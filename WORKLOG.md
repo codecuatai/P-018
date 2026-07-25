@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-25
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Phong Vu | Tạo branch `test` để kiểm tra AI usage logging hook | ✅ Done | Branch `test` được tạo từ `develop` | 0.2h |
+| Phong Vu | Cập nhật worklog và chuẩn bị push/PR kiểm thử AI log | ✅ Done | `WORKLOG.md` cập nhật, hook pre-push dùng `scripts/submit_log.py` để submit `.ai-log/session.jsonl` | 0.3h |
+
+**Tổng kết ngày:** Đã chuẩn bị thay đổi tối thiểu để kiểm tra luồng AI log qua hook khi push. PR sẽ được mở từ `test` vào `develop` để chương trình nhận biết cách dùng AI.
+
+---
+
 ## [YYYY-MM-DD]
 
 | Member | Task | Status | Output | Time |
