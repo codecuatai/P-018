@@ -1,18 +1,28 @@
-# Worklog — Team P-018
+# Worklog — Team [Tên Team]
 
 > Ghi lại tất cả công việc đã làm theo ngày. Ai làm gì, kết quả gì.
 
 ---
 
-## 2026-07-25
+## [YYYY-MM-DD]
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Dev | Khởi tạo môi trường ảo Python & cài đặt dependencies | ✅ Done | `.venv` & `requirements.txt` | 1h |
-| Dev | Cấu hình tệp biến môi trường `.env` | ✅ Done | `.env` file | 0.5h |
-| Dev | Cài đặt & kiểm thử Git pre-push hook nộp AI log | ✅ Done | Hook active & verified | 0.5h |
+| [Tên] | [mô tả task] | ✅ Done | [link/kết quả] | 2h |
+| [Tên] | [mô tả task] | 🔄 WIP | [mô tả tiến độ] | 1.5h |
+| [Tên] | [mô tả task] | ❌ Blocked | [lý do block] | - |
 
-**Tổng kết ngày:** Hoàn tất thiết lập môi trường phát triển, cài đặt AI logging pre-push hook và kiểm tra quy trình tự động thu thập log.
+**Tổng kết ngày:** [1-2 câu về tiến độ chung]
+
+---
+
+## [YYYY-MM-DD]
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| | | | | |
+
+**Tổng kết ngày:**
 
 ---
 
