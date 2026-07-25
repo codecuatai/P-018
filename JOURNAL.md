@@ -14,6 +14,7 @@
 ### Đã hoàn thành
 - [thành quả 1]
 - [thành quả 2]
+- [thành quả 3]
 
 ### Khó khăn & Giải pháp
 | Khó khăn | Giải pháp | Kết quả |
