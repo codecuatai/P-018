@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Manual AI usage logger — for team members using ANY AI tool.
+Manual AI usage logger - for team members using ANY AI tool.
 Use this when your AI tool does NOT have automatic hook integration.
 
 Usage (interactive):
@@ -10,10 +10,10 @@ Usage (one-line):
   python scripts/log_manual.py --tool "chatgpt" --prompt "Asked ChatGPT to explain transformer architecture" --model "gpt-5.4"
 
 Examples:
-  # Tiến logs a ChatGPT session
+  # Tien logs a ChatGPT session
   python scripts/log_manual.py --tool chatgpt --prompt "Brainstorm UI layout for /ai page"
 
-  # Hoàng logs a Gemini web session
+  # Hoang logs a Gemini web session
   python scripts/log_manual.py --tool gemini-web --prompt "Research risk scoring algorithms"
 
   # Quick interactive mode
@@ -27,6 +27,14 @@ import argparse
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+# Keep Windows consoles from crashing when status messages include Unicode.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 VN_TZ = timezone(timedelta(hours=7))
 
 
@@ -39,7 +47,7 @@ def git(cmd):
 
 def interactive_mode():
     """Prompt user for log info interactively."""
-    print("\n📝 Manual AI Log Entry")
+    print("\n[log] Manual AI Log Entry")
     print("=" * 40)
 
     tool = input("Tool name (e.g. chatgpt, gemini-web, copilot, other): ").strip()
@@ -52,7 +60,7 @@ def interactive_mode():
 
     prompt = input("What did you ask/do? (brief summary): ").strip()
     if not prompt:
-        print("[log] ❌ Prompt cannot be empty.", file=sys.stderr)
+        print("[log] Prompt cannot be empty.", file=sys.stderr)
         sys.exit(1)
 
     result = input("Result/outcome (optional, press Enter to skip): ").strip()
@@ -81,7 +89,7 @@ def main():
     student = git("git config user.email")
     if not student:
         student = os.environ.get("USERNAME", os.environ.get("USER", "unknown"))
-        print(f"[log] ⚠️  git email not set! Using fallback: {student}", file=sys.stderr)
+        print(f"[log] git email not set. Using fallback: {student}", file=sys.stderr)
         print(f"[log] Run: git config user.email \"your@vinuni.edu.vn\"", file=sys.stderr)
 
     entry = {
@@ -105,8 +113,8 @@ def main():
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    print(f"\n[log] ✅ Logged: [{tool}] {prompt[:80]}")
-    print(f"[log] 📁 Saved to: {log_file}")
+    print(f"\n[log] Logged: [{tool}] {prompt[:80]}")
+    print(f"[log] Saved to: {log_file}")
 
 
 if __name__ == "__main__":
