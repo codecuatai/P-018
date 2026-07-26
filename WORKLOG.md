@@ -15,6 +15,13 @@
 
 **Tổng kết ngày:** Đã chi tiết hóa toàn bộ worklog dự án, rà soát lại kết quả tích hợp AI logging script (`scripts/submit_log.py`, `scripts/setup_hooks.ps1`), tạo nhánh test và kiểm tra quy trình nộp AI log qua PR vào `develop`.
 
+### Bổ sung kỹ thuật và bằng chứng
+
+- **Codex CLI hook:** commit `d805095` cập nhật `.codex/hooks.json` và thêm `scripts/log_codex_hook.py`. Hook được khai báo cho cả sự kiện `UserPromptSubmit` và `Stop`; wrapper đọc event từ stdin, chuẩn hoá qua `log_hook.normalize`, ghi vào `.ai-log/session.jsonl` và luôn trả về JSON `{}` để không chặn Codex CLI.
+- **Xác minh worklog:** commit `2f4633f` ghi nhận kết quả kiểm tra AI log. Tại thời điểm rà soát, nhánh `test/verify-ai-log` trỏ tới commit này; local `develop` cũng đang chứa commit đó.
+- **Độ tin cậy khi nộp log:** `scripts/submit_log.py` gửi tối đa 500 bản ghi mỗi lần, archive bản ghi sau khi gửi thành công và khôi phục batch pending nếu yêu cầu HTTP lỗi, nhằm tránh mất log.
+- **Phạm vi test hiện có:** `pytest --collect-only -q` thu thập 5 test (2 test graph agent, 3 test API). Không ghi nhận kết quả pass của toàn bộ suite trong mục này vì lần chạy đầy đủ chưa hoàn tất trong giới hạn thực thi hiện tại.
+
 ---
 
 ## 2026-07-25
