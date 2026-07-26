@@ -21,12 +21,15 @@
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
 | Phong Vu | Tạo branch `test` để kiểm tra AI usage logging hook | ✅ Done | Branch `test` được tạo từ `develop` | 0.3h |
-| Phong Vu | Cập nhật `WORKLOG.md` & chuẩn bị push/PR kiểm thử AI log | ✅ Done | `WORKLOG.md` cập nhật, hook pre-push dùng `scripts/submit_log.py` để submit `.ai-log/session.jsonl` | 0.5h |
+| Phong Vu | Cập nhật `WORKLOG.md` & chuẩn bị push/PR kiểm thử AI log | ✅ Done | `WORKLOG.md` cập nhật, hook pre-push dùng `scripts/submit_log.py` | 0.5h |
 | VuVanPhong123 | Mở & merge PR #2 (Test AI log hook workflow) | ✅ Done | Pull Request #2 merged vào `develop` thành công | 0.4h |
 | VuVanPhong123 | Merge PR #3 & PR #4 đồng bộ nhánh `develop` vào `main` | ✅ Done | Nhánh `main` & `develop` đạt trạng thái nhất quán | 0.4h |
 | codecuatai | Khởi tạo thông tin cập nhật ban đầu cho `JOURNAL.md` | ✅ Done | Commit `0ffcd10` bổ sung dữ liệu tuần làm việc trong `JOURNAL.md` | 0.3h |
+| Dev | Khởi tạo môi trường ảo Python & cài đặt dependencies | ✅ Done | Môi trường `.venv` & dependencies từ `requirements.txt` | 1.0h |
+| Dev | Cấu hình tệp biến môi trường `.env` | ✅ Done | File `.env` hoàn tất | 0.5h |
+| Dev | Cài đặt & kiểm thử Git pre-push hook nộp AI log | ✅ Done | Hook active & verified | 0.5h |
 
-**Tổng kết ngày:** Đã kiểm thử thành công quy trình tự động ghi log AI usage qua git hook khi push code, xử lý hoàn tất các Pull Request (#1 - #4) để đưa hệ thống ghi nhận log của dự án đi vào hoạt động trơn tru.
+**Tổng kết ngày:** Hoàn tất thiết lập môi trường phát triển, cài đặt AI logging pre-push hook, kiểm thử thành công quy trình tự động ghi log AI usage và xử lý hoàn tất các Pull Request (#1 - #4) để đồng bộ nhánh với `develop`.
 
 ---
 
