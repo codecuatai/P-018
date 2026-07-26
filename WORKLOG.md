@@ -1,6 +1,6 @@
 # Worklog — Team P-018 (VinUni AI20K Cohort 3)
 
-> Ghi lại tất cả công việc đã làm theo ngày của các thành viên trong đội. Đảm bảo minh bạch tiến độ, kết quả công việc và theo dõi sử dụng AI.
+> Ghi lại tất cả công việc đã làm theo ngày của các thành viên trong đội. Đảm bảo minh bạch tiến độ, kết quả công việc và theo dõi sử dụng AI
 
 ---
 
