@@ -11,8 +11,9 @@
 | Phong Vu | Rà soát & kiểm thử tích hợp AI Antigravity CLI | ✅ Done | Xác nhận hook logging hoạt động ổn định trên môi trường Windows (PowerShell) | 0.8h |
 | Antigravity AI | Chi tiết hóa & cấu trúc lại `WORKLOG.md` | ✅ Done | `WORKLOG.md` được cập nhật chi tiết với mốc lịch sử commit, PR và bảng theo dõi | 0.5h |
 | Team P-018 | Kiểm tra liên kết git history, PR #4 và trạng thái repo | ✅ Done | Các branch `main`, `develop` và `test` đã được đồng bộ chuẩn bị cho Phase tiếp theo | 0.5h |
+| Dev | Kiểm thử AI usage logging hook và tạo nhánh PR vào `develop` | ✅ Done | Branch `test/verify-ai-log` được tạo và kiểm thử thành công | 0.4h |
 
-**Tổng kết ngày:** Đã chi tiết hóa toàn bộ worklog dự án, rà soát lại kết quả tích hợp AI logging script (`scripts/submit_log.py`, `scripts/setup_hooks.ps1`) và chuẩn bị sẵn sàng cấu trúc cho các task phát triển AI Agent trong giai đoạn tiếp theo.
+**Tổng kết ngày:** Đã chi tiết hóa toàn bộ worklog dự án, rà soát lại kết quả tích hợp AI logging script (`scripts/submit_log.py`, `scripts/setup_hooks.ps1`), tạo nhánh test và kiểm tra quy trình nộp AI log qua PR vào `develop`.
 
 ---
 
