@@ -6,7 +6,7 @@
           {
             "name": "log-prompt",
             "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=gemini",
+            "command": "scripts\\_pyrun.cmd scripts\\log_hook.py --tool=gemini",
             "timeout": 10000
           }
         ]
@@ -19,7 +19,7 @@
           {
             "name": "log-model",
             "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=gemini",
+            "command": "scripts\\_pyrun.cmd scripts\\log_hook.py --tool=gemini",
             "timeout": 10000
           }
         ]
@@ -32,7 +32,7 @@
           {
             "name": "log-session-end",
             "type": "command",
-            "command": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=gemini",
+            "command": "scripts\\_pyrun.cmd scripts\\log_hook.py --tool=gemini",
             "timeout": 10000
           }
         ]
