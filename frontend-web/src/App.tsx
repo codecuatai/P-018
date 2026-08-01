@@ -1,64 +1,81 @@
-import { FormEvent, useState } from "react";
-import { API_BASE_URL, sendChatMessage, type ChatResponse } from "./api";
+import { useState } from "react";
+import { MessageSquare, Clock, User, Navigation } from "lucide-react";
+import { ChatDashboard } from "./pages/ChatDashboard";
+import { HistoryView } from "./components/HistoryView";
+import { ProfileSettings } from "./pages/ProfileSettings";
+import "./styles.css";
 
 export default function App() {
-  const [message, setMessage] = useState("");
-  const [result, setResult] = useState<ChatResponse | null>(null);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"chat" | "history" | "profile">("chat");
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = message.trim();
-    if (!trimmed) return;
-
-    setIsLoading(true);
-    setError("");
-    try {
-      setResult(await sendChatMessage(trimmed));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Request failed");
-    } finally {
-      setIsLoading(false);
+  const renderContent = () => {
+    switch (activeTab) {
+      case "chat": return <ChatDashboard onRequireProfile={() => setActiveTab("profile")} />;
+      case "history": return <HistoryView />;
+      case "profile": return <ProfileSettings />;
     }
-  }
+  };
+
+  const getTabTitle = () => {
+    switch (activeTab) {
+      case "chat": return "Trợ lý Đặt vé AI";
+      case "history": return "Lịch sử dịch vụ";
+      case "profile": return "Cài đặt Hồ sơ";
+    }
+  };
 
   return (
-    <main className="page">
-      <section className="workspace">
-        <header className="header">
-          <div>
-            <p className="eyebrow">Team P-018</p>
-            <h1>AI Agent Web</h1>
-          </div>
-          <span className="apiBadge">API: {API_BASE_URL}</span>
-        </header>
-
-        <form className="composer" onSubmit={handleSubmit}>
-          <textarea
-            value={message}
-            onChange={(event) => setMessage(event.target.value)}
-            placeholder="Nhap cau hoi cho agent..."
-            rows={6}
-          />
-          <button type="submit" disabled={isLoading || !message.trim()}>
-            {isLoading ? "Dang xu ly" : "Gui"}
+    <div className="app-container">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h2>
+            <Navigation className="text-primary" size={28} color="#3b82f6" />
+            NaviGo
+          </h2>
+        </div>
+        <nav className="sidebar-nav">
+          <button 
+            className={`nav-btn ${activeTab === "chat" ? "active" : ""}`}
+            onClick={() => setActiveTab("chat")}
+          >
+            <MessageSquare size={20} />
+            Trợ lý đặt vé
           </button>
-        </form>
+          <button 
+            className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
+            onClick={() => setActiveTab("history")}
+          >
+            <Clock size={20} />
+            Lịch sử dịch vụ
+          </button>
+          <button 
+            className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
+            onClick={() => setActiveTab("profile")}
+          >
+            <User size={20} />
+            Hồ sơ cá nhân
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <div className="user-profile">
+            <div className="avatar">U</div>
+            <div className="user-info">
+              <span className="name">User Demo</span>
+              <span className="email">user@demo.com</span>
+            </div>
+          </div>
+        </div>
+      </aside>
 
-        {error && <p className="error">{error}</p>}
-
-        <section className="response" aria-live="polite">
-          <h2>Phan hoi</h2>
-          <p>{result?.response ?? "Chua co phan hoi."}</p>
-          {result?.analysis && (
-            <>
-              <h3>Analysis</h3>
-              <p>{result.analysis}</p>
-            </>
-          )}
-        </section>
-      </section>
-    </main>
+      <main className="main-content">
+        <header className="topbar">
+          <h1>{getTabTitle()}</h1>
+        </header>
+        
+        <div className="content-area">
+          {renderContent()}
+        </div>
+      </main>
+    </div>
   );
 }
