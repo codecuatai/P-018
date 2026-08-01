@@ -1,5 +1,5 @@
 import React from "react";
-import { Plane, Bus, Train, Hotel, Car, Package, Calendar, Clock, Users, ArrowRight } from "lucide-react";
+import { Plane, Bus, Train, Hotel, Car, Package, Calendar, Clock, Users, ArrowRight, BadgeCheck, Luggage, ShieldCheck } from "lucide-react";
 import { ServiceTicket } from "../types";
 import "./TicketCard.css";
 
@@ -34,7 +34,8 @@ export const TicketCard: React.FC<Props> = ({ ticket, onConfirm, onRequestChange
   };
 
   return (
-    <div className="ticket-card">
+    <div className={`ticket-card ticket-type-${ticket.type}`}>
+      <div className="ticket-top-bar" />
       <div className="ticket-header">
         <span className="ticket-type">
           {getTypeIcon()}
@@ -42,36 +43,88 @@ export const TicketCard: React.FC<Props> = ({ ticket, onConfirm, onRequestChange
         </span>
         <span className="ticket-provider">{ticket.provider}</span>
       </div>
-      
+
       <div className="ticket-body">
-        <div className="route">
-          <div className="location">
+        <div className="route-diagram">
+          <div className="location-box origin">
+            <span className="location-label">Điểm đi</span>
             <strong>{ticket.origin}</strong>
           </div>
-          <div className="arrow"><ArrowRight size={20} className="text-muted" /></div>
-          <div className="location">
+          <div className="flight-path">
+            <div className="path-line" />
+            <div className="path-icon">{getTypeIcon()}</div>
+          </div>
+          <div className="location-box destination">
+            <span className="location-label">Điểm đến</span>
             <strong>{ticket.destination}</strong>
           </div>
         </div>
-        
-        <div className="details">
-          <p><Calendar size={16} /> {ticket.date}</p>
-          <p><Clock size={16} /> {ticket.time}</p>
-          <p><Users size={16} /> {ticket.seats}</p>
-          <p className="price">💰 Giá: {ticket.price.toLocaleString("vi-VN")} VND</p>
+
+        <div className="ticket-info-grid">
+          <div className="info-item">
+            <Calendar size={15} />
+            <div>
+              <span>Ngày đi</span>
+              <strong>{ticket.date}</strong>
+            </div>
+          </div>
+          <div className="info-item">
+            <Clock size={15} />
+            <div>
+              <span>Giờ xuất phát</span>
+              <strong>{ticket.time}</strong>
+            </div>
+          </div>
+          <div className="info-item">
+            <Users size={15} />
+            <div>
+              <span>Vị trí / Ghế</span>
+              <strong>{ticket.seats}</strong>
+            </div>
+          </div>
+          <div className="info-item">
+            <BadgeCheck size={15} />
+            <div>
+              <span>Thời gian đi</span>
+              <strong>{ticket.duration ?? "Linh hoạt"}</strong>
+            </div>
+          </div>
         </div>
+
+        <div className="price-row">
+          <div className="price-tag">
+            <span>Tổng chi phí:</span>
+            <strong>{ticket.price.toLocaleString("vi-VN")} VND</strong>
+          </div>
+        </div>
+
+        {(ticket.note || ticket.baggage || ticket.refundPolicy) && (
+          <div className="ticket-meta">
+            {ticket.note && <p className="meta-item">{ticket.note}</p>}
+            {ticket.baggage && (
+              <p className="meta-item">
+                <Luggage size={14} /> {ticket.baggage}
+              </p>
+            )}
+            {ticket.refundPolicy && (
+              <p className="meta-item highlight">
+                <ShieldCheck size={14} /> {ticket.refundPolicy}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       {!readOnly && (
         <div className="ticket-actions">
           {onRequestChange && (
             <button className="btn-secondary" onClick={() => onRequestChange(ticket)}>
-              Yêu cầu đổi vé
+              Đổi phương án
             </button>
           )}
           {onConfirm && (
             <button className="btn-primary" onClick={() => onConfirm(ticket)}>
-              Xác nhận đặt vé
+              Xác nhận và thanh toán
             </button>
           )}
         </div>
