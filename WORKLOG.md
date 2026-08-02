@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-08-02
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Phong Vu | Bổ sung tài liệu Project Build Phase vào thư mục `docs/` | ✅ Done | Thêm `docs/Project Build Phase.docx.pdf`, merge vào `develop` và mở PR #15 vào `main` | 0.4h |
+| Codex AI | Hoàn thiện demo frontend cho agent đặt dịch vụ đa nền tảng | ✅ Done | Cập nhật `frontend-web` thành demo mock có hội thoại tiếng Việt, biên lai đặt xe/đồ ăn/chuyến bay, nút xác nhận thanh toán và modal thành công | 1.5h |
+| Codex AI | Tinh chỉnh trải nghiệm demo frontend | ✅ Done | Khóa sidebar và topbar, chỉ cho vùng chat scroll; xác minh `npm run build` pass và dev server Vite chạy tại `localhost:5173` | 0.5h |
+| Codex AI | Ghi nhận AI usage log và đồng bộ nhánh | ✅ Done | Ghi từng prompt thành AI-log entry riêng, push qua feature branch, merge vào `develop`, xóa nhánh feature sau merge và mở PR #16 vào `main` | 0.5h |
+| Team P-018 | Cập nhật worklog cho các thay đổi tài liệu và demo FE | ✅ Done | `WORKLOG.md` được cập nhật bằng UTF-8 để giữ đúng tiếng Việt có dấu | 0.3h |
+
+**Tổng kết ngày:** Đã bổ sung tài liệu Project Build Phase, hoàn thiện demo frontend cho agent hỗ trợ đặt nhiều dịch vụ trong một app, kiểm tra build/dev server và duy trì quy trình AI-log theo từng prompt riêng. Các thay đổi được đưa qua feature branch, merge về `develop` và chuẩn bị PR vào `main`.
+
+---
+
 ## 2026-07-26
 
 | Member | Task | Status | Output | Time |
