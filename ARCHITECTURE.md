@@ -1,110 +1,86 @@
-# Architecture Document
+# Monorepo Architecture Document - AI Concierge (X-One Assistant)
 
-## System Overview
+> **Mô Hình Kiến Trúc Monorepo Chuẩn Đa Nền Tảng (Web, Mobile App, Backend API)**
 
-[Tóm tắt 2-3 câu về kiến trúc hệ thống]
+---
 
-## Architecture Diagram
+## 1. System Architecture Overview
+
+Hệ thống **AI Concierge (X-One Assistant)** được tổ chức theo mô hình **Domain-Driven Monorepo Architecture** với thư mục `apps/` chứa tất cả các ứng dụng đầu ra và `packages/` chứa các tài nguyên dùng chung.
 
 ```mermaid
 graph TB
-    subgraph Frontend
-        UI[React/Next.js UI]
+    subgraph Clients["Applications (apps/)"]
+        Web[apps/web: React / Next.js Web App]
+        Mobile[apps/mobile: React Native / Expo App]
     end
 
-    subgraph Backend[FastAPI Backend]
-        API[API Routes]
-        Agent[LangGraph Agent]
-        LLM[LLM Service]
-        Tools[Agent Tools]
+    subgraph CoreBackend["Backend System (apps/backend/)"]
+        API[FastAPI API Routes]
+        Agent[LangGraph Agent Orchestrator]
+        LLM[LLM Service - GPT-4o / Claude]
+        Tools[Agent Tool Registry]
     end
 
-    subgraph Data[Data Layer]
-        DB[(Database)]
-        Vector[Vector Store]
+    subgraph SharedData["Data Layer"]
+        DB[(PostgreSQL Database)]
+        Cache[(Redis Cache & Pub/Sub)]
+        Vector[(pgvector - Semantic Search)]
     end
 
-    UI -->|HTTP/REST| API
+    Web -->|HTTP / SSE / WebSocket| API
+    Mobile -->|HTTP / SSE / WebSocket| API
     API --> Agent
     Agent --> LLM
     Agent --> Tools
-    Agent --> Vector
     Tools --> DB
-    API --> DB
+    API --> Cache
 ```
 
-## Components
+---
 
-### 1. Frontend (React/Next.js)
-- **Purpose:** [mô tả]
-- **Key Features:** [danh sách]
-- **State Management:** [approach]
+## 2. Directory Structure Layout (Monorepo Standard)
 
-### 2. Backend (FastAPI)
-- **Purpose:** [mô tả]
-- **API Design:** RESTful
-- **Authentication:** [JWT/None]
-
-### 3. AI Agent (LangGraph)
-- **Agent Type:** [ReAct / Plan-and-Execute / Custom]
-- **State:** [mô tả state schema]
-- **Nodes:** [danh sách nodes]
-- **Tools:** [danh sách tools]
-- **Flow:**
-
-```mermaid
-graph LR
-    START --> A[Node A]
-    A --> B{Decision}
-    B -->|Yes| C[Node C]
-    B -->|No| D[Node D]
-    C --> E[END]
-    D --> E
+```
+d:\VIN\Projects\P-018\
+├── apps/                    <-- Tất cả ứng dụng (Applications)
+│   ├── backend/             <-- Python FastAPI & LangGraph AI Agent
+│   │   ├── src/             <-- Core Python source (agents, api, models, services)
+│   │   ├── tests/           <-- Unit & Integration tests
+│   │   ├── Dockerfile       <-- Dedicated Backend Dockerfile
+│   │   └── requirements.txt <-- Backend Python dependencies
+│   │
+│   ├── web/                 <-- Web Application (React / Next.js / Vite)
+│   │   ├── src/             <-- Web source code
+│   │   ├── package.json     <-- Node dependencies
+│   │   └── Dockerfile       <-- Dedicated Web Dockerfile
+│   │
+│   └── mobile/              <-- Mobile Application (React Native / Expo / Flutter)
+│       ├── src/             <-- Mobile source code
+│       ├── package.json     <-- Mobile app package definition
+│       └── README.md        <-- Mobile run instructions
+│
+├── packages/                <-- Shared code & specifications
+│   └── api-contracts/       <-- Shared OpenAPI / Pydantic / TypeScript Schemas
+│
+├── docs/                    <-- Project documentation & PRDs
+│   └── AI_Concierge_Project_Docs/
+├── eval/                    <-- Agent evaluation benchmarks & datasets
+├── scripts/                 <-- Monorepo build, dev, log & deployment scripts
+├── docker-compose.yml       <-- Multi-container docker setup (web, backend, db, redis)
+├── Makefile                 <-- Root task runner for Monorepo
+└── README.md                <-- Root Monorepo README
 ```
 
-### 4. Database
-- **Type:** [PostgreSQL / SQLite]
-- **Tables:** [danh sách]
-- **Migrations:** Alembic
+---
 
-### 5. Vector Store
-- **Type:** [ChromaDB / FAISS / Pinecone]
-- **Embeddings:** [model]
-- **Purpose:** [RAG / similarity search]
+## 3. Development Workflow & Commands
 
-## Data Flow
-
-1. User gửi request từ Frontend
-2. API route nhận và validate input
-3. Agent xử lý qua LangGraph pipeline
-4. LLM generate response
-5. Tools thực thi actions (nếu cần)
-6. Response trả về Frontend
-
-## Deployment Architecture
-
-```mermaid
-graph LR
-    subgraph Docker
-        FE[Frontend Container]
-        BE[Backend Container]
-        DB_C[Database Container]
-    end
-    FE --> BE --> DB_C
-```
-
-## Security
-
-- API keys stored in `.env` (never commit)
-- Input validation via Pydantic
-- Rate limiting on API endpoints
-- CORS configured for frontend domain
-
-## Design Decisions
-
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Framework | FastAPI | Async, auto-docs, type-safe |
-| Agent | LangGraph | Flexible state management |
-| Database | [choice] | [reason] |
-| Frontend | Next.js | [reason] |
+| Thao tác | Câu lệnh thực thi (từ Root) | Mô tả |
+| :--- | :--- | :--- |
+| **Chạy Backend API** | `make run-backend` | Chạy FastAPI tại `http://localhost:8000` với live-reload |
+| **Chạy Web Frontend**| `make run-web` | Chạy Vite Web server tại `http://localhost:5173` |
+| **Chạy Mobile App** | `make run-mobile` | Khởi chạy Expo Metro Bundler cho ứng dụng di động |
+| **Chạy Test Backend** | `make test-backend` | Chạy bộ kiểm thử Pytest trong `apps/backend/tests/` |
+| **Lint & Format** | `make check` | Kiểm tra cú pháp và định dạng code với Ruff |
+| **Docker Compose** | `docker-compose up --build` | Khởi tạo toàn bộ container backend và web |

@@ -1,6 +1,6 @@
 # Wireframe & UI Flow - NaviGo Frontend Demo
 
-Tài liệu này mô tả wireframe và UI flow cho demo NaviGo trong `frontend-web/`. Mục tiêu là giúp reviewer hiểu nhanh màn hình, navigation và các luồng đặt dịch vụ đang được mock trong frontend.
+Tài liệu này mô tả wireframe và UI flow cho demo NaviGo trong `apps/web/`. Mục tiêu là giúp reviewer hiểu nhanh màn hình, navigation và các luồng đặt dịch vụ đang được mock trong frontend.
 
 ## Information Architecture
 
