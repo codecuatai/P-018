@@ -8,10 +8,10 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Phong Vu | Bổ sung tài liệu Project Build Phase vào thư mục `docs/` | ✅ Done | Thêm `docs/Project Build Phase.docx.pdf`, merge vào `develop` và mở PR #15 vào `main` | 0.4h |
-| Codex AI | Hoàn thiện demo frontend cho agent đặt dịch vụ đa nền tảng | ✅ Done | Cập nhật `frontend-web` thành demo mock có hội thoại tiếng Việt, biên lai đặt xe/đồ ăn/chuyến bay, nút xác nhận thanh toán và modal thành công | 1.5h |
-| Codex AI | Tinh chỉnh trải nghiệm demo frontend | ✅ Done | Khóa sidebar và topbar, chỉ cho vùng chat scroll; xác minh `npm run build` pass và dev server Vite chạy tại `localhost:5173` | 0.5h |
-| Codex AI | Ghi nhận AI usage log và đồng bộ nhánh | ✅ Done | Ghi từng prompt thành AI-log entry riêng, push qua feature branch, merge vào `develop`, xóa nhánh feature sau merge và mở PR #16 vào `main` | 0.5h |
+| Vũ Văn Phong | Bổ sung tài liệu Project Build Phase vào thư mục `docs/` | ✅ Done | Thêm `docs/Project Build Phase.docx.pdf`, merge vào `develop` và mở PR #15 vào `main` | 0.4h |
+| Trần Văn Tài, Lê Tiến Minh | Hoàn thiện demo frontend cho agent đặt dịch vụ đa nền tảng | ✅ Done | Cập nhật `frontend-web` thành demo mock có hội thoại tiếng Việt, biên lai đặt xe/đồ ăn/chuyến bay, nút xác nhận thanh toán và modal thành công | 1.5h |
+| Trần Văn Tài, Lê Tiến Minh | Tinh chỉnh trải nghiệm demo frontend | ✅ Done | Khóa sidebar và topbar, chỉ cho vùng chat scroll; xác minh `npm run build` pass và dev server Vite chạy tại `localhost:5173` | 0.5h |
+| Vũ Văn Phong | Ghi nhận AI usage log và đồng bộ nhánh | ✅ Done | Ghi từng prompt thành AI-log entry riêng, push qua feature branch, merge vào `develop`, xóa nhánh feature sau merge và mở PR #16 vào `main` | 0.5h |
 | Team P-018 | Cập nhật worklog cho các thay đổi tài liệu và demo FE | ✅ Done | `WORKLOG.md` được cập nhật bằng UTF-8 để giữ đúng tiếng Việt có dấu | 0.3h |
 
 **Tổng kết ngày:** Đã bổ sung tài liệu Project Build Phase, hoàn thiện demo frontend cho agent hỗ trợ đặt nhiều dịch vụ trong một app, kiểm tra build/dev server và duy trì quy trình AI-log theo từng prompt riêng. Các thay đổi được đưa qua feature branch, merge về `develop` và chuẩn bị PR vào `main`.
@@ -22,8 +22,8 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Phong Vu | Rà soát & kiểm thử tích hợp AI Antigravity CLI | ✅ Done | Xác nhận hook logging hoạt động ổn định trên môi trường Windows (PowerShell) | 0.8h |
-| Antigravity AI | Chi tiết hóa & cấu trúc lại `WORKLOG.md` | ✅ Done | `WORKLOG.md` được cập nhật chi tiết với mốc lịch sử commit, PR và bảng theo dõi | 0.5h |
+| Lê Tiến Minh | Rà soát & kiểm thử tích hợp AI Antigravity CLI | ✅ Done | Xác nhận hook logging hoạt động ổn định trên môi trường Windows (PowerShell) | 0.8h |
+| Lê Tiến Minh | Chi tiết hóa & cấu trúc lại `WORKLOG.md` | ✅ Done | `WORKLOG.md` được cập nhật chi tiết với mốc lịch sử commit, PR và bảng theo dõi | 0.5h |
 | Team P-018 | Kiểm tra liên kết git history, PR #4 và trạng thái repo | ✅ Done | Các branch `main`, `develop` và `test` đã được đồng bộ chuẩn bị cho Phase tiếp theo | 0.5h |
 | Dev | Kiểm thử AI usage logging hook và tạo nhánh PR vào `develop` | ✅ Done | Branch `test/verify-ai-log` được tạo và kiểm thử thành công | 0.4h |
 
@@ -42,11 +42,11 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Phong Vu | Tạo branch `test` để kiểm tra AI usage logging hook | ✅ Done | Branch `test` được tạo từ `develop` | 0.3h |
-| Phong Vu | Cập nhật `WORKLOG.md` & chuẩn bị push/PR kiểm thử AI log | ✅ Done | `WORKLOG.md` cập nhật, hook pre-push dùng `scripts/submit_log.py` | 0.5h |
-| VuVanPhong123 | Mở & merge PR #2 (Test AI log hook workflow) | ✅ Done | Pull Request #2 merged vào `develop` thành công | 0.4h |
-| VuVanPhong123 | Merge PR #3 & PR #4 đồng bộ nhánh `develop` vào `main` | ✅ Done | Nhánh `main` & `develop` đạt trạng thái nhất quán | 0.4h |
-| codecuatai | Khởi tạo thông tin cập nhật ban đầu cho `JOURNAL.md` | ✅ Done | Commit `0ffcd10` bổ sung dữ liệu tuần làm việc trong `JOURNAL.md` | 0.3h |
+| Vũ Văn Phong | Tạo branch `test` để kiểm tra AI usage logging hook | ✅ Done | Branch `test` được tạo từ `develop` | 0.3h |
+| Vũ Văn Phong | Cập nhật `WORKLOG.md` & chuẩn bị push/PR kiểm thử AI log | ✅ Done | `WORKLOG.md` cập nhật, hook pre-push dùng `scripts/submit_log.py` | 0.5h |
+| Vũ Văn Phong | Mở & merge PR #2 (Test AI log hook workflow) | ✅ Done | Pull Request #2 merged vào `develop` thành công | 0.4h |
+| Trần Văn Tài | Merge PR #3 & PR #4 đồng bộ nhánh `develop` vào `main` | ✅ Done | Nhánh `main` & `develop` đạt trạng thái nhất quán | 0.4h |
+| Trần Văn Tài | Khởi tạo thông tin cập nhật ban đầu cho `JOURNAL.md` | ✅ Done | Commit `0ffcd10` bổ sung dữ liệu tuần làm việc trong `JOURNAL.md` | 0.3h |
 | Dev | Khởi tạo môi trường ảo Python & cài đặt dependencies | ✅ Done | Môi trường `.venv` & dependencies từ `requirements.txt` | 1.0h |
 | Dev | Cấu hình tệp biến môi trường `.env` | ✅ Done | File `.env` hoàn tất | 0.5h |
 | Dev | Cài đặt & kiểm thử Git pre-push hook nộp AI log | ✅ Done | Hook active & verified | 0.5h |
@@ -59,7 +59,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Phong Vu | Khởi tạo repository dự án từ template AI20K Agent | ✅ Done | Mã nguồn khởi tạo với đầy đủ khung dự án (LangGraph, FastAPI, Docker) | 1.5h |
+| Vũ Văn Phong | Khởi tạo repository dự án từ template AI20K Agent | ✅ Done | Mã nguồn khởi tạo với đầy đủ khung dự án (LangGraph, FastAPI, Docker) | 1.5h |
 | Team P-018 | Thiết lập cấu hình môi trường và AI Logging Hook | ✅ Done | Đã cài đặt `.env`, `scripts/setup_hooks.ps1` / `setup_hooks.sh` và cấu hình CI/CD GitHub Actions | 1.0h |
 | Team P-018 | Xây dựng bộ khung tài liệu hướng dẫn và tài liệu kiến trúc | ✅ Done | Hoàn thiện `README.md`, `ARCHITECTURE.md`, `docs/` | 1.2h |
 
