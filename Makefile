@@ -1,21 +1,24 @@
-.PHONY: run test lint format typecheck check clean
+.PHONY: run-backend run-web run-mobile test-backend lint format check clean
 
-run:
-	uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+run-backend:
+	cd apps/backend && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
-test:
-	pytest tests/ -v
+run-web:
+	cd apps/web && npm run dev
+
+run-mobile:
+	cd apps/mobile && npm start
+
+test-backend:
+	cd apps/backend && PYTHONPATH=. pytest tests/ -v
 
 lint:
-	ruff check src/ tests/
+	cd apps/backend && ruff check src/ tests/
 
 format:
-	ruff format src/ tests/
+	cd apps/backend && ruff format src/ tests/
 
-typecheck:
-	mypy src/
-
-check: lint format test
+check: lint test-backend
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +

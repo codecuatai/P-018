@@ -4,6 +4,10 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+import langchain
+if not hasattr(langchain, "debug"):
+    langchain.debug = False
+
 from src.main import app
 
 

@@ -1,6 +1,6 @@
 # Architecture Diagram - P-018 NaviGo Demo
 
-Tài liệu này mô tả kiến trúc hiện tại của demo NaviGo trong repo P-018. UI demo nằm trong `frontend-web/`; tài liệu Project Build Phase dạng PDF nằm trong `docs/Project Build Phase.docx.pdf`.
+Tài liệu này mô tả kiến trúc hiện tại của demo NaviGo trong repo P-018. UI demo nằm trong `apps/web/`; tài liệu Project Build Phase dạng PDF nằm trong `docs/Project Build Phase.docx.pdf`.
 
 ## System Overview
 
@@ -8,7 +8,7 @@ Tài liệu này mô tả kiến trúc hiện tại của demo NaviGo trong repo
 flowchart TB
     User["Người dùng demo"] --> Browser["Trình duyệt"]
 
-    subgraph FE["frontend-web - Vite React"]
+    subgraph FE["apps/web - Vite React"]
         App["App.tsx\nShell + routing tab"]
         Auth["AuthPage\nĐăng nhập / đăng ký demo"]
         Chat["ChatDashboard\nTrợ lý đặt dịch vụ"]
@@ -95,13 +95,13 @@ flowchart LR
 
 | Component | Location | Technology | Purpose |
 |-----------|----------|------------|---------|
-| App shell | `frontend-web/src/App.tsx` | React + TypeScript | Điều hướng 3 tab: chat, lịch sử, hồ sơ; kiểm tra phiên đăng nhập và trạng thái hồ sơ |
-| Authentication | `frontend-web/src/pages/AuthPage.tsx` | React state + localStorage | Đăng nhập demo admin/user, đăng ký tài khoản demo |
-| Chat demo | `frontend-web/src/pages/ChatDashboard.tsx` | React + lucide-react | Mô phỏng hội thoại đặt dịch vụ, chọn scenario, xác nhận thanh toán và handoff |
-| Mock business layer | `frontend-web/src/mocks/mockService.ts` | TypeScript | Giả lập API, booking, profile, auth, lịch sử và trạng thái demo |
-| Mock data | `frontend-web/src/mocks/mockData.ts` | TypeScript constants | Dữ liệu vé máy bay, tàu, khách sạn, xe, combo và lịch sử mẫu |
-| Booking history | `frontend-web/src/components/HistoryView.tsx` | React | Lọc, tìm kiếm, xem chi tiết, hủy và đánh giá booking |
-| Profile settings | `frontend-web/src/pages/ProfileSettings.tsx` | React forms | Thu thập dữ liệu hành khách bắt buộc trước khi thanh toán |
+| App shell | `apps/web/src/App.tsx` | React + TypeScript | Điều hướng 3 tab: chat, lịch sử, hồ sơ; kiểm tra phiên đăng nhập và trạng thái hồ sơ |
+| Authentication | `apps/web/src/pages/AuthPage.tsx` | React state + localStorage | Đăng nhập demo admin/user, đăng ký tài khoản demo |
+| Chat demo | `apps/web/src/pages/ChatDashboard.tsx` | React + lucide-react | Mô phỏng hội thoại đặt dịch vụ, chọn scenario, xác nhận thanh toán và handoff |
+| Mock business layer | `apps/web/src/mocks/mockService.ts` | TypeScript | Giả lập API, booking, profile, auth, lịch sử và trạng thái demo |
+| Mock data | `apps/web/src/mocks/mockData.ts` | TypeScript constants | Dữ liệu vé máy bay, tàu, khách sạn, xe, combo và lịch sử mẫu |
+| Booking history | `apps/web/src/components/HistoryView.tsx` | React | Lọc, tìm kiếm, xem chi tiết, hủy và đánh giá booking |
+| Profile settings | `apps/web/src/pages/ProfileSettings.tsx` | React forms | Thu thập dữ liệu hành khách bắt buộc trước khi thanh toán |
 | Backend layer | `src/` | FastAPI + LangGraph | Lớp API/agent của project; sẵn để tích hợp thay cho mock service khi demo chuyển sang backend thật |
 | Project docs | `docs/` | PDF + Markdown + Mermaid | Lưu tài liệu build phase, architecture diagram và wireframe/UI flow |
 
@@ -126,7 +126,7 @@ flowchart TB
     Build --> Static["Static Vite assets\ndist/"]
     Static --> User["Demo browser"]
 
-    P018["P-018 monorepo"] --> Split["git subtree split\nfrontend-web"]
+    P018["P-018 monorepo"] --> Split["git subtree split\napps/web"]
     Split --> GitHub
 ```
 
