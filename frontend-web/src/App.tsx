@@ -1,192 +1,163 @@
-import { useState } from "react";
-
-type ChatMessage = {
-  id: number;
-  sender: "user" | "agent";
-  text: string;
-};
-
-type ReceiptLine = {
-  label: string;
-  value: string;
-};
-
-const chatMessages: ChatMessage[] = [
-  {
-    id: 1,
-    sender: "user",
-    text: "Mình cần ra sân bay Nội Bài lúc 18:30, đặt thêm bữa tối nhẹ và kiểm tra giúp chuyến bay vào Đà Nẵng tối nay.",
-  },
-  {
-    id: 2,
-    sender: "agent",
-    text: "Mình đã ghép nhu cầu của bạn thành một lịch trình liền mạch: xe đến đón lúc 17:05, bữa tối giao trước giờ đi, và vé bay phù hợp khởi hành lúc 20:15.",
-  },
-  {
-    id: 3,
-    sender: "user",
-    text: "Ưu tiên xe rộng, đồ ăn không cay, chuyến bay có hành lý ký gửi nhé.",
-  },
-  {
-    id: 4,
-    sender: "agent",
-    text: "Đã cập nhật: xe 7 chỗ, phần cơm gà sốt nấm không cay, vé bay kèm 20kg hành lý. Mình đã chuẩn bị biên lai để bạn xác nhận thanh toán.",
-  },
-];
-
-const receiptLines: ReceiptLine[] = [
-  { label: "Xe đưa đón", value: "7 chỗ, Hoàn Kiếm -> Nội Bài" },
-  { label: "Thời gian đón", value: "17:05 hôm nay" },
-  { label: "Đồ ăn", value: "Cơm gà sốt nấm, không cay" },
-  { label: "Chuyến bay", value: "HAN -> DAD, 20:15 - 21:35" },
-  { label: "Hành lý", value: "20kg ký gửi + 7kg xách tay" },
-  { label: "Thanh toán", value: "Ví DemoPay" },
-];
-
-const serviceCards = [
-  {
-    title: "Gọi xe",
-    meta: "Đón đúng giờ",
-    description: "Tự chọn loại xe theo hành lý, nhóm đi cùng và thời điểm cần đến.",
-  },
-  {
-    title: "Đặt đồ ăn",
-    meta: "Theo khẩu vị",
-    description: "Gợi ý món ăn khớp lịch trình, dị ứng, độ cay và thời gian giao.",
-  },
-  {
-    title: "Đặt chuyến bay",
-    meta: "Kèm hành lý",
-    description: "So sánh giờ bay, hành lý, tổng chi phí và rủi ro trễ lịch.",
-  },
-];
+import { useEffect, useState } from "react";
+import { MessageSquare, Clock, User, Navigation, CheckCircle2, CircleAlert, LogOut, ChevronUp } from "lucide-react";
+import { AuthPage } from "./pages/AuthPage";
+import { ChatDashboard } from "./pages/ChatDashboard";
+import { HistoryView } from "./components/HistoryView";
+import { ProfileSettings } from "./pages/ProfileSettings";
+import { MockService, isProfileComplete } from "./mocks/mockService";
+import { AuthUser, UserProfile } from "./types";
+import "./styles.css";
 
 export default function App() {
-  const [isPaid, setIsPaid] = useState(false);
-  const [showModal, setShowModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"chat" | "history" | "profile">("chat");
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  function handleConfirmPayment() {
-    setIsPaid(true);
-    setShowModal(true);
+  useEffect(() => {
+    Promise.all([MockService.getCurrentUser(), MockService.getUserProfile()]).then(([user, userProfile]) => {
+      setCurrentUser(user);
+      setProfile(userProfile);
+      setAuthLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    MockService.getUserProfile().then(setProfile);
+  }, [activeTab]);
+
+  const profileComplete = isProfileComplete(profile);
+
+  const handleAuthenticated = (user: AuthUser) => {
+    setCurrentUser(user);
+    setActiveTab("chat");
+  };
+
+  const handleLogout = async () => {
+    await MockService.logout();
+    setCurrentUser(null);
+    setUserMenuOpen(false);
+    setActiveTab("chat");
+  };
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case "chat":
+        return (
+          <ChatDashboard
+            profileComplete={profileComplete}
+            onRequireProfile={() => setActiveTab("profile")}
+            onOpenHistory={() => setActiveTab("history")}
+          />
+        );
+      case "history": return <HistoryView />;
+      case "profile": return <ProfileSettings onSaved={setProfile} />;
+    }
+  };
+
+  const getTabTitle = () => {
+    switch (activeTab) {
+      case "chat": return "Trợ lý Đặt dịch vụ AI";
+      case "history": return "Lịch sử dịch vụ";
+      case "profile": return "Cài đặt Hồ sơ";
+    }
+  };
+
+  if (authLoading) {
+    return <div className="app-loading">Đang tải phiên đăng nhập...</div>;
+  }
+
+  if (!currentUser) {
+    return <AuthPage onAuthenticated={handleAuthenticated} />;
   }
 
   return (
-    <main className="page">
-      <section className="shell">
-        <aside className="sidebar" aria-label="Tổng quan dịch vụ">
-          <div className="brandBlock">
-            <span className="brandMark">A</span>
-            <div>
-              <p className="eyebrow">Agent đặt dịch vụ</p>
-              <h1>All-in-One Concierge</h1>
-            </div>
-          </div>
-
-          <div className="serviceStack">
-            {serviceCards.map((service) => (
-              <article className="serviceCard" key={service.title}>
-                <div>
-                  <h2>{service.title}</h2>
-                  <p>{service.description}</p>
-                </div>
-                <span>{service.meta}</span>
-              </article>
-            ))}
-          </div>
-
-          <div className="tripSummary">
-            <p className="eyebrow">Lịch trình demo</p>
-            <strong>Hà Nội đến Đà Nẵng</strong>
-            <span>Xe, bữa tối và chuyến bay được gom trong một lần xác nhận.</span>
-          </div>
-        </aside>
-
-        <section className="conversationPanel" aria-label="Hội thoại đặt dịch vụ">
-          <header className="topBar">
-            <div>
-              <p className="eyebrow">Hội thoại mẫu</p>
-              <h2>Agent đang điều phối yêu cầu của bạn</h2>
-            </div>
-            <span className={isPaid ? "statusBadge paid" : "statusBadge"}>
-              {isPaid ? "Đã thanh toán" : "Chờ xác nhận"}
-            </span>
-          </header>
-
-          <div className="chatList">
-            {chatMessages.map((message) => (
-              <article className={`message ${message.sender}`} key={message.id}>
-                <span>{message.sender === "user" ? "Bạn" : "Agent"}</span>
-                <p>{message.text}</p>
-              </article>
-            ))}
-
-            <article className="receiptMessage">
-              <div className="receiptHeader">
-                <div>
-                  <span>Biên lai tạm tính</span>
-                  <h3>Gói dịch vụ liên kết</h3>
-                </div>
-                <strong>2.145.000đ</strong>
-              </div>
-
-              <dl className="receiptRows">
-                {receiptLines.map((line) => (
-                  <div key={line.label}>
-                    <dt>{line.label}</dt>
-                    <dd>{line.value}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              <div className="costBreakdown">
-                <div>
-                  <span>Tạm tính</span>
-                  <strong>2.040.000đ</strong>
-                </div>
-                <div>
-                  <span>Phí điều phối</span>
-                  <strong>105.000đ</strong>
-                </div>
-                <div className="totalRow">
-                  <span>Tổng thanh toán</span>
-                  <strong>2.145.000đ</strong>
-                </div>
-              </div>
-
-              <button
-                className="confirmButton"
-                type="button"
-                onClick={handleConfirmPayment}
-                disabled={isPaid}
-              >
-                {isPaid ? "Thanh toán đã xác nhận" : "Xác nhận thanh toán"}
-              </button>
-            </article>
-          </div>
-        </section>
-      </section>
-
-      {showModal && (
-        <div className="modalBackdrop" role="presentation">
-          <section
-            aria-labelledby="payment-success-title"
-            aria-modal="true"
-            className="modal"
-            role="dialog"
-          >
-            <span className="successMark">OK</span>
-            <p className="eyebrow">Hoàn tất</p>
-            <h2 id="payment-success-title">Xác nhận thanh toán thành công</h2>
-            <p>
-              Agent đã ghi nhận thanh toán demo và sẽ tiếp tục điều phối xe,
-              đồ ăn, chuyến bay trong cùng một lịch trình.
-            </p>
-            <button type="button" onClick={() => setShowModal(false)}>
-              Đóng
-            </button>
-          </section>
+    <div className="app-container">
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <h2>
+            <Navigation className="text-primary" size={28} color="#3b82f6" />
+            NaviGo
+          </h2>
         </div>
-      )}
-    </main>
+        <nav className="sidebar-nav">
+          <button 
+            className={`nav-btn ${activeTab === "chat" ? "active" : ""}`}
+            onClick={() => setActiveTab("chat")}
+          >
+            <MessageSquare size={20} />
+            Trợ lý đặt dịch vụ
+          </button>
+          <button 
+            className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
+            onClick={() => setActiveTab("history")}
+          >
+            <Clock size={20} />
+            Lịch sử dịch vụ
+          </button>
+          <button 
+            className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
+            onClick={() => setActiveTab("profile")}
+          >
+            <User size={20} />
+            Hồ sơ cá nhân
+            <span className={`nav-status ${profileComplete ? "done" : "warning"}`}>
+              {profileComplete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
+            </span>
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          {userMenuOpen && (
+            <div className="user-menu">
+              <button className="user-menu-item danger" onClick={handleLogout}>
+                <LogOut size={16} />
+                Đăng xuất
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`user-profile ${userMenuOpen ? "open" : ""}`}
+            onClick={() => setUserMenuOpen((open) => !open)}
+            aria-expanded={userMenuOpen}
+          >
+            <div className="avatar">{currentUser.fullName.charAt(0).toUpperCase()}</div>
+            <div className="user-info">
+              <span className="name">{currentUser.fullName}</span>
+              <span className="email">{currentUser.email}</span>
+            </div>
+            <ChevronUp className={`user-menu-chevron ${userMenuOpen ? "open" : ""}`} size={16} />
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div>
+            <h1>{getTabTitle()}</h1>
+            <p className="topbar-subtitle">
+              {activeTab === "chat" && "Demo luồng tìm kiếm, xác nhận và chuyển booking sang lịch sử."}
+              {activeTab === "history" && "Quản lý đặt chỗ, hủy dịch vụ, xem chi tiết và đánh giá."}
+              {activeTab === "profile" && "Dữ liệu hành khách bắt buộc trước khi xác nhận đặt dịch vụ."}
+            </p>
+          </div>
+          <div className="topbar-actions">
+            <button
+              className={`profile-pill ${profileComplete ? "complete" : "incomplete"}`}
+              onClick={() => setActiveTab("profile")}
+            >
+              {profileComplete ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
+              <span>{profileComplete ? "Hồ sơ sẵn sàng" : "Cần bổ sung hồ sơ"}</span>
+            </button>
+          </div>
+        </header>
+        
+        <div className="content-area">
+          {renderContent()}
+        </div>
+      </main>
+    </div>
   );
 }
