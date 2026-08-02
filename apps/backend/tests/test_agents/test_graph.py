@@ -1,5 +1,4 @@
 import pytest
-
 from src.agents.graph import agent
 
 
