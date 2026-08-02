@@ -1,8 +1,12 @@
 from unittest.mock import AsyncMock
 
+import langchain
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
+if not hasattr(langchain, "debug"):
+    langchain.debug = False
 
 from src.main import app
 
