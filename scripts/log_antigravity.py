@@ -202,6 +202,57 @@ def get_logged_entry_ids(log_file: Path) -> set[str]:
 # Iterating user inputs
 # ---------------------------------------------------------------------------
 
+def _iter_inputs_from_db(conv_id: str, conv_dir: Path, cutoff: datetime | None, repo_root_n: str):
+    """Fallback for active conversations where transcript.jsonl is not yet flushed to disk by IDE."""
+    import sqlite3
+    db_file = conv_dir.parent.parent / "conversations" / f"{conv_id}.db"
+    if not db_file.exists():
+        return
+
+    # Check if conversation touches current repo (check artifacts or cwd in sqlite if any)
+    # If repo_root_n is set, verify by checking if conv_dir matches or contains artifacts in repo
+    cwds = set()
+    try:
+        conn = sqlite3.connect(str(db_file))
+        rows = conn.execute("SELECT idx, step_payload FROM steps").fetchall()
+        
+        # Extract CWDs from payload if present
+        for _, payload in rows:
+            if not payload:
+                continue
+            text = payload.decode("utf-8", errors="ignore")
+            if repo_root_n and repo_root_n in _normalize(text):
+                cwds.add(repo_root_n)
+
+        if repo_root_n and not _conv_matches_repo(cwds, repo_root_n):
+            # Check if current working dir matches repo root
+            if _normalize(str(Path.cwd())) != repo_root_n:
+                return
+
+        extracted_prompts: set[str] = set()
+        step_idx = 0
+        for idx, payload in rows:
+            if not payload or b"<USER_REQUEST>" not in payload:
+                continue
+            text = payload.decode("utf-8", errors="ignore")
+            for m in USER_REQUEST_RE.finditer(text):
+                prompt_text = extract_user_prompt(m.group(1))
+                if len(prompt_text) >= 2 and prompt_text not in extracted_prompts:
+                    # Ignore truncated prompts or code/script test noise
+                    if prompt_text in ("...", "(.*?)") or "payload.decode" in prompt_text or "USER_REQUEST" in prompt_text:
+                        continue
+                    extracted_prompts.add(prompt_text)
+                    step_idx += 1
+                    yield {
+                        "conv_id": conv_id,
+                        "step_index": step_idx,
+                        "timestamp": datetime.now(tz=VN_TZ).isoformat(),
+                        "text": prompt_text,
+                    }
+    except Exception:
+        pass
+
+
 def iter_user_inputs(brain_dirs: list[Path], cutoff: datetime | None,
                      only_conv: str | None, repo_root_n: str):
     """Yield user-input dicts from every matching conversation transcript."""
@@ -214,7 +265,10 @@ def iter_user_inputs(brain_dirs: list[Path], cutoff: datetime | None,
             transcript = (
                 conv_dir / ".system_generated" / "logs" / "transcript.jsonl"
             )
+            
+            # If transcript.jsonl is missing or empty (active session), fallback to SQLite db
             if not transcript.exists() or transcript.stat().st_size == 0:
+                yield from _iter_inputs_from_db(conv_dir.name, conv_dir, cutoff, repo_root_n)
                 continue
 
             cwds = _conv_cwds(transcript)
@@ -256,6 +310,7 @@ def iter_user_inputs(brain_dirs: list[Path], cutoff: datetime | None,
                         "timestamp": ts,
                         "text": text,
                     }
+
 
 
 # ---------------------------------------------------------------------------
