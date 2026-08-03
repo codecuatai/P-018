@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, User, Navigation, CheckCircle2, CircleAlert, LogOut, ChevronUp } from "lucide-react";
+import { MessageSquare, Clock, User, Navigation, CheckCircle2, CircleAlert, LogOut, ChevronUp, Share2, Copy, Download, Check } from "lucide-react";
 import { AuthPage } from "./pages/AuthPage";
 import { ChatDashboard } from "./pages/ChatDashboard";
 import { HistoryView } from "./components/HistoryView";
@@ -14,6 +14,8 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([MockService.getCurrentUser(), MockService.getUserProfile()]).then(([user, userProfile]) => {
@@ -40,6 +42,29 @@ export default function App() {
     setCurrentUser(null);
     setUserMenuOpen(false);
     setActiveTab("chat");
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard?.writeText(window.location.href);
+    setCopied(true);
+    setActionNotice("Đã sao chép liên kết!");
+    setTimeout(() => {
+      setCopied(false);
+      setActionNotice(null);
+    }, 2000);
+  };
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({ title: "NaviGo AI Assistant", url: window.location.href }).catch(() => {});
+    } else {
+      handleCopyLink();
+    }
+  };
+
+  const handleDownload = () => {
+    setActionNotice("Đang tải dữ liệu phiên làm việc...");
+    setTimeout(() => setActionNotice(null), 2500);
   };
 
   const renderContent = () => {
@@ -78,7 +103,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <h2>
-            <Navigation className="text-primary" size={28} color="#3b82f6" />
+            <span className="logo-badge-n">N</span>
             NaviGo
           </h2>
         </div>
@@ -144,6 +169,28 @@ export default function App() {
             </p>
           </div>
           <div className="topbar-actions">
+            {!profileComplete && (
+              <div className="alert-banner-coral" onClick={() => setActiveTab("profile")}>
+                <CircleAlert size={16} />
+                <span>Cần bổ sung hồ sơ...</span>
+              </div>
+            )}
+            
+            <div className="header-glass-actions">
+              <button className="glass-action-btn" onClick={handleShare} title="Chia sẻ">
+                <Share2 size={16} />
+                <span>Share</span>
+              </button>
+              <button className="glass-action-btn" onClick={handleCopyLink} title="Sao chép liên kết">
+                {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
+                <span>{copied ? "Copied" : "Copy"}</span>
+              </button>
+              <button className="glass-action-btn" onClick={handleDownload} title="Tải về phiên làm việc">
+                <Download size={16} />
+                <span>Download</span>
+              </button>
+            </div>
+
             <button
               className={`profile-pill ${profileComplete ? "complete" : "incomplete"}`}
               onClick={() => setActiveTab("profile")}
@@ -153,7 +200,9 @@ export default function App() {
             </button>
           </div>
         </header>
-        
+
+        {actionNotice && <div className="action-toast-banner">{actionNotice}</div>}
+
         <div className="content-area">
           {renderContent()}
         </div>

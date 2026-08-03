@@ -13,7 +13,9 @@ import {
   Loader2,
   Lock,
   Luggage,
+  Mic,
   Package,
+  Paperclip,
   Plane,
   QrCode,
   RefreshCw,
@@ -52,6 +54,8 @@ const demoScenarios = [
     icon: <Plane size={18} />,
     category: "Vé đơn",
     type: "flight",
+    image: "/images/3d_airplane_icon.jpg",
+    highlight: false,
   },
   {
     title: "2. Combo Trọn gói",
@@ -59,23 +63,29 @@ const demoScenarios = [
     prompt: MOCK_SUGGESTIONS[1],
     icon: <Gift size={18} />,
     category: "Combo 15%",
-    type: "hotel",
+    type: "combo",
+    image: "/images/3d_gift_combo_icon.jpg",
+    highlight: true,
   },
   {
-    title: "3. Đổi vé & Hoàn tiền",
-    subtitle: "Chuyển sang Tàu hỏa",
+    title: "3. Đặt phòng Khách sạn",
+    subtitle: "Resort & Stay Booking",
     prompt: MOCK_SUGGESTIONS[2],
-    icon: <RefreshCw size={18} />,
-    category: "Đổi lịch",
-    type: "train",
+    icon: <Hotel size={18} />,
+    category: "Khách sạn",
+    type: "stay",
+    image: "/images/3d_hotel_icon.jpg",
+    highlight: false,
   },
   {
-    title: "4. Đặt xe & Chọn xe",
+    title: "4. Đặt xe & Đưa đón",
     subtitle: "Ride & Vehicle Choice",
     prompt: MOCK_SUGGESTIONS[3],
     icon: <Car size={18} />,
     category: "Xe đưa đón",
-    type: "car",
+    type: "ride",
+    image: "/images/3d_car_icon.jpg",
+    highlight: false,
   },
 ];
 
@@ -393,6 +403,13 @@ export const ChatDashboard: React.FC<Props> = ({
     </div>
   );
 
+  const getChipClass = (suggestion: string) => {
+    const s = suggestion.toLowerCase();
+    if (s.includes("combo") || s.includes("phú quốc")) return "suggestion-chip glow-border-orange";
+    if (s.includes("vé máy bay") || s.includes("máy bay") || s.includes("đà nẵng")) return "suggestion-chip glow-border-cyan";
+    return "suggestion-chip";
+  };
+
   return (
     <div className="chat-dashboard">
       <section className="chat-main">
@@ -401,10 +418,11 @@ export const ChatDashboard: React.FC<Props> = ({
             <button
               type="button"
               key={scenario.title}
-              className={`scenario-card scenario-${scenario.type}`}
+              className={`scenario-card scenario-${scenario.type} ${scenario.highlight ? "highlight-glow-orange" : ""}`}
               onClick={() => handleSend(scenario.prompt)}
               disabled={loading}
             >
+              <img src={scenario.image} alt={scenario.title} className="scenario-3d-img" />
               <div className="scenario-card-header">
                 <span className={`scenario-icon icon-${scenario.type}`}>{scenario.icon}</span>
                 <span className={`scenario-badge badge-${scenario.type}`}>{scenario.category}</span>
@@ -433,8 +451,8 @@ export const ChatDashboard: React.FC<Props> = ({
           {messages.map((msg) => (
             <div key={msg.id} className={`message-row ${msg.role}`}>
               {msg.role === "bot" && (
-                <div className="bot-avatar">
-                  <Zap size={16} />
+                <div className="bot-avatar robot-avatar-3d">
+                  <img src="/images/3d_robot_avatar.jpg" alt="Bot Avatar 3D" className="bot-avatar-img" />
                 </div>
               )}
               <div className="message-content-wrapper">
@@ -460,8 +478,8 @@ export const ChatDashboard: React.FC<Props> = ({
           ))}
           {loading && (
             <div className="message-row bot">
-              <div className="bot-avatar">
-                <Zap size={16} />
+              <div className="bot-avatar robot-avatar-3d">
+                <img src="/images/3d_robot_avatar.jpg" alt="Bot Avatar 3D" className="bot-avatar-img" />
               </div>
               <div className="message-content-wrapper">
                 <div className="message-bubble loading">
@@ -489,19 +507,27 @@ export const ChatDashboard: React.FC<Props> = ({
         <div className="chat-input-container">
           <div className="suggestions">
             {MOCK_SUGGESTIONS.map((suggestion, idx) => (
-              <button key={idx} onClick={() => setInput(suggestion)} className="suggestion-chip">
-                <Zap size={14} className="suggestion-icon" />
+              <button key={idx} onClick={() => setInput(suggestion)} className={getChipClass(suggestion)}>
+                <Sparkles size={14} className="suggestion-icon" />
                 {suggestion}
               </button>
             ))}
           </div>
           <form
-            className="input-form"
+            className="input-form glass-input-pill"
             onSubmit={(e) => {
               e.preventDefault();
               handleSend(input);
             }}
           >
+            <div className="input-utility-buttons">
+              <button type="button" className="input-util-btn" title="Đính kèm tệp / hình ảnh">
+                <Paperclip size={18} />
+              </button>
+              <button type="button" className="input-util-btn" title="Nhập bằng giọng nói">
+                <Mic size={18} />
+              </button>
+            </div>
             <input
               type="text"
               value={input}
@@ -509,7 +535,7 @@ export const ChatDashboard: React.FC<Props> = ({
               placeholder="Nhập yêu cầu đặt dịch vụ..."
               disabled={loading}
             />
-            <button type="submit" disabled={!input.trim() || loading} className="btn-send" aria-label="Gửi yêu cầu">
+            <button type="submit" disabled={!input.trim() || loading} className="btn-send bright-cyan-send" aria-label="Gửi yêu cầu">
               <Send size={18} />
             </button>
           </form>

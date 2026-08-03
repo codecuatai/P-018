@@ -1,12 +1,11 @@
 .auth-page {
   min-height: 100vh;
-  background:
-    linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(16, 185, 129, 0.12)),
-    #f8fafc;
+  background: var(--bg-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  color: #ffffff;
 }
 
 .auth-panel {
@@ -17,23 +16,25 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .auth-logo {
   width: 54px;
   height: 54px;
   border-radius: var(--radius-md);
-  background: var(--sidebar-bg);
+  background: var(--primary-gradient);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: var(--primary-glow);
 }
 
 .auth-brand h1 {
   margin: 0;
-  font-size: 1.7rem;
+  font-size: 1.75rem;
+  color: #ffffff;
 }
 
 .auth-brand p {
@@ -43,30 +44,33 @@
 }
 
 .auth-card {
-  background: white;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.14);
-  padding: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  padding: 26px;
 }
 
 .auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 .auth-tabs button,
 .role-control button,
 .demo-login-row button {
-  border: 1px solid var(--border-color);
-  background: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
   border-radius: var(--radius-md);
-  padding: 10px 12px;
+  padding: 10px 14px;
   cursor: pointer;
   font-weight: 700;
+  transition: all 0.2s ease;
 }
 
 .auth-tabs button {
@@ -78,17 +82,18 @@
 
 .auth-tabs button.active,
 .role-control button.active {
-  border-color: var(--primary);
-  color: var(--primary-dark);
-  background: #eff6ff;
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  background: var(--primary-gradient);
+  box-shadow: 0 4px 15px rgba(6, 182, 212, 0.35);
 }
 
 .auth-error {
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
   border-radius: var(--radius-md);
-  padding: 10px 12px;
+  padding: 10px 14px;
   font-weight: 700;
   margin-bottom: 14px;
 }
@@ -101,24 +106,25 @@
 .auth-field label {
   display: block;
   font-weight: 700;
-  color: var(--text-main);
+  color: #ffffff;
   margin-bottom: 8px;
 }
 
 .auth-field input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius-md);
   padding: 12px 14px;
   font-size: 0.95rem;
-  color: var(--text-main);
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.3);
+  outline: none;
 }
 
 .auth-field input:focus {
-  outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
 }
 
 .role-control {
@@ -129,7 +135,7 @@
 
 .auth-submit {
   border: none;
-  background: var(--primary);
+  background: var(--primary-gradient);
   color: white;
   border-radius: var(--radius-md);
   padding: 12px 14px;
@@ -139,13 +145,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 4px;
-}
-
-.auth-submit:disabled,
-.demo-login-row button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
+  margin-top: 6px;
+  box-shadow: var(--primary-glow);
 }
 
 .demo-login-row {
@@ -156,19 +157,13 @@
 }
 
 .demo-login-row button:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary-dark);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 @media (max-width: 520px) {
   .auth-page {
     padding: 16px;
-    align-items: stretch;
-  }
-
-  .auth-panel {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
   }
 }
