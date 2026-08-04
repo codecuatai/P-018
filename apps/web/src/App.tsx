@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, User, Navigation, CheckCircle2, CircleAlert, LogOut, ChevronUp, Share2, Copy, Download, Check } from "lucide-react";
+import { MessageSquare, Clock, User, Bell, Users, CreditCard, ChevronUp, Share2, Copy, Download, Check, HelpCircle, Sparkles, Gift } from "lucide-react";
 import { AuthPage } from "./pages/AuthPage";
-import { ChatDashboard } from "./pages/ChatDashboard";
+import { UnifiedDashboard } from "./pages/UnifiedDashboard";
 import { HistoryView } from "./components/HistoryView";
 import { ProfileSettings } from "./pages/ProfileSettings";
 import { MockService, isProfileComplete } from "./mocks/mockService";
@@ -13,7 +13,6 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -34,14 +33,6 @@ export default function App() {
 
   const handleAuthenticated = (user: AuthUser) => {
     setCurrentUser(user);
-    setActiveTab("chat");
-  };
-
-  const handleLogout = async () => {
-    await MockService.logout();
-    setCurrentUser(null);
-    setUserMenuOpen(false);
-    setActiveTab("chat");
   };
 
   const handleCopyLink = () => {
@@ -70,21 +61,17 @@ export default function App() {
   const renderContent = () => {
     switch (activeTab) {
       case "chat":
-        return (
-          <ChatDashboard
-            profileComplete={profileComplete}
-            onRequireProfile={() => setActiveTab("profile")}
-            onOpenHistory={() => setActiveTab("history")}
-          />
-        );
-      case "history": return <HistoryView />;
-      case "profile": return <ProfileSettings onSaved={setProfile} />;
+        return <UnifiedDashboard />;
+      case "history": 
+        return <HistoryView />;
+      case "profile": 
+        return <ProfileSettings onSaved={setProfile} />;
     }
   };
 
   const getTabTitle = () => {
     switch (activeTab) {
-      case "chat": return "Trợ lý Đặt dịch vụ AI";
+      case "chat": return "AI Service Assistant";
       case "history": return "Lịch sử dịch vụ";
       case "profile": return "Cài đặt Hồ sơ";
     }
@@ -112,92 +99,105 @@ export default function App() {
             className={`nav-btn ${activeTab === "chat" ? "active" : ""}`}
             onClick={() => setActiveTab("chat")}
           >
-            <MessageSquare size={20} />
-            Trợ lý đặt dịch vụ
+            <MessageSquare size={18} />
+            AI Service Assistant
           </button>
           <button 
             className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
           >
-            <Clock size={20} />
-            Lịch sử dịch vụ
+            <Clock size={18} />
+            Booking History
           </button>
           <button 
             className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
             onClick={() => setActiveTab("profile")}
           >
-            <User size={20} />
-            Hồ sơ cá nhân
-            <span className={`nav-status ${profileComplete ? "done" : "warning"}`}>
-              {profileComplete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
-            </span>
+            <User size={18} />
+            Profile
           </button>
+          <button className="nav-btn">
+            <Bell size={18} />
+            Notifications
+            <span className="badge-count">3</span>
+          </button>
+          <button className="nav-btn">
+            <Users size={18} />
+            Saved Travelers
+          </button>
+          <button className="nav-btn">
+            <CreditCard size={18} />
+            Payment Methods
+          </button>
+          
+          <div className="pro-upgrade-card">
+            <div className="pro-header">
+              <strong>Nâng cấp trải nghiệm</strong>
+              <span className="pro-badge">PRO</span>
+            </div>
+            <p>Ưu đãi độc quyền, hoàn hủy linh hoạt và hỗ trợ ưu tiên 24/7.</p>
+            <button className="btn-upgrade">Nâng cấp ngay</button>
+          </div>
         </nav>
+        
         <div className="sidebar-footer">
-          {userMenuOpen && (
-            <div className="user-menu">
-              <button className="user-menu-item danger" onClick={handleLogout}>
-                <LogOut size={16} />
-                Đăng xuất
-              </button>
-            </div>
-          )}
-          <button
-            type="button"
-            className={`user-profile ${userMenuOpen ? "open" : ""}`}
-            onClick={() => setUserMenuOpen((open) => !open)}
-            aria-expanded={userMenuOpen}
-          >
-            <div className="avatar">{currentUser.fullName.charAt(0).toUpperCase()}</div>
+          <div className="user-profile-admin">
+            <div className="avatar">A</div>
             <div className="user-info">
-              <span className="name">{currentUser.fullName}</span>
-              <span className="email">{currentUser.email}</span>
+              <span className="name">Admin NaviGo</span>
+              <span className="email">admin@navigo.vn</span>
             </div>
-            <ChevronUp className={`user-menu-chevron ${userMenuOpen ? "open" : ""}`} size={16} />
+            <ChevronUp size={16} className="text-muted" />
+          </div>
+          
+          <div className="premium-status">
+            <div>
+              <strong>NaviGo Premium</strong>
+              <span>Hiệu lực đến: 02/12/2025</span>
+            </div>
+            <div className="crown-icon"><Sparkles size={16} /></div>
+          </div>
+          
+          <button className="btn-help">
+            <HelpCircle size={16} />
+            Trợ giúp & hỗ trợ
+            <ChevronUp size={14} className="ml-auto" />
           </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <div>
+          <div className="topbar-left">
             <h1>{getTabTitle()}</h1>
             <p className="topbar-subtitle">
-              {activeTab === "chat" && "Demo luồng tìm kiếm, xác nhận và chuyển booking sang lịch sử."}
-              {activeTab === "history" && "Quản lý đặt chỗ, hủy dịch vụ, xem chi tiết và đánh giá."}
-              {activeTab === "profile" && "Dữ liệu hành khách bắt buộc trước khi xác nhận đặt dịch vụ."}
+              {activeTab === "chat" && "Trợ lý AI thông minh, giúp bạn đặt dịch vụ nhanh chóng và thuận tiện."}
+              {activeTab === "history" && "Quản lý các chuyến đi và dịch vụ bạn đã đặt."}
+              {activeTab === "profile" && "Cập nhật thông tin cá nhân và tài khoản."}
             </p>
           </div>
           <div className="topbar-actions">
-            {!profileComplete && (
-              <div className="alert-banner-coral" onClick={() => setActiveTab("profile")}>
-                <CircleAlert size={16} />
-                <span>Cần bổ sung hồ sơ...</span>
+            {activeTab === "chat" && (
+              <div className="coupon-completed-badge">
+                <Gift size={16} />
+                Mã sử dụng hoàn tất!
+                <span className="percent-badge">85%</span>
               </div>
             )}
             
-            <div className="header-glass-actions">
-              <button className="glass-action-btn" onClick={handleShare} title="Chia sẻ">
-                <Share2 size={16} />
-                <span>Share</span>
+            <div className="topbar-right-profile" style={{ borderLeft: "none", marginLeft: 0 }}>
+              <button className="notification-bell">
+                <Bell size={18} />
+                <span className="bell-badge">3</span>
               </button>
-              <button className="glass-action-btn" onClick={handleCopyLink} title="Sao chép liên kết">
-                {copied ? <Check size={16} className="text-success" /> : <Copy size={16} />}
-                <span>{copied ? "Copied" : "Copy"}</span>
-              </button>
-              <button className="glass-action-btn" onClick={handleDownload} title="Tải về phiên làm việc">
-                <Download size={16} />
-                <span>Download</span>
-              </button>
+              <div className="topbar-user">
+                <div className="avatar">A</div>
+                <div className="user-info-text">
+                  <span className="name">Admin NaviGo</span>
+                  <span className="email">admin@navigo.vn</span>
+                </div>
+              </div>
             </div>
-
-            <button
-              className={`profile-pill ${profileComplete ? "complete" : "incomplete"}`}
-              onClick={() => setActiveTab("profile")}
-            >
-              {profileComplete ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
-              <span>{profileComplete ? "Hồ sơ sẵn sàng" : "Cần bổ sung hồ sơ"}</span>
-            </button>
           </div>
         </header>
 
@@ -210,3 +210,4 @@ export default function App() {
     </div>
   );
 }
+
