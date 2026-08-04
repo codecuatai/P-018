@@ -127,8 +127,8 @@ export const ChatDashboard: React.FC<Props> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [agentSessionId, setAgentSessionId] = useState<string | null>(null);
   const AGENT_SESSION_KEY = "navi_session_id_v3";
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(() => sessionStorage.getItem(AGENT_SESSION_KEY));
   const [inactiveQuoteIds, setInactiveQuoteIds] = useState<Set<string>>(new Set());
   const paymentMethod: PaymentMethod = "momo";
   const [notice, setNotice] = useState<{ type: "success" | "warning"; text: string } | null>(null);

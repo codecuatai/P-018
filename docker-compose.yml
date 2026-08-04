@@ -1,19 +1,67 @@
-version: "3.8"
-
 services:
+  payment-service:
+    build:
+      context: ./apps/services
+      dockerfile: payment_service/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      PAYMENT_DATABASE_URL: sqlite+aiosqlite:///./data/payment/payment.db
+    volumes:
+      - payment-data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ride-service:
+    build:
+      context: ./apps/services
+      dockerfile: ride_service/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      RIDE_DATABASE_URL: sqlite+aiosqlite:///./data/ride/ride.db
+      PAYMENT_SERVICE_URL: http://payment-service:8001
+      RIDE_CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+    volumes:
+      - ride-data:/app/data
+    restart: unless-stopped
+    depends_on:
+      payment-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./apps/backend
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8002:8002"
     env_file:
       - .env
+    environment:
+      RIDE_SERVICE_URL: http://ride-service:8000
+      APP_PORT: 8002
+      APP_HOST: 0.0.0.0
     volumes:
-      - ./data:/app/data
+      - backend-data:/app/data
     restart: unless-stopped
+    depends_on:
+      ride-service:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -22,8 +70,16 @@ services:
     build:
       context: ./apps/web
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:8002
     ports:
       - "3000:80"
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+
+volumes:
+  payment-data:
+  ride-data:
+  backend-data:
