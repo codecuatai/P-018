@@ -1,28 +1,28 @@
 from langgraph.graph import END, StateGraph
 
-from src.agents.conversation import RideConcierge, ride_concierge
+from src.agents.nodes.example_node import analyze_node, respond_node
 from src.agents.state import AgentState
 
 
-def build_graph(concierge: RideConcierge | None = None):
-    """Build a small graph around the bounded ride-concierge brain."""
-    concierge = concierge or ride_concierge
+def should_continue(state: AgentState) -> str:
+    """Route based on whether an error occurred during analysis."""
+    if state.get("error"):
+        return END
+    return "respond"
 
-    async def run_concierge(state: AgentState) -> dict:
-        session_id, reply = await concierge.handle(state.get("query", ""), state.get("session_id"))
-        return {
-            "session_id": session_id,
-            "response": reply.response,
-            "analysis": f"action={reply.action.value}",
-            "action": reply.action.value,
-            "missing_fields": reply.missing_fields,
-            "data": reply.data,
-        }
 
+def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
-    graph.add_node("concierge", run_concierge)
-    graph.set_entry_point("concierge")
-    graph.add_edge("concierge", END)
+
+    # Add nodes
+    graph.add_node("analyze", analyze_node)
+    graph.add_node("respond", respond_node)
+
+    # Add edges
+    graph.set_entry_point("analyze")
+    graph.add_conditional_edges("analyze", should_continue)
+    graph.add_edge("respond", END)
+
     return graph.compile()
 
 

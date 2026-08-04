@@ -137,16 +137,12 @@ export const AuthPage: React.FC<Props> = ({ onAuthenticated }) => {
             </button>
           </form>
 
-          <div className="demo-login-divider">
-            <span>Hoặc thử nhanh bằng tài khoản Demo</span>
-          </div>
-
           <div className="demo-login-row">
             <button type="button" onClick={() => loginDemo("admin")} disabled={loading}>
-              Admin Demo
+              Admin demo
             </button>
             <button type="button" onClick={() => loginDemo("customer")} disabled={loading}>
-              User Demo
+              User demo
             </button>
           </div>
         </div>

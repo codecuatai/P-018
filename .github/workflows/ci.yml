@@ -8,20 +8,29 @@ on:
 
 jobs:
   backend-ci:
-    name: Agent backend CI
+    name: Backend CI
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: apps/backend/requirements.txt
+
       - name: Install dependencies
-        run: pip install --upgrade pip && pip install -r apps/backend/requirements.txt
-      - name: Lint Agent backend
-        run: ruff check apps/backend/src/ apps/backend/tests/
-      - name: Test Agent backend
+        run: |
+          pip install --upgrade pip
+          pip install -r apps/backend/requirements.txt
+
+      - name: Lint with ruff
+        run: |
+          ruff check apps/backend/src/ apps/backend/tests/
+
+      - name: Run pytest
         run: |
           cd apps/backend
           PYTHONPATH=. pytest tests/ -v --tb=short
@@ -29,35 +38,26 @@ jobs:
           APP_ENV: test
           OPENAI_API_KEY: test-key
 
-  domain-services-ci:
-    name: Ride and Payment services CI
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: apps/services/requirements.txt
-      - name: Install service dependencies
-        run: pip install --upgrade pip && pip install -r apps/services/requirements.txt && pip install ruff
-      - name: Lint domain services
-        run: ruff check apps/services/ride_service/ apps/services/payment_service/ apps/services/tests/
-      - name: Test domain services
-        run: |
-          PYTHONPATH=apps/services pytest apps/services/tests/ -v --tb=short
-
   web-ci:
     name: Web CI
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+
       - name: Install Node dependencies
-        run: cd apps/web && npm ci
+        run: |
+          cd apps/web
+          npm ci
+
       - name: Build Web Application
-        run: cd apps/web && npm run build
+        run: |
+          cd apps/web
+          npm run build

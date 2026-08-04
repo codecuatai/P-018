@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { MessageSquare, Clock, User, Bell, Users, CreditCard, ChevronUp, Share2, Copy, Download, Check, HelpCircle, Sparkles, Gift } from "lucide-react";
+import { MessageSquare, Clock, User, Navigation, CheckCircle2, CircleAlert, LogOut, ChevronUp } from "lucide-react";
 import { AuthPage } from "./pages/AuthPage";
-import { UnifiedDashboard } from "./pages/UnifiedDashboard";
+import { ChatDashboard } from "./pages/ChatDashboard";
 import { HistoryView } from "./components/HistoryView";
 import { ProfileSettings } from "./pages/ProfileSettings";
 import { MockService, isProfileComplete } from "./mocks/mockService";
@@ -13,8 +13,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([MockService.getCurrentUser(), MockService.getUserProfile()]).then(([user, userProfile]) => {
@@ -33,45 +32,34 @@ export default function App() {
 
   const handleAuthenticated = (user: AuthUser) => {
     setCurrentUser(user);
+    setActiveTab("chat");
   };
 
-  const handleCopyLink = () => {
-    navigator.clipboard?.writeText(window.location.href);
-    setCopied(true);
-    setActionNotice("Đã sao chép liên kết!");
-    setTimeout(() => {
-      setCopied(false);
-      setActionNotice(null);
-    }, 2000);
-  };
-
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({ title: "NaviGo AI Assistant", url: window.location.href }).catch(() => {});
-    } else {
-      handleCopyLink();
-    }
-  };
-
-  const handleDownload = () => {
-    setActionNotice("Đang tải dữ liệu phiên làm việc...");
-    setTimeout(() => setActionNotice(null), 2500);
+  const handleLogout = async () => {
+    await MockService.logout();
+    setCurrentUser(null);
+    setUserMenuOpen(false);
+    setActiveTab("chat");
   };
 
   const renderContent = () => {
     switch (activeTab) {
       case "chat":
-        return <UnifiedDashboard />;
-      case "history": 
-        return <HistoryView />;
-      case "profile": 
-        return <ProfileSettings onSaved={setProfile} />;
+        return (
+          <ChatDashboard
+            profileComplete={profileComplete}
+            onRequireProfile={() => setActiveTab("profile")}
+            onOpenHistory={() => setActiveTab("history")}
+          />
+        );
+      case "history": return <HistoryView />;
+      case "profile": return <ProfileSettings onSaved={setProfile} />;
     }
   };
 
   const getTabTitle = () => {
     switch (activeTab) {
-      case "chat": return "AI Service Assistant";
+      case "chat": return "Trợ lý Đặt dịch vụ AI";
       case "history": return "Lịch sử dịch vụ";
       case "profile": return "Cài đặt Hồ sơ";
     }
@@ -90,7 +78,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <h2>
-            <span className="logo-badge-n">N</span>
+            <Navigation className="text-primary" size={28} color="#3b82f6" />
             NaviGo
           </h2>
         </div>
@@ -99,110 +87,73 @@ export default function App() {
             className={`nav-btn ${activeTab === "chat" ? "active" : ""}`}
             onClick={() => setActiveTab("chat")}
           >
-            <MessageSquare size={18} />
-            AI Service Assistant
+            <MessageSquare size={20} />
+            Trợ lý đặt dịch vụ
           </button>
           <button 
             className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
           >
-            <Clock size={18} />
-            Booking History
+            <Clock size={20} />
+            Lịch sử dịch vụ
           </button>
           <button 
             className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
             onClick={() => setActiveTab("profile")}
           >
-            <User size={18} />
-            Profile
+            <User size={20} />
+            Hồ sơ cá nhân
+            <span className={`nav-status ${profileComplete ? "done" : "warning"}`}>
+              {profileComplete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
+            </span>
           </button>
-          <button className="nav-btn">
-            <Bell size={18} />
-            Notifications
-            <span className="badge-count">3</span>
-          </button>
-          <button className="nav-btn">
-            <Users size={18} />
-            Saved Travelers
-          </button>
-          <button className="nav-btn">
-            <CreditCard size={18} />
-            Payment Methods
-          </button>
-          
-          <div className="pro-upgrade-card">
-            <div className="pro-header">
-              <strong>Nâng cấp trải nghiệm</strong>
-              <span className="pro-badge">PRO</span>
-            </div>
-            <p>Ưu đãi độc quyền, hoàn hủy linh hoạt và hỗ trợ ưu tiên 24/7.</p>
-            <button className="btn-upgrade">Nâng cấp ngay</button>
-          </div>
         </nav>
-        
         <div className="sidebar-footer">
-          <div className="user-profile-admin">
-            <div className="avatar">A</div>
+          {userMenuOpen && (
+            <div className="user-menu">
+              <button className="user-menu-item danger" onClick={handleLogout}>
+                <LogOut size={16} />
+                Đăng xuất
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`user-profile ${userMenuOpen ? "open" : ""}`}
+            onClick={() => setUserMenuOpen((open) => !open)}
+            aria-expanded={userMenuOpen}
+          >
+            <div className="avatar">{currentUser.fullName.charAt(0).toUpperCase()}</div>
             <div className="user-info">
-              <span className="name">Admin NaviGo</span>
-              <span className="email">admin@navigo.vn</span>
+              <span className="name">{currentUser.fullName}</span>
+              <span className="email">{currentUser.email}</span>
             </div>
-            <ChevronUp size={16} className="text-muted" />
-          </div>
-          
-          <div className="premium-status">
-            <div>
-              <strong>NaviGo Premium</strong>
-              <span>Hiệu lực đến: 02/12/2025</span>
-            </div>
-            <div className="crown-icon"><Sparkles size={16} /></div>
-          </div>
-          
-          <button className="btn-help">
-            <HelpCircle size={16} />
-            Trợ giúp & hỗ trợ
-            <ChevronUp size={14} className="ml-auto" />
+            <ChevronUp className={`user-menu-chevron ${userMenuOpen ? "open" : ""}`} size={16} />
           </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <div className="topbar-left">
+          <div>
             <h1>{getTabTitle()}</h1>
             <p className="topbar-subtitle">
-              {activeTab === "chat" && "Trợ lý AI thông minh, giúp bạn đặt dịch vụ nhanh chóng và thuận tiện."}
-              {activeTab === "history" && "Quản lý các chuyến đi và dịch vụ bạn đã đặt."}
-              {activeTab === "profile" && "Cập nhật thông tin cá nhân và tài khoản."}
+              {activeTab === "chat" && "Demo luồng tìm kiếm, xác nhận và chuyển booking sang lịch sử."}
+              {activeTab === "history" && "Quản lý đặt chỗ, hủy dịch vụ, xem chi tiết và đánh giá."}
+              {activeTab === "profile" && "Dữ liệu hành khách bắt buộc trước khi xác nhận đặt dịch vụ."}
             </p>
           </div>
           <div className="topbar-actions">
-            {activeTab === "chat" && (
-              <div className="coupon-completed-badge">
-                <Gift size={16} />
-                Mã sử dụng hoàn tất!
-                <span className="percent-badge">85%</span>
-              </div>
-            )}
-            
-            <div className="topbar-right-profile" style={{ borderLeft: "none", marginLeft: 0 }}>
-              <button className="notification-bell">
-                <Bell size={18} />
-                <span className="bell-badge">3</span>
-              </button>
-              <div className="topbar-user">
-                <div className="avatar">A</div>
-                <div className="user-info-text">
-                  <span className="name">Admin NaviGo</span>
-                  <span className="email">admin@navigo.vn</span>
-                </div>
-              </div>
-            </div>
+            <button
+              className={`profile-pill ${profileComplete ? "complete" : "incomplete"}`}
+              onClick={() => setActiveTab("profile")}
+            >
+              {profileComplete ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
+              <span>{profileComplete ? "Hồ sơ sẵn sàng" : "Cần bổ sung hồ sơ"}</span>
+            </button>
           </div>
         </header>
-
-        {actionNotice && <div className="action-toast-banner">{actionNotice}</div>}
-
+        
         <div className="content-area">
           {renderContent()}
         </div>
@@ -210,4 +161,3 @@ export default function App() {
     </div>
   );
 }
-

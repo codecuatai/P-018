@@ -60,7 +60,7 @@ GEMINI_HOME = Path.home() / ".gemini"
 
 # Antigravity has shipped under two folder names; prefer the newer IDE one.
 BRAIN_CANDIDATES = (
-    # GEMINI_HOME / "antigravity-ide" / "brain",
+    GEMINI_HOME / "antigravity-ide" / "brain",
     GEMINI_HOME / "antigravity" / "brain",
 )
 

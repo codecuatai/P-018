@@ -64,10 +64,10 @@ Hooks tự động log mọi AI prompt khi dùng Claude Code, Cursor, Codex, Gem
 
 ```bash
 # Chạy FastAPI backend
-cd apps/backend && uvicorn src.main:app --reload --host 0.0.0.0 --port 8002
+uvicorn src.main:app --reload --port 8000
 
 # Mở Swagger UI
-# http://localhost:8002/docs
+# http://localhost:8000/docs
 ```
 
 ### Bước 5: Đọc hướng dẫn
@@ -199,8 +199,3 @@ bất kỳ markdown viewer/editor nào (VS Code, Obsidian, GitHub UI, …).
 ## 📄 License
 
 MIT — Sử dụng tự do cho mục đích giáo dục.
-
-
-## Domain services
-
-Ride and Payment are now part of this repository under pps/services. See [docs/domain-services.md](docs/domain-services.md) and [docs/contracts/ride-payment-integration.md](docs/contracts/ride-payment-integration.md).

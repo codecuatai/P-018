@@ -15,7 +15,6 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -r apps/services/requirements.txt
 
 # Create .env if not exists
 if [ ! -f .env ]; then
@@ -24,6 +23,6 @@ if [ ! -f .env ]; then
 fi
 
 # Create data directories
-mkdir -p data/chroma data/ride data/payment
+mkdir -p data/chroma
 
-echo "Setup complete! Run: make run-services, make run-backend, and make run-web"
+echo "Setup complete! Run: uvicorn src.main:app --reload"
