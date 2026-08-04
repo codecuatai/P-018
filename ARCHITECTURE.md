@@ -78,9 +78,14 @@ d:\VIN\Projects\P-018\
 
 | Thao tác | Câu lệnh thực thi (từ Root) | Mô tả |
 | :--- | :--- | :--- |
-| **Chạy Backend API** | `make run-backend` | Chạy FastAPI tại `http://localhost:8000` với live-reload |
+| **Chạy Backend API** | `make run-backend` | Chạy FastAPI tại `http://localhost:8002` với live-reload |
 | **Chạy Web Frontend**| `make run-web` | Chạy Vite Web server tại `http://localhost:5173` |
 | **Chạy Mobile App** | `make run-mobile` | Khởi chạy Expo Metro Bundler cho ứng dụng di động |
 | **Chạy Test Backend** | `make test-backend` | Chạy bộ kiểm thử Pytest trong `apps/backend/tests/` |
 | **Lint & Format** | `make check` | Kiểm tra cú pháp và định dạng code với Ruff |
 | **Docker Compose** | `docker-compose up --build` | Khởi tạo toàn bộ container backend và web |
+
+
+## Domain service layer
+
+The production integration adds pps/services/ride_service and pps/services/payment_service as independently deployable FastAPI services. The Agent in pps/backend communicates with Ride through HTTP; Ride owns the boundary to Payment. See [docs/domain-services.md](docs/domain-services.md).

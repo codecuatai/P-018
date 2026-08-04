@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowRightLeft,
   BadgeCheck,
+  Bot,
   Car,
   CheckCircle2,
   ChevronDown,
@@ -13,7 +14,9 @@ import {
   Loader2,
   Lock,
   Luggage,
+  Mic,
   Package,
+  Paperclip,
   Plane,
   QrCode,
   RefreshCw,
@@ -29,12 +32,18 @@ import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOpti
 import { isProfileComplete, MockService } from "../mocks/mockService";
 import { MOCK_COMBOS, MOCK_SUGGESTIONS } from "../mocks/mockData";
 import { TicketCard } from "../components/TicketCard";
+import { WelcomeScreen } from "../components/WelcomeScreen";
+import { VehicleSelector, VehicleQuote } from "../components/VehicleSelector";
+import { BookingStatusCard, BookingData } from "../components/BookingStatusCard";
+import { FareBreakdownCard } from "../components/FareBreakdownCard";
+import { ChatResponse, sendChatMessage, sendRideAction } from "../api";
 import "./ChatDashboard.css";
 
 interface Props {
   onRequireProfile?: () => void;
   onOpenHistory?: () => void;
   profileComplete?: boolean;
+  isUnified?: boolean;
 }
 
 const paymentLabels: Record<PaymentMethod, string> = {
@@ -52,6 +61,8 @@ const demoScenarios = [
     icon: <Plane size={18} />,
     category: "Vé đơn",
     type: "flight",
+    image: "/images/3d_airplane_icon.jpg",
+    highlight: false,
   },
   {
     title: "2. Combo Trọn gói",
@@ -59,33 +70,66 @@ const demoScenarios = [
     prompt: MOCK_SUGGESTIONS[1],
     icon: <Gift size={18} />,
     category: "Combo 15%",
-    type: "hotel",
+    type: "combo",
+    image: "/images/3d_gift_combo_icon.jpg",
+    highlight: true,
   },
   {
-    title: "3. Đổi vé & Hoàn tiền",
-    subtitle: "Chuyển sang Tàu hỏa",
+    title: "3. Đặt phòng Khách sạn",
+    subtitle: "Resort & Stay Booking",
     prompt: MOCK_SUGGESTIONS[2],
-    icon: <RefreshCw size={18} />,
-    category: "Đổi lịch",
-    type: "train",
+    icon: <Hotel size={18} />,
+    category: "Khách sạn",
+    type: "stay",
+    image: "/images/3d_hotel_icon.jpg",
+    highlight: false,
   },
   {
-    title: "4. Đặt xe & Chọn xe",
+    title: "4. Đặt xe & Đưa đón",
     subtitle: "Ride & Vehicle Choice",
     prompt: MOCK_SUGGESTIONS[3],
     icon: <Car size={18} />,
     category: "Xe đưa đón",
-    type: "car",
+    type: "ride",
+    image: "/images/3d_car_icon.jpg",
+    highlight: false,
   },
 ];
+
+const numberValue = (val: any) => (typeof val === 'number' ? val : 0);
+
+const toMultiQuotes = (result: ChatResponse): VehicleQuote[] | undefined => {
+  if (result.action === "multi_quote" && Array.isArray(result.data)) {
+    return result.data as VehicleQuote[];
+  }
+  return undefined;
+};
+
+const toBookingData = (result: ChatResponse): BookingData | undefined => {
+  if (["status", "book", "cancel", "complete"].includes(result.action) && result.data && result.data.id) {
+    return result.data as unknown as BookingData;
+  }
+  return undefined;
+};
+
+const toFareBreakdownData = (result: ChatResponse): any | undefined => {
+  if (result.action === "fare_breakdown" && result.data) {
+    return result.data;
+  }
+  return undefined;
+};
 
 export const ChatDashboard: React.FC<Props> = ({
   onRequireProfile,
   onOpenHistory,
+  isUnified,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const AGENT_SESSION_KEY = "navi_session_id_v3";
+  const [agentSessionId, setAgentSessionId] = useState<string | null>(() => sessionStorage.getItem(AGENT_SESSION_KEY));
+  const [inactiveQuoteIds, setInactiveQuoteIds] = useState<Set<string>>(new Set());
   const paymentMethod: PaymentMethod = "momo";
   const [notice, setNotice] = useState<{ type: "success" | "warning"; text: string } | null>(null);
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
@@ -121,18 +165,87 @@ export const ChatDashboard: React.FC<Props> = ({
   };
 
   const loadInitialMessages = async () => {
-    const msgs = await MockService.getMessages();
-    setMessages(msgs);
+    // Start a clean live-agent conversation; mock chat history is disabled.
+    setMessages([]);
   };
 
   const handleSend = async (text: string) => {
     if (!text.trim() || loading) return;
     setInput("");
-    setNotice(null);
+    setMessages((current) => [...current, { id: `user-${Date.now()}`, role: "user", text, timestamp: new Date().toISOString() }]);
     setLoading(true);
-    const newMsgs = await MockService.sendMessage(text);
-    setMessages([...newMsgs]);
-    setLoading(false);
+    try {
+      const result = await sendChatMessage(text, agentSessionId || undefined);
+      if (result.session_id) {
+        setAgentSessionId(result.session_id);
+        sessionStorage.setItem(AGENT_SESSION_KEY, result.session_id);
+      }
+      setMessages((current) => [...current, { 
+        id: `agent-${Date.now()}`, 
+        role: "bot", 
+        text: result.response || "Mình chưa thể tạo phản hồi. Bạn thử lại nhé.", 
+        timestamp: new Date().toISOString(), 
+        multiQuotes: toMultiQuotes(result),
+        bookingData: toBookingData(result),
+        fareBreakdownData: toFareBreakdownData(result),
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmMultiQuote = async (quoteId: string) => {
+    if (!agentSessionId || loading) return;
+    setMessages((current) => [...current, {
+      id: `user-action-${Date.now()}`,
+      role: "user",
+      text: "Xác nhận đặt chuyến này",
+      timestamp: new Date().toISOString(),
+    }]);
+    setLoading(true);
+    try {
+      const result = await sendRideAction("confirm_quote", agentSessionId, quoteId);
+      setAgentSessionId(result.session_id);
+      sessionStorage.setItem(AGENT_SESSION_KEY, result.session_id);
+      setMessages((current) => [...current, {
+        id: `agent-action-${Date.now()}`,
+        role: "bot",
+        text: result.response,
+        timestamp: new Date().toISOString(),
+        bookingData: toBookingData(result),
+      }]);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Lỗi kết nối backend";
+      setMessages((current) => [...current, {
+        id: `agent-error-${Date.now()}`, role: "bot", text: detail, timestamp: new Date().toISOString()
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderMultiQuotes = (quotes: VehicleQuote[]) => {
+    if (!quotes.length) return null;
+    const first: any = quotes[0];
+    return (
+      <VehicleSelector
+        quotes={quotes}
+        pickupAddress={first.pickup_address || "Điểm đón"}
+        dropoffAddress={first.dropoff_address || "Điểm đến"}
+        onSelect={(id) => handleConfirmMultiQuote(id)}
+        loading={loading}
+      />
+    );
+  };
+
+  const renderBookingData = (booking: BookingData) => {
+    return (
+      <BookingStatusCard
+        booking={booking}
+        onCancel={(id) => handleSend(`Hủy chuyến ${id}`)}
+        loading={loading}
+      />
+    );
   };
 
   const handleConfirm = async (ticket: ServiceTicket) => {
@@ -393,29 +506,44 @@ export const ChatDashboard: React.FC<Props> = ({
     </div>
   );
 
+  const getChipClass = (suggestion: string) => {
+    const s = suggestion.toLowerCase();
+    if (s.includes("combo") || s.includes("phú quốc")) return "suggestion-chip glow-border-orange";
+    if (s.includes("vé máy bay") || s.includes("máy bay") || s.includes("đà nẵng")) return "suggestion-chip glow-border-cyan";
+    return "suggestion-chip";
+  };
+
   return (
-    <div className="chat-dashboard">
+    <div className={`chat-dashboard ${isUnified ? "unified-mode" : ""}`}>
       <section className="chat-main">
-        <div className="scenario-grid">
-          {demoScenarios.map((scenario) => (
-            <button
-              type="button"
-              key={scenario.title}
-              className={`scenario-card scenario-${scenario.type}`}
-              onClick={() => handleSend(scenario.prompt)}
-              disabled={loading}
-            >
-              <div className="scenario-card-header">
-                <span className={`scenario-icon icon-${scenario.type}`}>{scenario.icon}</span>
-                <span className={`scenario-badge badge-${scenario.type}`}>{scenario.category}</span>
-              </div>
-              <div className="scenario-card-body">
-                <strong>{scenario.title}</strong>
-                <small>{scenario.subtitle}</small>
-              </div>
-            </button>
-          ))}
-        </div>
+        {!isUnified && (
+          <div className="scenario-grid">
+            {demoScenarios.map((scenario) => (
+              <button
+                type="button"
+                key={scenario.title}
+                className={`scenario-card scenario-${scenario.type} ${scenario.highlight ? "highlight-glow-orange" : ""}`}
+                onClick={() => handleSend(scenario.prompt)}
+                disabled={loading}
+              >
+                <img 
+                  src={scenario.image} 
+                  alt={scenario.title} 
+                  className="scenario-3d-img" 
+                  onError={(e) => { e.currentTarget.style.display = "none"; }} 
+                />
+                <div className="scenario-card-header">
+                  <span className={`scenario-icon icon-${scenario.type}`}>{scenario.icon}</span>
+                  <span className={`scenario-badge badge-${scenario.type}`}>{scenario.category}</span>
+                </div>
+                <div className="scenario-card-body">
+                  <strong>{scenario.title}</strong>
+                  <small>{scenario.subtitle}</small>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
 
         {notice && (
           <div className={`flow-notice ${notice.type}`}>
@@ -430,16 +558,30 @@ export const ChatDashboard: React.FC<Props> = ({
         )}
 
         <div className="chat-messages" ref={chatMessagesRef} onScroll={handleScroll}>
-          {messages.map((msg) => (
-            <div key={msg.id} className={`message-row ${msg.role}`}>
-              {msg.role === "bot" && (
-                <div className="bot-avatar">
-                  <Zap size={16} />
-                </div>
-              )}
-              <div className="message-content-wrapper">
-                <div className="message-bubble">
-                  <p className="message-text">{msg.text}</p>
+          {messages.length === 0 ? (
+            <WelcomeScreen onQuickAction={handleSend} />
+          ) : (
+            <>
+              {messages.map((msg) => (
+                <div key={msg.id} className={`message-row ${msg.role}`}>
+                  {msg.role === "bot" && (
+                    <div className="bot-avatar robot-avatar-3d">
+                      <img 
+                        src="/images/3d_robot_avatar.jpg" 
+                        alt="NaviGo" 
+                        className="bot-avatar-img" 
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          if (e.currentTarget.parentElement) {
+                            e.currentTarget.parentElement.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>';
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="message-content-wrapper">
+                    <div className="message-bubble">
+                      <p className="message-text">{msg.text}</p>
                   {msg.ticket && (
                     <TicketCard
                       ticket={msg.ticket}
@@ -451,6 +593,9 @@ export const ChatDashboard: React.FC<Props> = ({
                   {msg.rescheduleComparison && renderRescheduleCard(msg.rescheduleComparison)}
                   {msg.handoffInfo && renderHandoffCard(msg.handoffInfo)}
                   {msg.rideOptions && renderRideOptions(msg.rideOptions)}
+                  {msg.multiQuotes && renderMultiQuotes(msg.multiQuotes)}
+                  {msg.bookingData && renderBookingData(msg.bookingData)}
+                  {msg.fareBreakdownData && <FareBreakdownCard data={msg.fareBreakdownData} />}
                   <span className="message-time">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
@@ -460,8 +605,8 @@ export const ChatDashboard: React.FC<Props> = ({
           ))}
           {loading && (
             <div className="message-row bot">
-              <div className="bot-avatar">
-                <Zap size={16} />
+              <div className="bot-avatar robot-avatar-3d">
+                <img src="/images/3d_robot_avatar.jpg" alt="Bot Avatar 3D" className="bot-avatar-img" />
               </div>
               <div className="message-content-wrapper">
                 <div className="message-bubble loading">
@@ -472,6 +617,8 @@ export const ChatDashboard: React.FC<Props> = ({
             </div>
           )}
           <div ref={messagesEndRef} />
+          </>
+          )}
         </div>
 
         {showScrollBottom && (
@@ -489,19 +636,27 @@ export const ChatDashboard: React.FC<Props> = ({
         <div className="chat-input-container">
           <div className="suggestions">
             {MOCK_SUGGESTIONS.map((suggestion, idx) => (
-              <button key={idx} onClick={() => setInput(suggestion)} className="suggestion-chip">
-                <Zap size={14} className="suggestion-icon" />
+              <button key={idx} onClick={() => setInput(suggestion)} className={getChipClass(suggestion)}>
+                <Sparkles size={14} className="suggestion-icon" />
                 {suggestion}
               </button>
             ))}
           </div>
           <form
-            className="input-form"
+            className="input-form glass-input-pill"
             onSubmit={(e) => {
               e.preventDefault();
               handleSend(input);
             }}
           >
+            <div className="input-utility-buttons">
+              <button type="button" className="input-util-btn" title="Đính kèm tệp / hình ảnh">
+                <Paperclip size={18} />
+              </button>
+              <button type="button" className="input-util-btn" title="Nhập bằng giọng nói">
+                <Mic size={18} />
+              </button>
+            </div>
             <input
               type="text"
               value={input}
@@ -509,7 +664,7 @@ export const ChatDashboard: React.FC<Props> = ({
               placeholder="Nhập yêu cầu đặt dịch vụ..."
               disabled={loading}
             />
-            <button type="submit" disabled={!input.trim() || loading} className="btn-send" aria-label="Gửi yêu cầu">
+            <button type="submit" disabled={!input.trim() || loading} className="btn-send bright-cyan-send" aria-label="Gửi yêu cầu">
               <Send size={18} />
             </button>
           </form>

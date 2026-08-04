@@ -71,7 +71,6 @@ export interface AdminDashboardSummary {
   recentBookings: BookingHistory[];
 }
 
-
 export type BookingStatus = "pending_confirmation" | "confirmed" | "cancelled" | "completed";
 export type PaymentStatus = "unpaid" | "paid" | "refunded";
 export type PaymentMethod = "momo" | "bank_transfer" | "card" | "cash";
@@ -126,6 +125,43 @@ export interface RideVehicleOption {
   driverPhone?: string;
 }
 
+export interface RideQuoteCard {
+  quoteId: string;
+  pickupAddress: string;
+  dropoffAddress: string;
+  vehicleType: string;
+  amount: number;
+  currency: string;
+  distanceKm?: number;
+  durationMinutes?: number;
+}
+
+export interface VehicleQuote {
+  vehicle_type: string;
+  amount: number;
+  duration_minutes: number;
+  distance_km: number;
+  id: string;
+}
+
+export interface BookingData {
+  id: string;
+  status: string;
+  amount: number;
+  driver?: {
+    display_name: string;
+    rating: number;
+    total_trips: number;
+    vehicle: {
+      make: string;
+      model: string;
+      color: string;
+      license_plate: string;
+    };
+  } | null;
+  driver_eta_seconds?: number | null;
+}
+
 export interface SupportTicketContext {
   ticketId: string;
   priority: "HIGH" | "MEDIUM" | "LOW";
@@ -140,11 +176,15 @@ export interface Message {
   role: "user" | "bot";
   text: string;
   timestamp: string;
-  ticket?: ServiceTicket; // If the bot proposes a ticket
+  ticket?: ServiceTicket;
   comboPackages?: ComboPackage[];
   rescheduleComparison?: RescheduleOption;
   handoffInfo?: SupportTicketContext;
   rideOptions?: RideVehicleOption[];
+  rideQuote?: RideQuoteCard;
+  multiQuotes?: VehicleQuote[];
+  bookingData?: BookingData;
+  fareBreakdownData?: any;
   demoFlow?: DemoFlowResult;
 }
 
