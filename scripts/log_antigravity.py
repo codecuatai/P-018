@@ -60,7 +60,8 @@ GEMINI_HOME = Path.home() / ".gemini"
 
 # Antigravity has shipped under two folder names; prefer the newer IDE one.
 BRAIN_CANDIDATES = (
-    GEMINI_HOME / "antigravity-ide" / "brain",
+    GEMINI_HOME / "antigravity-cli" / "brain",
+    # GEMINI_HOME / "antigravity-ide" / "brain",
     GEMINI_HOME / "antigravity" / "brain",
 )
 
@@ -263,10 +264,14 @@ def iter_user_inputs(brain_dirs: list[Path], cutoff: datetime | None,
             if only_conv and conv_dir.name != only_conv:
                 continue
             transcript = (
-                conv_dir / ".system_generated" / "logs" / "transcript.jsonl"
+                conv_dir / ".system_generated" / "logs" / "overview.txt"
             )
+            if not transcript.exists():
+                transcript = (
+                    conv_dir / ".system_generated" / "logs" / "transcript.jsonl"
+                )
             
-            # If transcript.jsonl is missing or empty (active session), fallback to SQLite db
+            # If transcript is missing or empty (active session), fallback to SQLite db
             if not transcript.exists() or transcript.stat().st_size == 0:
                 yield from _iter_inputs_from_db(conv_dir.name, conv_dir, cutoff, repo_root_n)
                 continue
