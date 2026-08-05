@@ -13,3 +13,5 @@
 - [Local development](development/local-development.md), [environment variables](development/environment-variables.md), [database and migrations](development/database-and-migrations.md), [contributing](development/contributing.md), [new-service checklist](development/new-service-checklist.md), [testing strategy](development/testing-strategy.md), [ADRs](adr/README.md), and [project status](project-status.md)
 
 > **Legacy reference only:** `docs/guide/` is preserved as general course material, not as the X-One architecture source of truth. Follow root/scoped `AGENTS.md`, the canonical architecture documents, and [current state](architecture/current-state.md). Do not execute destructive or publishing commands from the guide without explicit approval.
+
+> **Legacy reference only:** [AI Concierge project documents](AI_Concierge_Project_Docs/README.md) are retained planning material. They are not an operational runbook or the X-One architecture source of truth.
