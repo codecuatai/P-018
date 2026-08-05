@@ -1,8 +1,8 @@
 # Project Charter - AI Concierge (X-One Assistant)
 
-> **Tài liệu Điều Lệ Dự Án & Định Hướng Chiến Lược**  
-> **Sản phẩm:** X-One Assistant (AI Concierge)  
-> **Thời gian thực hiện:** 6 tuần | **Quy mô nhóm:** 4 thành viên | **Cách thức triển khai:** Vertical Slice  
+> **Tài liệu Điều Lệ Dự Án & Định Hướng Chiến Lược**\
+> **Sản phẩm:** X-One Assistant (AI Concierge)\
+> **Thời gian thực hiện:** 6 tuần | **Quy mô nhóm:** 4 thành viên | **Cách thức triển khai:** Vertical Slice\
 
 ---
 

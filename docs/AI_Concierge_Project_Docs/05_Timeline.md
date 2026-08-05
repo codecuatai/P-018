@@ -1,7 +1,7 @@
 # Project Timeline & Implementation Roadmap
 
-> **X-ONE ASSISTANT | LỘ TRÌNH TRIỂN KHAI DỰ ÁN 6 TUẦN (6-WEEK ROADMAP)**  
-> **Phương pháp triển khai:** Agile Vertical Slices | **Quy mô:** 4 thành viên  
+> **X-ONE ASSISTANT | LỘ TRÌNH TRIỂN KHAI DỰ ÁN 6 TUẦN (6-WEEK ROADMAP)**\
+> **Phương pháp triển khai:** Agile Vertical Slices | **Quy mô:** 4 thành viên\
 
 ---
 

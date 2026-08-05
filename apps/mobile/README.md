@@ -1,34 +1,11 @@
-# AI Concierge - Mobile Application
+# X-One Mobile Application
 
-> **X-ONE ASSISTANT | MOBILE APP (REACT NATIVE / EXPO)**  
-> **Ứng dụng di động hỗ trợ đặt xe, đặt lịch khám và dịch vụ bằng giọng nói/hội thoại.**
+The Expo shell is preserved and remains independent of the backend foundation.
 
----
-
-## 1. Hướng Dẫn Khởi Chạy (Quick Start)
-
-### Cài đặt thư viện:
 ```bash
 cd apps/mobile
 npm install
-```
-
-### Chạy ứng dụng di động:
-```bash
-# Chạy với Expo CLI
 npm start
-
-# Chạy trên Android Emulator / thiết bị thật
-npm run android
-
-# Chạy trên iOS Simulator (macOS)
-npm run ios
 ```
 
----
-
-## 2. Kết Nối API Backend
-
-Ứng dụng kết nối trực tiếp với FastAPI Backend tại `http://localhost:8000` (hoặc IP local của máy chủ khi test trên thiết bị thật).
-- REST API Base URL: `http://<IP_LOCAL>:8000/api/v1`
-- WebSocket Realtime: `ws://<IP_LOCAL>:8000/ws`
+When mock flows are replaced, mobile must call only the public NestJS gateway at `http://<LOCAL_IP>:3000/api/v1`; it must not call the agent or a domain service directly. Business endpoints and realtime transport are not implemented yet.

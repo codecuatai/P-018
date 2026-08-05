@@ -1,7 +1,7 @@
 # System Architecture & AI Agent Design
 
-> **X-ONE ASSISTANT | TÀI LIỆU KIẾN TRÚC HỆ THỐNG VÀ THIẾT KẾ AGENT**  
-> **Phiên bản:** 1.0 | **Framework điều phối:** LangGraph | **Backend:** FastAPI | **Database:** PostgreSQL + Redis  
+> **X-ONE ASSISTANT | TÀI LIỆU KIẾN TRÚC HỆ THỐNG VÀ THIẾT KẾ AGENT**\
+> **Phiên bản:** 1.0 | **Framework điều phối:** LangGraph | **Backend:** FastAPI | **Database:** PostgreSQL + Redis\
 
 ---
 
@@ -10,7 +10,7 @@
 ```mermaid
 graph TD
     UI[Frontend: React / Next.js Web App] <-->|REST API / SSE / WebSocket| BE[Backend API: FastAPI]
-    
+
     subgraph FastAPI Backend Modules
         BE --> Auth[Auth / User / RBAC]
         BE --> Conv[Conversation & State Recovery]
@@ -89,30 +89,30 @@ flowchart TD
     N3 --> N4[resolve_references]
     N4 --> N5[validate_request]
     N5 --> N6{Hỏi slot hay lập plan?}
-    
+
     N6 -->|Thiếu thông tin| N7[ask_missing_information]
     N6 -->|Đủ thông tin| N8[build_plan]
-    
+
     N8 --> N9[validate_plan]
     N9 --> N10[route_service]
     N10 --> N11[search_options]
     N11 --> N12[rank_options]
     N12 --> N13[present_options]
     N13 --> N14[capture_selection]
-    
+
     N14 --> N15[build_confirmation]
     N15 --> N16[wait_for_confirmation]
-    
+
     N16 -->|User đồng ý| N17[execute_action]
     N16 -->|User từ chối / Đổi ý| N7
-    
+
     N17 --> N18[verify_result]
     N18 -->|Thành công| N21[save_memory_candidate]
     N18 -->|Thất bại| N19[handle_failure]
-    
+
     N19 --> N20[compensate]
     N20 -->|Không sửa được| N22[handoff_operator]
-    
+
     N21 --> N23[generate_response]
 ```
 

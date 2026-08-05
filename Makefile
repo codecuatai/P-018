@@ -1,7 +1,7 @@
-.PHONY: run-backend run-web run-mobile test-backend lint format check clean
+.PHONY: run-agent run-web run-mobile test-agent lint-agent compose-config
 
-run-backend:
-	cd apps/backend && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+run-agent:
+	cd apps/agent-service && uvicorn src.main:app --reload --host 0.0.0.0 --port 8001
 
 run-web:
 	cd apps/web && npm run dev
@@ -9,18 +9,11 @@ run-web:
 run-mobile:
 	cd apps/mobile && npm start
 
-test-backend:
-	cd apps/backend && PYTHONPATH=. pytest tests/ -v
+test-agent:
+	cd apps/agent-service && python -m pytest tests -q
 
-lint:
-	cd apps/backend && ruff check src/ tests/
+lint-agent:
+	python -m ruff check apps/agent-service/src apps/agent-service/tests
 
-format:
-	cd apps/backend && ruff format src/ tests/
-
-check: lint test-backend
-
-clean:
-	find . -type d -name __pycache__ -exec rm -rf {} +
-	find . -type d -name .pytest_cache -exec rm -rf {} +
-	find . -type d -name .ruff_cache -exec rm -rf {} +
+compose-config:
+	docker compose config --quiet

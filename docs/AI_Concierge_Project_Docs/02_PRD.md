@@ -1,7 +1,7 @@
 # Product Requirements Document (PRD)
 
-> **X-ONE ASSISTANT | CONVERSATIONAL MULTI-SERVICE AI AGENT**  
-> **Phiên bản PRD:** 1.0 | **Thời gian triển khai:** 6 tuần | **Nhóm:** 4 thành viên  
+> **X-ONE ASSISTANT | CONVERSATIONAL MULTI-SERVICE AI AGENT**\
+> **Phiên bản PRD:** 1.0 | **Thời gian triển khai:** 6 tuần | **Nhóm:** 4 thành viên\
 
 ---
 

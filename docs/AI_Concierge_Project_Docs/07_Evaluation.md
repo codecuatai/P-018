@@ -1,7 +1,7 @@
 # Agent Evaluation Plan & Success Metrics
 
-> **X-ONE ASSISTANT | KẾ HOẠCH ĐÁNH GIÁ ĐỊNH LƯỢNG VÀ BỘ TEST SUITE**  
-> **Tổng số test cases:** 150 kịch bản | **Mục tiêu hoàn thành:** Quản trị chất lượng AI Agent  
+> **X-ONE ASSISTANT | KẾ HOẠCH ĐÁNH GIÁ ĐỊNH LƯỢNG VÀ BỘ TEST SUITE**\
+> **Tổng số test cases:** 150 kịch bản | **Mục tiêu hoàn thành:** Quản trị chất lượng AI Agent\
 
 ---
 
@@ -64,7 +64,7 @@ pie title Phân Bổ 150 Test Cases Trong Bộ Đánh Giá Agent
 ## 4. Kịch Bản Demo Chuẩn (Demo Scenarios)
 
 ### 4.1 Demo Kịch Bản Chính (Main Multi-Service Flow)
-- **Câu thoại của người dùng:**  
+- **Câu thoại của người dùng:**
   *"Tìm lịch khám da liễu gần trường sau 9 giờ sáng thứ Hai và đặt xe để tôi đến trước 20 phút."*
 
 - **Diễn biến các bước xử lý của Agent:**

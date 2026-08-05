@@ -16,6 +16,9 @@ env/
 .env
 .env.local
 .env.production
+.env.*.local
+!.env.example
+!**/.env.example
 
 # IDE
 .vscode/
@@ -47,7 +50,7 @@ coverage.xml
 # Docker
 docker-compose.override.yml
 
-# Node (frontend)   
+# Node (frontend)
 node_modules/
 .next/
 out/
@@ -60,3 +63,5 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+
+phong.md

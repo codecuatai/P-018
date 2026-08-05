@@ -3,6 +3,8 @@ title: "Troubleshooting — Sửa lỗi thường gặp"
 weight: 99
 ---
 
+> **Legacy reference only:** this course troubleshooting guide is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../architecture/current-state.md). Do not execute destructive Docker/database, repository-reinitializing, or publishing commands here without explicit approval.
+
 # Troubleshooting — Sửa lỗi thường gặp
 
 Phần này tổng hợp các lỗi phổ biến khi setup và chạy dự án AI Agent, kèm hướng dẫn sửa chi tiết. Nếu bạn gặp lỗi không có trong danh sách, hãy kiểm tra lại các bước trong chương tương ứng hoặc tìm trên GitHub Issues của template.

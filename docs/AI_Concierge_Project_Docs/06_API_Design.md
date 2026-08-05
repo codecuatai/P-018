@@ -1,7 +1,7 @@
 # Tool Specifications & API Contracts
 
-> **X-ONE ASSISTANT | DANH SÁCH API & THIẾT KẾ TOOL CALLING DÀNH CHO AGENT**  
-> **Chuẩn hóa Pydantic Schema** | **Transaction Safety** | **Idempotency Protection**  
+> **X-ONE ASSISTANT | DANH SÁCH API & THIẾT KẾ TOOL CALLING DÀNH CHO AGENT**\
+> **Chuẩn hóa Pydantic Schema** | **Transaction Safety** | **Idempotency Protection**\
 
 ---
 

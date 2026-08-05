@@ -1,7 +1,11 @@
+# Legacy/reference: AI Concierge project documents
+
+> These documents are retained as historical planning and course material. They are not the X-One architecture source of truth and may describe the earlier FastAPI monolith, Redis, or other capabilities that are not approved for the current backend-first foundation. Consult `../architecture/current-state.md`, the ADRs, and the API/architecture documentation for current decisions and implementation status.
+
 # AI Concierge - Intelligent Multi-Service Ride & Service Booking Agent
 
-> **X-ONE ASSISTANT | PRODUCT REQUIREMENTS DOCUMENT & PROJECT DOCUMENTATION**  
-> **Phiên bản:** 1.0 | **Quy mô nhóm:** 4 thành viên | **Thời gian phát triển:** 6 tuần  
+> **X-ONE ASSISTANT | PRODUCT REQUIREMENTS DOCUMENT & PROJECT DOCUMENTATION**\
+> **Phiên bản:** 1.0 | **Quy mô nhóm:** 4 thành viên | **Thời gian phát triển:** 6 tuần\
 > **Mức độ:** Tham vọng cao, triển khai theo Vertical Slice
 
 ---

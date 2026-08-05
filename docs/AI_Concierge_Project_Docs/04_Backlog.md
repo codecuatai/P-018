@@ -1,7 +1,7 @@
 # Product Backlog & Feature Breakdown
 
-> **X-ONE ASSISTANT | PRODUCT BACKLOG CHITIẾT DỰ ÁN AI CONCIERGE**  
-> **Phân chia theo Epics & User Stories** | **Chuẩn hóa cho Kế hoạch 6 tuần**  
+> **X-ONE ASSISTANT | PRODUCT BACKLOG CHITIẾT DỰ ÁN AI CONCIERGE**\
+> **Phân chia theo Epics & User Stories** | **Chuẩn hóa cho Kế hoạch 6 tuần**\
 
 ---
 

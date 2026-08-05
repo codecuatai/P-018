@@ -1,6 +1,6 @@
 # Service API Integration Guide
 
-> **X-ONE ASSISTANT | MÔ TẢ DỊCH VỤ, CÁCH HOẠT ĐỘNG VÀ CÁCH TÍCH HỢP API/SANDBOX**  
+> **X-ONE ASSISTANT | MÔ TẢ DỊCH VỤ, CÁCH HOẠT ĐỘNG VÀ CÁCH TÍCH HỢP API/SANDBOX**\
 > **Mục tiêu:** Chọn đúng sandbox/API cho giai đoạn phát triển, đồng thời giữ kiến trúc đủ gần thực tế để sau này thay bằng provider như Grab, ShopeeFood, Shopee, Lalamove hoặc đối tác thật mà không phải sửa toàn bộ hệ thống.
 
 ---
