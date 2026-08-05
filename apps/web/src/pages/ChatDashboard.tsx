@@ -29,6 +29,7 @@ import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOpti
 import { isProfileComplete, MockService } from "../mocks/mockService";
 import { MOCK_COMBOS, MOCK_SUGGESTIONS } from "../mocks/mockData";
 import { TicketCard } from "../components/TicketCard";
+import { sendChatMessage } from "../api";
 import "./ChatDashboard.css";
 
 interface Props {
@@ -130,8 +131,50 @@ export const ChatDashboard: React.FC<Props> = ({
     setInput("");
     setNotice(null);
     setLoading(true);
-    const newMsgs = await MockService.sendMessage(text);
-    setMessages([...newMsgs]);
+    
+    // Optimistic user message update
+    const userMsg: Message = { id: `msg-${Date.now()}`, role: "user", text, timestamp: new Date().toISOString() };
+    setMessages(prev => [...prev, userMsg]);
+
+    try {
+      // Connect to Real LangGraph Backend
+      const profile = await MockService.getUserProfile();
+      let contextMsg = text;
+      if (profile && profile.fullName && profile.phone) {
+        contextMsg = `[System Context: Thông tin hồ sơ User đang chat: Tên là ${profile.fullName}, SĐT là ${profile.phone}] ` + text;
+      }
+      const res = await sendChatMessage(contextMsg, "web_user_demo");
+      
+      let doctorScheduleData = undefined;
+      let cleanText = res.response;
+      
+      // Parse JSON from text if AI provides it for the card
+      const jsonMatch = res.response.match(/```json\n([\s\S]*?)\n```/);
+      if (jsonMatch) {
+         try {
+             const data = JSON.parse(jsonMatch[1]);
+             if (data.type === "doctor_schedule") {
+                 doctorScheduleData = data.data;
+                 cleanText = res.response.replace(jsonMatch[0], "").trim();
+             }
+         } catch (e) {}
+      }
+
+      const botMsg: Message = {
+        id: `msg-${Date.now()+1}`,
+        role: "bot",
+        text: cleanText,
+        timestamp: new Date().toISOString(),
+        doctorSchedule: doctorScheduleData
+      };
+      setMessages(prev => [...prev, botMsg]);
+    } catch (error) {
+      // Fallback to Mock Service if Real Backend is not running
+      const newMsgs = await MockService.sendMessage(text);
+      // MockService returns the full array, so we replace it but keep the history
+      setMessages([...newMsgs]);
+    }
+    
     setLoading(false);
   };
 
@@ -168,6 +211,32 @@ export const ChatDashboard: React.FC<Props> = ({
     await new Promise((resolve) => setTimeout(resolve, 800));
 
     if (pendingTicket) {
+      if (pendingTicket.type === "medical") {
+        try {
+          // GỌI WEBHOOK ĐỂ BÁO ĐÃ THANH TOÁN VÀO DATABASE
+          await fetch("http://127.0.0.1:8000/api/v1/payment/webhook", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ appointment_id: parseInt(pendingTicket.id) })
+          });
+          
+          setIsVerifying(false);
+          setShowAuthModal(false);
+          setNotice({
+            type: "success",
+            text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán phí khám qua Webhook.`,
+          });
+          // Gửi một câu chat rất bình thường báo AI kiểm tra lại
+          await handleSend(`Tôi đã thanh toán xong cho mã lịch hẹn ${pendingTicket.id}, bạn kiểm tra lại giúp tôi!`);
+          setPendingTicket(null);
+          return;
+        } catch (e) {
+          console.error("Webhook payment failed", e);
+          setIsVerifying(false);
+          return;
+        }
+      }
+
       const booking = await MockService.confirmBooking(pendingTicket, authMethod);
       const msgs = await MockService.getMessages();
       setLastBookingId(booking.bookingId);
@@ -274,6 +343,76 @@ export const ChatDashboard: React.FC<Props> = ({
           </button>
         </div>
       ))}
+    </div>
+  );
+
+  const handleSelectTimeSlot = async (doctor: any, slot: string) => {
+    await handleSend(`Tôi muốn chọn giờ khám ${slot} với ${doctor.doctorName} ngày ${doctor.date}`);
+  };
+
+  const renderDoctorScheduleCard = (schedule: any) => (
+    <div className="doctor-schedule-card" style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '12px', backgroundColor: 'white' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+        <div style={{ backgroundColor: '#e0f2fe', color: '#0369a1', padding: '8px', borderRadius: '50%', marginRight: '12px' }}>
+          <UserCheck size={20} />
+        </div>
+        <div>
+          <h4 style={{ margin: 0, color: '#0f172a' }}>{schedule.doctorName}</h4>
+          <span style={{ fontSize: '13px', color: '#64748b' }}>{schedule.specialty || "Bác sĩ chuyên khoa"} · Phí khám: {schedule.price?.toLocaleString("vi-VN") || "0"} VND</span>
+        </div>
+      </div>
+      
+      {schedule.status === "Draft" ? (
+        <div style={{ backgroundColor: '#fff7ed', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
+          <strong style={{ color: '#c2410c', display: 'block', marginBottom: '4px' }}>Trạng thái: Đang giữ chỗ (Draft)</strong>
+          <span style={{ fontSize: '14px', color: '#9a3412' }}>Mã lịch hẹn: {schedule.appointmentId}</span><br/>
+          <span style={{ fontSize: '14px', color: '#9a3412' }}>Giờ khám: {schedule.date}</span>
+          <button 
+            type="button" 
+            onClick={() => handleConfirm({
+              id: schedule.appointmentId.toString(),
+              type: "medical",
+              origin: "Khám chuyên khoa",
+              destination: schedule.doctorName,
+              date: schedule.date,
+              time: schedule.date,
+              price: schedule.price || 0,
+              seats: "1 bệnh nhân",
+              provider: "Bệnh viện Đa Khoa",
+              duration: "30 phút",
+              note: schedule.specialty || "",
+              refundPolicy: "Không hoàn phí khám nếu vắng mặt"
+            })}
+            style={{ marginTop: '12px', width: '100%', padding: '8px', backgroundColor: '#ea580c', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+          >
+            <CreditCard size={16} /> Thanh toán & Xác nhận
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={{ marginBottom: '12px' }}>
+            <strong style={{ fontSize: '14px', color: '#334155' }}>Lịch trống ngày {schedule.date}:</strong>
+          </div>
+          
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {(schedule.availableSlots || []).map((slot: string) => (
+              <button 
+                key={slot}
+                type="button"
+                onClick={() => handleSelectTimeSlot(schedule, slot)}
+                style={{ padding: '6px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'white', color: '#0f172a', cursor: 'pointer', fontSize: '14px' }}
+                onMouseOver={(e) => e.currentTarget.style.borderColor = '#3b82f6'}
+                onMouseOut={(e) => e.currentTarget.style.borderColor = '#cbd5e1'}
+              >
+                {slot}
+              </button>
+            ))}
+            {(!schedule.availableSlots || schedule.availableSlots.length === 0) && (
+                <span style={{ color: '#ef4444', fontSize: '14px' }}>Không có lịch trống</span>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 
@@ -439,7 +578,17 @@ export const ChatDashboard: React.FC<Props> = ({
               )}
               <div className="message-content-wrapper">
                 <div className="message-bubble">
-                  <p className="message-text">{msg.text}</p>
+                  <div className="message-text">
+                    {msg.text.split('\n').map((line, i, arr) => {
+                      const parts = line.split(/\*\*(.*?)\*\*/g);
+                      return (
+                        <React.Fragment key={i}>
+                          {parts.map((part, j) => j % 2 === 1 ? <strong key={j}>{part}</strong> : part)}
+                          {i < arr.length - 1 && <br />}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
                   {msg.ticket && (
                     <TicketCard
                       ticket={msg.ticket}
@@ -451,6 +600,7 @@ export const ChatDashboard: React.FC<Props> = ({
                   {msg.rescheduleComparison && renderRescheduleCard(msg.rescheduleComparison)}
                   {msg.handoffInfo && renderHandoffCard(msg.handoffInfo)}
                   {msg.rideOptions && renderRideOptions(msg.rideOptions)}
+                  {msg.doctorSchedule && renderDoctorScheduleCard(msg.doctorSchedule)}
                   <span className="message-time">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>

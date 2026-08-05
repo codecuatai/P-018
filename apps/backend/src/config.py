@@ -5,9 +5,14 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+from pathlib import Path
+
+# Thư mục gốc chứa file .env (team-TLU)
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent.parent
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(ROOT_DIR / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -22,7 +27,9 @@ class Settings(BaseSettings):
 
     # LLM
     openai_api_key: str = ""
-    model_name: str = "gpt-4o-mini"
+    groq_api_key: str = ""
+    google_api_key: str = ""
+    model_name: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
 
     # Database

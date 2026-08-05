@@ -1,4 +1,4 @@
-export type ServiceType = "bus" | "flight" | "train" | "car" | "hotel" | "delivery" | "other";
+export type ServiceType = "bus" | "flight" | "train" | "car" | "hotel" | "delivery" | "medical" | "other";
 
 export interface UserProfile {
   fullName: string;
@@ -135,6 +135,15 @@ export interface SupportTicketContext {
   status: "open" | "assigned" | "resolved";
 }
 
+export interface DoctorSchedule {
+  doctorId: string;
+  doctorName: string;
+  specialty: string;
+  price: number;
+  date: string;
+  availableSlots: string[];
+}
+
 export interface Message {
   id: string;
   role: "user" | "bot";
@@ -146,6 +155,7 @@ export interface Message {
   handoffInfo?: SupportTicketContext;
   rideOptions?: RideVehicleOption[];
   demoFlow?: DemoFlowResult;
+  doctorSchedule?: DoctorSchedule;
 }
 
 export type DemoFlowKind = "ride" | "medical_ride" | "partial_failure" | "human_handoff";

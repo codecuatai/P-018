@@ -440,7 +440,23 @@ export const MockService = {
         text: `Tôi đã tìm thấy phương án ${ticket.provider} phù hợp cho hành trình ${ticket.origin} đi ${ticket.destination}. Vui lòng kiểm tra chi tiết và bấm Xác nhận và thanh toán.`,
         ticket,
       };
-    } else {
+    } 
+    // Thêm luồng Mock Y tế (Medical Booking) để test UI khi Backend lỗi
+    else if (lowerText.includes("kham") || lowerText.includes("đau đầu") || lowerText.includes("dau dau") || lowerText.includes("bác sĩ") || lowerText.includes("bac si")) {
+      botMsg = {
+        ...botMsg,
+        text: "Dựa vào triệu chứng của bạn, tôi đề xuất khám chuyên khoa Thần kinh. Dưới đây là lịch trống của bác sĩ chuyên khoa phù hợp, bạn vui lòng chọn giờ khám:",
+        doctorSchedule: {
+          doctorId: "doc_001",
+          doctorName: "BS. Nguyễn Văn An",
+          specialty: "Thần kinh",
+          price: 500000,
+          date: "2026-08-08",
+          availableSlots: ["08:00", "09:30", "14:00", "15:30"]
+        }
+      };
+    }
+    else {
       const ticket = findTicketForMessage(text);
       if (ticket) {
         botMsg = {

@@ -1,18 +1,13 @@
-from __future__ import annotations
-
-from typing import TypedDict
-
+from typing import TypedDict, Annotated
+from langgraph.graph.message import add_messages
 
 class AgentState(TypedDict, total=False):
-    """State schema cho LangGraph agent.
-
-    Mỗi node đọc và ghi vào state này.
-    total=False cho phép tất cả fields là optional.
-    """
-
+    """State schema cho LangGraph agent hỗ trợ lưu trữ history."""
+    messages: Annotated[list, add_messages]
     query: str
-    context: str
-    analysis: str
     response: str
-    error: str
-    metadata: dict
+    
+    # Integration Contract Outputs
+    medical_status: str
+    destination_address: str
+    appointment_time: str
