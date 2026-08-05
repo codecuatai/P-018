@@ -47,7 +47,7 @@ coverage.xml
 # Docker
 docker-compose.override.yml
 
-# Node (frontend)
+# Node (frontend)   
 node_modules/
 .next/
 out/
