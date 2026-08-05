@@ -1,6 +1,6 @@
 # Repository Structure
 
-`apps/` contains user-facing applications and central orchestration: gateway, agent, web, and mobile. `services/` contains independently owned domain services. `packages/` contains versioned contracts, generated TypeScript clients, and non-business shared configuration; generated clients are regenerated from contracts and must not be hand-edited.
+`apps/` contains user-facing applications and central orchestration: gateway, agent, web, and mobile. `services/` contains domain-owned boundaries; an entry can be planned, skeletal, in-process, or independently deployable as documented in [current state](current-state.md). `packages/` contains versioned contracts, generated TypeScript clients, and non-business shared configuration; generated clients are regenerated from contracts and must not be hand-edited.
 
 `tests/` holds cross-service contract/integration/E2E/evaluation suites; unit tests stay with their owner. `infra/` holds local runtime bootstrap only. `scripts/` holds reproducible developer/CI helpers. Root documentation defines the architecture; service-specific run instructions live in `services/README.md`.
 
@@ -14,4 +14,4 @@ scripts/       setup, validation, migration, seed, test helpers
 docs/          architecture, API, ADR, development guidance
 ```
 
-Ownership follows directory boundaries. Do not hand-edit generated clients, build output, lockfile internals, or AI log content. To add an app/service, use [the checklist](../development/new-service-checklist.md): create its owner directory and config, add runtime/database/gateway/contract/tests/docs in one coherent change.
+Ownership follows directory boundaries. Share only technical capabilities such as contracts, generated clients, stable utilities, logging/tracing conventions, error envelopes, and test utilities; never share a domain ORM model, entity, repository, payment state machine, or unowned "common business logic." Do not hand-edit generated clients, build output, lockfile internals, or AI log content. To add an app/service, use [the checklist](../development/new-service-checklist.md): create its owner directory and config, add runtime/database/gateway/contract/tests/docs in one coherent change.

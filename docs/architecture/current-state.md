@@ -7,6 +7,11 @@ This is the canonical, filesystem-backed source of truth for X-One's implementat
 - `implemented`: the repository contains the stated behavior/configuration and this document cites the supporting path and a check.
 - `skeleton`: boundary, configuration, or layout exists, but the domain behavior is not wired or implemented.
 - `planned`: no runnable or wired implementation exists.
+- `in-process`: a module runs within an existing deployable boundary; it is not automatically a separately deployable service.
+- `standalone`: a component has its own runtime/deployment boundary. This says nothing about feature completeness, availability, or production readiness.
+- `deprecated`: retained but not for new development. `legacy-reference`: retained only for historical or course/reference use and not authoritative for X-One.
+
+Status and deployment mode are independent. A current skeleton may be standalone, and a target box may remain in-process until a measured need supports a separate deployment boundary.
 
 ## Runtime shape and ownership
 
@@ -23,6 +28,8 @@ flowchart LR
 Clients may call only the gateway. The gateway owns public workflow orchestration, confirmation, audit/idempotency, and the payment sandbox boundary. The agent may only return a typed tool request to that gateway; it cannot call a domain service or database, create a booking, or charge payment. Restaurant owns dine-in table reservations; Food owns menus, food orders, and delivery/takeaway ordering.
 
 Each backend owner has one logical PostgreSQL database: gateway/Core `xone_core`, agent `xone_agent`, Ride `xone_ride`, Restaurant `xone_restaurant`, Healthcare `xone_healthcare`, and Food `xone_food`. The bootstrap script at `infra/postgres/init/01-create-databases.sh` creates the distinct roles/databases. Cross-database queries, foreign keys, and shared ORM models are prohibited; cross-service data travels through REST/JSON/OpenAPI contracts.
+
+Logical ownership is mandatory: each domain owns its schema/tables, migrations, and state, while other domains use contracts rather than SQL or shared ORM entities. The local foundation currently uses one PostgreSQL instance with separate logical databases/roles. Physical instance or cluster separation is deferred until measured scale, reliability, security, compliance, team-ownership, deployment-independence, or operational-isolation needs justify it.
 
 ## Observed implementation matrix
 
@@ -41,6 +48,20 @@ Each backend owner has one logical PostgreSQL database: gateway/Core `xone_core`
 | Migrations and seeds | planned | `scripts/migrate.ps1`, `scripts/seed.ps1`, each service's `migrations/README.md` and `seeds/README.md` | Placeholders explicitly report that no owned schema revision or seed data exists. |
 | Automated tests and CI | skeleton | `.github/workflows/ci.yml`, gateway/domain/agent test directories | Health/config/demo tests and CI definitions exist; no business contract, integration, or end-to-end workflow test is implemented. Remote CI execution is not implied by the workflow file. |
 | Deployment | planned | no deployment manifest outside local Compose | No production deployment or cloud pipeline is present. |
+
+## Intended ownership and deployment reading
+
+This table describes intended authority, not a promise that an interface exists. The implementation matrix above remains the status source of truth.
+
+| Component | Current status | Intended authority/data owner | Current deployment mode |
+| --- | --- | --- | --- |
+| Web | implemented (mock) | No authoritative domain data | standalone web demo |
+| Mobile | skeleton | No authoritative domain data | standalone mobile shell |
+| Gateway | skeleton | Public workflow/audit/idempotency metadata in Core; never domain state | standalone gateway runtime |
+| Agent | skeleton | Approved agent run/checkpoint metadata only | standalone agent runtime |
+| Ride, Restaurant, Healthcare, Food | skeleton | Their respective domain data and state transitions; Restaurant = tables, Food = menus/orders | standalone domain-service runtimes |
+
+The checked repository has separate runtime entrypoints for the listed components, but that does not make their planned business interfaces implemented or available.
 
 ## Repository roles
 
@@ -88,3 +109,7 @@ Agent pytest could not import `langchain`, and the host Python installation did 
 ## Change rules derived from the current state
 
 Business API changes must add a versioned OpenAPI contract, any needed generated client, API/contract tests, and matching documentation. A schema change needs an owned migration before an optional deterministic seed, plus data-architecture and test updates. Booking and payment remain separate confirmed actions: users first confirm service/booking details, then explicitly confirm payment. Neither confirmation flow is implemented today.
+
+## Incremental delivery guidance
+
+Implement one walking vertical slice at a time: user request → gateway → agent intent/tool selection → provider lookup → draft/quote → user confirmation → domain booking creation → structured result. This is a target sequence, not a running flow. Add confirmation, idempotency, and audit before its important side effects; a target box does not need to become a separate physical service/database before the first end-to-end slice is complete.

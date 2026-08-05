@@ -3,6 +3,8 @@ title: "Khởi tạo dự án từ Template"
 weight: 2
 ---
 
+> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../architecture/current-state.md). Do not execute repository-reinitializing or publishing commands here without explicit approval.
+
 ## Clone template — Bắt đầu từ nền tảng đúng
 
 Một trong những sai lầm phổ biến nhất của sinh viên khi bắt đầu dự án mới là tạo mọi thứ từ con số không — tự setup cấu trúc thư mục, tự cấu hình linting, tự viết CI/CD file, tự tạo Dockerfile. Kết quả là mỗi đội có một cấu trúc khác nhau, thiếu những file quan trọng, và mất hàng ngày chỉ để setup thay vì viết logic chính. Template dự án giải quyết vấn đề này bằng cách cung cấp một nền tảng đã được chuẩn hóa, bao gồm tất cả best practices mà bạn cần.

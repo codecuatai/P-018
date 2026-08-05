@@ -10,7 +10,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Vũ Văn Phong | Chuẩn hóa environment và tái cấu trúc/governance kiến trúc X-One theo backend-first microservices | ✅ Done | Thiết lập một root `.env` với Compose inject tối thiểu; di chuyển Agent, thêm API Gateway và Ride/Restaurant/Healthcare/Food skeletons cùng PostgreSQL logical databases; làm rõ Food ownership và Restaurant reservations; tăng cường contracts, CI, docs, `AGENTS.md`, package discovery và error hygiene; `.env` hiện có được giữ nguyên, báo cáo tại `job.txt` | 5.0h |
+| Vũ Văn Phong | Chuẩn hóa environment, kiến trúc và governance tài liệu X-One theo backend-first | ✅ Done | Thiết lập một root `.env` với Compose inject tối thiểu; di chuyển Agent, thêm API Gateway và Ride/Restaurant/Healthcare/Food skeletons cùng PostgreSQL logical databases; làm rõ Food ownership và Restaurant reservations; tăng cường contracts, CI, docs, `AGENTS.md`, package discovery và error hygiene; bổ sung governance nhẹ về precedence, logical/physical data ownership, target/current state, vertical slice, idempotency, confirmation, prompt safety và legacy-doc warnings; `.env` hiện có được giữ nguyên, báo cáo tại `job.txt` | 5.0h |
 
 **Tổng kết ngày:** Hoàn thành foundation, environment và architecture-governance refactor; xác minh gateway lint/test/build, web build, các domain health tests, package discovery, Compose config và Python compile. Docker build và stack smoke test đã thành công; toàn bộ service/postgres đều healthy. Agent pytest/Ruff đầy đủ vẫn phụ thuộc các development package Python chưa có trên host.
 
