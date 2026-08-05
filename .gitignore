@@ -37,10 +37,12 @@ data/
 logs/
 *.log
 
-# Test coverage
+# Test coverage & Cache
 htmlcov/
 .coverage
 coverage.xml
+.pytest_cache/
+.ruff_cache/
 
 # Docker
 docker-compose.override.yml

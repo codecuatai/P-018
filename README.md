@@ -77,40 +77,27 @@ uvicorn src.main:app --reload --port 8000
 ## 📁 Cấu trúc dự án
 
 ```
-├── src/
-│   ├── agents/           # 🧠 LangGraph Agent
-│   │   ├── graph.py      #    State graph (nodes + edges)
-│   │   ├── state.py      #    State schema (TypedDict)
-│   │   ├── nodes/        #    Node functions
-│   │   └── tools/        #    Agent tools (@tool)
-│   ├── api/              # 🌐 FastAPI Backend
-│   │   └── routes.py     #    API endpoints
-│   ├── models/           # 📋 Pydantic schemas
-│   ├── services/         # 🔧 Business logic (LLM, etc.)
-│   ├── config.py         # ⚙️ Pydantic Settings
-│   └── main.py           # 🚀 App entry point
-├── tests/                # 🧪 pytest suite
-│   ├── test_agents/      #    Agent/graph tests
-│   └── test_api/         #    API endpoint tests
-├── scripts/              # 🔌 AI Logging Hooks
-│   ├── log_hook.py       #    Auto-log cho Claude/Cursor/Codex/Gemini/Copilot
-│   ├── log_antigravity.py#    Antigravity IDE prompt scanner
-│   ├── log_manual.py     #    Manual log cho ChatGPT / web tools
-│   ├── submit_log.py     #    Submit logs on git push
-│   └── setup_hooks.sh    #    One-time hook installer
-├── .claude/ .codex/ .cursor/ .gemini/  # Per-tool hook configs
-├── .agents/              # Antigravity rules + workflows
-├── .ai-log/              # 📊 AI usage logs (auto-generated)
-├── docs/
-│   ├── guide/            # 📖 Technical Guidebook (10 chapters)
-│   └── architecture_diagram.md
-├── eval/                 # 📊 Evaluation results
-├── presentation/         # 🎤 Demo Day slides
-├── .github/workflows/    # ⚡ CI/CD (GitHub Actions)
-├── .github/hooks/        # 🪝 Copilot hook config
-├── Dockerfile            # 🐳 Multi-stage build
-├── docker-compose.yml    # 🐙 Full stack orchestration
-└── README_boilerplate.md # 📝 README template cho đội của bạn
+├── apps/                    # 🚀 Monorepo Applications
+│   ├── backend/             # 🧠 FastAPI Backend & LangGraph Agent
+│   │   ├── src/             #    Source code (agents, api, models, services)
+│   │   ├── tests/           #    Pytest suite
+│   │   ├── Dockerfile       #    Backend Docker configuration
+│   │   └── requirements.txt #    Backend Python dependencies
+│   ├── web/                 # 🌐 Web Application (React / Vite)
+│   │   ├── src/             #    Frontend UI source
+│   │   ├── package.json     #    Frontend dependencies
+│   │   └── Dockerfile       #    Web Docker configuration
+│   └── mobile/              # 📱 Mobile App (React Native / Expo)
+├── packages/                # 📦 Shared packages & API contracts
+├── docs/                    # 📖 Project documentation & Guidebook
+├── eval/                    # 📊 Evaluation benchmark results
+├── presentation/            # 🎤 Demo Day presentation materials
+├── scripts/                 # 🔌 Monorepo build & AI logging scripts
+├── .github/workflows/       # ⚡ CI/CD Workflows
+├── Makefile                 # 🛠️ Root task runner
+├── ruff.toml                # 🧹 Ruff linter & formatter config
+├── docker-compose.yml       # 🐙 Full-stack multi-container orchestration
+└── README_boilerplate.md    # 📝 Project template checklist
 ```
 
 ## 📚 Technical Guidebook — 10 Chương
