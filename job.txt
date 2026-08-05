@@ -1,0 +1,239 @@
+# X-One Architecture Foundation Refactor Report
+
+## Task summary
+
+Refactored the FastAPI/LangGraph demo into a backend-first microservices foundation: NestJS gateway, moved agent, three domain skeletons, PostgreSQL ownership bootstrap, Compose, contracts, documentation, CI, and scoped rules.
+
+## Repository state before refactor
+
+- `apps/backend` was the only FastAPI/LangGraph backend (port 8000); no gateway, domain services, `AGENTS.md`, migrations, or database bootstrap existed.
+- Web was a Vite/React mock/localStorage demo; mobile was an Expo shell. Both were preserved.
+- Compose and CI covered only backend/web.
+- Existing worktree items preserved: modified `.gitignore`, untracked `.ai-log/`, and untracked `repomix-output.xml`.
+
+## Files read
+
+Read root README, architecture/Docker/Compose/CI/config/manifests/logging files, backend/web/mobile entry points and tests, worklog/journal, and all 40 existing Markdown files in `docs/`. No existing `AGENTS.md`, migration, or database initialization source was found.
+
+## Files created
+
+- `AGENTS.md`, `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `infra/postgres/init/01-create-databases.sql`.
+- NestJS gateway under `apps/api-gateway/`, agent service environment/package/Docker/rules files, and three FastAPI domain-service skeletons under `services/`.
+- Contracts, test placeholders, PowerShell/shell helper scripts, architecture/API/development/ADR/status documentation.
+
+## Files moved and modified
+
+- Moved `apps/backend` to `apps/agent-service` with `git mv`; retained its LangGraph implementation and tests.
+- Replaced root README, Compose, CI, Makefile, root `.env.example`, legacy architecture pointers; updated agent config/health, web base URL, and mobile API guidance.
+- Removed obsolete root/backend Docker and requirements files only after service replacements existed.
+- Restored the tracked Project Build Phase PDF when it was observed as unexpectedly deleted.
+
+## Architecture, Docker, and database changes
+
+- Gateway owns public API/orchestration; agent proposes tool requests only; each domain owns its own logical database.
+- Compose runs PostgreSQL, gateway, agent, Ride, Restaurant, and Healthcare on `xone_internal`, with health checks, dependencies, and persistent `postgres_data`.
+- Initialization creates `xone_core`, `xone_agent`, `xone_ride`, `xone_restaurant`, and `xone_healthcare`, each with a dedicated role.
+- Documentation now includes seven Mermaid diagrams, API/tool conventions, four ADRs, local development guidance, and an honest status matrix.
+
+## AGENTS.md rules
+
+Added root invariants/required reading/security/check rules plus scoped gateway, agent, and domain rules: frontend only calls gateway; no agent/domain cross-access; no raw chain-of-thought; typed validation; idempotency/confirmation; service database ownership.
+
+## Tests and checks run
+
+| Command | Exact result |
+| --- | --- |
+| `docker compose config --quiet` | Passed |
+| `corepack pnpm --dir apps/api-gateway run lint` | Passed |
+| `corepack pnpm --dir apps/api-gateway test` | Passed: 5 tests |
+| `corepack pnpm --dir apps/api-gateway run build` | Passed |
+| `cd apps/web; npm ci; npm run build` | Passed |
+| `pytest tests -q` in Ride/Restaurant/Healthcare | Passed: 2 tests per service |
+| `python -m compileall -q apps/agent-service/src services` | Passed |
+| `git diff --check` | Passed |
+
+## Checks not run and reasons
+
+- Agent Ruff/pytest: environment lacks LangChain/LangGraph/Ruff. Two dependency-install attempts timed out retrieving packages.
+- `docker compose build`, `up`, and health smoke tests: Docker Desktop Linux engine was unavailable (`dockerDesktopLinuxEngine` pipe not found); syntax/config validation passed.
+- Mobile build: no Expo dependency install or lockfile existed; its source was not changed.
+
+## Known limitations and manual follow-up
+
+- Gateway/domain modules are skeletons; booking workflows, payment, migrations, seeds, real Gemini adapter, and production authentication are not implemented.
+- Start Docker Desktop and run `docker compose build` then `docker compose up`; smoke-test every `/health/live` and `/health/ready` endpoint.
+- In a network-enabled Python 3.11+ environment, install `apps/agent-service` with `[dev]` and run its Ruff/pytest suite.
+- Next task: add one versioned gateway/domain contract and a read-only Ride availability flow with timeout/error mapping and deterministic tests.
+
+## Security and Git status
+
+- The old root `.env.example` contained a credential-looking value; it was replaced with placeholders. Rotate/revoke the original value; it is not printed here.
+- A credential-like value in tracked legacy guide material was sanitized to a placeholder without exposing it.
+- Pre-existing untracked `repomix-output.xml` matches credential-like patterns and should be sanitized before sharing/committing.
+- No commit or push was created. `job.txt` is intentionally uncommitted. Pre-existing user worktree items were preserved.
+
+---
+
+# Environment Management Refactor Report
+
+## Before and after
+
+Before this change, root `.env.example` contained only two values; Compose hard-coded database URLs/placeholders, FastAPI services loaded local `.env` files and included database defaults, and PostgreSQL initialization hard-coded role passwords. After the change, root `.env.example` is the complete local Compose source of truth. Compose uses it only for interpolation, then explicitly injects each container's minimum variables. No service receives the entire root environment.
+
+## Files changed
+
+- Root `.env.example`, `.gitignore`, `docker-compose.yml`, `AGENTS.md`, Compose CI, root README, runtime/development documentation, and this report.
+- Added `scripts/setup-env.ps1`, `scripts/setup-env.sh`, `scripts/validate-env-config.py`, `docs/development/environment-variables.md`, and `docs/development/database-and-migrations.md`.
+- Updated gateway, agent, and domain config validation/tests, scoped AGENTS rules, service-level examples, and PostgreSQL initialization (now `01-create-databases.sh`).
+
+## Root environment and Compose mapping
+
+Root `.env.example` contains 40 structured variables: shared configuration; PostgreSQL/database owners; service database URLs; ports/internal URLs; and Gemini settings. The validator confirmed all 37 Compose interpolation variables are declared. PostgreSQL alone receives all bootstrap credentials; the gateway receives only core DB/internal URLs/token; agent receives its DB, CORS, Gemini, and token; each domain receives only its own DB, port, and token. There is no `env_file` mapping.
+
+## Setup scripts and config validation
+
+Both setup scripts create root `.env` from root `.env.example` only when absent and never modify an existing root/service `.env`. A temporary PowerShell smoke test confirmed create-then-no-overwrite behavior; the repository's existing root `.env` was left untouched. Gateway validates port, database URL, four internal URLs, and token; agent validates environment, port, DB URL, Gemini settings, and token; domain services validate port, DB URL, and token from process environment only.
+
+## Documentation and AGENTS updates
+
+README and development docs now document the one-root-`.env` setup, standalone-only service examples, production secret isolation, initialization-volume behavior, and security rules. Root/scoped AGENTS rules require explicit Compose mappings and synchronized updates to examples, validation, and documentation.
+
+## Checks and results
+
+| Command | Result |
+| --- | --- |
+| `python scripts/validate-env-config.py` | Passed: 40 root / 37 Compose variables |
+| `docker compose --env-file .env.example config --quiet` | Passed |
+| PowerShell setup script smoke test | Passed: creates absent `.env`; preserves existing `.env` |
+| `bash -n ./scripts/setup-env.sh` and `bash ./scripts/setup-env.sh` | Passed |
+| Gateway lint/test/build | Passed: 6 tests |
+| Domain pytest suites | Passed: 3 tests each for Ride, Restaurant, Healthcare |
+| Agent process-environment config smoke test | Passed |
+| `python -m compileall` and `git diff --check` | Passed |
+
+## Checks not run and security
+
+Docker build/up remains unavailable because Docker Desktop Linux engine is not running. Full agent pytest/Ruff remains blocked by LangChain/LangGraph dependency installation timing out in this environment. No secret-like pattern remains in tracked files changed by this refactor; pre-existing untracked `repomix-output.xml` still requires review/sanitization before sharing. No `.env` was read, printed, overwritten, committed, or pushed.
+
+## Final local setup
+
+PowerShell: `./scripts/setup-env.ps1` then `docker compose up --build`.
+
+Linux/macOS: `./scripts/setup-env.sh` then `docker compose up --build`.
+
+Developers edit only root `/.env` for the complete local stack.
+
+---
+
+# Architecture Governance Audit and Consistency Refactor Report
+
+## Outcome
+
+The repository now has an explicit backend-first service taxonomy and a Food Service skeleton. Food owns merchants, menus, order quotes, orders, order items, and food-domain events; Restaurant is limited to table reservations. API Gateway has a typed Food client and does not use Compose `depends_on` for domain availability, so an unavailable domain cannot prevent the gateway container from starting.
+
+## Architecture and runtime changes
+
+- Added `services/food-service` on port `8104`, including configuration validation, health endpoints, domain/application/API/repository layout, migration/seed placeholders, Dockerfile, and health/config tests.
+- Added `xone_food` / `food_user` bootstrap support, Food database URL/port/service URL variables, and explicit Compose injection. No Compose service uses `env_file`.
+- Added `FoodClient` to the gateway and required `FOOD_SERVICE_URL`; gateway health tests cover the configured client URL.
+- Updated all Python service packaging to discover `src` subpackages reliably.
+- Removed the Agent response `analysis` field and replaced exposed raw exception details with server-side logging plus a stable client error.
+- Corrected the web Docker default API base URL to port `3000` and made the gateway image use the repository pnpm lockfile consistently.
+
+## Governance and documentation
+
+- Strengthened root and scoped `AGENTS.md` rules around ownership, environment injection, error boundaries, contracts, tests, and change discipline.
+- Added `CONTRIBUTING.md`, `services/README.md`, repository-structure, contribution, testing-strategy, and new-service-checklist documentation.
+- Reconciled system, service-boundary, backend, agent, data, runtime, workflow, status, local-development, and migration documentation with the implemented Food/Restaurant split.
+- Normalized the anomalous `.ai-log` placeholder filename without deleting AI-log records.
+
+## Verification
+
+| Command/check | Result |
+| --- | --- |
+| `python scripts/validate-env-config.py` | Passed: 46 root / 43 Compose variables |
+| `docker compose --env-file .env.example config --quiet` | Passed |
+| Gateway lint, test, build | Passed; 7 tests |
+| Web `npm run build` | Passed |
+| Ride, Restaurant, Healthcare, Food `pytest` | Passed; 3 tests per service |
+| Python package wheel smoke for Agent and four domain services | Passed |
+| `python -m compileall -q apps/agent-service/src services scripts` | Passed |
+| `git diff --check` and credential-pattern scan | Passed; no matching files |
+| `docker compose --env-file .env.example build --parallel` | Passed for all images |
+| Full Compose smoke | Passed: PostgreSQL, gateway, agent, and four domain services healthy; all 12 live/ready endpoints returned HTTP 200 |
+
+The test stack was stopped with `docker compose down` without `-v`; the PostgreSQL named volume was preserved. The root `.env` was neither read nor modified. No commit or push was created.
+
+## Remaining limitation
+
+The full Agent Ruff/pytest suite was not re-run on the host because its LangChain/LangGraph development dependencies are still unavailable there. The service image itself built successfully, and compile/package validation passed.
+
+---
+
+# Documentation and Architecture-Governance Audit
+
+## Scope and timestamp
+
+- Performed 2026-08-05 21:38:55 +07:00.
+- Scope: repository-wide architecture, boundaries, documentation/rules, Compose/environment mapping, migration/seed scaffolds, CI declarations, and available tests. No booking, payment, agent-workflow, frontend, or database-schema business work was implemented.
+- `git status --short` was checked before inspection and again after the changes. The worktree already contained substantial modified, renamed, deleted, and untracked user work; it was preserved.
+
+## Sources and instructions read
+
+- Read root `AGENTS.md`, plus `services/AGENTS.md`, `apps/agent-service/AGENTS.md`, and `apps/api-gateway/AGENTS.md` before touching their scopes.
+- Read `README.md`, `docs/README.md`, `docs/architecture/system-overview.md`, `docs/architecture/service-boundaries.md`, `docs/architecture/data-architecture.md`, `docs/api/api-conventions.md`, the remaining current architecture/development/status documentation, `CONTRIBUTING.md`, service/package READMEs, Compose, CI, manifests, Dockerfiles, representative entry points/tests, migration/seed placeholders, and environment examples.
+- `repomix-output.xml` exists. It was treated only as an optional index; architecture findings were verified against the filesystem and configuration. Root `.env` was not read or modified.
+
+## Architecture findings
+
+| Component | Status | Filesystem evidence | Limitation |
+| --- | --- | --- | --- |
+| Web | implemented | `apps/web/src/App.tsx`, `apps/web/src/mocks/mockService.ts` | Local mock/localStorage demo; it does not implement a gateway workflow. |
+| Mobile | skeleton | `apps/mobile/App.tsx` | Shell only; no API integration. |
+| Gateway | skeleton | `apps/api-gateway/src/main.ts`, `src/modules/health/health.module.ts`, `src/clients/service.clients.ts` | Health/config/client URL holders and empty module boundaries exist; no business API/workflow/outbound call is wired. |
+| Agent | skeleton | `apps/agent-service/src/agents/graph.py`, `src/api/routes.py` | Deterministic two-node chat demo; no typed tool request, gateway call, or Gemini adapter invocation. |
+| Ride, Restaurant, Healthcare, Food | skeleton | each service's `src/main.py`, `src/api/health.py`, `tests/` | Health/config/layer layout only; no domain API, persistence adapter, revision, or seed data. Restaurant remains tables; Food remains menus/orders/delivery. |
+| Contracts/generated clients | skeleton | `packages/contracts/tools/tool-request.schema.json`, package READMEs | Generic tool schema is unwired; no versioned business OpenAPI or generated client. |
+| Compose/database bootstrap | implemented | `docker-compose.yml`, `.env.example`, `infra/postgres/init/01-create-databases.sh` | Static configuration was validated; runtime build/up was not performed in this audit. |
+| Migrations/seeds | planned | service `migrations/README.md`, `seeds/README.md`, root helper scripts | Explicit placeholders only. |
+| CI/tests | skeleton | `.github/workflows/ci.yml`, owner test directories | Health/config/demo coverage exists; no business contract, integration, or e2e workflow. Remote CI was not executed. |
+| Deployment | planned | no production deployment manifest | Local Compose only. |
+
+The canonical detailed matrix, boundary diagram, database ownership, actual local ports, environment mappings, commands, and audit verification is `docs/architecture/current-state.md`.
+
+## Files changed in this audit
+
+| File | Change and reason |
+| --- | --- |
+| `AGENTS.md` | Clarified nearest-instruction reading, filesystem verification, package boundary, two explicit confirmations, container DNS, schema/API update procedure, status definitions, and safe deletion/status checks. |
+| `README.md`, `docs/README.md`, `docs/architecture/system-overview.md`, `docs/project-status.md` | Routed architecture/status references to one evidence-backed source instead of duplicate drifting status tables. |
+| `docs/architecture/current-state.md` | Added the canonical current-state architecture document with diagram, boundaries, ownership, status evidence, local runtime facts, commands, and limits. |
+| `docs/architecture/agent-architecture.md`, `docs/architecture/workflows.md` | Distinguished target architecture from the current deterministic agent/demo and corrected the target food sequence so clients enter through the gateway. |
+| `apps/agent-service/.env.example` | Removed duplicate `APP_ENV` and `CORS_ORIGINS` entries; the remaining entries are identical and still cover the standalone configuration. |
+| `job.txt` | Added this audit record as required. |
+
+No file was deleted. The unusual `.ai-log` directory, `.ai-log/`, `.pytest_cache/`, `repomix-output.xml`, and existing user worktree changes were retained: this audit did not establish that any user-owned item was disposable. Reproducible Python/Node artifacts are already covered by `.gitignore` where applicable.
+
+## Checks actually run
+
+| Command | Result |
+| --- | --- |
+| `python scripts/validate-env-config.py` | Passed: 46 root variables / 43 Compose variables. |
+| `docker compose --env-file .env.example config --quiet` | Passed. |
+| `corepack pnpm --dir apps/api-gateway run lint` | Passed. |
+| `corepack pnpm --dir apps/api-gateway test` | Passed: 7 tests. |
+| `corepack pnpm --dir apps/api-gateway run build` | Passed. |
+| `python -m pytest tests -q` in each Ride/Restaurant/Healthcare/Food service | Passed: 3 tests per service. |
+| `npm run build` in `apps/web` | Passed. |
+| `python -m compileall -q apps/agent-service/src services scripts` | Passed. |
+| `git diff --check` | Passed. |
+
+## Checks not run or not passing
+
+- The first combined command batch timed out after 124 seconds without emitting a completed subcommand result; each relevant check was rerun separately and recorded above.
+- `python -m pytest tests -q` in `apps/agent-service` did not run because `langchain` is absent (`ModuleNotFoundError`). Proposed command after dependencies are available: `pip install "apps/agent-service[dev]"` then rerun the suite.
+- `python -m ruff check src tests` in `apps/agent-service` did not run because the host Python does not have the `ruff` module. The same agent dev dependency install is required first.
+- Docker image build, `docker compose up`, endpoint smoke tests, and remote GitHub Actions were not run in this documentation audit. Proposed follow-up: `docker compose --env-file .env.example build`, `docker compose --env-file .env.example up -d`, then request each documented `/health/live` and `/health/ready` endpoint; do not use `down -v`.
+- Root contract/integration/e2e/evaluation directories contain README placeholders, so no suite exists to run.
+
+No deep business capability was implemented, and no commit, push, or PR was created.

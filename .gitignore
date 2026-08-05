@@ -16,6 +16,9 @@ env/
 .env
 .env.local
 .env.production
+.env.*.local
+!.env.example
+!**/.env.example
 
 # IDE
 .vscode/
@@ -58,3 +61,5 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+
+phong.md

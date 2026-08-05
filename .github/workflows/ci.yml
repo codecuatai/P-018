@@ -7,57 +7,43 @@ on:
     branches: [main]
 
 jobs:
-  backend-ci:
-    name: Backend CI
+  python-services:
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        service: [apps/agent-service, services/ride-service, services/restaurant-service, services/healthcare-service, services/food-service]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install service with test dependencies
+        run: pip install "${{ matrix.service }}[dev]"
+      - name: Lint agent
+        if: matrix.service == 'apps/agent-service'
+        run: ruff check apps/agent-service/src apps/agent-service/tests
+      - name: Test service
+        run: cd ${{ matrix.service }} && pytest tests -q
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: apps/backend/requirements.txt
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r apps/backend/requirements.txt
-
-      - name: Lint with ruff
-        run: |
-          ruff check apps/backend/src/ apps/backend/tests/
-
-      - name: Run pytest
-        run: |
-          cd apps/backend
-          PYTHONPATH=. pytest tests/ -v --tb=short
-        env:
-          APP_ENV: test
-          OPENAI_API_KEY: test-key
-
-  web-ci:
-    name: Web CI
+  gateway:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: corepack enable && pnpm --dir apps/api-gateway install --frozen-lockfile
+      - run: corepack enable && pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test && pnpm --dir apps/api-gateway build
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: npm, cache-dependency-path: apps/web/package-lock.json }
+      - run: cd apps/web && npm ci && npm run build
 
-      - name: Install Node dependencies
-        run: |
-          cd apps/web
-          npm ci
-
-      - name: Build Web Application
-        run: |
-          cd apps/web
-          npm run build
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/validate-env-config.py
+      - run: docker compose --env-file .env.example config --quiet

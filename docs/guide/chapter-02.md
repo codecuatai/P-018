@@ -233,7 +233,7 @@ API_PREFIX=/api/v1
 
 # LLM Provider
 LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-your-key-here
+OPENAI_API_KEY=sk-replace-me
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.7
 OPENAI_MAX_TOKENS=2048
@@ -246,7 +246,7 @@ VECTOR_STORE_TYPE=chroma
 CHROMA_PERSIST_DIR=./data/chroma
 ```
 
-Sau khi copy, mở file `.env` và thay thế các giá trị placeholder bằng giá trị thực của bạn. Đặc biệt, thay `sk-your-key-here` bằng OpenAI API key của bạn.
+Sau khi copy, mở file `.env` và thay thế các giá trị placeholder bằng giá trị thực của bạn. Đặc biệt, thay `sk-replace-me` bằng OpenAI API key của bạn.
 
 > ⚠️ **LƯU Ý:** File `.env` không bao giờ được commit lên Git. Template đã bao gồm `.env` trong `.gitignore`. Nếu bạn vô tình commit `.env`, hãy ngay lập tức: (1) đổi API key trên dashboard của provider, (2) xóa file khỏi git history bằng `git filter-branch` hoặc BFG Repo-Cleaner.
 
@@ -529,7 +529,7 @@ Sau khi chạy server, truy cập: http://localhost:8000/docs
 **3. Cập nhật `.env` với API key thực:** Nếu bạn có OpenAI API key, thêm vào file `.env`:
 
 ```env
-OPENAI_API_KEY=sk-proj-xxxxxxxxxxxxx
+OPENAI_API_KEY=sk-replace-me
 ```
 
 ### Những gì cần giữ nguyên
