@@ -1,0 +1,452 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Callable
+from copy import deepcopy
+from datetime import UTC, datetime
+from typing import Protocol
+from uuid import uuid4
+
+from src.domain.policies import DomainError, FoodOrderStatus, calculate_discount, validate_transition
+
+
+def ident(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex[:12]}"
+
+
+AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime | None]]
+
+
+class FoodRepository(Protocol):
+    async def search(self, **filters) -> list[dict]: ...
+    async def get_restaurant(self, restaurant_id: str) -> dict | None: ...
+    async def get_menu_item(self, item_id: str) -> dict | None: ...
+    async def get_cart(self, cart_id: str) -> dict | None: ...
+    async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict: ...
+    async def get_voucher(self, code: str) -> dict | None: ...
+    async def get_address(self, address_id: str) -> dict | None: ...
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict: ...
+    async def get_order(self, order_id: str) -> dict | None: ...
+    async def list_orders(self) -> list[dict]: ...
+    async def list_due_orders(self, now: datetime) -> list[dict]: ...
+    async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]: ...
+    async def transition_order_atomic(
+        self,
+        order_id: str,
+        target: FoodOrderStatus,
+        reason: str,
+        actor_type: str = "system",
+        next_transition_at: datetime | None = None,
+        expected_version: int | None = None,
+        operation_key: str | None = None,
+    ) -> dict: ...
+    async def get_order_events(self, order_id: str) -> list[dict]: ...
+
+
+def _parse_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _json_object(value: object) -> dict:
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if not isinstance(parsed, dict):
+            raise TypeError("Expected a JSON object")
+        return parsed
+    if not isinstance(value, dict):
+        raise TypeError("Expected a JSON object")
+    return dict(value)
+
+
+def _event(current: str | None, target: FoodOrderStatus, reason: str, actor_type: str) -> dict:
+    return {
+        "from_status": current,
+        "to_status": target.value,
+        "occurred_at": datetime.now(UTC).isoformat(),
+        "reason": reason,
+        "actor_type": actor_type,
+    }
+
+
+class InMemoryFoodRepository:
+    """Deterministic test adapter with the same atomic operation semantics as PostgreSQL."""
+
+    def __init__(self) -> None:
+        self.restaurants = {
+            "res_pho_hanoi": {"id": "res_pho_hanoi", "name": "Phở Gánh Phố Cổ", "category": "Phở", "district": "Hoàn Kiếm", "address": "12 Hàng Trống, Hoàn Kiếm, Hà Nội", "latitude": 21.0285, "longitude": 105.8520, "is_open": True},
+            "res_bun_cha": {"id": "res_bun_cha", "name": "Bún Chả Góc Phố", "category": "Bún chả", "district": "Ba Đình", "address": "34 Ngọc Hà, Ba Đình, Hà Nội", "latitude": 21.0375, "longitude": 105.8290, "is_open": True},
+            "res_com_viet": {"id": "res_com_viet", "name": "Cơm Nhà Hà Nội", "category": "Cơm", "district": "Đống Đa", "address": "88 Chùa Láng, Đống Đa, Hà Nội", "latitude": 21.0185, "longitude": 105.8070, "is_open": True},
+        }
+        self.items = {
+            "item_pho_bo": {"id": "item_pho_bo", "restaurant_id": "res_pho_hanoi", "name": "Phở bò tái", "description": "Phở bò nước dùng trong, thịt bò tái mềm.", "category": "Phở", "price": 65000, "currency": "VND", "available": True, "option_groups": [{"id": "opt_spice", "name": "Mức cay", "required": False, "options": [{"id": "mild", "name": "Không cay", "price": 0}, {"id": "hot", "name": "Cay vừa", "price": 0}]}, {"id": "opt_size", "name": "Kích thước", "required": True, "options": [{"id": "regular", "name": "Thường", "price": 0}, {"id": "large", "name": "Lớn", "price": 15000}]}]},
+            "item_pho_ga": {"id": "item_pho_ga", "restaurant_id": "res_pho_hanoi", "name": "Phở gà", "description": "Phở gà ta thơm nhẹ.", "category": "Phở", "price": 60000, "currency": "VND", "available": True, "option_groups": []},
+            "item_bun_cha": {"id": "item_bun_cha", "restaurant_id": "res_bun_cha", "name": "Bún chả Hà Nội", "description": "Bún chả nướng than, nước chấm truyền thống.", "category": "Bún chả", "price": 70000, "currency": "VND", "available": True, "option_groups": [{"id": "opt_extra", "name": "Thêm món", "required": False, "options": [{"id": "nem", "name": "Nem cua bể", "price": 20000}]}]},
+            "item_com_ga": {"id": "item_com_ga", "restaurant_id": "res_com_viet", "name": "Cơm gà nướng", "description": "Cơm gạo dẻo với gà nướng mật ong.", "category": "Cơm", "price": 75000, "currency": "VND", "available": True, "option_groups": []},
+        }
+        now = datetime.now(UTC)
+        self.vouchers = {
+            "XONE50": {"code": "XONE50", "discount_type": "percentage", "discount_value": 10, "maximum_discount": 50000, "minimum_order_amount": 100000, "expires_at": now.replace(year=now.year + 1), "usage_limit": 1000, "used_count": 0, "restaurant_id": None},
+            "PHO20K": {"code": "PHO20K", "discount_type": "fixed", "discount_value": 20000, "maximum_discount": None, "minimum_order_amount": 60000, "expires_at": now.replace(year=now.year + 1), "usage_limit": 1000, "used_count": 0, "restaurant_id": "res_pho_hanoi"},
+        }
+        self.addresses = {"addr_demo": {"id": "addr_demo", "user_id": "usr_demo_001", "label": "Nhà riêng", "address": "25 Lê Đại Hành, Hai Bà Trưng, Hà Nội", "district": "Hai Bà Trưng", "latitude": 21.0125, "longitude": 105.8480}}
+        self.drivers = {"drv_001": {"id": "drv_001", "name": "Nguyễn Văn Minh", "phone": "090***1234", "vehicle_type": "Xe máy", "license_plate": "29A-123.45", "available": True}}
+        self.carts: dict[str, dict] = {}
+        self.orders: dict[str, dict] = {}
+        self.order_events: dict[str, list[dict]] = {}
+        self.redeemed_vouchers: set[tuple[str, str]] = set()
+        self._lock = asyncio.Lock()
+
+    async def search(self, **filters) -> list[dict]:
+        keyword = str(filters.get("keyword", "")).lower()
+        result = []
+        for item in self.items.values():
+            restaurant = self.restaurants[item["restaurant_id"]]
+            text = f"{item['name']} {item['description']} {item['category']} {restaurant['name']}".lower()
+            if keyword and keyword not in text:
+                continue
+            if filters.get("district") and filters["district"].lower() not in restaurant["district"].lower():
+                continue
+            if filters.get("category") and filters["category"].lower() != item["category"].lower():
+                continue
+            if filters.get("min_price") is not None and item["price"] < filters["min_price"]:
+                continue
+            if filters.get("max_price") is not None and item["price"] > filters["max_price"]:
+                continue
+            if filters.get("open_only", True) and not restaurant["is_open"]:
+                continue
+            result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant)})
+        return result
+
+    async def get_restaurant(self, restaurant_id: str) -> dict | None:
+        return deepcopy(self.restaurants.get(restaurant_id))
+
+    async def get_menu_item(self, item_id: str) -> dict | None:
+        return deepcopy(self.items.get(item_id))
+
+    async def get_cart(self, cart_id: str) -> dict | None:
+        return deepcopy(self.carts.get(cart_id))
+
+    async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict:
+        async with self._lock:
+            current = self.carts.get(cart["id"])
+            current_version = int(current.get("version", 0)) if current else 0
+            if current and expected_version is not None and current_version != expected_version:
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tải lại.")
+            saved = deepcopy(cart)
+            saved["version"] = current_version + 1 if current else 0
+            self.carts[saved["id"]] = saved
+            return deepcopy(saved)
+
+    async def get_voucher(self, code: str) -> dict | None:
+        return deepcopy(self.vouchers.get(code.upper()))
+
+    async def get_address(self, address_id: str) -> dict | None:
+        return deepcopy(self.addresses.get(address_id))
+
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict:
+        async with self._lock:
+            existing = next((value for value in self.orders.values() if value["user_id"] == order["user_id"] and value["idempotency_key"] == order["idempotency_key"]), None)
+            if existing:
+                if existing["snapshot_hash"] != order["snapshot_hash"]:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
+                return deepcopy(existing)
+            cart = self.carts.get(order["cart_id"])
+            if cart is None or cart.get("user_id") != order["user_id"] or int(cart.get("version", 0)) != int(order.get("cart_version", 0)):
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+            voucher_copy = deepcopy(voucher)
+            if voucher_copy:
+                code = str(voucher_copy["code"]).upper()
+                current = self.vouchers.get(code)
+                key = (code, order["user_id"])
+                if current is None or key in self.redeemed_vouchers or int(current.get("used_count", 0)) >= int(current.get("usage_limit", 0)):
+                    raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
+                calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
+                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                    raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
+                current["used_count"] = int(current.get("used_count", 0)) + 1
+                self.vouchers[code] = deepcopy(current)
+                self.redeemed_vouchers.add(key)
+                voucher_copy = current
+                order["voucher"] = deepcopy(current)
+            created = deepcopy(order)
+            self.orders[created["id"]] = created
+            self.order_events[created["id"]] = deepcopy(created["timeline"])
+            return deepcopy(created)
+
+    async def get_order(self, order_id: str) -> dict | None:
+        return deepcopy(self.orders.get(order_id))
+
+    async def list_orders(self) -> list[dict]:
+        return [deepcopy(order) for order in self.orders.values()]
+
+    async def list_due_orders(self, now: datetime) -> list[dict]:
+        return [deepcopy(order) for order in self.orders.values() if order.get("next_transition_at") and _parse_datetime(order["next_transition_at"]) <= now]
+
+    def _advance_locked(self, order: dict, target: FoodOrderStatus, reason: str, actor_type: str) -> dict:
+        current = FoodOrderStatus(order["status"])
+        if current == target:
+            return deepcopy(order)
+        validate_transition(current, target)
+        if target == FoodOrderStatus.DRIVER_ASSIGNED:
+            driver = next((value for value in self.drivers.values() if value["available"]), None)
+            if driver is None:
+                raise DomainError("UPSTREAM_UNAVAILABLE", "Hiện chưa có tài xế khả dụng.")
+            driver["available"] = False
+            order["driver"] = {key: value for key, value in driver.items() if key != "available"}
+        event = _event(current.value, target, reason, actor_type)
+        order["status"] = target.value
+        order.setdefault("timeline", []).append(event)
+        self.order_events.setdefault(order["id"], []).append(deepcopy(event))
+        order["version"] = int(order.get("version", 0)) + 1
+        return deepcopy(order)
+
+    async def transition_order_atomic(self, order_id: str, target: FoodOrderStatus, reason: str, actor_type: str = "system", next_transition_at: datetime | None = None, expected_version: int | None = None, operation_key: str | None = None) -> dict:
+        async with self._lock:
+            order = self.orders.get(order_id)
+            if order is None:
+                raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
+            if expected_version is not None and int(order.get("version", 0)) != expected_version:
+                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
+            existing_key = order.get("cancellation_idempotency_key")
+            if operation_key and existing_key:
+                if existing_key != operation_key:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key hủy đơn đã được dùng cho payload khác.")
+                return deepcopy(order)
+            if operation_key:
+                order["cancellation_idempotency_key"] = operation_key
+            updated = self._advance_locked(order, target, reason, actor_type)
+            updated["next_transition_at"] = next_transition_at.isoformat() if next_transition_at else None
+            if target == FoodOrderStatus.DELIVERED:
+                updated["workflow_completed_at"] = datetime.now(UTC).isoformat()
+                driver_id = (updated.get("driver") or {}).get("id")
+                if driver_id in self.drivers:
+                    self.drivers[driver_id]["available"] = True
+            self.orders[order_id] = deepcopy(updated)
+            return deepcopy(updated)
+
+    async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:
+        async with self._lock:
+            due = sorted((order for order in self.orders.values() if order.get("next_transition_at") and _parse_datetime(order["next_transition_at"]) <= now), key=lambda value: _parse_datetime(value["next_transition_at"]))[:limit]
+            result = []
+            for order in due:
+                target, decision, next_at = advance(deepcopy(order))
+                if decision:
+                    order["restaurant_decision"] = decision
+                updated = self._advance_locked(order, target, "Timed Food workflow transition", "worker")
+                updated["next_transition_at"] = next_at.isoformat() if next_at else None
+                self.orders[order["id"]] = deepcopy(updated)
+                result.append(deepcopy(updated))
+            return result
+
+    async def get_order_events(self, order_id: str) -> list[dict]:
+        return deepcopy(self.order_events.get(order_id, []))
+
+
+class PostgresFoodRepository:
+    """PostgreSQL adapter; every multi-step mutation owns one transaction."""
+
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+        self.pool = None
+
+    async def connect(self) -> None:
+        import asyncpg
+
+        self.pool = await asyncpg.create_pool(self.database_url, min_size=1, max_size=5)
+
+    async def close(self) -> None:
+        if self.pool is not None:
+            await self.pool.close()
+
+    def _require_pool(self):
+        if self.pool is None:
+            raise RuntimeError("Food repository is not connected")
+        return self.pool
+
+    @staticmethod
+    def _order_from_row(row: object) -> dict:
+        record = dict(row)
+        order = _json_object(record["data"])
+        order.update({"status": record["status"], "version": record["version"], "next_transition_at": record["next_transition_at"].isoformat() if record["next_transition_at"] else None, "restaurant_decision": record["restaurant_decision"], "driver_id": record["driver_id"]})
+        return order
+
+    async def _records(self, record_type: str) -> list[dict]:
+        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type = $1", record_type)
+        return [_json_object(row["data"]) for row in rows]
+
+    async def search(self, **filters) -> list[dict]:
+        restaurants = {value["id"]: value for value in await self._records("restaurant")}
+        result = []
+        keyword = str(filters.get("keyword", "")).lower()
+        for item in await self._records("menu_item"):
+            restaurant = restaurants.get(item["restaurant_id"])
+            if restaurant is None:
+                continue
+            haystack = f"{item['name']} {item.get('description', '')} {item.get('category', '')} {restaurant['name']}".lower()
+            if keyword and keyword not in haystack:
+                continue
+            if filters.get("district") and filters["district"].lower() not in restaurant["district"].lower():
+                continue
+            if filters.get("category") and filters["category"].lower() != item["category"].lower():
+                continue
+            if filters.get("min_price") is not None and item["price"] < filters["min_price"]:
+                continue
+            if filters.get("max_price") is not None and item["price"] > filters["max_price"]:
+                continue
+            if filters.get("open_only", True) and not restaurant["is_open"]:
+                continue
+            result.append({"item": item, "restaurant": restaurant})
+        return result
+
+    async def get_restaurant(self, restaurant_id: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1", restaurant_id)
+        return _json_object(row["data"]) if row else None
+
+    async def get_menu_item(self, item_id: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'menu_item' AND id = $1", item_id)
+        return _json_object(row["data"]) if row else None
+
+    async def get_cart(self, cart_id: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT data, version FROM food_carts WHERE id = $1", cart_id)
+        if not row:
+            return None
+        cart = _json_object(row["data"])
+        cart["version"] = row["version"]
+        return cart
+
+    async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict:
+        pool = self._require_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            current = await connection.fetchrow("SELECT version FROM food_carts WHERE id=$1 FOR UPDATE", cart["id"])
+            current_version = int(current["version"]) if current else None
+            if current and expected_version is not None and current_version != expected_version:
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tải lại.")
+            if current:
+                row = await connection.fetchrow("UPDATE food_carts SET data=$1::jsonb, version=version+1, updated_at=now() WHERE id=$2 RETURNING version", json.dumps(cart, ensure_ascii=False), cart["id"])
+            else:
+                row = await connection.fetchrow("INSERT INTO food_carts (id,user_id,restaurant_id,data,version) VALUES ($1,$2,$3,$4::jsonb,0) RETURNING version", cart["id"], cart["user_id"], cart["restaurant_id"], json.dumps(cart, ensure_ascii=False))
+            saved = deepcopy(cart)
+            saved["version"] = int(row["version"])
+            return saved
+
+    async def get_voucher(self, code: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'voucher' AND id = $1", code.upper())
+        return _json_object(row["data"]) if row else None
+
+    async def get_address(self, address_id: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1", address_id)
+        return _json_object(row["data"]) if row else None
+
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict:
+        pool = self._require_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            existing = await connection.fetchrow("SELECT * FROM food_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", order["user_id"], order["idempotency_key"])
+            if existing:
+                existing_order = self._order_from_row(existing)
+                if existing_order["snapshot_hash"] != order["snapshot_hash"]:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
+                return existing_order
+            cart_row = await connection.fetchrow("SELECT user_id, restaurant_id, version FROM food_carts WHERE id=$1 FOR UPDATE", order["cart_id"])
+            if not cart_row or cart_row["user_id"] != order["user_id"] or int(cart_row["version"]) != int(order.get("cart_version", 0)):
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+            if voucher:
+                code = str(voucher["code"]).upper()
+                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 FOR UPDATE", code)
+                if not voucher_row:
+                    raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
+                current = _json_object(voucher_row["data"])
+                if await connection.fetchval("SELECT 1 FROM food_voucher_redemptions WHERE voucher_code=$1 AND user_id=$2", code, order["user_id"]):
+                    raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã được user sử dụng.")
+                calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
+                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                    raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
+                updated = await connection.fetchrow("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}',to_jsonb(COALESCE((data->>'used_count')::int,0)+1)),updated_at=now() WHERE record_type='voucher' AND id=$1 AND COALESCE((data->>'used_count')::int,0) < COALESCE((data->>'usage_limit')::int,0) RETURNING data", code)
+                if not updated:
+                    raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
+                order["voucher"] = _json_object(updated["data"])
+            next_at = _parse_datetime(order["next_transition_at"]) if order.get("next_transition_at") else None
+            await connection.execute("INSERT INTO food_orders (id,user_id,status,idempotency_key,snapshot_hash,amount,currency,next_transition_at,workflow_scenario,restaurant_decision,driver_id,data) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)", order["id"], order["user_id"], order["status"], order["idempotency_key"], order["snapshot_hash"], order["amount"], order["currency"], next_at, order.get("workflow_scenario", "standard"), order.get("restaurant_decision"), (order.get("driver") or {}).get("id"), json.dumps(order, ensure_ascii=False))
+            timeline = order.get("timeline", [])
+            first = timeline[0] if timeline else {"from_status": None, "to_status": order["status"], "reason": "Order created", "actor_type": "gateway"}
+            await connection.execute("INSERT INTO food_order_status_events (order_id,from_status,to_status,occurred_at,reason,actor_type) VALUES ($1,$2,$3,$4,$5,$6)", order["id"], first.get("from_status"), first["to_status"], _parse_datetime(first.get("occurred_at", datetime.now(UTC).isoformat())), first.get("reason", "Order created"), first.get("actor_type", "gateway"))
+            if voucher:
+                await connection.execute("INSERT INTO food_voucher_redemptions (voucher_code,order_id,user_id) VALUES ($1,$2,$3)", str(voucher["code"]).upper(), order["id"], order["user_id"])
+            row = await connection.fetchrow("SELECT * FROM food_orders WHERE id=$1", order["id"])
+            return self._order_from_row(row)
+
+    async def get_order(self, order_id: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT * FROM food_orders WHERE id = $1", order_id)
+        return self._order_from_row(row) if row else None
+
+    async def list_orders(self) -> list[dict]:
+        rows = await self._require_pool().fetch("SELECT * FROM food_orders ORDER BY created_at")
+        return [self._order_from_row(row) for row in rows]
+
+    async def list_due_orders(self, now: datetime) -> list[dict]:
+        rows = await self._require_pool().fetch("SELECT * FROM food_orders WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 ORDER BY next_transition_at", now)
+        return [self._order_from_row(row) for row in rows]
+
+    async def _transition_connection(self, connection, row: object, target: FoodOrderStatus, reason: str, actor_type: str, next_transition_at: datetime | None, decision: str | None = None, operation_key: str | None = None) -> dict:
+        order = self._order_from_row(row)
+        current = FoodOrderStatus(order["status"])
+        if current == target:
+            return order
+        validate_transition(current, target)
+        if target == FoodOrderStatus.DRIVER_ASSIGNED:
+            driver_row = await connection.fetchrow("SELECT id,data FROM food_drivers WHERE available=true ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1")
+            if not driver_row:
+                raise DomainError("UPSTREAM_UNAVAILABLE", "Hiện chưa có tài xế khả dụng.")
+            driver = _json_object(driver_row["data"])
+            await connection.execute("UPDATE food_drivers SET available=false,updated_at=now() WHERE id=$1", driver_row["id"])
+            order["driver"] = driver
+            order["driver_id"] = driver_row["id"]
+        if decision:
+            order["restaurant_decision"] = decision
+        event = _event(current.value, target, reason, actor_type)
+        order["status"] = target.value
+        order.setdefault("timeline", []).append(event)
+        order["next_transition_at"] = next_transition_at.isoformat() if next_transition_at else None
+        if target == FoodOrderStatus.DELIVERED:
+            order["workflow_completed_at"] = datetime.now(UTC).isoformat()
+        updated = await connection.fetchrow("UPDATE food_orders SET status=$1,next_transition_at=$2,restaurant_decision=$3,driver_id=$4,workflow_completed_at=$5,cancellation_idempotency_key=COALESCE($6,cancellation_idempotency_key),data=$7::jsonb,version=version+1,updated_at=now() WHERE id=$8 AND version=$9 RETURNING *", target.value, next_transition_at, order.get("restaurant_decision"), order.get("driver_id"), _parse_datetime(order["workflow_completed_at"]) if order.get("workflow_completed_at") else None, operation_key, json.dumps(order, ensure_ascii=False), order["id"], int(row["version"]))
+        if not updated:
+            raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
+        await connection.execute("INSERT INTO food_order_status_events (order_id,from_status,to_status,reason,actor_type,metadata) VALUES ($1,$2,$3,$4,$5,$6::jsonb)", order["id"], current.value, target.value, reason, actor_type, json.dumps({"version": int(updated["version"])}, ensure_ascii=False))
+        if target == FoodOrderStatus.DELIVERED and order.get("driver_id"):
+            await connection.execute("UPDATE food_drivers SET available=true,updated_at=now() WHERE id=$1", order["driver_id"])
+        return self._order_from_row(updated)
+
+    async def transition_order_atomic(self, order_id: str, target: FoodOrderStatus, reason: str, actor_type: str = "system", next_transition_at: datetime | None = None, expected_version: int | None = None, operation_key: str | None = None) -> dict:
+        pool = self._require_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            row = await connection.fetchrow("SELECT * FROM food_orders WHERE id=$1 FOR UPDATE", order_id)
+            if not row:
+                raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
+            if expected_version is not None and int(row["version"]) != expected_version:
+                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
+            existing_key = row["cancellation_idempotency_key"]
+            if operation_key and existing_key:
+                if existing_key != operation_key:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key hủy đơn đã được dùng cho payload khác.")
+                return self._order_from_row(row)
+            return await self._transition_connection(connection, row, target, reason, actor_type, next_transition_at, operation_key=operation_key)
+
+    async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:
+        pool = self._require_pool()
+        result: list[dict] = []
+        async with pool.acquire() as connection, connection.transaction():
+            for _ in range(limit):
+                row = await connection.fetchrow("SELECT * FROM food_orders WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 ORDER BY next_transition_at FOR UPDATE SKIP LOCKED LIMIT 1", now)
+                if not row:
+                    break
+                order = self._order_from_row(row)
+                target, decision, next_at = advance(deepcopy(order))
+                result.append(await self._transition_connection(connection, row, target, "Timed Food workflow transition", "worker", next_at, decision))
+        return result
+
+    async def get_order_events(self, order_id: str) -> list[dict]:
+        rows = await self._require_pool().fetch("SELECT from_status,to_status,occurred_at,reason,actor_type,metadata FROM food_order_status_events WHERE order_id=$1 ORDER BY id", order_id)
+        return [{"from_status": row["from_status"], "to_status": row["to_status"], "occurred_at": row["occurred_at"].isoformat(), "reason": row["reason"], "actor_type": row["actor_type"], "metadata": _json_object(row["metadata"]) if row["metadata"] else {}} for row in rows]

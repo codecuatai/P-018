@@ -1,0 +1,1 @@
+Core owns confirmations, sandbox payments, refunds, receipts, conversations, idempotency evidence, reconciliation metadata, and audit records. Run `001_core_vertical_slice.sql`, `002_core_persistence_slice.sql`, and `003_core_atomicity.sql` against `xone_core`. Migrations are additive and owned by the Gateway; they do not access Food tables.

@@ -12,7 +12,7 @@ flowchart TB
   Food --> FoodDb[(xone_food)]
 ```
 
-Core conceptually owns users, conversations, workflows, confirmations, payments, idempotency records, tool calls, and audit logs. Food conceptually owns `food_merchants`, `menus`, `menu_items`, `food_order_quotes`, `food_orders`, `food_order_items`, and `food_order_events`; other domain conceptual tables remain owner-local.
+Core owns confirmations, confirmation executions, payment records, refunds, receipts, conversation state, idempotency evidence, and audit events through `apps/api-gateway/migrations/001_core_vertical_slice.sql` and `002_core_persistence_slice.sql`. Food owns catalog/cart/order JSON snapshots, immutable status events, timed workflow fields, driver state, and voucher redemptions through its two service migrations. Runtime repositories use PostgreSQL; in-memory adapters are test-only.
 
 Logical ownership is mandatory from the first vertical slice: each domain owns its schema/table/migration boundary, validates its own writes, and shares API snapshots/external references rather than tables. There are no cross-database queries/FKs or shared ORM entities. Each service owns its migration, seed, transaction boundary, and domain idempotency.
 

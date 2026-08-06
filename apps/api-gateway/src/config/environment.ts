@@ -7,6 +7,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     'HEALTHCARE_SERVICE_URL',
     'FOOD_SERVICE_URL',
     'INTERNAL_SERVICE_TOKEN',
+    'JWT_SECRET',
   ];
   for (const name of requiredStrings) {
     if (typeof config[name] !== 'string' || config[name].trim() === '') {
@@ -28,6 +29,12 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     } catch {
       throw new Error(`${name} must be a valid URL.`);
     }
+  }
+  if (String(config.JWT_SECRET).length < 16) {
+    throw new Error('JWT_SECRET must be at least 16 characters.');
+  }
+  for (const name of ['UPSTREAM_TIMEOUT_MS', 'CONFIRMATION_TTL_SECONDS', 'GATEWAY_WORKFLOW_POLL_INTERVAL_MS']) {
+    if (config[name] !== undefined && (!Number.isInteger(Number(config[name])) || Number(config[name]) < 1)) throw new Error(`${name} must be a positive integer.`);
   }
   return { ...config, PORT: port };
 }

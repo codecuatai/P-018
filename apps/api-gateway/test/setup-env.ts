@@ -6,3 +6,4 @@ process.env.RESTAURANT_SERVICE_URL = 'http://restaurant-service:8102';
 process.env.HEALTHCARE_SERVICE_URL = 'http://healthcare-service:8103';
 process.env.FOOD_SERVICE_URL = 'http://food-service:8104';
 process.env.INTERNAL_SERVICE_TOKEN = 'test-token';
+process.env.JWT_SECRET = 'test-jwt-secret-12345';

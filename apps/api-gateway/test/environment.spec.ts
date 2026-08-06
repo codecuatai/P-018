@@ -10,6 +10,7 @@ describe('environment validation', () => {
     HEALTHCARE_SERVICE_URL: 'http://healthcare-service:8103',
     FOOD_SERVICE_URL: 'http://food-service:8104',
     INTERNAL_SERVICE_TOKEN: 'test-token',
+    JWT_SECRET: 'test-jwt-secret-12345',
   };
 
   it('accepts complete process configuration', () => {

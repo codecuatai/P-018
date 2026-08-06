@@ -17,5 +17,5 @@ async def test_chat_empty_message(client):
 
 @pytest.mark.asyncio
 async def test_agent_status(client):
-    response = await client.get("/api/v1/status")
+    response = await client.get("/api/v1/status", headers={"x-internal-service-token": "test-token"})
     assert response.status_code == 200

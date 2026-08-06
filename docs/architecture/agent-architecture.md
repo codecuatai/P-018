@@ -11,7 +11,7 @@ flowchart LR
   ToolResult --> Resume --> Response
 ```
 
-Current code is a skeleton, not this target flow: `apps/agent-service/src/agents/graph.py` compiles a deterministic two-node graph and `/api/v1/chat` returns its response. It does not emit the schema in `packages/contracts/tools/tool-request.schema.json`, call the gateway, or invoke a Gemini adapter. The graph's internal `analysis` field is not returned by `ChatResponse`; raw exceptions are logged server-side and replaced with a stable public error.
+The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`: Gemini is called when configured, its JSON is validated by a Pydantic structured decision model, and deterministic Vietnamese fallback is used for tests/no-key/errors. `src/services/gateway.py` discovers and executes only non-transaction tools through the Gateway with internal token and actor assertion. The public response contains no analysis, prompt, or chain-of-thought.
 
 `xone_agent` may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The LLM never determines price, availability, payment, or booking/order success.
 
