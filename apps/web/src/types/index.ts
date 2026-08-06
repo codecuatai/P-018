@@ -36,7 +36,7 @@ export interface UserProfile {
   cashNote?: string;
 }
 
-export type UserRole = "admin" | "customer";
+export type UserRole = "admin" | "operator" | "customer" | "provider";
 
 export interface AuthUser {
   id: string;
@@ -146,6 +146,7 @@ export interface Message {
   handoffInfo?: SupportTicketContext;
   rideOptions?: RideVehicleOption[];
   demoFlow?: DemoFlowResult;
+  customCombo?: boolean;
 }
 
 export type DemoFlowKind = "ride" | "medical_ride" | "partial_failure" | "human_handoff";

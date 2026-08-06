@@ -26,10 +26,25 @@ import {
   Zap,
 } from "lucide-react";
 import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOption, ServiceTicket, SupportTicketContext } from "../types";
-import { isProfileComplete, MockService } from "../mocks/mockService";
-import { MOCK_COMBOS, MOCK_SUGGESTIONS } from "../mocks/mockData";
+import { ApiService } from "../api";
 import { TicketCard } from "../components/TicketCard";
 import "./ChatDashboard.css";
+
+const MOCK_SUGGESTIONS = [
+  "Tôi muốn đặt lịch khám tại Vinmec Times City",
+  "Tôi muốn tìm nhà hàng món Việt tại Hà Nội",
+  "Tìm cho tôi chuyến xe 4 chỗ từ Times City đi Royal City",
+  "Tư vấn thực đơn món ngon hôm nay",
+];
+
+const isProfileComplete = (profile: any) => {
+  return Boolean(
+    profile?.fullName &&
+      profile?.phone &&
+      profile?.email &&
+      profile?.idNumber
+  );
+};
 
 interface Props {
   onRequireProfile?: () => void;
@@ -47,7 +62,7 @@ const paymentLabels: Record<PaymentMethod, string> = {
 const demoScenarios = [
   {
     title: "1. Đặt vé máy bay",
-    subtitle: "Single Ticket Booking",
+    subtitle: "Đặt vé lẻ",
     prompt: MOCK_SUGGESTIONS[0],
     icon: <Plane size={18} />,
     category: "Vé đơn",
@@ -71,7 +86,7 @@ const demoScenarios = [
   },
   {
     title: "4. Đặt xe & Chọn xe",
-    subtitle: "Ride & Vehicle Choice",
+    subtitle: "Chọn xe & phương tiện",
     prompt: MOCK_SUGGESTIONS[3],
     icon: <Car size={18} />,
     category: "Xe đưa đón",
@@ -87,7 +102,7 @@ export const ChatDashboard: React.FC<Props> = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const paymentMethod: PaymentMethod = "momo";
-  const [notice, setNotice] = useState<{ type: "success" | "warning"; text: string } | null>(null);
+  const [notice, setNotice] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null);
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
@@ -121,8 +136,14 @@ export const ChatDashboard: React.FC<Props> = ({
   };
 
   const loadInitialMessages = async () => {
-    const msgs = await MockService.getMessages();
-    setMessages(msgs);
+    setMessages([
+      {
+        id: "msg-0",
+        role: "bot",
+        text: "Xin chào! Tôi là trợ lý AI Assistant-018. Bạn cần tôi hỗ trợ đặt xe, tìm nhà hàng, hay đặt lịch dịch vụ y tế nào hôm nay?",
+        timestamp: new Date().toISOString(),
+      }
+    ]);
   };
 
   const handleSend = async (text: string) => {
@@ -130,13 +151,36 @@ export const ChatDashboard: React.FC<Props> = ({
     setInput("");
     setNotice(null);
     setLoading(true);
-    const newMsgs = await MockService.sendMessage(text);
-    setMessages([...newMsgs]);
-    setLoading(false);
+
+    const userMsg: Message = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      text,
+      timestamp: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    try {
+      const responseData = await ApiService.sendChatMessage(text);
+      const botMsg: Message = {
+        id: `msg-${Date.now() + 1}`,
+        role: "bot",
+        text: responseData.response,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, botMsg]);
+    } catch (err) {
+      setNotice({
+        type: "error",
+        text: "Không thể gửi tin nhắn đến trợ lý AI. Vui lòng kiểm tra lại backend.",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleConfirm = async (ticket: ServiceTicket) => {
-    const profile = await MockService.getUserProfile();
+    const profile = await ApiService.getProfile();
     if (!isProfileComplete(profile)) {
       setNotice({
         type: "warning",
@@ -165,47 +209,67 @@ export const ChatDashboard: React.FC<Props> = ({
   const handleConfirmOtpPayment = async () => {
     if (!selectedCombo && !pendingTicket) return;
     setIsVerifying(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
 
-    if (pendingTicket) {
-      const booking = await MockService.confirmBooking(pendingTicket, authMethod);
-      const msgs = await MockService.getMessages();
-      setLastBookingId(booking.bookingId);
+    try {
+      if (pendingTicket) {
+        const booking = await ApiService.createBooking({
+          ...pendingTicket,
+          paymentMethod: authMethod,
+        });
+        setLastBookingId(booking.bookingId);
+        setNotice({
+          type: "success",
+          text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán và tạo mã đặt chỗ ${booking.bookingId}.`,
+        });
+        setPendingTicket(null);
+      } else if (selectedCombo) {
+        const bookingFlight = await ApiService.createBooking({
+          ...selectedCombo.flight,
+          paymentMethod: authMethod,
+        });
+        const bookingHotel = await ApiService.createBooking({
+          ...selectedCombo.hotel,
+          paymentMethod: authMethod,
+        });
+        setLastBookingId(bookingFlight.bookingId);
+        setNotice({
+          type: "success",
+          text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã tạo mã Booking Combo ${bookingFlight.bookingId} & ${bookingHotel.bookingId}.`,
+        });
+        setSelectedCombo(null);
+      }
+    } catch {
       setNotice({
-        type: "success",
-        text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán và tạo mã đặt chỗ ${booking.bookingId}.`,
+        type: "error",
+        text: "Giao dịch thanh toán thất bại. Vui lòng thử lại.",
       });
-      setMessages([...msgs]);
-      setPendingTicket(null);
-    } else if (selectedCombo) {
-      const bookingFlight = await MockService.confirmBooking(selectedCombo.flight, authMethod);
-      const bookingHotel = await MockService.confirmBooking(selectedCombo.hotel, authMethod);
-      const msgs = await MockService.getMessages();
-      setLastBookingId(bookingFlight.bookingId);
-      setNotice({
-        type: "success",
-        text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã tạo mã Booking Combo ${bookingFlight.bookingId} & ${bookingHotel.bookingId}.`,
-      });
-      setMessages([...msgs]);
-      setSelectedCombo(null);
+    } finally {
+      setIsVerifying(false);
+      setShowAuthModal(false);
     }
-
-    setIsVerifying(false);
-    setShowAuthModal(false);
   };
 
   // Flow 3: Confirm Reschedule & Refund
   const handleConfirmReschedule = async (reschedule: RescheduleOption) => {
     setLoading(true);
-    const booking = await MockService.confirmBooking(reschedule.newTicket, "momo");
-    setLastBookingId(booking.bookingId);
-    setNotice({
-      type: "success",
-      text: `Đã đổi sang ${reschedule.newTicket.provider} và tự động hoàn trả 520.000 VND về Ví MoMo của bạn!`,
-    });
-    const msgs = await MockService.getMessages();
-    setMessages([...msgs]);
-    setLoading(false);
+    try {
+      const booking = await ApiService.createBooking({
+        ...reschedule.newTicket,
+        paymentMethod: "momo",
+      });
+      setLastBookingId(booking.bookingId);
+      setNotice({
+        type: "success",
+        text: `Đã đổi sang ${reschedule.newTicket.provider} và tự động hoàn trả 520.000 VND về Ví MoMo của bạn!`,
+      });
+    } catch {
+      setNotice({
+        type: "error",
+        text: "Đổi lịch thất bại.",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Flow 4: CSKH Operator Handoff
