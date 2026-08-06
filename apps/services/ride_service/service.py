@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+﻿from datetime import datetime, timedelta, timezone
 from math import asin, ceil, cos, radians, sin, sqrt
 from uuid import uuid4
 
@@ -152,10 +152,22 @@ class RideService:
             route = await self.location_provider.calculate_route(data)
         except LocationProviderError as exc:
             raise HTTPException(502, str(exc)) from exc
+        distance_km = max(1, ceil(route["distance_meters"] / 1000))
+        duration_minutes = max(1, ceil(route["duration_seconds"] / 60))
+        if distance_km > 200 or duration_minutes > 600:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "route_out_of_supported_range",
+                    "message": "Tuyến đường được định vị vượt phạm vi phục vụ hiện tại. Hãy kiểm tra lại điểm đón và điểm đến cụ thể hơn.",
+                    "distance_km": distance_km,
+                    "duration_minutes": duration_minutes,
+                },
+            )
         quote = await self.create_quote(
             QuoteCreate(
-                distance_km=max(1, ceil(route["distance_meters"] / 1000)),
-                duration_minutes=max(1, ceil(route["duration_seconds"] / 60)),
+                distance_km=distance_km,
+                duration_minutes=duration_minutes,
                 weather=route["weather"],
                 promo_code=data.promo_code,
                 vehicle_type=data.vehicle_type,
@@ -292,3 +304,5 @@ class RideService:
             await self.payment_gateway.cancel(booking.payment_intent_id, f"{key or booking.id}:cancel")
         booking.status = "CANCELLED"
         return await self.repository.save_booking(booking, "cancel", key)
+
+

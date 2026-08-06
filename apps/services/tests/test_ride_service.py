@@ -1,4 +1,5 @@
-import pytest
+﻿import pytest
+from fastapi import HTTPException
 from payment_service.database import PaymentDatabase
 from payment_service.repository import PaymentRepository
 from payment_service.schemas import PaymentIntentCreate
@@ -189,3 +190,28 @@ async def test_finalize_gps_fare_then_capture_and_refund(ride_factory):
     assert finalized.final_amount is not None
     assert (await ride_factory().complete(booking.id, "gps-complete")).status == "PAID"
     assert (await ride_factory().cancel(booking.id, "gps-refund")).status == "REFUNDED"
+
+
+class FakeDistantRouteProvider(FakeLiveRouteProvider):
+    async def calculate_route(self, data):
+        route = await super().calculate_route(data)
+        return {**route, "distance_meters": 1_557_000, "duration_seconds": 65_820}
+
+
+@pytest.mark.asyncio
+async def test_live_quote_rejects_out_of_range_route_as_business_error(tmp_path):
+    database = RideDatabase(f"sqlite+aiosqlite:///{(tmp_path / 'out_of_range.db').as_posix()}")
+    await database.create_tables()
+    try:
+        async with database.sessions() as session:
+            service = RideService(
+                RideRepository(session), payment_gateway=None, location_provider=FakeDistantRouteProvider()
+            )
+            with pytest.raises(HTTPException) as error:
+                await service.create_live_quote(
+                    LiveQuoteCreate(pickup_address="Dai hoc Thuy Loi", dropoff_address="90 Duong Lang")
+                )
+        assert error.value.status_code == 422
+        assert error.value.detail["code"] == "route_out_of_supported_range"
+    finally:
+        await database.dispose()

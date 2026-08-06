@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import { Plane, Bus, Train, Hotel, Car, Package, Calendar, Clock, Users, ArrowRight, BadgeCheck, Luggage, ShieldCheck } from "lucide-react";
 import { ServiceTicket } from "../types";
 import "./TicketCard.css";
