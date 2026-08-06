@@ -22,7 +22,6 @@ services:
       FOOD_DB_NAME: ${FOOD_DB_NAME:?FOOD_DB_NAME is required}
       FOOD_DB_USER: ${FOOD_DB_USER:?FOOD_DB_USER is required}
       FOOD_DB_PASSWORD: ${FOOD_DB_PASSWORD:?FOOD_DB_PASSWORD is required}
-    ports: ["${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -51,6 +50,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:?UPSTREAM_TIMEOUT_MS is required}
       CONFIRMATION_TTL_SECONDS: ${CONFIRMATION_TTL_SECONDS:?CONFIRMATION_TTL_SECONDS is required}
+      CONFIRMATION_PROCESSING_TIMEOUT_SECONDS: ${CONFIRMATION_PROCESSING_TIMEOUT_SECONDS:?CONFIRMATION_PROCESSING_TIMEOUT_SECONDS is required}
+      CONFIRMATION_RECOVERY_POLL_INTERVAL_MS: ${CONFIRMATION_RECOVERY_POLL_INTERVAL_MS:?CONFIRMATION_RECOVERY_POLL_INTERVAL_MS is required}
       GATEWAY_WORKFLOW_WORKER_ENABLED: ${GATEWAY_WORKFLOW_WORKER_ENABLED:?GATEWAY_WORKFLOW_WORKER_ENABLED is required}
       GATEWAY_WORKFLOW_POLL_INTERVAL_MS: ${GATEWAY_WORKFLOW_POLL_INTERVAL_MS:?GATEWAY_WORKFLOW_POLL_INTERVAL_MS is required}
       RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
@@ -70,7 +71,7 @@ services:
       GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
       API_GATEWAY_INTERNAL_URL: ${API_GATEWAY_INTERNAL_URL:?API_GATEWAY_INTERNAL_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    ports: ["${AGENT_SERVICE_PORT}:8001"]
+    expose: ["8001"]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]
@@ -82,7 +83,6 @@ services:
       SERVICE_PORT: ${RIDE_SERVICE_PORT:?RIDE_SERVICE_PORT is required}
       DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    ports: ["${RIDE_SERVICE_PORT}:8101"]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]
@@ -94,7 +94,6 @@ services:
       SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
       DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    ports: ["${RESTAURANT_SERVICE_PORT}:8102"]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]
@@ -106,7 +105,6 @@ services:
       SERVICE_PORT: ${HEALTHCARE_SERVICE_PORT:?HEALTHCARE_SERVICE_PORT is required}
       DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    ports: ["${HEALTHCARE_SERVICE_PORT}:8103"]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]
@@ -135,7 +133,7 @@ services:
       FOOD_DELIVERY_DELAY_MS: ${FOOD_DELIVERY_DELAY_MS:?FOOD_DELIVERY_DELAY_MS is required}
       FOOD_WORKFLOW_POLL_INTERVAL_MS: ${FOOD_WORKFLOW_POLL_INTERVAL_MS:?FOOD_WORKFLOW_POLL_INTERVAL_MS is required}
       FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
-    ports: ["${FOOD_SERVICE_PORT}:8104"]
+    expose: ["8104"]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]

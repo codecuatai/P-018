@@ -28,4 +28,4 @@ async def test_agent_uses_correlation_id_and_returns_state_update() -> None:
     graph = build_graph(tool_client=gateway, llm=FakeLLM())
     result = await graph.ainvoke({"query": "Tìm phở bò", "user_id": "usr_demo_001", "conversation_id": "conv_1", "correlation_id": "cor_test_1", "workflow_context": {}})
     assert gateway.calls[-1] == ("search_food", "cor_test_1")
-    assert result["state_updates"]["selected_restaurant_id"] == "res_pho_hanoi"
+    assert result["state_updates"]["restaurant_id"] == "res_pho_hanoi"

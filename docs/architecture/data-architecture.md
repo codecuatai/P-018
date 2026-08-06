@@ -12,7 +12,7 @@ flowchart TB
   Food --> FoodDb[(xone_food)]
 ```
 
-Core owns confirmations, confirmation executions, payment records, refunds, receipts, conversation state, idempotency evidence, and audit events through `apps/api-gateway/migrations/001_core_vertical_slice.sql` and `002_core_persistence_slice.sql`. Food owns catalog/cart/order JSON snapshots, immutable status events, timed workflow fields, driver state, and voucher redemptions through its two service migrations. Runtime repositories use PostgreSQL; in-memory adapters are test-only.
+Core owns confirmations, confirmation executions, payment records, refunds, receipts, conversation state, idempotency evidence, and audit events through `apps/api-gateway/migrations/001_core_vertical_slice.sql`, `002_core_persistence_slice.sql`, and additive `004_core_recovery.sql`. The recovery migration adds persisted provider state, stale-confirmation claims, execution payloads, and refund-saga reconciliation checkpoints. Food owns catalog/cart/order JSON snapshots, immutable status events, timed workflow fields, driver state, voucher redemptions, and transition-operation idempotency through `services/food-service/migrations/001_food_vertical_slice.sql` through `004_food_authoritative_operations.sql`. Runtime repositories use PostgreSQL; in-memory adapters are test-only.
 
 Logical ownership is mandatory from the first vertical slice: each domain owns its schema/table/migration boundary, validates its own writes, and shares API snapshots/external references rather than tables. There are no cross-database queries/FKs or shared ORM entities. Each service owns its migration, seed, transaction boundary, and domain idempotency.
 

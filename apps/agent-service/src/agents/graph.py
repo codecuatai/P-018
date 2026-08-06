@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from src.agents.state import AgentState
+from src.agents.state import AgentState, FoodWorkflowContext
 from src.config import get_settings
 from src.services.gateway import GatewayToolClient, GatewayToolError
 from src.services.llm import GeminiAdapter, LLMAdapter
@@ -17,12 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 class StructuredDecision(BaseModel):
-    intent: str
+    intent: Literal["search_food", "select_restaurant", "view_menu", "select_menu_item", "create_cart", "add_to_cart", "update_cart", "remove_cart_item", "apply_voucher", "remove_voucher", "quote_delivery", "preview_order", "place_order", "track_order", "cancel_order", "general_food_support", "out_of_scope"]
     confidence: float = Field(ge=0, le=1)
     extracted_slots: dict[str, Any] = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
     response_message: str | None = None
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    references: dict[str, Any] = Field(default_factory=dict)
 
 
 def _legacy_classify(query: str) -> str:
@@ -72,7 +73,8 @@ _legacy_extract_slots = extract_slots
 
 def _plain(text: str) -> str:
     import unicodedata
-    return "".join(char for char in unicodedata.normalize("NFD", text.lower()) if unicodedata.category(char) != "Mn")
+    normalized = unicodedata.normalize("NFD", text.lower())
+    return "".join("d" if char == "đ" else char for char in normalized if unicodedata.category(char) != "Mn")
 
 
 def _classify_vietnamese(query: str) -> str:
@@ -95,6 +97,8 @@ def _classify_vietnamese(query: str) -> str:
         return "create_cart"
     if any(word in text for word in ("them", "cho vao gio", "mua")):
         return "add_to_cart"
+    if (re.search(r"\b[1-9][0-9]?\b", text) or any(word in text for word in ("mot ", "hai ", "ba ", "bon "))) and any(word in text for word in ("pho", "bun", "com", "mon")):
+        return "add_to_cart"
     if any(word in text for word in ("xem tong", "preview", "xem don")):
         return "preview_order"
     if any(word in text for word in ("chon quan", "chon nha hang")):
@@ -112,8 +116,15 @@ def _extract_vietnamese(query: str) -> dict[str, Any]:
     quantity = re.search(r"\b([1-9][0-9]?)\b", text)
     if quantity:
         slots["quantity"] = int(quantity.group(1))
+    else:
+        for word, value in (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4)):
+            if re.search(rf"\b{word}\b", text):
+                slots["quantity"] = value
+                break
     if "pho bo" in text:
         slots["item_id"] = "item_pho_bo"
+    if "pho ga" in text:
+        slots["item_id"] = "item_pho_ga"
     if "bun cha" in text:
         slots["item_id"] = "item_bun_cha"
     if "pho" in text:
@@ -124,8 +135,12 @@ def _extract_vietnamese(query: str) -> dict[str, Any]:
         slots.setdefault("selected_options", []).append({"group_id": "opt_spice", "option_id": "mild"})
     if "nha rieng" in text or "addr_demo" in text:
         slots["address_id"] = "addr_demo"
-    if "don vua dat" in text or "don vua tao" in text:
+    if "don vua dat" in text or "don vua tao" in text or "don gan nhat" in text:
         slots["order_alias"] = "last_order_id"
+    if "quan dau tien" in text or "nha hang dau tien" in text:
+        slots["restaurant_alias"] = "first"
+    if "mon dau tien" in text or "mon vua xem" in text:
+        slots["menu_item_alias"] = "first"
     district = re.search(r"(?:o|tai|khu vuc)\s+([A-Za-zÀ-ỹĐđ\s]+?)(?:\s+(?:duoi|tren|gia|$))", query, re.IGNORECASE)
     if district:
         slots["district"] = district.group(1).strip()
@@ -159,11 +174,11 @@ extract_slots = _extract_vietnamese
 def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | None = None):
     gateway = tool_client or GatewayToolClient()
     model = llm or GeminiAdapter()
-    use_model = llm is not None or bool(get_settings().gemini_api_key)
+    use_model = llm is not None or (tool_client is None and bool(get_settings().gemini_api_key))
 
     async def load_context(state: AgentState) -> AgentState:
-        context = state.get("workflow_context", {})
-        return {"step_count": state.get("step_count", 0) + 1, "tool_calls": [], "tool_results": [], "data": {}, "state_updates": {}, "extracted_slots": dict(context) if isinstance(context, dict) else {}}
+        context = FoodWorkflowContext.model_validate(state.get("workflow_context", {}))
+        return {"step_count": state.get("step_count", 0) + 1, "tool_calls": [], "tool_results": [], "data": {}, "state_updates": {}, "extracted_slots": context.model_dump(exclude_none=True)}
 
     async def classify_and_extract(state: AgentState) -> AgentState:
         query = state.get("query", "")
@@ -172,19 +187,38 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             if not use_model:
                 return {**fallback, "step_count": state.get("step_count", 0) + 1}
             registry = await gateway.registry(state.get("correlation_id", "cor_unknown"))
-            prompt = json.dumps({"instruction": "Classify the Vietnamese food request into a safe intent and propose only registered non-transaction tools. Return JSON matching the schema.", "query": query, "available_tools": registry, "context": state.get("extracted_slots", {})}, ensure_ascii=False)
+            prompt = json.dumps({"instruction": "Classify the Vietnamese food request into a safe intent and propose only registered non-transaction tools.", "query": query, "recent_messages": state.get("messages", [])[-20:], "workflow_context": state.get("extracted_slots", {}), "tool_registry": registry, "allowed_permissions": ["read", "draft_write", "preview", "confirmation_prepare"], "system_constraints": ["never execute transaction tools", "never invent prices or IDs"], "response_schema": StructuredDecision.model_json_schema()}, ensure_ascii=False)
             raw = await model.ainvoke(prompt)
             if raw:
-                decision = StructuredDecision.model_validate(json.loads(raw))
-                return {"intent": decision.intent, "confidence": decision.confidence, "extracted_slots": {**state.get("extracted_slots", {}), **decision.extracted_slots, **extract_slots(query)}, "model_tool_calls": decision.tool_calls, "tool_registry": registry, "step_count": state.get("step_count", 0) + 1}
-        except Exception as exc:
+                fenced = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL | re.IGNORECASE)
+                parsed = json.loads(fenced.group(1) if fenced else raw)
+                decision = StructuredDecision.model_validate(parsed)
+                return {"intent": decision.intent, "confidence": decision.confidence, "extracted_slots": {**state.get("extracted_slots", {}), **decision.extracted_slots, **decision.references, **extract_slots(query)}, "model_tool_calls": decision.tool_calls, "tool_registry": registry, "step_count": state.get("step_count", 0) + 1}
+        except (json.JSONDecodeError, ValidationError, GatewayToolError) as exc:
             logger.warning("Structured model decision unavailable; using deterministic fallback: %s", type(exc).__name__)
+        except Exception as exc:
+            logger.warning("LLM adapter failed; using deterministic fallback: %s", type(exc).__name__)
         return {**fallback, "step_count": state.get("step_count", 0) + 1}
+
+    async def resolve_references(state: AgentState) -> AgentState:
+        slots = dict(state.get("extracted_slots", {}))
+        context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(exclude_none=True)
+        if slots.get("order_alias") == "last_order_id":
+            slots["order_id"] = context.get("last_order_id")
+        if slots.get("restaurant_alias") == "first" and context.get("restaurant_candidates"):
+            slots["restaurant_id"] = context["restaurant_candidates"][0]["id"]
+        if slots.get("menu_item_alias") == "first" and context.get("menu_item_candidates"):
+            slots["item_id"] = context["menu_item_candidates"][0]["id"]
+        if slots.get("address_alias") == "home":
+            slots["address_id"] = context.get("address_id") or "addr_demo"
+        return {"extracted_slots": slots, "step_count": state.get("step_count", 0) + 1}
 
     async def validate_slots(state: AgentState) -> AgentState:
         intent = state.get("intent", "general_food_support")
         slots = state.get("extracted_slots", {})
         required: list[str] = []
+        if intent == "select_restaurant" and not slots.get("restaurant_id") and not slots.get("restaurant_alias"):
+            required.append("restaurant_id")
         if intent in {"quote_delivery", "preview_order", "place_order"}:
             required.append("address_id")
         if intent in {"preview_order", "place_order"}:
@@ -193,6 +227,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             required.append("order_id")
         if intent == "view_menu":
             required.append("restaurant_id")
+        if intent == "add_to_cart":
+            required.extend(slot for slot in ("restaurant_id", "item_id", "quantity") if not slots.get(slot))
         return {"missing_slots": [slot for slot in required if not slots.get(slot)], "step_count": state.get("step_count", 0) + 1}
 
     async def select_tools(state: AgentState) -> AgentState:
@@ -242,11 +278,18 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         results: list[dict[str, Any]] = []
         calls: list[dict[str, Any]] = []
         try:
-            for tool in state.get("selected_tools", [])[:6]:
+            selected = list(state.get("selected_tools", []))[: get_settings().max_tool_calls]
+            for tool in selected:
                 name = str(tool["name"])
-                result = await gateway.execute(name, tool.get("arguments", {}), state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
+                arguments = dict(tool.get("arguments", {}))
+                result = await gateway.execute(name, arguments, state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
                 calls.append({"name": name, "status": "succeeded"})
                 results.append({"name": name, "data": result})
+                if name == "create_cart" and state.get("intent") == "add_to_cart" and isinstance(result, dict) and result.get("id"):
+                    add_arguments = {"cart_id": result["id"], "menu_item_id": state.get("extracted_slots", {}).get("item_id"), "quantity": state.get("extracted_slots", {}).get("quantity", 1), "selected_options": state.get("extracted_slots", {}).get("selected_options", [])}
+                    add_result = await gateway.execute("add_to_cart", add_arguments, state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
+                    calls.append({"name": "add_to_cart", "status": "succeeded"})
+                    results.append({"name": "add_to_cart", "data": add_result})
         except GatewayToolError as exc:
             calls.append({"name": name, "status": "failed", "code": exc.code})
             return {"error": exc.code, "tool_calls": calls}
@@ -264,13 +307,13 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         if slots.get("address_id"):
             updates["address_id"] = slots["address_id"]
         if slots.get("restaurant_id"):
-            updates["selected_restaurant_id"] = slots["restaurant_id"]
+            updates["restaurant_id"] = slots["restaurant_id"]
         if slots.get("item_id"):
-            updates["selected_menu_item_ids"] = [slots["item_id"]]
+            updates["menu_item_id"] = slots["item_id"]
         if intent == "select_restaurant":
-            selected_restaurant = state.get("workflow_context", {}).get("selected_restaurant_id")
+            selected_restaurant = slots.get("restaurant_id")
             if selected_restaurant:
-                updates["selected_restaurant_id"] = selected_restaurant
+                updates["restaurant_id"] = selected_restaurant
         for result in results:
             data = result.get("data", {})
             name = result.get("name")
@@ -278,12 +321,21 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 updates["cart_id"] = data["id"]
             if name in {"get_food_order", "track_food_order"} and isinstance(data, dict) and data.get("order_id"):
                 updates["last_order_id"] = data["order_id"]
-            if name == "search_food" and isinstance(data, dict) and isinstance(data.get("items"), list) and data["items"]:
-                first = data["items"][0]
-                if isinstance(first, dict):
-                    restaurant = first.get("restaurant") or {}
-                    if isinstance(restaurant, dict) and restaurant.get("id"):
-                        updates["selected_restaurant_id"] = restaurant["id"]
+            if name == "search_food" and isinstance(data, dict) and isinstance(data.get("items"), list):
+                restaurants: list[dict[str, Any]] = []
+                items: list[dict[str, Any]] = []
+                for candidate in data["items"]:
+                    if isinstance(candidate, dict):
+                        restaurant = candidate.get("restaurant") or {}
+                        item = candidate.get("item") or {}
+                        if isinstance(restaurant, dict) and restaurant.get("id") and not any(value["id"] == restaurant["id"] for value in restaurants):
+                            restaurants.append({"id": restaurant["id"], "name": restaurant.get("name", "")})
+                        if isinstance(item, dict) and item.get("id"):
+                            items.append({"id": item["id"], "name": item.get("name", ""), "restaurant_id": item.get("restaurant_id")})
+                updates["restaurant_candidates"] = restaurants
+                updates["menu_item_candidates"] = items
+                if restaurants and len(restaurants) == 1 and not updates.get("restaurant_id"):
+                    updates["restaurant_id"] = restaurants[0]["id"]
         if intent in {"place_order", "cancel_order"} and results:
             confirmation = results[0]["data"]
             if intent == "cancel_order":
@@ -293,7 +345,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             return {"response_type": "confirmation_form", "response": "Bạn kiểm tra thông tin đơn và xác nhận thanh toán nhé.", "data": confirmation, "pending_confirmation": confirmation, "state_updates": updates}
         messages = {"quote_delivery": "Phí giao hàng đã được tính từ địa chỉ và nhà hàng.", "preview_order": "Đây là bản xem trước đơn hàng.", "view_menu": "Đây là menu hiện tại của nhà hàng.", "search_food": "Mình tìm được các món phù hợp từ Food Service."}
         if intent == "select_restaurant":
-            return {"response_type": "options", "response": "Mình đã chọn nhà hàng đầu tiên trong danh sách cho bạn.", "data": {"restaurant_id": updates.get("selected_restaurant_id")}, "state_updates": updates}
+            return {"response_type": "options", "response": "Mình đã chọn nhà hàng đầu tiên trong danh sách cho bạn.", "data": {"restaurant_id": updates.get("restaurant_id")}, "state_updates": updates}
         return {"response_type": "options" if results else "text", "response": messages.get(intent, "Mình có thể giúp bạn tìm món, xem menu, tạo giỏ và xem trước đơn giao tại Hà Nội."), "data": results[0]["data"] if results else {}, "state_updates": updates}
 
     def route_validation(state: AgentState) -> str:
@@ -305,13 +357,15 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
     graph = StateGraph(AgentState)
     graph.add_node("load_context", load_context)
     graph.add_node("classify_and_extract", classify_and_extract)
+    graph.add_node("resolve_references", resolve_references)
     graph.add_node("validate_slots", validate_slots)
     graph.add_node("select_tools", select_tools)
     graph.add_node("execute_tools", execute_tools)
     graph.add_node("evaluate_result", evaluate_result)
     graph.set_entry_point("load_context")
     graph.add_edge("load_context", "classify_and_extract")
-    graph.add_edge("classify_and_extract", "validate_slots")
+    graph.add_edge("classify_and_extract", "resolve_references")
+    graph.add_edge("resolve_references", "validate_slots")
     graph.add_conditional_edges("validate_slots", route_validation, {"evaluate_result": "evaluate_result", "select_tools": "select_tools"})
     graph.add_conditional_edges("select_tools", route_selection, {"evaluate_result": "evaluate_result", "execute_tools": "execute_tools"})
     graph.add_edge("execute_tools", "evaluate_result")

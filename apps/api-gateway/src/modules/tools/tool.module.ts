@@ -62,11 +62,26 @@ export class ToolService {
   constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore) {}
   list(): ToolDefinition[] { return definitions; }
   async execute(name: string, args: JsonObject, actor: AuthUser, correlationId: string): Promise<JsonObject> {
+    const startedAt = Date.now();
+    await this.store.audit({ action: 'tool.execute.started', actorId: actor.sub, correlationId, metadata: { tool_name: name, permission: definitions.find((tool) => tool.name === name)?.permission ?? 'unknown' } });
+    try {
+      const result = await this.executeUnsafe(name, args, actor, correlationId);
+      await this.store.audit({ action: 'tool.execute.succeeded', actorId: actor.sub, correlationId, metadata: { tool_name: name, duration_ms: Date.now() - startedAt, resource_ids: this.resourceIds(args) } });
+      return result;
+    } catch (error: unknown) {
+      await this.store.audit({ action: 'tool.execute.failed', actorId: actor.sub, correlationId, metadata: { tool_name: name, duration_ms: Date.now() - startedAt, resource_ids: this.resourceIds(args), error_code: this.errorCode(error) } });
+      throw error;
+    }
+  }
+
+  private resourceIds(args: JsonObject): string[] { return Object.entries(args).filter(([key, value]) => key.endsWith('_id') && typeof value === 'string').map(([, value]) => String(value)); }
+  private errorCode(error: unknown): string { const response = error instanceof Error && 'getResponse' in error && typeof (error as { getResponse?: unknown }).getResponse === 'function' ? (error as { getResponse: () => unknown }).getResponse() : undefined; return typeof response === 'object' && response !== null && 'code' in response ? String((response as { code: unknown }).code) : error instanceof Error ? error.name : 'UNKNOWN'; }
+
+  private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string): Promise<JsonObject> {
     const definition = definitions.find((tool) => tool.name === name);
     if (!definition) throw new UnauthorizedException({ code: 'TOOL_NOT_FOUND', detail: 'Tool is not registered.' });
     if (definition.permission === 'transaction') throw new UnauthorizedException({ code: 'TOOL_NOT_ALLOWED', detail: 'Agent cannot execute transaction tools.' });
     validateArguments(definition, args);
-    await this.store.audit({ action: 'tool.execute', actorId: actor.sub, correlationId, metadata: { tool_name: name, tool_version: definition.version, permission: definition.permission } });
     switch (name) {
       case 'search_food': { const params = new URLSearchParams({ keyword: String(args.keyword ?? '') }); if (typeof args.district === 'string') params.set('district', args.district); if (typeof args.category === 'string') params.set('category', args.category); if (typeof args.max_price === 'number') params.set('max_price', String(args.max_price)); return this.food.get(`/api/v1/food/search?${params.toString()}`, correlationId, actor.sub); }
       case 'view_menu': return this.food.get(`/api/v1/restaurants/${String(args.restaurant_id)}/menu`, correlationId);

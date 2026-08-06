@@ -154,5 +154,5 @@ async def cancel(order_id: str, payload: CancelOrderRequest, actor_id: str = Dep
 
 
 @router.post("/internal/orders/{order_id}/transition", dependencies=[Depends(require_internal)])
-async def transition(order_id: str, payload: TransitionOrderRequest, food: FoodApplicationService = Depends(service)):
-    return {"data": await food.transition_order(order_id, payload.target_status, payload.reason)}
+async def transition(order_id: str, payload: TransitionOrderRequest, idempotency_key: str | None = Header(default=None), food: FoodApplicationService = Depends(service)):
+    return {"data": await food.transition_order(order_id, payload.target_status, payload.reason, payload.operation_key or idempotency_key)}

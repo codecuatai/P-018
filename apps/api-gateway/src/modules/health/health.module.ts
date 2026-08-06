@@ -1,4 +1,4 @@
-import { Controller, Get, Module, Req } from '@nestjs/common';
+import { Controller, Get, Module, Req, ServiceUnavailableException } from '@nestjs/common';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { WorkflowModule } from '../workflow/workflow.module';
@@ -13,9 +13,11 @@ class HealthController {
   }
 
   @Get('ready')
-  ready(@Req() request: CorrelatedRequest): object {
-    const healthy = this.workflow.isWorkerHealthy();
-    return { data: { status: healthy ? 'ready' : 'not_ready', service: 'api-gateway', workflow_worker: healthy ? 'healthy' : 'unhealthy' }, meta: { request_id: request.correlationId } };
+  async ready(@Req() request: CorrelatedRequest): Promise<object> {
+    const database = await this.workflow.checkReadiness();
+    const healthy = database && this.workflow.isWorkerHealthy();
+    if (!healthy) throw new ServiceUnavailableException({ code: 'NOT_READY', detail: 'Gateway dependencies or recovery workers are not ready.' });
+    return { data: { status: 'ready', service: 'api-gateway', database: 'connected', workflow_worker: 'healthy', confirmation_recovery_worker: 'healthy' }, meta: { request_id: request.correlationId } };
   }
 }
 

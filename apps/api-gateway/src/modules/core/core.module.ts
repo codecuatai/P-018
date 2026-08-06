@@ -25,6 +25,9 @@ export interface ConfirmationRecord {
   failureCode?: string;
   result?: Record<string, unknown>;
   version: number;
+  recoveryClaimedAt?: number;
+  recoveryAttempts?: number;
+  nextRecoveryAt?: number;
 }
 
 export type ConfirmationClaimState = 'CLAIMED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL' | 'EXPIRED' | 'CONFIRMATION_ALREADY_USED' | 'IDEMPOTENCY_KEY_REUSED';
@@ -43,6 +46,10 @@ export interface PaymentRecord {
   createdAt: string;
   receiptId?: string;
   intentId?: string;
+  providerReference?: string;
+  providerStatus?: string;
+  authorizedAt?: string;
+  lastCheckedAt?: string;
 }
 
 export interface RefundRecord {
@@ -66,12 +73,13 @@ export interface ConversationRecord {
   state: Record<string, unknown>;
 }
 
-export interface ExecutionRecord { status: string; payloadHash: string; result?: Record<string, unknown> }
+export interface ExecutionRecord { status: string; payloadHash: string; result?: Record<string, unknown>; payload?: Record<string, unknown> }
+export interface WorkflowReconciliationRecord { orderId: string; actorId: string; paymentId: string; refundId?: string; status: string; lastErrorCode?: string; attemptCount: number; nextAttemptAt?: string; completedAt?: string }
 
 export interface CoreRepository {
   createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord>;
   getConfirmation(id: string): Promise<ConfirmationRecord | undefined>;
-  claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number): Promise<ConfirmationClaim>;
+  claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number, executionPayload?: Record<string, unknown>): Promise<ConfirmationClaim>;
   completeConfirmation(id: string, actorId: string, executionKey: string, status: Exclude<ConfirmationStatus, 'PENDING' | 'PROCESSING' | 'EXPIRED'>, result: Record<string, unknown>, failureCode?: string): Promise<void>;
   getExecution(key: string): Promise<ExecutionRecord | undefined>;
   createPayment(value: PaymentRecord): Promise<PaymentRecord>;
@@ -83,10 +91,16 @@ export interface CoreRepository {
   getRefundByKey(paymentId: string, idempotencyKey: string): Promise<RefundRecord | undefined>;
   listRefunds(paymentId: string): Promise<RefundRecord[]>;
   listPaymentsForReconciliation(): Promise<PaymentRecord[]>;
+  listPaymentsForRecovery(now: number): Promise<PaymentRecord[]>;
+  claimStaleConfirmations(cutoff: number, now: number, limit: number): Promise<ConfirmationRecord[]>;
+  releaseConfirmationRecovery(id: string): Promise<void>;
+  upsertWorkflowReconciliation(value: WorkflowReconciliationRecord): Promise<WorkflowReconciliationRecord>;
+  listDueWorkflowReconciliations(now: string, limit: number): Promise<WorkflowReconciliationRecord[]>;
   getReceipt(paymentId: string): Promise<Record<string, unknown> | undefined>;
   saveConversation(value: ConversationRecord): Promise<void>;
   getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined>;
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void>;
+  checkHealth(): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -95,7 +109,7 @@ function clone<T>(value: T): T { return structuredClone(value); }
 /** Test-only repository. It preserves the same claim and idempotency semantics without network I/O. */
 export class InMemoryCoreRepository implements CoreRepository {
   private readonly confirmations = new Map<string, ConfirmationRecord>();
-  private readonly executions = new Map<string, { confirmationId: string; actorId: string; key: string; payloadHash: string; status: string; result?: Record<string, unknown> }>();
+  private readonly executions = new Map<string, { confirmationId: string; actorId: string; key: string; payloadHash: string; status: string; result?: Record<string, unknown>; payload?: Record<string, unknown> }>();
   private readonly payments = new Map<string, PaymentRecord>();
   private readonly refunds = new Map<string, RefundRecord>();
   private readonly conversations = new Map<string, ConversationRecord>();
@@ -104,12 +118,19 @@ export class InMemoryCoreRepository implements CoreRepository {
   async createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord> { const saved = { ...value, status: value.status ?? 'PENDING', version: value.version ?? 0 }; this.confirmations.set(saved.id, clone(saved)); return clone(saved); }
   async getConfirmation(id: string): Promise<ConfirmationRecord | undefined> { const value = this.confirmations.get(id); return value ? clone(value) : undefined; }
 
-  async claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number): Promise<ConfirmationClaim> {
+  async claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number, executionPayload?: Record<string, unknown>): Promise<ConfirmationClaim> {
     const confirmation = this.confirmations.get(id);
     if (!confirmation || confirmation.actorId !== actorId) return { state: 'CONFIRMATION_ALREADY_USED' };
     const existing = [...this.executions.values()].find((value) => value.confirmationId === id && value.key === executionKey);
     if (existing) {
       if (existing.payloadHash !== payloadHash) return { state: 'IDEMPOTENCY_KEY_REUSED' };
+      if (existing.status === 'FAILED_RETRYABLE') {
+        existing.status = 'PROCESSING';
+        existing.result = undefined;
+        confirmation.status = 'PROCESSING';
+        confirmation.processingStartedAt = now;
+        return { state: 'CLAIMED', confirmation: clone(confirmation) };
+      }
       if (existing.result) return { state: existing.status as ConfirmationClaimState, confirmation: clone(confirmation), result: clone(existing.result) };
       return { state: 'PROCESSING', confirmation: clone(confirmation) };
     }
@@ -123,7 +144,7 @@ export class InMemoryCoreRepository implements CoreRepository {
       confirmation.executionKey = executionKey;
       confirmation.processingStartedAt = now;
       confirmation.version += 1;
-      this.executions.set(executionKey, { confirmationId: id, actorId, key: executionKey, payloadHash, status: 'PROCESSING' });
+      this.executions.set(executionKey, { confirmationId: id, actorId, key: executionKey, payloadHash, status: 'PROCESSING', payload: executionPayload });
       return { state: 'CLAIMED', confirmation: clone(confirmation) };
     }
     if (confirmation.result) return { state: confirmation.status, confirmation: clone(confirmation), result: clone(confirmation.result) };
@@ -142,9 +163,9 @@ export class InMemoryCoreRepository implements CoreRepository {
     if (execution) { execution.status = status; execution.result = clone(result); }
   }
 
-  async getExecution(key: string): Promise<ExecutionRecord | undefined> { const value = this.executions.get(key); return value ? { status: value.status, payloadHash: value.payloadHash, result: value.result ? clone(value.result) : undefined } : undefined; }
+  async getExecution(key: string): Promise<ExecutionRecord | undefined> { const value = this.executions.get(key); return value ? { status: value.status, payloadHash: value.payloadHash, result: value.result ? clone(value.result) : undefined, payload: value.payload ? clone(value.payload) : undefined } : undefined; }
   async createPayment(value: PaymentRecord): Promise<PaymentRecord> { const existing = [...this.payments.values()].find((item) => item.actorId === value.actorId && item.idempotencyKey === value.idempotencyKey); if (existing) return clone(existing); this.payments.set(value.id, clone(value)); return clone(value); }
-  async updatePayment(id: string, status: PaymentStatus, receiptId?: string): Promise<PaymentRecord> { const payment = this.payments.get(id); if (!payment) throw new Error('PAYMENT_NOT_FOUND'); payment.status = status; payment.receiptId = receiptId ?? payment.receiptId; return clone(payment); }
+  async updatePayment(id: string, status: PaymentStatus, receiptId?: string): Promise<PaymentRecord> { const payment = this.payments.get(id); if (!payment) throw new Error('PAYMENT_NOT_FOUND'); payment.status = status; payment.providerStatus = status; payment.lastCheckedAt = new Date().toISOString(); payment.authorizedAt = status === 'SUCCEEDED' ? payment.authorizedAt ?? new Date().toISOString() : payment.authorizedAt; payment.receiptId = receiptId ?? payment.receiptId; return clone(payment); }
   async getPayment(id: string): Promise<PaymentRecord | undefined> { const value = this.payments.get(id); return value ? clone(value) : undefined; }
   async findPayment(actorId: string, idempotencyKey: string): Promise<PaymentRecord | undefined> { const value = [...this.payments.values()].find((item) => item.actorId === actorId && item.idempotencyKey === idempotencyKey); return value ? clone(value) : undefined; }
   async findPaymentByOrder(orderId: string, actorId: string): Promise<PaymentRecord | undefined> { const value = [...this.payments.values()].find((item) => item.orderId === orderId && item.actorId === actorId); return value ? clone(value) : undefined; }
@@ -152,10 +173,16 @@ export class InMemoryCoreRepository implements CoreRepository {
   async getRefundByKey(paymentId: string, idempotencyKey: string): Promise<RefundRecord | undefined> { const value = [...this.refunds.values()].find((item) => item.paymentId === paymentId && item.idempotencyKey === idempotencyKey); return value ? clone(value) : undefined; }
   async listRefunds(paymentId: string): Promise<RefundRecord[]> { return [...this.refunds.values()].filter((item) => item.paymentId === paymentId).map(clone); }
   async listPaymentsForReconciliation(): Promise<PaymentRecord[]> { return [...this.payments.values()].filter((item) => item.status === 'SUCCEEDED').map(clone); }
+  async listPaymentsForRecovery(_now: number): Promise<PaymentRecord[]> { return [...this.payments.values()].filter((item) => ['PENDING', 'TIMED_OUT', 'UNKNOWN'].includes(item.status)).map(clone); }
+  async claimStaleConfirmations(cutoff: number, now: number, limit: number): Promise<ConfirmationRecord[]> { const claimed: ConfirmationRecord[] = []; for (const confirmation of this.confirmations.values()) { if (claimed.length >= limit) break; if (confirmation.status === 'PROCESSING' && (confirmation.processingStartedAt ?? 0) < cutoff && ((confirmation.nextRecoveryAt ?? 0) <= now) && (!confirmation.recoveryClaimedAt || confirmation.recoveryClaimedAt < now - 5000)) { confirmation.recoveryClaimedAt = now; confirmation.recoveryAttempts = (confirmation.recoveryAttempts ?? 0) + 1; confirmation.nextRecoveryAt = now + 5000; claimed.push(clone(confirmation)); } } return claimed; }
+  async releaseConfirmationRecovery(id: string): Promise<void> { const confirmation = this.confirmations.get(id); if (confirmation) confirmation.recoveryClaimedAt = undefined; }
+  async upsertWorkflowReconciliation(value: WorkflowReconciliationRecord): Promise<WorkflowReconciliationRecord> { return value; }
+  async listDueWorkflowReconciliations(_now: string, _limit: number): Promise<WorkflowReconciliationRecord[]> { return []; }
   async getReceipt(paymentId: string): Promise<Record<string, unknown> | undefined> { const payment = this.payments.get(paymentId); return payment?.receiptId ? { receipt_id: payment.receiptId, payment_id: payment.id, order_id: payment.orderId, amount: { amount: payment.amount, currency: payment.currency }, method: payment.method, status: payment.status, issued_at: payment.createdAt } : undefined; }
   async saveConversation(value: ConversationRecord): Promise<void> { this.conversations.set(value.conversationId, clone(value)); }
   async getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { const value = this.conversations.get(id); return value && value.actorId === actorId ? clone(value) : undefined; }
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { this.audits.push(clone(value)); }
+  async checkHealth(): Promise<boolean> { return true; }
   async close(): Promise<void> {}
 }
 
@@ -163,14 +190,14 @@ export class PostgresCoreRepository implements CoreRepository {
   private readonly pool: Pool;
   constructor(databaseUrl: string) { this.pool = new Pool({ connectionString: databaseUrl, max: 5 }); }
   private async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> { const client = await this.pool.connect(); try { await client.query('BEGIN'); const result = await work(client); await client.query('COMMIT'); return result; } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
-  private confirmationFromRow(row: Record<string, unknown>): ConfirmationRecord { return { id: String(row.id), actorId: String(row.actor_id), action: String(row.action), payload: row.payload as Record<string, unknown>, payloadHash: String(row.payload_hash), quoteVersion: String(row.quote_version), amount: Number(row.amount), currency: String(row.currency), expiresAt: new Date(String(row.expires_at)).getTime(), createdAt: new Date(String(row.created_at)).toISOString(), status: row.status as ConfirmationStatus, executionKey: row.execution_key ? String(row.execution_key) : undefined, processingStartedAt: row.processing_started_at ? new Date(String(row.processing_started_at)).getTime() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).getTime() : undefined, failureCode: row.failure_code ? String(row.failure_code) : undefined, result: row.result as Record<string, unknown> | undefined, version: Number(row.version) } }
-  private paymentFromRow(row: Record<string, unknown> | undefined): PaymentRecord | undefined { return row ? { id: String(row.id), actorId: String(row.actor_id), orderId: String(row.order_id), amount: Number(row.amount), currency: String(row.currency), method: row.method as PaymentMethod, status: row.status as PaymentStatus, idempotencyKey: String(row.idempotency_key), payloadHash: String(row.payload_hash ?? ''), createdAt: new Date(String(row.created_at)).toISOString(), receiptId: row.receipt_id ? String(row.receipt_id) : undefined, intentId: row.intent_id ? String(row.intent_id) : undefined } : undefined; }
+  private confirmationFromRow(row: Record<string, unknown>): ConfirmationRecord { return { id: String(row.id), actorId: String(row.actor_id), action: String(row.action), payload: row.payload as Record<string, unknown>, payloadHash: String(row.payload_hash), quoteVersion: String(row.quote_version), amount: Number(row.amount), currency: String(row.currency), expiresAt: new Date(String(row.expires_at)).getTime(), createdAt: new Date(String(row.created_at)).toISOString(), status: row.status as ConfirmationStatus, executionKey: row.execution_key ? String(row.execution_key) : undefined, processingStartedAt: row.processing_started_at ? new Date(String(row.processing_started_at)).getTime() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).getTime() : undefined, failureCode: row.failure_code ? String(row.failure_code) : undefined, result: row.result as Record<string, unknown> | undefined, version: Number(row.version), recoveryClaimedAt: row.recovery_claimed_at ? new Date(String(row.recovery_claimed_at)).getTime() : undefined, recoveryAttempts: Number(row.recovery_attempts ?? 0), nextRecoveryAt: row.next_recovery_at ? new Date(String(row.next_recovery_at)).getTime() : undefined } }
+  private paymentFromRow(row: Record<string, unknown> | undefined): PaymentRecord | undefined { return row ? { id: String(row.id), actorId: String(row.actor_id), orderId: String(row.order_id), amount: Number(row.amount), currency: String(row.currency), method: row.method as PaymentMethod, status: row.status as PaymentStatus, idempotencyKey: String(row.idempotency_key), payloadHash: String(row.payload_hash ?? ''), createdAt: new Date(String(row.created_at)).toISOString(), receiptId: row.receipt_id ? String(row.receipt_id) : undefined, intentId: row.intent_id ? String(row.intent_id) : undefined, providerReference: row.provider_reference ? String(row.provider_reference) : undefined, providerStatus: row.provider_status ? String(row.provider_status) : undefined, authorizedAt: row.authorized_at ? new Date(String(row.authorized_at)).toISOString() : undefined, lastCheckedAt: row.last_checked_at ? new Date(String(row.last_checked_at)).toISOString() : undefined } : undefined; }
   private refundFromRow(row: Record<string, unknown>): RefundRecord { return { id: String(row.id), paymentId: String(row.payment_id), actorId: String(row.actor_id), amount: Number(row.amount), currency: String(row.currency), reason: String(row.reason), status: row.status as RefundStatus, idempotencyKey: String(row.idempotency_key), payloadHash: String(row.payload_hash ?? ''), createdAt: new Date(String(row.created_at)).toISOString(), completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : undefined }; }
 
   async createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord> { await this.pool.query('INSERT INTO confirmations (id,actor_id,action,payload,payload_hash,quote_version,amount,currency,expires_at,created_at,status,version) VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9,$10,\'PENDING\',0)', [value.id, value.actorId, value.action, JSON.stringify(value.payload), value.payloadHash, value.quoteVersion, value.amount, value.currency, new Date(value.expiresAt), value.createdAt]); return { ...value, status: 'PENDING', version: 0 }; }
   async getConfirmation(id: string): Promise<ConfirmationRecord | undefined> { const result = await this.pool.query('SELECT * FROM confirmations WHERE id=$1', [id]); return result.rows[0] ? this.confirmationFromRow(result.rows[0]) : undefined; }
 
-  async claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number): Promise<ConfirmationClaim> {
+  async claimConfirmation(id: string, actorId: string, executionKey: string, payloadHash: string, now: number, executionPayload?: Record<string, unknown>): Promise<ConfirmationClaim> {
     return this.transaction(async (client) => {
       const result = await client.query('SELECT * FROM confirmations WHERE id=$1 AND actor_id=$2 FOR UPDATE', [id, actorId]);
       const row = result.rows[0] as Record<string, unknown> | undefined;
@@ -179,6 +206,11 @@ export class PostgresCoreRepository implements CoreRepository {
       const execution = existing.rows[0] as Record<string, unknown> | undefined;
       if (execution) {
         if (String(execution.payload_hash) !== payloadHash) return { state: 'IDEMPOTENCY_KEY_REUSED' as const };
+        if (String(execution.status) === 'FAILED_RETRYABLE') {
+          const resumed = await client.query("UPDATE confirmations SET status='PROCESSING',processing_started_at=now(),recovery_claimed_at=NULL,next_recovery_at=NULL,version=version+1 WHERE id=$1 RETURNING *", [id]);
+          await client.query("UPDATE confirmation_executions SET status='PROCESSING',result=NULL,execution_payload=COALESCE(execution_payload,$2::jsonb) WHERE execution_key=$1", [executionKey, JSON.stringify(executionPayload ?? {})]);
+          return { state: 'CLAIMED' as const, confirmation: this.confirmationFromRow(resumed.rows[0]) };
+        }
         return { state: String(execution.status) as ConfirmationClaimState, confirmation: this.confirmationFromRow(row), result: execution.result as Record<string, unknown> | undefined };
       }
       const confirmation = this.confirmationFromRow(row);
@@ -189,7 +221,7 @@ export class PostgresCoreRepository implements CoreRepository {
       }
       if (confirmation.status === 'PENDING') {
         const claimed = await client.query("UPDATE confirmations SET status='PROCESSING',execution_key=$1,processing_started_at=now(),version=version+1 WHERE id=$2 AND status='PENDING' RETURNING *", [executionKey, id]);
-        await client.query('INSERT INTO confirmation_executions (execution_key,confirmation_id,actor_id,idempotency_key,payload_hash,status) VALUES ($1,$2,$3,$4,$5,\'PROCESSING\')', [executionKey, id, actorId, executionKey, payloadHash]);
+        await client.query('INSERT INTO confirmation_executions (execution_key,confirmation_id,actor_id,idempotency_key,payload_hash,status,execution_payload) VALUES ($1,$2,$3,$4,$5,\'PROCESSING\',$6::jsonb)', [executionKey, id, actorId, executionKey, payloadHash, JSON.stringify(executionPayload ?? {})]);
         return { state: 'CLAIMED' as const, confirmation: this.confirmationFromRow(claimed.rows[0]) };
       }
       if (confirmation.result) return { state: confirmation.status, confirmation, result: confirmation.result };
@@ -198,10 +230,10 @@ export class PostgresCoreRepository implements CoreRepository {
   }
 
   async completeConfirmation(id: string, actorId: string, executionKey: string, status: Exclude<ConfirmationStatus, 'PENDING' | 'PROCESSING' | 'EXPIRED'>, result: Record<string, unknown>, failureCode?: string): Promise<void> { await this.transaction(async (client) => { await client.query('UPDATE confirmations SET status=$1,result=$2::jsonb,failure_code=$3,completed_at=now(),version=version+1 WHERE id=$4 AND actor_id=$5 AND execution_key=$6', [status, JSON.stringify(result), failureCode ?? null, id, actorId, executionKey]); await client.query('UPDATE confirmation_executions SET status=$1,result=$2::jsonb WHERE execution_key=$3', [status, JSON.stringify(result), executionKey]); }); }
-  async getExecution(key: string): Promise<ExecutionRecord | undefined> { const result = await this.pool.query('SELECT status,payload_hash,result FROM confirmation_executions WHERE execution_key=$1', [key]); const row = result.rows[0]; return row ? { status: String(row.status), payloadHash: String(row.payload_hash), result: row.result as Record<string, unknown> | undefined } : undefined; }
+  async getExecution(key: string): Promise<ExecutionRecord | undefined> { const result = await this.pool.query('SELECT status,payload_hash,result,execution_payload FROM confirmation_executions WHERE execution_key=$1', [key]); const row = result.rows[0]; return row ? { status: String(row.status), payloadHash: String(row.payload_hash), result: row.result as Record<string, unknown> | undefined, payload: row.execution_payload as Record<string, unknown> | undefined } : undefined; }
 
-  async createPayment(value: PaymentRecord): Promise<PaymentRecord> { return this.transaction(async (client) => { await client.query('INSERT INTO payments (id,actor_id,order_id,amount,currency,method,status,idempotency_key,payload_hash,receipt_id,intent_id,created_at,completed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (actor_id,idempotency_key) DO NOTHING', [value.id,value.actorId,value.orderId,value.amount,value.currency,value.method,value.status,value.idempotencyKey,value.payloadHash,value.receiptId ?? null,value.intentId ?? null,value.createdAt,value.status === 'SUCCEEDED' ? value.createdAt : null]); const result = await client.query('SELECT * FROM payments WHERE actor_id=$1 AND idempotency_key=$2 FOR UPDATE', [value.actorId,value.idempotencyKey]); const payment = this.paymentFromRow(result.rows[0]); if (!payment) throw new Error('PAYMENT_NOT_PERSISTED'); if (payment.status === 'SUCCEEDED' && payment.receiptId) await client.query('INSERT INTO receipts (id,payment_id) VALUES ($1,$2) ON CONFLICT (payment_id) DO NOTHING', [payment.receiptId,payment.id]); return payment; }); }
-  async updatePayment(id: string, status: PaymentStatus, receiptId?: string): Promise<PaymentRecord> { return this.transaction(async (client) => { const result = await client.query('UPDATE payments SET status=$1,receipt_id=COALESCE($2,receipt_id),completed_at=CASE WHEN $1 IN (\'SUCCEEDED\',\'FAILED\',\'TIMED_OUT\',\'UNKNOWN\') THEN now() ELSE completed_at END,updated_at=now() WHERE id=$3 RETURNING *', [status, receiptId ?? null, id]); const payment = this.paymentFromRow(result.rows[0]); if (!payment) throw new Error('PAYMENT_NOT_FOUND'); if (payment.status === 'SUCCEEDED' && payment.receiptId) await client.query('INSERT INTO receipts (id,payment_id) VALUES ($1,$2) ON CONFLICT (payment_id) DO NOTHING', [payment.receiptId,payment.id]); return payment; }); }
+  async createPayment(value: PaymentRecord): Promise<PaymentRecord> { return this.transaction(async (client) => { await client.query('INSERT INTO payments (id,actor_id,order_id,amount,currency,method,status,idempotency_key,payload_hash,receipt_id,intent_id,provider_reference,provider_status,authorized_at,last_checked_at,created_at,completed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (actor_id,idempotency_key) DO NOTHING', [value.id,value.actorId,value.orderId,value.amount,value.currency,value.method,value.status,value.idempotencyKey,value.payloadHash,value.receiptId ?? null,value.intentId ?? null,value.providerReference ?? value.id,value.providerStatus ?? value.status,value.authorizedAt ?? null,value.lastCheckedAt ?? new Date().toISOString(),value.createdAt,value.status === 'SUCCEEDED' ? value.createdAt : null]); const result = await client.query('SELECT * FROM payments WHERE actor_id=$1 AND idempotency_key=$2 FOR UPDATE', [value.actorId,value.idempotencyKey]); const payment = this.paymentFromRow(result.rows[0]); if (!payment) throw new Error('PAYMENT_NOT_PERSISTED'); if (payment.status === 'SUCCEEDED' && payment.receiptId) await client.query('INSERT INTO receipts (id,payment_id) VALUES ($1,$2) ON CONFLICT (payment_id) DO NOTHING', [payment.receiptId,payment.id]); return payment; }); }
+  async updatePayment(id: string, status: PaymentStatus, receiptId?: string): Promise<PaymentRecord> { return this.transaction(async (client) => { const result = await client.query('UPDATE payments SET status=$1,provider_status=$1,last_checked_at=now(),authorized_at=CASE WHEN $1=\'SUCCEEDED\' THEN COALESCE(authorized_at,now()) ELSE authorized_at END,receipt_id=COALESCE($2,receipt_id),completed_at=CASE WHEN $1 IN (\'SUCCEEDED\',\'FAILED\',\'TIMED_OUT\',\'UNKNOWN\') THEN now() ELSE completed_at END,updated_at=now() WHERE id=$3 RETURNING *', [status, receiptId ?? null, id]); const payment = this.paymentFromRow(result.rows[0]); if (!payment) throw new Error('PAYMENT_NOT_FOUND'); if (payment.status === 'SUCCEEDED' && payment.receiptId) await client.query('INSERT INTO receipts (id,payment_id) VALUES ($1,$2) ON CONFLICT (payment_id) DO NOTHING', [payment.receiptId,payment.id]); return payment; }); }
   async getPayment(id: string): Promise<PaymentRecord | undefined> { const result = await this.pool.query('SELECT * FROM payments WHERE id=$1', [id]); return this.paymentFromRow(result.rows[0]); }
   async findPayment(actorId: string, idempotencyKey: string): Promise<PaymentRecord | undefined> { const result = await this.pool.query('SELECT * FROM payments WHERE actor_id=$1 AND idempotency_key=$2', [actorId,idempotencyKey]); return this.paymentFromRow(result.rows[0]); }
   async findPaymentByOrder(orderId: string, actorId: string): Promise<PaymentRecord | undefined> { const result = await this.pool.query('SELECT * FROM payments WHERE order_id=$1 AND actor_id=$2 ORDER BY created_at DESC LIMIT 1', [orderId,actorId]); return this.paymentFromRow(result.rows[0]); }
@@ -209,10 +241,16 @@ export class PostgresCoreRepository implements CoreRepository {
   async getRefundByKey(paymentId: string, idempotencyKey: string): Promise<RefundRecord | undefined> { const result = await this.pool.query('SELECT * FROM payment_refunds WHERE payment_id=$1 AND idempotency_key=$2', [paymentId,idempotencyKey]); return result.rows[0] ? this.refundFromRow(result.rows[0]) : undefined; }
   async listRefunds(paymentId: string): Promise<RefundRecord[]> { const result = await this.pool.query('SELECT * FROM payment_refunds WHERE payment_id=$1 ORDER BY created_at', [paymentId]); return result.rows.map((row) => this.refundFromRow(row)); }
   async listPaymentsForReconciliation(): Promise<PaymentRecord[]> { const result = await this.pool.query("SELECT * FROM payments WHERE status='SUCCEEDED'"); return result.rows.map((row) => this.paymentFromRow(row)).filter((value): value is PaymentRecord => Boolean(value)); }
+  async listPaymentsForRecovery(_now: number): Promise<PaymentRecord[]> { const result = await this.pool.query("SELECT * FROM payments WHERE status IN ('PENDING','TIMED_OUT','UNKNOWN') ORDER BY COALESCE(last_checked_at, created_at) LIMIT 50"); return result.rows.map((row) => this.paymentFromRow(row)).filter((value): value is PaymentRecord => Boolean(value)); }
+  async claimStaleConfirmations(cutoff: number, now: number, limit: number): Promise<ConfirmationRecord[]> { return this.transaction(async (client) => { const result = await client.query("SELECT * FROM confirmations WHERE status='PROCESSING' AND processing_started_at < $1 AND (next_recovery_at IS NULL OR next_recovery_at <= now()) AND (recovery_claimed_at IS NULL OR recovery_claimed_at < now()-interval '5 seconds') ORDER BY processing_started_at FOR UPDATE SKIP LOCKED LIMIT $2", [new Date(cutoff), limit]); const records: ConfirmationRecord[] = []; for (const row of result.rows) { const updated = await client.query("UPDATE confirmations SET recovery_claimed_at=now(),recovery_attempts=recovery_attempts+1,next_recovery_at=now()+interval '5 seconds' WHERE id=$1 RETURNING *", [row.id]); records.push(this.confirmationFromRow(updated.rows[0])); } return records; }); }
+  async releaseConfirmationRecovery(id: string): Promise<void> { await this.pool.query('UPDATE confirmations SET recovery_claimed_at=NULL WHERE id=$1', [id]); }
+  async upsertWorkflowReconciliation(value: WorkflowReconciliationRecord): Promise<WorkflowReconciliationRecord> { const result = await this.pool.query("INSERT INTO workflow_reconciliation (order_id,actor_id,payment_id,refund_id,status,last_error_code,attempt_count,next_attempt_at,completed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (order_id) DO UPDATE SET refund_id=COALESCE(EXCLUDED.refund_id,workflow_reconciliation.refund_id),status=EXCLUDED.status,last_error_code=EXCLUDED.last_error_code,attempt_count=EXCLUDED.attempt_count,next_attempt_at=EXCLUDED.next_attempt_at,completed_at=EXCLUDED.completed_at,updated_at=now() RETURNING *", [value.orderId,value.actorId,value.paymentId,value.refundId ?? null,value.status,value.lastErrorCode ?? null,value.attemptCount,value.nextAttemptAt ?? null,value.completedAt ?? null]); const row = result.rows[0]; return { orderId: String(row.order_id), actorId: String(row.actor_id), paymentId: String(row.payment_id), refundId: row.refund_id ? String(row.refund_id) : undefined, status: String(row.status), lastErrorCode: row.last_error_code ? String(row.last_error_code) : undefined, attemptCount: Number(row.attempt_count), nextAttemptAt: row.next_attempt_at ? new Date(String(row.next_attempt_at)).toISOString() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : undefined }; }
+  async listDueWorkflowReconciliations(now: string, limit: number): Promise<WorkflowReconciliationRecord[]> { const result = await this.pool.query("SELECT * FROM workflow_reconciliation WHERE completed_at IS NULL AND (next_attempt_at IS NULL OR next_attempt_at <= $1) ORDER BY COALESCE(next_attempt_at,updated_at) LIMIT $2", [now, limit]); return result.rows.map((row) => ({ orderId: String(row.order_id), actorId: String(row.actor_id), paymentId: String(row.payment_id), refundId: row.refund_id ? String(row.refund_id) : undefined, status: String(row.status), lastErrorCode: row.last_error_code ? String(row.last_error_code) : undefined, attemptCount: Number(row.attempt_count), nextAttemptAt: row.next_attempt_at ? new Date(String(row.next_attempt_at)).toISOString() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : undefined })); }
   async getReceipt(paymentId: string): Promise<Record<string, unknown> | undefined> { const result = await this.pool.query('SELECT r.*,p.order_id,p.amount,p.currency,p.method,p.status AS payment_status FROM receipts r JOIN payments p ON p.id=r.payment_id WHERE r.payment_id=$1', [paymentId]); const row = result.rows[0]; return row ? { receipt_id: row.id, payment_id: paymentId, order_id: row.order_id, amount: { amount: row.amount, currency: row.currency }, method: row.method, status: row.payment_status, issued_at: new Date(String(row.created_at)).toISOString() } : undefined; }
   async saveConversation(value: ConversationRecord): Promise<void> { await this.pool.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state) VALUES ($1,$2,$3::jsonb,$4::jsonb) ON CONFLICT (conversation_id) DO UPDATE SET messages=EXCLUDED.messages,state=EXCLUDED.state,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id', [value.conversationId,value.actorId,JSON.stringify(value.messages),JSON.stringify(value.state)]); }
   async getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { const result = await this.pool.query('SELECT * FROM conversation_states WHERE conversation_id=$1 AND actor_id=$2', [id,actorId]); const row = result.rows[0]; return row ? { conversationId: String(row.conversation_id), actorId: String(row.actor_id), messages: row.messages, state: row.state } : undefined; }
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { await this.pool.query('INSERT INTO audit_events (action,actor_id,resource_id,correlation_id,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)', [value.action,value.actorId ?? null,value.resourceId ?? null,value.correlationId ?? null,JSON.stringify(value.metadata ?? {})]); }
+  async checkHealth(): Promise<boolean> { try { await this.pool.query('SELECT 1'); return true; } catch { return false; } }
   async close(): Promise<void> { await this.pool.end(); }
 }
 
@@ -222,7 +260,7 @@ export class CoreStore implements OnModuleDestroy {
   constructor(config: ConfigService) { this.repository = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID ? new InMemoryCoreRepository() : new PostgresCoreRepository(config.getOrThrow<string>('DATABASE_URL')); }
   createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord> { return this.repository.createConfirmation(value); }
   getConfirmation(id: string): Promise<ConfirmationRecord | undefined> { return this.repository.getConfirmation(id); }
-  claimConfirmation(id: string, actorId: string, key: string, hash: string, now: number): Promise<ConfirmationClaim> { return this.repository.claimConfirmation(id, actorId, key, hash, now); }
+  claimConfirmation(id: string, actorId: string, key: string, hash: string, now: number, payload?: Record<string, unknown>): Promise<ConfirmationClaim> { return this.repository.claimConfirmation(id, actorId, key, hash, now, payload); }
   completeConfirmation(id: string, actorId: string, key: string, status: Exclude<ConfirmationStatus, 'PENDING' | 'PROCESSING' | 'EXPIRED'>, result: Record<string, unknown>, code?: string): Promise<void> { return this.repository.completeConfirmation(id, actorId, key, status, result, code); }
   getExecution(key: string): Promise<ExecutionRecord | undefined> { return this.repository.getExecution(key); }
   createPayment(value: PaymentRecord): Promise<PaymentRecord> { return this.repository.createPayment(value); }
@@ -234,10 +272,16 @@ export class CoreStore implements OnModuleDestroy {
   getRefundByKey(paymentId: string, key: string): Promise<RefundRecord | undefined> { return this.repository.getRefundByKey(paymentId, key); }
   listRefunds(paymentId: string): Promise<RefundRecord[]> { return this.repository.listRefunds(paymentId); }
   listPaymentsForReconciliation(): Promise<PaymentRecord[]> { return this.repository.listPaymentsForReconciliation(); }
+  listPaymentsForRecovery(now: number): Promise<PaymentRecord[]> { return this.repository.listPaymentsForRecovery(now); }
+  claimStaleConfirmations(cutoff: number, now: number, limit: number): Promise<ConfirmationRecord[]> { return this.repository.claimStaleConfirmations(cutoff, now, limit); }
+  releaseConfirmationRecovery(id: string): Promise<void> { return this.repository.releaseConfirmationRecovery(id); }
+  upsertWorkflowReconciliation(value: WorkflowReconciliationRecord): Promise<WorkflowReconciliationRecord> { return this.repository.upsertWorkflowReconciliation(value); }
+  listDueWorkflowReconciliations(now: string, limit: number): Promise<WorkflowReconciliationRecord[]> { return this.repository.listDueWorkflowReconciliations(now, limit); }
   getReceipt(paymentId: string): Promise<Record<string, unknown> | undefined> { return this.repository.getReceipt(paymentId); }
   saveConversation(value: ConversationRecord): Promise<void> { return this.repository.saveConversation(value); }
   getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { return this.repository.getConversation(id, actorId); }
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { return this.repository.audit(value); }
+  checkHealth(): Promise<boolean> { return this.repository.checkHealth(); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }
 }
 

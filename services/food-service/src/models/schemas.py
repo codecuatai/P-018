@@ -55,11 +55,17 @@ class PreviewOrderRequest(BaseModel):
 class CreateOrderRequest(PreviewOrderRequest):
     idempotency_key: str = Field(min_length=8, max_length=128)
     payment_method: str = Field(pattern="^(bank_transfer|card|e_wallet)$")
+    expected_snapshot_hash: str = Field(min_length=1)
+    expected_cart_version: int = Field(ge=0)
+    expected_amount: int = Field(ge=0)
+    expected_currency: str = Field(min_length=3, max_length=3)
+    expected_quote_version: str = Field(min_length=1)
 
 
 class TransitionOrderRequest(BaseModel):
     target_status: str
     reason: str = Field(min_length=1, max_length=200)
+    operation_key: str | None = Field(default=None, min_length=8, max_length=200)
 
 
 class CancelOrderRequest(BaseModel):

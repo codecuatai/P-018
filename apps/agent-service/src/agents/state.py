@@ -2,6 +2,31 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
+from pydantic import BaseModel, Field
+
+
+class RestaurantCandidate(BaseModel):
+    id: str
+    name: str = ""
+
+
+class MenuItemCandidate(BaseModel):
+    id: str
+    name: str = ""
+    restaurant_id: str | None = None
+
+
+class FoodWorkflowContext(BaseModel):
+    restaurant_id: str | None = None
+    restaurant_candidates: list[RestaurantCandidate] = Field(default_factory=list)
+    menu_item_id: str | None = None
+    menu_item_candidates: list[MenuItemCandidate] = Field(default_factory=list)
+    cart_id: str | None = None
+    address_id: str | None = None
+    last_order_id: str | None = None
+    last_payment_id: str | None = None
+    pending_confirmation_id: str | None = None
+
 
 class AgentState(TypedDict, total=False):
     user_id: str
@@ -14,10 +39,11 @@ class AgentState(TypedDict, total=False):
     confidence: float
     extracted_slots: dict[str, Any]
     missing_slots: list[str]
-    selected_restaurant_id: str | None
-    selected_menu_item_ids: list[str]
-    cart_id: str | None
-    delivery_address: str | None
+    restaurant_id: str | None
+    menu_item_id: str | None
+    restaurant_candidates: list[dict[str, Any]]
+    menu_item_candidates: list[dict[str, Any]]
+    address_id: str | None
     tool_calls: list[dict[str, Any]]
     tool_results: list[dict[str, Any]]
     selected_tools: list[dict[str, Any]]

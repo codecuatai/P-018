@@ -15,6 +15,7 @@ from src.domain.policies import (
     cancellation_policy,
     quote_delivery,
 )
+from src.domain.quotes import build_authoritative_quote, price_item
 from src.repositories.food import FoodRepository, ident
 
 
@@ -75,36 +76,17 @@ class FoodApplicationService:
         return await self.repository.save_cart(cart)
 
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
-        groups = {group["id"]: group for group in item.get("option_groups", [])}
-        selected_by_group: dict[str, str] = {}
-        for option in selected_options:
-            group_id = option["group_id"]
-            if group_id in selected_by_group:
-                raise DomainError("INVALID_OPTION", "Mỗi nhóm tùy chọn chỉ được chọn một lần.")
-            selected_by_group[group_id] = option["option_id"]
-        for group in groups.values():
-            if group["required"] and group["id"] not in selected_by_group:
-                raise DomainError("INVALID_OPTION", f"Vui lòng chọn {group['name']}.")
-        normalized: list[dict] = []
-        extra = 0
-        for group_id, option_id in selected_by_group.items():
-            group = groups.get(group_id)
-            if group is None:
-                raise DomainError("INVALID_OPTION", "Nhóm tùy chọn không hợp lệ.")
-            option = next((candidate for candidate in group["options"] if candidate["id"] == option_id), None)
-            if option is None:
-                raise DomainError("INVALID_OPTION", "Tùy chọn không hợp lệ.")
-            extra += option["price"]
-            normalized.append({"group_id": group_id, "group_name": group["name"], "option_id": option_id, "option_name": option["name"], "price": option["price"]})
-        return item["price"] + extra, normalized
+        return price_item(item, selected_options)
 
     async def _recalculate(self, cart: dict, expected_version: int | None = None, persist: bool = True) -> dict:
         subtotal = sum(item["unit_price"] * item["quantity"] for item in cart["items"])
         discount = 0
-        if cart.get("voucher"):
-            if cart["voucher"].get("restaurant_id") and cart["voucher"]["restaurant_id"] != cart["restaurant_id"]:
+        voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
+        voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
+        if voucher:
+            if voucher.get("restaurant_id") and voucher["restaurant_id"] != cart["restaurant_id"]:
                 raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
-            discount = calculate_discount(cart["voucher"], subtotal, datetime.now(UTC))
+            discount = calculate_discount(voucher, subtotal, datetime.now(UTC))
         cart["subtotal"] = subtotal
         cart["discount"] = discount
         cart["total"] = max(subtotal - discount, 0)
@@ -168,7 +150,7 @@ class FoodApplicationService:
             raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
         if voucher.get("restaurant_id") and voucher["restaurant_id"] != cart["restaurant_id"]:
             raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
-        cart["voucher"] = voucher
+        cart["voucher"] = {"code": str(voucher["code"]).upper()}
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
     async def remove_voucher(self, cart_id: str, user_id: str | None = None) -> dict:
@@ -208,18 +190,19 @@ class FoodApplicationService:
         address = await self.repository.get_address(address_id)
         if address is None or address.get("user_id") != user_id:
             raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
-        cart = await self._reprice_cart(cart, persist=False)
-        delivery = await self.delivery_quote(cart["restaurant_id"], address_id)
-        delivery_fee = delivery["fee"]["amount"]
-        total = cart["total"] + delivery_fee
-        payload = {"cart_id": cart_id, "cart_version": int(cart.get("version", 0)), "restaurant_id": cart["restaurant_id"], "items": cart["items"], "subtotal": cart["subtotal"], "voucher": cart.get("voucher"), "discount": cart["discount"], "delivery": delivery, "total": {"amount": total, "currency": "VND"}, "address": delivery["address"], "cancellation_policy": cancellation_policy(FoodOrderStatus.PAYMENT_PENDING), "payment_methods": ["bank_transfer", "card", "e_wallet"], "quote_version": "food-quote-v2"}
-        payload["snapshot_hash"] = hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
-        return payload
+        restaurant = await self.restaurant(cart["restaurant_id"])
+        items = {item["menu_item_id"]: await self.menu_item(item["menu_item_id"]) for item in cart["items"]}
+        voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
+        voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
+        return build_authoritative_quote(cart, restaurant, items, voucher, address, self.delivery_config)
 
     async def create_order(self, payload: dict) -> dict:
-        preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"])
-        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "cart_version": preview["cart_version"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "snapshot_hash": preview["snapshot_hash"], "amount": preview["total"]["amount"], "currency": preview["total"]["currency"], "subtotal": preview["subtotal"], "restaurant": preview["delivery"]["restaurant"], "items": preview["items"], "address": preview["address"], "delivery": preview["delivery"], "voucher": preview.get("voucher"), "discount": preview["discount"], "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": datetime.now(UTC).isoformat(), "reason": "Order created", "actor_type": "gateway"}]}
-        return await self.repository.create_order_with_optional_voucher(order, preview.get("voucher"))
+        if "expected_snapshot_hash" not in payload:
+            preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"])
+            payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}
+        expected = {"snapshot_hash": payload["expected_snapshot_hash"], "cart_version": payload["expected_cart_version"], "amount": payload["expected_amount"], "currency": payload["expected_currency"], "quote_version": payload["expected_quote_version"]}
+        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": datetime.now(UTC).isoformat(), "reason": "Order created", "actor_type": "gateway"}]}
+        return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"])
 
     async def get_order(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.repository.get_order(order_id)

@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
-from src.domain.policies import DomainError, FoodOrderStatus, calculate_discount, validate_transition
+from src.domain.policies import DeliveryConfig, DomainError, FoodOrderStatus, calculate_discount, validate_transition
+from src.domain.quotes import build_authoritative_quote
 
 
 def ident(prefix: str) -> str:
@@ -26,7 +27,7 @@ class FoodRepository(Protocol):
     async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict: ...
     async def get_voucher(self, code: str) -> dict | None: ...
     async def get_address(self, address_id: str) -> dict | None: ...
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict: ...
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict: ...
     async def get_order(self, order_id: str) -> dict | None: ...
     async def list_orders(self) -> list[dict]: ...
     async def list_due_orders(self, now: datetime) -> list[dict]: ...
@@ -97,6 +98,7 @@ class InMemoryFoodRepository:
         self.orders: dict[str, dict] = {}
         self.order_events: dict[str, list[dict]] = {}
         self.redeemed_vouchers: set[tuple[str, str]] = set()
+        self.order_operations: dict[tuple[str, str], dict] = {}
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
@@ -146,15 +148,30 @@ class InMemoryFoodRepository:
     async def get_address(self, address_id: str) -> dict | None:
         return deepcopy(self.addresses.get(address_id))
 
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict:
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
         async with self._lock:
             existing = next((value for value in self.orders.values() if value["user_id"] == order["user_id"] and value["idempotency_key"] == order["idempotency_key"]), None)
             if existing:
-                if existing["snapshot_hash"] != order["snapshot_hash"]:
+                if expected is not None and existing["snapshot_hash"] != expected["snapshot_hash"]:
                     raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
                 return deepcopy(existing)
             cart = self.carts.get(order["cart_id"])
-            if cart is None or cart.get("user_id") != order["user_id"] or int(cart.get("version", 0)) != int(order.get("cart_version", 0)):
+            if cart is None or cart.get("user_id") != order["user_id"]:
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+            if expected is not None and delivery_config is not None and address_id is not None:
+                restaurant = self.restaurants.get(str(cart["restaurant_id"]))
+                address = self.addresses.get(address_id)
+                voucher_code = str((cart.get("voucher") or {}).get("code", ""))
+                current_voucher = self.vouchers.get(voucher_code.upper()) if voucher_code else None
+                items = {item["menu_item_id"]: self.items[item["menu_item_id"]] for item in cart.get("items", []) if item["menu_item_id"] in self.items}
+                if restaurant is None or address is None or address.get("user_id") != order["user_id"]:
+                    raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
+                quote = build_authoritative_quote(cart, restaurant, items, current_voucher, address, delivery_config)
+                if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
+                    raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                voucher = current_voucher
+            elif int(cart.get("version", 0)) != int(order.get("cart_version", 0)):
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
             voucher_copy = deepcopy(voucher)
             if voucher_copy:
@@ -210,13 +227,12 @@ class InMemoryFoodRepository:
                 raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
             if expected_version is not None and int(order.get("version", 0)) != expected_version:
                 raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
-            existing_key = order.get("cancellation_idempotency_key")
-            if operation_key and existing_key:
-                if existing_key != operation_key:
-                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key hủy đơn đã được dùng cho payload khác.")
-                return deepcopy(order)
             if operation_key:
-                order["cancellation_idempotency_key"] = operation_key
+                existing_operation = self.order_operations.get((order_id, operation_key))
+                if existing_operation:
+                    if existing_operation["target_status"] != target.value:
+                        raise DomainError("IDEMPOTENCY_KEY_REUSED", "Transition operation key đã được dùng cho target khác.")
+                    return deepcopy(existing_operation["result"])
             updated = self._advance_locked(order, target, reason, actor_type)
             updated["next_transition_at"] = next_transition_at.isoformat() if next_transition_at else None
             if target == FoodOrderStatus.DELIVERED:
@@ -225,6 +241,8 @@ class InMemoryFoodRepository:
                 if driver_id in self.drivers:
                     self.drivers[driver_id]["available"] = True
             self.orders[order_id] = deepcopy(updated)
+            if operation_key:
+                self.order_operations[(order_id, operation_key)] = {"target_status": target.value, "result": deepcopy(updated)}
             return deepcopy(updated)
 
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:
@@ -340,18 +358,44 @@ class PostgresFoodRepository:
         row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1", address_id)
         return _json_object(row["data"]) if row else None
 
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None) -> dict:
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
         pool = self._require_pool()
         async with pool.acquire() as connection, connection.transaction():
             existing = await connection.fetchrow("SELECT * FROM food_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", order["user_id"], order["idempotency_key"])
             if existing:
                 existing_order = self._order_from_row(existing)
-                if existing_order["snapshot_hash"] != order["snapshot_hash"]:
+                if expected is not None and existing_order["snapshot_hash"] != expected["snapshot_hash"]:
                     raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
                 return existing_order
-            cart_row = await connection.fetchrow("SELECT user_id, restaurant_id, version FROM food_carts WHERE id=$1 FOR UPDATE", order["cart_id"])
-            if not cart_row or cart_row["user_id"] != order["user_id"] or int(cart_row["version"]) != int(order.get("cart_version", 0)):
+            cart_row = await connection.fetchrow("SELECT user_id, restaurant_id, version, data FROM food_carts WHERE id=$1 FOR UPDATE", order["cart_id"])
+            if not cart_row or cart_row["user_id"] != order["user_id"]:
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+            cart = _json_object(cart_row["data"])
+            cart["version"] = int(cart_row["version"])
+            if expected is None:
+                if int(cart_row["version"]) != int(order.get("cart_version", 0)):
+                    raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+            else:
+                if delivery_config is None or address_id is None:
+                    raise DomainError("CART_CHANGED", "Authoritative quote configuration is missing.")
+                restaurant_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='restaurant' AND id=$1 FOR UPDATE", cart["restaurant_id"])
+                address_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='address' AND id=$1 FOR UPDATE", address_id)
+                if not restaurant_row or not address_row:
+                    raise DomainError("NOT_FOUND", "Không tìm thấy nhà hàng hoặc địa chỉ giao hàng.")
+                address = _json_object(address_row["data"])
+                if address.get("user_id") != order["user_id"]:
+                    raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
+                item_ids = [str(item["menu_item_id"]) for item in cart.get("items", [])]
+                item_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='menu_item' AND id=ANY($1::text[]) FOR UPDATE", item_ids)
+                items = {str(row["id"]): _json_object(row["data"]) for row in item_rows}
+                voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
+                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 FOR UPDATE", voucher_code.upper()) if voucher_code else None
+                current_voucher = _json_object(voucher_row["data"]) if voucher_row else None
+                quote = build_authoritative_quote(cart, _json_object(restaurant_row["data"]), items, current_voucher, address, delivery_config)
+                if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
+                    raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                voucher = current_voucher
             if voucher:
                 code = str(voucher["code"]).upper()
                 voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 FOR UPDATE", code)
@@ -400,7 +444,7 @@ class PostgresFoodRepository:
             if not driver_row:
                 raise DomainError("UPSTREAM_UNAVAILABLE", "Hiện chưa có tài xế khả dụng.")
             driver = _json_object(driver_row["data"])
-            await connection.execute("UPDATE food_drivers SET available=false,updated_at=now() WHERE id=$1", driver_row["id"])
+            await connection.execute("UPDATE food_drivers SET available=false,assigned_order_id=$1,updated_at=now() WHERE id=$2", order["id"], driver_row["id"])
             order["driver"] = driver
             order["driver_id"] = driver_row["id"]
         if decision:
@@ -411,12 +455,12 @@ class PostgresFoodRepository:
         order["next_transition_at"] = next_transition_at.isoformat() if next_transition_at else None
         if target == FoodOrderStatus.DELIVERED:
             order["workflow_completed_at"] = datetime.now(UTC).isoformat()
-        updated = await connection.fetchrow("UPDATE food_orders SET status=$1,next_transition_at=$2,restaurant_decision=$3,driver_id=$4,workflow_completed_at=$5,cancellation_idempotency_key=COALESCE($6,cancellation_idempotency_key),data=$7::jsonb,version=version+1,updated_at=now() WHERE id=$8 AND version=$9 RETURNING *", target.value, next_transition_at, order.get("restaurant_decision"), order.get("driver_id"), _parse_datetime(order["workflow_completed_at"]) if order.get("workflow_completed_at") else None, operation_key, json.dumps(order, ensure_ascii=False), order["id"], int(row["version"]))
+        updated = await connection.fetchrow("UPDATE food_orders SET status=$1,next_transition_at=$2,restaurant_decision=$3,driver_id=$4,workflow_completed_at=$5,data=$6::jsonb,version=version+1,updated_at=now() WHERE id=$7 AND version=$8 RETURNING *", target.value, next_transition_at, order.get("restaurant_decision"), order.get("driver_id"), _parse_datetime(order["workflow_completed_at"]) if order.get("workflow_completed_at") else None, json.dumps(order, ensure_ascii=False), order["id"], int(row["version"]))
         if not updated:
             raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
         await connection.execute("INSERT INTO food_order_status_events (order_id,from_status,to_status,reason,actor_type,metadata) VALUES ($1,$2,$3,$4,$5,$6::jsonb)", order["id"], current.value, target.value, reason, actor_type, json.dumps({"version": int(updated["version"])}, ensure_ascii=False))
         if target == FoodOrderStatus.DELIVERED and order.get("driver_id"):
-            await connection.execute("UPDATE food_drivers SET available=true,updated_at=now() WHERE id=$1", order["driver_id"])
+            await connection.execute("UPDATE food_drivers SET available=true,assigned_order_id=NULL,updated_at=now() WHERE id=$1", order["driver_id"])
         return self._order_from_row(updated)
 
     async def transition_order_atomic(self, order_id: str, target: FoodOrderStatus, reason: str, actor_type: str = "system", next_transition_at: datetime | None = None, expected_version: int | None = None, operation_key: str | None = None) -> dict:
@@ -427,12 +471,16 @@ class PostgresFoodRepository:
                 raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
             if expected_version is not None and int(row["version"]) != expected_version:
                 raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
-            existing_key = row["cancellation_idempotency_key"]
-            if operation_key and existing_key:
-                if existing_key != operation_key:
-                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key hủy đơn đã được dùng cho payload khác.")
-                return self._order_from_row(row)
-            return await self._transition_connection(connection, row, target, reason, actor_type, next_transition_at, operation_key=operation_key)
+            if operation_key:
+                operation = await connection.fetchrow("SELECT target_status,result FROM food_order_operations WHERE order_id=$1 AND operation_key=$2 FOR UPDATE", order_id, operation_key)
+                if operation:
+                    if str(operation["target_status"]) != target.value:
+                        raise DomainError("IDEMPOTENCY_KEY_REUSED", "Transition operation key đã được dùng cho target khác.")
+                    return _json_object(operation["result"])
+            updated = await self._transition_connection(connection, row, target, reason, actor_type, next_transition_at)
+            if operation_key:
+                await connection.execute("INSERT INTO food_order_operations (order_id,operation_key,operation_type,target_status,result) VALUES ($1,$2,$3,$4,$5::jsonb)", order_id, operation_key, "ORDER_TRANSITION", target.value, json.dumps(updated, ensure_ascii=False))
+            return updated
 
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:
         pool = self._require_pool()

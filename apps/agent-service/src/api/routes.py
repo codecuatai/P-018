@@ -27,7 +27,7 @@ async def chat(request: ChatRequest, x_internal_service_token: str | None = Head
             elif result.get("intent") == "search_food" and isinstance(first, dict) and isinstance(first.get("items"), list) and first["items"]:
                 item = first["items"][0]
                 if isinstance(item, dict):
-                    state_updates = {"selected_restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")}
+                    state_updates = {"restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")}
         if result.get("pending_confirmation") is not None:
             state_updates = {**state_updates, "pending_confirmation_id": result["pending_confirmation"].get("id")}
         response = AgentResponse(response_type=result.get("response_type", "text"), message=result.get("response", ""), response=result.get("response", ""), data=result.get("data", {}), pending_confirmation=result.get("pending_confirmation"), state_updates=state_updates, meta={"conversation_id": request.conversation_id, "request_id": request.correlation_id, "tool_calls": result.get("tool_calls", [])})

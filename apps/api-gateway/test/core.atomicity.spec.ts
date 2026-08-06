@@ -46,4 +46,17 @@ describe('Core atomicity adapter', () => {
     expect(retry.id).toBe(first.id);
     await expect(repository.createRefund({ ...refund, id: 'refund_c', idempotencyKey: 'refund:other' })).rejects.toThrow('REFUND_AMOUNT_EXCEEDED');
   });
+
+  it('reclaims stale processing confirmations and resumes failed-retryable executions', async () => {
+    const repository = new InMemoryCoreRepository();
+    const stale = { ...confirmation, id: 'cnf_stale', status: 'PENDING' as const, expiresAt: Date.now() + 60_000 };
+    await repository.createConfirmation(stale);
+    const first = await repository.claimConfirmation(stale.id, stale.actorId, 'confirmation:stale', 'payload-stale', Date.now(), { payment_method: 'card' });
+    expect(first.state).toBe('CLAIMED');
+    await repository.completeConfirmation(stale.id, stale.actorId, 'confirmation:stale', 'FAILED_RETRYABLE', { code: 'PAYMENT_TIMEOUT' }, 'PAYMENT_TIMEOUT');
+    const retry = await repository.claimConfirmation(stale.id, stale.actorId, 'confirmation:stale', 'payload-stale', Date.now(), { payment_method: 'card' });
+    expect(retry.state).toBe('CLAIMED');
+    const staleRows = await repository.claimStaleConfirmations(Date.now() - 1000, Date.now(), 10);
+    expect(staleRows).toHaveLength(0);
+  });
 });

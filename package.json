@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "build:gateway": "pnpm --dir apps/api-gateway build",
-    "test:gateway": "pnpm --dir apps/api-gateway test",
+    "build:gateway": "corepack pnpm --dir apps/api-gateway build",
+    "test:gateway": "corepack pnpm --dir apps/api-gateway test",
     "check:agent": "python -m ruff check apps/agent-service/src apps/agent-service/tests && python -m pytest apps/agent-service/tests -q",
-    "compose:config": "docker compose --env-file .env.example config --quiet"
+    "compose:config": "docker compose --env-file .env.example config --quiet",
+    "test:e2e": "python -m pytest tests/e2e -q"
   }
 }

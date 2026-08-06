@@ -1,6 +1,6 @@
 # Runtime Architecture
 
-Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, agent, Ride, Restaurant, Healthcare, and Food over internal DNS: `agent-service`, `ride-service`, `restaurant-service`, `healthcare-service`, and `food-service`.
+Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, agent, Ride, Restaurant, Healthcare, and Food over internal DNS: `agent-service`, `ride-service`, `restaurant-service`, `healthcare-service`, and `food-service`. The default Compose publishes only the Gateway; Agent/Food use `expose` for container-network access.
 
 ```mermaid
 flowchart TB

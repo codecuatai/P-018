@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     cors_origins: str = "http://localhost:3000"
 
-    # LLM adapter configuration. The skeleton does not call an LLM by default.
+    # LLM adapter configuration. Deterministic fallback is used when no key is configured.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)

@@ -32,8 +32,8 @@ export class ConfirmationService {
     return confirmation;
   }
 
-  private async claim(id: string, user: AuthUser, key: string, hash: string): Promise<ConfirmationClaim> {
-    const claim = await this.store.claimConfirmation(id, user.sub, key, hash, Date.now());
+  private async claim(id: string, user: AuthUser, key: string, hash: string, payload?: JsonObject): Promise<ConfirmationClaim> {
+    const claim = await this.store.claimConfirmation(id, user.sub, key, hash, Date.now(), payload);
     if (claim.state === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different payload.' });
     if (claim.state === 'EXPIRED') throw new ConflictException({ code: 'CONFIRMATION_EXPIRED', detail: 'Confirmation has expired.' });
     if (claim.state === 'CONFIRMATION_ALREADY_USED') throw new ConflictException({ code: 'CONFIRMATION_ALREADY_USED', detail: 'Confirmation has already been used.' });
@@ -54,7 +54,9 @@ export class ConfirmationService {
     if (typeof paymentMethod !== 'string' || !['bank_transfer', 'card', 'e_wallet'].includes(paymentMethod)) throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Only payment_method is accepted for execution.' });
     const executionHash = stableHash({ confirmation_id: id, payment_method: paymentMethod, simulate_failure: body.simulate_failure === true, simulate_timeout: body.simulate_timeout === true });
     const executionKey = `confirmation:${id}:${idempotencyKey}`;
-    const claim = await this.claim(id, user, executionKey, executionHash);
+    const orderKey = `order:${id}:${idempotencyKey}`;
+    const paymentKey = `payment:${id}:${idempotencyKey}`;
+    const claim = await this.claim(id, user, executionKey, executionHash, { payment_method: paymentMethod, order_idempotency_key: orderKey, payment_idempotency_key: paymentKey, simulate_failure: body.simulate_failure === true, simulate_timeout: body.simulate_timeout === true, conversation_id: body.conversation_id });
     if (claim.result) return claim.result;
     const confirmation = claim.confirmation;
     if (!confirmation || claim.state !== 'CLAIMED') throw new ConflictException({ code: 'CONFIRMATION_PROCESSING', detail: 'Confirmation is already being processed.', retryable: true });
@@ -67,14 +69,12 @@ export class ConfirmationService {
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'CART_CHANGED');
         throw new ConflictException({ code: 'CART_CHANGED', detail: 'Cart, price, voucher, delivery quote, or currency changed. Prepare a new confirmation.' });
       }
-      const orderKey = `order:${id}:${idempotencyKey}`;
-      const order = await this.food.post('/api/v1/orders', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub, payment_method: paymentMethod, idempotency_key: orderKey }, correlationId, orderKey, user.sub);
+      const order = await this.food.post('/api/v1/orders', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version }, correlationId, orderKey, user.sub);
       if (Number(order.amount) !== confirmation.amount || String(order.currency) !== confirmation.currency) {
         const result = { confirmation_id: id, order, code: 'PAYLOAD_MISMATCH' };
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'PAYLOAD_MISMATCH');
         throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Food order amount does not match the confirmed amount.' });
       }
-      const paymentKey = `payment:${id}:${idempotencyKey}`;
       const payment = await this.payments.createAndConfirm({ actorId: user.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: body.simulate_failure === true, simulateTimeout: body.simulate_timeout === true });
       if (payment.status === 'PENDING' || payment.status === 'TIMED_OUT' || payment.status === 'UNKNOWN') {
         const result = { confirmation_id: id, order, payment, code: 'PAYMENT_TIMEOUT' };
@@ -82,12 +82,13 @@ export class ConfirmationService {
         throw new ConflictException({ code: 'PAYMENT_TIMEOUT', detail: 'Payment status is unknown; query the payment before retrying.', retryable: true });
       }
       if (payment.status === 'FAILED') {
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment sandbox failed' }, correlationId, `payment-failed:${id}`);
+        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment sandbox failed', operation_key: `payment-failed:${id}` }, correlationId, `payment-failed:${id}`);
       } else {
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAID', reason: 'Payment sandbox succeeded' }, correlationId, `payment-paid:${id}`);
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Awaiting restaurant confirmation' }, correlationId, `restaurant-confirming:${id}`);
+        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAID', reason: 'Payment sandbox succeeded', operation_key: `payment-paid:${id}` }, correlationId, `payment-paid:${id}`);
+        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Awaiting restaurant confirmation', operation_key: `restaurant-confirming:${id}` }, correlationId, `restaurant-confirming:${id}`);
       }
-      const result: JsonObject = { confirmation_id: confirmation.id, order, payment };
+      const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, user.sub);
+      const result: JsonObject = { confirmation_id: confirmation.id, order: authoritativeOrder, payment };
       await this.store.completeConfirmation(id, user.sub, executionKey, payment.status === 'FAILED' ? 'FAILED_FINAL' : 'SUCCEEDED', result, payment.status === 'FAILED' ? 'PAYMENT_FAILED' : undefined);
       if (payment.status === 'SUCCEEDED') await this.updateConversationAfterExecution(body.conversation_id, user.sub, String(order.id), payment.id);
       await this.store.audit({ action: payment.status === 'SUCCEEDED' ? 'payment.succeeded' : 'payment.failed', actorId: user.sub, resourceId: payment.id, correlationId });
@@ -121,7 +122,9 @@ export class ConfirmationService {
     const confirmation = await this.get(id, user.sub);
     if (confirmation.action !== 'CANCEL_FOOD_ORDER') throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Confirmation action is not cancellation.' });
     const executionKey = `confirmation:${id}:${idempotencyKey}`;
-    const claim = await this.claim(id, user, executionKey, stableHash({ confirmation_id: id, action: confirmation.action, payload_hash: confirmation.payloadHash }));
+    const cancelKey = `cancel:${id}:${idempotencyKey}`;
+    const refundKey = `refund:${id}:${idempotencyKey}`;
+    const claim = await this.claim(id, user, executionKey, stableHash({ confirmation_id: id, action: confirmation.action, payload_hash: confirmation.payloadHash }), { cancel_idempotency_key: cancelKey, refund_idempotency_key: refundKey, conversation_id: conversationId });
     if (claim.result) return claim.result;
     if (!claim.confirmation || claim.state !== 'CLAIMED') throw new ConflictException({ code: 'CONFIRMATION_PROCESSING', detail: 'Confirmation is already being processed.', retryable: true });
     try {
@@ -132,16 +135,16 @@ export class ConfirmationService {
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'ORDER_CHANGED');
         throw new ConflictException({ code: 'ORDER_CHANGED', detail: 'Order status or refund amount changed. Prepare a new cancellation confirmation.' });
       }
-      const cancelKey = `cancel:${id}:${idempotencyKey}`;
       const order = await this.food.post(`/api/v1/orders/${confirmation.payload.order_id}/cancel`, { user_id: user.sub, idempotency_key: cancelKey }, correlationId, cancelKey, user.sub);
       const payment = await this.store.findPaymentByOrder(String(confirmation.payload.order_id), user.sub);
       let refundRecord: JsonObject | undefined;
       if (payment?.status === 'SUCCEEDED') {
-        refundRecord = await this.payments.refund(payment.id, user.sub, `cancel:${id}:${idempotencyKey}`, 'customer_cancellation') as unknown as JsonObject;
-        await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund started' }, correlationId, `cancel-refund-pending:${id}`);
-        await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund completed' }, correlationId, `cancel-refunded:${id}`);
+        refundRecord = await this.payments.refund(payment.id, user.sub, refundKey, 'customer_cancellation') as unknown as JsonObject;
+        await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund started', operation_key: `cancel-refund-pending:${id}` }, correlationId, `cancel-refund-pending:${id}`);
+        await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund completed', operation_key: `cancel-refunded:${id}` }, correlationId, `cancel-refunded:${id}`);
       }
-      const result: JsonObject = { confirmation_id: id, order, payment, refund: refundRecord };
+      const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, user.sub);
+      const result: JsonObject = { confirmation_id: id, order: authoritativeOrder, payment, refund: refundRecord };
       await this.store.completeConfirmation(id, user.sub, executionKey, 'SUCCEEDED', result);
       await this.updateConversationAfterExecution(conversationId, user.sub, String(order.id), payment?.id);
       return result;
@@ -152,5 +155,55 @@ export class ConfirmationService {
       await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_RETRYABLE', result, code);
       throw error;
     }
+  }
+
+  async recoverStaleConfirmations(correlationId: string): Promise<number> {
+    const timeoutMs = this.config.get<number>('CONFIRMATION_PROCESSING_TIMEOUT_SECONDS', 30) * 1000;
+    const stale = await this.store.claimStaleConfirmations(Date.now() - timeoutMs, Date.now(), 20);
+    let recovered = 0;
+    for (const confirmation of stale) {
+      try {
+        const execution = confirmation.executionKey ? await this.store.getExecution(confirmation.executionKey) : undefined;
+        if (!execution || !confirmation.executionKey) { await this.store.releaseConfirmationRecovery(confirmation.id); continue; }
+        const payload = execution.payload ?? {};
+        const actor: AuthUser = { sub: confirmation.actorId, email: 'recovery@xone.local', role: 'customer' };
+        if (confirmation.action === 'PLACE_FOOD_ORDER') {
+          const paymentMethod = String(payload.payment_method ?? 'card');
+          const orderKey = String(payload.order_idempotency_key ?? `order:${confirmation.id}:recovery`);
+          const paymentKey = String(payload.payment_idempotency_key ?? `payment:${confirmation.id}:recovery`);
+          const order = await this.food.post('/api/v1/orders', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: actor.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version }, correlationId, orderKey, actor.sub);
+          const payment = await this.payments.createAndConfirm({ actorId: actor.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: payload.simulate_failure === true, simulateTimeout: payload.simulate_timeout === true });
+          if (payment.status === 'FAILED') await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment recovery failed', operation_key: `payment-failed:${confirmation.id}` }, correlationId, `payment-failed:${confirmation.id}`);
+          else if (payment.status === 'SUCCEEDED') {
+            await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAID', reason: 'Payment recovery succeeded', operation_key: `payment-paid:${confirmation.id}` }, correlationId, `payment-paid:${confirmation.id}`);
+            await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Restaurant confirmation resumed', operation_key: `restaurant-confirming:${confirmation.id}` }, correlationId, `restaurant-confirming:${confirmation.id}`);
+          }
+          const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, actor.sub);
+          const result = { confirmation_id: confirmation.id, order: authoritativeOrder, payment, ...(payment.status === 'TIMED_OUT' || payment.status === 'UNKNOWN' ? { code: 'PAYMENT_TIMEOUT' } : {}) };
+          await this.store.completeConfirmation(confirmation.id, actor.sub, confirmation.executionKey, payment.status === 'FAILED' ? 'FAILED_FINAL' : payment.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'FAILED_RETRYABLE', result, payment.status === 'FAILED' ? 'PAYMENT_FAILED' : payment.status === 'SUCCEEDED' ? undefined : 'PAYMENT_TIMEOUT');
+          recovered += 1;
+        } else if (confirmation.action === 'CANCEL_FOOD_ORDER') {
+          const orderId = String(confirmation.payload.order_id);
+          const cancelKey = String(payload.cancel_idempotency_key ?? `cancel:${confirmation.id}:recovery`);
+          const order = await this.food.post(`/api/v1/orders/${orderId}/cancel`, { user_id: actor.sub, idempotency_key: cancelKey }, correlationId, cancelKey, actor.sub);
+          const payment = await this.store.findPaymentByOrder(orderId, actor.sub);
+          let refund: JsonObject | undefined;
+          if (payment?.status === 'SUCCEEDED') {
+            refund = await this.payments.refund(payment.id, actor.sub, String(payload.refund_idempotency_key ?? `refund:${confirmation.id}:recovery`), 'customer_cancellation') as unknown as JsonObject;
+            await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund recovery started', operation_key: `cancel-refund-pending:${confirmation.id}` }, correlationId, `cancel-refund-pending:${confirmation.id}`);
+            await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund recovery completed', operation_key: `cancel-refunded:${confirmation.id}` }, correlationId, `cancel-refunded:${confirmation.id}`);
+          }
+          const authoritativeOrder = await this.food.get(`/api/v1/orders/${orderId}`, correlationId, actor.sub);
+          const result = { confirmation_id: confirmation.id, order: authoritativeOrder, payment, refund };
+          await this.store.completeConfirmation(confirmation.id, actor.sub, confirmation.executionKey, 'SUCCEEDED', result);
+          recovered += 1;
+        }
+        await this.store.releaseConfirmationRecovery(confirmation.id);
+      } catch (error: unknown) {
+        await this.store.completeConfirmation(confirmation.id, confirmation.actorId, confirmation.executionKey ?? '', 'FAILED_RETRYABLE', { confirmation_id: confirmation.id, code: errorCode(error), detail: 'Recovery will retry the same execution.' }, errorCode(error));
+        await this.store.releaseConfirmationRecovery(confirmation.id);
+      }
+    }
+    return recovered;
   }
 }
