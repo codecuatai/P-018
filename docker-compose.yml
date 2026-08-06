@@ -1,29 +1,123 @@
-version: "3.8"
-
 services:
-  backend:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      CORE_DB_NAME: ${CORE_DB_NAME:?CORE_DB_NAME is required}
+      CORE_DB_USER: ${CORE_DB_USER:?CORE_DB_USER is required}
+      CORE_DB_PASSWORD: ${CORE_DB_PASSWORD:?CORE_DB_PASSWORD is required}
+      AGENT_DB_NAME: ${AGENT_DB_NAME:?AGENT_DB_NAME is required}
+      AGENT_DB_USER: ${AGENT_DB_USER:?AGENT_DB_USER is required}
+      AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:?AGENT_DB_PASSWORD is required}
+      RIDE_DB_NAME: ${RIDE_DB_NAME:?RIDE_DB_NAME is required}
+      RIDE_DB_USER: ${RIDE_DB_USER:?RIDE_DB_USER is required}
+      RIDE_DB_PASSWORD: ${RIDE_DB_PASSWORD:?RIDE_DB_PASSWORD is required}
+      RESTAURANT_DB_NAME: ${RESTAURANT_DB_NAME:?RESTAURANT_DB_NAME is required}
+      RESTAURANT_DB_USER: ${RESTAURANT_DB_USER:?RESTAURANT_DB_USER is required}
+      RESTAURANT_DB_PASSWORD: ${RESTAURANT_DB_PASSWORD:?RESTAURANT_DB_PASSWORD is required}
+      HEALTHCARE_DB_NAME: ${HEALTHCARE_DB_NAME:?HEALTHCARE_DB_NAME is required}
+      HEALTHCARE_DB_USER: ${HEALTHCARE_DB_USER:?HEALTHCARE_DB_USER is required}
+      HEALTHCARE_DB_PASSWORD: ${HEALTHCARE_DB_PASSWORD:?HEALTHCARE_DB_PASSWORD is required}
+      FOOD_DB_NAME: ${FOOD_DB_NAME:?FOOD_DB_NAME is required}
+      FOOD_DB_USER: ${FOOD_DB_USER:?FOOD_DB_USER is required}
+      FOOD_DB_PASSWORD: ${FOOD_DB_PASSWORD:?FOOD_DB_PASSWORD is required}
+    ports: ["${POSTGRES_PORT:?POSTGRES_PORT is required}:5432"]
     volumes:
-      - ./data:/app/data
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  web:
-    build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    ports:
-      - "3000:80"
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
-    depends_on:
-      - backend
+    networks: [xone_internal]
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    environment:
+      NODE_ENV: ${APP_ENV:?APP_ENV is required}
+      PORT: ${API_GATEWAY_PORT:?API_GATEWAY_PORT is required}
+      DATABASE_URL: ${CORE_DATABASE_URL:?CORE_DATABASE_URL is required}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:?AGENT_SERVICE_URL is required}
+      RIDE_SERVICE_URL: ${RIDE_SERVICE_URL:?RIDE_SERVICE_URL is required}
+      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL:?RESTAURANT_SERVICE_URL is required}
+      HEALTHCARE_SERVICE_URL: ${HEALTHCARE_SERVICE_URL:?HEALTHCARE_SERVICE_URL is required}
+      FOOD_SERVICE_URL: ${FOOD_SERVICE_URL:?FOOD_SERVICE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${API_GATEWAY_PORT}:3000"]
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  agent-service:
+    build: ./apps/agent-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${AGENT_SERVICE_PORT:?AGENT_SERVICE_PORT is required}
+      DATABASE_URL: ${AGENT_DATABASE_URL:?AGENT_DATABASE_URL is required}
+      CORS_ORIGINS: ${AGENT_CORS_ORIGINS:?AGENT_CORS_ORIGINS is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${AGENT_SERVICE_PORT}:8001"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  ride-service:
+    build: ./services/ride-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${RIDE_SERVICE_PORT:?RIDE_SERVICE_PORT is required}
+      DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${RIDE_SERVICE_PORT}:8101"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  restaurant-service:
+    build: ./services/restaurant-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
+      DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${RESTAURANT_SERVICE_PORT}:8102"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  healthcare-service:
+    build: ./services/healthcare-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${HEALTHCARE_SERVICE_PORT:?HEALTHCARE_SERVICE_PORT is required}
+      DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${HEALTHCARE_SERVICE_PORT}:8103"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  food-service:
+    build: ./services/food-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${FOOD_SERVICE_PORT:?FOOD_SERVICE_PORT is required}
+      DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    ports: ["${FOOD_SERVICE_PORT}:8104"]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [xone_internal]
+
+volumes:
+  postgres_data:
+
+networks:
+  xone_internal:
+    driver: bridge

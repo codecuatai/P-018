@@ -1,9 +1,9 @@
 export type ChatResponse = {
   response: string;
-  analysis: string;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// The browser-facing backend is the NestJS gateway, never an internal service.
+const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8001";
 
 export async function sendChatMessage(message: string, sessionId: string = "default_session"): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/chat`, {

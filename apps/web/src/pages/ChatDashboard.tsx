@@ -213,26 +213,34 @@ export const ChatDashboard: React.FC<Props> = ({
     if (pendingTicket) {
       if (pendingTicket.type === "medical") {
         try {
-          // GỌI WEBHOOK ĐỂ BÁO ĐÃ THANH TOÁN VÀO DATABASE
-          await fetch("http://127.0.0.1:8000/api/v1/payment/webhook", {
+          const rawId = pendingTicket.id.toString().replace(/\D/g, '');
+          const appointmentId = parseInt(rawId) || 1;
+          
+          const res = await fetch("http://127.0.0.1:8109/api/v1/payment/webhook", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ appointment_id: parseInt(pendingTicket.id) })
+            body: JSON.stringify({ appointment_id: appointmentId })
           });
+          
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Lỗi HTTP: ${res.status}`);
+          }
           
           setIsVerifying(false);
           setShowAuthModal(false);
           setNotice({
             type: "success",
-            text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán phí khám qua Webhook.`,
+            text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán phí khám.`,
           });
           // Gửi một câu chat rất bình thường báo AI kiểm tra lại
-          await handleSend(`Tôi đã thanh toán xong cho mã lịch hẹn ${pendingTicket.id}, bạn kiểm tra lại giúp tôi!`);
+          await handleSend(`Tôi đã thanh toán xong cho mã lịch hẹn ${appointmentId}, bạn kiểm tra lại giúp tôi!`);
           setPendingTicket(null);
           return;
-        } catch (e) {
+        } catch (e: any) {
           console.error("Webhook payment failed", e);
           setIsVerifying(false);
+          alert(`Thanh toán thất bại: ${e.message}. (Gợi ý: Kiểm tra lại mạng hoặc CORS)`);
           return;
         }
       }
