@@ -14,13 +14,17 @@ X-One is a backend-first conversational multi-service booking platform. This rep
 For the complete local stack, create exactly one root `.env` and start Compose:
 
 ```powershell
-./scripts/setup-env.ps1
-docker compose up --build
+./scripts/start-all.ps1
+# or manually:
+# ./scripts/setup-env.ps1
+# docker compose up --build
 ```
 
 ```bash
-./scripts/setup-env.sh
-docker compose up --build
+./scripts/start-all.sh
+# or manually:
+# ./scripts/setup-env.sh
+# docker compose up --build
 ```
 
 The setup script never overwrites an existing `.env`. Compose reads root `.env` for interpolation and sends each container only its explicit, least-privilege values. Service-level `.env.example` files are only for standalone runs outside Compose. The web demo remains independent: `cd apps/web && npm run dev`.

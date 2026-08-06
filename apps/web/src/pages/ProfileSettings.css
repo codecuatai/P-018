@@ -599,3 +599,113 @@
     justify-content: center;
   }
 }
+
+/* ─── Premium Dark Theme / Glassmorphism Overrides ─── */
+.profile-settings {
+  background: var(--bg-color);
+  color: var(--text-main);
+}
+
+.summary-card,
+.profile-card {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.summary-card h2,
+.summary-card p,
+.summary-list div strong,
+.card-header h3,
+.form-group label,
+.connect-title h4 {
+  color: var(--text-main) !important;
+}
+
+.summary-list div span {
+  color: var(--text-muted) !important;
+}
+
+.card-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  background-color: var(--input-bg) !important;
+  border-color: var(--input-border) !important;
+  color: var(--text-bright) !important;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35) !important;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--primary-accent) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15) !important;
+}
+
+.toggle-row {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-bright) !important;
+}
+
+.form-actions {
+  background: linear-gradient(180deg, rgba(11, 15, 25, 0), #0b0f19 36%) !important;
+}
+
+.btn-reset {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-bright) !important;
+}
+
+.btn-reset:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.payment-connect-box {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.payment-connect-box.momo-box {
+  background: rgba(219, 70, 239, 0.06) !important;
+  border-color: rgba(219, 70, 239, 0.15) !important;
+}
+
+.payment-connect-box.card-box {
+  background: rgba(56, 189, 248, 0.06) !important;
+  border-color: rgba(56, 189, 248, 0.15) !important;
+}
+
+.payment-connect-box.bank-box {
+  background: rgba(16, 185, 129, 0.06) !important;
+  border-color: rgba(16, 185, 129, 0.15) !important;
+}
+
+.payment-connect-box.cash-box {
+  background: rgba(245, 158, 11, 0.06) !important;
+  border-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+.summary-card.compact ul li {
+  color: var(--text-bright) !important;
+}
+
+.summary-card.compact ul li::before {
+  color: var(--text-muted) !important;
+}
+
+.summary-avatar {
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.2) !important;
+}
+

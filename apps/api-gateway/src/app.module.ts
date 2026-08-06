@@ -23,5 +23,6 @@ import { WorkflowModule } from './modules/workflow/workflow.module';
     AuditModule,
   ],
   providers: [AgentClient, RideClient, RestaurantClient, HealthcareClient, FoodClient],
+  exports: [AgentClient, RideClient, RestaurantClient, HealthcareClient, FoodClient],
 })
 export class AppModule {}

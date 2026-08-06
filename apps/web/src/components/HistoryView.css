@@ -1,12 +1,19 @@
 .history-view {
   padding: 24px;
-  max-width: 1120px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: none;
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
   overflow-y: auto;
+}
+
+.history-view > * {
+  max-width: 1120px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .history-loading {
@@ -632,3 +639,205 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ─── Premium Dark Theme / Glassmorphism Overrides ─── */
+.history-view {
+  background: var(--bg-color);
+  color: var(--text-main);
+}
+
+.history-hero {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.summary-card-history,
+.filter-panel {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.summary-card-history strong,
+.summary-card-history h3,
+.filter-panel label,
+.filter-panel h3,
+.history-hero h2 {
+  color: var(--text-main) !important;
+}
+
+.history-search {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+}
+
+.history-search input,
+.history-toolbar select {
+  background-color: transparent !important;
+  color: var(--text-bright) !important;
+}
+
+.history-toolbar select {
+  background-color: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+}
+
+.history-toolbar select option {
+  background-color: #0f172a !important;
+  color: var(--text-bright) !important;
+}
+
+.history-search input:focus,
+.history-toolbar select:focus {
+  border-color: var(--primary-accent) !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15) !important;
+}
+
+.history-filters button {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-muted) !important;
+}
+
+.history-filters button:hover {
+  border-color: var(--primary-accent) !important;
+  color: var(--text-bright) !important;
+}
+
+.history-filters button.active {
+  background: var(--primary-accent) !important;
+  color: #0f172a !important;
+  border-color: var(--primary-accent) !important;
+}
+
+.history-card {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.history-card h3,
+.history-card p,
+.history-card strong,
+.history-card span:not(.status-badge),
+.history-card .provider-label {
+  color: var(--text-bright) !important;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-bright) !important;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.status-badge.confirmed {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #10b981 !important;
+  border: 1px solid rgba(16, 185, 129, 0.25) !important;
+}
+
+.status-badge.completed {
+  background: rgba(56, 189, 248, 0.15) !important;
+  color: #38bdf8 !important;
+  border: 1px solid rgba(56, 189, 248, 0.25) !important;
+}
+
+.status-badge.cancelled {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #ef4444 !important;
+  border: 1px solid rgba(239, 68, 68, 0.25) !important;
+}
+
+.status-badge.pending {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.25) !important;
+}
+
+.route-line {
+  background: rgba(30, 41, 59, 0.3) !important;
+  border: 1px solid rgba(255, 255, 255, 0.05) !important;
+  color: var(--text-bright) !important;
+}
+
+.empty-state {
+  background: rgba(15, 23, 42, 0.65) !important;
+  border: 1px dashed rgba(255, 255, 255, 0.15) !important;
+  color: var(--text-bright);
+}
+
+.ticket-detail-row span {
+  color: var(--text-muted) !important;
+}
+
+.ticket-detail-row strong {
+  color: var(--text-bright) !important;
+}
+
+.history-hero-total {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-bright) !important;
+}
+
+.history-hero-total span {
+  color: var(--text-muted) !important;
+}
+
+.history-hero-total strong {
+  color: var(--primary-accent) !important;
+}
+
+.booking-side {
+  border-left-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.section-kicker {
+  color: var(--primary-accent) !important;
+}
+
+/* Modal details */
+.modal-overlay {
+  backdrop-filter: blur(8px) !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+}
+
+.modal-content {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-bright) !important;
+}
+
+.modal-header h3,
+.modal-section h4 {
+  color: var(--text-bright) !important;
+}
+
+.ticket-detail-card {
+  background: rgba(30, 41, 59, 0.4) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.star-rating button {
+  color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.star-rating button.active {
+  color: #fbbf24 !important;
+}
+
+.modal-body textarea {
+  background-color: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+  color: var(--text-bright) !important;
+}
+
