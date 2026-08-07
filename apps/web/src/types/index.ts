@@ -26,14 +26,12 @@ export interface UserProfile {
   momoPhone?: string;
   momoAccountName?: string;
   momoLinked?: boolean;
-  cardNumber?: string;
+  maskedCard?: string;
+  paymentMethodToken?: string;
   cardHolder?: string;
-  cardExpiry?: string;
-  cardCvv?: string;
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;
-  cashNote?: string;
 }
 
 export type UserRole = "admin" | "operator" | "customer" | "provider";
@@ -74,7 +72,7 @@ export interface AdminDashboardSummary {
 
 export type BookingStatus = "pending_confirmation" | "confirmed" | "cancelled" | "completed";
 export type PaymentStatus = "unpaid" | "paid" | "refunded";
-export type PaymentMethod = "momo" | "bank_transfer" | "card" | "cash";
+export type PaymentMethod = "momo" | "bank_transfer" | "card";
 
 export interface ServiceTicket {
   id: string;

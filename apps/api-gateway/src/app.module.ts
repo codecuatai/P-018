@@ -4,17 +4,21 @@ import { ConfigModule } from '@nestjs/config';
 import { AgentClient, FoodClient, HealthcareClient, RestaurantClient, RideClient } from './clients/service.clients';
 import { validateEnvironment } from './config/environment';
 import { AuditModule } from './modules/audit/audit.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { ConfirmationModule } from './modules/confirmation/confirmation.module';
 import { ConversationModule } from './modules/conversation/conversation.module';
 import { HealthModule } from './modules/health/health.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { ToolModule } from './modules/tools/tool.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
+import { CoreModule } from './modules/core/core.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, validate: validateEnvironment }),
     HealthModule,
+    CoreModule,
+    AuthModule,
     ConversationModule,
     WorkflowModule,
     ConfirmationModule,

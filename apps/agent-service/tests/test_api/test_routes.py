@@ -16,6 +16,14 @@ async def test_chat_empty_message(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_requires_real_actor_and_conversation(client):
+    response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn"})
+    assert response.status_code == 422
+    response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn", "user_id": "actor", "conversation_id": "conversation"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_agent_status(client):
-    response = await client.get("/api/v1/status")
+    response = await client.get("/api/v1/status", headers={"x-internal-service-token": "test-token"})
     assert response.status_code == 200

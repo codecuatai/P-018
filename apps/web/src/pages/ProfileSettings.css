@@ -470,11 +470,6 @@
   border-color: #bbf7d0;
 }
 
-.payment-connect-box.cash-box {
-  background: #fffbeb;
-  border-color: #fef08a;
-}
-
 .connect-header {
   display: flex;
   align-items: center;

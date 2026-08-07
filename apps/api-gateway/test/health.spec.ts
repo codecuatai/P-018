@@ -40,4 +40,12 @@ describe('health endpoints', () => {
   it('registers FoodClient with the configured internal URL', () => {
     expect(app.get(FoodClient).baseUrl).toBe('http://food-service:8104');
   });
+
+  it('supports demo login and protects the current-user endpoint', async () => {
+    const login = await request(app.getHttpServer()).post('/api/v1/auth/login').send({ email: 'demo@xone.vn', password: 'Xone@123' }).expect(201);
+    expect(login.body.data.user.sub).toBe('usr_demo_001');
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+    const me = await request(app.getHttpServer()).get('/api/v1/auth/me').set('Authorization', `Bearer ${login.body.data.access_token}`).expect(200);
+    expect(me.body.data.email).toBe('demo@xone.vn');
+  });
 });

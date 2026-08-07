@@ -41,7 +41,7 @@ async def liveness() -> dict:
 
 @app.get("/health/ready")
 async def readiness() -> dict:
-    return {"data": {"status": "ready", "service": "agent-service"}}
+    return {"data": {"status": "ready", "service": "agent-service", "llm_configured": bool(settings.gemini_api_key)}}
 
 
 @app.get("/health", include_in_schema=False)

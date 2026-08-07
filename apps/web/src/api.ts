@@ -5,6 +5,22 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 const TOKEN_KEY = 'x1_token';
 
 export type UserRole = 'admin' | 'operator' | 'customer' | 'provider';
+export async function sendConversationMessage(conversationId: string, message: string, accessToken: string): Promise<ChatResponse> {
+  const response = await fetch(`${API_BASE}/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ message }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Backend returned ${response.status}`);
+  }
+
+  return response.json() as Promise<ChatResponse>;
+}
 
 export interface AuthUser {
   id: string;

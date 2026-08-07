@@ -2,13 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "X-One Tool Request",
   "type": "object",
-  "required": ["tool_name", "risk_level", "arguments", "workflow_id"],
+  "required": ["tool_name", "risk_level", "arguments", "workflow_id", "user_id"],
   "properties": {
     "tool_name": { "type": "string", "minLength": 1 },
     "risk_level": { "enum": ["READ", "REVERSIBLE_WRITE", "FINANCIAL_OR_FINAL"] },
     "arguments": { "type": "object" },
     "workflow_id": { "type": "string", "minLength": 1 },
-    "idempotency_key": { "type": "string" }
+    "idempotency_key": { "type": "string" },
+    "user_id": { "type": "string", "minLength": 1 },
+    "correlation_id": { "type": "string", "minLength": 1 }
   },
   "additionalProperties": false
 }

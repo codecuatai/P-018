@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info:
+  title: X-One Food Vertical Slice
+  version: 1.1.0
+servers:
+  - url: http://food-service:8104/api/v1
+tags:
+  - name: catalog
+  - name: cart
+  - name: order
+paths:
+  /addresses:
+    get:
+      summary: List delivery addresses owned by the asserted actor
+      parameters:
+        - {name: label, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Address candidates}
+  /food/search:
+    get:
+      tags: [catalog]
+      summary: Search food and restaurants
+      parameters:
+        - {$ref: '#/components/parameters/CorrelationId'}
+        - {name: keyword, in: query, schema: {type: string}}
+        - {name: district, in: query, schema: {type: string}}
+        - {name: max_price, in: query, schema: {type: integer, minimum: 0}}
+      responses: {'200': {description: Search result, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}, '422': {$ref: '#/components/responses/Error422'}}
+  /carts:
+    post:
+      tags: [cart]
+      summary: Create a restaurant-scoped cart
+      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/ActorId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateCart'}}}}
+      responses: {'200': {description: Cart, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}, '409': {$ref: '#/components/responses/Error409'}}
+  /carts/{cart_id}:
+    get:
+      tags: [cart]
+      parameters: [{name: cart_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
+      responses: {'200': {description: Cart}, '403': {$ref: '#/components/responses/Error403'}}
+  /carts/{cart_id}/items:
+    post:
+      tags: [cart]
+      parameters: [{name: cart_id, in: path, required: true, schema: {type: string}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CartItem'}}}}
+      responses: {'200': {description: Cart}, '422': {$ref: '#/components/responses/Error422'}}
+  /orders/preview:
+    post:
+      tags: [order]
+      summary: Build an authoritative order quote without creating an order
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PreviewOrder'}}}}
+      responses: {'200': {description: Preview with snapshot hash}, '409': {$ref: '#/components/responses/Error409'}}
+  /delivery/quote:
+    post:
+      tags: [order]
+      summary: Quote delivery for an actor-owned address
+      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/ActorId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DeliveryQuote'}}}}
+      responses: {'200': {description: Delivery quote}, '403': {$ref: '#/components/responses/Error403'}}
+  /orders:
+    post:
+      tags: [order]
+      summary: Create a payment-pending order through the Gateway
+      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateOrder'}}}}
+      responses: {'200': {description: Order}, '409': {$ref: '#/components/responses/Error409'}}
+  /orders/{order_id}:
+    get:
+      tags: [order]
+      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
+      responses: {'200': {description: Order}, '403': {$ref: '#/components/responses/Error403'}}
+  /orders/{order_id}/tracking:
+    get:
+      tags: [order]
+      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
+      responses: {'200': {description: Tracking with immutable status events}}
+  /orders/{order_id}/cancel-preview:
+    post:
+      tags: [order]
+      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
+      responses: {'200': {description: Cancellation policy/refund preview}, '409': {$ref: '#/components/responses/Error409'}}
+components:
+  parameters:
+    CorrelationId: {name: X-Correlation-Id, in: header, schema: {type: string}}
+    InternalToken: {name: X-Internal-Service-Token, in: header, required: true, schema: {type: string}}
+    ActorId: {name: X-Actor-Id, in: header, required: true, schema: {type: string}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+  schemas:
+    Money: {type: object, additionalProperties: false, required: [amount, currency], properties: {amount: {type: integer, minimum: 0}, currency: {type: string, minLength: 3, maxLength: 3}}}
+    CreateCart: {type: object, additionalProperties: false, required: [user_id, restaurant_id], properties: {user_id: {type: string}, restaurant_id: {type: string}}}
+    SelectedOption: {type: object, additionalProperties: false, required: [group_id, option_id], properties: {group_id: {type: string}, option_id: {type: string}}}
+    CartItem: {type: object, additionalProperties: false, required: [menu_item_id, quantity], properties: {menu_item_id: {type: string}, quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: array, items: {$ref: '#/components/schemas/SelectedOption'}}, note: {type: string, maxLength: 500}}}
+    PreviewOrder: {type: object, additionalProperties: false, required: [cart_id, address_id, user_id], properties: {cart_id: {type: string}, address_id: {type: string}, user_id: {type: string}}}
+    DeliveryQuote: {type: object, additionalProperties: false, required: [restaurant_id, address_id], properties: {restaurant_id: {type: string}, address_id: {type: string}}}
+    CreateOrder: {allOf: [{$ref: '#/components/schemas/PreviewOrder'}, {type: object, required: [idempotency_key, payment_method, expected_snapshot_hash, expected_cart_version, expected_amount, expected_currency, expected_quote_version], properties: {idempotency_key: {type: string}, payment_method: {type: string, enum: [bank_transfer, card, e_wallet]}, expected_snapshot_hash: {type: string}, expected_cart_version: {type: integer, minimum: 0}, expected_amount: {type: integer, minimum: 0}, expected_currency: {type: string, minLength: 3, maxLength: 3}, expected_quote_version: {type: string}}}]}
+    Envelope: {type: object, additionalProperties: false, required: [data], properties: {data: {type: object}, meta: {type: object}}}
+    Error: {type: object, additionalProperties: false, required: [code, detail, status, retryable], properties: {code: {type: string}, detail: {type: string}, status: {type: integer}, retryable: {type: boolean}, request_id: {type: string}}}
+  responses:
+    Error403: {description: Forbidden, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Error409: {description: Conflict, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Error422: {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

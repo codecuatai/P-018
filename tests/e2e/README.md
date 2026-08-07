@@ -1,3 +1,3 @@
-# End-to-End Tests
+# Cross-service E2E tests
 
-End-to-end booking scenarios are out of scope for this foundation refactor.
+`test_food_vertical_slice.py` is a real Gateway-through-Agent-through-Food harness. Normal flows discover restaurants, menu items, addresses, and options through APIs; seed IDs are used only by targeted fixture/reset helpers. It covers confirmation, payment/recovery, idempotency, refunds, ownership, conversation append concurrency, security, and restart persistence. Set `E2E_GATEWAY_URL` (and optionally `E2E_AGENT_URL`/`E2E_FOOD_URL`) to run it against a live Compose stack; without those variables pytest skips the external-stack checks explicitly and that is not acceptance evidence.
