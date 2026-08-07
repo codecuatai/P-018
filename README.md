@@ -1,14 +1,16 @@
 # X-One
 
-X-One is a backend-first conversational multi-service booking platform. This repository currently provides an architecture foundation: a NestJS orchestration gateway, a FastAPI/LangGraph agent service, and FastAPI skeletons for ride, restaurant, and healthcare. The existing React web demo and Expo mobile shell remain mock-driven.
+X-One is a backend-first conversational multi-service booking platform. The first local Ride walking slice now runs from React chat through the NestJS Gateway and deterministic Agent to the simulated Ride domain. Restaurant, Healthcare, Food, mobile, production authentication, and real payment remain skeleton/planned.
 
 ## What runs today
 
 | Component | Port | Status |
 | --- | ---: | --- |
-| API Gateway | 3000 | Skeleton: health, validation, safe errors, correlation IDs |
-| Agent Service | 8001 | Existing LangGraph demo moved and retained |
-| Ride / Restaurant / Healthcare / Food | 8101 / 8102 / 8103 / 8104 | Skeleton: health endpoints only |
+| Web | 5173 | Ride chat UI backed only by the public Gateway |
+| API Gateway | 3000 | Ride workflow orchestration, typed Agent/Ride clients, two explicit confirmations |
+| Agent Service | 8001 | Skeleton: deterministic Ride state patches and typed tool requests; no execution |
+| Ride Service | 8101 | Implemented simulation slice: quotes, two-step booking confirmation, driver assignment, cancellation, persistence |
+| Restaurant / Healthcare / Food | 8102 / 8103 / 8104 | Skeleton: health endpoints only |
 | PostgreSQL | 5432 | Local logical-database bootstrap |
 
 For the complete local stack, create exactly one root `.env` and start Compose:

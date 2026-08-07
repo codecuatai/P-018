@@ -1,1 +1,1 @@
-"""Ride persistence adapters."""
+"""Application-facing repository ports."""

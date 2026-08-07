@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
-
 from src.config import get_settings
+from src.infrastructure.database import sqlalchemy_database_url
 
 
 def test_service_config_reads_process_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -17,3 +17,10 @@ def test_service_config_fails_when_token_missing(monkeypatch: pytest.MonkeyPatch
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
         get_settings()
+
+
+def test_postgresql_url_selects_declared_psycopg_driver() -> None:
+    source = "postgresql://ride_user:password@postgres:5432/xone_ride"
+    assert sqlalchemy_database_url(source) == (
+        "postgresql+psycopg://ride_user:password@postgres:5432/xone_ride"
+    )
