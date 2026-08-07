@@ -225,7 +225,12 @@ def _missing_slots(intent: str, slots: dict[str, Any]) -> list[str]:
 def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | None = None):
     gateway = tool_client or GatewayToolClient()
     model = llm or GeminiAdapter()
-    use_model = llm is not None or (tool_client is None and bool(get_settings().gemini_api_key))
+    settings = get_settings()
+    use_model = llm is not None or (
+        tool_client is None
+        and getattr(settings, "agent_model_mode", "deterministic") == "gemini"
+        and bool(settings.gemini_api_key)
+    )
 
     async def load_context(state: AgentState) -> AgentState:
         context = FoodWorkflowContext.model_validate(state.get("workflow_context", {}))
@@ -250,7 +255,15 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "extracted_slots": {**state.get("extracted_slots", {}), **deterministic},
         }
         if not use_model:
-            return {**fallback, "step_count": state.get("step_count", 0) + 1}
+            try:
+                registry = await gateway.registry(str(state.get("correlation_id")))
+            except GatewayToolError:
+                registry = []
+            return {
+                **fallback,
+                "tool_registry": registry,
+                "step_count": state.get("step_count", 0) + 1,
+            }
         try:
             registry = await gateway.registry(str(state.get("correlation_id")))
             prompt = json.dumps(

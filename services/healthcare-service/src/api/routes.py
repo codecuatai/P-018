@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -92,6 +93,12 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _fold_department_name(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.casefold())
+    folded = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    return folded.replace("đ", "d")
+
+
 def _release_expired_slots(db: Session) -> None:
     expired_slots = (
         db.query(TimeSlot)
@@ -128,7 +135,15 @@ def get_doctors_by_department(
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
     _release_expired_slots(db)
-    department_record = db.query(Department).filter(Department.name.ilike(f"%{department}%")).first()
+    folded_department = _fold_department_name(department)
+    department_record = next(
+        (
+            candidate
+            for candidate in db.query(Department).all()
+            if folded_department in _fold_department_name(candidate.name)
+        ),
+        None,
+    )
     if not department_record:
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
