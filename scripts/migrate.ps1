@@ -13,3 +13,6 @@ Get-Content 'services/food-service/migrations/003_food_atomicity.sql' | docker c
 Get-Content 'services/food-service/migrations/004_food_authoritative_operations.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
 Get-Content 'services/food-service/migrations/005_food_idempotency_eligibility.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
 Write-Host 'Core and Food migrations applied.'
+docker compose --env-file $envFile exec -T restaurant-service alembic upgrade head
+if ($LASTEXITCODE -ne 0) { throw 'Restaurant Service migration failed.' }
+Write-Host 'Restaurant Service migrations applied.'

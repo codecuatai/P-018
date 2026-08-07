@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)
     max_graph_steps: int = Field(default=12, ge=1, le=20)
     max_tool_calls: int = Field(default=6, ge=1, le=10)
+    agent_model_mode: Literal["deterministic", "gemini"] = "deterministic"
 
     # Database
     database_url: str = Field(min_length=1)

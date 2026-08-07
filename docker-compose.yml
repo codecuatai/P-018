@@ -75,6 +75,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
       GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
       API_GATEWAY_INTERNAL_URL: ${API_GATEWAY_INTERNAL_URL:?API_GATEWAY_INTERNAL_URL is required}
+      AGENT_MODEL_MODE: ${AGENT_MODEL_MODE:-deterministic}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     expose: ["8001"]
     depends_on: { postgres: { condition: service_healthy } }

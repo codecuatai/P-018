@@ -36,6 +36,11 @@ export interface ApiResponse<T> {
 
 export interface ChatResponse {
   response: string;
+  workflow_id?: string;
+  intent?: string;
+  status?: string;
+  slots?: Record<string, unknown>;
+  tool_result?: unknown;
 }
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
@@ -142,6 +147,18 @@ async function sendChatMessage(message: string): Promise<ChatResponse> {
   return res.data;
 }
 
+async function sendRestaurantChatMessage(message: string, workflowId?: string): Promise<ChatResponse> {
+  const res = await request<ApiResponse<ChatResponse>>('/api/v1/restaurant-workflows/chat', {
+    method: 'POST',
+    body: JSON.stringify({
+      message,
+      workflow_id: workflowId,
+      client_turn_id: `turn-${Date.now()}`,
+    }),
+  });
+  return res.data;
+}
+
 // ─── Bookings ─────────────────────────────────────────────────────────────────
 async function getBookings(): Promise<any[]> {
   const res = await request<ApiResponse<any[]>>('/api/v1/bookings');
@@ -188,6 +205,7 @@ export const ApiService = {
   getProfile,
   updateProfile,
   sendChatMessage,
+  sendRestaurantChatMessage,
   getBookings,
   createBooking,
   cancelBooking,

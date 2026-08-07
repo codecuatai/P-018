@@ -14,3 +14,5 @@ docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/004_food_authoritative_operations.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/005_food_idempotency_eligibility.sql
 echo 'Core and Food migrations applied.'
+docker compose --env-file "$env_file" exec -T restaurant-service alembic upgrade head
+echo 'Restaurant Service migrations applied.'

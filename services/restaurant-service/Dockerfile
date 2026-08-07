@@ -2,6 +2,9 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
+COPY migrations ./migrations
+COPY seeds ./seeds
+COPY alembic.ini ./alembic.ini
 RUN pip install --no-cache-dir .
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser

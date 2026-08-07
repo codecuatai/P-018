@@ -16,6 +16,10 @@ abstract class InternalServiceClient {
     return this.config.getOrThrow<string>(this.urlKey);
   }
 
+  protected get internalToken(): string {
+    return this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN');
+  }
+
   protected async request<T extends JsonObject>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
@@ -25,7 +29,7 @@ abstract class InternalServiceClient {
         signal: controller.signal,
         headers: {
           'content-type': 'application/json',
-          'x-internal-service-token': this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'),
+          'x-internal-service-token': this.internalToken,
           ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
           ...(actorId ? { 'x-actor-id': actorId } : {}),
           ...init.headers,
@@ -42,7 +46,7 @@ abstract class InternalServiceClient {
       return body.data as T;
     } catch (error) {
       if (error instanceof UpstreamClientError) throw error;
-      throw new ServiceUnavailableException({ code: 'UPSTREAM_UNAVAILABLE', detail: 'Food or agent service is unavailable.', retryable: true });
+      throw new ServiceUnavailableException({ code: 'UPSTREAM_UNAVAILABLE', detail: 'Internal service is unavailable.', retryable: true });
     } finally {
       clearTimeout(timeout);
     }
@@ -54,6 +58,17 @@ function mapFoodErrorStatus(code: string, upstreamStatus: number): number {
   return statuses[code] ?? (upstreamStatus >= 500 ? 503 : upstreamStatus);
 }
 
+export interface RestaurantTool {
+  tool_name: 'restaurant.search' | 'restaurant.get' | 'restaurant.check_availability' | 'restaurant.create_hold' | 'restaurant.create_reservation';
+  risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  arguments: Record<string, unknown>;
+  workflow_id: string;
+  tool_call_id: string;
+  idempotency_key?: string;
+}
+
+export type RestaurantReadTool = RestaurantTool;
+
 @Injectable()
 export class AgentClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'AGENT_SERVICE_URL'); }
@@ -61,6 +76,11 @@ export class AgentClient extends InternalServiceClient {
   chat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
     const actorId = typeof payload.user_id === 'string' ? payload.user_id : undefined;
     return this.request<JsonObject>('/api/v1/chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, undefined, 30000);
+  }
+
+  restaurantChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
+    const actorId = typeof payload.actor_id === 'string' ? payload.actor_id : undefined;
+    return this.request<JsonObject>('/api/v1/restaurant-chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, actorId, 30000);
   }
 }
 
@@ -89,10 +109,70 @@ export class FoodClient extends InternalServiceClient {
 export class RideClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'RIDE_SERVICE_URL'); }
 }
+
 @Injectable()
 export class RestaurantClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'RESTAURANT_SERVICE_URL'); }
+
+  async executeTool(tool: RestaurantTool, actorId: string, correlationId: string): Promise<unknown> {
+    const headers: Record<string, string> = {
+      'X-Internal-Service-Token': this.internalToken,
+      'X-Actor-Id': actorId,
+      'X-Correlation-Id': correlationId,
+      'X-Workflow-Id': tool.workflow_id,
+    };
+    let url = `${this.baseUrl}/v1/restaurants`;
+    let method = 'GET';
+    let body: string | undefined;
+    if (tool.tool_name === 'restaurant.get') {
+      url += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}`;
+    } else if (tool.tool_name === 'restaurant.check_availability') {
+      url += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}/availability`;
+      method = 'POST';
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify({
+        party_size: tool.arguments.party_size,
+        start_at: tool.arguments.start_at,
+        duration_minutes: tool.arguments.duration_minutes ?? 120,
+        seating_type: tool.arguments.seating_type,
+      });
+    } else if (tool.tool_name === 'restaurant.search') {
+      const query = new URLSearchParams();
+      for (const key of ['location', 'cuisine_type', 'budget_range', 'limit', 'offset']) {
+        const value = tool.arguments[key];
+        if (value !== undefined && value !== null) query.set(key, String(value));
+      }
+      url += `?${query.toString()}`;
+    } else if (tool.tool_name === 'restaurant.create_hold') {
+      url = `${this.baseUrl}/v1/reservation-holds`;
+      method = 'POST';
+      headers['Content-Type'] = 'application/json';
+      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      body = JSON.stringify(tool.arguments);
+    } else if (tool.tool_name === 'restaurant.create_reservation') {
+      url = `${this.baseUrl}/v1/reservations`;
+      method = 'POST';
+      headers['Content-Type'] = 'application/json';
+      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      body = JSON.stringify(tool.arguments);
+    } else {
+      throw new Error(`Unsupported restaurant tool: ${tool.tool_name}`);
+    }
+    const response = await fetch(url, { method, headers, body });
+    if (!response.ok) {
+      let detail = `RESTAURANT_SERVICE_${response.status}`;
+      try {
+        const payload = await response.json() as { code?: string; detail?: string };
+        detail = payload.code ?? payload.detail ?? detail;
+      } catch {
+        // Keep a safe status-based error when the service response is not JSON.
+      }
+      return { error: detail, status: response.status };
+    }
+    return await response.json();
+  }
 }
+
 @Injectable()
 export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }

@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: X-One Gateway API
+  version: 1.0.0
+paths:
+  /api/v1/restaurant-workflows/chat:
+    post:
+      summary: Process restaurant booking conversation and dispatch safe read tools
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestaurantChatRequest'
+      responses:
+        '200':
+          description: Agent response and validated Restaurant result
+        '401':
+          description: Missing or invalid user token
+        '422':
+          description: Invalid request
+        '502':
+          description: Internal service failure
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    RestaurantChatRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        workflow_id:
+          type: string
+        context:
+          type: object
+          additionalProperties: true

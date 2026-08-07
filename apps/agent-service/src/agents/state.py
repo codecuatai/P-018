@@ -62,3 +62,12 @@ class AgentState(TypedDict, total=False):
     missing_options: list[str]
     ambiguity: str
     step_count: int
+    workflow_id: str
+    turn_id: str
+    actor_id: str
+    context: dict[str, Any]
+    slots: dict[str, Any]
+    tool_request: dict[str, Any]
+    tool_result: dict[str, Any]
+    status: str
+    unsupported: bool
