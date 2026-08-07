@@ -68,10 +68,12 @@ async def search(query: SearchQuery = Depends(), food: FoodApplicationService = 
 
 
 @router.post("/carts")
-async def create_cart(payload: CreateCartRequest, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+async def create_cart(payload: CreateCartRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
     if actor_id != payload.user_id:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "detail": "Actor does not match cart owner."})
-    return {"data": await food.create_cart(payload.user_id, payload.restaurant_id)}
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail={"code": "IDEMPOTENCY_KEY_REQUIRED", "detail": "Idempotency-Key is required."})
+    return {"data": await food.create_cart(actor_id, payload.restaurant_id, idempotency_key)}
 
 
 @router.get("/carts/{cart_id}")
@@ -106,9 +108,9 @@ async def remove_voucher(cart_id: str, actor_id: str = Depends(require_actor), f
     return {"data": await food.remove_voucher(cart_id, actor_id)}
 
 
-@router.post("/delivery/quote", dependencies=[Depends(require_internal)])
-async def delivery_quote(payload: DeliveryQuoteRequest, food: FoodApplicationService = Depends(service)):
-    return {"data": await food.delivery_quote(payload.restaurant_id, payload.address_id)}
+@router.post("/delivery/quote")
+async def delivery_quote(payload: DeliveryQuoteRequest, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+    return {"data": await food.delivery_quote(payload.restaurant_id, payload.address_id, actor_id)}
 
 
 @router.post("/orders/preview")

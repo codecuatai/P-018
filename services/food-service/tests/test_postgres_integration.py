@@ -90,6 +90,7 @@ async def test_postgres_due_claim_is_single_winner(postgres_food: tuple[Postgres
     await service.transition_order(order["id"], FoodOrderStatus.PAID.value, "test")
     confirming = await service.transition_order(order["id"], FoodOrderStatus.RESTAURANT_CONFIRMING.value, "test")
     assert confirming["next_transition_at"]
+    service.settings.workflow_step_delay_ms = 1000
     first, second = await asyncio.gather(service.reconcile_due_orders(), service.reconcile_due_orders())
     assert first + second == 1
     events = await repository.get_order_events(order["id"])

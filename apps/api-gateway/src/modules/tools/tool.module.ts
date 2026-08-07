@@ -61,11 +61,11 @@ function validateArguments(definition: ToolDefinition, args: JsonObject): void {
 export class ToolService {
   constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore) {}
   list(): ToolDefinition[] { return definitions; }
-  async execute(name: string, args: JsonObject, actor: AuthUser, correlationId: string): Promise<JsonObject> {
+  async execute(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string): Promise<JsonObject> {
     const startedAt = Date.now();
     await this.store.audit({ action: 'tool.execute.started', actorId: actor.sub, correlationId, metadata: { tool_name: name, permission: definitions.find((tool) => tool.name === name)?.permission ?? 'unknown' } });
     try {
-      const result = await this.executeUnsafe(name, args, actor, correlationId);
+      const result = await this.executeUnsafe(name, args, actor, correlationId, conversationId);
       await this.store.audit({ action: 'tool.execute.succeeded', actorId: actor.sub, correlationId, metadata: { tool_name: name, duration_ms: Date.now() - startedAt, resource_ids: this.resourceIds(args) } });
       return result;
     } catch (error: unknown) {
@@ -77,17 +77,17 @@ export class ToolService {
   private resourceIds(args: JsonObject): string[] { return Object.entries(args).filter(([key, value]) => key.endsWith('_id') && typeof value === 'string').map(([, value]) => String(value)); }
   private errorCode(error: unknown): string { const response = error instanceof Error && 'getResponse' in error && typeof (error as { getResponse?: unknown }).getResponse === 'function' ? (error as { getResponse: () => unknown }).getResponse() : undefined; return typeof response === 'object' && response !== null && 'code' in response ? String((response as { code: unknown }).code) : error instanceof Error ? error.name : 'UNKNOWN'; }
 
-  private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string): Promise<JsonObject> {
+  private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string): Promise<JsonObject> {
     const definition = definitions.find((tool) => tool.name === name);
     if (!definition) throw new UnauthorizedException({ code: 'TOOL_NOT_FOUND', detail: 'Tool is not registered.' });
-    if (definition.permission === 'transaction') throw new UnauthorizedException({ code: 'TOOL_NOT_ALLOWED', detail: 'Agent cannot execute transaction tools.' });
+    if (!['read', 'draft_write', 'preview', 'confirmation_prepare'].includes(definition.permission)) throw new UnauthorizedException({ code: 'TOOL_NOT_ALLOWED', detail: 'Agent cannot execute this permission.' });
     validateArguments(definition, args);
     switch (name) {
       case 'search_food': { const params = new URLSearchParams({ keyword: String(args.keyword ?? '') }); if (typeof args.district === 'string') params.set('district', args.district); if (typeof args.category === 'string') params.set('category', args.category); if (typeof args.max_price === 'number') params.set('max_price', String(args.max_price)); return this.food.get(`/api/v1/food/search?${params.toString()}`, correlationId, actor.sub); }
       case 'view_menu': return this.food.get(`/api/v1/restaurants/${String(args.restaurant_id)}/menu`, correlationId);
       case 'view_menu_item': return this.food.get(`/api/v1/menu-items/${String(args.menu_item_id)}`, correlationId);
       case 'get_food_cart': return this.food.get(`/api/v1/carts/${String(args.cart_id)}?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
-      case 'create_cart': return this.food.post('/api/v1/carts', { user_id: actor.sub, restaurant_id: args.restaurant_id }, correlationId, `cart:${actor.sub}:${String(args.restaurant_id)}`, actor.sub);
+      case 'create_cart': return this.food.post('/api/v1/carts', { user_id: actor.sub, restaurant_id: args.restaurant_id }, correlationId, `cart:${actor.sub}:${String(args.restaurant_id)}:${conversationId ?? correlationId}`, actor.sub);
       case 'add_to_cart': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/items`, args, correlationId, undefined, actor.sub);
       case 'update_food_cart_item': return this.food.patch(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, args, correlationId, actor.sub);
       case 'remove_food_cart_item': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, correlationId, actor.sub);
@@ -115,7 +115,7 @@ export class ToolController {
   @Get()
   list(@Headers('x-internal-service-token') token: string | undefined, @Req() request: CorrelatedRequest): object { if (!token || token !== this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN')) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication required.' }); return { data: this.tools.list(), meta: { request_id: request.correlationId } }; }
   @Post('execute')
-  execute(@Headers('x-internal-service-token') token: string | undefined, @Headers('x-actor-id') actorId: string | undefined, @Body() body: { name: string; arguments: JsonObject; actor_id?: string }, @Req() request: CorrelatedRequest): Promise<object> { requireInternal(token, actorId, this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'), body.actor_id); return this.tools.execute(body.name, body.arguments, { sub: actorId!, email: 'internal@xone.local', role: 'customer' }, request.correlationId ?? 'cor_unknown').then((data) => ({ data, meta: { request_id: request.correlationId } })); }
+  execute(@Headers('x-internal-service-token') token: string | undefined, @Headers('x-actor-id') actorId: string | undefined, @Body() body: { name: string; arguments: JsonObject; actor_id?: string; conversation_id?: string }, @Req() request: CorrelatedRequest): Promise<object> { requireInternal(token, actorId, this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'), body.actor_id); return this.tools.execute(body.name, body.arguments, { sub: actorId!, email: 'internal@xone.local', role: 'customer' }, request.correlationId ?? 'cor_unknown', body.conversation_id).then((data) => ({ data, meta: { request_id: request.correlationId } })); }
 }
 
 @Module({ imports: [ConfirmationModule, CoreModule], controllers: [ToolController], providers: [ToolService, FoodClient], exports: [ToolService] })

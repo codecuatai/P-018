@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'crypto';
 
 import { FoodClient, JsonObject, UpstreamClientError } from '../../clients/service.clients';
 import { AuthUser } from '../auth/auth.types';
-import { ConfirmationClaim, ConfirmationRecord, CoreStore } from '../core/core.module';
+import { ConfirmationClaim, ConfirmationRecord, CoreStore, PaymentRecord } from '../core/core.module';
 import { PaymentService } from '../payment/payment.service';
 
 function stableHash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
@@ -46,7 +46,7 @@ export class ConfirmationService {
     if (typeof conversationId !== 'string' || !conversationId) return;
     const conversation = await this.store.getConversation(conversationId, actorId);
     if (!conversation) return;
-    await this.store.saveConversation({ ...conversation, state: { ...conversation.state, last_order_id: orderId, ...(paymentId ? { last_payment_id: paymentId } : {}), pending_confirmation_id: null } });
+    await this.store.mergeConversationState(conversationId, actorId, { last_order_id: orderId, ...(paymentId ? { last_payment_id: paymentId } : {}), pending_confirmation_id: null });
   }
 
   async execute(id: string, user: AuthUser, body: JsonObject, correlationId: string, idempotencyKey: string): Promise<JsonObject> {
@@ -75,7 +75,7 @@ export class ConfirmationService {
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'PAYLOAD_MISMATCH');
         throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Food order amount does not match the confirmed amount.' });
       }
-      const payment = await this.payments.createAndConfirm({ actorId: user.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: body.simulate_failure === true, simulateTimeout: body.simulate_timeout === true });
+      const payment = await this.payments.createAndConfirm({ actorId: user.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: body.simulate_failure === true, simulateTimeout: body.simulate_timeout === true, confirmationId: id, confirmationExecutionKey: executionKey, conversationId: typeof body.conversation_id === 'string' ? body.conversation_id : undefined });
       if (payment.status === 'PENDING' || payment.status === 'TIMED_OUT' || payment.status === 'UNKNOWN') {
         const result = { confirmation_id: id, order, payment, code: 'PAYMENT_TIMEOUT' };
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_RETRYABLE', result, 'PAYMENT_TIMEOUT');
@@ -92,10 +92,11 @@ export class ConfirmationService {
       await this.store.completeConfirmation(id, user.sub, executionKey, payment.status === 'FAILED' ? 'FAILED_FINAL' : 'SUCCEEDED', result, payment.status === 'FAILED' ? 'PAYMENT_FAILED' : undefined);
       if (payment.status === 'SUCCEEDED') await this.updateConversationAfterExecution(body.conversation_id, user.sub, String(order.id), payment.id);
       await this.store.audit({ action: payment.status === 'SUCCEEDED' ? 'payment.succeeded' : 'payment.failed', actorId: user.sub, resourceId: payment.id, correlationId });
+      if (payment.status === 'FAILED') throw new ConflictException({ code: 'PAYMENT_FAILED', detail: 'Payment failed and the order was not placed.' });
       return result;
     } catch (error: unknown) {
       const code = errorCode(error);
-      if (code === 'CART_CHANGED' || code === 'PAYLOAD_MISMATCH' || code === 'PAYMENT_TIMEOUT') throw error;
+      if (code === 'CART_CHANGED' || code === 'PAYLOAD_MISMATCH' || code === 'PAYMENT_TIMEOUT' || code === 'PAYMENT_FAILED') throw error;
       if (['VOUCHER_EXPIRED', 'VOUCHER_NOT_APPLICABLE', 'RESTAURANT_CLOSED', 'MENU_ITEM_UNAVAILABLE', 'DELIVERY_OUT_OF_RANGE'].includes(code)) {
         const result = { confirmation_id: id, code: 'CART_CHANGED', detail: 'The authoritative Food quote changed.' };
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'CART_CHANGED');
@@ -139,9 +140,9 @@ export class ConfirmationService {
       const payment = await this.store.findPaymentByOrder(String(confirmation.payload.order_id), user.sub);
       let refundRecord: JsonObject | undefined;
       if (payment?.status === 'SUCCEEDED') {
-        refundRecord = await this.payments.refund(payment.id, user.sub, refundKey, 'customer_cancellation') as unknown as JsonObject;
+        refundRecord = await this.payments.refund(payment.id, user.sub, `food-order-refund:${confirmation.payload.order_id}:${payment.id}`, 'customer_cancellation') as unknown as JsonObject;
         await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund started', operation_key: `cancel-refund-pending:${id}` }, correlationId, `cancel-refund-pending:${id}`);
-        await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund completed', operation_key: `cancel-refunded:${id}` }, correlationId, `cancel-refunded:${id}`);
+        if (String(refundRecord.status) === 'SUCCEEDED') await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund completed', operation_key: `cancel-refunded:${confirmation.payload.order_id}:${payment.id}` }, correlationId, `cancel-refunded:${confirmation.payload.order_id}:${payment.id}`);
       }
       const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, user.sub);
       const result: JsonObject = { confirmation_id: id, order: authoritativeOrder, payment, refund: refundRecord };
@@ -189,9 +190,9 @@ export class ConfirmationService {
           const payment = await this.store.findPaymentByOrder(orderId, actor.sub);
           let refund: JsonObject | undefined;
           if (payment?.status === 'SUCCEEDED') {
-            refund = await this.payments.refund(payment.id, actor.sub, String(payload.refund_idempotency_key ?? `refund:${confirmation.id}:recovery`), 'customer_cancellation') as unknown as JsonObject;
+            refund = await this.payments.refund(payment.id, actor.sub, `food-order-refund:${orderId}:${payment.id}`, 'customer_cancellation') as unknown as JsonObject;
             await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund recovery started', operation_key: `cancel-refund-pending:${confirmation.id}` }, correlationId, `cancel-refund-pending:${confirmation.id}`);
-            await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund recovery completed', operation_key: `cancel-refunded:${confirmation.id}` }, correlationId, `cancel-refunded:${confirmation.id}`);
+            if (String(refund.status) === 'SUCCEEDED') await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund recovery completed', operation_key: `cancel-refunded:${orderId}:${payment.id}` }, correlationId, `cancel-refunded:${orderId}:${payment.id}`);
           }
           const authoritativeOrder = await this.food.get(`/api/v1/orders/${orderId}`, correlationId, actor.sub);
           const result = { confirmation_id: confirmation.id, order: authoritativeOrder, payment, refund };
@@ -205,5 +206,24 @@ export class ConfirmationService {
       }
     }
     return recovered;
+  }
+
+  async reconcileRecoveredPayment(payment: PaymentRecord, correlationId: string): Promise<void> {
+    if (!payment.confirmationId || !payment.confirmationExecutionKey) return;
+    const confirmation = await this.store.getConfirmation(payment.confirmationId);
+    if (!confirmation || confirmation.actorId !== payment.actorId) return;
+    const actor = { sub: payment.actorId, email: 'recovery@xone.local', role: 'customer' as const };
+    if (payment.status === 'SUCCEEDED') {
+      await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'PAID', reason: 'Payment provider recovery succeeded', operation_key: `payment-paid:${payment.id}` }, correlationId, `payment-paid:${payment.id}`);
+      await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Payment provider recovery succeeded', operation_key: `restaurant-confirming:${payment.id}` }, correlationId, `restaurant-confirming:${payment.id}`);
+      const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
+      const result = { confirmation_id: confirmation.id, order, payment };
+      await this.store.completeConfirmation(confirmation.id, actor.sub, payment.confirmationExecutionKey, 'SUCCEEDED', result);
+      await this.updateConversationAfterExecution(payment.conversationId, actor.sub, payment.orderId, payment.id);
+    } else if (payment.status === 'FAILED') {
+      await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment provider recovery failed', operation_key: `payment-failed:${payment.id}` }, correlationId, `payment-failed:${payment.id}`);
+      const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
+      await this.store.completeConfirmation(confirmation.id, actor.sub, payment.confirmationExecutionKey, 'FAILED_FINAL', { confirmation_id: confirmation.id, order, payment, code: 'PAYMENT_FAILED' }, 'PAYMENT_FAILED');
+    }
   }
 }

@@ -22,6 +22,7 @@ class FoodWorkflowContext(BaseModel):
     menu_item_id: str | None = None
     menu_item_candidates: list[MenuItemCandidate] = Field(default_factory=list)
     cart_id: str | None = None
+    cart_items: list[dict[str, Any]] = Field(default_factory=list)
     address_id: str | None = None
     last_order_id: str | None = None
     last_payment_id: str | None = None

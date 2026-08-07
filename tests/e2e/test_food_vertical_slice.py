@@ -204,6 +204,22 @@ def test_pending_payment_recovery_reuses_provider_reference() -> None:
         assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(payment_id)}", "xone_core", "core_user") == "1"
 
 
+def test_payment_failure_converges_without_receipt() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        token = login(client)
+        form, conversation_id, _ = prepare_order(client, token)
+        key = unique_id("e2e-payment-failure")
+        response = execute_order(client, token, form, conversation_id, key, simulate_failure=True)
+        assert response.status_code == 409
+        assert "PAYMENT_FAILED" in response.text
+        order_key = f"order:{form['id']}:{key}"
+        order_id = db_scalar(f"SELECT id FROM food_orders WHERE idempotency_key={sql_literal(order_key)}", "xone_food", "food_user")
+        payment_id = db_scalar(f"SELECT id FROM payments WHERE order_id={sql_literal(order_id)}", "xone_core", "core_user")
+        assert db_scalar(f"SELECT status FROM food_orders WHERE id={sql_literal(order_id)}", "xone_food", "food_user") == "PAYMENT_FAILED"
+        assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(payment_id)}", "xone_core", "core_user") == "0"
+
+
 def test_restaurant_reject_saga_refunds_once() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
@@ -301,3 +317,18 @@ def test_restart_preserves_order_payment_and_conversation() -> None:
         assert client.get(f"/api/v1/food/orders/{order_id}", headers={"Authorization": f"Bearer {token}"}).status_code == 200
         assert client.get(f"/api/v1/payments/{payment_id}", headers={"Authorization": f"Bearer {token}"}).status_code == 200
         assert client.get(f"/api/v1/conversations/{conversation_id}", headers={"Authorization": f"Bearer {token}"}).status_code == 200
+
+
+def test_concurrent_conversation_turns_append_without_loss() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        token = login(client)
+        conversation_id = unique_id("e2e-concurrency")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(chat, client, token, conversation_id, message) for message in ("Tìm phở bò", "Tìm bún chả")]
+            [future.result() for future in futures]
+        conversation = client.get(f"/api/v1/conversations/{conversation_id}", headers={"Authorization": f"Bearer {token}"})
+        conversation.raise_for_status()
+        messages = conversation.json()["data"]["messages"]
+        assert len(messages) == 4
+        assert {message["content"] for message in messages if message["role"] == "user"} == {"Tìm phở bò", "Tìm bún chả"}

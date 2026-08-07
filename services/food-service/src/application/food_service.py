@@ -68,12 +68,12 @@ class FoodApplicationService:
             raise DomainError("NOT_FOUND", "Không tìm thấy món ăn.")
         return item
 
-    async def create_cart(self, user_id: str, restaurant_id: str) -> dict:
+    async def create_cart(self, user_id: str, restaurant_id: str, idempotency_key: str | None = None) -> dict:
         restaurant = await self.restaurant(restaurant_id)
         if not restaurant.get("is_open", False):
             raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
         cart = {"id": ident("cart"), "user_id": user_id, "restaurant_id": restaurant_id, "items": [], "voucher": None, "subtotal": 0, "discount": 0, "total": 0, "currency": "VND", "version": 0}
-        return await self.repository.save_cart(cart)
+        return await self.repository.create_cart_idempotent(cart, idempotency_key or f"legacy-cart:{ident('op')}")
 
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
         return price_item(item, selected_options)
@@ -160,11 +160,13 @@ class FoodApplicationService:
         cart["voucher"] = None
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
-    async def delivery_quote(self, restaurant_id: str, address_id: str) -> dict:
+    async def delivery_quote(self, restaurant_id: str, address_id: str, user_id: str) -> dict:
         restaurant = await self.restaurant(restaurant_id)
         address = await self.repository.get_address(address_id)
         if address is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy địa chỉ giao hàng.")
+        if address.get("user_id") != user_id:
+            raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
         return {"restaurant": restaurant, "address": address, **quote_delivery(restaurant, address, self.delivery_config)}
 
     async def _reprice_cart(self, cart: dict, persist: bool = False) -> dict:
@@ -194,9 +196,16 @@ class FoodApplicationService:
         items = {item["menu_item_id"]: await self.menu_item(item["menu_item_id"]) for item in cart["items"]}
         voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
         voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
+        if voucher_code:
+            await self.repository.ensure_voucher_eligible(voucher_code, user_id)
         return build_authoritative_quote(cart, restaurant, items, voucher, address, self.delivery_config)
 
     async def create_order(self, payload: dict) -> dict:
+        existing = await self.repository.get_order_by_idempotency(payload["user_id"], payload["idempotency_key"])
+        if existing:
+            if existing.get("cart_id") != payload.get("cart_id") or existing.get("address", {}).get("id") != payload.get("address_id") or existing.get("payment_method") != payload.get("payment_method"):
+                raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
+            return existing
         if "expected_snapshot_hash" not in payload:
             preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"])
             payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}

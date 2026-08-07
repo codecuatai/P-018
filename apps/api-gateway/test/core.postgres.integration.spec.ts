@@ -6,6 +6,7 @@ import { ConfirmationRecord, PaymentRecord, PostgresCoreRepository } from '../sr
 
 const databaseUrl = process.env.CORE_TEST_DATABASE_URL;
 const integration = databaseUrl ? it : it.skip;
+jest.setTimeout(30_000);
 
 describe('Core PostgreSQL persistence', () => {
   let repository: PostgresCoreRepository;
@@ -13,7 +14,7 @@ describe('Core PostgreSQL persistence', () => {
   beforeAll(async () => {
     if (!databaseUrl) return;
     const migrationPool = new Pool({ connectionString: databaseUrl });
-    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
+    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql', '005_core_payment_provider_saga.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
     await migrationPool.end();
     repository = new PostgresCoreRepository(databaseUrl);
   });
@@ -38,5 +39,18 @@ describe('Core PostgreSQL persistence', () => {
     const stored = await repository.createRefund(refund);
     expect((await repository.createRefund({ ...refund, id: `different-${refund.id}` })).id).toBe(stored.id);
     await expect(repository.createRefund({ ...refund, id: `second-${refund.id}`, idempotencyKey: `${refundKey}-other` })).rejects.toThrow('REFUND_AMOUNT_EXCEEDED');
+  });
+
+  integration('persists provider state, conversation appends, and one queue claim', async () => {
+    const suffix = Date.now();
+    const payment: PaymentRecord = { id: `pay_provider_${suffix}`, actorId: 'usr_pg_provider', orderId: `ord_provider_${suffix}`, amount: 1000, currency: 'VND', method: 'card', status: 'PENDING', idempotencyKey: `provider-payment-${suffix}`, payloadHash: 'provider-hash', createdAt: new Date().toISOString(), providerReference: `sandbox:provider:${suffix}` };
+    await repository.createPayment(payment);
+    const provider = await repository.createPaymentProviderTransaction({ providerReference: payment.providerReference!, paymentId: payment.id, actorId: payment.actorId, orderId: payment.orderId, requestHash: 'provider-hash', providerStatus: 'CREATED', attemptCount: 0 });
+    expect((await repository.getPaymentProviderTransaction(provider.providerReference))?.paymentId).toBe(payment.id);
+    const conversation = await repository.appendConversationTurn({ conversationId: `conv_provider_${suffix}`, actorId: payment.actorId, userMessage: { role: 'user', content: 'hello', createdAt: new Date().toISOString() }, assistantMessage: { role: 'assistant', content: 'hi', createdAt: new Date().toISOString() }, stateUpdates: { cart_id: 'cart_1' } });
+    expect(conversation.messages).toHaveLength(2);
+    await repository.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', attemptCount: 0, nextAttemptAt: new Date().toISOString() });
+    const claimed = await repository.claimDueWorkflowReconciliations(new Date().toISOString(), 10, `test:${suffix}`);
+    expect(claimed.map((item) => item.orderId)).toContain(payment.orderId);
   });
 });

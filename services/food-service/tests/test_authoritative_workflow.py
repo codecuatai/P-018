@@ -60,3 +60,21 @@ async def test_driver_is_released_and_timeline_is_event_backed() -> None:
     assert repository.drivers["drv_001"]["available"] is True
     tracking = await food.tracking(order["id"], "usr_demo_001")
     assert tracking["timeline"][-1]["to_status"] == FoodOrderStatus.DELIVERED.value
+
+
+@pytest.mark.asyncio
+async def test_preview_rejects_redeemed_voucher_and_cart_creation_is_idempotent() -> None:
+    repository, food = make_service()
+    first = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-create-key")
+    retry = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-create-key")
+    assert retry["id"] == first["id"]
+    with pytest.raises(DomainError, match="Idempotency"):
+        await food.create_cart("usr_demo_001", "res_bun_cha", "cart-create-key")
+
+    cart = await food.add_item(first["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
+    await food.apply_voucher(cart["id"], "XONE50")
+    order = await food.create_order({"cart_id": cart["id"], "address_id": "addr_demo", "user_id": "usr_demo_001", "payment_method": "card", "idempotency_key": "voucher-order-key"})
+    assert order["id"]
+    with pytest.raises(DomainError, match="Voucher"):
+        await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
+    assert repository.vouchers["XONE50"]["used_count"] == 1

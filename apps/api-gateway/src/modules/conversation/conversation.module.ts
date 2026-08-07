@@ -23,11 +23,11 @@ export class ConversationService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const messages = current?.messages ?? [];
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, messages, workflow_context: current?.state ?? {}, correlation_id: correlationId }, correlationId);
-    messages.push({ role: 'user', content: message, createdAt: new Date().toISOString() });
-    messages.push({ role: 'assistant', content: String(response.message ?? response.response ?? ''), createdAt: new Date().toISOString() });
+    const userMessage = { role: 'user' as const, content: message, createdAt: new Date().toISOString() };
+    const assistantMessage = { role: 'assistant' as const, content: String(response.message ?? response.response ?? ''), createdAt: new Date().toISOString() };
     const updates = response.state_updates;
-    const state = { ...(current?.state ?? {}), ...(typeof updates === 'object' && updates !== null ? updates as JsonObject : {}) };
-    await this.store.saveConversation({ conversationId, actorId: user.sub, messages, state });
+    const stateUpdates = typeof updates === 'object' && updates !== null ? updates as JsonObject : {};
+    await this.store.appendConversationTurn({ conversationId, actorId: user.sub, userMessage, assistantMessage, stateUpdates });
     return response;
   }
 }

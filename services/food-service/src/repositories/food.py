@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Callable
 from copy import deepcopy
@@ -25,10 +26,13 @@ class FoodRepository(Protocol):
     async def get_menu_item(self, item_id: str) -> dict | None: ...
     async def get_cart(self, cart_id: str) -> dict | None: ...
     async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict: ...
+    async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict: ...
     async def get_voucher(self, code: str) -> dict | None: ...
+    async def ensure_voucher_eligible(self, code: str, user_id: str) -> None: ...
     async def get_address(self, address_id: str) -> dict | None: ...
     async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict: ...
     async def get_order(self, order_id: str) -> dict | None: ...
+    async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None: ...
     async def list_orders(self) -> list[dict]: ...
     async def list_due_orders(self, now: datetime) -> list[dict]: ...
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]: ...
@@ -99,6 +103,7 @@ class InMemoryFoodRepository:
         self.order_events: dict[str, list[dict]] = {}
         self.redeemed_vouchers: set[tuple[str, str]] = set()
         self.order_operations: dict[tuple[str, str], dict] = {}
+        self.cart_operations: dict[tuple[str, str], tuple[str, dict]] = {}
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
@@ -142,8 +147,29 @@ class InMemoryFoodRepository:
             self.carts[saved["id"]] = saved
             return deepcopy(saved)
 
+    async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict:
+        async with self._lock:
+            payload_hash = hashlib.sha256(json.dumps({"restaurant_id": cart["restaurant_id"]}, sort_keys=True).encode()).hexdigest()
+            existing = self.cart_operations.get((cart["user_id"], idempotency_key))
+            if existing:
+                if existing[0] != payload_hash:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho nhà hàng khác.")
+                return deepcopy(existing[1])
+            saved = deepcopy(cart)
+            saved["idempotency_key"] = idempotency_key
+            self.carts[saved["id"]] = saved
+            self.cart_operations[(saved["user_id"], idempotency_key)] = (payload_hash, saved)
+            return deepcopy(saved)
+
     async def get_voucher(self, code: str) -> dict | None:
         return deepcopy(self.vouchers.get(code.upper()))
+
+    async def ensure_voucher_eligible(self, code: str, user_id: str) -> None:
+        voucher = self.vouchers.get(code.upper())
+        if voucher is None:
+            raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
+        if (code.upper(), user_id) in self.redeemed_vouchers or int(voucher.get("used_count", 0)) >= int(voucher.get("usage_limit", 0)):
+            raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
 
     async def get_address(self, address_id: str) -> dict | None:
         return deepcopy(self.addresses.get(address_id))
@@ -196,6 +222,10 @@ class InMemoryFoodRepository:
     async def get_order(self, order_id: str) -> dict | None:
         return deepcopy(self.orders.get(order_id))
 
+    async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None:
+        value = next((order for order in self.orders.values() if order["user_id"] == user_id and order["idempotency_key"] == idempotency_key), None)
+        return deepcopy(value)
+
     async def list_orders(self) -> list[dict]:
         return [deepcopy(order) for order in self.orders.values()]
 
@@ -225,14 +255,14 @@ class InMemoryFoodRepository:
             order = self.orders.get(order_id)
             if order is None:
                 raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
-            if expected_version is not None and int(order.get("version", 0)) != expected_version:
-                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
             if operation_key:
                 existing_operation = self.order_operations.get((order_id, operation_key))
                 if existing_operation:
-                    if existing_operation["target_status"] != target.value:
+                    if existing_operation["target_status"] != target.value or existing_operation.get("payload_hash") != hashlib.sha256(reason.encode()).hexdigest():
                         raise DomainError("IDEMPOTENCY_KEY_REUSED", "Transition operation key đã được dùng cho target khác.")
                     return deepcopy(existing_operation["result"])
+            if expected_version is not None and int(order.get("version", 0)) != expected_version:
+                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
             updated = self._advance_locked(order, target, reason, actor_type)
             updated["next_transition_at"] = next_transition_at.isoformat() if next_transition_at else None
             if target == FoodOrderStatus.DELIVERED:
@@ -242,7 +272,7 @@ class InMemoryFoodRepository:
                     self.drivers[driver_id]["available"] = True
             self.orders[order_id] = deepcopy(updated)
             if operation_key:
-                self.order_operations[(order_id, operation_key)] = {"target_status": target.value, "result": deepcopy(updated)}
+                self.order_operations[(order_id, operation_key)] = {"target_status": target.value, "payload_hash": hashlib.sha256(reason.encode()).hexdigest(), "result": deepcopy(updated)}
             return deepcopy(updated)
 
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:
@@ -350,9 +380,34 @@ class PostgresFoodRepository:
             saved["version"] = int(row["version"])
             return saved
 
+    async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict:
+        pool = self._require_pool()
+        payload_hash = hashlib.sha256(json.dumps({"restaurant_id": cart["restaurant_id"]}, sort_keys=True).encode()).hexdigest()
+        async with pool.acquire() as connection, connection.transaction():
+            existing = await connection.fetchrow("SELECT data,version,payload_hash FROM food_carts WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", cart["user_id"], idempotency_key)
+            if existing:
+                if existing["payload_hash"] and str(existing["payload_hash"]) != payload_hash:
+                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho nhà hàng khác.")
+                saved = _json_object(existing["data"])
+                saved["version"] = int(existing["version"])
+                return saved
+            row = await connection.fetchrow("INSERT INTO food_carts (id,user_id,restaurant_id,data,idempotency_key,payload_hash,version) VALUES ($1,$2,$3,$4::jsonb,$5,$6,0) RETURNING data,version", cart["id"], cart["user_id"], cart["restaurant_id"], json.dumps(cart, ensure_ascii=False), idempotency_key, payload_hash)
+            saved = _json_object(row["data"])
+            saved["version"] = int(row["version"])
+            return saved
+
     async def get_voucher(self, code: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'voucher' AND id = $1", code.upper())
         return _json_object(row["data"]) if row else None
+
+    async def ensure_voucher_eligible(self, code: str, user_id: str) -> None:
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1", code.upper())
+        if not row:
+            raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
+        voucher = _json_object(row["data"])
+        used = await self._require_pool().fetchval("SELECT 1 FROM food_voucher_redemptions WHERE voucher_code=$1 AND user_id=$2", code.upper(), user_id)
+        if used or int(voucher.get("used_count", 0)) >= int(voucher.get("usage_limit", 0)):
+            raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
 
     async def get_address(self, address_id: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1", address_id)
@@ -425,6 +480,10 @@ class PostgresFoodRepository:
         row = await self._require_pool().fetchrow("SELECT * FROM food_orders WHERE id = $1", order_id)
         return self._order_from_row(row) if row else None
 
+    async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None:
+        row = await self._require_pool().fetchrow("SELECT * FROM food_orders WHERE user_id=$1 AND idempotency_key=$2", user_id, idempotency_key)
+        return self._order_from_row(row) if row else None
+
     async def list_orders(self) -> list[dict]:
         rows = await self._require_pool().fetch("SELECT * FROM food_orders ORDER BY created_at")
         return [self._order_from_row(row) for row in rows]
@@ -469,17 +528,17 @@ class PostgresFoodRepository:
             row = await connection.fetchrow("SELECT * FROM food_orders WHERE id=$1 FOR UPDATE", order_id)
             if not row:
                 raise DomainError("NOT_FOUND", "Không tìm thấy đơn hàng.")
-            if expected_version is not None and int(row["version"]) != expected_version:
-                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
             if operation_key:
-                operation = await connection.fetchrow("SELECT target_status,result FROM food_order_operations WHERE order_id=$1 AND operation_key=$2 FOR UPDATE", order_id, operation_key)
+                operation = await connection.fetchrow("SELECT target_status,payload_hash,result FROM food_order_operations WHERE order_id=$1 AND operation_key=$2 FOR UPDATE", order_id, operation_key)
                 if operation:
-                    if str(operation["target_status"]) != target.value:
+                    if str(operation["target_status"]) != target.value or (operation["payload_hash"] and str(operation["payload_hash"]) != hashlib.sha256(reason.encode()).hexdigest()):
                         raise DomainError("IDEMPOTENCY_KEY_REUSED", "Transition operation key đã được dùng cho target khác.")
                     return _json_object(operation["result"])
+            if expected_version is not None and int(row["version"]) != expected_version:
+                raise DomainError("WORKFLOW_CONFLICT", "Đơn hàng đã được cập nhật bởi worker khác.")
             updated = await self._transition_connection(connection, row, target, reason, actor_type, next_transition_at)
             if operation_key:
-                await connection.execute("INSERT INTO food_order_operations (order_id,operation_key,operation_type,target_status,result) VALUES ($1,$2,$3,$4,$5::jsonb)", order_id, operation_key, "ORDER_TRANSITION", target.value, json.dumps(updated, ensure_ascii=False))
+                await connection.execute("INSERT INTO food_order_operations (order_id,operation_key,operation_type,target_status,payload_hash,result) VALUES ($1,$2,$3,$4,$5,$6::jsonb)", order_id, operation_key, "ORDER_TRANSITION", target.value, hashlib.sha256(reason.encode()).hexdigest(), json.dumps(updated, ensure_ascii=False))
             return updated
 
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]:

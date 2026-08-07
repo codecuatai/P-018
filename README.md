@@ -28,4 +28,4 @@ The setup script never overwrites an existing `.env`. Compose reads root `.env` 
 
 See [the current architecture state](docs/architecture/current-state.md) for the evidence-backed implementation matrix, and [the documentation index](docs/README.md) for the supporting architecture, API, and runtime guidance. Read [AGENTS.md](AGENTS.md) before changing code.
 
-The live verification command for the Food vertical slice is `corepack pnpm test:e2e`; it exercises the running Compose Gateway and skips only when `E2E_GATEWAY_URL` is not set. On 2026-08-06, the configured local stack passed all ten scenarios.
+The live verification command for the Food vertical slice is `corepack pnpm test:e2e`; it exercises the running Compose Gateway and skips only when `E2E_GATEWAY_URL` is not set. On 2026-08-06, the configured local stack passed all twelve scenarios. Live Gemini smoke remains environment-dependent and was not run because the configured key check was false.

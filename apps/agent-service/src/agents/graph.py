@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import re
@@ -87,6 +88,8 @@ def _classify_vietnamese(query: str) -> str:
         return "cancel_order"
     if any(word in text for word in ("dat luon", "thanh toan di", "toi dong y", "dat mon")):
         return "place_order"
+    if any(word in text for word in ("bo ma", "xoa ma", "go ma", "bo voucher")):
+        return "remove_voucher"
     if any(word in text for word in ("voucher", "ma giam", "ap ma")):
         return "apply_voucher"
     if any(word in text for word in ("phi giao", "ship bao nhieu", "giao den")):
@@ -95,6 +98,10 @@ def _classify_vietnamese(query: str) -> str:
         return "view_menu"
     if "tao gio" in text or "mo gio" in text:
         return "create_cart"
+    if any(word in text for word in ("bo mon", "xoa mon")):
+        return "remove_cart_item"
+    if any(word in text for word in ("doi mon", "sua gio", "cap nhat gio")):
+        return "update_cart"
     if any(word in text for word in ("them", "cho vao gio", "mua")):
         return "add_to_cart"
     if (re.search(r"\b[1-9][0-9]?\b", text) or any(word in text for word in ("mot ", "hai ", "ba ", "bon "))) and any(word in text for word in ("pho", "bun", "com", "mon")):
@@ -139,8 +146,13 @@ def _extract_vietnamese(query: str) -> dict[str, Any]:
         slots["order_alias"] = "last_order_id"
     if "quan dau tien" in text or "nha hang dau tien" in text:
         slots["restaurant_alias"] = "first"
+    if "quan thu hai" in text or "nha hang thu hai" in text:
+        slots["restaurant_alias"] = "second"
     if "mon dau tien" in text or "mon vua xem" in text:
         slots["menu_item_alias"] = "first"
+    if "mon thu hai" in text:
+        slots["menu_item_alias"] = "second"
+        slots["cart_item_alias"] = "second"
     district = re.search(r"(?:o|tai|khu vuc)\s+([A-Za-zÀ-ỹĐđ\s]+?)(?:\s+(?:duoi|tren|gia|$))", query, re.IGNORECASE)
     if district:
         slots["district"] = district.group(1).strip()
@@ -207,8 +219,14 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             slots["order_id"] = context.get("last_order_id")
         if slots.get("restaurant_alias") == "first" and context.get("restaurant_candidates"):
             slots["restaurant_id"] = context["restaurant_candidates"][0]["id"]
+        if slots.get("restaurant_alias") == "second" and len(context.get("restaurant_candidates", [])) > 1:
+            slots["restaurant_id"] = context["restaurant_candidates"][1]["id"]
         if slots.get("menu_item_alias") == "first" and context.get("menu_item_candidates"):
             slots["item_id"] = context["menu_item_candidates"][0]["id"]
+        if slots.get("menu_item_alias") == "second" and len(context.get("menu_item_candidates", [])) > 1:
+            slots["item_id"] = context["menu_item_candidates"][1]["id"]
+        if slots.get("cart_item_alias") == "second" and len(context.get("cart_items", [])) > 1:
+            slots["cart_item_id"] = context["cart_items"][1].get("id")
         if slots.get("address_alias") == "home":
             slots["address_id"] = context.get("address_id") or "addr_demo"
         return {"extracted_slots": slots, "step_count": state.get("step_count", 0) + 1}
@@ -225,6 +243,14 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             required.append("cart_id")
         if intent in {"track_order", "cancel_order"}:
             required.append("order_id")
+        if intent == "apply_voucher":
+            required.extend(("cart_id", "voucher_code"))
+        if intent == "remove_voucher":
+            required.append("cart_id")
+        if intent == "remove_cart_item":
+            required.extend(("cart_id", "cart_item_id"))
+        if intent == "update_cart":
+            required.extend(("cart_id", "cart_item_id", "quantity"))
         if intent == "view_menu":
             required.append("restaurant_id")
         if intent == "add_to_cart":
@@ -240,7 +266,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         slots = state.get("extracted_slots", {})
         query = state.get("query", "")
         registry = {str(tool.get("name")): tool for tool in state.get("tool_registry", []) if isinstance(tool, dict)}
-        selected: list[dict[str, Any]] = [call for call in state.get("model_tool_calls", []) if isinstance(call, dict) and (not registry or (call.get("name") in registry and registry[str(call.get("name"))].get("permission") not in {"transaction", "privileged"}))]
+        allowed_permissions = {"read", "draft_write", "preview", "confirmation_prepare"}
+        selected: list[dict[str, Any]] = [call for call in state.get("model_tool_calls", []) if isinstance(call, dict) and call.get("name") in registry and registry[str(call.get("name"))].get("permission") in allowed_permissions]
         if selected:
             return {"selected_tools": selected}
         if intent == "search_food":
@@ -255,7 +282,13 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             else:
                 selected = [{"name": "add_to_cart", "arguments": {"cart_id": slots.get("cart_id"), "menu_item_id": slots.get("item_id"), "quantity": slots.get("quantity", 1), "selected_options": slots.get("selected_options", [])}}]
         elif intent == "apply_voucher":
-            selected = [{"name": "apply_voucher", "arguments": {"cart_id": slots.get("cart_id"), "code": slots.get("voucher_code", "XONE50")}}]
+            selected = [{"name": "apply_voucher", "arguments": {"cart_id": slots["cart_id"], "code": slots["voucher_code"]}}]
+        elif intent == "remove_voucher":
+            selected = [{"name": "remove_food_voucher", "arguments": {"cart_id": slots["cart_id"]}}]
+        elif intent == "update_cart":
+            selected = [{"name": "update_food_cart_item", "arguments": {"cart_id": slots["cart_id"], "cart_item_id": slots["cart_item_id"], "quantity": slots["quantity"], **({"selected_options": slots["selected_options"]} if slots.get("selected_options") else {})}}]
+        elif intent == "remove_cart_item":
+            selected = [{"name": "remove_food_cart_item", "arguments": {"cart_id": slots["cart_id"], "cart_item_id": slots["cart_item_id"]}}]
         elif intent == "quote_delivery":
             selected = [{"name": "quote_delivery", "arguments": {"restaurant_id": slots.get("restaurant_id", "res_pho_hanoi"), "address_id": slots["address_id"]}}]
         elif intent == "preview_order":
@@ -277,17 +310,22 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
     async def execute_tools(state: AgentState) -> AgentState:
         results: list[dict[str, Any]] = []
         calls: list[dict[str, Any]] = []
+        async def invoke_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            common = (name, arguments, state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
+            if len(inspect.signature(gateway.execute).parameters) >= 5:
+                return await gateway.execute(*common, state.get("conversation_id"))
+            return await gateway.execute(*common)
         try:
             selected = list(state.get("selected_tools", []))[: get_settings().max_tool_calls]
             for tool in selected:
                 name = str(tool["name"])
                 arguments = dict(tool.get("arguments", {}))
-                result = await gateway.execute(name, arguments, state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
+                result = await invoke_tool(name, arguments)
                 calls.append({"name": name, "status": "succeeded"})
                 results.append({"name": name, "data": result})
                 if name == "create_cart" and state.get("intent") == "add_to_cart" and isinstance(result, dict) and result.get("id"):
                     add_arguments = {"cart_id": result["id"], "menu_item_id": state.get("extracted_slots", {}).get("item_id"), "quantity": state.get("extracted_slots", {}).get("quantity", 1), "selected_options": state.get("extracted_slots", {}).get("selected_options", [])}
-                    add_result = await gateway.execute("add_to_cart", add_arguments, state.get("user_id", "usr_demo_001"), state.get("correlation_id") or "cor_unknown")
+                    add_result = await invoke_tool("add_to_cart", add_arguments)
                     calls.append({"name": "add_to_cart", "status": "succeeded"})
                     results.append({"name": "add_to_cart", "data": add_result})
         except GatewayToolError as exc:
@@ -319,6 +357,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             name = result.get("name")
             if name == "create_cart" and isinstance(data, dict) and data.get("id"):
                 updates["cart_id"] = data["id"]
+            if name in {"create_cart", "add_to_cart", "update_food_cart_item", "remove_food_cart_item", "apply_voucher", "remove_food_voucher"} and isinstance(data, dict) and isinstance(data.get("items"), list):
+                updates["cart_items"] = data["items"]
             if name in {"get_food_order", "track_food_order"} and isinstance(data, dict) and data.get("order_id"):
                 updates["last_order_id"] = data["order_id"]
             if name == "search_food" and isinstance(data, dict) and isinstance(data.get("items"), list):

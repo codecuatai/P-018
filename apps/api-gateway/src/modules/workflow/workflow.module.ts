@@ -20,6 +20,7 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
   private worker?: NodeJS.Timeout;
   private workerHealthy = true;
   private inFlight?: Promise<void>;
+  private lastDiscoveryAt = 0;
   constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore, private readonly payments: PaymentService, private readonly config: ConfigService) {}
 
   async onModuleInit(): Promise<void> {
@@ -43,30 +44,57 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
   private async runReconciliation(): Promise<void> {
     try {
       await this.confirmations.recoverStaleConfirmations(`cor_recovery_${Date.now()}`);
-      await this.payments.recoverPendingPayments();
-      const payments = await this.store.listPaymentsForReconciliation();
-      for (const payment of payments) {
+      const recoveredPayments = await this.payments.recoverPendingPayments();
+      for (const payment of recoveredPayments) await this.confirmations.reconcileRecoveredPayment(payment, `cor_payment_recovery_${payment.id}`);
+      if (Date.now() - this.lastDiscoveryAt >= 5000) {
+        this.lastDiscoveryAt = Date.now();
+        const payments = await this.store.listPaymentsForReconciliation();
+        for (const payment of payments) {
+          const correlationId = `cor_discover_${payment.orderId}`;
+          let order: JsonObject;
+          try {
+            order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
+          } catch (error: unknown) {
+            this.logger.warn(`Reconciliation discovery skipped for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
+            continue;
+          }
+          if (!['RESTAURANT_REJECTED', 'CANCELLED', 'REFUND_PENDING'].includes(String(order.status))) continue;
+          await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: String(order.status), attemptCount: 0, nextAttemptAt: new Date().toISOString() });
+        }
+      }
+      const due = await this.store.claimDueWorkflowReconciliations(new Date().toISOString(), 20, `gateway:${process.pid}`);
+      for (const work of due) {
+        const payment = await this.store.getPayment(work.paymentId);
+        if (!payment || payment.status !== 'SUCCEEDED') {
+          await this.store.upsertWorkflowReconciliation({ ...work, status: 'NO_LONGER_DUE', completedAt: new Date().toISOString(), nextAttemptAt: undefined });
+          continue;
+        }
         try {
-          const existingRefunds = await this.store.listRefunds(payment.id);
           const correlationId = `cor_reconcile_${payment.orderId}`;
           const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
-          if (!['RESTAURANT_REJECTED', 'CANCELLED', 'REFUND_PENDING'].includes(String(order.status))) continue;
-          let refund = existingRefunds.find((item) => item.status === 'SUCCEEDED');
-          if (!refund) refund = await this.payments.refund(payment.id, payment.actorId, `workflow:${payment.orderId}`, String(order.status) === 'CANCELLED' ? 'customer_cancellation' : 'restaurant_rejection');
-          const reconciliation = { orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, refundId: refund.id, status: String(order.status), attemptCount: 1, nextAttemptAt: new Date(Date.now() + 5000).toISOString() };
+          if (!['RESTAURANT_REJECTED', 'CANCELLED', 'REFUND_PENDING'].includes(String(order.status))) {
+            await this.store.upsertWorkflowReconciliation({ ...work, status: 'NO_LONGER_DUE', completedAt: new Date().toISOString(), nextAttemptAt: undefined });
+            continue;
+          }
+          const existingRefunds = await this.store.listRefunds(payment.id);
+          let refund = existingRefunds.find((item) => item.refundScope === 'FOOD_ORDER_FINAL_REFUND' || item.status === 'SUCCEEDED');
+          if (!refund) refund = await this.payments.refund(payment.id, payment.actorId, `food-order-refund:${payment.orderId}:${payment.id}`, String(order.status) === 'CANCELLED' ? 'customer_cancellation' : 'restaurant_rejection');
+          const backoffSeconds = [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
+          const reconciliation = { orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, refundId: refund.id, status: String(order.status), attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() };
           if (String(order.status) === 'RESTAURANT_REJECTED' || String(order.status) === 'CANCELLED') {
             await this.food.post(`/api/v1/internal/orders/${encodeURIComponent(payment.orderId)}/transition`, { target_status: 'REFUND_PENDING', reason: 'Refund reconciliation started', operation_key: `workflow-pending:${payment.orderId}` }, correlationId, `workflow-pending:${payment.orderId}`);
           }
           const current = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
           if (refund.status === 'SUCCEEDED' && String(current.status) === 'REFUND_PENDING') {
-            await this.food.post(`/api/v1/internal/orders/${encodeURIComponent(payment.orderId)}/transition`, { target_status: 'REFUNDED', reason: 'Refund reconciliation completed', operation_key: `workflow-refunded:${payment.orderId}` }, correlationId, `workflow-refunded:${payment.orderId}`);
+            await this.food.post(`/api/v1/internal/orders/${encodeURIComponent(payment.orderId)}/transition`, { target_status: 'REFUNDED', reason: 'Refund reconciliation completed', operation_key: `food-order-refunded:${payment.orderId}:${payment.id}` }, correlationId, `food-order-refunded:${payment.orderId}:${payment.id}`);
             await this.store.upsertWorkflowReconciliation({ ...reconciliation, status: 'REFUNDED', completedAt: new Date().toISOString(), nextAttemptAt: undefined });
           } else {
             await this.store.upsertWorkflowReconciliation(reconciliation);
           }
         } catch (error: unknown) {
           this.logger.warn(`Refund reconciliation deferred for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
-          await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN', attemptCount: 1, nextAttemptAt: new Date(Date.now() + 5000).toISOString() });
+          const backoffSeconds = [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
+          await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN', attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() });
         }
       }
       this.workerHealthy = true;
