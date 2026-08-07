@@ -23,7 +23,15 @@ class GatewayToolClient:
         self._registry: list[dict[str, Any]] = []
         self._registry_loaded_at = 0.0
 
-    async def _request(self, method: str, path: str, payload: dict[str, Any] | None, correlation_id: str, actor_id: str | None = None) -> dict[str, Any]:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None,
+        correlation_id: str,
+        actor_id: str | None = None,
+        unwrap_list: bool = False,
+    ) -> Any:
         own_client = self.client is None
         client = self.client or httpx.AsyncClient(timeout=10.0)
         try:
@@ -31,12 +39,17 @@ class GatewayToolClient:
             if actor_id:
                 headers["x-actor-id"] = actor_id
             response = await client.request(method, f"{self.base_url}{path}", json=payload, headers=headers)
-            body = response.json()
+            try:
+                body = response.json()
+            except ValueError as exc:
+                raise GatewayToolError("INVALID_GATEWAY_RESPONSE") from exc
             if response.status_code >= 400:
-                detail = body.get("code", "UPSTREAM_UNAVAILABLE") if isinstance(body, dict) else "UPSTREAM_UNAVAILABLE"
-                raise GatewayToolError(str(detail))
+                detail = body.get("code") if isinstance(body, dict) else None
+                if not detail and isinstance(body, dict) and isinstance(body.get("detail"), dict):
+                    detail = body["detail"].get("code")
+                raise GatewayToolError(str(detail or "UPSTREAM_UNAVAILABLE"))
             data = body.get("data") if isinstance(body, dict) else None
-            return data if isinstance(data, dict) else {"items": data}
+            return data if isinstance(data, dict) or (unwrap_list and isinstance(data, list)) else {"items": data}
         except httpx.TimeoutException as exc:
             raise GatewayToolError("TOOL_TIMEOUT") from exc
         except httpx.HTTPError as exc:
@@ -49,11 +62,10 @@ class GatewayToolClient:
         settings = get_settings()
         if self._registry and time.monotonic() - self._registry_loaded_at < settings.tool_registry_ttl_seconds:
             return self._registry
-        data = await self._request("GET", "/internal/tools", None, correlation_id)
-        tools = data.get("items", [])
-        if not isinstance(tools, list):
+        data = await self._request("GET", "/internal/tools", None, correlation_id, unwrap_list=True)
+        if not isinstance(data, list) or any(not isinstance(tool, dict) for tool in data):
             raise GatewayToolError("INVALID_TOOL_REGISTRY")
-        self._registry = [tool for tool in tools if isinstance(tool, dict)]
+        self._registry = list(data)
         self._registry_loaded_at = time.monotonic()
         return self._registry
 

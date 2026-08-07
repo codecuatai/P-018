@@ -117,14 +117,7 @@ def test_native_wrapper_recovers_from_raw_message_when_parser_did_not() -> None:
 @pytest.mark.asyncio
 async def test_native_structured_response_is_used_and_authoritative_tools_run() -> None:
     gateway = SearchGateway()
-    llm = NativeStructuredLLM(
-        decision(
-            restaurant_id="invented_restaurant",
-            menu_item_id="invented_item",
-            address_id="invented_address",
-            option_id="invented_option",
-        )
-    )
+    llm = NativeStructuredLLM(decision(dish_query="pho bo", max_price=100000))
     graph = build_graph(tool_client=gateway, llm=llm)
 
     result = await graph.ainvoke(
@@ -141,6 +134,54 @@ async def test_native_structured_response_is_used_and_authoritative_tools_run() 
     assert gateway.calls == [("search_food", {"keyword": "pho bo", "max_price": 100000})]
     assert result["decision_source"] == "model"
     assert result["state_updates"]["restaurant_candidates"][0]["id"] == "restaurant_authoritative"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("option_preferences", "large"),
+        ("quantity", "abc"),
+        ("max_price", {}),
+        ("voucher_code", []),
+    ],
+)
+@pytest.mark.asyncio
+async def test_malformed_semantic_slots_fall_back_without_unsafe_values(field: str, value: Any) -> None:
+    gateway = SearchGateway()
+    graph = build_graph(tool_client=gateway, llm=NativeStructuredLLM(decision(**{field: value})))
+
+    result = await graph.ainvoke(
+        {
+            "query": "Tìm phở bò dưới 100 nghìn",
+            "user_id": "actor_malformed_slot",
+            "conversation_id": "conversation_malformed_slot",
+            "correlation_id": "correlation_malformed_slot",
+            "workflow_context": {},
+        }
+    )
+
+    assert result["decision_source"] == "deterministic"
+    assert result["extracted_slots"].get(field) != value
+    assert gateway.calls[0][0] == "search_food"
+
+
+@pytest.mark.asyncio
+async def test_model_resource_id_causes_deterministic_fallback() -> None:
+    gateway = SearchGateway()
+    graph = build_graph(tool_client=gateway, llm=NativeStructuredLLM(decision(restaurant_id="invented_restaurant")))
+
+    result = await graph.ainvoke(
+        {
+            "query": "Tìm phở bò",
+            "user_id": "actor_invented_id",
+            "conversation_id": "conversation_invented_id",
+            "correlation_id": "correlation_invented_id",
+            "workflow_context": {},
+        }
+    )
+
+    assert result["decision_source"] == "deterministic"
+    assert "restaurant_id" not in result["extracted_slots"]
 
 
 @pytest.mark.asyncio

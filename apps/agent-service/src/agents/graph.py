@@ -6,7 +6,7 @@ import logging
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.agents.intent import classify, extract_slots
 from src.agents.option_resolution import resolve_options
@@ -22,6 +22,32 @@ logger = logging.getLogger(__name__)
 
 class ToolCallLimitError(RuntimeError):
     """Raised before a nested tool call can exceed the configured hard limit."""
+
+
+class OptionPreference(BaseModel):
+    """A non-authoritative preference that can be resolved against a menu tool result."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    concept: str = Field(min_length=1)
+    value: str = Field(min_length=1)
+
+
+class SemanticSlots(BaseModel):
+    """The complete non-authoritative semantic surface available to the model."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    quantity: int | None = Field(default=None, ge=1, strict=True)
+    option_preferences: list[OptionPreference] | None = None
+    address_query: str | None = None
+    restaurant_alias: Literal["first", "second"] | None = None
+    menu_item_alias: Literal["first", "second"] | None = None
+    order_alias: Literal["last"] | None = None
+    dish_query: str | None = None
+    district: str | None = None
+    max_price: int | None = Field(default=None, ge=0, strict=True)
+    voucher_code: str | None = None
 
 
 class StructuredDecision(BaseModel):
@@ -46,7 +72,7 @@ class StructuredDecision(BaseModel):
         "out_of_scope",
     ]
     confidence: float | None = Field(default=None, ge=0, le=1)
-    extracted_slots: dict[str, Any] = Field(default_factory=dict)
+    extracted_slots: SemanticSlots = Field(default_factory=SemanticSlots)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -63,9 +89,58 @@ SEMANTIC_SLOTS = {
     "voucher_code",
 }
 
+VALID_INTENTS = {
+    "search_food",
+    "select_restaurant",
+    "view_menu",
+    "select_menu_item",
+    "create_cart",
+    "add_to_cart",
+    "update_cart",
+    "remove_cart_item",
+    "apply_voucher",
+    "remove_voucher",
+    "quote_delivery",
+    "preview_order",
+    "place_order",
+    "track_order",
+    "cancel_order",
+    "list_addresses",
+    "general_food_support",
+    "out_of_scope",
+}
 
-def _safe_model_slots(values: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in values.items() if key in SEMANTIC_SLOTS}
+
+def reconcile_intent(
+    deterministic_intent: str,
+    model_intent: str,
+    workflow_context: dict[str, Any] | None = None,
+) -> str:
+    """Keep explicit user workflow actions authoritative over model routing."""
+    del workflow_context
+    if deterministic_intent == "out_of_scope":
+        return "out_of_scope"
+    if deterministic_intent != "general_food_support":
+        return deterministic_intent
+    return model_intent if model_intent in VALID_INTENTS else "general_food_support"
+
+
+def _safe_model_slots(values: SemanticSlots | dict[str, Any]) -> dict[str, Any]:
+    """Return only validated, non-authoritative model semantics.
+
+    `StructuredDecision` validates this before normal graph use. The mapping branch
+    keeps this boundary defensive for adapters/tests that supply an unparsed value:
+    resource IDs are removed before validation and malformed values are discarded.
+    """
+    if isinstance(values, SemanticSlots):
+        return values.model_dump(exclude_none=True)
+    if not isinstance(values, dict):
+        return {}
+    try:
+        permitted = {key: value for key, value in values.items() if key in SEMANTIC_SLOTS}
+        return SemanticSlots.model_validate(permitted).model_dump(exclude_none=True)
+    except ValidationError:
+        return {}
 
 
 def _parse_structured_decision(raw: Any) -> StructuredDecision:
@@ -165,10 +240,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
 
     async def classify_and_extract(state: AgentState) -> AgentState:
         query = str(state.get("query", ""))
+        deterministic_intent = classify(query)
         deterministic = extract_slots(query)
         registry: list[dict[str, Any]] = []
         fallback = {
-            "intent": classify(query),
+            "intent": deterministic_intent,
             "confidence": None,
             "decision_source": "deterministic",
             "extracted_slots": {**state.get("extracted_slots", {}), **deterministic},
@@ -193,9 +269,10 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             raw = await structured_invoke(prompt, StructuredDecision) if callable(structured_invoke) else await model.ainvoke(prompt)
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
-            slots = {**state.get("extracted_slots", {}), **deterministic, **_safe_model_slots(decision.extracted_slots)}
+            model_slots = _safe_model_slots(decision.extracted_slots)
+            slots = {**state.get("extracted_slots", {}), **model_slots, **deterministic}
             return {
-                "intent": decision.intent,
+                "intent": reconcile_intent(deterministic_intent, decision.intent, state.get("extracted_slots", {})),
                 "confidence": decision.confidence,
                 "decision_source": "model",
                 "extracted_slots": slots,
