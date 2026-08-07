@@ -19,8 +19,9 @@ import {
   WalletCards,
   X,
   XCircle,
+  QrCode,
 } from "lucide-react";
-import { BookingHistory, BookingStatus, PaymentMethod, ServiceType } from "../types";
+import { BookingHistory, BookingStatus, PaymentMethod, ServiceType, UserProfile } from "../types";
 import { MockService } from "../mocks/mockService";
 import "./HistoryView.css";
 
@@ -38,6 +39,7 @@ const serviceLabels: Record<ServiceType, string> = {
   car: "Đặt xe",
   hotel: "Khách sạn",
   delivery: "Giao hàng",
+  medical: "Khám bệnh",
   other: "Dịch vụ",
 };
 
@@ -72,6 +74,7 @@ export const HistoryView: React.FC = () => {
   const [rateTarget, setRateTarget] = useState<BookingHistory | null>(null);
   const [rating, setRating] = useState(5);
   const [toast, setToast] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     loadHistory();
@@ -81,6 +84,8 @@ export const HistoryView: React.FC = () => {
     setLoading(true);
     const data = await MockService.getHistory();
     setHistory(data);
+    const profile = await MockService.getUserProfile();
+    setUserProfile(profile);
     setLoading(false);
   };
 
@@ -310,30 +315,127 @@ export const HistoryView: React.FC = () => {
 
       {selectedBooking && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="booking-modal">
-            <div className="modal-header">
-              <div>
-                <h3>Chi tiết {selectedBooking.bookingId}</h3>
-                <p>{selectedBooking.provider} · {selectedBooking.origin} → {selectedBooking.destination}</p>
+          {selectedBooking.type === "medical" ? (
+            <div className="booking-modal medical-ticket" style={{ maxWidth: '500px', padding: 0, overflow: 'hidden', backgroundColor: '#f8fafc' }}>
+              <div style={{ backgroundColor: '#0ea5e9', color: 'white', padding: '20px', textAlign: 'center', position: 'relative' }}>
+                <button type="button" onClick={() => setSelectedBooking(null)} aria-label="Đóng" style={{ position: 'absolute', right: '16px', top: '16px', background: 'transparent', color: 'white', border: 'none', cursor: 'pointer' }}>
+                  <X size={24} />
+                </button>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+                  <div style={{ background: 'white', padding: '12px', borderRadius: '12px', display: 'inline-block' }}>
+                    <QrCode size={64} color="#0284c7" />
+                  </div>
+                </div>
+                <h3 style={{ margin: '0 0 4px 0', fontSize: '20px' }}>PHIẾU KHÁM BỆNH ĐIỆN TỬ</h3>
+                <p style={{ margin: 0, opacity: 0.9 }}>Mã số: <strong>{selectedBooking.bookingId}</strong></p>
               </div>
-              <button type="button" onClick={() => setSelectedBooking(null)} aria-label="Đóng">
-                <X size={18} />
-              </button>
+              
+              <div style={{ padding: '24px' }}>
+                <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+                  <h4 style={{ color: '#0369a1', marginTop: 0, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Users size={18} /> THÔNG TIN HÀNH CHÍNH
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '14px' }}>
+                    <div><span style={{ color: '#64748b', display: 'block', fontSize: '12px' }}>Họ và tên</span><strong style={{ textTransform: 'uppercase' }}>{selectedBooking.customerName ?? userProfile?.fullName ?? "CHƯA CẬP NHẬT"}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'block', fontSize: '12px' }}>Số điện thoại</span><strong>{selectedBooking.customerPhone ?? userProfile?.phone ?? "Chưa cập nhật"}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'block', fontSize: '12px' }}>Ngày sinh</span><strong>{userProfile?.dob || "Chưa cập nhật"}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'block', fontSize: '12px' }}>Số giấy tờ / BHYT</span><strong>{userProfile?.idNumber || "Chưa cập nhật"}</strong></div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+                  <h4 style={{ color: '#0369a1', marginTop: 0, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CalendarDays size={18} /> THÔNG TIN CUỘC HẸN
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', fontSize: '14px' }}>
+                    <div><span style={{ color: '#64748b', display: 'inline-block', width: '100px' }}>Chuyên khoa:</span><strong style={{ color: '#0f172a' }}>{selectedBooking.origin}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'inline-block', width: '100px' }}>Bác sĩ khám:</span><strong style={{ color: '#0f172a' }}>{selectedBooking.destination}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'inline-block', width: '100px' }}>Thời gian:</span><strong style={{ color: '#ea580c' }}>{selectedBooking.time}, ngày {selectedBooking.date}</strong></div>
+                    <div><span style={{ color: '#64748b', display: 'inline-block', width: '100px' }}>Địa điểm:</span><strong>Phòng khám số 3, Tầng 2, Khu A - {selectedBooking.provider}</strong></div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
+                  <h4 style={{ color: '#0369a1', marginTop: 0, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <WalletCards size={18} /> THÔNG TIN TÀI CHÍNH
+                  </h4>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '16px', fontWeight: 'bold' }}>{selectedBooking.price.toLocaleString("vi-VN")} VNĐ</span>
+                    {selectedBooking.paymentStatus === "paid" ? (
+                      <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>ĐÃ THANH TOÁN</span>
+                    ) : (
+                      <span style={{ backgroundColor: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', border: '1px solid #fecaca' }}>CHƯA THANH TOÁN</span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fff7ed', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa', fontSize: '13px', color: '#9a3412', marginBottom: '20px' }}>
+                  <strong>Lưu ý quan trọng:</strong>
+                  <ul style={{ margin: '4px 0 0 0', paddingLeft: '20px' }}>
+                    <li>Vui lòng có mặt trước giờ khám 15 phút để làm thủ tục.</li>
+                    <li>{(selectedBooking.origin?.toLowerCase() || "").includes("tiêu hóa") || (selectedBooking.origin?.toLowerCase() || "").includes("nội tiết") ? "Vui lòng nhịn ăn sáng để thực hiện xét nghiệm máu." : "Mang theo sổ khám bệnh và các kết quả xét nghiệm cũ (nếu có)."}</li>
+                  </ul>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  {selectedBooking.status === "confirmed" && (
+                    <button 
+                      className="btn-danger" 
+                      style={{ flex: 1, padding: '12px', borderRadius: '8px', fontSize: '15px', border: 'none', cursor: 'pointer', fontWeight: '600' }}
+                      onClick={() => {
+                        setCancelTarget(selectedBooking);
+                        setSelectedBooking(null);
+                      }}
+                    >
+                      Hủy lịch hẹn
+                    </button>
+                  )}
+                  <button 
+                    className="btn-primary" 
+                    style={{ flex: 1, padding: '12px', borderRadius: '8px', fontSize: '15px', border: 'none', cursor: 'pointer', fontWeight: '600' }}
+                    onClick={() => setSelectedBooking(null)}
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
             </div>
-            <div className="modal-grid">
-              <div><span>Khách hàng</span><strong>{selectedBooking.customerName ?? "User Demo"}</strong></div>
-              <div><span>Số điện thoại</span><strong>{selectedBooking.customerPhone ?? "0901234567"}</strong></div>
-              <div><span>Trạng thái</span>{getStatusBadge(selectedBooking.status)}</div>
-              <div><span>Thanh toán</span><strong>{selectedBooking.paymentStatus === "paid" ? "Đã thanh toán" : selectedBooking.paymentStatus === "refunded" ? "Đã hoàn tiền" : "Chưa thanh toán"}</strong></div>
-              <div><span>Thời lượng</span><strong>{selectedBooking.duration ?? "Linh hoạt"}</strong></div>
-              <div><span>Chỗ/Phòng</span><strong>{selectedBooking.seats}</strong></div>
+          ) : (
+            <div className="booking-modal">
+              <div className="modal-header">
+                <div>
+                  <h3>Chi tiết {selectedBooking.bookingId}</h3>
+                  <p>{selectedBooking.provider} · {selectedBooking.origin} → {selectedBooking.destination}</p>
+                </div>
+                <button type="button" onClick={() => setSelectedBooking(null)} aria-label="Đóng">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="modal-grid">
+                <div><span>Khách hàng</span><strong>{selectedBooking.customerName ?? "User Demo"}</strong></div>
+                <div><span>Số điện thoại</span><strong>{selectedBooking.customerPhone ?? "0901234567"}</strong></div>
+                <div><span>Trạng thái</span>{getStatusBadge(selectedBooking.status)}</div>
+                <div><span>Thanh toán</span><strong>{selectedBooking.paymentStatus === "paid" ? "Đã thanh toán" : selectedBooking.paymentStatus === "refunded" ? "Đã hoàn tiền" : "Chưa thanh toán"}</strong></div>
+                <div><span>Thời lượng</span><strong>{selectedBooking.duration ?? "Linh hoạt"}</strong></div>
+                <div><span>Chỗ/Phòng</span><strong>{selectedBooking.seats}</strong></div>
+              </div>
+              <div className="modal-note">
+                <strong>Ghi chú dịch vụ</strong>
+                <p>{selectedBooking.note ?? "Không có ghi chú bổ sung."}</p>
+                <p>{selectedBooking.refundPolicy ?? "Áp dụng theo chính sách nhà cung cấp."}</p>
+              </div>
+              {selectedBooking.status === "confirmed" && (
+                <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn-danger" onClick={() => {
+                    setCancelTarget(selectedBooking);
+                    setSelectedBooking(null);
+                  }}>
+                    Hủy dịch vụ này
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="modal-note">
-              <strong>Ghi chú dịch vụ</strong>
-              <p>{selectedBooking.note ?? "Không có ghi chú bổ sung."}</p>
-              <p>{selectedBooking.refundPolicy ?? "Áp dụng theo chính sách nhà cung cấp."}</p>
-            </div>
-          </div>
+          )}
         </div>
       )}
 

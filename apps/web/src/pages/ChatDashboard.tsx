@@ -25,7 +25,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOption, ServiceTicket, SupportTicketContext } from "../types";
+import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOption, ServiceTicket, SupportTicketContext, UserProfile } from "../types";
 import { isProfileComplete, MockService } from "../mocks/mockService";
 import { MOCK_COMBOS, MOCK_SUGGESTIONS } from "../mocks/mockData";
 import { TicketCard } from "../components/TicketCard";
@@ -91,6 +91,7 @@ export const ChatDashboard: React.FC<Props> = ({
   const [notice, setNotice] = useState<{ type: "success" | "warning"; text: string } | null>(null);
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   // Flow 2 & Ticket Payment Modal States
   const [selectedCombo, setSelectedCombo] = useState<ComboPackage | null>(null);
@@ -124,6 +125,8 @@ export const ChatDashboard: React.FC<Props> = ({
   const loadInitialMessages = async () => {
     const msgs = await MockService.getMessages();
     setMessages(msgs);
+    const profile = await MockService.getUserProfile();
+    setUserProfile(profile);
   };
 
   const handleSend = async (text: string) => {
@@ -233,6 +236,10 @@ export const ChatDashboard: React.FC<Props> = ({
             type: "success",
             text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán phí khám.`,
           });
+          
+          // Ghi nhận vào Lịch sử (Service History)
+          await MockService.confirmBooking(pendingTicket, authMethod);
+
           // Gửi một câu chat rất bình thường báo AI kiểm tra lại
           await handleSend(`Tôi đã thanh toán xong cho mã lịch hẹn ${appointmentId}, bạn kiểm tra lại giúp tôi!`);
           setPendingTicket(null);
@@ -371,30 +378,81 @@ export const ChatDashboard: React.FC<Props> = ({
       </div>
       
       {schedule.status === "Draft" ? (
-        <div style={{ backgroundColor: '#fff7ed', padding: '12px', borderRadius: '8px', border: '1px solid #fed7aa' }}>
-          <strong style={{ color: '#c2410c', display: 'block', marginBottom: '4px' }}>Trạng thái: Đang giữ chỗ (Draft)</strong>
-          <span style={{ fontSize: '14px', color: '#9a3412' }}>Mã lịch hẹn: {schedule.appointmentId}</span><br/>
-          <span style={{ fontSize: '14px', color: '#9a3412' }}>Giờ khám: {schedule.date}</span>
-          <button 
-            type="button" 
-            onClick={() => handleConfirm({
-              id: schedule.appointmentId.toString(),
-              type: "medical",
-              origin: "Khám chuyên khoa",
-              destination: schedule.doctorName,
-              date: schedule.date,
-              time: schedule.date,
-              price: schedule.price || 0,
-              seats: "1 bệnh nhân",
-              provider: "Bệnh viện Đa Khoa",
-              duration: "30 phút",
-              note: schedule.specialty || "",
-              refundPolicy: "Không hoàn phí khám nếu vắng mặt"
-            })}
-            style={{ marginTop: '12px', width: '100%', padding: '8px', backgroundColor: '#ea580c', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-          >
-            <CreditCard size={16} /> Thanh toán & Xác nhận
-          </button>
+        <div style={{ backgroundColor: '#fffaf0', padding: '20px', borderRadius: '16px', border: '1px dashed #fbbf24', position: 'relative' }}>
+          <div style={{ position: 'absolute', top: '-12px', right: '16px', backgroundColor: '#f59e0b', color: 'white', padding: '4px 12px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            ⏳ Đang giữ chỗ (Draft)
+          </div>
+          
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px', borderBottom: '1px dashed #fde68a', paddingBottom: '16px' }}>
+            <div style={{ backgroundColor: 'white', padding: '8px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+              <QrCode size={48} color="#d97706" />
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 4px 0', color: '#b45309', fontSize: '16px', textTransform: 'uppercase' }}>Phiếu khám bệnh</h4>
+              <div style={{ fontSize: '13px', color: '#78350f' }}>Mã đặt chỗ: <strong style={{ backgroundColor: '#fef3c7', padding: '2px 6px', borderRadius: '4px' }}>#{schedule.appointmentId}</strong></div>
+            </div>
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '14px', color: '#451a03', marginBottom: '20px' }}>
+            <div>
+              <div style={{ opacity: 0.7, fontSize: '12px', marginBottom: '2px' }}>Họ và tên bệnh nhân</div>
+              <strong style={{ textTransform: 'uppercase' }}>{userProfile?.fullName || "Chưa cập nhật"}</strong>
+            </div>
+            <div>
+              <div style={{ opacity: 0.7, fontSize: '12px', marginBottom: '2px' }}>Số điện thoại</div>
+              <strong>{userProfile?.phone || "Chưa cập nhật"}</strong>
+            </div>
+            <div>
+              <div style={{ opacity: 0.7, fontSize: '12px', marginBottom: '2px' }}>Thời gian khám</div>
+              <strong style={{ color: '#ea580c' }}>{schedule.date}</strong>
+            </div>
+            <div>
+              <div style={{ opacity: 0.7, fontSize: '12px', marginBottom: '2px' }}>Địa điểm</div>
+              <strong>Phòng khám Tầng 2, Khu A</strong>
+            </div>
+          </div>
+          
+          <div style={{ backgroundColor: '#fef3c7', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#92400e', marginBottom: '20px' }}>
+            <strong style={{ display: 'block', marginBottom: '4px' }}>📌 Lưu ý trước khi khám:</strong>
+            <ul style={{ margin: 0, paddingLeft: '16px' }}>
+              <li>Vui lòng nhịn ăn sáng để thực hiện xét nghiệm lâm sàng.</li>
+              <li>Có mặt trước 15 phút tại quầy lễ tân để lấy số thứ tự.</li>
+            </ul>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button 
+              type="button" 
+              onClick={() => handleSend(`Tôi muốn hủy lịch hẹn mã ${schedule.appointmentId}`)}
+              style={{ flex: 1, padding: '12px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #fca5a5', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#fef2f2'; }}
+              onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              Hủy lịch
+            </button>
+            <button 
+              type="button" 
+              onClick={() => handleConfirm({
+                id: schedule.appointmentId.toString(),
+                type: "medical",
+                origin: "Khám chuyên khoa",
+                destination: schedule.doctorName,
+                date: schedule.date,
+                time: schedule.date,
+                price: schedule.price || 0,
+                seats: "1 bệnh nhân",
+                provider: "Bệnh viện Đa Khoa",
+                duration: "30 phút",
+                note: schedule.specialty || "",
+                refundPolicy: "Không hoàn phí khám nếu vắng mặt"
+              })}
+              style={{ flex: 2, padding: '12px', backgroundColor: '#f97316', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: '0 4px 6px -1px rgba(249, 115, 22, 0.2)', transition: 'all 0.2s' }}
+              onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ea580c'; }}
+              onMouseOut={(e) => { e.currentTarget.style.backgroundColor = '#f97316'; }}
+            >
+              <CreditCard size={18} /> Thanh toán
+            </button>
+          </div>
         </div>
       ) : (
         <>

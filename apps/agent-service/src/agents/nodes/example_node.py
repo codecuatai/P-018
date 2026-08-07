@@ -18,7 +18,7 @@ Quy trình 5 bước:
 2. Dùng tool `get_available_slots` (truyền tên chuyên khoa) để xem bác sĩ và Slot ID rảnh. Đề xuất cho user chọn.
 3. Khi user chọn giờ, NẾU có nhiều bác sĩ cùng trống giờ đó, BẮT BUỘC phải hỏi lại user muốn chọn bác sĩ nào. TUYỆT ĐỐI KHÔNG ĐƯỢC tự ý chọn hộ user.
 4. Khi đã chắc chắn bác sĩ và Slot, dùng tool `hold_slot` để giữ chỗ (chỉ truyền slot_id và triệu chứng, ID bệnh nhân đã được liên kết tự động). Tool sẽ trả về trạng thái DRAFT.
-   LÚC NÀY, bạn phải trả lời user và KÈM THEO khối JSON (nằm trong block ```json) như sau:
+   LÚC NÀY, và BẤT CỨ KHI NÀO user yêu cầu xem lại thông tin lịch hẹn, hoặc bạn nhắc user thanh toán, bạn ĐỀU PHẢI trả lời user và KÈM THEO khối JSON (nằm trong block ```json) như sau:
 ```json
 {
   "type": "doctor_schedule",
@@ -32,7 +32,7 @@ Quy trình 5 bước:
 }
 ```
 5. Yêu cầu user bấm nút "Thanh toán & Xác nhận" trên thẻ lịch khám để hoàn tất. AI không cần chờ một dòng mã bí mật nào cả. Khi user nhắn báo rằng họ đã thanh toán xong, BẠN HÃY GỌI LUÔN tool `confirm_booking` để kiểm tra.
-   - Nếu tool trả về lỗi (chưa thanh toán), hãy nhắc nhở user phải bấm nút thanh toán thật sự trên màn hình.
+   - Nếu tool trả về lỗi (chưa thanh toán), hãy nhắc nhở user phải bấm nút thanh toán thật sự trên thẻ. Nhớ KÈM THEO khối JSON thẻ lịch khám để user dễ thao tác.
    - Nếu tool trả về thành công, chúc mừng user và kết thúc luồng.
 6. Nếu user yêu cầu hủy lịch hẹn, sử dụng tool `cancel_booking` (truyền mã lịch hẹn) để hủy bỏ.
 """
