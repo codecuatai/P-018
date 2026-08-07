@@ -59,8 +59,8 @@ services:
       SERVICE_PORT: ${AGENT_SERVICE_PORT:?AGENT_SERVICE_PORT is required}
       DATABASE_URL: ${AGENT_DATABASE_URL:?AGENT_DATABASE_URL is required}
       CORS_ORIGINS: ${AGENT_CORS_ORIGINS:?AGENT_CORS_ORIGINS is required}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
-      GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
+      GROQ_API_KEY: ${GROQ_API_KEY:?GROQ_API_KEY is required}
+      GROQ_MODEL: ${GROQ_MODEL:?GROQ_MODEL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     ports: ["${AGENT_SERVICE_PORT}:8001"]
     depends_on: { postgres: { condition: service_healthy } }
