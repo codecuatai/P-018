@@ -1,28 +1,23 @@
-#!/bin/bash
-# Setup script cho AI20K project
+#!/usr/bin/env sh
+set -eu
 
-set -e
+repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+cd "$repository_root"
 
-echo "=== AI20K Project Setup ==="
-
-# Check Python version
 python3 -c "import sys; assert sys.version_info >= (3, 11), 'Python 3.11+ required'"
-echo "Python version OK"
-
-# Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+# shellcheck disable=SC1091
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e 'apps/agent-service[dev]' -e 'services/food-service[dev]'
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env if not exists
 if [ ! -f .env ]; then
-    cp .env.example .env
-    echo "Created .env — please edit with your API keys"
+  cp .env.example .env
+  echo 'Created .env from .env.example; update local placeholder values before starting Compose.'
+else
+  echo '.env already exists. No files were changed.'
 fi
 
-# Create data directories
-mkdir -p data/chroma
-
-echo "Setup complete! Run: uvicorn src.main:app --reload"
+corepack pnpm install --frozen-lockfile
+python scripts/check-migration-parity.py
+echo 'Setup complete. Start the canonical stack with: docker compose up --build'

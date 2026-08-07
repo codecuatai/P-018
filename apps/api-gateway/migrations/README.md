@@ -1,1 +1,3 @@
 Core owns confirmations, sandbox payments, refunds, receipts, conversations, idempotency evidence, reconciliation metadata, and audit records. Run `001_core_vertical_slice.sql` through `006_core_payment_recovery_claims.sql` against `xone_core`. Migration `005` adds durable provider transactions and saga fields; migration `006` adds atomic payment-recovery claims and refund recovery scheduling. Migrations are additive and owned by the Gateway; they do not access Food tables.
+
+Both `scripts/migrate.sh` and `scripts/migrate.ps1` apply the same ordered Core/Food migration set. Run `python scripts/check-migration-parity.py` to detect drift before changing either script.

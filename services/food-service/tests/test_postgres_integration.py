@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 from src.application.food_service import FoodApplicationService
 from src.config import Settings
-from src.domain.policies import FoodOrderStatus
+from src.domain.policies import DomainError, FoodOrderStatus
 from src.repositories.food import PostgresFoodRepository
 
 DATABASE_URL = os.environ.get("FOOD_TEST_DATABASE_URL")
@@ -95,3 +95,17 @@ async def test_postgres_due_claim_is_single_winner(postgres_food: tuple[Postgres
     assert first + second == 1
     events = await repository.get_order_events(order["id"])
     assert len([event for event in events if event["to_status"] in {FoodOrderStatus.RESTAURANT_ACCEPTED.value, FoodOrderStatus.RESTAURANT_REJECTED.value}]) == 1
+
+
+@pytest.mark.asyncio
+async def test_postgres_create_cart_concurrent_idempotency(postgres_food: tuple[PostgresFoodRepository, FoodApplicationService]) -> None:
+    repository, service = postgres_food
+    pool = repository._require_pool()
+    user_id = f"usr_pg_cart_{uuid4().hex[:12]}"
+    key = f"pg-cart-concurrent-{uuid4().hex[:12]}"
+    results = await asyncio.gather(*[service.create_cart(user_id, "res_pho_hanoi", key) for _ in range(20)])
+    assert len({cart["id"] for cart in results}) == 1
+    assert await pool.fetchval("SELECT count(*) FROM food_carts WHERE user_id=$1 AND idempotency_key=$2", user_id, key) == 1
+    with pytest.raises(DomainError) as error:
+        await service.create_cart(user_id, "res_bun_cha", key)
+    assert error.value.code == "IDEMPOTENCY_KEY_REUSED"

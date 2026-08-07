@@ -1,5 +1,9 @@
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+import src.agents.graph as graph_module
+from src.agents.graph import build_graph
 from src.agents.intent import classify, extract_slots
 from src.agents.option_resolution import resolve_options
 from src.agents.reference_resolution import resolve_references
@@ -52,3 +56,102 @@ def test_new_dish_query_does_not_reuse_previous_menu_item() -> None:
         {"menu_item_candidates": [{"id": "item_old", "name": "pho bo tai"}]},
     )
     assert "menu_item_id" not in slots
+
+
+class AddressDiscoveryGateway:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def registry(self, correlation_id: str) -> list[dict[str, str]]:
+        return [
+            {"name": "list_food_delivery_addresses", "permission": "read"},
+            {"name": "quote_delivery", "permission": "read"},
+            {"name": "prepare_food_order_confirmation", "permission": "confirmation_prepare"},
+        ]
+
+    async def execute(self, name: str, arguments: dict, user_id: str, correlation_id: str, conversation_id: str | None = None) -> dict:
+        self.calls.append(name)
+        if name == "list_food_delivery_addresses":
+            return {"addresses": [{"id": "address_opaque_7", "label": "Nhà riêng", "user_id": user_id}]}
+        if name == "quote_delivery":
+            return {"restaurant": {"id": arguments["restaurant_id"]}, "address": {"id": arguments["address_id"]}, "delivery": {"fee": 15000}}
+        return {"id": "confirmation_opaque_7", "action": "PLACE_FOOD_ORDER"}
+
+
+class NestedCallLimitGateway:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def registry(self, correlation_id: str) -> list[dict[str, str]]:
+        return [
+            {"name": "view_menu_item", "permission": "read"},
+            {"name": "create_cart", "permission": "write"},
+            {"name": "add_to_cart", "permission": "write"},
+        ]
+
+    async def execute(self, name: str, arguments: dict, user_id: str, correlation_id: str, conversation_id: str | None = None) -> dict:
+        self.calls.append(name)
+        if name == "view_menu_item":
+            return {
+                "id": arguments["menu_item_id"],
+                "option_groups": [{"id": "group_opaque_9", "name": "Kích thước", "options": [{"id": "option_opaque_9", "name": "Cỡ lớn"}]}],
+            }
+        if name == "create_cart":
+            return {"id": "cart_from_tool"}
+        return {"id": "cart_item_from_tool"}
+
+
+@pytest.mark.asyncio
+async def test_address_discovery_reselects_original_quote_tool() -> None:
+    gateway = AddressDiscoveryGateway()
+    graph = build_graph(tool_client=gateway)
+    result = await graph.ainvoke(
+        {
+            "query": "Giao về nhà riêng",
+            "user_id": "user_opaque_7",
+            "conversation_id": "conversation_opaque_7",
+            "correlation_id": "correlation_opaque_7",
+            "workflow_context": {"restaurant_id": "restaurant_opaque_7"},
+        }
+    )
+    assert gateway.calls == ["list_food_delivery_addresses", "quote_delivery"]
+    assert result["response_type"] == "options"
+    assert result["data"]["address"]["id"] == "address_opaque_7"
+
+
+@pytest.mark.asyncio
+async def test_address_discovery_reselects_original_prepare_tool() -> None:
+    gateway = AddressDiscoveryGateway()
+    graph = build_graph(tool_client=gateway)
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt luôn giao về nhà riêng",
+            "user_id": "user_opaque_8",
+            "conversation_id": "conversation_opaque_8",
+            "correlation_id": "correlation_opaque_8",
+            "workflow_context": {"restaurant_id": "restaurant_opaque_8", "cart_id": "cart_opaque_8"},
+        }
+    )
+    assert gateway.calls == ["list_food_delivery_addresses", "prepare_food_order_confirmation"]
+    assert result["response_type"] == "confirmation_form"
+    assert result["data"]["id"] == "confirmation_opaque_7"
+
+
+@pytest.mark.asyncio
+async def test_nested_tool_calls_enforce_the_hard_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(graph_module, "get_settings", lambda: SimpleNamespace(max_tool_calls=2, max_graph_steps=12, gemini_api_key=""))
+    gateway = NestedCallLimitGateway()
+    graph = build_graph(tool_client=gateway)
+
+    result = await graph.ainvoke(
+        {
+            "query": "Thêm 1 món item_opaque_9 cỡ lớn vào giỏ",
+            "user_id": "user_opaque_9",
+            "conversation_id": "conversation_opaque_9",
+            "correlation_id": "correlation_opaque_9",
+            "workflow_context": {"restaurant_id": "restaurant_opaque_9", "menu_item_id": "item_opaque_9"},
+        }
+    )
+
+    assert gateway.calls == ["view_menu_item", "create_cart"]
+    assert result["data"]["code"] == "TOOL_CALL_LIMIT"

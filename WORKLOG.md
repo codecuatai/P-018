@@ -6,7 +6,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Vũ Văn Phong | Final hardening Food vertical slice theo `plan.md`: audit/chống overfit Agent, resolver menu-option-address authoritative, identity/persistence/auth safety, payment/refund recovery claims, cart concurrency, web mock cleanup, contracts/CI/docs và kiểm thử | ✅ Done | Đã hoàn thiện implementation; Agent 18 pass, Food 21 pass/2 skip, Gateway 14 pass/3 skip, Food PostgreSQL 2 pass, E2E 12 pass, Docker build/health/restart pass; Core PostgreSQL và Gemini live smoke được ghi nhận là chưa verify; không commit/push | - |
+| Vũ Văn Phong | Final corrective pass: migration parity, stale payment-confirmation linkage, terminal refund semantics, bounded Agent address orchestration, voucher stale mapping, real timeout/restart E2E, PostgreSQL cart concurrency, Gemini smoke và setup script | ✅ Done | Agent 20 pass, Food 21 pass/3 skip, Gateway 17 pass/3 skip, Food PostgreSQL 3 pass, Core PostgreSQL 3 pass, E2E 15 pass, Bash/PowerShell migration và Docker build/health pass; Gemini 4 calls fallback do provider error; không commit/push | - |
 
 > Ghi lại tất cả công việc đã làm theo ngày của các thành viên trong đội. Đảm bảo minh bạch tiến độ, kết quả công việc và theo dõi sử dụng AI.
 >

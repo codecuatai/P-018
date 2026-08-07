@@ -85,6 +85,10 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
           if (String(order.status) === 'RESTAURANT_REJECTED' || String(order.status) === 'CANCELLED') {
             await this.food.post(`/api/v1/internal/orders/${encodeURIComponent(payment.orderId)}/transition`, { target_status: 'REFUND_PENDING', reason: 'Refund reconciliation started', operation_key: `workflow-pending:${payment.orderId}` }, correlationId, `workflow-pending:${payment.orderId}`);
           }
+          if (refund.status === 'FAILED') {
+            await this.store.upsertWorkflowReconciliation({ ...reconciliation, status: 'REFUND_FAILED', lastErrorCode: 'REFUND_FAILED', completedAt: new Date().toISOString(), nextAttemptAt: undefined });
+            continue;
+          }
           const current = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
           if (refund.status === 'SUCCEEDED' && String(current.status) === 'REFUND_PENDING') {
             await this.food.post(`/api/v1/internal/orders/${encodeURIComponent(payment.orderId)}/transition`, { target_status: 'REFUNDED', reason: 'Refund reconciliation completed', operation_key: `food-order-refunded:${payment.orderId}:${payment.id}` }, correlationId, `food-order-refunded:${payment.orderId}:${payment.id}`);
@@ -94,6 +98,10 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
           }
         } catch (error: unknown) {
           this.logger.warn(`Refund reconciliation deferred for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
+          if (error instanceof Error && error.message === 'REFUND_FAILED') {
+            await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'REFUND_FAILED', lastErrorCode: 'REFUND_FAILED', attemptCount: work.attemptCount, completedAt: new Date().toISOString(), nextAttemptAt: undefined });
+            continue;
+          }
           const backoffSeconds = [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
           await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN', attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() });
         }

@@ -3,7 +3,6 @@ from __future__ import annotations
 import inspect
 import json
 import logging
-import re
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
@@ -19,6 +18,10 @@ from src.services.gateway import GatewayToolClient, GatewayToolError
 from src.services.llm import GeminiAdapter, LLMAdapter
 
 logger = logging.getLogger(__name__)
+
+
+class ToolCallLimitError(RuntimeError):
+    """Raised before a nested tool call can exceed the configured hard limit."""
 
 
 class StructuredDecision(BaseModel):
@@ -65,6 +68,85 @@ def _safe_model_slots(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key in SEMANTIC_SLOTS}
 
 
+def _parse_structured_decision(raw: Any) -> StructuredDecision:
+    """Validate native output or recover one JSON object from model text safely."""
+    if isinstance(raw, StructuredDecision):
+        return raw
+    if isinstance(raw, BaseModel):
+        return StructuredDecision.model_validate(raw.model_dump())
+    if isinstance(raw, dict):
+        if raw.get("parsed") is not None:
+            return _parse_structured_decision(raw["parsed"])
+        if isinstance(raw.get("json"), dict):
+            return StructuredDecision.model_validate(raw["json"])
+        if raw.get("raw") is not None:
+            return _parse_structured_decision(raw["raw"])
+        return StructuredDecision.model_validate(raw)
+
+    content = getattr(raw, "content", raw)
+    if isinstance(content, dict):
+        return StructuredDecision.model_validate(content)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                if isinstance(block.get("json"), dict):
+                    return StructuredDecision.model_validate(block["json"])
+                if isinstance(block.get("text"), str):
+                    parts.append(block["text"])
+        content = "\n".join(parts)
+    if not isinstance(content, str):
+        raise TypeError("Unsupported structured model output")
+
+    decoder = json.JSONDecoder()
+    validation_error: ValidationError | None = None
+    for index, character in enumerate(content):
+        if character != "{":
+            continue
+        try:
+            candidate, _ = decoder.raw_decode(content[index:])
+        except json.JSONDecodeError:
+            continue
+        try:
+            return StructuredDecision.model_validate(candidate)
+        except ValidationError as exc:
+            validation_error = exc
+    if validation_error is not None:
+        raise validation_error
+    raise json.JSONDecodeError("No JSON object found in model output", content, 0)
+
+
+def _missing_slots(intent: str, slots: dict[str, Any]) -> list[str]:
+    required: list[str] = []
+    if intent == "create_cart":
+        required.append("restaurant_id")
+    if intent in {"quote_delivery", "preview_order", "place_order"} and not slots.get("address_id") and not slots.get("address_query"):
+        required.append("address_id")
+    if intent in {"preview_order", "place_order"}:
+        required.append("cart_id")
+    if intent == "quote_delivery":
+        required.append("restaurant_id")
+    if intent in {"track_order", "cancel_order"}:
+        required.append("order_id")
+    if intent == "apply_voucher":
+        required.extend(("cart_id", "voucher_code"))
+    if intent == "remove_voucher":
+        required.append("cart_id")
+    if intent == "remove_cart_item":
+        required.extend(("cart_id", "cart_item_id"))
+    if intent == "update_cart":
+        required.extend(("cart_id", "cart_item_id", "quantity"))
+    if intent == "view_menu":
+        required.append("restaurant_id")
+    if intent == "add_to_cart":
+        required.extend(slot for slot in ("quantity", "restaurant_id") if not slots.get(slot))
+        if not slots.get("menu_item_id") and not slots.get("dish_query"):
+            required.append("menu_item_id")
+    return [slot for slot in required if not slots.get(slot)]
+
+
 def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | None = None):
     gateway = tool_client or GatewayToolClient()
     model = llm or GeminiAdapter()
@@ -107,9 +189,10 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 },
                 ensure_ascii=False,
             )
-            raw = await model.ainvoke(prompt)
-            fenced = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL | re.IGNORECASE)
-            decision = StructuredDecision.model_validate(json.loads(fenced.group(1) if fenced else raw))
+            structured_invoke = getattr(model, "ainvoke_structured", None)
+            raw = await structured_invoke(prompt, StructuredDecision) if callable(structured_invoke) else await model.ainvoke(prompt)
+            decision = _parse_structured_decision(raw)
+            logger.info("Structured model decision accepted")
             slots = {**state.get("extracted_slots", {}), **deterministic, **_safe_model_slots(decision.extracted_slots)}
             return {
                 "intent": decision.intent,
@@ -133,35 +216,6 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
     async def validate_slots(state: AgentState) -> AgentState:
         intent = state.get("intent", "general_food_support")
         slots = state.get("extracted_slots", {})
-        required: list[str] = []
-        if intent == "create_cart":
-            required.append("restaurant_id")
-        if (
-            intent in {"quote_delivery", "preview_order", "place_order"}
-            and not slots.get("address_id")
-            and not slots.get("address_query")
-        ):
-            required.append("address_id")
-        if intent in {"preview_order", "place_order"}:
-            required.append("cart_id")
-        if intent == "quote_delivery":
-            required.append("restaurant_id")
-        if intent in {"track_order", "cancel_order"}:
-            required.append("order_id")
-        if intent == "apply_voucher":
-            required.extend(("cart_id", "voucher_code"))
-        if intent == "remove_voucher":
-            required.append("cart_id")
-        if intent == "remove_cart_item":
-            required.extend(("cart_id", "cart_item_id"))
-        if intent == "update_cart":
-            required.extend(("cart_id", "cart_item_id", "quantity"))
-        if intent == "view_menu":
-            required.append("restaurant_id")
-        if intent == "add_to_cart":
-            required.extend(slot for slot in ("quantity", "restaurant_id") if not slots.get(slot))
-            if not slots.get("menu_item_id") and not slots.get("dish_query"):
-                required.append("menu_item_id")
         if slots.get("ambiguous_menu_items"):
             return {
                 "missing_slots": ["menu_item_id"],
@@ -175,7 +229,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "step_count": state.get("step_count", 0) + 1,
             }
         return {
-            "missing_slots": [slot for slot in required if not slots.get(slot)],
+            "missing_slots": _missing_slots(str(intent), slots),
             "step_count": state.get("step_count", 0) + 1,
         }
 
@@ -216,20 +270,45 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             return {"error": "IDENTITY_REQUIRED", "tool_calls": []}
         results: list[dict[str, Any]] = []
         calls: list[dict[str, Any]] = []
+        original_intent = str(state.get("intent", "general_food_support"))
+        working_slots = dict(state.get("extracted_slots", {}))
+        working_context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(exclude_none=True)
+        pending_tools = list(state.get("selected_tools", []))
+        max_steps = get_settings().max_graph_steps
+        max_tool_calls = get_settings().max_tool_calls
 
         async def invoke(name: str, args: dict[str, Any]) -> dict[str, Any]:
+            if len(calls) >= max_tool_calls:
+                raise ToolCallLimitError()
             signature = inspect.signature(gateway.execute)
             if len(signature.parameters) >= 5:
                 return await gateway.execute(name, args, str(actor), str(state["correlation_id"]), str(conversation))
             return await gateway.execute(name, args, str(actor), str(state["correlation_id"]))
 
         try:
-            for tool in list(state.get("selected_tools", []))[: get_settings().max_tool_calls]:
+            while pending_tools and len(calls) < max_tool_calls and len(calls) < max_steps:
+                tool = pending_tools.pop(0)
                 name = str(tool["name"])
                 result = await invoke(name, dict(tool.get("arguments", {})))
                 calls.append({"name": name, "status": "succeeded"})
                 results.append({"name": name, "data": result})
-                if name == "view_menu_item" and state.get("intent") == "add_to_cart":
+                if name == "list_food_delivery_addresses" and original_intent in {"quote_delivery", "preview_order", "place_order"}:
+                    addresses = result.get("addresses", result.get("items", [])) if isinstance(result, dict) else []
+                    working_context["address_candidates"] = addresses if isinstance(addresses, list) else []
+                    working_slots = resolve_references(working_slots, working_context)
+                    missing = _missing_slots(original_intent, working_slots)
+                    if working_slots.get("ambiguous_addresses"):
+                        missing = ["address_id"]
+                    if missing:
+                        return {
+                            "tool_calls": calls,
+                            "tool_results": results,
+                            "extracted_slots": working_slots,
+                            "missing_slots": missing,
+                            "ambiguity": "address" if working_slots.get("ambiguous_addresses") else "",
+                        }
+                    pending_tools = select_tools(original_intent, working_slots, state.get("tool_registry", []))
+                elif name == "view_menu_item" and state.get("intent") == "add_to_cart":
                     item = result if isinstance(result, dict) else {}
                     selected, missing = resolve_options(
                         list(item.get("option_groups", [])),
@@ -286,10 +365,14 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         )
                         calls.append({"name": "add_to_cart", "status": "succeeded"})
                         results.append({"name": "add_to_cart", "data": added})
+        except ToolCallLimitError:
+            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
         except GatewayToolError as exc:
             calls.append({"name": name, "status": "failed", "code": exc.code})
-            return {"error": exc.code, "tool_calls": calls, "tool_results": results}
-        return {"tool_calls": calls, "tool_results": results}
+            return {"error": exc.code, "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+        if pending_tools:
+            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+        return {"tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
 
     async def evaluate_node(state: AgentState) -> AgentState:
         if state.get("error"):
@@ -360,7 +443,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             if name in {"get_food_order", "track_food_order"} and isinstance(data, dict) and data.get("order_id"):
                 updates["last_order_id"] = data["order_id"]
         if intent in {"place_order", "cancel_order"} and results:
-            confirmation = results[0]["data"]
+            confirmation = results[-1]["data"]
             updates["pending_confirmation_id"] = confirmation.get("id") if isinstance(confirmation, dict) else None
             return {
                 "response_type": "confirmation_form",
@@ -394,7 +477,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         return {
             "response_type": "options" if results else "text",
             "response": messages.get(intent, "Mình có thể giúp bạn tìm món, xem menu và tạo giỏ."),
-            "data": results[0].get("data", {}) if results else {},
+            "data": results[-1].get("data", {}) if results else {},
             "state_updates": updates,
         }
 

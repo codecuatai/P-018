@@ -7,7 +7,7 @@ X-One is a backend-first conversational multi-service booking platform. This rep
 | Component | Port | Status |
 | --- | ---: | --- |
 | API Gateway | 3000 | Food workflow slice: auth, tools, confirmation, sandbox payment, typed clients |
-| Agent Service | 8001 (internal Compose DNS only) | Structured LangGraph food intent/tool-request flow; Gemini is lazy/optional |
+| Agent Service | 8001 (internal Compose DNS only) | Structured LangGraph food intent/tool-request flow; configured Gemini uses native Pydantic JSON-Schema output with safe fallback |
 | Ride / Restaurant / Healthcare | 8101 / 8102 / 8103 (internal Compose DNS only) | Skeleton: health/config only |
 | Food Service | 8104 (internal Compose DNS only) | PostgreSQL-backed catalog/cart/order boundary with deterministic demo seed |
 | PostgreSQL | 5432 (internal Compose DNS only) | Local logical-database bootstrap |

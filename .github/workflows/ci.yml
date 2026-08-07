@@ -99,5 +99,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python scripts/validate-env-config.py
+      - run: python scripts/check-migration-parity.py
       - run: docker compose --env-file .env.example config --quiet
       - run: docker compose --env-file .env.example build api-gateway food-service agent-service

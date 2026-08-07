@@ -115,6 +115,19 @@ def wait_for_payment(client: httpx.Client, token: str, payment_id: str, expected
     raise AssertionError(f"Payment did not reach {expected}: {last}")
 
 
+def wait_for_confirmation(client: httpx.Client, token: str, confirmation_id: str, expected: str, timeout: float = 30) -> dict:
+    deadline = time.monotonic() + timeout
+    last: dict = {}
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/v1/confirmations/{confirmation_id}", headers={"Authorization": f"Bearer {token}"})
+        response.raise_for_status()
+        last = response.json()["data"]
+        if last.get("status") == expected:
+            return last
+        time.sleep(1)
+    raise AssertionError(f"Confirmation did not reach {expected}: {last}")
+
+
 def test_natural_language_food_happy_path() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
@@ -171,7 +184,7 @@ def test_crash_recovery_after_stale_confirmation_claim() -> None:
         execution_key = unique_id(f"confirmation-{confirmation_id}")
         order_key = unique_id("order-recovery")
         payment_key = unique_id("payment-recovery")
-        execution_payload = {"payment_method": "card", "order_idempotency_key": order_key, "payment_idempotency_key": payment_key, "conversation_id": conversation_id}
+        execution_payload = {"payment_method": "card", "order_idempotency_key": order_key, "payment_idempotency_key": payment_key, "conversation_id": conversation_id, "simulate_timeout": True}
         execution_hash = stable_hash({"confirmation_id": confirmation_id, "payment_method": "card", "simulate_failure": False, "simulate_timeout": False})
         run_sql(
             f"""
@@ -191,6 +204,9 @@ def test_crash_recovery_after_stale_confirmation_claim() -> None:
             time.sleep(1)
         assert status == "SUCCEEDED"
         assert db_scalar(f"SELECT count(*) FROM confirmation_executions WHERE execution_key={sql_literal(execution_key)}", "xone_core", "core_user") == "1"
+        result = client.get(f"/api/v1/confirmations/{confirmation_id}", headers={"Authorization": f"Bearer {token}"}).json()["data"]["result"]
+        assert result["payment"]["status"] == "SUCCEEDED"
+        assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(result['payment']['id'])}", "xone_core", "core_user") == "1"
 
 
 def test_pending_payment_recovery_reuses_provider_reference() -> None:
@@ -222,6 +238,85 @@ def test_payment_failure_converges_without_receipt() -> None:
         payment_id = db_scalar(f"SELECT id FROM payments WHERE order_id={sql_literal(order_id)}", "xone_core", "core_user")
         assert db_scalar(f"SELECT status FROM food_orders WHERE id={sql_literal(order_id)}", "xone_food", "food_user") == "PAYMENT_FAILED"
         assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(payment_id)}", "xone_core", "core_user") == "0"
+
+
+def test_real_payment_timeout_recovers_through_public_flow() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        token = login(client)
+        form, conversation_id, _ = prepare_order(client, token)
+        response = execute_order(client, token, form, conversation_id, unique_id("e2e-real-timeout"), simulate_timeout=True)
+        assert response.status_code == 409
+        assert "PAYMENT_TIMEOUT" in response.text
+        processing = client.get(f"/api/v1/confirmations/{form['id']}", headers={"Authorization": f"Bearer {token}"})
+        processing.raise_for_status()
+        confirmation = processing.json()["data"]
+        payment = confirmation["result"]["payment"]
+        assert confirmation["status"] == "FAILED_RETRYABLE"
+        assert payment["status"] in {"TIMED_OUT", "PENDING", "UNKNOWN"}
+        pending_order = client.get(f"/api/v1/food/orders/{payment['orderId']}", headers={"Authorization": f"Bearer {token}"})
+        pending_order.raise_for_status()
+        assert pending_order.json()["data"]["status"] == "PAYMENT_PENDING"
+        recovered_payment = wait_for_payment(client, token, payment["id"], "SUCCEEDED", timeout=30)
+        assert recovered_payment["providerReference"] == payment["providerReference"]
+        order = wait_for_order(client, token, payment["orderId"], {"DELIVERED"}, timeout=60)
+        assert order["status"] == "DELIVERED"
+        recovered_confirmation = wait_for_confirmation(client, token, form["id"], "SUCCEEDED")
+        assert recovered_confirmation["result"]["payment"]["id"] == payment["id"]
+        assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(payment['id'])}", "xone_core", "core_user") == "1"
+
+
+def test_real_payment_timeout_restart_preserves_provider_attempt_and_converges() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        token = login(client)
+        form, conversation_id, _ = prepare_order(client, token)
+        response = execute_order(client, token, form, conversation_id, unique_id("e2e-timeout-restart"), simulate_timeout=True)
+        assert response.status_code == 409
+        processing = client.get(f"/api/v1/confirmations/{form['id']}", headers={"Authorization": f"Bearer {token}"})
+        processing.raise_for_status()
+        payment = processing.json()["data"]["result"]["payment"]
+        provider_reference = payment["providerReference"]
+        pending_order = client.get(f"/api/v1/food/orders/{payment['orderId']}", headers={"Authorization": f"Bearer {token}"})
+        pending_order.raise_for_status()
+        assert pending_order.json()["data"]["status"] == "PAYMENT_PENDING"
+    restart = subprocess.run(["docker", "compose", "--env-file", ".env.example", "restart", "api-gateway"], cwd=REPO_ROOT, text=True, capture_output=True, check=False)
+    assert restart.returncode == 0, restart.stderr
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        deadline = time.monotonic() + 45
+        ready = False
+        while time.monotonic() < deadline:
+            try:
+                ready = client.get("/health/ready").status_code == 200
+            except httpx.HTTPError:
+                ready = False
+            if ready:
+                break
+            time.sleep(1)
+        assert ready
+        recovered = wait_for_payment(client, token, payment["id"], "SUCCEEDED", timeout=45)
+        assert recovered["providerReference"] == provider_reference
+        order = wait_for_order(client, token, payment["orderId"], {"DELIVERED"}, timeout=60)
+        confirmation = wait_for_confirmation(client, token, form["id"], "SUCCEEDED", timeout=45)
+        assert order["status"] == "DELIVERED"
+        assert confirmation["result"]["payment"]["id"] == payment["id"]
+        assert db_scalar(f"SELECT attempt_count FROM sandbox_payment_provider_transactions WHERE provider_reference={sql_literal(provider_reference)}", "xone_core", "core_user") == "1"
+        assert db_scalar(f"SELECT count(*) FROM receipts WHERE payment_id={sql_literal(payment['id'])}", "xone_core", "core_user") == "1"
+
+
+def test_voucher_exhaustion_between_prepare_and_execute_is_cart_changed() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
+        token = login(client)
+        run_sql("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}','0'::jsonb) WHERE record_type='voucher' AND id='XONE50'; DELETE FROM food_voucher_redemptions WHERE voucher_code='XONE50'", "xone_food", "food_user")
+        form, conversation_id, _ = prepare_order(client, token, with_voucher=True)
+        run_sql("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}',data->'usage_limit') WHERE record_type='voucher' AND id='XONE50'", "xone_food", "food_user")
+        response = execute_order(client, token, form, conversation_id, unique_id("e2e-voucher-race"))
+        assert response.status_code == 409
+        assert "CART_CHANGED" in response.text
+        stored = client.get(f"/api/v1/confirmations/{form['id']}", headers={"Authorization": f"Bearer {token}"})
+        stored.raise_for_status()
+        assert stored.json()["data"]["status"] == "FAILED_FINAL"
 
 
 def test_restaurant_reject_saga_refunds_once() -> None:

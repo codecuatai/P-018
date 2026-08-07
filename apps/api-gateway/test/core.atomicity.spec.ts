@@ -59,4 +59,15 @@ describe('Core atomicity adapter', () => {
     const staleRows = await repository.claimStaleConfirmations(Date.now() - 1000, Date.now(), 10);
     expect(staleRows).toHaveLength(0);
   });
+
+  it('does not regress a terminal confirmation to retryable', async () => {
+    const repository = new InMemoryCoreRepository();
+    const terminal = { ...confirmation, id: 'cnf_terminal', status: 'PENDING' as const, expiresAt: Date.now() + 60_000 };
+    await repository.createConfirmation(terminal);
+    await repository.claimConfirmation(terminal.id, terminal.actorId, 'confirmation:terminal', 'payload-terminal', Date.now());
+    await repository.completeConfirmation(terminal.id, terminal.actorId, 'confirmation:terminal', 'FAILED_FINAL', { code: 'REFUND_FAILED' }, 'REFUND_FAILED');
+    await repository.completeConfirmation(terminal.id, terminal.actorId, 'confirmation:terminal', 'FAILED_RETRYABLE', { code: 'REFUND_PENDING' }, 'REFUND_PENDING');
+    expect((await repository.getConfirmation(terminal.id))?.status).toBe('FAILED_FINAL');
+    expect((await repository.getConfirmation(terminal.id))?.failureCode).toBe('REFUND_FAILED');
+  });
 });

@@ -16,9 +16,9 @@ abstract class InternalServiceClient {
     return this.config.getOrThrow<string>(this.urlKey);
   }
 
-  protected async request<T extends JsonObject>(path: string, init: RequestInit, correlationId?: string, actorId?: string): Promise<T> {
+  protected async request<T extends JsonObject>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
+    const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
@@ -60,7 +60,7 @@ export class AgentClient extends InternalServiceClient {
 
   chat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
     const actorId = typeof payload.user_id === 'string' ? payload.user_id : undefined;
-    return this.request<JsonObject>('/api/v1/chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId);
+    return this.request<JsonObject>('/api/v1/chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, undefined, 30000);
   }
 }
 
