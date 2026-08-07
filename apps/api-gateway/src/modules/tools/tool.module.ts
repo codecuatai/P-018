@@ -1,3 +1,9 @@
 import { Module } from '@nestjs/common';
-@Module({})
+
+import { ToolRegistry } from './tool-registry';
+
+@Module({
+  providers: [ToolRegistry],
+  exports: [ToolRegistry],
+})
 export class ToolModule {}
