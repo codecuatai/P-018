@@ -35,7 +35,7 @@ async def postgres_food() -> tuple[PostgresFoodRepository, FoodApplicationServic
     for migration in sorted((root / "migrations").glob("*.sql")):
         await pool.execute(migration.read_text(encoding="utf-8"))
     await pool.execute((root / "seeds" / "001_demo_hanoi.sql").read_text(encoding="utf-8"))
-    settings = Settings(service_port=8104, database_url=DATABASE_URL, internal_service_token="test-token", workflow_step_delay_ms=0)
+    settings = Settings(app_env="test", persistence="postgres", service_port=8104, database_url=DATABASE_URL, internal_service_token="test-token", workflow_step_delay_ms=0)
     service = FoodApplicationService(repository, settings, random_value=lambda: 1.0)
     try:
         yield repository, service
@@ -44,7 +44,7 @@ async def postgres_food() -> tuple[PostgresFoodRepository, FoodApplicationServic
 
 
 async def _cart(service: FoodApplicationService, user_id: str, address_id: str = "addr_demo") -> dict:
-    cart = await service.create_cart(user_id, "res_pho_hanoi")
+    cart = await service.create_cart(user_id, "res_pho_hanoi", f"cart-{user_id}-{uuid4().hex}")
     return await service.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
 
 

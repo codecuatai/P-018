@@ -1,6 +1,6 @@
 # Food Vertical Slice
 
-The public client calls the NestJS Gateway. The Gateway calls Food through `FoodClient`; the Agent calls only the Gateway Tool API. Food owns catalog, cart, quote, order, driver, and status-event invariants. Gateway owns demo JWT auth, confirmation records, sandbox payment, audit metadata, and orchestration. No component accesses another service's database.
+The public client calls the NestJS Gateway. The Gateway calls Food through `FoodClient`; the Agent calls only the Gateway Tool API. Food owns catalog, actor-scoped address discovery, cart, quote, order, driver, and status-event invariants. Gateway owns explicitly development/test-only demo JWT auth, confirmation records, sandbox payment, audit metadata, and orchestration. No component accesses another service's database. PostgreSQL is authoritative in Compose; memory is an explicit test/development adapter only.
 
 The flow is: Agent discovery and read/draft/preview tools → authoritative Food preview (including voucher usage eligibility and actor-owned address) → Gateway confirmation bound to actor, snapshot hash, quote version, cart version, amount/currency, expiry → PostgreSQL atomic confirmation claim → idempotent cart/order/voucher transaction → durable sandbox provider payment → Food-validated status transitions. Provider timeout recovery only queries the persisted provider reference; restaurant rejection and cancellation converge on one canonical persisted refund operation, and Food reaches `REFUNDED` only after provider success.
 

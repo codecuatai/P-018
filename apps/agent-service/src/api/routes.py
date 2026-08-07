@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def chat(request: ChatRequest, x_internal_service_token: str | None = Header(default=None), x_actor_id: str | None = Header(default=None)) -> dict[str, Any]:
     """Chat với AI agent."""
     settings = get_settings()
-    if x_internal_service_token != settings.internal_service_token or x_actor_id != request.user_id:
+    if not x_internal_service_token or x_internal_service_token != settings.internal_service_token or not x_actor_id or x_actor_id != request.user_id:
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
     try:
         result = await agent.ainvoke({"query": request.message, "user_id": request.user_id, "conversation_id": request.conversation_id, "messages": request.messages, "workflow_context": request.workflow_context, "correlation_id": request.correlation_id})

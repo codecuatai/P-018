@@ -386,7 +386,6 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
                     <option value="momo">Ví MoMo</option>
                     <option value="bank_transfer">Chuyển khoản</option>
                     <option value="card">Thẻ nội địa/quốc tế</option>
-                    <option value="cash">Thanh toán tại quầy</option>
                   </select>
                   {renderError("preferredPayment")}
                 </div>
@@ -460,13 +459,13 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
                   </div>
                   <div className="form-row">
                     <div className="form-group full-width">
-                      <label>Số thẻ thanh toán</label>
+                      <label>Thẻ đã liên kết (masked)</label>
                       <input
                         type="text"
-                        name="cardNumber"
-                        value={profile.cardNumber || ""}
+                        name="maskedCard"
+                        value={profile.maskedCard || ""}
                         onChange={handleChange}
-                        placeholder="4123 4567 8901 2345"
+                        placeholder="**** **** **** 1234"
                       />
                     </div>
                   </div>
@@ -482,24 +481,13 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
                       />
                     </div>
                     <div className="form-group">
-                      <label>Hạn thẻ (MM/YY)</label>
+                      <label>Payment method token</label>
                       <input
                         type="text"
-                        name="cardExpiry"
-                        value={profile.cardExpiry || ""}
+                        name="paymentMethodToken"
+                        value={profile.paymentMethodToken || ""}
                         onChange={handleChange}
-                        placeholder="12/28"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>Mã CVV/CVC</label>
-                      <input
-                        type="password"
-                        name="cardCvv"
-                        value={profile.cardCvv || ""}
-                        onChange={handleChange}
-                        placeholder="***"
-                        maxLength={4}
+                        placeholder="demo-token"
                       />
                     </div>
                   </div>
@@ -554,32 +542,6 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
                         value={profile.bankAccountName || ""}
                         onChange={handleChange}
                         placeholder="NGUYEN MINH ANH"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {profile.preferredPayment === "cash" && (
-                <div className="payment-connect-box cash-box">
-                  <div className="connect-header">
-                    <div className="connect-title">
-                      <Contact size={22} className="text-primary" />
-                      <div>
-                        <h4>Thanh toán trực tiếp tại quầy / Điểm đón</h4>
-                        <p>Thanh toán tiền mặt hoặc quẹt thẻ POS trực tiếp</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group full-width">
-                      <label>Ghi chú địa điểm thanh toán</label>
-                      <input
-                        type="text"
-                        name="cashNote"
-                        value={profile.cashNote || ""}
-                        onChange={handleChange}
-                        placeholder="Thanh toán trực tiếp tại quầy dịch vụ hoặc điểm đón"
                       />
                     </div>
                   </div>

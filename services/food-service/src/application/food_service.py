@@ -68,12 +68,15 @@ class FoodApplicationService:
             raise DomainError("NOT_FOUND", "Không tìm thấy món ăn.")
         return item
 
-    async def create_cart(self, user_id: str, restaurant_id: str, idempotency_key: str | None = None) -> dict:
+    async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]:
+        return await self.repository.list_addresses(user_id, label)
+
+    async def create_cart(self, user_id: str, restaurant_id: str, idempotency_key: str) -> dict:
         restaurant = await self.restaurant(restaurant_id)
         if not restaurant.get("is_open", False):
             raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
         cart = {"id": ident("cart"), "user_id": user_id, "restaurant_id": restaurant_id, "items": [], "voucher": None, "subtotal": 0, "discount": 0, "total": 0, "currency": "VND", "version": 0}
-        return await self.repository.create_cart_idempotent(cart, idempotency_key or f"legacy-cart:{ident('op')}")
+        return await self.repository.create_cart_idempotent(cart, idempotency_key)
 
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
         return price_item(item, selected_options)

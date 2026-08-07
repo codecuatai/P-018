@@ -62,6 +62,11 @@ async def menu_item(menu_item_id: str, food: FoodApplicationService = Depends(se
     return {"data": await food.menu_item(menu_item_id)}
 
 
+@router.get("/addresses")
+async def addresses(label: str | None = None, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+    return {"data": {"addresses": await food.list_addresses(actor_id, label)}}
+
+
 @router.get("/food/search", dependencies=[Depends(require_internal)])
 async def search(query: SearchQuery = Depends(), food: FoodApplicationService = Depends(service)):
     return {"data": await food.search(**query.model_dump())}

@@ -38,6 +38,17 @@ jobs:
       - run: corepack enable && pnpm --dir apps/api-gateway install --frozen-lockfile
       - run: corepack enable && pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
 
+  anti-overfit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Install Agent test dependencies
+        run: pip install "apps/agent-service[dev]"
+      - name: Run opaque-ID and runtime literal regression tests
+        run: cd apps/agent-service && pytest tests/test_agents/test_hardening.py -q
+
   postgres-integration:
     runs-on: ubuntu-latest
     services:

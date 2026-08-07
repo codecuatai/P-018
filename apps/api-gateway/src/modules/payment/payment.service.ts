@@ -34,7 +34,9 @@ export class SandboxPaymentProvider implements PaymentProvider {
     if (current.confirmAttemptedAt) return this.getStatus(input.providerReference);
     const intendedFinalStatus = simulationsAllowed && input.simulateFailure ? 'FAILED' : 'SUCCEEDED';
     const statusAvailableAt = simulationsAllowed && input.simulateTimeout ? new Date(Date.now() + 1500).toISOString() : new Date().toISOString();
-    const transaction = await this.store.markPaymentProviderConfirmation(input.providerReference, { intendedFinalStatus, statusAvailableAt, confirmationId: input.confirmationId, executionKey: input.confirmationExecutionKey });
+    const claim = await this.store.claimPaymentProviderConfirmation(input.providerReference, { intendedFinalStatus, statusAvailableAt, confirmationId: input.confirmationId, executionKey: input.confirmationExecutionKey });
+    if (!claim.claimed) return this.getStatus(input.providerReference);
+    const transaction = claim.transaction;
     return { providerReference: input.providerReference, status: simulationsAllowed && input.simulateTimeout && transaction.providerStatus === 'PENDING' ? 'TIMED_OUT' : transaction.providerStatus === 'FAILED' ? 'FAILED' : transaction.providerStatus === 'SUCCEEDED' ? 'SUCCEEDED' : 'PENDING' };
   }
 
@@ -90,7 +92,7 @@ export class PaymentService {
   }
 
   async recoverPendingPayments(): Promise<PaymentRecord[]> {
-    const pending = await this.store.listPaymentsForRecovery(Date.now());
+    const pending = await this.store.claimPaymentsForRecovery(Date.now(), `gateway:${process.pid}`, 50);
     const recovered: PaymentRecord[] = [];
     for (const payment of pending) {
       try {
@@ -119,7 +121,15 @@ export class PaymentService {
     const providerReference = actual.providerRefundReference ?? `sandbox-refund:${payment.orderId}:${paymentId}`;
     const providerTransaction = await this.store.getRefundProviderTransaction(providerReference);
     const result = providerTransaction ? await this.provider.getRefundStatus(providerReference) : await this.provider.createRefund({ refundId: actual.id, providerRefundReference: providerReference, paymentProviderReference: payment.providerReference ?? '', amount: actual.amount, currency: actual.currency, requestHash: actual.payloadHash });
-    return this.store.updateRefund(actual.id, result.status === 'SUCCEEDED' ? 'SUCCEEDED' : result.status === 'FAILED' ? 'FAILED' : 'UNKNOWN', result.status);
+    return this.store.updateRefund(actual.id, result.status === 'SUCCEEDED' ? 'SUCCEEDED' : result.status === 'FAILED' ? 'FAILED' : 'UNKNOWN', result.status, { nextRecoveryAt: result.status === 'SUCCEEDED' || result.status === 'FAILED' ? undefined : new Date(Date.now() + 1000).toISOString() });
+  }
+
+  async recoverRefund(refund: RefundRecord): Promise<RefundRecord> {
+    if (refund.status === 'SUCCEEDED' || refund.status === 'FAILED') return refund;
+    const providerReference = refund.providerRefundReference;
+    if (!providerReference) throw new ConflictException({ code: 'REFUND_UNKNOWN', detail: 'Refund provider reference is missing.' });
+    const result = await this.provider.getRefundStatus(providerReference);
+    return this.store.updateRefund(refund.id, result.status === 'SUCCEEDED' ? 'SUCCEEDED' : result.status === 'FAILED' ? 'FAILED' : 'UNKNOWN', result.status, { nextRecoveryAt: result.status === 'SUCCEEDED' || result.status === 'FAILED' ? undefined : new Date(Date.now() + 1000).toISOString() });
   }
 
   async receipt(paymentId: string, actorId: string): Promise<Record<string, unknown>> {

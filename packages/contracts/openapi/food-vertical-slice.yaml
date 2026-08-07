@@ -9,6 +9,13 @@ tags:
   - name: cart
   - name: order
 paths:
+  /addresses:
+    get:
+      summary: List delivery addresses owned by the asserted actor
+      parameters:
+        - {name: label, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Address candidates}
   /food/search:
     get:
       tags: [catalog]

@@ -14,7 +14,7 @@ class FakeGateway:
 
     async def execute(self, name: str, arguments: dict, user_id: str, correlation_id: str) -> dict:
         self.calls.append((name, correlation_id))
-        return {"items": [{"restaurant": {"id": "res_pho_hanoi"}, "item": {"id": "item_pho_bo"}}]}
+        return {"items": [{"restaurant": {"id": "restaurant_A_93f", "name": "Burger House"}, "item": {"id": "item_Z_71b", "name": "burger bò", "restaurant_id": "restaurant_A_93f"}}]}
 
 
 class FakeLLM:
@@ -28,4 +28,4 @@ async def test_agent_uses_correlation_id_and_returns_state_update() -> None:
     graph = build_graph(tool_client=gateway, llm=FakeLLM())
     result = await graph.ainvoke({"query": "Tìm phở bò", "user_id": "usr_demo_001", "conversation_id": "conv_1", "correlation_id": "cor_test_1", "workflow_context": {}})
     assert gateway.calls[-1] == ("search_food", "cor_test_1")
-    assert result["state_updates"]["restaurant_id"] == "res_pho_hanoi"
+    assert result["state_updates"]["restaurant_candidates"][0]["id"] == "restaurant_A_93f"

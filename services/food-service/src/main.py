@@ -18,7 +18,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    repository = PostgresFoodRepository(settings.database_url) if settings.persistence == "postgres" else InMemoryFoodRepository()
+    if settings.persistence == "postgres":
+        repository = PostgresFoodRepository(settings.database_url)
+    elif settings.persistence == "memory" and settings.app_env in {"development", "test"}:
+        repository = InMemoryFoodRepository()
+    else:
+        raise RuntimeError("Invalid Food persistence mode for this runtime.")
     if isinstance(repository, PostgresFoodRepository):
         await repository.connect()
     app.state.food_service = FoodApplicationService(repository, settings)

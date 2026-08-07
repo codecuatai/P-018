@@ -2,6 +2,7 @@ import { validateEnvironment } from '../src/config/environment';
 
 describe('environment validation', () => {
   const completeConfig = {
+    APP_ENV: 'test',
     PORT: '3000',
     DATABASE_URL: 'postgresql://core_user:password@postgres:5432/xone_core',
     AGENT_SERVICE_URL: 'http://agent-service:8001',
@@ -11,6 +12,7 @@ describe('environment validation', () => {
     FOOD_SERVICE_URL: 'http://food-service:8104',
     INTERNAL_SERVICE_TOKEN: 'test-token',
     JWT_SECRET: 'test-jwt-secret-12345',
+    DEMO_AUTH_ENABLED: 'false',
   };
 
   it('accepts complete process configuration', () => {

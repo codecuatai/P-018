@@ -143,6 +143,12 @@ export class ConfirmationService {
         refundRecord = await this.payments.refund(payment.id, user.sub, `food-order-refund:${confirmation.payload.order_id}:${payment.id}`, 'customer_cancellation') as unknown as JsonObject;
         await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund started', operation_key: `cancel-refund-pending:${id}` }, correlationId, `cancel-refund-pending:${id}`);
         if (String(refundRecord.status) === 'SUCCEEDED') await this.food.post(`/api/v1/internal/orders/${confirmation.payload.order_id}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund completed', operation_key: `cancel-refunded:${confirmation.payload.order_id}:${payment.id}` }, correlationId, `cancel-refunded:${confirmation.payload.order_id}:${payment.id}`);
+        if (String(refundRecord.status) !== 'SUCCEEDED') {
+          const code = String(refundRecord.status) === 'FAILED' ? 'REFUND_FAILED' : 'REFUND_PENDING';
+          const result = { confirmation_id: id, order, payment, refund: refundRecord, code };
+          await this.store.completeConfirmation(id, user.sub, executionKey, code === 'REFUND_FAILED' ? 'FAILED_FINAL' : 'FAILED_RETRYABLE', result, code);
+          throw new ConflictException({ code, detail: 'Cancellation refund has not converged yet.', retryable: code !== 'REFUND_FAILED' });
+        }
       }
       const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, user.sub);
       const result: JsonObject = { confirmation_id: id, order: authoritativeOrder, payment, refund: refundRecord };
@@ -193,6 +199,7 @@ export class ConfirmationService {
             refund = await this.payments.refund(payment.id, actor.sub, `food-order-refund:${orderId}:${payment.id}`, 'customer_cancellation') as unknown as JsonObject;
             await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUND_PENDING', reason: 'Cancellation refund recovery started', operation_key: `cancel-refund-pending:${confirmation.id}` }, correlationId, `cancel-refund-pending:${confirmation.id}`);
             if (String(refund.status) === 'SUCCEEDED') await this.food.post(`/api/v1/internal/orders/${orderId}/transition`, { target_status: 'REFUNDED', reason: 'Cancellation refund recovery completed', operation_key: `cancel-refunded:${orderId}:${payment.id}` }, correlationId, `cancel-refunded:${orderId}:${payment.id}`);
+            if (String(refund.status) !== 'SUCCEEDED') throw new Error(String(refund.status) === 'FAILED' ? 'REFUND_FAILED' : 'REFUND_PENDING');
           }
           const authoritativeOrder = await this.food.get(`/api/v1/orders/${orderId}`, correlationId, actor.sub);
           const result = { confirmation_id: confirmation.id, order: authoritativeOrder, payment, refund };

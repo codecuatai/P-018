@@ -13,12 +13,16 @@ import httpx
 import pytest
 
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
+DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
+DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
+DEMO_USER_ID = os.getenv("E2E_DEMO_USER_ID", "usr_demo_001")
+INTERNAL_SERVICE_TOKEN = os.getenv("E2E_INTERNAL_SERVICE_TOKEN", "replace-with-local-token")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
 
 
 def login(client: httpx.Client) -> str:
-    response = client.post("/api/v1/auth/login", json={"email": "demo@xone.vn", "password": "Xone@123"})
+    response = client.post("/api/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
     response.raise_for_status()
     return response.json()["data"]["access_token"]
 
@@ -173,7 +177,7 @@ def test_crash_recovery_after_stale_confirmation_claim() -> None:
             f"""
             UPDATE confirmations SET status='PROCESSING', execution_key={sql_literal(execution_key)}, processing_started_at=now()-interval '60 seconds', recovery_claimed_at=NULL, next_recovery_at=NULL WHERE id={sql_literal(confirmation_id)};
             INSERT INTO confirmation_executions (execution_key, confirmation_id, actor_id, idempotency_key, payload_hash, status, execution_payload)
-            VALUES ({sql_literal(execution_key)}, {sql_literal(confirmation_id)}, 'usr_demo_001', {sql_literal(execution_key)}, {sql_literal(execution_hash)}, 'PROCESSING', {sql_literal(json.dumps(execution_payload))}::jsonb);
+            VALUES ({sql_literal(execution_key)}, {sql_literal(confirmation_id)}, {sql_literal(DEMO_USER_ID)}, {sql_literal(execution_key)}, {sql_literal(execution_hash)}, 'PROCESSING', {sql_literal(json.dumps(execution_payload))}::jsonb);
             """,
             "xone_core",
             "core_user",
@@ -287,7 +291,7 @@ def test_security_internal_auth_and_actor_ownership() -> None:
         response = execute_order(client, token, form, conversation_id, unique_id("e2e-security-order"))
         response.raise_for_status()
         order_id = response.json()["data"]["order"]["id"]
-    assert internal_status("food-service", f"http://food-service:8104/api/v1/orders/{order_id}", {"X-Internal-Service-Token": "replace-with-local-token", "X-Actor-Id": "usr_other"}) == 403
+    assert internal_status("food-service", f"http://food-service:8104/api/v1/orders/{order_id}", {"X-Internal-Service-Token": INTERNAL_SERVICE_TOKEN, "X-Actor-Id": "usr_other"}) == 403
 
 
 def test_restart_preserves_order_payment_and_conversation() -> None:

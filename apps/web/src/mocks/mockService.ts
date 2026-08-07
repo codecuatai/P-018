@@ -95,14 +95,12 @@ export const DEMO_PROFILE: UserProfile = {
   momoPhone: "0901234567",
   momoAccountName: "NGUYEN MINH ANH",
   momoLinked: true,
-  cardNumber: "4123 4567 8901 2345",
+  maskedCard: "**** **** **** 2345",
+  paymentMethodToken: "demo-token",
   cardHolder: "NGUYEN MINH ANH",
-  cardExpiry: "12/28",
-  cardCvv: "888",
   bankName: "Vietcombank",
   bankAccountNumber: "10123456789",
   bankAccountName: "NGUYEN MINH ANH",
-  cashNote: "Thanh toán bằng tiền mặt hoặc quẹt thẻ tại quầy giao dịch / điểm đón NaviGo.",
 };
 
 export const isProfileComplete = (profile: UserProfile | null) => {

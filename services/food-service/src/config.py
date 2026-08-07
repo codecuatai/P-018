@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,10 +9,11 @@ class Settings(BaseSettings):
     """Service configuration loaded only from process environment."""
 
     model_config = SettingsConfigDict(extra="ignore")
+    app_env: Literal["development", "production", "test"]
     service_port: int = Field(ge=1, le=65535)
     database_url: str = Field(min_length=1)
     internal_service_token: str = Field(min_length=1)
-    persistence: str = "memory"
+    persistence: Literal["postgres", "memory"]
     delivery_base_fee: int = Field(default=15000, ge=0)
     delivery_per_km_fee: int = Field(default=5000, ge=0)
     delivery_minimum_fee: int = Field(default=15000, ge=0)
@@ -29,6 +31,12 @@ class Settings(BaseSettings):
     workflow_poll_interval_ms: int = Field(default=500, ge=20, validation_alias=AliasChoices("FOOD_WORKFLOW_POLL_INTERVAL_MS", "WORKFLOW_POLL_INTERVAL_MS"))
     workflow_worker_enabled: bool = Field(default=True, validation_alias=AliasChoices("FOOD_WORKFLOW_WORKER_ENABLED", "WORKFLOW_WORKER_ENABLED"))
     workflow_step_delay_ms: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_runtime_mode(self) -> "Settings":
+        if self.app_env == "production" and self.persistence != "postgres":
+            raise ValueError("Production Food Service requires PERSISTENCE=postgres.")
+        return self
 
 
 @lru_cache

@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
+import unicodedata
 from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -15,6 +17,17 @@ from src.domain.quotes import build_authoritative_quote
 
 def ident(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:12]}"
+
+
+def _fold_text(value: object) -> str:
+    if value is None:
+        return ""
+    normalized = unicodedata.normalize("NFD", str(value).lower())
+    return "".join("d" if char == "đ" else char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def _matches_keyword(text: str, keyword: str) -> bool:
+    return all(re.search(rf"\b{re.escape(token)}\b", text) for token in keyword.split())
 
 
 AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime | None]]
@@ -30,6 +43,7 @@ class FoodRepository(Protocol):
     async def get_voucher(self, code: str) -> dict | None: ...
     async def ensure_voucher_eligible(self, code: str, user_id: str) -> None: ...
     async def get_address(self, address_id: str) -> dict | None: ...
+    async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]: ...
     async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict: ...
     async def get_order(self, order_id: str) -> dict | None: ...
     async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None: ...
@@ -107,16 +121,18 @@ class InMemoryFoodRepository:
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
-        keyword = str(filters.get("keyword", "")).lower()
+        keyword = _fold_text(filters.get("keyword", ""))
+        district = _fold_text(filters.get("district", ""))
+        category = _fold_text(filters.get("category", ""))
         result = []
         for item in self.items.values():
             restaurant = self.restaurants[item["restaurant_id"]]
-            text = f"{item['name']} {item['description']} {item['category']} {restaurant['name']}".lower()
-            if keyword and keyword not in text:
+            text = _fold_text(f"{item['name']} {item['description']} {item['category']} {restaurant['name']}")
+            if keyword and not _matches_keyword(text, keyword):
                 continue
-            if filters.get("district") and filters["district"].lower() not in restaurant["district"].lower():
+            if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
-            if filters.get("category") and filters["category"].lower() != item["category"].lower():
+            if category and category != _fold_text(item["category"]):
                 continue
             if filters.get("min_price") is not None and item["price"] < filters["min_price"]:
                 continue
@@ -173,6 +189,10 @@ class InMemoryFoodRepository:
 
     async def get_address(self, address_id: str) -> dict | None:
         return deepcopy(self.addresses.get(address_id))
+
+    async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]:
+        wanted = str(label or "").casefold()
+        return [deepcopy(value) for value in self.addresses.values() if value.get("user_id") == user_id and (not wanted or wanted in str(value.get("label", "")).casefold() or wanted in str(value.get("address", "")).casefold())]
 
     async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
         async with self._lock:
@@ -328,17 +348,19 @@ class PostgresFoodRepository:
     async def search(self, **filters) -> list[dict]:
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
         result = []
-        keyword = str(filters.get("keyword", "")).lower()
+        keyword = _fold_text(filters.get("keyword", ""))
+        district = _fold_text(filters.get("district", ""))
+        category = _fold_text(filters.get("category", ""))
         for item in await self._records("menu_item"):
             restaurant = restaurants.get(item["restaurant_id"])
             if restaurant is None:
                 continue
-            haystack = f"{item['name']} {item.get('description', '')} {item.get('category', '')} {restaurant['name']}".lower()
-            if keyword and keyword not in haystack:
+            haystack = _fold_text(f"{item['name']} {item.get('description', '')} {item.get('category', '')} {restaurant['name']}")
+            if keyword and not _matches_keyword(haystack, keyword):
                 continue
-            if filters.get("district") and filters["district"].lower() not in restaurant["district"].lower():
+            if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
-            if filters.get("category") and filters["category"].lower() != item["category"].lower():
+            if category and category != _fold_text(item["category"]):
                 continue
             if filters.get("min_price") is not None and item["price"] < filters["min_price"]:
                 continue
@@ -384,14 +406,12 @@ class PostgresFoodRepository:
         pool = self._require_pool()
         payload_hash = hashlib.sha256(json.dumps({"restaurant_id": cart["restaurant_id"]}, sort_keys=True).encode()).hexdigest()
         async with pool.acquire() as connection, connection.transaction():
-            existing = await connection.fetchrow("SELECT data,version,payload_hash FROM food_carts WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", cart["user_id"], idempotency_key)
-            if existing:
-                if existing["payload_hash"] and str(existing["payload_hash"]) != payload_hash:
-                    raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho nhà hàng khác.")
-                saved = _json_object(existing["data"])
-                saved["version"] = int(existing["version"])
-                return saved
-            row = await connection.fetchrow("INSERT INTO food_carts (id,user_id,restaurant_id,data,idempotency_key,payload_hash,version) VALUES ($1,$2,$3,$4::jsonb,$5,$6,0) RETURNING data,version", cart["id"], cart["user_id"], cart["restaurant_id"], json.dumps(cart, ensure_ascii=False), idempotency_key, payload_hash)
+            await connection.execute("INSERT INTO food_carts (id,user_id,restaurant_id,data,idempotency_key,payload_hash,version) VALUES ($1,$2,$3,$4::jsonb,$5,$6,0) ON CONFLICT (user_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING", cart["id"], cart["user_id"], cart["restaurant_id"], json.dumps(cart, ensure_ascii=False), idempotency_key, payload_hash)
+            row = await connection.fetchrow("SELECT data,version,payload_hash FROM food_carts WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", cart["user_id"], idempotency_key)
+            if not row:
+                raise DomainError("IDEMPOTENCY_KEY_REUSED", "Không thể lưu giỏ hàng idempotent.")
+            if row["payload_hash"] and str(row["payload_hash"]) != payload_hash:
+                raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho nhà hàng khác.")
             saved = _json_object(row["data"])
             saved["version"] = int(row["version"])
             return saved
@@ -412,6 +432,14 @@ class PostgresFoodRepository:
     async def get_address(self, address_id: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1", address_id)
         return _json_object(row["data"]) if row else None
+
+    async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]:
+        wanted = _fold_text(label)
+        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type='address' AND data->>'user_id'=$1 ORDER BY id", user_id)
+        addresses = [_json_object(row["data"]) for row in rows]
+        if not wanted:
+            return addresses
+        return [address for address in addresses if wanted in _fold_text(address.get("label", "")) or wanted in _fold_text(address.get("address", ""))]
 
     async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
         pool = self._require_pool()

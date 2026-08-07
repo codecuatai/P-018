@@ -14,7 +14,7 @@ describe('Core PostgreSQL persistence', () => {
   beforeAll(async () => {
     if (!databaseUrl) return;
     const migrationPool = new Pool({ connectionString: databaseUrl });
-    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql', '005_core_payment_provider_saga.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
+    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql', '005_core_payment_provider_saga.sql', '006_core_payment_recovery_claims.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
     await migrationPool.end();
     repository = new PostgresCoreRepository(databaseUrl);
   });

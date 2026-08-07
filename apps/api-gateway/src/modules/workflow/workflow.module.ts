@@ -79,6 +79,7 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
           const existingRefunds = await this.store.listRefunds(payment.id);
           let refund = existingRefunds.find((item) => item.refundScope === 'FOOD_ORDER_FINAL_REFUND' || item.status === 'SUCCEEDED');
           if (!refund) refund = await this.payments.refund(payment.id, payment.actorId, `food-order-refund:${payment.orderId}:${payment.id}`, String(order.status) === 'CANCELLED' ? 'customer_cancellation' : 'restaurant_rejection');
+          else if (refund.status === 'PENDING' || refund.status === 'UNKNOWN') refund = await this.payments.recoverRefund(refund);
           const backoffSeconds = [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
           const reconciliation = { orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, refundId: refund.id, status: String(order.status), attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() };
           if (String(order.status) === 'RESTAURANT_REJECTED' || String(order.status) === 'CANCELLED') {

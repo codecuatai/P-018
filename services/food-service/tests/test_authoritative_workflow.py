@@ -7,13 +7,13 @@ from src.repositories.food import InMemoryFoodRepository
 
 def make_service(repository: InMemoryFoodRepository | None = None) -> tuple[InMemoryFoodRepository, FoodApplicationService]:
     repo = repository or InMemoryFoodRepository()
-    return repo, FoodApplicationService(repo, Settings(service_port=8104, database_url="postgresql://test", internal_service_token="token"), random_value=lambda: 1.0)
+    return repo, FoodApplicationService(repo, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"), random_value=lambda: 1.0)
 
 
 @pytest.mark.asyncio
 async def test_authoritative_create_order_rejects_catalog_change_without_order_or_redemption() -> None:
     repository, food = make_service()
-    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi")
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-authoritative-key")
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     repository.items["item_pho_bo"]["price"] = 70000
@@ -25,7 +25,7 @@ async def test_authoritative_create_order_rejects_catalog_change_without_order_o
 @pytest.mark.asyncio
 async def test_voucher_reload_and_quote_are_deterministic_without_usage_counter() -> None:
     repository, food = make_service()
-    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi")
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-voucher-reload-key")
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
     cart = await food.apply_voucher(cart["id"], "XONE50")
     first = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
@@ -39,7 +39,7 @@ async def test_voucher_reload_and_quote_are_deterministic_without_usage_counter(
 @pytest.mark.asyncio
 async def test_transition_operation_key_is_idempotent_and_rejects_target_reuse() -> None:
     _, food = make_service()
-    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi")
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-transition-key")
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
     order = await food.create_order({"cart_id": cart["id"], "address_id": "addr_demo", "user_id": "usr_demo_001", "payment_method": "card", "idempotency_key": "transition-order"})
     first = await food.transition_order(order["id"], FoodOrderStatus.PAID.value, "payment", "transition-key")
@@ -52,7 +52,7 @@ async def test_transition_operation_key_is_idempotent_and_rejects_target_reuse()
 @pytest.mark.asyncio
 async def test_driver_is_released_and_timeline_is_event_backed() -> None:
     repository, food = make_service()
-    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi")
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-driver-key")
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
     order = await food.create_order({"cart_id": cart["id"], "address_id": "addr_demo", "user_id": "usr_demo_001", "payment_method": "card", "idempotency_key": "driver-order"})
     for target in (FoodOrderStatus.PAID, FoodOrderStatus.RESTAURANT_CONFIRMING, FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING, FoodOrderStatus.DELIVERED):

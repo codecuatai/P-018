@@ -28,7 +28,6 @@ const paymentLabels: Record<PaymentMethod, string> = {
   momo: "Ví MoMo",
   bank_transfer: "Chuyển khoản",
   card: "Thẻ nội địa/quốc tế",
-  cash: "Thanh toán tại quầy",
 };
 
 const serviceLabels: Record<ServiceType, string> = {

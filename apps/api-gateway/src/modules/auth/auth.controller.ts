@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, ServiceUnavailableException, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 
@@ -22,8 +22,11 @@ export class AuthController {
 
   @Post('login')
   login(@Body() body: LoginDto, @Req() request: CorrelatedRequest): object {
-    if (body.email !== 'demo@xone.vn' || body.password !== 'Xone@123') throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', detail: 'Email hoặc mật khẩu không đúng.' });
-    const user: AuthUser = { sub: 'usr_demo_001', email: body.email, role: 'customer' };
+    if (this.config.get<string>('DEMO_AUTH_ENABLED') !== 'true') throw new ServiceUnavailableException({ code: 'DEMO_AUTH_DISABLED', detail: 'Demo authentication is disabled in this environment.' });
+    const email = this.config.getOrThrow<string>('DEMO_AUTH_EMAIL');
+    const password = this.config.getOrThrow<string>('DEMO_AUTH_PASSWORD');
+    if (body.email !== email || body.password !== password) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', detail: 'Email hoặc mật khẩu không đúng.' });
+    const user: AuthUser = { sub: this.config.getOrThrow<string>('DEMO_AUTH_USER_ID'), email, role: 'customer' };
     return { data: { access_token: issueDemoToken(user, this.config.getOrThrow<string>('JWT_SECRET')), token_type: 'bearer', expires_in: 3600, user }, meta: { request_id: request.correlationId } };
   }
 

@@ -41,7 +41,6 @@ const paymentLabels: Record<PaymentMethod, string> = {
   momo: "Ví MoMo",
   bank_transfer: "Chuyển khoản VietQR",
   card: "Thẻ Visa / Mastercard",
-  cash: "Thanh toán tại quầy",
 };
 
 const demoScenarios = [
