@@ -1,7 +1,6 @@
 from datetime import datetime
-from typing import List, Optional
+
 from pydantic import BaseModel, Field
-from src.domain.restaurant import ReservationStatus
 
 
 class RestaurantResponse(BaseModel):
@@ -11,56 +10,81 @@ class RestaurantResponse(BaseModel):
     cuisine_type: str
     budget_range: str
     rating: float
-    total_capacity: int
-    opening_hours: str
-    image_url: Optional[str] = None
-    description: Optional[str] = None
+    timezone: str
+    image_url: str | None = None
+    description: str | None = None
 
 
 class RestaurantListResponse(BaseModel):
-    items: List[RestaurantResponse]
+    items: list[RestaurantResponse]
     total: int
 
 
 class AvailabilityCheckRequest(BaseModel):
     party_size: int = Field(..., gt=0, description="Number of guests")
-    booking_time: str = Field(..., description="Desired date and time (ISO format or YYYY-MM-DD HH:MM)")
+    start_at: datetime
+    duration_minutes: int = Field(120, ge=30, le=360)
+    seating_type: str | None = None
 
 
 class AvailabilityCheckResponse(BaseModel):
     restaurant_id: str
-    booking_time: str
+    start_at: datetime
+    end_at: datetime
     party_size: int
     available: bool
-    available_tables: int
-    message: Optional[str] = None
+    table_code: str | None = None
+    resource_version: int = 1
+    message: str | None = None
 
 
 class ReservationCreateRequest(BaseModel):
-    user_id: str = Field(..., description="User ID placing reservation")
     restaurant_id: str = Field(..., description="Restaurant ID")
     party_size: int = Field(..., gt=0, description="Number of guests")
-    booking_time: str = Field(..., description="Date and time for table reservation")
-    special_requests: Optional[str] = Field(None, description="Special requests (e.g. window seat, quiet table)")
-    idempotency_key: Optional[str] = Field(None, description="Idempotency key to prevent duplicate bookings")
+    start_at: datetime
+    duration_minutes: int = Field(120, ge=30, le=360)
+    special_requests: str | None = Field(None, description="Special requests (e.g. window seat, quiet table)")
+    hold_id: str | None = None
 
 
 class ReservationUpdateRequest(BaseModel):
-    party_size: Optional[int] = Field(None, gt=0)
-    booking_time: Optional[str] = None
-    special_requests: Optional[str] = None
+    party_size: int | None = Field(None, gt=0)
+    start_at: datetime | None = None
+    special_requests: str | None = None
 
 
 class ReservationResponse(BaseModel):
     id: str
     reservation_code: str
-    user_id: str
+    actor_id: str
     restaurant_id: str
     restaurant_name: str
     party_size: int
-    booking_time: str
-    status: ReservationStatus
-    special_requests: Optional[str] = None
-    idempotency_key: Optional[str] = None
+    table_code: str
+    start_at: datetime
+    end_at: datetime
+    status: str
+    special_requests: str | None = None
+    idempotency_key: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class HoldCreateRequest(BaseModel):
+    restaurant_id: str
+    party_size: int = Field(..., gt=0)
+    start_at: datetime
+    duration_minutes: int = Field(120, ge=30, le=360)
+
+
+class HoldResponse(BaseModel):
+    id: str
+    hold_code: str
+    actor_id: str
+    restaurant_id: str
+    table_code: str | None
+    party_size: int
+    start_at: datetime
+    end_at: datetime
+    expires_at: datetime
+    status: str

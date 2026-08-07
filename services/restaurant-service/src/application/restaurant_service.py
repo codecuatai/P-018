@@ -1,148 +1,66 @@
-from datetime import datetime, timezone
-import uuid
-from typing import List, Optional
-from src.domain.restaurant import Restaurant, Reservation, ReservationStatus, TableAvailability
+from datetime import UTC, datetime, timedelta
+
 from src.repositories.restaurant_repository import RestaurantRepository
 
 
+def normalized_interval(start_at: datetime, duration_minutes: int):
+    if start_at.tzinfo is None or start_at.utcoffset() is None:
+        raise ValueError("NAIVE_DATETIME")
+    start = start_at.astimezone(UTC)
+    if start <= datetime.now(UTC):
+        raise ValueError("PAST_START")
+    return start, start + timedelta(minutes=duration_minutes)
+
+
 class RestaurantApplicationService:
-    def __init__(self, repo: Optional[RestaurantRepository] = None):
-        self.repo = repo or RestaurantRepository()
+    def __init__(self, repo: RestaurantRepository):
+        self.repo = repo
 
-    def search_restaurants(
-        self,
-        location: Optional[str] = None,
-        cuisine_type: Optional[str] = None,
-        budget_range: Optional[str] = None
-    ) -> List[Restaurant]:
-        return self.repo.list_restaurants(location=location, cuisine_type=cuisine_type, budget_range=budget_range)
+    def search_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
+        return self.repo.list_restaurants(location, cuisine_type, budget_range, limit, offset)
 
-    def get_restaurant(self, restaurant_id: str) -> Optional[Restaurant]:
+    def get_restaurant(self, restaurant_id):
         return self.repo.get_restaurant_by_id(restaurant_id)
 
-    def check_availability(self, restaurant_id: str, party_size: int, booking_time: str) -> TableAvailability:
-        restaurant = self.repo.get_restaurant_by_id(restaurant_id)
-        if not restaurant:
-            return TableAvailability(
-                restaurant_id=restaurant_id,
-                booking_time=booking_time,
-                party_size=party_size,
-                available=False,
-                available_tables=0,
-                message="Restaurant not found"
-            )
+    def check_availability(self, restaurant_id, party_size, start_at, duration_minutes, seating_type=None):
+        start, end = normalized_interval(start_at, duration_minutes)
+        result = self.repo.availability(restaurant_id, party_size, start, end, seating_type)
+        if result is None:
+            raise ValueError("RESTAURANT_NOT_FOUND")
+        return result
 
-        existing_reservations = self.repo.get_active_reservations_for_time(restaurant_id, booking_time)
-        booked_guests = sum(r.party_size for r in existing_reservations)
-        remaining_capacity = restaurant.total_capacity - booked_guests
+    def create_hold(self, actor_id, restaurant_id, party_size, start_at, duration_minutes, key):
+        start, end = normalized_interval(start_at, duration_minutes)
+        payload = {"restaurant_id": restaurant_id, "party_size": party_size, "start_at": start.isoformat(), "end_at": end.isoformat()}
+        request_hash = self.repo.request_hash(payload)
+        existing = self.repo.find_idempotent(__import__("src.infrastructure.database", fromlist=["HoldRow"]).HoldRow,
+            actor_id, "create_hold", key, request_hash)
+        if existing:
+            return self.repo.hold_dict(existing)
+        return self.repo.create_hold(actor_id, restaurant_id, party_size, start, end, key, request_hash,
+            datetime.now(UTC) + timedelta(minutes=10))
 
-        if remaining_capacity >= party_size:
-            # Assuming average table size of 4
-            available_tables = max(1, remaining_capacity // 4)
-            return TableAvailability(
-                restaurant_id=restaurant_id,
-                booking_time=booking_time,
-                party_size=party_size,
-                available=True,
-                available_tables=available_tables,
-                message=f"Table available for party of {party_size}"
-            )
-        else:
-            return TableAvailability(
-                restaurant_id=restaurant_id,
-                booking_time=booking_time,
-                party_size=party_size,
-                available=False,
-                available_tables=0,
-                message=f"Not enough capacity for party of {party_size} at requested time"
-            )
+    def create_reservation(self, actor_id, restaurant_id, party_size, start_at, duration_minutes, special_requests, key, hold_id=None):
+        start, end = normalized_interval(start_at, duration_minutes)
+        payload = {"restaurant_id": restaurant_id, "party_size": party_size, "start_at": start.isoformat(), "end_at": end.isoformat(), "special_requests": special_requests, "hold_id": hold_id}
+        request_hash = self.repo.request_hash(payload)
+        existing = self.repo.find_reservation_idempotency(actor_id, key, request_hash)
+        if existing:
+            return existing
+        return self.repo.create_reservation(actor_id, restaurant_id, party_size, start, end, special_requests, key, request_hash, hold_id)
 
-    def create_reservation(
-        self,
-        user_id: str,
-        restaurant_id: str,
-        party_size: int,
-        booking_time: str,
-        special_requests: Optional[str] = None,
-        idempotency_key: Optional[str] = None
-    ) -> Reservation:
-        # Check idempotency
-        if idempotency_key:
-            existing = self.repo.get_reservation_by_idempotency_key(idempotency_key)
-            if existing:
-                return existing
+    def get_reservation(self, reservation_id, actor_id):
+        return self.repo.get_reservation_by_id(reservation_id, actor_id)
 
-        restaurant = self.repo.get_restaurant_by_id(restaurant_id)
-        if not restaurant:
-            raise ValueError(f"Restaurant with ID '{restaurant_id}' not found")
+    def update_reservation(self, actor_id, reservation_id, party_size, start_at, duration_minutes, special_requests, key):
+        current = self.repo.get_reservation_by_id(reservation_id, actor_id)
+        if not current:
+            raise ValueError("RESERVATION_NOT_FOUND")
+        start, end = normalized_interval(start_at or current["start_at"], duration_minutes)
+        size = party_size or current["party_size"]
+        payload = {"reservation_id": reservation_id, "party_size": size, "start_at": start.isoformat(), "end_at": end.isoformat(), "special_requests": special_requests}
+        return self.repo.update_reservation(actor_id, reservation_id, size, start, end, special_requests, key, self.repo.request_hash(payload))
 
-        availability = self.check_availability(restaurant_id, party_size, booking_time)
-        if not availability.available:
-            raise ValueError(f"Table unavailable: {availability.message}")
-
-        res_id = f"res-{uuid.uuid4().hex[:8]}"
-        res_code = f"RST-{uuid.uuid4().hex[:6].upper()}"
-
-        reservation = Reservation(
-            id=res_id,
-            reservation_code=res_code,
-            user_id=user_id,
-            restaurant_id=restaurant_id,
-            restaurant_name=restaurant.name,
-            party_size=party_size,
-            booking_time=booking_time,
-            status=ReservationStatus.CONFIRMED,
-            special_requests=special_requests,
-            idempotency_key=idempotency_key,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
-        )
-
-        return self.repo.save_reservation(reservation)
-
-    def get_reservation(self, reservation_id: str) -> Optional[Reservation]:
-        return self.repo.get_reservation_by_id(reservation_id)
-
-    def update_reservation(
-        self,
-        reservation_id: str,
-        party_size: Optional[int] = None,
-        booking_time: Optional[str] = None,
-        special_requests: Optional[str] = None
-    ) -> Reservation:
-        reservation = self.repo.get_reservation_by_id(reservation_id)
-        if not reservation:
-            raise ValueError(f"Reservation '{reservation_id}' not found")
-
-        if reservation.status == ReservationStatus.CANCELLED:
-            raise ValueError(f"Cannot update cancelled reservation '{reservation_id}'")
-
-        new_party_size = party_size if party_size is not None else reservation.party_size
-        new_booking_time = booking_time if booking_time is not None else reservation.booking_time
-
-        # Check availability if time or party size changed
-        if new_party_size != reservation.party_size or new_booking_time != reservation.booking_time:
-            availability = self.check_availability(reservation.restaurant_id, new_party_size, new_booking_time)
-            if not availability.available:
-                raise ValueError(f"Cannot update reservation: {availability.message}")
-
-        reservation.party_size = new_party_size
-        reservation.booking_time = new_booking_time
-        if special_requests is not None:
-            reservation.special_requests = special_requests
-        reservation.status = ReservationStatus.MODIFIED
-        reservation.updated_at = datetime.now(timezone.utc)
-
-        return self.repo.save_reservation(reservation)
-
-    def cancel_reservation(self, reservation_id: str) -> Reservation:
-        reservation = self.repo.get_reservation_by_id(reservation_id)
-        if not reservation:
-            raise ValueError(f"Reservation '{reservation_id}' not found")
-
-        if reservation.status == ReservationStatus.CANCELLED:
-            return reservation
-
-        reservation.status = ReservationStatus.CANCELLED
-        reservation.updated_at = datetime.now(timezone.utc)
-        return self.repo.save_reservation(reservation)
+    def cancel_reservation(self, actor_id, reservation_id, key):
+        payload = {"reservation_id": reservation_id, "action": "cancel"}
+        return self.repo.cancel_reservation(actor_id, reservation_id, key, self.repo.request_hash(payload))

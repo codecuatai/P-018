@@ -1,3 +1,3 @@
 # OpenAPI Contracts
 
-Versioned OpenAPI descriptions belong here. This foundation exposes only health endpoints; first business endpoints must add a reviewed contract before clients are generated.
+Versioned OpenAPI descriptions belong here. The Restaurant Service business contract is captured in `restaurant-service-v1.yaml`; generated clients must be produced from this contract and never hand-edited.
