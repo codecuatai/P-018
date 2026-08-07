@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC
 from hashlib import sha256
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from src.infrastructure.database import (
@@ -37,6 +37,9 @@ class RestaurantRepository:
                 restaurant = RestaurantRow(id=rid, name=name, location=location, cuisine_type=cuisine,
                     budget_range=budget, rating=rating, timezone="Asia/Ho_Chi_Minh", active=True)
                 db.add(restaurant)
+                # Flush the parent before inserting FK children. OpeningHourRow
+                # intentionally keeps a scalar FK without an ORM relationship.
+                db.flush()
                 capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
                 for table_index, capacity in enumerate(capacities, 1):
                     db.add(TableRow(restaurant_id=rid, table_code=f"T{table_index:02d}", capacity=capacity,
@@ -54,7 +57,14 @@ class RestaurantRepository:
         with self.factory() as db:
             stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
             if location:
-                stmt = stmt.where(RestaurantRow.location.ilike(f"%{location}%"))
+                aliases = {
+                    "hà nội": ("Hà Nội", "Hanoi"),
+                    "ha noi": ("Hà Nội", "Hanoi"),
+                    "hồ chí minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
+                    "ho chi minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
+                }
+                candidates = aliases.get(location.strip().lower(), (location,))
+                stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))
             if cuisine_type:
                 stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{cuisine_type}%"))
             if budget_range:

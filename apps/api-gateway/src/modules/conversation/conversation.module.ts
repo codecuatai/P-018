@@ -219,7 +219,7 @@ class ChatController {
       headers: {
         'Content-Type': 'application/json',
         'X-Correlation-Id': String(req.correlationId ?? ''),
-        'Authorization': `Bearer ${process.env.INTERNAL_SERVICE_TOKEN ?? ''}`,
+        'X-Internal-Service-Token': process.env.INTERNAL_SERVICE_TOKEN ?? '',
       } as Record<string, string>,
       body: JSON.stringify({ message: body.message }),
     });

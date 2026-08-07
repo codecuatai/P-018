@@ -27,6 +27,9 @@ def test_search_restaurants():
     french_res = client.get("/v1/restaurants?cuisine_type=French", headers=AUTH)
     assert french_res.status_code == 200
     assert french_res.json()["data"]["items"][0]["cuisine_type"] == "French"
+    hanoi_res = client.get("/v1/restaurants?location=Hà Nội", headers=AUTH)
+    assert hanoi_res.status_code == 200
+    assert len(hanoi_res.json()["data"]["items"]) >= 2
 
 
 def test_get_restaurant_by_id():
@@ -41,6 +44,13 @@ def test_check_availability():
     response = client.post("/v1/restaurants/rest-001/availability", json=payload, headers=AUTH)
     assert response.status_code == 200
     assert response.json()["data"]["available"] is True
+
+
+def test_check_availability_reports_past_start():
+    payload = {"party_size": 3, "start_at": "2020-08-10T08:00:00+07:00", "duration_minutes": 120}
+    response = client.post("/v1/restaurants/rest-001/availability", json=payload, headers=AUTH)
+    assert response.status_code == 422
+    assert response.json()["code"] == "PAST_START"
 
 
 def test_hold_reservation_and_idempotency():

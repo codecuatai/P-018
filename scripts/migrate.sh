@@ -1,2 +1,5 @@
 #!/usr/bin/env sh
-echo 'No migrations exist yet. Add a service-owned Alembic revision before running database migrations.'
+set -eu
+echo 'Applying Restaurant Service migrations...'
+docker compose exec -T restaurant-service alembic upgrade head
+echo 'Restaurant Service migrations applied.'

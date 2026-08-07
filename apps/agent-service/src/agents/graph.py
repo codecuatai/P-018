@@ -1,28 +1,16 @@
 from langgraph.graph import END, StateGraph
 
-from src.agents.nodes.example_node import analyze_node, respond_node
+from src.agents.nodes.restaurant_node import classify_and_extract, compose_restaurant_response
 from src.agents.state import AgentState
 
 
-def should_continue(state: AgentState) -> str:
-    """Route based on whether an error occurred during analysis."""
-    if state.get("error"):
-        return END
-    return "respond"
-
-
-def build_graph() -> StateGraph:
+def build_graph():
     graph = StateGraph(AgentState)
-
-    # Add nodes
-    graph.add_node("analyze", analyze_node)
-    graph.add_node("respond", respond_node)
-
-    # Add edges
-    graph.set_entry_point("analyze")
-    graph.add_conditional_edges("analyze", should_continue)
-    graph.add_edge("respond", END)
-
+    graph.add_node("classify_and_extract", classify_and_extract)
+    graph.add_node("compose_response", compose_restaurant_response)
+    graph.set_entry_point("classify_and_extract")
+    graph.add_edge("classify_and_extract", "compose_response")
+    graph.add_edge("compose_response", END)
     return graph.compile()
 
 

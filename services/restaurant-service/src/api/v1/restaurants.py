@@ -31,6 +31,9 @@ def check_availability(restaurant_id: str, body: AvailabilityCheckRequest, reque
         result = request.app.state.restaurant_service.check_availability(restaurant_id, body.party_size, body.start_at, body.duration_minutes, body.seating_type)
         return envelope(result, request)
     except ValueError as exc:
-        if str(exc) == "RESTAURANT_NOT_FOUND":
+        error_code = str(exc)
+        if error_code == "RESTAURANT_NOT_FOUND":
             raise HTTPException(status_code=404, detail="Restaurant not found") from exc
+        if error_code in {"PAST_START", "CAPACITY_UNAVAILABLE"}:
+            raise HTTPException(status_code=422, detail=error_code) from exc
         raise HTTPException(status_code=422, detail="Invalid availability request") from exc

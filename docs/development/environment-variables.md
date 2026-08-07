@@ -1,6 +1,6 @@
 # Environment Variables
 
-Root `.env.example` is the local Docker Compose source of truth. It groups shared settings, PostgreSQL admin and logical-database credentials, per-service database URLs, ports/internal URLs, and Gemini configuration. It contains placeholders only.
+Root `.env.example` is the local Docker Compose source of truth. It groups shared settings, PostgreSQL admin and logical-database credentials, per-service database URLs, ports/internal URLs, and Gemini configuration. It contains placeholders only. `AGENT_MODEL_MODE` defaults to `deterministic`; set it to `gemini` to enable the structured Gemini adapter.
 
 Compose automatically reads root `.env` for `${VARIABLE}` interpolation but does not pass that full file to containers. PostgreSQL receives only bootstrap/database variables; gateway receives core database, internal URLs, and token; agent receives agent database, Gemini values, CORS, and token; each domain receives only its database URL, port, and token. Frontend receives neither Gemini nor internal token.
 

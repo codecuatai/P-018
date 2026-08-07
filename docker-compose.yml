@@ -61,6 +61,7 @@ services:
       CORS_ORIGINS: ${AGENT_CORS_ORIGINS:?AGENT_CORS_ORIGINS is required}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
       GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
+      AGENT_MODEL_MODE: ${AGENT_MODEL_MODE:-deterministic}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     ports: ["${AGENT_SERVICE_PORT}:8001"]
     depends_on: { postgres: { condition: service_healthy } }

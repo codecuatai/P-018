@@ -101,6 +101,7 @@ export const ChatDashboard: React.FC<Props> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [workflowId, setWorkflowId] = useState<string | undefined>();
   const paymentMethod: PaymentMethod = "momo";
   const [notice, setNotice] = useState<{ type: "success" | "warning" | "error"; text: string } | null>(null);
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
@@ -161,7 +162,8 @@ export const ChatDashboard: React.FC<Props> = ({
     setMessages(prev => [...prev, userMsg]);
 
     try {
-      const responseData = await ApiService.sendChatMessage(text);
+      const responseData = await ApiService.sendRestaurantChatMessage(text, workflowId);
+      if (responseData.workflow_id) setWorkflowId(responseData.workflow_id);
       const botMsg: Message = {
         id: `msg-${Date.now() + 1}`,
         role: "bot",

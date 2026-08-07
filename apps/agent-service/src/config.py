@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = Field(min_length=1)
     gemini_model: str = Field(min_length=1)
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    agent_model_mode: Literal["deterministic", "gemini"] = "deterministic"
 
     # Database
     database_url: str = Field(min_length=1)

@@ -4,16 +4,17 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from src.infrastructure import database  # noqa: F401
-from src.infrastructure.database import Base
+from src.infrastructure.database import Base, normalize_database_url
 
 config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+database_url = normalize_database_url(os.environ["DATABASE_URL"])
+config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
 def run_migrations_offline():
-    context.configure(url=os.environ["DATABASE_URL"], target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
+    context.configure(url=database_url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
         context.run_migrations()
 

@@ -103,7 +103,16 @@ def build_engine(database_url: str):
     kwargs: dict[str, Any] = {"pool_pre_ping": True, "future": True}
     if database_url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
-    return create_engine(database_url, **kwargs)
+    return create_engine(normalize_database_url(database_url), **kwargs)
+
+
+def normalize_database_url(database_url: str) -> str:
+    """Use the psycopg v3 dialect declared by this service."""
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if database_url.startswith("postgresql+psycopg2://"):
+        return database_url.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+    return database_url
 
 
 def make_session_factory(database_url: str):
