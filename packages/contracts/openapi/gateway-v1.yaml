@@ -3,6 +3,26 @@ info:
   title: X-One Gateway API
   version: 1.0.0
 paths:
+  /api/v1/healthcare-workflows/chat:
+    post:
+      summary: Process healthcare booking conversation and dispatch safe read/reversible tools
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthcareChatRequest'
+      responses:
+        '200':
+          description: Agent response and validated Healthcare result
+        '401':
+          description: Missing or invalid user token
+        '422':
+          description: Invalid request
+        '502':
+          description: Internal service failure
   /api/v1/restaurant-workflows/chat:
     post:
       summary: Process restaurant booking conversation and dispatch safe read tools
@@ -30,6 +50,28 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    HealthcareChatRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        workflow_id:
+          type: string
+        client_turn_id:
+          type: string
+        patient_id:
+          type: integer
+          minimum: 1
+        symptoms:
+          type: string
+          maxLength: 2000
+        context:
+          type: object
+          additionalProperties: true
     RestaurantChatRequest:
       type: object
       required: [message]

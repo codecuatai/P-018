@@ -9,7 +9,6 @@ from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.models.schemas import ToolRequest
 
-
 TZ = timezone(timedelta(hours=7))
 
 
@@ -123,7 +122,7 @@ def _tool_result_response(result: dict[str, Any], tool_name: str | None = None) 
         return "Mình chưa lấy được dữ liệu nhà hàng lúc này. Bạn thử lại giúp mình nhé."
     data = result.get("data", result)
     if tool_name == "restaurant.create_hold" and isinstance(data, dict):
-        return f"Mình đã giữ bàn trong 10 phút. Bạn xác nhận lần cuối để mình tạo đặt bàn nhé."
+        return "Mình đã giữ bàn trong 10 phút. Bạn xác nhận lần cuối để mình tạo đặt bàn nhé."
     if tool_name == "restaurant.create_reservation" and isinstance(data, dict):
         return f"Đặt bàn thành công. Mã đặt bàn của bạn là {data.get('reservation_code', data.get('id', 'đã tạo'))}."
     if isinstance(data, dict) and "items" in data:

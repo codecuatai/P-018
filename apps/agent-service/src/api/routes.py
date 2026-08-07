@@ -7,11 +7,12 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from src.agents.graph import agent as food_agent
+from src.agents.healthcare_graph import agent as healthcare_agent
 from src.agents.restaurant_graph import agent as restaurant_agent
 from src.api.dependencies import require_internal_auth
 from src.application.workflow_store import workflow_store
 from src.config import get_settings
-from src.models.schemas import AgentResponse, ChatRequest, ChatResponse, RestaurantChatRequest
+from src.models.schemas import AgentResponse, ChatRequest, ChatResponse, HealthcareChatRequest, RestaurantChatRequest
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -110,6 +111,57 @@ async def restaurant_chat(
     except Exception:
         logger.exception("Restaurant agent execution failed")
         raise HTTPException(status_code=500, detail="Unable to process the restaurant workflow.") from None
+
+
+@router.post("/healthcare-chat", response_model=None)
+async def healthcare_chat(
+    request: HealthcareChatRequest,
+    x_actor_id: str | None = Header(default=None),
+    _auth: None = Depends(require_internal_auth),
+) -> dict[str, Any]:
+    """Return typed Healthcare tool requests without calling the Healthcare service."""
+    workflow_id = request.workflow_id or f"wf-{uuid4().hex}"
+    actor_id = x_actor_id or str(request.context.get("actor_id", "anonymous"))
+    previous = workflow_store.get(actor_id, workflow_id)
+    merged_context = {
+        **previous.get("context", {}),
+        "slots": {**previous.get("slots", {}), **request.context.get("slots", {})},
+        **request.context,
+    }
+    if not request.context.get("tool_result_only"):
+        merged_context.pop("tool_result_only", None)
+        merged_context.pop("tool_result", None)
+        merged_context.pop("tool_name", None)
+    try:
+        result = await healthcare_agent.ainvoke(
+            {
+                "query": request.message,
+                "workflow_id": workflow_id,
+                "turn_id": request.client_turn_id or uuid4().hex,
+                "actor_id": actor_id,
+                "intent": previous.get("intent"),
+                "slots": previous.get("slots", {}),
+                "context": merged_context,
+            }
+        )
+        workflow_store.save(
+            actor_id,
+            workflow_id,
+            {**previous, **result, "context": merged_context, "workflow_id": workflow_id, "actor_id": actor_id},
+        )
+        response = ChatResponse(
+            response=result.get("response", ""),
+            workflow_id=workflow_id,
+            intent=result.get("intent"),
+            slots=result.get("slots", {}),
+            missing_slots=result.get("missing_slots", []),
+            tool_request=result.get("tool_request"),
+            status=result.get("status", "COMPLETED"),
+        )
+        return {"data": response.model_dump(), "meta": {"request_id": None}}
+    except Exception:
+        logger.exception("Healthcare agent execution failed")
+        raise HTTPException(status_code=500, detail="Unable to process the healthcare workflow.") from None
 
 
 @router.get("/status")

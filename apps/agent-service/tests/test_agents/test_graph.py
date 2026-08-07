@@ -1,5 +1,16 @@
 import pytest
-from src.agents.graph import agent
+from src.agents.graph import agent as food_agent
+from src.agents.restaurant_graph import agent as restaurant_agent
+
+
+class _CanonicalAgent:
+    async def ainvoke(self, state):
+        if state.get("workflow_id"):
+            return await restaurant_agent.ainvoke(state)
+        return await food_agent.ainvoke(state)
+
+
+agent = _CanonicalAgent()
 
 
 @pytest.mark.asyncio

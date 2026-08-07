@@ -6,3 +6,5 @@ docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone
 echo 'Deterministic Food demo seed applied.'
 docker compose --env-file "$env_file" exec -T restaurant-service python -m seeds.seed
 echo 'Restaurant Service seeds applied.'
+docker compose --env-file "$env_file" exec -T healthcare-service python -m seeds.seed_medical
+echo 'Healthcare Service seeds applied.'

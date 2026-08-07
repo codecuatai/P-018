@@ -5,3 +5,6 @@ Write-Host 'Deterministic Food demo seed applied.'
 docker compose --env-file $envFile exec -T restaurant-service python -m seeds.seed
 if ($LASTEXITCODE -ne 0) { throw 'Restaurant Service seed failed.' }
 Write-Host 'Restaurant Service seeds applied.'
+docker compose --env-file $envFile exec -T healthcare-service python -m seeds.seed_medical
+if ($LASTEXITCODE -ne 0) { throw 'Healthcare Service seed failed.' }
+Write-Host 'Healthcare Service seeds applied.'

@@ -2,7 +2,7 @@ import { Controller, Get, Logger, OnModuleDestroy, OnModuleInit, Param, Post, Re
 import { ConfigService } from '@nestjs/config';
 import { Injectable, Module } from '@nestjs/common';
 
-import { AgentClient, FoodClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
+import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { DemoAuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
@@ -14,6 +14,7 @@ import { PaymentService } from '../payment/payment.service';
 import { CoreModule } from '../core/core.module';
 import { PaymentModule } from '../payment/payment.module';
 import { RestaurantWorkflowController } from './restaurant-workflow.controller';
+import { HealthcareWorkflowController } from './healthcare-workflow.controller';
 
 @Injectable()
 export class WorkflowService implements OnModuleInit, OnModuleDestroy {
@@ -154,8 +155,8 @@ export class WorkflowController {
 
 @Module({
   imports: [AuthModule, ConfirmationModule, CoreModule, PaymentModule],
-  controllers: [WorkflowController, RestaurantWorkflowController],
-  providers: [WorkflowService, FoodClient, AgentClient, RestaurantClient],
+  controllers: [WorkflowController, RestaurantWorkflowController, HealthcareWorkflowController],
+  providers: [WorkflowService, FoodClient, AgentClient, RestaurantClient, HealthcareClient],
   exports: [WorkflowService],
 })
 export class WorkflowModule {}

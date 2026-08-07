@@ -64,3 +64,27 @@ async def test_restaurant_chat_merges_follow_up_turns(client):
     fifth = await client.post("/api/v1/restaurant-chat", json={"message": "Hà Nội", "workflow_id": workflow_id}, headers=headers)
     assert fifth.json()["data"]["status"] == "TOOL_REQUEST_READY"
     assert fifth.json()["data"]["tool_request"]["tool_name"] == "restaurant.search"
+
+
+@pytest.mark.asyncio
+async def test_healthcare_chat_returns_typed_request_without_calling_domain(client):
+    response = await client.post(
+        "/api/v1/healthcare-chat",
+        json={
+            "message": "dat lich kham khoa than kinh",
+            "workflow_id": "wf-healthcare-api-1",
+            "context": {"patient_id": 1},
+        },
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-test"},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["intent"] == "healthcare_booking"
+    assert data["tool_request"]["tool_name"] == "healthcare.list_slots"
+    assert data["tool_request"]["risk_level"] == "READ"
+
+
+@pytest.mark.asyncio
+async def test_healthcare_chat_requires_internal_auth(client):
+    response = await client.post("/api/v1/healthcare-chat", json={"message": "dat lich kham"})
+    assert response.status_code == 401

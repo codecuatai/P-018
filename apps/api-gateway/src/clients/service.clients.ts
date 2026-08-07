@@ -67,6 +67,15 @@ export interface RestaurantTool {
   idempotency_key?: string;
 }
 
+export interface HealthcareTool {
+  tool_name: 'healthcare.list_departments' | 'healthcare.list_slots' | 'healthcare.hold_slot' | 'healthcare.confirm_appointment' | 'healthcare.cancel_appointment';
+  risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  arguments: Record<string, unknown>;
+  workflow_id: string;
+  tool_call_id: string;
+  idempotency_key?: string;
+}
+
 export type RestaurantReadTool = RestaurantTool;
 
 @Injectable()
@@ -81,6 +90,11 @@ export class AgentClient extends InternalServiceClient {
   restaurantChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
     const actorId = typeof payload.actor_id === 'string' ? payload.actor_id : undefined;
     return this.request<JsonObject>('/api/v1/restaurant-chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, actorId, 30000);
+  }
+
+  healthcareChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
+    const actorId = typeof payload.actor_id === 'string' ? payload.actor_id : undefined;
+    return this.request<JsonObject>('/api/v1/healthcare-chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, actorId, 30000);
   }
 }
 
@@ -176,4 +190,53 @@ export class RestaurantClient extends InternalServiceClient {
 @Injectable()
 export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
+
+  async executeTool(tool: HealthcareTool, actorId: string, correlationId: string): Promise<unknown> {
+    if (tool.risk_level === 'FINANCIAL_OR_FINAL' || tool.tool_name === 'healthcare.confirm_appointment') {
+      throw new Error('CONFIRMATION_REQUIRED');
+    }
+    let path: string;
+    let method = 'GET';
+    let body: string | undefined;
+    const headers: Record<string, string> = {
+      'X-Internal-Service-Token': this.internalToken,
+      'X-Actor-Id': actorId,
+      'X-Correlation-Id': correlationId,
+      'X-Workflow-Id': tool.workflow_id,
+    };
+    if (tool.tool_name === 'healthcare.list_departments') {
+      path = '/api/v1/departments';
+    } else if (tool.tool_name === 'healthcare.list_slots') {
+      const department = String(tool.arguments.department ?? '');
+      path = `/api/v1/doctors?department=${encodeURIComponent(department)}`;
+    } else if (tool.tool_name === 'healthcare.hold_slot') {
+      path = '/api/v1/slots/hold';
+      method = 'POST';
+      headers['Content-Type'] = 'application/json';
+      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      body = JSON.stringify(tool.arguments);
+    } else if (tool.tool_name === 'healthcare.cancel_appointment') {
+      path = `/api/v1/appointments/${encodeURIComponent(String(tool.arguments.appointment_id))}/cancel`;
+      method = 'POST';
+      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+    } else {
+      throw new Error(`Unsupported healthcare tool: ${tool.tool_name}`);
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, { method, headers, body, signal: controller.signal });
+      const payload = await response.json().catch(() => ({})) as JsonObject;
+      if (!response.ok) {
+        const detail = typeof payload.detail === 'object' && payload.detail !== null ? payload.detail as JsonObject : payload;
+        return { error: typeof detail.code === 'string' ? detail.code : `HEALTHCARE_SERVICE_${response.status}`, status: response.status };
+      }
+      return payload.data ?? payload;
+    } catch {
+      return { error: 'UPSTREAM_UNAVAILABLE', status: 503 };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }

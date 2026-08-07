@@ -1,7 +1,5 @@
-from typing import Any
 
 from src.models.schemas import ToolRequest
-
 
 READ_TOOLS = {
     "restaurant.search",

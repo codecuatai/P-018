@@ -26,6 +26,15 @@ class RestaurantChatRequest(BaseModel):
     client_turn_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+class HealthcareChatRequest(BaseModel):
+    """Healthcare workflow contract kept separate from Food and Restaurant state."""
+
+    message: str = Field(..., min_length=1, max_length=5000, description="Message from the user")
+    workflow_id: str | None = Field(default=None, min_length=1, max_length=100)
+    context: dict[str, Any] = Field(default_factory=dict)
+    client_turn_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
 class AgentResponse(BaseModel):
     response_type: Literal["text", "options", "cart", "order_preview", "confirmation_form", "tracking", "error"]
     message: str
@@ -42,7 +51,7 @@ class ChatResponse(BaseModel):
     intent: str | None = None
     slots: dict[str, Any] = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
-    tool_request: "ToolRequest | None" = None
+    tool_request: ToolRequest | None = None
     status: Literal["NEEDS_INPUT", "TOOL_REQUEST_READY", "COMPLETED"] = "COMPLETED"
 
 

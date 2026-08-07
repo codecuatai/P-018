@@ -1,5 +1,4 @@
 import pytest
-
 from src.agents.nodes.restaurant_node import classify_and_extract
 
 
