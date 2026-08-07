@@ -7,6 +7,9 @@ import { AuthModule } from '../auth/auth.module';
 import { DemoAuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { CoreModule, CoreStore } from '../core/core.module';
+import { ToolModule } from '../tools/tool.module';
+import { ConversationController as RideConversationController } from './conversation.controller';
+import { RideConversationService } from './ride-conversation.service';
 
 class MessageDto {
   @IsString()
@@ -34,7 +37,7 @@ export class ConversationService {
 
 @Controller('api/v1/conversations')
 @UseGuards(DemoAuthGuard)
-export class ConversationController {
+export class FoodConversationController {
   constructor(private readonly conversations: ConversationService, private readonly store: CoreStore) {}
 
   @Post(':conversationId/messages')
@@ -49,5 +52,9 @@ export class ConversationController {
   }
 }
 
-@Module({ imports: [AuthModule, CoreModule], controllers: [ConversationController], providers: [ConversationService, AgentClient] })
+@Module({
+  imports: [AuthModule, CoreModule, ToolModule],
+  controllers: [FoodConversationController, RideConversationController],
+  providers: [ConversationService, AgentClient, RideConversationService],
+})
 export class ConversationModule {}

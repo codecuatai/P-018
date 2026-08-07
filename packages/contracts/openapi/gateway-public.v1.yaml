@@ -1,0 +1,261 @@
+openapi: 3.1.0
+info:
+  title: X-One Gateway Public Ride API
+  version: 1.0.0
+  description: >
+    Browser-facing Ride conversation slice. Authentication is not implemented;
+    X-Actor-Id is a local development identity only.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/v1/chat:
+    post:
+      operationId: submitRideChatTurn
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatTurn"
+      responses:
+        "201":
+          description: Interpreted turn with an optional authoritative Ride quote.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "502":
+          $ref: "#/components/responses/Problem"
+        "504":
+          $ref: "#/components/responses/Problem"
+  /api/v1/workflows/{workflow_id}/confirm-service:
+    post:
+      operationId: confirmRideServiceDetails
+      description: >
+        Explicitly confirms the selected route, vehicle, quote version, amount,
+        and currency. It does not confirm payment.
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Ride booking prepared and awaiting payment confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowEnvelope"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "502":
+          $ref: "#/components/responses/Problem"
+  /api/v1/workflows/{workflow_id}/confirm-payment:
+    post:
+      operationId: confirmRideSandboxPayment
+      description: >
+        Explicitly confirms the sandbox payment reference and asks Ride to
+        perform its final simulated booking transition.
+      parameters:
+        - $ref: "#/components/parameters/WorkflowId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Booking completed and simulated driver assigned.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowEnvelope"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "502":
+          $ref: "#/components/responses/Problem"
+components:
+  parameters:
+    ActorId:
+      in: header
+      name: X-Actor-Id
+      required: true
+      description: Ephemeral local-development actor identity; not authentication.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CorrelationId:
+      in: header
+      name: X-Correlation-Id
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    WorkflowId:
+      in: path
+      name: workflow_id
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  responses:
+    Problem:
+      description: Safe problem response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    ChatTurn:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        workflow_id:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 128
+    WorkflowEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/WorkflowResult"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    WorkflowResult:
+      type: object
+      additionalProperties: false
+      required:
+        - workflow_id
+        - response
+        - intent
+        - stage
+        - missing_fields
+        - quote
+        - booking
+        - confirmation
+      properties:
+        workflow_id:
+          type: string
+        response:
+          type: string
+        intent:
+          type: string
+        stage:
+          enum: [COLLECTING_DETAILS, SERVICE_CONFIRMATION, PAYMENT_CONFIRMATION, COMPLETED]
+        missing_fields:
+          type: array
+          items:
+            type: string
+        quote:
+          oneOf:
+            - $ref: "#/components/schemas/RideQuote"
+            - type: "null"
+        booking:
+          oneOf:
+            - $ref: "#/components/schemas/RideBooking"
+            - type: "null"
+        confirmation:
+          oneOf:
+            - $ref: "#/components/schemas/ConfirmationPrompt"
+            - type: "null"
+    RideQuote:
+      type: object
+      required:
+        - id
+        - pickup_address
+        - dropoff_address
+        - vehicle_type
+        - distance_km
+        - duration_minutes
+        - amount
+        - currency
+        - tariff_version
+        - quote_version
+        - expires_at
+      properties:
+        id: {type: string}
+        pickup_address: {type: string}
+        dropoff_address: {type: string}
+        vehicle_type: {enum: [BIKE, CAR_4, CAR_7]}
+        distance_km: {type: integer}
+        duration_minutes: {type: integer}
+        amount: {type: integer}
+        currency: {type: string}
+        tariff_version: {type: string}
+        quote_version: {type: string}
+        expires_at: {type: string, format: date-time}
+    RideBooking:
+      type: object
+      required:
+        - id
+        - quote_id
+        - quote_version
+        - amount
+        - currency
+        - status
+        - resource_version
+        - payment_reference
+        - driver
+        - created_at
+        - updated_at
+      properties:
+        id: {type: string}
+        quote_id: {type: string}
+        quote_version: {type: string}
+        amount: {type: integer}
+        currency: {type: string}
+        status:
+          enum: [AWAITING_PAYMENT_CONFIRMATION, DRIVER_ASSIGNED, CANCELLED]
+        resource_version: {type: integer}
+        payment_reference:
+          type: [string, "null"]
+        driver:
+          type: [object, "null"]
+          additionalProperties: true
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ConfirmationPrompt:
+      type: object
+      additionalProperties: false
+      required: [kind, title, detail, action_label]
+      properties:
+        kind:
+          enum: [SERVICE_DETAILS, PAYMENT]
+        title: {type: string}
+        detail: {type: string}
+        action_label: {type: string}
+    ResponseMeta:
+      type: object
+      additionalProperties: false
+      required: [request_id, timestamp]
+      properties:
+        request_id: {type: string}
+        timestamp: {type: string, format: date-time}
+    Problem:
+      type: object
+      required: [type, title, status, code, detail, retryable, request_id]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string}
+        detail: {type: string}
+        retryable: {type: boolean}
+        request_id:
+          type: [string, "null"]

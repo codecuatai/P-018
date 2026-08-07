@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
-import { AgentClient, FoodClient, HealthcareClient, RestaurantClient, RideClient } from './clients/service.clients';
+import { ClientsModule } from './clients/clients.module';
 import { validateEnvironment } from './config/environment';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -16,6 +16,7 @@ import { CoreModule } from './modules/core/core.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, validate: validateEnvironment }),
+    ClientsModule,
     HealthModule,
     CoreModule,
     AuthModule,
@@ -26,7 +27,5 @@ import { CoreModule } from './modules/core/core.module';
     ToolModule,
     AuditModule,
   ],
-  providers: [AgentClient, RideClient, RestaurantClient, HealthcareClient, FoodClient],
-  exports: [AgentClient, RideClient, RestaurantClient, HealthcareClient, FoodClient],
 })
 export class AppModule {}

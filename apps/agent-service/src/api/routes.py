@@ -9,10 +9,19 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from src.agents.graph import agent as food_agent
 from src.agents.healthcare_graph import agent as healthcare_agent
 from src.agents.restaurant_graph import agent as restaurant_agent
+from src.agents.ride_graph import agent as ride_agent
 from src.api.dependencies import require_internal_auth
 from src.application.workflow_store import workflow_store
 from src.config import get_settings
-from src.models.schemas import AgentResponse, ChatRequest, ChatResponse, HealthcareChatRequest, RestaurantChatRequest
+from src.models.schemas import (
+    AgentResponse,
+    ChatRequest,
+    ChatResponse,
+    HealthcareChatRequest,
+    RestaurantChatRequest,
+    RideChatRequest,
+    RideChatResponse,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -162,6 +171,35 @@ async def healthcare_chat(
     except Exception:
         logger.exception("Healthcare agent execution failed")
         raise HTTPException(status_code=500, detail="Unable to process the healthcare workflow.") from None
+
+
+@router.post("/ride-chat", response_model=None)
+async def ride_chat(
+    request: RideChatRequest,
+    _auth: None = Depends(require_internal_auth),
+) -> dict[str, Any]:
+    """Return a deterministic Ride state patch and typed tool request."""
+    try:
+        result = await ride_agent.ainvoke(
+            {
+                "query": request.message,
+                "workflow_id": request.workflow_id,
+                "turn_id": request.client_turn_id or uuid4().hex,
+                "context": request.context,
+            }
+        )
+        response = RideChatResponse(
+            response=result.get("response", ""),
+            workflow_id=request.workflow_id,
+            intent=result.get("intent", "help"),
+            missing_fields=result.get("missing_fields", []),
+            state_patch=result.get("state_patch", {}),
+            tool_request=result.get("tool_request"),
+        )
+        return {"data": response.model_dump(), "meta": {"request_id": None}}
+    except Exception:
+        logger.exception("Ride agent execution failed")
+        raise HTTPException(status_code=500, detail="Unable to process the ride workflow.") from None
 
 
 @router.get("/status")

@@ -21,13 +21,14 @@ import {
   XCircle,
 } from "lucide-react";
 import { BookingHistory, BookingStatus, PaymentMethod, ServiceType } from "../types";
-import { ApiService } from "../api";
+import { MockService } from "../mocks/mockService";
 import "./HistoryView.css";
 
 const paymentLabels: Record<PaymentMethod, string> = {
   momo: "Ví MoMo",
   bank_transfer: "Chuyển khoản",
   card: "Thẻ nội địa/quốc tế",
+  cash: "Thanh toán tại quầy",
 };
 
 const serviceLabels: Record<ServiceType, string> = {
@@ -78,7 +79,7 @@ export const HistoryView: React.FC = () => {
 
   const loadHistory = async () => {
     setLoading(true);
-    const data = await ApiService.getBookings();
+    const data = await MockService.getHistory();
     setHistory(data);
     setLoading(false);
   };
@@ -117,7 +118,7 @@ export const HistoryView: React.FC = () => {
 
   const confirmCancel = async () => {
     if (!cancelTarget) return;
-    const success = await ApiService.cancelBooking(cancelTarget.bookingId);
+    const success = await MockService.cancelBooking(cancelTarget.bookingId);
     if (success) {
       setToast(`Đã hủy ${cancelTarget.bookingId} và cập nhật trạng thái hoàn tiền.`);
       setCancelTarget(null);
@@ -127,7 +128,7 @@ export const HistoryView: React.FC = () => {
 
   const submitRating = async () => {
     if (!rateTarget) return;
-    await ApiService.rateBooking(rateTarget.bookingId, rating);
+    await MockService.rateService(rateTarget.bookingId, rating);
     setToast(`Cảm ơn bạn đã đánh giá ${rating}/5 cho ${rateTarget.bookingId}.`);
     setRateTarget(null);
     loadHistory();

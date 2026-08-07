@@ -7,6 +7,7 @@ import { ConfirmationModule } from '../confirmation/confirmation.module';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { CoreModule, CoreStore } from '../core/core.module';
 import { AuthUser } from '../auth/auth.types';
+import { ToolRegistry } from './tool-registry';
 
 type Permission = 'read' | 'draft_write' | 'preview' | 'confirmation_prepare' | 'transaction';
 interface ToolDefinition { name: string; description: string; input_schema: JsonObject; output_schema: JsonObject; permission: Permission; confirmation_required: boolean; version: string }
@@ -120,5 +121,10 @@ export class ToolController {
   execute(@Headers('x-internal-service-token') token: string | undefined, @Headers('x-actor-id') actorId: string | undefined, @Body() body: { name: string; arguments: JsonObject; actor_id?: string; conversation_id?: string }, @Req() request: CorrelatedRequest): Promise<object> { requireInternal(token, actorId, this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'), body.actor_id); return this.tools.execute(body.name, body.arguments, { sub: actorId!, email: 'internal@xone.local', role: 'customer' }, request.correlationId ?? 'cor_unknown', body.conversation_id).then((data) => ({ data, meta: { request_id: request.correlationId } })); }
 }
 
-@Module({ imports: [ConfirmationModule, CoreModule], controllers: [ToolController], providers: [ToolService, FoodClient], exports: [ToolService] })
+@Module({
+  imports: [ConfirmationModule, CoreModule],
+  controllers: [ToolController],
+  providers: [ToolService, FoodClient, ToolRegistry],
+  exports: [ToolService, ToolRegistry],
+})
 export class ToolModule {}

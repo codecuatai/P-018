@@ -1,14 +1,17 @@
 # X-One
 
-X-One is a backend-first conversational multi-service booking platform. This repository now contains a Food ordering vertical slice: FastAPI Food Service, owned PostgreSQL migration/seed, Gateway demo auth/tools/confirmation/payment sandbox/workflow, and a Gateway-only LangGraph agent adapter. Ride, Restaurant, and Healthcare remain health/config skeletons; the React web demo and Expo mobile shell remain mock-driven.
+X-One is a backend-first conversational multi-service booking platform. The local stack now contains Food ordering, Restaurant booking, Healthcare appointment, and Ride simulation slices, all reached through the NestJS Gateway and typed internal clients. The Agent emits typed requests and never executes domain side effects directly.
 
 ## What runs today
 
 | Component | Port | Status |
 | --- | ---: | --- |
-| API Gateway | 3000 | Food workflow slice: auth, tools, confirmation, sandbox payment, typed clients |
-| Agent Service | 8001 (internal Compose DNS only) | Structured LangGraph food intent/tool-request flow; configured Gemini uses native Pydantic JSON-Schema output with safe fallback |
-| Ride / Restaurant / Healthcare | 8101 / 8102 / 8103 (internal Compose DNS only) | Skeleton: health/config only |
+| Web | 5173 | Ride chat UI backed only by the public Gateway |
+| API Gateway | 3000 | Food, Restaurant, Healthcare, and Ride routing/orchestration with typed service clients |
+| Agent Service | 8001 (internal Compose DNS only) | Food graph plus typed Restaurant, Healthcare, and Ride request graphs; Gemini is optional with deterministic fallback |
+| Ride Service | 8101 (internal Compose DNS only) | Simulated quote/booking lifecycle with persistence and two explicit confirmations |
+| Restaurant Service | 8102 (internal Compose DNS only) | PostgreSQL-backed restaurant search, availability, holds, and reservation boundary |
+| Healthcare Service | 8103 (internal Compose DNS only) | PostgreSQL-backed departments, doctors, slots, and appointment holds; final confirmation remains gated |
 | Food Service | 8104 (internal Compose DNS only) | PostgreSQL-backed catalog/cart/order boundary with deterministic demo seed |
 | PostgreSQL | 5432 (internal Compose DNS only) | Local logical-database bootstrap |
 

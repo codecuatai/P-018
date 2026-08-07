@@ -35,6 +35,32 @@ class HealthcareChatRequest(BaseModel):
     client_turn_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+class RideChatRequest(BaseModel):
+    """Ride interpretation contract; the Gateway remains the workflow owner."""
+
+    message: str = Field(..., min_length=1, max_length=5000, description="Message from the user")
+    workflow_id: str = Field(..., min_length=1, max_length=128)
+    context: dict[str, Any] = Field(default_factory=dict)
+    client_turn_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class RideStatePatch(BaseModel):
+    active_domain: Literal["ride", "restaurant", "healthcare", "food"] | None = "ride"
+    slot_updates: list[dict[str, Any]] = Field(default_factory=list)
+    clear_fields: list[str] = Field(default_factory=list)
+    revision: int = Field(default=0, ge=0)
+    pending_action: str | None = None
+
+
+class RideChatResponse(BaseModel):
+    response: str
+    workflow_id: str
+    intent: str
+    missing_fields: list[str] = Field(default_factory=list)
+    state_patch: RideStatePatch
+    tool_request: ToolRequest | None = None
+
+
 class AgentResponse(BaseModel):
     response_type: Literal["text", "options", "cart", "order_preview", "confirmation_form", "tracking", "error"]
     message: str

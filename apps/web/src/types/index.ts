@@ -26,15 +26,17 @@ export interface UserProfile {
   momoPhone?: string;
   momoAccountName?: string;
   momoLinked?: boolean;
-  maskedCard?: string;
-  paymentMethodToken?: string;
+  cardNumber?: string;
   cardHolder?: string;
+  cardExpiry?: string;
+  cardCvv?: string;
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountName?: string;
+  cashNote?: string;
 }
 
-export type UserRole = "admin" | "operator" | "customer" | "provider";
+export type UserRole = "admin" | "customer";
 
 export interface AuthUser {
   id: string;
@@ -72,7 +74,7 @@ export interface AdminDashboardSummary {
 
 export type BookingStatus = "pending_confirmation" | "confirmed" | "cancelled" | "completed";
 export type PaymentStatus = "unpaid" | "paid" | "refunded";
-export type PaymentMethod = "momo" | "bank_transfer" | "card";
+export type PaymentMethod = "momo" | "bank_transfer" | "card" | "cash";
 
 export interface ServiceTicket {
   id: string;
@@ -144,7 +146,6 @@ export interface Message {
   handoffInfo?: SupportTicketContext;
   rideOptions?: RideVehicleOption[];
   demoFlow?: DemoFlowResult;
-  customCombo?: boolean;
 }
 
 export type DemoFlowKind = "ride" | "medical_ride" | "partial_failure" | "human_handoff";

@@ -88,3 +88,20 @@ async def test_healthcare_chat_returns_typed_request_without_calling_domain(clie
 async def test_healthcare_chat_requires_internal_auth(client):
     response = await client.post("/api/v1/healthcare-chat", json={"message": "dat lich kham"})
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ride_chat_returns_typed_quote_request(client):
+    response = await client.post(
+        "/api/v1/ride-chat",
+        json={
+            "message": "from 1 Main Street to 2 Lake Road by car 4",
+            "workflow_id": "wf-ride-agent-1",
+        },
+        headers={"X-Internal-Service-Token": "test-token"},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["intent"] == "request_ride_quote"
+    assert data["tool_request"]["tool_name"] == "ride.quote.create"
+    assert data["tool_request"]["risk_level"] == "READ"

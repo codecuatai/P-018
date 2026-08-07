@@ -19,3 +19,6 @@ Write-Host 'Restaurant Service migrations applied.'
 Get-Content 'services/healthcare-service/migrations/001_healthcare_booking.sql' | docker compose --env-file $envFile exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1
 if ($LASTEXITCODE -ne 0) { throw 'Healthcare Service migration failed.' }
 Write-Host 'Healthcare Service migrations applied.'
+docker compose --env-file $envFile exec -T ride-service alembic upgrade head
+if ($LASTEXITCODE -ne 0) { throw 'Ride Service migration failed.' }
+Write-Host 'Ride Service migrations applied.'

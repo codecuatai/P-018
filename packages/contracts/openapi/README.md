@@ -9,3 +9,9 @@ Healthcare uses the same Gateway-only orchestration boundary at
 slot, hold, cancel, or final-confirmation requests; the Gateway dispatches only
 read and reversible requests. Final appointment confirmation remains blocked
 until the explicit confirmation/payment evidence flow is connected.
+
+The Ride contracts are captured in `agent-service.v1.yaml`, `ride-service-v1.yaml`,
+and `gateway-public.v1.yaml`; they describe the internal typed interpretation and
+the two Gateway confirmation boundaries. The current Gateway uses small typed
+adapters with runtime response validation. No generated-client toolchain is
+configured yet; do not hand-edit generated output when one is introduced.
