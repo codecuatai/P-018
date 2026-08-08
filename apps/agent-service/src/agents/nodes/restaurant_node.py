@@ -51,6 +51,21 @@ def _parse_date(query: str, now: datetime) -> str | None:
     return None
 
 
+def _matches_restaurant_name(name: str, query: str) -> bool:
+    folded_name = _fold(name)
+    folded_query = _fold(query)
+    if folded_name in folded_query:
+        return True
+    stop_words = {"va", "và", "and", "nha", "hang"}
+    name_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", folded_name)
+        if token not in stop_words
+    }
+    query_tokens = set(re.findall(r"[a-z0-9]+", folded_query))
+    return bool(name_tokens) and name_tokens.issubset(query_tokens)
+
+
 def _extract_slots(query: str, previous: dict[str, Any], now: datetime) -> dict[str, Any]:
     slots = dict(previous)
     folded = _fold(query)
@@ -81,14 +96,15 @@ def _extract_slots(query: str, previous: dict[str, Any], now: datetime) -> dict[
 
     tool_result = previous.get("_tool_result")
     if isinstance(tool_result, dict):
-        items = tool_result.get("data", {}).get("items", []) if isinstance(tool_result.get("data"), dict) else []
+        result_data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else tool_result
+        items = result_data.get("items", []) if isinstance(result_data, dict) else []
         if items:
             selected = None
             if any(term in folded for term in ("cai thu nhat", "thu nhat", "dau tien", "so 1")):
                 selected = items[0]
             else:
                 for item in items:
-                    if _fold(str(item.get("name", ""))) in folded:
+                    if _matches_restaurant_name(str(item.get("name", "")), query):
                         selected = item
                         break
             if selected:
@@ -165,7 +181,8 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             ))
             return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
         elif tool_name == "restaurant.create_hold" and _is_confirmation(query):
-            hold_data = context.get("tool_result", {}).get("data", {})
+            hold_result = context.get("tool_result", {})
+            hold_data = hold_result.get("data") if isinstance(hold_result, dict) and isinstance(hold_result.get("data"), dict) else hold_result
             tool_request = validate_tool_request(ToolRequest(
                 tool_name="restaurant.create_reservation", risk_level="FINANCIAL_OR_FINAL",
                 arguments={"restaurant_id": slots.get("restaurant_id"), "party_size": slots.get("party_size"), "start_at": slots.get("start_at"), "duration_minutes": slots.get("duration_minutes", 120), "hold_id": hold_data.get("id")},

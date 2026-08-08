@@ -28,6 +28,34 @@ async def test_restaurant_selection_advances_to_availability_check():
 
 
 @pytest.mark.asyncio
+async def test_restaurant_selection_matches_natural_language_name_tokens():
+    result = await classify_and_extract({
+        "query": "chon pho va tra heritage",
+        "workflow_id": "wf-flow",
+        "turn_id": "2",
+        "intent": "restaurant_booking",
+        "slots": {},
+        "context": {
+            "tool_name": "restaurant.search",
+            "tool_result": {
+                "items": [{"id": "r1", "name": "Phở & Trà Heritage"}],
+                "total": 1,
+            },
+            "slots": {
+                "party_size": 3,
+                "local_date": "2099-01-01",
+                "local_time": "20:00",
+                "start_at": "2099-01-01T20:00:00+07:00",
+                "location": "Ha Noi",
+            },
+        },
+    })
+
+    assert result["tool_request"]["tool_name"] == "restaurant.check_availability"
+    assert result["tool_request"]["arguments"]["restaurant_id"] == "r1"
+
+
+@pytest.mark.asyncio
 async def test_availability_confirmation_creates_hold_then_reservation():
     slots = {
         "restaurant_id": "r1",

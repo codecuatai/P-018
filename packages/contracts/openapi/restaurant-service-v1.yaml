@@ -1,21 +1,31 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: X-One Restaurant Service
-  version: 1.0.0
+  version: 1.1.0
 paths:
   /v1/restaurants:
     get:
       summary: Discover active restaurants
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
       responses:
-        '200': {description: Success}
+        '200':
+          description: Restaurant list envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
   /v1/restaurants/{restaurant_id}/availability:
     post:
       summary: Check table availability
       parameters:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityRequest'}}}
       responses:
-        '200': {description: Success}
+        '200':
+          description: Availability envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
         '404': {description: Restaurant not found}
   /v1/reservation-holds:
     post:
@@ -24,6 +34,9 @@ paths:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/HoldRequest'}}}
       responses:
         '201': {description: Hold created or replayed}
         '409': {description: Conflict}
@@ -34,6 +47,9 @@ paths:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ReservationRequest'}}}
       responses:
         '201': {description: Reservation created or replayed}
         '409': {description: Conflict}
@@ -54,3 +70,39 @@ components:
       in: header
       required: true
       schema: {type: string}
+  schemas:
+    Envelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}
+    AvailabilityRequest:
+      type: object
+      required: [party_size, start_at]
+      additionalProperties: false
+      properties:
+        party_size: {type: integer, minimum: 1}
+        start_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
+        seating_type: {type: [string, 'null']}
+    HoldRequest:
+      type: object
+      required: [restaurant_id, party_size, start_at]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string}
+        party_size: {type: integer, minimum: 1}
+        start_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
+    ReservationRequest:
+      type: object
+      required: [restaurant_id, party_size, start_at]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string}
+        party_size: {type: integer, minimum: 1}
+        start_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
+        special_requests: {type: [string, 'null']}
+        hold_id: {type: [string, 'null']}

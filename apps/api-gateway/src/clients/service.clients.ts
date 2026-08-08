@@ -233,6 +233,7 @@ export interface RestaurantTool {
   arguments: Record<string, unknown>;
   workflow_id: string;
   tool_call_id: string;
+  schema_version: string;
   idempotency_key?: string;
 }
 
@@ -242,6 +243,7 @@ export interface HealthcareTool {
   arguments: Record<string, unknown>;
   workflow_id: string;
   tool_call_id: string;
+  schema_version: string;
   idempotency_key?: string;
 }
 
@@ -364,21 +366,23 @@ export class RestaurantClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'RESTAURANT_SERVICE_URL'); }
 
   async executeTool(tool: RestaurantTool, actorId: string, correlationId: string): Promise<unknown> {
-    const headers: Record<string, string> = {
-      'X-Internal-Service-Token': this.internalToken,
-      'X-Actor-Id': actorId,
-      'X-Correlation-Id': correlationId,
-      'X-Workflow-Id': tool.workflow_id,
+    const context: ServiceCallContext = {
+      correlationId,
+      workflowId: tool.workflow_id,
+      toolCallId: tool.tool_call_id,
     };
-    let url = `${this.baseUrl}/v1/restaurants`;
+    let path = '/v1/restaurants';
     let method = 'GET';
     let body: string | undefined;
+    let headers: Record<string, string> = actorHeaders(actorId);
+    let profile = operationProfile('restaurant.search');
     if (tool.tool_name === 'restaurant.get') {
-      url += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}`;
+      path += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}`;
+      profile = operationProfile('restaurant.get');
     } else if (tool.tool_name === 'restaurant.check_availability') {
-      url += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}/availability`;
+      path += `/${encodeURIComponent(String(tool.arguments.restaurant_id))}/availability`;
       method = 'POST';
-      headers['Content-Type'] = 'application/json';
+      profile = operationProfile('restaurant.availability');
       body = JSON.stringify({
         party_size: tool.arguments.party_size,
         start_at: tool.arguments.start_at,
@@ -391,34 +395,23 @@ export class RestaurantClient extends InternalServiceClient {
         const value = tool.arguments[key];
         if (value !== undefined && value !== null) query.set(key, String(value));
       }
-      url += `?${query.toString()}`;
+      path += `?${query.toString()}`;
     } else if (tool.tool_name === 'restaurant.create_hold') {
-      url = `${this.baseUrl}/v1/reservation-holds`;
+      path = '/v1/reservation-holds';
       method = 'POST';
-      headers['Content-Type'] = 'application/json';
-      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      profile = operationProfile('restaurant.hold.create');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
       body = JSON.stringify(tool.arguments);
     } else if (tool.tool_name === 'restaurant.create_reservation') {
-      url = `${this.baseUrl}/v1/reservations`;
+      path = '/v1/reservations';
       method = 'POST';
-      headers['Content-Type'] = 'application/json';
-      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      profile = operationProfile('restaurant.reservation.create');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
       body = JSON.stringify(tool.arguments);
     } else {
       throw new Error(`Unsupported restaurant tool: ${tool.tool_name}`);
     }
-    const response = await fetch(url, { method, headers, body });
-    if (!response.ok) {
-      let detail = `RESTAURANT_SERVICE_${response.status}`;
-      try {
-        const payload = await response.json() as { code?: string; detail?: string };
-        detail = payload.code ?? payload.detail ?? detail;
-      } catch {
-        // Keep a safe status-based error when the service response is not JSON.
-      }
-      return { error: detail, status: response.status };
-    }
-    return await response.json();
+    return this.request(path, context, { method, body }, headers, profile, envelopeValue);
   }
 }
 
@@ -426,53 +419,74 @@ export class RestaurantClient extends InternalServiceClient {
 export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
 
-  async executeTool(tool: HealthcareTool, actorId: string, correlationId: string): Promise<unknown> {
-    if (tool.risk_level === 'FINANCIAL_OR_FINAL' || tool.tool_name === 'healthcare.confirm_appointment') {
+  get defaultPatientId(): number {
+    return this.config.get<number>('HEALTHCARE_DEFAULT_PATIENT_ID', 1);
+  }
+
+  async getAppointment(appointmentId: number, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.request(
+      `/api/v1/appointments/${encodeURIComponent(String(appointmentId))}`,
+      { correlationId },
+      { method: 'GET' },
+      actorHeaders(actorId),
+      operationProfile('healthcare.appointment.get'),
+      (payload) => asJsonObject(envelopeValue(payload), 'Healthcare appointment'),
+    );
+  }
+
+  async acknowledgePayment(appointmentId: number, actorId: string, correlationId: string, idempotencyKey: string): Promise<JsonObject> {
+    return this.request(
+      '/api/v1/payment/webhook',
+      { correlationId },
+      { method: 'POST', body: JSON.stringify({ appointment_id: appointmentId }) },
+      writeHeaders(actorId, idempotencyKey),
+      operationProfile('healthcare.payment.acknowledge'),
+      (payload) => asJsonObject(envelopeValue(payload), 'Healthcare payment acknowledgement'),
+    );
+  }
+
+  async executeTool(tool: HealthcareTool, actorId: string, correlationId: string, options: { allowFinal?: boolean } = {}): Promise<unknown> {
+    if ((tool.risk_level === 'FINANCIAL_OR_FINAL' || tool.tool_name === 'healthcare.confirm_appointment') && !options.allowFinal) {
       throw new Error('CONFIRMATION_REQUIRED');
     }
     let path: string;
     let method = 'GET';
     let body: string | undefined;
-    const headers: Record<string, string> = {
-      'X-Internal-Service-Token': this.internalToken,
-      'X-Actor-Id': actorId,
-      'X-Correlation-Id': correlationId,
-      'X-Workflow-Id': tool.workflow_id,
-    };
+    let headers: Record<string, string> = actorHeaders(actorId);
+    let profile = operationProfile('healthcare.departments.list');
     if (tool.tool_name === 'healthcare.list_departments') {
       path = '/api/v1/departments';
     } else if (tool.tool_name === 'healthcare.list_slots') {
       const department = String(tool.arguments.department ?? '');
       path = `/api/v1/doctors?department=${encodeURIComponent(department)}`;
+      profile = operationProfile('healthcare.doctors.list');
     } else if (tool.tool_name === 'healthcare.hold_slot') {
       path = '/api/v1/slots/hold';
       method = 'POST';
-      headers['Content-Type'] = 'application/json';
-      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      profile = operationProfile('healthcare.hold.create');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
       body = JSON.stringify(tool.arguments);
+    } else if (tool.tool_name === 'healthcare.confirm_appointment') {
+      path = `/api/v1/appointments/${encodeURIComponent(String(tool.arguments.appointment_id))}/confirm`;
+      method = 'POST';
+      profile = operationProfile('healthcare.appointment.confirm');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
     } else if (tool.tool_name === 'healthcare.cancel_appointment') {
       path = `/api/v1/appointments/${encodeURIComponent(String(tool.arguments.appointment_id))}/cancel`;
       method = 'POST';
-      headers['Idempotency-Key'] = tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`;
+      profile = operationProfile('healthcare.appointment.cancel');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
     } else {
       throw new Error(`Unsupported healthcare tool: ${tool.tool_name}`);
     }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
-    try {
-      const response = await fetch(`${this.baseUrl}${path}`, { method, headers, body, signal: controller.signal });
-      const payload = await response.json().catch(() => ({})) as JsonObject;
-      if (!response.ok) {
-        const detail = typeof payload.detail === 'object' && payload.detail !== null ? payload.detail as JsonObject : payload;
-        return { error: typeof detail.code === 'string' ? detail.code : `HEALTHCARE_SERVICE_${response.status}`, status: response.status };
-      }
-      return payload.data ?? payload;
-    } catch {
-      return { error: 'UPSTREAM_UNAVAILABLE', status: 503 };
-    } finally {
-      clearTimeout(timeout);
-    }
+    return this.request(
+      path,
+      { correlationId, workflowId: tool.workflow_id, toolCallId: tool.tool_call_id },
+      { method, body },
+      headers,
+      profile,
+      envelopeValue,
+    );
   }
 }
 
@@ -526,11 +540,17 @@ function responseError(
   payload: unknown,
 ): ServiceCallError {
   const problem = isRecord(payload) ? payload : {};
-  const code = typeof problem.code === 'string' ? problem.code : 'DOWNSTREAM_HTTP_ERROR';
-  const detail = typeof problem.detail === 'string'
-    ? problem.detail
-    : 'Internal service request failed.';
-  const retryableHint = problem.retryable === true;
+  const nested = isRecord(problem.detail) ? problem.detail : {};
+  const rawDetail = typeof problem.detail === 'string' ? problem.detail : typeof nested.detail === 'string' ? nested.detail : undefined;
+  const code = typeof problem.code === 'string'
+    ? problem.code
+    : typeof nested.code === 'string'
+      ? nested.code
+      : rawDetail && /^[A-Z][A-Z0-9_]{2,}$/.test(rawDetail)
+        ? rawDetail
+        : 'DOWNSTREAM_HTTP_ERROR';
+  const detail = rawDetail ?? 'Internal service request failed.';
+  const retryableHint = problem.retryable === true || nested.retryable === true;
   return new ServiceCallError({
     service: profile.serviceId,
     operation: profile.operationId,
@@ -569,6 +589,18 @@ function envelopeData(payload: unknown): Record<string, unknown> {
     throw new Error('Internal service returned an invalid envelope.');
   }
   return payload.data;
+}
+
+function envelopeValue(payload: unknown): unknown {
+  if (!isRecord(payload) || !('data' in payload)) {
+    throw new Error('Internal service returned an invalid envelope.');
+  }
+  return payload.data;
+}
+
+function asJsonObject(value: unknown, resource: string): JsonObject {
+  if (!isRecord(value)) throw new Error(`${resource} response is not an object.`);
+  return value;
 }
 
 function parseAgentDecision(data: Record<string, unknown>): AgentDecision {

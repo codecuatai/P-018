@@ -11,7 +11,7 @@ X-One is a backend-first conversational multi-service booking platform. The loca
 | Agent Service | 8001 (internal Compose DNS only) | Food graph plus typed Restaurant, Healthcare, and Ride request graphs; Gemini is optional with deterministic fallback |
 | Ride Service | 8101 (internal Compose DNS only) | Simulated quote/booking lifecycle with persistence and two explicit confirmations |
 | Restaurant Service | 8102 (internal Compose DNS only) | PostgreSQL-backed restaurant search, availability, holds, and reservation boundary |
-| Healthcare Service | 8103 (internal Compose DNS only) | PostgreSQL-backed departments, doctors, slots, and appointment holds; final confirmation remains gated |
+| Healthcare Service | 8103 (internal Compose DNS only) | PostgreSQL-backed departments, doctors, slots, payment acknowledgement, appointment holds/final confirmation, cancellation, and slot reuse |
 | Food Service | 8104 (internal Compose DNS only) | PostgreSQL-backed catalog/cart/order boundary with deterministic demo seed |
 | PostgreSQL | 5432 (internal Compose DNS only) | Local logical-database bootstrap |
 

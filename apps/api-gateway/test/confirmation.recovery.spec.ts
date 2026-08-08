@@ -41,7 +41,9 @@ function dependencies(confirmation: ReturnType<typeof cancellationConfirmation>)
   };
   const payments = { refund: jest.fn().mockResolvedValue({ status: 'FAILED' }) };
   const config = { get: jest.fn().mockReturnValue(600) };
-  return { store, food, payments, config, service: new ConfirmationService(store as never, food as never, payments as never, config as never) };
+  const restaurant = { executeTool: jest.fn() };
+  const healthcare = { executeTool: jest.fn(), getAppointment: jest.fn() };
+  return { store, food, payments, config, restaurant, healthcare, service: new ConfirmationService(store as never, food as never, payments as never, config as never, restaurant as never, healthcare as never) };
 }
 
 describe('confirmation refund terminal semantics', () => {

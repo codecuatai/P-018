@@ -5,10 +5,13 @@ import unicodedata
 from typing import Any
 
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, Field
 
 from src.agents.policies.healthcare_policy import validate_tool_request
 from src.agents.state import AgentState
+from src.config import get_settings
 from src.models.schemas import ToolRequest
+from src.services.llm import GeminiAdapter
 
 DEPARTMENT_ALIASES = {
     "than kinh": "Than kinh",
@@ -27,6 +30,25 @@ DEPARTMENT_ALIASES = {
     "kham benh": "Kham benh",
 }
 
+SYMPTOM_MARKERS = (
+    "dau",
+    "buon non",
+    "non",
+    "sot",
+    "ho",
+    "met",
+    "chong mat",
+    "tieu chay",
+    "tao bon",
+    "ngua",
+    "phat ban",
+)
+
+
+class DepartmentSelection(BaseModel):
+    department: str | None = None
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
 
 def _fold(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value.lower())
@@ -38,7 +60,7 @@ def _healthcare_message(query: str, previous_intent: str | None) -> bool:
     folded = _fold(query)
     if previous_intent == "healthcare_booking":
         return True
-    return any(term in folded for term in ("suc khoe", "bac si", "kham", "benh vien", "chuyen khoa", "dat lich y te"))
+    return any(term in folded for term in ("suc khoe", "bac si", "kham", "benh vien", "chuyen khoa", "dat lich y te", "huy lich", "huy cuoc hen", *SYMPTOM_MARKERS))
 
 
 def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dict[str, Any]:
@@ -103,6 +125,57 @@ def _tool_request(
     return validate_tool_request(request).model_dump()
 
 
+def _tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", _fold(value))
+        if len(token) > 2 and token not in {"khoa", "noi", "ngoai", "benh", "kham"}
+    }
+
+
+def _deterministic_department(query: str, departments: list[dict[str, Any]]) -> str | None:
+    query_tokens = _tokens(query)
+    if not query_tokens:
+        return None
+    scored: list[tuple[int, str]] = []
+    for department in departments:
+        name = str(department.get("name", ""))
+        description = str(department.get("description", ""))
+        score = len(query_tokens & _tokens(f"{name} {description}"))
+        if score:
+            scored.append((score, name))
+    scored.sort(reverse=True)
+    if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
+        return None
+    return scored[0][1]
+
+
+async def _select_department(query: str, departments: list[dict[str, Any]]) -> str | None:
+    if not departments:
+        return None
+    settings = get_settings()
+    if settings.agent_model_mode == "gemini" and settings.gemini_api_key:
+        try:
+            prompt = (
+                "Bạn hỗ trợ chọn chuyên khoa dựa trên mô tả dữ liệu được cung cấp. "
+                "Chỉ chọn một tên khoa đúng y nguyên trong danh sách hoặc trả null. "
+                "Không chẩn đoán bệnh và không đưa lời khuyên điều trị.\n"
+                f"Triệu chứng người dùng: {query}\n"
+                f"Danh sách chuyên khoa: {departments}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, DepartmentSelection)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            parsed = raw if isinstance(raw, DepartmentSelection) else DepartmentSelection.model_validate(raw)
+            if parsed.department and parsed.confidence >= 0.55 and any(parsed.department == item.get("name") for item in departments):
+                return parsed.department
+        except Exception:
+            # Candidate presentation remains the safe fallback when provider
+            # output is unavailable or does not match authoritative data.
+            pass
+    return _deterministic_department(query, departments)
+
+
 def _tool_result_response(tool_name: str | None, result: Any) -> str:
     if isinstance(result, dict) and result.get("error"):
         return "Mình chưa thể lấy dữ liệu y tế lúc này. Bạn thử lại sau nhé."
@@ -114,8 +187,13 @@ def _tool_result_response(tool_name: str | None, result: Any) -> str:
         if not result:
             return "Mình chưa tìm thấy lựa chọn phù hợp. Bạn thử chuyên khoa khác nhé."
         if isinstance(result[0], dict) and "available_slots" in result[0]:
-            names = [str(item.get("name", "bác sĩ")) for item in result[:5]]
-            return "Mình tìm thấy các bác sĩ: " + ", ".join(names) + ". Bạn chọn slot, ví dụ 'slot 1', nhé."
+            candidates = []
+            for item in result[:5]:
+                doctor_name = str(item.get("name", "bác sĩ"))
+                actual_slots = item.get("available_slots", [])
+                slot_ids = [str(slot.get("id")) for slot in actual_slots if isinstance(slot, dict) and slot.get("id") is not None]
+                candidates.append(f"{doctor_name} (slot {', '.join(slot_ids) or 'chưa có'})")
+            return "Mình tìm thấy các bác sĩ: " + "; ".join(candidates) + ". Bạn chọn bác sĩ và slot theo mã hiển thị nhé."
         names = [str(item.get("name", "chuyên khoa")) for item in result[:8] if isinstance(item, dict)]
         return "Các chuyên khoa hiện có: " + ", ".join(names) + "."
     return "Mình đã nhận được kết quả từ Healthcare Service."
@@ -135,6 +213,24 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     folded = _fold(query)
 
     if context.get("tool_result_only") and tool_result is not None:
+        if context.get("tool_name") == "healthcare.list_departments" and isinstance(tool_result, list):
+            departments = [item for item in tool_result if isinstance(item, dict)]
+            selected_department = await _select_department(query, departments)
+            if selected_department:
+                slots["department"] = selected_department
+                return {
+                    "intent": "healthcare_booking",
+                    "slots": slots,
+                    "status": "TOOL_REQUEST_READY",
+                    "response": "Mình đã chọn chuyên khoa phù hợp từ mô tả của Healthcare Service và sẽ lấy bác sĩ, khung giờ còn trống.",
+                    "tool_request": _tool_request(
+                        "healthcare.list_slots",
+                        "READ",
+                        {"department": selected_department},
+                        workflow_id,
+                        turn_id,
+                    ),
+                }
         return {
             "intent": "healthcare_booking",
             "slots": slots,
@@ -142,11 +238,10 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             "response": _tool_result_response(context.get("tool_name"), tool_result),
         }
 
-    if any(term in folded for term in ("xac nhan lich", "xac nhan dat", "hoan tat lich")) or (
-        "xac nhan" in folded and slots.get("appointment_id")
+    if slots.get("appointment_id") and (
+        any(term in folded for term in ("xac nhan lich", "xac nhan dat", "hoan tat lich"))
+        or "xac nhan" in folded
     ):
-        if not slots.get("appointment_id"):
-            return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["appointment_id"], "status": "NEEDS_INPUT"}
         return {
             "intent": "healthcare_booking",
             "slots": slots,
@@ -202,7 +297,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
 
     if not slots.get("patient_id"):
         return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["patient_id"], "status": "NEEDS_INPUT"}
-    if not _is_confirmation(query) and not context.get("tool_result"):
+    if not _is_confirmation(query):
         return {"intent": "healthcare_booking", "slots": slots, "status": "NEEDS_INPUT", "missing_slots": ["confirmation"]}
 
     return {

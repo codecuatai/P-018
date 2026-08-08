@@ -67,6 +67,46 @@ async def test_restaurant_chat_merges_follow_up_turns(client):
 
 
 @pytest.mark.asyncio
+async def test_restaurant_chat_reuses_read_result_for_selection(client):
+    headers = {"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-selection"}
+    workflow_id = "wf-selection-result"
+    first = await client.post(
+        "/api/v1/restaurant-chat",
+        json={"message": "dat ban cho 2 nguoi ngay mai luc 19h o Ha Noi", "workflow_id": workflow_id},
+        headers=headers,
+    )
+    first_data = first.json()["data"]
+    assert first_data["tool_request"]["tool_name"] == "restaurant.search"
+
+    grounded = await client.post(
+        "/api/v1/restaurant-chat",
+        json={
+            "message": "dat ban cho 2 nguoi ngay mai luc 19h o Ha Noi",
+            "workflow_id": workflow_id,
+            "context": {
+                "slots": first_data["slots"],
+                "intent": first_data["intent"],
+                "tool_name": "restaurant.search",
+                "tool_result": {"items": [{"id": "r1", "name": "Pho Heritage"}], "total": 1},
+                "tool_result_only": True,
+            },
+        },
+        headers=headers,
+    )
+    assert grounded.json()["data"]["status"] == "COMPLETED"
+
+    selected = await client.post(
+        "/api/v1/restaurant-chat",
+        json={"message": "chon pho heritage", "workflow_id": workflow_id},
+        headers=headers,
+    )
+    selected_data = selected.json()["data"]
+    assert selected_data["status"] == "TOOL_REQUEST_READY"
+    assert selected_data["tool_request"]["tool_name"] == "restaurant.check_availability"
+    assert selected_data["tool_request"]["arguments"]["restaurant_id"] == "r1"
+
+
+@pytest.mark.asyncio
 async def test_healthcare_chat_returns_typed_request_without_calling_domain(client):
     response = await client.post(
         "/api/v1/healthcare-chat",

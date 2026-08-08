@@ -5,9 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATION_PATTERN = re.compile(r"((?:apps/api-gateway|services/food-service)/migrations/[^'\"\s]+\.sql)")
+MIGRATION_PATTERN = re.compile(r"((?:apps/api-gateway|services/food-service|services/healthcare-service)/migrations/[^'\"\s]+\.sql)")
 
 
 def migration_paths(path: Path) -> list[str]:

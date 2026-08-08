@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # LLM adapter configuration. Deterministic fallback is used when no key is configured.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     api_gateway_internal_url: str = "http://localhost:3000"
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)

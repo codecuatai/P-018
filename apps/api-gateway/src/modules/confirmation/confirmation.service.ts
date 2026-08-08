@@ -2,7 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 
-import { FoodClient, JsonObject, UpstreamClientError } from '../../clients/service.clients';
+import { FoodClient, HealthcareClient, HealthcareTool, JsonObject, RestaurantClient, RestaurantTool, UpstreamClientError } from '../../clients/service.clients';
+import { ServiceCallError } from '../../resilience/service-call-error';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationClaim, ConfirmationRecord, CoreStore, PaymentRecord } from '../core/core.module';
 import { PaymentService } from '../payment/payment.service';
@@ -10,14 +11,35 @@ import { PaymentService } from '../payment/payment.service';
 function stableHash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function errorCode(error: unknown): string {
   if (error instanceof UpstreamClientError) return error.code;
+  if (error instanceof ServiceCallError) return error.code;
   if (error instanceof Error && ['REFUND_FAILED', 'REFUND_PENDING', 'REFUND_UNKNOWN'].includes(error.message)) return error.message;
   const response = error instanceof ConflictException ? error.getResponse() : undefined;
   return typeof response === 'object' && response !== null && 'code' in response ? String(response.code) : 'UPSTREAM_UNAVAILABLE';
 }
 
+type DomainFinalTool = RestaurantTool | HealthcareTool;
+const DOMAIN_CONFIRMATION_ACTIONS = new Set(['CREATE_RESTAURANT_RESERVATION', 'CONFIRM_HEALTHCARE_APPOINTMENT']);
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function domainAction(toolName: DomainFinalTool['tool_name']): string {
+  if (toolName === 'restaurant.create_reservation') return 'CREATE_RESTAURANT_RESERVATION';
+  if (toolName === 'healthcare.confirm_appointment') return 'CONFIRM_HEALTHCARE_APPOINTMENT';
+  throw new ConflictException({ code: 'INVALID_CONFIRMATION_ACTION', detail: 'Only final domain tools can create a confirmation.' });
+}
+
 @Injectable()
 export class ConfirmationService {
-  constructor(private readonly store: CoreStore, private readonly food: FoodClient, private readonly payments: PaymentService, private readonly config: ConfigService) {}
+  constructor(
+    private readonly store: CoreStore,
+    private readonly food: FoodClient,
+    private readonly payments: PaymentService,
+    private readonly config: ConfigService,
+    private readonly restaurant: RestaurantClient,
+    private readonly healthcare: HealthcareClient,
+  ) {}
 
   async prepare(user: AuthUser, payload: JsonObject, correlationId: string): Promise<ConfirmationRecord & { preview: JsonObject }> {
     const preview = await this.food.post('/api/v1/orders/preview', { cart_id: payload.cart_id, address_id: payload.address_id, user_id: user.sub }, correlationId, undefined, user.sub);
@@ -29,6 +51,72 @@ export class ConfirmationService {
     await this.store.createConfirmation(confirmation);
     await this.store.audit({ action: 'confirmation.created', actorId: user.sub, resourceId: confirmation.id, correlationId });
     return { ...confirmation, preview };
+  }
+
+  async prepareDomainConfirmation(
+    user: AuthUser,
+    tool: DomainFinalTool,
+    resource: JsonObject | undefined,
+    correlationId: string,
+  ): Promise<JsonObject> {
+    if (tool.risk_level !== 'FINANCIAL_OR_FINAL') {
+      throw new ConflictException({ code: 'INVALID_CONFIRMATION_ACTION', detail: 'The proposed tool is not final.' });
+    }
+    const action = domainAction(tool.tool_name);
+    const args = tool.arguments;
+    if (!isRecord(args)) throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The final tool arguments are invalid.' });
+    if (action === 'CREATE_RESTAURANT_RESERVATION' && typeof args.hold_id !== 'string') {
+      throw new ConflictException({ code: 'HOLD_REQUIRED', detail: 'A valid restaurant hold is required before confirmation.' });
+    }
+    if (action === 'CONFIRM_HEALTHCARE_APPOINTMENT' && !Number.isInteger(Number(args.appointment_id))) {
+      throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'A valid appointment is required before confirmation.' });
+    }
+
+    const snapshot = resource ?? {};
+    const amount = Math.max(0, Math.trunc(Number(snapshot.price ?? args.price ?? 0) || 0));
+    const currency = String(snapshot.currency ?? args.currency ?? 'VND').toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The confirmation currency is invalid.' });
+    const quoteVersion = String(snapshot.resource_version ?? args.resource_version ?? args.hold_id ?? args.appointment_id ?? 'v1');
+    const toolPayload = {
+      tool_name: tool.tool_name,
+      risk_level: tool.risk_level,
+      arguments: args,
+      workflow_id: tool.workflow_id,
+      tool_call_id: tool.tool_call_id,
+      schema_version: tool.schema_version ?? '1',
+      idempotency_key: tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`,
+    };
+    const payload = { ...toolPayload, resource: snapshot };
+    const confirmation: ConfirmationRecord = {
+      id: `cnf_${randomUUID().replaceAll('-', '').slice(0, 12)}`,
+      actorId: user.sub,
+      action,
+      payload,
+      payloadHash: stableHash(payload),
+      quoteVersion,
+      amount,
+      currency,
+      expiresAt: Date.now() + this.config.get<number>('CONFIRMATION_TTL_SECONDS', 600) * 1000,
+      createdAt: new Date().toISOString(),
+      status: 'PENDING',
+      version: 0,
+    };
+    await this.store.createConfirmation(confirmation);
+    await this.store.audit({ action: 'domain_confirmation.created', actorId: user.sub, resourceId: confirmation.id, correlationId, metadata: { action, workflow_id: tool.workflow_id } });
+    return {
+      id: confirmation.id,
+      action: confirmation.action,
+      status: confirmation.status,
+      workflow_id: tool.workflow_id,
+      tool_name: tool.tool_name,
+      tool_call_id: tool.tool_call_id,
+      arguments: args,
+      quote_version: confirmation.quoteVersion,
+      amount: confirmation.amount,
+      currency: confirmation.currency,
+      expires_at: new Date(confirmation.expiresAt).toISOString(),
+      ...(Object.keys(snapshot).length ? { resource: snapshot } : {}),
+    };
   }
 
   async get(id: string, actorId: string): Promise<ConfirmationRecord> {
@@ -55,6 +143,10 @@ export class ConfirmationService {
   }
 
   async execute(id: string, user: AuthUser, body: JsonObject, correlationId: string, idempotencyKey: string): Promise<JsonObject> {
+    const existing = await this.get(id, user.sub);
+    if (DOMAIN_CONFIRMATION_ACTIONS.has(existing.action)) {
+      return this.executeDomain(id, user, body, correlationId, idempotencyKey);
+    }
     const paymentMethod = body.payment_method;
     if (typeof paymentMethod !== 'string' || !['bank_transfer', 'card', 'e_wallet'].includes(paymentMethod)) throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Only payment_method is accepted for execution.' });
     const executionHash = stableHash({ confirmation_id: id, payment_method: paymentMethod, simulate_failure: body.simulate_failure === true, simulate_timeout: body.simulate_timeout === true });
@@ -109,6 +201,96 @@ export class ConfirmationService {
       }
       const result = { confirmation_id: id, code, detail: 'Execution could not be completed safely.' };
       await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_RETRYABLE', result, code);
+      throw error;
+    }
+  }
+
+  async executeDomain(
+    id: string,
+    user: AuthUser,
+    body: JsonObject,
+    correlationId: string,
+    idempotencyKey: string,
+    expectedAction?: string,
+    expectedWorkflowId?: string,
+  ): Promise<JsonObject> {
+    const confirmation = await this.get(id, user.sub);
+    if (!DOMAIN_CONFIRMATION_ACTIONS.has(confirmation.action) || (expectedAction && confirmation.action !== expectedAction)) {
+      throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Confirmation action does not match this workflow.' });
+    }
+    const workflowId = String(confirmation.payload.workflow_id ?? '');
+    if (!workflowId || (expectedWorkflowId && workflowId !== expectedWorkflowId) || (body.workflow_id !== undefined && body.workflow_id !== workflowId)) {
+      throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Confirmation workflow does not match the pending action.' });
+    }
+    if (body.action !== undefined && body.action !== confirmation.action) {
+      throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Confirmation action does not match the pending action.' });
+    }
+    for (const key of Object.keys(body)) {
+      if (!['workflow_id', 'action'].includes(key)) {
+        throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'Only workflow_id and action may accompany explicit confirmation.' });
+      }
+    }
+
+    const toolPayload = confirmation.payload;
+    const tool = {
+      tool_name: String(toolPayload.tool_name),
+      risk_level: String(toolPayload.risk_level) as DomainFinalTool['risk_level'],
+      arguments: isRecord(toolPayload.arguments) ? toolPayload.arguments : {},
+      workflow_id: workflowId,
+      tool_call_id: String(toolPayload.tool_call_id),
+      schema_version: String(toolPayload.schema_version ?? '1'),
+      idempotency_key: String(toolPayload.idempotency_key ?? `${workflowId}:${toolPayload.tool_call_id}`),
+    } as DomainFinalTool;
+    if (tool.risk_level !== 'FINANCIAL_OR_FINAL') {
+      throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The pending action is not a final operation.' });
+    }
+
+    if (confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
+      const appointmentId = Number(tool.arguments.appointment_id);
+      const appointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
+      if (appointment.is_paid !== true) {
+        throw new ConflictException({ code: 'PAYMENT_REQUIRED', detail: 'Appointment payment is required before confirmation.' });
+      }
+    }
+
+    const executionHash = stableHash({ confirmation_id: id, action: confirmation.action, workflow_id: workflowId, action_body: body });
+    const executionKey = `confirmation:${id}:${idempotencyKey}`;
+    const claim = await this.claim(id, user, executionKey, executionHash, { workflow_id: workflowId, action: confirmation.action, tool_request: tool });
+    if (claim.result) return claim.result;
+    if (!claim.confirmation || claim.state !== 'CLAIMED') {
+      throw new ConflictException({ code: 'CONFIRMATION_PROCESSING', detail: 'Confirmation is already being processed.', retryable: true });
+    }
+
+    try {
+      const toolResult = confirmation.action === 'CREATE_RESTAURANT_RESERVATION'
+        ? await this.restaurant.executeTool(tool as RestaurantTool, user.sub, correlationId)
+        : await this.healthcare.executeTool(tool as HealthcareTool, user.sub, correlationId, { allowFinal: true });
+      const result: JsonObject = {
+        confirmation_id: id,
+        action: confirmation.action,
+        workflow_id: workflowId,
+        tool_request: tool,
+        tool_result: isRecord(toolResult) ? toolResult : { data: toolResult },
+        ...(confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT' ? { payment: { status: 'SUCCEEDED', appointment_id: tool.arguments.appointment_id } } : {}),
+      };
+      await this.store.completeConfirmation(id, user.sub, executionKey, 'SUCCEEDED', result);
+      await this.store.audit({ action: 'domain_confirmation.executed', actorId: user.sub, resourceId: id, correlationId, metadata: { action: confirmation.action, workflow_id: workflowId } });
+      return result;
+    } catch (error: unknown) {
+      const retryable = error instanceof ServiceCallError
+        ? !['BUSINESS', 'CLIENT', 'CONTRACT'].includes(error.category)
+        : error instanceof UpstreamClientError
+          ? error.retryable
+          : false;
+      const code = errorCode(error);
+      await this.store.completeConfirmation(
+        id,
+        user.sub,
+        executionKey,
+        retryable ? 'FAILED_RETRYABLE' : 'FAILED_FINAL',
+        { confirmation_id: id, action: confirmation.action, code, detail: 'The final operation could not be completed safely.' },
+        code,
+      );
       throw error;
     }
   }

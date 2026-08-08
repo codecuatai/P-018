@@ -55,7 +55,9 @@ def seed_data():
     db.commit()
 
     print("Seeding Patient...")
-    patient = Patient(name="Nguyễn Văn Bệnh Nhân", phone="0987654321", blood_type="O+", medical_history="Cao huyết áp")
+    # Keep the local demo identity stable so the Gateway adapter can use its
+    # documented default without exposing an internal patient lookup to users.
+    patient = Patient(id=1, name="Nguyễn Văn Bệnh Nhân", phone="0987654321", blood_type="O+", medical_history="Cao huyết áp")
     db.add(patient)
     db.commit()
 

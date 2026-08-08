@@ -36,3 +36,50 @@ sequenceDiagram
 ```
 
 The Food flow is implemented for the backend slice. Final writes require an idempotency key from the first request, confirmation bound to action/payload/version/price/expiry, audit metadata, and an authoritative Food result. Payment success ends the request at `PAID -> RESTAURANT_CONFIRMING`; Food's due-workflow worker/lazy reconciliation advances later states. Restaurant rejection and cancellation are reconciled to one idempotent refund. Stale `PROCESSING` confirmations and `PENDING` payments are claimed/recovered by the Gateway worker using the same execution/payment keys.
+
+## Restaurant reservation
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant G as Gateway
+  participant A as Agent
+  participant R as Restaurant
+  U->>G: booking details
+  G->>A: typed Restaurant request
+  A-->>G: search / availability request
+  G->>R: authoritative search and availability
+  R-->>G: candidates and available table
+  U->>G: select restaurant and accept hold
+  G->>R: create reversible hold
+  R-->>G: hold expiry and resource version
+  G-->>U: explicit final confirmation required
+  U->>G: confirm reservation
+  G->>R: create reservation with idempotency key
+  R-->>G: CONFIRMED reservation
+```
+
+## Healthcare appointment
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant G as Gateway
+  participant A as Agent
+  participant H as Healthcare
+  U->>G: symptom or department request
+  G->>A: authoritative department/slot context
+  A-->>G: typed list/hold request
+  G->>H: list slots, then hold selected slot
+  H-->>G: DRAFT appointment and price
+  G-->>U: payment acknowledgement required
+  U->>G: local payment acknowledgement
+  G->>H: actor-scoped payment webhook
+  U->>G: explicit final confirmation
+  G->>H: confirm appointment
+  H-->>G: CONFIRMED appointment
+  U->>G: cancel appointment
+  G->>H: release slot; retain appointment history
+```
+
+Restaurant and Healthcare final actions are never inferred from the first model turn. Gateway confirmation records bind actor, workflow, action, normalized payload, resource/quote version, expiry, and idempotency evidence before the domain write.

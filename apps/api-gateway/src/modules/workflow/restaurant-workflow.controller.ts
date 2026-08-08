@@ -1,9 +1,10 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, Post, Req, UseGuards } from '@nestjs/common';
 
 import { AgentClient, JsonObject, RestaurantClient, RestaurantTool } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { DemoAuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
+import { ConfirmationService } from '../confirmation/confirmation.service';
 
 interface AuthenticatedRequest extends CorrelatedRequest {
   user: AuthUser;
@@ -26,11 +27,17 @@ interface RestaurantChatBody {
   context?: Record<string, unknown>;
 }
 
+interface RestaurantConfirmationBody {
+  confirmation_id: string;
+  workflow_id?: string;
+}
+
 @Controller('api/v1/restaurant-workflows')
 export class RestaurantWorkflowController {
   constructor(
     private readonly agentClient: AgentClient,
     private readonly restaurantClient: RestaurantClient,
+    private readonly confirmations: ConfirmationService,
   ) {}
 
   @Post('chat')
@@ -48,8 +55,24 @@ export class RestaurantWorkflowController {
     }, correlationId) as AgentResult;
     const toolRequest = agentResult.data?.tool_request as RestaurantTool | undefined ?? agentResult.tool_request;
     const requiresFinalConfirmation = toolRequest?.risk_level === 'FINANCIAL_OR_FINAL';
+    if (toolRequest && requiresFinalConfirmation) {
+      const pending = await this.confirmations.prepareDomainConfirmation(request.user, toolRequest, undefined, correlationId);
+      return {
+        data: {
+          response: 'Thông tin đặt bàn đã sẵn sàng. Bạn xác nhận lần cuối để tạo đặt bàn nhé.',
+          workflow_id: workflowId,
+          intent: agentResult.data?.intent ?? agentResult.intent,
+          slots: agentResult.data?.slots ?? agentResult.slots ?? {},
+          tool_request: toolRequest,
+          tool_result: null,
+          status: 'CONFIRMATION_REQUIRED',
+          pending_confirmation: pending,
+        },
+        meta: { request_id: request.correlationId },
+      };
+    }
     let toolResult: unknown = null;
-    if (toolRequest && !requiresFinalConfirmation) {
+    if (toolRequest) {
       toolResult = await this.restaurantClient.executeTool(
         toolRequest,
         actorId,
@@ -86,5 +109,25 @@ export class RestaurantWorkflowController {
       },
       meta: { request_id: request.correlationId },
     };
+  }
+
+  @Post('confirm')
+  @UseGuards(DemoAuthGuard)
+  async confirm(
+    @Body() body: RestaurantConfirmationBody,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    if (!body.confirmation_id) throw new BadRequestException({ code: 'INVALID_CONFIRMATION', detail: 'confirmation_id is required.' });
+    const result = await this.confirmations.executeDomain(
+      body.confirmation_id,
+      request.user,
+      body.workflow_id ? { workflow_id: body.workflow_id } : {},
+      request.correlationId ?? 'cor_unknown',
+      idempotencyKey ?? `restaurant:${body.confirmation_id}`,
+      'CREATE_RESTAURANT_RESERVATION',
+      body.workflow_id,
+    );
+    return { data: result, meta: { request_id: request.correlationId } };
   }
 }

@@ -46,5 +46,8 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['UPSTREAM_TIMEOUT_MS', 'CONFIRMATION_TTL_SECONDS', 'GATEWAY_WORKFLOW_POLL_INTERVAL_MS']) {
     if (config[name] !== undefined && (!Number.isInteger(Number(config[name])) || Number(config[name]) < 1)) throw new Error(`${name} must be a positive integer.`);
   }
+  if (config.HEALTHCARE_DEFAULT_PATIENT_ID !== undefined && (!Number.isInteger(Number(config.HEALTHCARE_DEFAULT_PATIENT_ID)) || Number(config.HEALTHCARE_DEFAULT_PATIENT_ID) < 1)) {
+    throw new Error('HEALTHCARE_DEFAULT_PATIENT_ID must be a positive integer.');
+  }
   return { ...config, PORT: port };
 }

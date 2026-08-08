@@ -93,6 +93,8 @@ async def restaurant_chat(
     previous = workflow_store.get(actor_id, workflow_id)
     merged_context = {**previous, **request.context}
     if not request.context.get("tool_result_only"):
+        # A rendered read result remains authoritative for the next user turn,
+        # but it must not force the agent into result-only response mode.
         merged_context.pop("tool_result_only", None)
     try:
         result = await restaurant_agent.ainvoke(
@@ -138,9 +140,10 @@ async def healthcare_chat(
         **request.context,
     }
     if not request.context.get("tool_result_only"):
+        # Keep the last authoritative tool result for the next user turn. This
+        # is what lets a confirmation answer resolve the held resource without
+        # asking the user to repeat an internal ID.
         merged_context.pop("tool_result_only", None)
-        merged_context.pop("tool_result", None)
-        merged_context.pop("tool_name", None)
     try:
         result = await healthcare_agent.ainvoke(
             {

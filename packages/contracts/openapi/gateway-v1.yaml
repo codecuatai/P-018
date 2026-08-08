@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.0.0
+  version: 1.1.0
 paths:
   /api/v1/healthcare-workflows/chat:
     post:
@@ -23,6 +23,42 @@ paths:
           description: Invalid request
         '502':
           description: Internal service failure
+  /api/v1/healthcare-workflows/payment:
+    post:
+      summary: Acknowledge the existing Healthcare payment mechanism for a held appointment
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HealthcarePaymentRequest'}
+      responses:
+        '200':
+          description: Payment acknowledged and the authoritative appointment returned
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/WorkflowEnvelope'}}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Payment could not be acknowledged}
+  /api/v1/healthcare-workflows/confirm:
+    post:
+      summary: Explicitly confirm a paid Healthcare appointment
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DomainConfirmationRequest'}
+      responses:
+        '200':
+          description: Appointment confirmed by the Healthcare Service
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/WorkflowEnvelope'}}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Payment, confirmation, or idempotency precondition failed}
   /api/v1/restaurant-workflows/chat:
     post:
       summary: Process restaurant booking conversation and dispatch safe read tools
@@ -43,12 +79,39 @@ paths:
           description: Invalid request
         '502':
           description: Internal service failure
+  /api/v1/restaurant-workflows/confirm:
+    post:
+      summary: Explicitly confirm a held Restaurant reservation
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DomainConfirmationRequest'}
+      responses:
+        '200':
+          description: Reservation created by the Restaurant Service
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/WorkflowEnvelope'}}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Confirmation or idempotency precondition failed}
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  parameters:
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 256
   schemas:
     HealthcareChatRequest:
       type: object
@@ -86,3 +149,27 @@ components:
         context:
           type: object
           additionalProperties: true
+        client_turn_id:
+          type: string
+          minLength: 1
+          maxLength: 100
+    HealthcarePaymentRequest:
+      type: object
+      required: [appointment_id]
+      additionalProperties: false
+      properties:
+        appointment_id: {type: integer, minimum: 1}
+        workflow_id: {type: string, minLength: 1, maxLength: 100}
+    DomainConfirmationRequest:
+      type: object
+      required: [confirmation_id]
+      additionalProperties: false
+      properties:
+        confirmation_id: {type: string, minLength: 1, maxLength: 128}
+        workflow_id: {type: string, minLength: 1, maxLength: 100}
+    WorkflowEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}

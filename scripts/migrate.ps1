@@ -17,6 +17,7 @@ docker compose --env-file $envFile exec -T restaurant-service alembic upgrade he
 if ($LASTEXITCODE -ne 0) { throw 'Restaurant Service migration failed.' }
 Write-Host 'Restaurant Service migrations applied.'
 Get-Content 'services/healthcare-service/migrations/001_healthcare_booking.sql' | docker compose --env-file $envFile exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1
+Get-Content 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' | docker compose --env-file $envFile exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1
 if ($LASTEXITCODE -ne 0) { throw 'Healthcare Service migration failed.' }
 Write-Host 'Healthcare Service migrations applied.'
 docker compose --env-file $envFile exec -T ride-service alembic upgrade head

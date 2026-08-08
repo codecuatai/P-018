@@ -1,0 +1,110 @@
+openapi: 3.1.0
+info:
+  title: X-One Healthcare Service
+  version: 1.1.0
+  description: Healthcare-owned appointment and slot state boundary. The Gateway is the only runtime caller.
+paths:
+  /api/v1/departments:
+    get:
+      summary: List authoritative departments and descriptions
+      security: [{internalServiceToken: []}]
+      responses: {'200': {description: Department envelope}}
+  /api/v1/doctors:
+    get:
+      summary: List doctors and actual available slot IDs for a department
+      security: [{internalServiceToken: []}]
+      parameters:
+        - in: query
+          name: department
+          required: true
+          schema: {type: string, minLength: 1}
+      responses: {'200': {description: Doctor and slot candidates}}
+  /api/v1/slots/hold:
+    post:
+      summary: Hold one slot; the Healthcare Service owns the appointment draft
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/HoldRequest'}}}
+      responses:
+        '200': {description: Held appointment}
+        '409': {description: Slot unavailable}
+  /api/v1/appointments/{appointment_id}:
+    get:
+      summary: Read an actor-owned appointment
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+      responses: {'200': {description: Appointment state}}
+  /api/v1/payment/webhook:
+    post:
+      summary: Existing local payment acknowledgement boundary
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PaymentRequest'}}}
+      responses: {'200': {description: Payment acknowledgement}}
+  /api/v1/appointments/{appointment_id}/confirm:
+    post:
+      summary: Confirm a paid appointment after Gateway confirmation evidence
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200': {description: Confirmed appointment}
+        '409': {description: Payment or state precondition failed}
+  /api/v1/appointments/{appointment_id}/cancel:
+    post:
+      summary: Cancel an actor-owned appointment and release its slot
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses: {'200': {description: Cancelled appointment}}
+components:
+  securitySchemes:
+    internalServiceToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Token
+  parameters:
+    ActorId:
+      in: header
+      name: X-Actor-Id
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema: {type: string, minLength: 1, maxLength: 256}
+    AppointmentId:
+      in: path
+      name: appointment_id
+      required: true
+      schema: {type: integer, minimum: 1}
+  schemas:
+    HoldRequest:
+      type: object
+      required: [slot_id, symptoms]
+      additionalProperties: false
+      properties:
+        slot_id: {type: integer, minimum: 1}
+        patient_id: {type: [integer, 'null'], minimum: 1}
+        symptoms: {type: string, minLength: 1, maxLength: 2000}
+    PaymentRequest:
+      type: object
+      required: [appointment_id]
+      additionalProperties: false
+      properties:
+        appointment_id: {type: integer, minimum: 1}

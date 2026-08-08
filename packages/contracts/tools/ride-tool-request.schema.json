@@ -12,7 +12,7 @@
   "$defs": {
     "base": {
       "type": "object",
-      "required": ["tool_name", "risk_level", "arguments", "workflow_id"],
+      "required": ["tool_name", "risk_level", "arguments", "workflow_id", "tool_call_id", "schema_version"],
       "properties": {
         "tool_name": { "type": "string" },
         "risk_level": {
@@ -24,10 +24,20 @@
           "minLength": 1,
           "maxLength": 128
         },
-        "idempotency_key": {
+        "tool_call_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "additionalProperties": false

@@ -1,5 +1,9 @@
 export type ChatResponse = {
   response: string;
+  workflow_id?: string;
+  intent?: string;
+  stage?: string;
+  data?: Record<string, unknown>;
 };
 
 // The browser-facing backend is the NestJS gateway, never an internal service.
@@ -18,7 +22,16 @@ export async function sendChatMessage(message: string): Promise<ChatResponse> {
     throw new Error(`Backend returned ${response.status}`);
   }
 
-  return response.json() as Promise<ChatResponse>;
+  const envelope = (await response.json()) as {
+    data?: ChatResponse & { message?: string };
+  };
+  if (!envelope.data) {
+    throw new Error("Backend returned an invalid response envelope");
+  }
+  return {
+    ...envelope.data,
+    response: envelope.data.response ?? envelope.data.message ?? "",
+  };
 }
 
 export { API_BASE_URL };

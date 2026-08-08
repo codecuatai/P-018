@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.database import Base
@@ -16,6 +16,7 @@ class AppointmentStatus(StrEnum):
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
 
 class Department(Base):
     __tablename__ = "departments"
@@ -72,10 +73,23 @@ class TimeSlot(Base):
     hold_expires_at = Column(DateTime, nullable=True)
 
     doctor = relationship("Doctor", back_populates="slots")
-    appointment = relationship("Appointment", back_populates="slot", uselist=False)
+    appointments = relationship("Appointment", back_populates="slot")
 
 class Appointment(Base):
     __tablename__ = "appointments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('DRAFT', 'CONFIRMED', 'CANCELLED', 'EXPIRED')",
+            name="appointments_status_check",
+        ),
+        Index(
+            "uq_appointments_active_slot",
+            "slot_id",
+            unique=True,
+            postgresql_where=text("status IN ('DRAFT', 'CONFIRMED')"),
+            sqlite_where=text("status IN ('DRAFT', 'CONFIRMED')"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     actor_id = Column(String(128), nullable=False, index=True)
@@ -91,7 +105,7 @@ class Appointment(Base):
 
     patient = relationship("Patient", back_populates="appointments")
     doctor = relationship("Doctor", back_populates="appointments")
-    slot = relationship("TimeSlot", back_populates="appointment")
+    slot = relationship("TimeSlot", back_populates="appointments")
     audit_logs = relationship("AuditLog", back_populates="appointment")
 
 class AuditLog(Base):

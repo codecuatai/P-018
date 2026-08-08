@@ -26,7 +26,14 @@ Validate without exposing values using `python scripts/validate-env-config.py` a
 
 Service-level `.env.example` files are optional references for a service running outside Compose. They contain only that service's variables. Since applications read process environment only, export/provide those values through your shell, IDE, or a service-specific Docker command; do not copy secrets among service files.
 
-The existing web demo runs separately with `cd apps/web && npm run dev`. Migrations and seeds are still scaffolds; do not remove the PostgreSQL volume automatically.
+The existing web demo runs separately with `cd apps/web && npm run dev`; its legacy scenarios remain mock-driven. Apply service-owned migrations and deterministic seeds explicitly when testing the integrated stack:
+
+```powershell
+./scripts/migrate.ps1 .env.example
+./scripts/seed.ps1 .env.example
+```
+
+The helpers preserve the PostgreSQL volume and do not perform destructive resets. The Healthcare demo patient is seeded with a stable local identity, while all appointment writes remain actor-scoped at the domain boundary.
 
 ## Package-manager decision
 
