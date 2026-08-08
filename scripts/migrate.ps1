@@ -1,25 +1,118 @@
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker is required to run migrations.' }
 $ErrorActionPreference = 'Stop'
-$envFile = if ($args.Count -gt 0) { $args[0] } elseif (Test-Path .env) { '.env' } else { '.env.example' }
-Get-Content 'apps/api-gateway/migrations/001_core_vertical_slice.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'apps/api-gateway/migrations/002_core_persistence_slice.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'apps/api-gateway/migrations/003_core_atomicity.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'apps/api-gateway/migrations/004_core_recovery.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'apps/api-gateway/migrations/005_core_payment_provider_saga.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'apps/api-gateway/migrations/006_core_payment_recovery_claims.sql' | docker compose --env-file $envFile exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1
-Get-Content 'services/food-service/migrations/001_food_vertical_slice.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
-Get-Content 'services/food-service/migrations/002_food_workflow_concurrency.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
-Get-Content 'services/food-service/migrations/003_food_atomicity.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
-Get-Content 'services/food-service/migrations/004_food_authoritative_operations.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
-Get-Content 'services/food-service/migrations/005_food_idempotency_eligibility.sql' | docker compose --env-file $envFile exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1
-Write-Host 'Core and Food migrations applied.'
-docker compose --env-file $envFile exec -T restaurant-service alembic upgrade head
-if ($LASTEXITCODE -ne 0) { throw 'Restaurant Service migration failed.' }
-Write-Host 'Restaurant Service migrations applied.'
-Get-Content 'services/healthcare-service/migrations/001_healthcare_booking.sql' | docker compose --env-file $envFile exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1
-Get-Content 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' | docker compose --env-file $envFile exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1
-if ($LASTEXITCODE -ne 0) { throw 'Healthcare Service migration failed.' }
-Write-Host 'Healthcare Service migrations applied.'
-docker compose --env-file $envFile exec -T ride-service alembic upgrade head
-if ($LASTEXITCODE -ne 0) { throw 'Ride Service migration failed.' }
-Write-Host 'Ride Service migrations applied.'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$requestedEnvFile = if ($args.Count -gt 0) { $args[0] } elseif (Test-Path -LiteralPath (Join-Path $repoRoot '.env') -PathType Leaf) { '.env' } else { '.env.example' }
+
+function ConvertTo-ProcessArgument {
+    param([Parameter(Mandatory = $true)][string]$Value)
+
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Invoke-Utf8PostgresMigration {
+    param(
+        [Parameter(Mandatory = $true)][string]$Domain,
+        [Parameter(Mandatory = $true)][string]$MigrationPath,
+        [Parameter(Mandatory = $true)][string]$DatabaseUser,
+        [Parameter(Mandatory = $true)][string]$Database,
+        [Parameter(Mandatory = $true)][string]$EnvFile
+    )
+
+    $absoluteMigrationPath = Join-Path $repoRoot $MigrationPath
+    if (-not (Test-Path -LiteralPath $absoluteMigrationPath -PathType Leaf)) {
+        throw "$Domain migration file not found: $MigrationPath"
+    }
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = 'docker'
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $arguments = @(
+        'compose', '--env-file', $EnvFile, 'exec', '-T', 'postgres', 'psql',
+        '-U', $DatabaseUser, '-d', $Database, '-v', 'ON_ERROR_STOP=1'
+    )
+    $startInfo.Arguments = ($arguments | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' '
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $exitCode = -1
+    $processStarted = $false
+    try {
+        if (-not $process.Start()) {
+            throw 'The docker process could not be started.'
+        }
+        $processStarted = $true
+        $sql = [System.IO.File]::ReadAllText($absoluteMigrationPath, [System.Text.Encoding]::UTF8)
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($sql)
+        $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $process.StandardInput.Close()
+        $stdout = $process.StandardOutput.ReadToEnd()
+        $stderr = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        $exitCode = $process.ExitCode
+    } catch {
+        if ($processStarted -and $process.HasExited) {
+            $exitCode = $process.ExitCode
+        }
+        throw "$Domain migration failed: $MigrationPath (exit code $exitCode). $($_.Exception.Message)"
+    }
+
+    if ($stdout) { Write-Output $stdout.TrimEnd() }
+    if ($exitCode -ne 0) {
+        $detail = if ($stderr) { " $($stderr.Trim())" } else { '' }
+        throw "$Domain migration failed: $MigrationPath (exit code $exitCode).$detail"
+    }
+    Write-Host "$Domain migration applied: $MigrationPath"
+}
+
+function Invoke-AlembicMigration {
+    param(
+        [Parameter(Mandatory = $true)][string]$Service,
+        [Parameter(Mandatory = $true)][string]$Domain,
+        [Parameter(Mandatory = $true)][string]$MigrationPath,
+        [Parameter(Mandatory = $true)][string]$EnvFile
+    )
+
+    & docker compose --env-file $EnvFile exec -T $Service alembic upgrade head
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "$Domain migration failed: $MigrationPath (alembic upgrade head; exit code $exitCode)."
+    }
+    Write-Host "$Domain migration applied: $MigrationPath"
+}
+
+Push-Location $repoRoot
+try {
+    if (-not (Test-Path -LiteralPath $requestedEnvFile -PathType Leaf)) {
+        throw "Environment file was not found: $requestedEnvFile"
+    }
+    $envFile = (Resolve-Path -LiteralPath $requestedEnvFile).Path
+
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/001_core_vertical_slice.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/002_core_persistence_slice.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/003_core_atomicity.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/004_core_recovery.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/005_core_payment_provider_saga.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/006_core_payment_recovery_claims.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/003_food_atomicity.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/004_food_authoritative_operations.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Write-Host 'Core and Food migrations applied.'
+
+    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0002_restaurant_idempotency_records.py' -EnvFile $envFile
+    Write-Host 'Restaurant Service migrations applied.'
+
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Write-Host 'Healthcare Service migrations applied.'
+
+    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260806_0001_ride_simulation.py' -EnvFile $envFile
+    Write-Host 'Ride Service migrations applied.'
+} finally {
+    Pop-Location
+}

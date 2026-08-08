@@ -111,7 +111,7 @@ components:
       schema:
         type: string
         minLength: 1
-        maxLength: 256
+        maxLength: 255
   schemas:
     HealthcareChatRequest:
       type: object

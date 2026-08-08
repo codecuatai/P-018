@@ -13,12 +13,17 @@ import httpx
 import pytest
 
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
+E2E_COMPOSE_PROJECT_NAME = os.getenv("E2E_COMPOSE_PROJECT_NAME", "p-018")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
 DEMO_USER_ID = os.getenv("E2E_DEMO_USER_ID", "usr_demo_001")
 INTERNAL_SERVICE_TOKEN = os.getenv("E2E_INTERNAL_SERVICE_TOKEN", "replace-with-local-token")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
+
+
+def compose_args(*args: str) -> list[str]:
+    return ["docker", "compose", "-p", E2E_COMPOSE_PROJECT_NAME, "--env-file", ".env.example", *args]
 
 
 def login(client: httpx.Client) -> str:
@@ -47,7 +52,7 @@ def sql_literal(value: str) -> str:
 
 def run_sql(sql: str, database: str, user: str) -> str:
     result = subprocess.run(
-        ["docker", "compose", "--env-file", ".env.example", "exec", "-T", "postgres", "psql", "-U", user, "-d", database, "-v", "ON_ERROR_STOP=1", "-qAt"],
+        compose_args("exec", "-T", "postgres", "psql", "-U", user, "-d", database, "-v", "ON_ERROR_STOP=1", "-qAt"),
         cwd=REPO_ROOT,
         input=sql,
         text=True,
@@ -132,7 +137,10 @@ def test_natural_language_food_happy_path() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
         token = login(client)
-        form, conversation_id, _ = prepare_order(client, token, with_voucher=True)
+        # Voucher redemption is covered by the dedicated exhaustion test below.
+        # Keep the general happy path repeatable against a persistent local database,
+        # where a prior run may have consumed the seeded voucher.
+        form, conversation_id, _ = prepare_order(client, token)
         execute = execute_order(client, token, form, conversation_id, unique_id("e2e-place-order"))
         execute.raise_for_status()
         result = execute.json()["data"]
@@ -280,7 +288,7 @@ def test_real_payment_timeout_restart_preserves_provider_attempt_and_converges()
         pending_order = client.get(f"/api/v1/food/orders/{payment['orderId']}", headers={"Authorization": f"Bearer {token}"})
         pending_order.raise_for_status()
         assert pending_order.json()["data"]["status"] == "PAYMENT_PENDING"
-    restart = subprocess.run(["docker", "compose", "--env-file", ".env.example", "restart", "api-gateway"], cwd=REPO_ROOT, text=True, capture_output=True, check=False)
+    restart = subprocess.run(compose_args("restart", "api-gateway"), cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     assert restart.returncode == 0, restart.stderr
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
         deadline = time.monotonic() + 45
@@ -371,7 +379,7 @@ def test_cancellation_is_rejected_after_preparing() -> None:
 def internal_status(service: str, url: str, headers: dict[str, str] | None = None) -> int:
     header_lines = "".join(f"req.add_header({key!r}, {value!r});" for key, value in (headers or {}).items())
     script = f"import urllib.request,urllib.error;req=urllib.request.Request({url!r});{header_lines}\ntry: urllib.request.urlopen(req); print(200)\nexcept urllib.error.HTTPError as e: print(e.code)"
-    result = subprocess.run(["docker", "compose", "--env-file", ".env.example", "exec", "-T", service, "python", "-c", script], cwd=REPO_ROOT, text=True, capture_output=True, check=False)
+    result = subprocess.run(compose_args("exec", "-T", service, "python", "-c", script), cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     assert result.returncode == 0, result.stderr
     return int(result.stdout.strip().splitlines()[-1])
 
@@ -399,7 +407,7 @@ def test_restart_preserves_order_payment_and_conversation() -> None:
         result = response.json()["data"]
         order_id = result["order"]["id"]
         payment_id = result["payment"]["id"]
-    restart = subprocess.run(["docker", "compose", "--env-file", ".env.example", "restart", "api-gateway"], cwd=REPO_ROOT, text=True, capture_output=True, check=False)
+    restart = subprocess.run(compose_args("restart", "api-gateway"), cwd=REPO_ROOT, text=True, capture_output=True, check=False)
     assert restart.returncode == 0, restart.stderr
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
         deadline = time.monotonic() + 45

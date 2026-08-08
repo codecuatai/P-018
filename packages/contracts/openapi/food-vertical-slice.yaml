@@ -1,101 +1,337 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: X-One Food Vertical Slice
-  version: 1.1.0
+  version: 1.2.0
 servers:
   - url: http://food-service:8104/api/v1
 tags:
   - name: catalog
   - name: cart
   - name: order
+  - name: internal
 paths:
+  /restaurants:
+    get:
+      tags: [catalog]
+      summary: Search restaurants and matching menu items
+      description: Requires the internal service token. The runtime does not require an actor header for catalog discovery.
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: keyword, in: query, required: false, schema: {type: string, default: ''}}
+        - {name: district, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: category, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: min_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
+        - {name: max_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
+        - {name: open_only, in: query, required: false, schema: {type: boolean, default: true}}
+      responses:
+        '200': {description: Restaurant search results}
+        '401': {$ref: '#/components/responses/Error401'}
+        '422': {$ref: '#/components/responses/Error422'}
+  /restaurants/{restaurant_id}:
+    get:
+      tags: [catalog]
+      summary: Read a restaurant
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: restaurant_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Restaurant result}
+        '401': {$ref: '#/components/responses/Error401'}
+        '404': {$ref: '#/components/responses/Error404'}
+  /restaurants/{restaurant_id}/menu:
+    get:
+      tags: [catalog]
+      summary: Read a restaurant menu
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: restaurant_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Menu result}
+        '401': {$ref: '#/components/responses/Error401'}
+        '404': {$ref: '#/components/responses/Error404'}
+  /menu-items/{menu_item_id}:
+    get:
+      tags: [catalog]
+      summary: Read one menu item
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: menu_item_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Menu item result}
+        '401': {$ref: '#/components/responses/Error401'}
+        '404': {$ref: '#/components/responses/Error404'}
   /addresses:
     get:
+      tags: [cart]
       summary: List delivery addresses owned by the asserted actor
       parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
         - {name: label, in: query, required: false, schema: {type: string}}
       responses:
         '200': {description: Address candidates}
+        '401': {$ref: '#/components/responses/Error401'}
   /food/search:
     get:
       tags: [catalog]
       summary: Search food and restaurants
       parameters:
-        - {$ref: '#/components/parameters/CorrelationId'}
-        - {name: keyword, in: query, schema: {type: string}}
-        - {name: district, in: query, schema: {type: string}}
-        - {name: max_price, in: query, schema: {type: integer, minimum: 0}}
-      responses: {'200': {description: Search result, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}, '422': {$ref: '#/components/responses/Error422'}}
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: keyword, in: query, required: false, schema: {type: string, default: ''}}
+        - {name: district, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: category, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: min_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
+        - {name: max_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
+        - {name: open_only, in: query, required: false, schema: {type: boolean, default: true}}
+      responses:
+        '200': {description: Search result, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}
+        '401': {$ref: '#/components/responses/Error401'}
+        '422': {$ref: '#/components/responses/Error422'}
   /carts:
     post:
       tags: [cart]
       summary: Create a restaurant-scoped cart
-      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/ActorId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      description: The runtime requires Idempotency-Key in the request header; the key is scoped to the asserted actor.
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateCart'}}}}
-      responses: {'200': {description: Cart, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}, '409': {$ref: '#/components/responses/Error409'}}
+      responses:
+        '200': {description: Cart created or replayed, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
   /carts/{cart_id}:
     get:
       tags: [cart]
-      parameters: [{name: cart_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
-      responses: {'200': {description: Cart}, '403': {$ref: '#/components/responses/Error403'}}
+      summary: Read an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
+        - {name: user_id, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
   /carts/{cart_id}/items:
     post:
       tags: [cart]
-      parameters: [{name: cart_id, in: path, required: true, schema: {type: string}}]
+      summary: Add an item to an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CartItem'}}}}
-      responses: {'200': {description: Cart}, '422': {$ref: '#/components/responses/Error422'}}
-  /orders/preview:
+      responses:
+        '200': {description: Updated cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '422': {$ref: '#/components/responses/Error422'}
+  /carts/{cart_id}/items/{cart_item_id}:
+    patch:
+      tags: [cart]
+      summary: Update an item in an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
+        - {name: cart_item_id, in: path, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UpdateCartItem'}}}}
+      responses:
+        '200': {description: Updated cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '422': {$ref: '#/components/responses/Error422'}
+    delete:
+      tags: [cart]
+      summary: Remove an item from an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
+        - {name: cart_item_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Updated cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+  /carts/{cart_id}/voucher:
     post:
-      tags: [order]
-      summary: Build an authoritative order quote without creating an order
-      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PreviewOrder'}}}}
-      responses: {'200': {description: Preview with snapshot hash}, '409': {$ref: '#/components/responses/Error409'}}
+      tags: [cart]
+      summary: Apply a voucher to an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Voucher'}}}}
+      responses:
+        '200': {description: Updated cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
+    delete:
+      tags: [cart]
+      summary: Remove a voucher from an actor-owned cart
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: cart_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Updated cart}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
   /delivery/quote:
     post:
       tags: [order]
       summary: Quote delivery for an actor-owned address
-      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/ActorId'}]
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/DeliveryQuote'}}}}
-      responses: {'200': {description: Delivery quote}, '403': {$ref: '#/components/responses/Error403'}}
+      responses:
+        '200': {description: Delivery quote}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '422': {$ref: '#/components/responses/Error422'}
+  /orders/preview:
+    post:
+      tags: [order]
+      summary: Build an authoritative order quote without creating an order
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PreviewOrder'}}}}
+      responses:
+        '200': {description: Preview with snapshot hash}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
   /orders:
     post:
       tags: [order]
       summary: Create a payment-pending order through the Gateway
-      parameters: [{$ref: '#/components/parameters/InternalToken'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      description: The runtime requires the idempotency key in CreateOrder.idempotency_key; it does not read an Idempotency-Key header on this route.
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateOrder'}}}}
-      responses: {'200': {description: Order}, '409': {$ref: '#/components/responses/Error409'}}
+      responses:
+        '200': {description: Order created or replayed}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
   /orders/{order_id}:
     get:
       tags: [order]
-      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
-      responses: {'200': {description: Order}, '403': {$ref: '#/components/responses/Error403'}}
+      summary: Read an actor-owned order
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {name: user_id, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Order}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
   /orders/{order_id}/tracking:
     get:
       tags: [order]
-      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
-      responses: {'200': {description: Tracking with immutable status events}}
+      summary: Read immutable order status tracking
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {name: user_id, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Tracking with immutable status events}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
   /orders/{order_id}/cancel-preview:
     post:
       tags: [order]
-      parameters: [{name: order_id, in: path, required: true, schema: {type: string}}, {name: user_id, in: query, schema: {type: string}}]
-      responses: {'200': {description: Cancellation policy/refund preview}, '409': {$ref: '#/components/responses/Error409'}}
+      summary: Preview cancellation policy and refund
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {name: user_id, in: query, required: false, schema: {type: string}}
+      responses:
+        '200': {description: Cancellation policy/refund preview}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+  /orders/{order_id}/cancel:
+    post:
+      tags: [order]
+      summary: Cancel an actor-owned order
+      description: The runtime requires the idempotency key in CancelOrder.idempotency_key; it does not read an Idempotency-Key header on this route.
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CancelOrder'}}}}
+      responses:
+        '200': {description: Cancelled order or idempotent replay}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
+  /internal/orders/{order_id}/transition:
+    post:
+      tags: [internal]
+      summary: Apply an internal order status transition
+      description: Internal-only operation. An operation_key in the body or Idempotency-Key header is forwarded to the domain idempotency boundary when supplied.
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/OptionalIdempotencyKey'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/TransitionOrder'}}}}
+      responses:
+        '200': {description: Transition result}
+        '401': {$ref: '#/components/responses/Error401'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
 components:
   parameters:
-    CorrelationId: {name: X-Correlation-Id, in: header, schema: {type: string}}
+    CorrelationId: {name: X-Correlation-Id, in: header, required: false, schema: {type: string}}
     InternalToken: {name: X-Internal-Service-Token, in: header, required: true, schema: {type: string}}
     ActorId: {name: X-Actor-Id, in: header, required: true, schema: {type: string}}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+    OptionalIdempotencyKey: {name: Idempotency-Key, in: header, required: false, schema: {type: string, minLength: 8, maxLength: 200}}
   schemas:
-    Money: {type: object, additionalProperties: false, required: [amount, currency], properties: {amount: {type: integer, minimum: 0}, currency: {type: string, minLength: 3, maxLength: 3}}}
-    CreateCart: {type: object, additionalProperties: false, required: [user_id, restaurant_id], properties: {user_id: {type: string}, restaurant_id: {type: string}}}
-    SelectedOption: {type: object, additionalProperties: false, required: [group_id, option_id], properties: {group_id: {type: string}, option_id: {type: string}}}
-    CartItem: {type: object, additionalProperties: false, required: [menu_item_id, quantity], properties: {menu_item_id: {type: string}, quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: array, items: {$ref: '#/components/schemas/SelectedOption'}}, note: {type: string, maxLength: 500}}}
-    PreviewOrder: {type: object, additionalProperties: false, required: [cart_id, address_id, user_id], properties: {cart_id: {type: string}, address_id: {type: string}, user_id: {type: string}}}
+    Envelope: {type: object, additionalProperties: true, required: [data], properties: {data: {}}}
+    CreateCart: {type: object, additionalProperties: false, required: [user_id, restaurant_id], properties: {user_id: {type: string, minLength: 1}, restaurant_id: {type: string, minLength: 1}}}
+    SelectedOption: {type: object, additionalProperties: false, required: [group_id, option_id], properties: {group_id: {type: string, minLength: 1}, option_id: {type: string, minLength: 1}}}
+    CartItem: {type: object, additionalProperties: false, required: [menu_item_id, quantity], properties: {menu_item_id: {type: string, minLength: 1}, quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: array, items: {$ref: '#/components/schemas/SelectedOption'}, default: []}, note: {type: [string, 'null'], maxLength: 500}}}
+    UpdateCartItem: {type: object, additionalProperties: false, required: [quantity], properties: {quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: [array, 'null'], items: {$ref: '#/components/schemas/SelectedOption'}}, note: {type: [string, 'null'], maxLength: 500}}}
+    Voucher: {type: object, additionalProperties: false, required: [code], properties: {code: {type: string, minLength: 1, maxLength: 40}}}
     DeliveryQuote: {type: object, additionalProperties: false, required: [restaurant_id, address_id], properties: {restaurant_id: {type: string}, address_id: {type: string}}}
-    CreateOrder: {allOf: [{$ref: '#/components/schemas/PreviewOrder'}, {type: object, required: [idempotency_key, payment_method, expected_snapshot_hash, expected_cart_version, expected_amount, expected_currency, expected_quote_version], properties: {idempotency_key: {type: string}, payment_method: {type: string, enum: [bank_transfer, card, e_wallet]}, expected_snapshot_hash: {type: string}, expected_cart_version: {type: integer, minimum: 0}, expected_amount: {type: integer, minimum: 0}, expected_currency: {type: string, minLength: 3, maxLength: 3}, expected_quote_version: {type: string}}}]}
-    Envelope: {type: object, additionalProperties: false, required: [data], properties: {data: {type: object}, meta: {type: object}}}
-    Error: {type: object, additionalProperties: false, required: [code, detail, status, retryable], properties: {code: {type: string}, detail: {type: string}, status: {type: integer}, retryable: {type: boolean}, request_id: {type: string}}}
+    PreviewOrder: {type: object, additionalProperties: false, required: [cart_id, address_id, user_id], properties: {cart_id: {type: string}, address_id: {type: string}, user_id: {type: string}}}
+    CreateOrder:
+      allOf:
+        - {$ref: '#/components/schemas/PreviewOrder'}
+        - {type: object, required: [idempotency_key, payment_method, expected_snapshot_hash, expected_cart_version, expected_amount, expected_currency, expected_quote_version], properties: {idempotency_key: {type: string, minLength: 8, maxLength: 128}, payment_method: {type: string, enum: [bank_transfer, card, e_wallet]}, expected_snapshot_hash: {type: string, minLength: 1}, expected_cart_version: {type: integer, minimum: 0}, expected_amount: {type: integer, minimum: 0}, expected_currency: {type: string, minLength: 3, maxLength: 3}, expected_quote_version: {type: string, minLength: 1}}}
+    CancelOrder: {type: object, additionalProperties: false, required: [user_id, idempotency_key], properties: {user_id: {type: string}, idempotency_key: {type: string, minLength: 8, maxLength: 128}}}
+    TransitionOrder: {type: object, additionalProperties: false, required: [target_status, reason], properties: {target_status: {type: string}, reason: {type: string, minLength: 1, maxLength: 200}, operation_key: {type: [string, 'null'], minLength: 8, maxLength: 200}}}
   responses:
-    Error403: {description: Forbidden, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    Error409: {description: Conflict, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
-    Error422: {description: Validation error, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+    Error401: {description: Internal authentication or actor assertion missing}
+    Error403: {description: Actor is not the resource owner}
+    Error404: {description: Resource not found}
+    Error409: {description: Conflict or invalid state transition}
+    Error422: {description: Request validation or domain validation error}

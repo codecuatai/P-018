@@ -12,6 +12,14 @@ def normalized_interval(start_at: datetime, duration_minutes: int):
     return start, start + timedelta(minutes=duration_minutes)
 
 
+def normalized_datetime(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("NAIVE_DATETIME")
+    return value.astimezone(UTC)
+
+
 class RestaurantApplicationService:
     def __init__(self, repo: RestaurantRepository):
         self.repo = repo
@@ -33,10 +41,6 @@ class RestaurantApplicationService:
         start, end = normalized_interval(start_at, duration_minutes)
         payload = {"restaurant_id": restaurant_id, "party_size": party_size, "start_at": start.isoformat(), "end_at": end.isoformat()}
         request_hash = self.repo.request_hash(payload)
-        existing = self.repo.find_idempotent(__import__("src.infrastructure.database", fromlist=["HoldRow"]).HoldRow,
-            actor_id, "create_hold", key, request_hash)
-        if existing:
-            return self.repo.hold_dict(existing)
         return self.repo.create_hold(actor_id, restaurant_id, party_size, start, end, key, request_hash,
             datetime.now(UTC) + timedelta(minutes=10))
 
@@ -44,22 +48,52 @@ class RestaurantApplicationService:
         start, end = normalized_interval(start_at, duration_minutes)
         payload = {"restaurant_id": restaurant_id, "party_size": party_size, "start_at": start.isoformat(), "end_at": end.isoformat(), "special_requests": special_requests, "hold_id": hold_id}
         request_hash = self.repo.request_hash(payload)
-        existing = self.repo.find_reservation_idempotency(actor_id, key, request_hash)
-        if existing:
-            return existing
         return self.repo.create_reservation(actor_id, restaurant_id, party_size, start, end, special_requests, key, request_hash, hold_id)
 
     def get_reservation(self, reservation_id, actor_id):
         return self.repo.get_reservation_by_id(reservation_id, actor_id)
 
-    def update_reservation(self, actor_id, reservation_id, party_size, start_at, duration_minutes, special_requests, key):
-        current = self.repo.get_reservation_by_id(reservation_id, actor_id)
-        if not current:
-            raise ValueError("RESERVATION_NOT_FOUND")
-        start, end = normalized_interval(start_at or current["start_at"], duration_minutes)
-        size = party_size or current["party_size"]
-        payload = {"reservation_id": reservation_id, "party_size": size, "start_at": start.isoformat(), "end_at": end.isoformat(), "special_requests": special_requests}
-        return self.repo.update_reservation(actor_id, reservation_id, size, start, end, special_requests, key, self.repo.request_hash(payload))
+    def update_reservation(
+        self,
+        actor_id,
+        reservation_id,
+        party_size=None,
+        start_at=None,
+        special_requests=None,
+        key=None,
+        fields_set=None,
+    ):
+        fields = set(fields_set or ())
+        if fields_set is None:
+            fields = {
+                field
+                for field, value in {
+                    "party_size": party_size,
+                    "start_at": start_at,
+                    "special_requests": special_requests,
+                }.items()
+                if value is not None
+            }
+
+        normalized_start = normalized_datetime(start_at) if "start_at" in fields else None
+        payload = {"reservation_id": reservation_id, "fields": sorted(fields)}
+        if "party_size" in fields:
+            payload["party_size"] = party_size
+        if "start_at" in fields:
+            payload["start_at"] = normalized_start.isoformat() if normalized_start else None
+        if "special_requests" in fields:
+            payload["special_requests"] = special_requests
+
+        return self.repo.update_reservation(
+            actor_id,
+            reservation_id,
+            party_size,
+            normalized_start,
+            special_requests,
+            fields,
+            key,
+            self.repo.request_hash(payload),
+        )
 
     def cancel_reservation(self, actor_id, reservation_id, key):
         payload = {"reservation_id": reservation_id, "action": "cancel"}

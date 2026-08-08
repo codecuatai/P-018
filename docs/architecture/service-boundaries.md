@@ -11,4 +11,4 @@ This is the target responsibility map, not a claim that every listed interface i
 | Healthcare | appointments/availability | gateway | access core/payment data |
 | Food | merchants, menus, items, order quotes/drafts, orders/items/events | gateway | manage tables/reservations |
 
-Gateway may orchestrate multiple services, but a domain service remains authoritative for its own business invariants and state transitions. Restaurant Service = table reservation. Food Service = menu ordering and food delivery. No booking/order belongs to both services. Domain APIs use `/v1`; gateway public APIs use `/api/v1`; contracts, not SQL, carry cross-boundary references and snapshots.
+Gateway may orchestrate multiple services, but a domain service remains authoritative for its own business invariants and state transitions. Restaurant Service = table reservation. Food Service = menu ordering and food delivery. No booking/order belongs to both services. Domain route prefixes follow the checked-in versioned contracts; current prefixes differ by incremental slice. See [API conventions](../api/api-conventions.md). Contracts, not SQL, carry cross-boundary references and snapshots.

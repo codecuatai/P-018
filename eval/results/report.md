@@ -1,46 +1,29 @@
 # Evaluation Report
 
-> Báo cáo đánh giá chất lượng sản phẩm theo tiêu chí BTC.
+This report deliberately distinguishes repository checks from product-quality metrics. The metrics below have not been measured in a controlled evaluation; local unit, contract, integration, and live E2E evidence is recorded in job.txt after each actual run.
 
----
-
-## 1. Metrics
+## Metrics
 
 | Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Response accuracy | >80% | — | ⏳ |
-| Response latency | <3s | — | ⏳ |
-| User satisfaction | >4/5 | — | ⏳ |
-| Test coverage | >60% | — | ⏳ |
+| --- | --- | --- | --- |
+| Response accuracy | >80% | not measured | Not measured |
+| Response latency | <3s | not measured | Not measured |
+| User satisfaction | >4/5 | not collected | Not measured |
+| Test coverage | >60% | not measured | Not measured |
 
-## 2. Test Results
+## Test results
 
-### Unit Tests
-```
-pytest tests/ -v
-# Paste output here
-```
+Run the repository test matrix and record the exact commands and outcomes in job.txt. A skipped external-stack test is not acceptance evidence; set E2E_GATEWAY_URL for the live suite.
 
-### Integration Tests
-```
-# Mô tả test scenarios và kết quả
-```
+## User feedback
 
-## 3. User Feedback
+No structured user-feedback sample or rating dataset has been collected.
 
-| User | Feedback | Rating |
-|------|----------|--------|
-| [User 1] | [feedback] | [1-5] |
-| [User 2] | [feedback] | [1-5] |
+## Demo results
 
-## 4. Demo Results
+No separate demo event or participant count has been measured. Local demo authentication and sandbox payment are development/test-only.
 
-- Ngày demo: [YYYY-MM-DD]
-- Người tham gia: [số người]
-- Feedback chung: [tóm tắt]
-- Issues phát hiện: [danh sách]
+## Action items
 
-## 5. Action Items
-
-- [ ] [Cần cải thiện 1]
-- [ ] [Cần cải thiện 2]
+- [ ] Run a controlled response-accuracy and latency evaluation.
+- [ ] Collect structured user feedback and ratings.

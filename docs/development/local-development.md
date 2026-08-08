@@ -7,18 +7,22 @@ The complete local backend stack uses one file only: root `/.env`. Do not create
 Windows PowerShell:
 
 ```powershell
-./scripts/setup-env.ps1
-docker compose up --build
+./scripts/start-all.ps1
+# Optional: deterministic local demo data
+./scripts/start-all.ps1 -SeedDemo
 ```
 
 Linux/macOS:
 
 ```bash
-./scripts/setup-env.sh
-docker compose up --build
+./scripts/start-all.sh
+# Optional: deterministic local demo data
+./scripts/start-all.sh --seed-demo
 ```
 
-The setup scripts copy root `.env.example` only when root `.env` does not exist; they never overwrite it or touch service-level files. Review and replace local placeholders before startup. Existing `.env` files from an older layout must be reconciled manually with the current root `.env.example` because the setup script deliberately preserves them.
+The launcher copies root `.env.example` only when root `.env` does not exist; it never overwrites it or touches service-level files. It validates the environment, waits for Compose health, runs migrations, checks Gateway readiness, and starts Web only after those checks pass. Normal runs do not seed or reset data. Review and replace local placeholders before startup. Existing `.env` files from an older layout must be reconciled manually with the current root `.env.example` because setup deliberately preserves them.
+
+For an explicit disposable/template verification, PowerShell supports `./scripts/start-all.ps1 -EnvFile .env.example`; the default and normal local path remain root `.env`.
 
 Validate without exposing values using `python scripts/validate-env-config.py` and `docker compose --env-file .env.example config`. Health endpoints are `/health/live` and `/health/ready` on the documented service ports.
 
@@ -26,7 +30,7 @@ Validate without exposing values using `python scripts/validate-env-config.py` a
 
 Service-level `.env.example` files are optional references for a service running outside Compose. They contain only that service's variables. Since applications read process environment only, export/provide those values through your shell, IDE, or a service-specific Docker command; do not copy secrets among service files.
 
-The existing web demo runs separately with `cd apps/web && npm run dev`; its legacy scenarios remain mock-driven. Apply service-owned migrations and deterministic seeds explicitly when testing the integrated stack:
+The existing Web demo can also run separately with `cd apps/web && npm run dev`; its legacy scenarios remain mock-driven. When running services manually, apply service-owned migrations and deterministic seeds explicitly:
 
 ```powershell
 ./scripts/migrate.ps1 .env.example

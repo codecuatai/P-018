@@ -24,7 +24,7 @@ def seed_data():
     print("Seeding Departments...")
     departments_data = [
         ("Khoa Nội Tim mạch", "Khám và điều trị bệnh về Tim, huyết áp, mạch máu"),
-        ("Khoa Nội Thần kinh", "Khám não, tủy sống, dây thần kinh, đột stroke"),
+        ("Khoa Nội Thần kinh", "Khám não, tủy sống, dây thần kinh, đột quỵ"),
         ("Khoa Nội Cơ - Xương - Khớp", "Khám khớp, gân, thoái hóa, gout"),
         ("Khoa Nội Tiêu hóa - Gan mật", "Dạ dày, đại tràng, gan, mật"),
         ("Khoa Nội Hô hấp", "Phổi, phế quản, hen suyễn"),

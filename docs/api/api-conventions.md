@@ -1,6 +1,16 @@
 # API Conventions
 
-Public gateway routes use `/api/v1`; optional gateway-internal routes use `/internal/v1`; domain services use `/v1`. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
+Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/internal/v1`. The checked-in internal domain prefixes are currently split by the incremental slices:
+
+| Boundary | Prefix |
+| --- | --- |
+| Public Gateway | `/api/v1` |
+| Restaurant Service | `/v1` |
+| Ride Service | `/v1` |
+| Food Service | `/api/v1` |
+| Healthcare Service | `/api/v1` |
+
+This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 
 Successful responses use:
 

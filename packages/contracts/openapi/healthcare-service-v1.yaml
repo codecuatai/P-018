@@ -31,6 +31,8 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/HoldRequest'}}}
       responses:
         '200': {description: Held appointment}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
         '409': {description: Slot unavailable}
   /api/v1/appointments/{appointment_id}:
     get:
@@ -42,7 +44,7 @@ paths:
       responses: {'200': {description: Appointment state}}
   /api/v1/payment/webhook:
     post:
-      summary: Existing local payment acknowledgement boundary
+      summary: Local payment acknowledgement boundary; it is not a provider refund
       security: [{internalServiceToken: []}]
       parameters:
         - {$ref: '#/components/parameters/ActorId'}
@@ -50,7 +52,11 @@ paths:
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/PaymentRequest'}}}
-      responses: {'200': {description: Payment acknowledgement}}
+      responses:
+        '200': {description: Payment acknowledgement while the appointment hold is active}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Expired, cancelled, confirmed, or otherwise non-payable appointment}
   /api/v1/appointments/{appointment_id}/confirm:
     post:
       summary: Confirm a paid appointment after Gateway confirmation evidence
@@ -61,6 +67,8 @@ paths:
         - {$ref: '#/components/parameters/IdempotencyKey'}
       responses:
         '200': {description: Confirmed appointment}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
         '409': {description: Payment or state precondition failed}
   /api/v1/appointments/{appointment_id}/cancel:
     post:
@@ -70,7 +78,11 @@ paths:
         - {$ref: '#/components/parameters/ActorId'}
         - {$ref: '#/components/parameters/AppointmentId'}
         - {$ref: '#/components/parameters/IdempotencyKey'}
-      responses: {'200': {description: Cancelled appointment}}
+      responses:
+        '200': {description: Cancelled appointment and released slot}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Expired or non-cancellable appointment}
 components:
   securitySchemes:
     internalServiceToken:
@@ -86,8 +98,8 @@ components:
     IdempotencyKey:
       in: header
       name: Idempotency-Key
-      required: false
-      schema: {type: string, minLength: 1, maxLength: 256}
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
     AppointmentId:
       in: path
       name: appointment_id

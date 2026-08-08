@@ -6,7 +6,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Hoàn thiện post-merge integration cho Food, Restaurant, Healthcare và Ride; sửa lifecycle confirmation, Healthcare slot reuse, UTF-8 seed và Gemini fallback | ✅ Done | Agent/Gateway/domain tests, Food E2E 15/15, Restaurant và Healthcare public smoke, Ride public smoke, Web build, Ruff/env/Compose/migration/seed pass; Docker healthy; chưa commit/push `develop` | - |
+| Vũ Văn Phong (2A202601647) | Final last-mile corrective pass: Restaurant PATCH/idempotency, Restaurant/Food OpenAPI parity, Bash host normalization, E2E harness project scoping, and disposable persistence verification | ✅ Done | Agent 68 pass; Food 22 pass/3 skip; Ride 10; Restaurant 17 pass/1 skip; Healthcare 20 pass/1 skip; Gateway 30 pass/3 skip + lint/build; Web build; fresh disposable migrations/seeds and live E2E 18/18; no-seed restart kept food_orders 12→12; p-018 Restaurant Alembic 0002/table and all containers healthy; env/Compose/migration/parity/static checks pass; no commit/push/cloud | - |
 
 ---
 

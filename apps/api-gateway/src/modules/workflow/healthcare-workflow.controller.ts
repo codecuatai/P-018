@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Headers, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, Headers, Post, Req, UseGuards } from '@nestjs/common';
 
 import { AgentClient, HealthcareClient, HealthcareTool, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -51,6 +51,25 @@ function slotsFrom(result: AgentResult): Record<string, unknown> {
   return resultData(result).slots && typeof resultData(result).slots === 'object'
     ? resultData(result).slots as Record<string, unknown>
     : {};
+}
+
+function isRecord(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function healthcareFinalStateError(appointment: JsonObject): { code: string; detail: string } | null {
+  if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
+  if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment has been cancelled.' };
+  if (appointment.status === 'CONFIRMED') return { code: 'APPOINTMENT_ALREADY_CONFIRMED', detail: 'The appointment is already confirmed.' };
+  if (appointment.is_paid !== true) return { code: 'PAYMENT_REQUIRED', detail: 'Appointment payment is required before confirmation.' };
+  if (appointment.status !== 'DRAFT') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'Only a draft appointment can be confirmed.' };
+  const slot = isRecord(appointment.slot) ? appointment.slot : null;
+  const expiresAt = slot && typeof slot.hold_expires_at === 'string' ? Date.parse(slot.hold_expires_at) : Number.NaN;
+  if (!slot || slot.status !== 'HOLDING' || !Number.isFinite(expiresAt)) {
+    return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment does not have an active slot hold.' };
+  }
+  if (expiresAt <= Date.now()) return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
+  return null;
 }
 
 function structuredData(toolName: string | undefined, result: unknown, slots: Record<string, unknown>): JsonObject {
@@ -131,7 +150,8 @@ export class HealthcareWorkflowController {
           throw new BadRequestException({ code: 'PAYLOAD_MISMATCH', detail: 'A valid appointment is required before final confirmation.' });
         }
         const appointment = await this.healthcareClient.getAppointment(appointmentId, actorId, correlationId);
-        if (appointment.is_paid !== true) {
+        const finalStateError = healthcareFinalStateError(appointment);
+        if (finalStateError?.code === 'PAYMENT_REQUIRED') {
           const structured = structuredData('healthcare.appointment.get', appointment, slotsFrom(current));
           return {
             data: {
@@ -148,6 +168,7 @@ export class HealthcareWorkflowController {
             meta: { request_id: request.correlationId },
           };
         }
+        if (finalStateError) throw new ConflictException(finalStateError);
         const pending = await this.confirmations.prepareDomainConfirmation(request.user, toolRequest, appointment, correlationId);
         const structured = structuredData('healthcare.appointment.get', appointment, slotsFrom(current));
         return {
@@ -219,13 +240,17 @@ export class HealthcareWorkflowController {
     const key = idempotencyKey ?? `healthcare-payment:${body.workflow_id ?? 'default'}:${body.appointment_id}`;
     const payment = await this.healthcareClient.acknowledgePayment(Number(body.appointment_id), request.user.sub, correlationId, key);
     const appointment = await this.healthcareClient.getAppointment(Number(body.appointment_id), request.user.sub, correlationId);
+    const finalStateError = healthcareFinalStateError(appointment);
+    if (finalStateError) {
+      throw new ConflictException(finalStateError);
+    }
     return {
       data: {
         workflow_id: body.workflow_id,
-        payment,
-        appointment,
-        ...structuredData('healthcare.appointment.get', appointment, {}),
-        status: 'PAYMENT_SUCCEEDED',
+      payment,
+      appointment,
+      ...structuredData('healthcare.appointment.get', appointment, {}),
+      status: 'PAYMENT_SUCCEEDED',
       },
       meta: { request_id: request.correlationId },
     };

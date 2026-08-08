@@ -24,6 +24,21 @@ function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function healthcareFinalStateError(appointment: JsonObject): { code: string; detail: string } | null {
+  if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
+  if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment has been cancelled.' };
+  if (appointment.status === 'CONFIRMED') return { code: 'APPOINTMENT_ALREADY_CONFIRMED', detail: 'The appointment is already confirmed.' };
+  if (appointment.is_paid !== true) return { code: 'PAYMENT_REQUIRED', detail: 'Appointment payment is required before confirmation.' };
+  if (appointment.status !== 'DRAFT') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'Only a draft appointment can be confirmed.' };
+  const slot = isRecord(appointment.slot) ? appointment.slot : null;
+  const expiresAt = slot && typeof slot.hold_expires_at === 'string' ? Date.parse(slot.hold_expires_at) : Number.NaN;
+  if (!slot || slot.status !== 'HOLDING' || !Number.isFinite(expiresAt)) {
+    return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment does not have an active slot hold.' };
+  }
+  if (expiresAt <= Date.now()) return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
+  return null;
+}
+
 function domainAction(toolName: DomainFinalTool['tool_name']): string {
   if (toolName === 'restaurant.create_reservation') return 'CREATE_RESTAURANT_RESERVATION';
   if (toolName === 'healthcare.confirm_appointment') return 'CONFIRM_HEALTHCARE_APPOINTMENT';
@@ -72,7 +87,14 @@ export class ConfirmationService {
       throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'A valid appointment is required before confirmation.' });
     }
 
-    const snapshot = resource ?? {};
+    let snapshot = resource ?? {};
+    if (action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
+      const appointmentId = Number(args.appointment_id);
+      const authoritativeAppointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
+      const stateError = healthcareFinalStateError(authoritativeAppointment);
+      if (stateError) throw new ConflictException(stateError);
+      snapshot = authoritativeAppointment;
+    }
     const amount = Math.max(0, Math.trunc(Number(snapshot.price ?? args.price ?? 0) || 0));
     const currency = String(snapshot.currency ?? args.currency ?? 'VND').toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The confirmation currency is invalid.' });
@@ -248,9 +270,8 @@ export class ConfirmationService {
     if (confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
       const appointmentId = Number(tool.arguments.appointment_id);
       const appointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
-      if (appointment.is_paid !== true) {
-        throw new ConflictException({ code: 'PAYMENT_REQUIRED', detail: 'Appointment payment is required before confirmation.' });
-      }
+      const stateError = healthcareFinalStateError(appointment);
+      if (stateError) throw new ConflictException(stateError);
     }
 
     const executionHash = stableHash({ confirmation_id: id, action: confirmation.action, workflow_id: workflowId, action_body: body });
@@ -262,6 +283,12 @@ export class ConfirmationService {
     }
 
     try {
+      if (confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
+        const appointmentId = Number(tool.arguments.appointment_id);
+        const appointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
+        const stateError = healthcareFinalStateError(appointment);
+        if (stateError) throw new ConflictException(stateError);
+      }
       const toolResult = confirmation.action === 'CREATE_RESTAURANT_RESERVATION'
         ? await this.restaurant.executeTool(tool as RestaurantTool, user.sub, correlationId)
         : await this.healthcare.executeTool(tool as HealthcareTool, user.sub, correlationId, { allowFinal: true });

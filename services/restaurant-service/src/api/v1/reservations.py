@@ -46,11 +46,19 @@ def update_reservation(reservation_id: str, body: ReservationUpdateRequest, requ
     if not idempotency_key:
         raise HTTPException(status_code=400, detail="Idempotency-Key is required")
     try:
-        result = request.app.state.restaurant_service.update_reservation(actor_id, reservation_id, body.party_size, body.start_at, 120, body.special_requests, idempotency_key)
+        result = request.app.state.restaurant_service.update_reservation(
+            actor_id,
+            reservation_id,
+            party_size=body.party_size,
+            start_at=body.start_at,
+            special_requests=body.special_requests,
+            key=idempotency_key,
+            fields_set=body.model_fields_set,
+        )
         return envelope(result, request)
     except ValueError as exc:
         code = str(exc)
-        status_code = 404 if code == "RESERVATION_NOT_FOUND" else 409
+        status_code = 404 if code == "RESERVATION_NOT_FOUND" else 422 if code in {"PAST_START", "NAIVE_DATETIME"} else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 

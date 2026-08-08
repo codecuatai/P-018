@@ -2,7 +2,7 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
 
@@ -97,6 +97,28 @@ class EventRow(Base):
     correlation_id: Mapped[str | None] = mapped_column(String(128))
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class IdempotencyRecordRow(Base):
+    """Immutable lifecycle evidence for a Restaurant side-effect operation."""
+
+    __tablename__ = "restaurant_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id",
+            "operation",
+            "idempotency_key",
+            name="uq_restaurant_idempotency_actor_operation_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    actor_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    operation: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 def build_engine(database_url: str):

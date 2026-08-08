@@ -43,21 +43,40 @@ def _require_actor(x_actor_id: str | None) -> str:
     return x_actor_id
 
 
+def _require_idempotency_key(value: str | None) -> str:
+    if value is None or not value.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "IDEMPOTENCY_KEY_REQUIRED", "detail": "Idempotency-Key is required for this write."},
+        )
+    normalized = value.strip()
+    if len(normalized) > 255:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "IDEMPOTENCY_KEY_INVALID", "detail": "Idempotency-Key must be at most 255 characters."},
+        )
+    return normalized
+
+
 def _request_hash(operation: str, payload: dict[str, Any]) -> str:
     encoded = json.dumps({"operation": operation, "payload": payload}, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _idempotency_storage_key(actor_id: str, operation: str, key: str) -> str:
+    encoded = json.dumps([actor_id, operation, key], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _load_idempotency(
     db: Session,
-    key: str | None,
+    key: str,
     actor_id: str,
     operation: str,
     request_hash: str,
 ) -> dict[str, Any] | None:
-    if not key:
-        return None
-    record = db.query(IdempotencyRecord).filter(IdempotencyRecord.idempotency_key == key).first()
+    storage_key = _idempotency_storage_key(actor_id, operation, key)
+    record = db.query(IdempotencyRecord).filter(IdempotencyRecord.idempotency_key == storage_key).first()
     if not record:
         return None
     if record.actor_id != actor_id or record.operation != operation or record.request_hash != request_hash:
@@ -70,23 +89,22 @@ def _load_idempotency(
 
 def _save_idempotency(
     db: Session,
-    key: str | None,
+    key: str,
     actor_id: str,
     operation: str,
     request_hash: str,
     response: dict[str, Any],
 ) -> None:
-    if key:
-        db.add(
-            IdempotencyRecord(
-                idempotency_key=key,
-                actor_id=actor_id,
-                operation=operation,
-                request_hash=request_hash,
-                response_body=json.dumps(response, ensure_ascii=False),
-                status_code=200,
-            )
+    db.add(
+        IdempotencyRecord(
+            idempotency_key=_idempotency_storage_key(actor_id, operation, key),
+            actor_id=actor_id,
+            operation=operation,
+            request_hash=request_hash,
+            response_body=json.dumps(response, ensure_ascii=False),
+            status_code=200,
         )
+    )
 
 
 def _now() -> datetime:
@@ -99,24 +117,57 @@ def _fold_department_name(value: str) -> str:
     return folded.replace("đ", "d")
 
 
-def _release_expired_slots(db: Session) -> None:
-    expired_slots = (
-        db.query(TimeSlot)
-        .filter(TimeSlot.status == SlotStatus.HOLDING, TimeSlot.hold_expires_at < _now())
-        .all()
-    )
-    for slot in expired_slots:
+def _expire_hold(db: Session, slot: TimeSlot | None, appointment: Appointment | None) -> None:
+    if slot:
         slot.status = SlotStatus.AVAILABLE.value
         slot.hold_expires_at = None
+    if appointment and appointment.status == AppointmentStatus.DRAFT.value:
+        appointment.status = AppointmentStatus.EXPIRED.value
+        appointment.is_paid = False
+        db.add(AuditLog(appointment_id=appointment.id, action="BOOKING_EXPIRED", details="The slot hold expired."))
+
+
+def _reconcile_expired_holds(db: Session, now: datetime | None = None) -> set[int]:
+    """Reconcile expired holds without committing the caller's transaction."""
+
+    current_time = now or _now()
+    expired_slots = (
+        db.query(TimeSlot)
+        .filter(
+            TimeSlot.status == SlotStatus.HOLDING.value,
+            TimeSlot.hold_expires_at.is_not(None),
+            TimeSlot.hold_expires_at <= current_time,
+        )
+        .with_for_update()
+        .all()
+    )
+    expired_appointment_ids: set[int] = set()
+    for slot in expired_slots:
         appointment = (
             db.query(Appointment)
-            .filter(Appointment.slot_id == slot.id, Appointment.status == AppointmentStatus.DRAFT)
+            .filter(Appointment.slot_id == slot.id, Appointment.status == AppointmentStatus.DRAFT.value)
+            .with_for_update()
             .first()
         )
+        _expire_hold(db, slot, appointment)
+        db.info["healthcare_reconciliation_changed"] = True
         if appointment:
-            appointment.status = AppointmentStatus.EXPIRED.value
-            db.add(AuditLog(appointment_id=appointment.id, action="BOOKING_EXPIRED", details="The slot hold expired."))
-    if expired_slots:
+            expired_appointment_ids.add(appointment.id)
+    return expired_appointment_ids
+
+
+def _hold_is_active(slot: TimeSlot | None, now: datetime | None = None) -> bool:
+    current_time = now or _now()
+    return bool(
+        slot
+        and slot.status == SlotStatus.HOLDING.value
+        and slot.hold_expires_at is not None
+        and slot.hold_expires_at > current_time
+    )
+
+
+def _commit_reconciliation(db: Session, expired_appointment_ids: set[int]) -> None:
+    if expired_appointment_ids or db.info.pop("healthcare_reconciliation_changed", False):
         db.commit()
 
 
@@ -179,7 +230,7 @@ def get_doctors_by_department(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
-    _release_expired_slots(db)
+    expired_appointment_ids = _reconcile_expired_holds(db)
     folded_department = _fold_department_name(department)
     department_record = next(
         (
@@ -190,13 +241,14 @@ def get_doctors_by_department(
         None,
     )
     if not department_record:
+        _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
     doctors: list[dict[str, Any]] = []
     for doctor in db.query(Doctor).filter(Doctor.department_id == department_record.id).order_by(Doctor.name).all():
         slots = (
             db.query(TimeSlot)
-            .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE)
+            .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
             .order_by(TimeSlot.start_time)
             .all()
         )
@@ -221,6 +273,7 @@ def get_doctors_by_department(
                 ],
             }
         )
+    _commit_reconciliation(db, expired_appointment_ids)
     return {"data": doctors}
 
 
@@ -233,20 +286,21 @@ def hold_slot(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
     operation = "healthcare.hold_slot"
     payload = request.model_dump()
     request_hash = _request_hash(operation, payload)
-    cached = _load_idempotency(db, idempotency_key, actor_id, operation, request_hash)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
     if cached is not None:
         return {"data": cached}
 
     try:
-        _release_expired_slots(db)
+        _reconcile_expired_holds(db)
         patient = _resolve_patient(db, request.patient_id)
         slot = db.query(TimeSlot).filter(TimeSlot.id == request.slot_id).with_for_update().first()
         if not slot:
             raise HTTPException(status_code=404, detail={"code": "SLOT_NOT_FOUND", "detail": "Time slot was not found."})
-        if slot.status != SlotStatus.AVAILABLE:
+        if slot.status != SlotStatus.AVAILABLE.value:
             raise HTTPException(status_code=409, detail={"code": "SLOT_UNAVAILABLE", "detail": "Time slot is not available."})
 
         slot.status = SlotStatus.HOLDING.value
@@ -276,7 +330,7 @@ def hold_slot(
             "is_paid": False,
             "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
         }
-        _save_idempotency(db, idempotency_key, actor_id, operation, request_hash, response)
+        _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
         return {"data": response}
     except HTTPException:
@@ -295,14 +349,16 @@ def get_appointment(
     x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
-    _release_expired_slots(db)
+    expired_appointment_ids = _reconcile_expired_holds(db)
     appointment = (
         db.query(Appointment)
         .filter(Appointment.id == appointment_id, Appointment.actor_id == actor_id)
         .first()
     )
     if not appointment:
+        _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "APPOINTMENT_NOT_FOUND", "detail": "Appointment was not found."})
+    _commit_reconciliation(db, expired_appointment_ids)
     return {"data": _appointment_data(appointment)}
 
 
@@ -315,36 +371,45 @@ def confirm_booking(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
     operation = "healthcare.confirm_appointment"
     payload = {"appointment_id": appointment_id}
     request_hash = _request_hash(operation, payload)
-    cached = _load_idempotency(db, idempotency_key, actor_id, operation, request_hash)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
     if cached is not None:
         return {"data": cached}
 
     try:
+        expired_appointment_ids = _reconcile_expired_holds(db)
         appointment = (
             db.query(Appointment)
             .filter(Appointment.id == appointment_id, Appointment.actor_id == actor_id)
+            .with_for_update()
             .first()
         )
         if not appointment:
             raise HTTPException(status_code=404, detail={"code": "APPOINTMENT_NOT_FOUND", "detail": "Appointment was not found."})
-        if appointment.status == AppointmentStatus.CONFIRMED:
+        if appointment.status == AppointmentStatus.EXPIRED.value:
+            _commit_reconciliation(db, {appointment.id} & expired_appointment_ids)
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_EXPIRED", "detail": "The appointment hold has expired."})
+        if appointment.status == AppointmentStatus.CONFIRMED.value:
             raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_ALREADY_CONFIRMED", "detail": "Appointment is already confirmed."})
-        if appointment.status != AppointmentStatus.DRAFT:
+        if appointment.status != AppointmentStatus.DRAFT.value:
             raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_NOT_CONFIRMABLE", "detail": "Only an active appointment hold can be confirmed."})
         if not appointment.is_paid:
             raise HTTPException(status_code=409, detail={"code": "PAYMENT_REQUIRED", "detail": "Appointment payment is required before confirmation."})
 
-        slot = appointment.slot
+        slot = db.query(TimeSlot).filter(TimeSlot.id == appointment.slot_id).with_for_update().first()
+        if not _hold_is_active(slot):
+            _expire_hold(db, slot, appointment)
+            db.commit()
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_EXPIRED", "detail": "The appointment hold has expired."})
         appointment.status = AppointmentStatus.CONFIRMED.value
-        if slot:
-            slot.status = SlotStatus.BOOKED.value
-            slot.hold_expires_at = None
+        slot.status = SlotStatus.BOOKED.value
+        slot.hold_expires_at = None
         db.add(AuditLog(appointment_id=appointment.id, action="BOOKING_CONFIRMED", details="Booking confirmed."))
         response = {"status": "success", "appointment_id": appointment.id, "message": "Booking confirmed.", "appointment": _appointment_data(appointment)}
-        _save_idempotency(db, idempotency_key, actor_id, operation, request_hash, response)
+        _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
         return {"data": response}
     except HTTPException:
@@ -364,40 +429,51 @@ def cancel_booking(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
     operation = "healthcare.cancel_appointment"
     payload = {"appointment_id": appointment_id}
     request_hash = _request_hash(operation, payload)
-    cached = _load_idempotency(db, idempotency_key, actor_id, operation, request_hash)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
     if cached is not None:
         return {"data": cached}
 
     try:
+        expired_appointment_ids = _reconcile_expired_holds(db)
         appointment = (
             db.query(Appointment)
             .filter(Appointment.id == appointment_id, Appointment.actor_id == actor_id)
+            .with_for_update()
             .first()
         )
         if not appointment:
             raise HTTPException(status_code=404, detail={"code": "APPOINTMENT_NOT_FOUND", "detail": "Appointment was not found."})
-        if appointment.status == AppointmentStatus.CANCELLED:
-            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_ALREADY_CANCELLED", "detail": "Appointment is already cancelled."})
-        if appointment.status == AppointmentStatus.EXPIRED:
+        if appointment.status == AppointmentStatus.EXPIRED.value:
+            _commit_reconciliation(db, {appointment.id} & expired_appointment_ids)
             raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_EXPIRED", "detail": "The appointment hold has expired."})
+        if appointment.status == AppointmentStatus.CANCELLED.value:
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_ALREADY_CANCELLED", "detail": "Appointment is already cancelled."})
+        if appointment.status not in {AppointmentStatus.DRAFT.value, AppointmentStatus.CONFIRMED.value}:
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_NOT_CANCELLABLE", "detail": "The appointment cannot be cancelled in its current state."})
 
-        slot = appointment.slot
+        slot = db.query(TimeSlot).filter(TimeSlot.id == appointment.slot_id).with_for_update().first()
+        if not slot:
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_NOT_CANCELLABLE", "detail": "The appointment slot is unavailable."})
+        if appointment.status == AppointmentStatus.DRAFT.value and not _hold_is_active(slot):
+            _expire_hold(db, slot, appointment)
+            db.commit()
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_EXPIRED", "detail": "The appointment hold has expired."})
         appointment.status = AppointmentStatus.CANCELLED.value
-        if slot:
-            slot.status = SlotStatus.AVAILABLE.value
-            slot.hold_expires_at = None
+        slot.status = SlotStatus.AVAILABLE.value
+        slot.hold_expires_at = None
         db.add(AuditLog(appointment_id=appointment.id, action="BOOKING_CANCELLED", details="Booking cancelled."))
         response = {
             "status": "success",
             "appointment_id": appointment.id,
-            "slot_id": slot.id if slot else None,
-            "slot_status": slot.status if slot else None,
+            "slot_id": slot.id,
+            "slot_status": slot.status,
             "message": "Booking cancelled.",
         }
-        _save_idempotency(db, idempotency_key, actor_id, operation, request_hash, response)
+        _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
         return {"data": response}
     except HTTPException:
@@ -417,28 +493,43 @@ def payment_webhook(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
     operation = "healthcare.payment.acknowledge"
     payload = request.model_dump()
     request_hash = _request_hash(operation, payload)
-    cached = _load_idempotency(db, idempotency_key, actor_id, operation, request_hash)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
     if cached is not None:
         return {"data": cached}
     try:
+        expired_appointment_ids = _reconcile_expired_holds(db)
         appointment = (
             db.query(Appointment)
             .filter(Appointment.id == request.appointment_id, Appointment.actor_id == actor_id)
+            .with_for_update()
             .first()
         )
         if not appointment:
             raise HTTPException(status_code=404, detail={"code": "APPOINTMENT_NOT_FOUND", "detail": "Appointment was not found."})
+        if appointment.status == AppointmentStatus.EXPIRED.value:
+            _commit_reconciliation(db, {appointment.id} & expired_appointment_ids)
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_EXPIRED", "detail": "The appointment hold has expired."})
+        if appointment.status != AppointmentStatus.DRAFT.value:
+            raise HTTPException(status_code=409, detail={"code": "APPOINTMENT_NOT_PAYABLE", "detail": "Only a draft appointment can receive payment acknowledgement."})
+        slot = db.query(TimeSlot).filter(TimeSlot.id == appointment.slot_id).with_for_update().first()
+        if not _hold_is_active(slot):
+            _expire_hold(db, slot, appointment)
+            db.commit()
+            code = "APPOINTMENT_EXPIRED" if appointment.status == AppointmentStatus.EXPIRED.value else "APPOINTMENT_NOT_PAYABLE"
+            raise HTTPException(status_code=409, detail={"code": code, "detail": "The appointment hold is no longer payable."})
         appointment.is_paid = True
+        db.add(AuditLog(appointment_id=appointment.id, action="PAYMENT_ACKNOWLEDGED", details="Local payment acknowledgement accepted while the hold was active."))
         response = {
             "status": "success",
             "appointment_id": appointment.id,
             "is_paid": True,
             "message": "Appointment marked as paid.",
         }
-        _save_idempotency(db, idempotency_key, actor_id, operation, request_hash, response)
+        _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
         return {"data": response}
     except HTTPException:

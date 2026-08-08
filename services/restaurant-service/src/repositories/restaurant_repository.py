@@ -1,14 +1,16 @@
 import json
 import uuid
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.infrastructure.database import (
     EventRow,
     HoldRow,
+    IdempotencyRecordRow,
     OpeningHourRow,
     ReservationRow,
     RestaurantRow,
@@ -26,6 +28,8 @@ RESTAURANT_SEEDS = (
 
 
 class RestaurantRepository:
+    _IDEMPOTENCY_PENDING = '{"status":"PENDING"}'
+
     def __init__(self, database_url: str):
         self.factory = make_session_factory(database_url)
 
@@ -52,6 +56,94 @@ class RestaurantRepository:
     def request_hash(payload: dict) -> str:
         normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
         return sha256(normalized.encode()).hexdigest()
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @classmethod
+    def _response_json(cls, payload: dict) -> str:
+        def normalize(value):
+            if isinstance(value, datetime):
+                return cls._as_utc(value).isoformat()
+            if isinstance(value, dict):
+                return {key: normalize(item) for key, item in value.items()}
+            if isinstance(value, list):
+                return [normalize(item) for item in value]
+            return value
+
+        return json.dumps(normalize(payload), sort_keys=True, separators=(",", ":"))
+
+    @classmethod
+    def _decode_idempotency_record(cls, row: IdempotencyRecordRow, request_hash: str) -> dict:
+        if row.request_hash != request_hash:
+            raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
+        if row.response_json == cls._IDEMPOTENCY_PENDING:
+            raise ValueError("IDEMPOTENCY_IN_PROGRESS")
+        return json.loads(row.response_json)
+
+    def _claim_idempotency(
+        self,
+        db: Session,
+        actor_id: str,
+        operation: str,
+        key: str,
+        request_hash: str,
+    ) -> tuple[dict | None, IdempotencyRecordRow | None]:
+        """Claim a lifecycle key before its mutation in the same transaction.
+
+        Flushing the unique record first makes concurrent PostgreSQL requests
+        wait on the same actor/operation/key. The winner fills the response
+        snapshot and commits the mutation plus evidence atomically; a loser
+        rolls back its empty claim and replays the committed snapshot.
+        """
+
+        record = db.scalar(
+            select(IdempotencyRecordRow)
+            .where(
+                IdempotencyRecordRow.actor_id == actor_id,
+                IdempotencyRecordRow.operation == operation,
+                IdempotencyRecordRow.idempotency_key == key,
+            )
+            .with_for_update()
+        )
+        if record:
+            return self._decode_idempotency_record(record, request_hash), None
+
+        record = IdempotencyRecordRow(
+            actor_id=actor_id,
+            operation=operation,
+            idempotency_key=key,
+            request_hash=request_hash,
+            response_json=self._IDEMPOTENCY_PENDING,
+            created_at=utc_now(),
+        )
+        db.add(record)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            with self.factory() as retry_db:
+                concurrent = retry_db.scalar(
+                    select(IdempotencyRecordRow).where(
+                        IdempotencyRecordRow.actor_id == actor_id,
+                        IdempotencyRecordRow.operation == operation,
+                        IdempotencyRecordRow.idempotency_key == key,
+                    )
+                )
+                if concurrent:
+                    return self._decode_idempotency_record(concurrent, request_hash), None
+            raise ValueError("IDEMPOTENCY_IN_PROGRESS")
+        return None, record
+
+    def _complete_idempotency(self, record: IdempotencyRecordRow, response: dict) -> None:
+        record.response_json = self._response_json(response)
+
+    @staticmethod
+    def _legacy_key(operation: str, key: str) -> str:
+        return f"{operation}:{key}"
 
     def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
         with self.factory() as db:
@@ -111,32 +203,73 @@ class RestaurantRepository:
 
     def find_idempotent(self, model, actor_id, operation, key, request_hash):
         with self.factory() as db:
-            row = db.scalar(select(model).where(model.actor_id == actor_id, model.idempotency_key == f"{operation}:{key}"))
+            row = db.scalar(select(model).where(model.actor_id == actor_id, model.idempotency_key == self._legacy_key(operation, key)))
             if row and row.request_hash != request_hash:
                 raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
             return row
 
     def create_hold(self, actor_id, restaurant_id, party_size, start_at, end_at, key, request_hash, expires_at):
         with self.factory() as db:
+            replay, record = self._claim_idempotency(db, actor_id, "create_hold", key, request_hash)
+            if replay is not None:
+                return replay
+
+            legacy = db.scalar(
+                select(HoldRow).where(
+                    HoldRow.actor_id == actor_id,
+                    HoldRow.idempotency_key == self._legacy_key("create_hold", key),
+                )
+            )
+            if legacy:
+                if legacy.request_hash != request_hash:
+                    raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
+                result = self.hold_dict(legacy, db.get(TableRow, legacy.table_id).table_code)
+                self._complete_idempotency(record, result)
+                db.commit()
+                return result
+
             table = self._available_table(db, restaurant_id, party_size, start_at, end_at)
             if not table:
                 raise ValueError("CAPACITY_UNAVAILABLE")
             hold = HoldRow(id=f"hold-{uuid.uuid4().hex[:12]}", actor_id=actor_id, restaurant_id=restaurant_id,
                 table_id=table.id, party_size=party_size, start_at=start_at, end_at=end_at, expires_at=expires_at,
-                status="ACTIVE", idempotency_key=f"create_hold:{key}", request_hash=request_hash)
+                status="ACTIVE", idempotency_key=self._legacy_key("create_hold", key), request_hash=request_hash)
             db.add(hold)
             db.add(EventRow(aggregate_type="hold", aggregate_id=hold.id, event_type="CREATED", actor_id=actor_id, occurred_at=utc_now()))
+            result = self.hold_dict(hold, table.table_code)
+            self._complete_idempotency(record, result)
             db.commit()
-            return self.hold_dict(hold, table.table_code)
+            return result
 
     @staticmethod
     def hold_dict(row, table_code=None):
         return {"id": row.id, "hold_code": row.id, "actor_id": row.actor_id, "restaurant_id": row.restaurant_id,
                 "table_id": row.table_id, "table_code": table_code, "party_size": row.party_size,
-                "start_at": row.start_at, "end_at": row.end_at, "expires_at": row.expires_at, "status": row.status}
+                "start_at": RestaurantRepository._as_utc(row.start_at), "end_at": RestaurantRepository._as_utc(row.end_at),
+                "expires_at": RestaurantRepository._as_utc(row.expires_at), "status": row.status}
 
     def create_reservation(self, actor_id, restaurant_id, party_size, start_at, end_at, special_requests, key, request_hash, hold_id=None):
         with self.factory() as db:
+            replay, record = self._claim_idempotency(db, actor_id, "create_reservation", key, request_hash)
+            if replay is not None:
+                return replay
+
+            legacy = db.scalar(
+                select(ReservationRow).where(
+                    ReservationRow.actor_id == actor_id,
+                    ReservationRow.idempotency_key == self._legacy_key("create_reservation", key),
+                )
+            )
+            if legacy:
+                if legacy.request_hash != request_hash:
+                    raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
+                table = db.get(TableRow, legacy.table_id)
+                restaurant = db.get(RestaurantRow, legacy.restaurant_id)
+                result = self.reservation_dict(legacy, table, restaurant.name if restaurant else None)
+                self._complete_idempotency(record, result)
+                db.commit()
+                return result
+
             table = None
             if hold_id:
                 hold = db.scalar(select(HoldRow).where(HoldRow.id == hold_id).with_for_update())
@@ -155,13 +288,15 @@ class RestaurantRepository:
             row = ReservationRow(id=f"res-{uuid.uuid4().hex[:12]}", reservation_code=f"RST-{uuid.uuid4().hex[:8].upper()}",
                 actor_id=actor_id, restaurant_id=restaurant_id, table_id=table.id, party_size=party_size,
                 start_at=start_at, end_at=end_at, status="CONFIRMED", special_requests=special_requests,
-                hold_id=hold_id, idempotency_key=f"create_reservation:{key}", request_hash=request_hash,
+                hold_id=hold_id, idempotency_key=self._legacy_key("create_reservation", key), request_hash=request_hash,
                 created_at=now, updated_at=now)
             db.add(row)
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="CREATED", actor_id=actor_id, occurred_at=now))
-            db.commit()
             restaurant = db.get(RestaurantRow, row.restaurant_id)
-            return self.reservation_dict(row, table, restaurant.name if restaurant else None)
+            result = self.reservation_dict(row, table, restaurant.name if restaurant else None)
+            self._complete_idempotency(record, result)
+            db.commit()
+            return result
 
     def get_reservation_by_id(self, reservation_id, actor_id=None):
         with self.factory() as db:
@@ -178,14 +313,24 @@ class RestaurantRepository:
     def reservation_dict(row, table, restaurant_name=None):
         return {"id": row.id, "reservation_code": row.reservation_code, "actor_id": row.actor_id,
                 "restaurant_id": row.restaurant_id, "restaurant_name": restaurant_name, "table_code": table.table_code,
-                "party_size": row.party_size, "start_at": row.start_at, "end_at": row.end_at,
-                "status": row.status, "special_requests": row.special_requests, "created_at": row.created_at,
-                "updated_at": row.updated_at, "resource_version": row.resource_version}
+                "party_size": row.party_size, "start_at": RestaurantRepository._as_utc(row.start_at),
+                "end_at": RestaurantRepository._as_utc(row.end_at), "status": row.status,
+                "special_requests": row.special_requests, "created_at": RestaurantRepository._as_utc(row.created_at),
+                "updated_at": RestaurantRepository._as_utc(row.updated_at), "resource_version": row.resource_version}
 
     def find_reservation_idempotency(self, actor_id, key, request_hash):
         with self.factory() as db:
+            record = db.scalar(
+                select(IdempotencyRecordRow).where(
+                    IdempotencyRecordRow.actor_id == actor_id,
+                    IdempotencyRecordRow.operation == "create_reservation",
+                    IdempotencyRecordRow.idempotency_key == key,
+                )
+            )
+            if record:
+                return self._decode_idempotency_record(record, request_hash)
             row = db.scalar(select(ReservationRow).where(ReservationRow.actor_id == actor_id,
-                ReservationRow.idempotency_key == f"create_reservation:{key}"))
+                ReservationRow.idempotency_key == self._legacy_key("create_reservation", key)))
             if row and row.request_hash != request_hash:
                 raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
             if not row:
@@ -194,51 +339,99 @@ class RestaurantRepository:
             restaurant = db.get(RestaurantRow, row.restaurant_id)
             return self.reservation_dict(row, table, restaurant.name if restaurant else None)
 
-    def update_reservation(self, actor_id, reservation_id, party_size, start_at, end_at, special_requests, key, request_hash):
+    def update_reservation(self, actor_id, reservation_id, party_size, start_at, special_requests, fields_set, key, request_hash):
         with self.factory() as db:
+            replay, record = self._claim_idempotency(db, actor_id, "update_reservation", key, request_hash)
+            if replay is not None:
+                return replay
+
+            legacy = db.scalar(
+                select(ReservationRow).where(
+                    ReservationRow.actor_id == actor_id,
+                    ReservationRow.idempotency_key == self._legacy_key("update_reservation", key),
+                )
+            )
+            if legacy:
+                if legacy.request_hash != request_hash:
+                    raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
+                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id).name)
+                self._complete_idempotency(record, result)
+                db.commit()
+                return result
+
             row = db.scalar(select(ReservationRow).where(ReservationRow.id == reservation_id, ReservationRow.actor_id == actor_id).with_for_update())
             if not row:
                 raise ValueError("RESERVATION_NOT_FOUND")
             if row.status in {"CANCELLED", "COMPLETED", "NO_SHOW"}:
                 raise ValueError("INVALID_TRANSITION")
-            existing = db.scalar(select(ReservationRow).where(ReservationRow.actor_id == actor_id, ReservationRow.idempotency_key == f"update_reservation:{key}"))
-            if existing:
-                if existing.request_hash != request_hash:
-                    raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
-                table = db.get(TableRow, existing.table_id)
-                restaurant = db.get(RestaurantRow, existing.restaurant_id)
-                return self.reservation_dict(existing, table, restaurant.name if restaurant else None)
-            table = self._available_table(db, row.restaurant_id, party_size, start_at, end_at, exclude_id=row.id)
+
+            fields = set(fields_set)
+            current_start = self._as_utc(row.start_at)
+            current_end = self._as_utc(row.end_at)
+            duration_minutes = int((current_end - current_start).total_seconds() // 60)
+            new_start = self._as_utc(start_at) if "start_at" in fields and start_at is not None else current_start
+            if new_start <= utc_now():
+                raise ValueError("PAST_START")
+            new_end = new_start + timedelta(minutes=duration_minutes)
+            new_party_size = party_size if "party_size" in fields and party_size is not None else row.party_size
+            new_special_requests = special_requests if "special_requests" in fields else row.special_requests
+
+            table = self._available_table(db, row.restaurant_id, new_party_size, new_start, new_end, exclude_id=row.id)
             if not table:
                 raise ValueError("CAPACITY_UNAVAILABLE")
             row.table_id = table.id
-            row.party_size = party_size
-            row.start_at = start_at
-            row.end_at = end_at
-            row.special_requests = special_requests
+            row.party_size = new_party_size
+            row.start_at = new_start
+            row.end_at = new_end
+            row.special_requests = new_special_requests
             row.status = "MODIFIED"
             row.resource_version += 1
-            row.idempotency_key = f"update_reservation:{key}"
+            row.idempotency_key = self._legacy_key("update_reservation", key)
             row.request_hash = request_hash
             row.updated_at = utc_now()
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="MODIFIED", actor_id=actor_id, occurred_at=utc_now()))
+            result = self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id).name)
+            self._complete_idempotency(record, result)
             db.commit()
-            return self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id).name)
+            return result
 
     def cancel_reservation(self, actor_id, reservation_id, key, request_hash):
         with self.factory() as db:
+            replay, record = self._claim_idempotency(db, actor_id, "cancel_reservation", key, request_hash)
+            if replay is not None:
+                return replay
+
+            legacy = db.scalar(
+                select(ReservationRow).where(
+                    ReservationRow.actor_id == actor_id,
+                    ReservationRow.idempotency_key == self._legacy_key("cancel_reservation", key),
+                )
+            )
+            if legacy:
+                if legacy.request_hash != request_hash:
+                    raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
+                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id).name)
+                self._complete_idempotency(record, result)
+                db.commit()
+                return result
+
             row = db.scalar(select(ReservationRow).where(ReservationRow.id == reservation_id, ReservationRow.actor_id == actor_id).with_for_update())
             if not row:
                 raise ValueError("RESERVATION_NOT_FOUND")
             if row.status == "CANCELLED":
-                return self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+                result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+                self._complete_idempotency(record, result)
+                db.commit()
+                return result
             if row.status in {"COMPLETED", "NO_SHOW"}:
                 raise ValueError("INVALID_TRANSITION")
             row.status = "CANCELLED"
             row.resource_version += 1
-            row.idempotency_key = f"cancel_reservation:{key}"
+            row.idempotency_key = self._legacy_key("cancel_reservation", key)
             row.request_hash = request_hash
             row.updated_at = utc_now()
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="CANCELLED", actor_id=actor_id, occurred_at=utc_now()))
+            result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+            self._complete_idempotency(record, result)
             db.commit()
-            return self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+            return result

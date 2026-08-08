@@ -9,10 +9,32 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
+        - {name: location, in: query, required: false, schema: {type: string}}
+        - {name: cuisine_type, in: query, required: false, schema: {type: string}}
+        - {name: budget_range, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
         '200':
           description: Restaurant list envelope
           content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '401': {description: Internal authentication or actor context is missing}
+  /v1/restaurants/{restaurant_id}:
+    get:
+      summary: Read one active restaurant
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - name: restaurant_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Restaurant envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '401': {description: Internal authentication or actor context is missing}
+        '404': {description: Restaurant not found}
   /v1/restaurants/{restaurant_id}/availability:
     post:
       summary: Check table availability
@@ -52,6 +74,57 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/ReservationRequest'}}}
       responses:
         '201': {description: Reservation created or replayed}
+        '409': {description: Conflict}
+  /v1/reservations/{reservation_id}:
+    get:
+      summary: Read an actor-owned reservation
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - name: reservation_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Reservation envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '404': {description: Reservation not found}
+    patch:
+      summary: Update an actor-owned reservation
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - name: reservation_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ReservationUpdateRequest'}}}
+      responses:
+        '200':
+          description: Updated reservation envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '404': {description: Reservation not found}
+        '409': {description: Conflict}
+  /v1/reservations/{reservation_id}/cancel:
+    post:
+      summary: Cancel an actor-owned reservation
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - name: reservation_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Cancelled reservation envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '404': {description: Reservation not found}
         '409': {description: Conflict}
 components:
   parameters:
@@ -106,3 +179,10 @@ components:
         duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
         special_requests: {type: [string, 'null']}
         hold_id: {type: [string, 'null']}
+    ReservationUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        party_size: {type: [integer, 'null'], minimum: 1}
+        start_at: {type: [string, 'null'], format: date-time}
+        special_requests: {type: [string, 'null']}

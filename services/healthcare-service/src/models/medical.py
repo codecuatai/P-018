@@ -54,13 +54,16 @@ class Patient(Base):
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
 
-    idempotency_key = Column(String, primary_key=True, index=True)
+    # The stored key is a deterministic digest of actor + operation + client
+    # key.  Keeping the scoped identity in one bounded primary-key column lets
+    # different actors use the same client key without sharing a replay.
+    idempotency_key = Column(String(255), primary_key=True, index=True)
     actor_id = Column(String(128), nullable=False)
     operation = Column(String(80), nullable=False)
     request_hash = Column(String(64), nullable=False)
     response_body = Column(Text, nullable=False)
     status_code = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 class TimeSlot(Base):
     __tablename__ = "time_slots"

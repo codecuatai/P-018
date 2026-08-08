@@ -574,7 +574,17 @@ class PostgresFoodRepository:
         result: list[dict] = []
         async with pool.acquire() as connection, connection.transaction():
             for _ in range(limit):
-                row = await connection.fetchrow("SELECT * FROM food_orders WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 ORDER BY next_transition_at FOR UPDATE SKIP LOCKED LIMIT 1", now)
+                # A ready order needs a free driver, but an already assigned
+                # order may still need to advance and release that driver.
+                # Skip only the blocked ready rows so one unavailable driver
+                # cannot head-of-line block the whole workflow queue.
+                row = await connection.fetchrow(
+                    "SELECT * FROM food_orders "
+                    "WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 "
+                    "AND (status <> 'READY_FOR_PICKUP' OR EXISTS (SELECT 1 FROM food_drivers WHERE available = true)) "
+                    "ORDER BY next_transition_at FOR UPDATE SKIP LOCKED LIMIT 1",
+                    now,
+                )
                 if not row:
                     break
                 order = self._order_from_row(row)
