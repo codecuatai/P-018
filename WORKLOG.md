@@ -1,8 +1,35 @@
 # Worklog — Team P-018 (VinUni AI20K Cohort 3)
 
+---
+
+## 2026-08-08
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Vũ Văn Phong | Tích hợp Food, Restaurant, Healthcare và Ride vào nhánh tích hợp tạm; điều chỉnh shared-core, contracts, Ride FE và xác minh local stack | ✅ Done | Không còn conflict; Agent 61 pass, Food 21/3 skip, Restaurant 9, Healthcare 5, Ride 10; Gateway 27/3 skip + lint/build; Web build; Ruff/env/Compose/migration/seed pass; Docker healthy; smoke qua Gateway; chưa commit/push `develop` | - |
+
+---
+
+## 2026-08-07
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Vũ Văn Phong | Final corrective pass: migration parity, stale payment-confirmation linkage, terminal refund semantics, bounded Agent address orchestration, voucher stale mapping, real timeout/restart E2E, PostgreSQL cart concurrency, Gemini smoke và setup script | ✅ Done | Agent 20 pass, Food 21 pass/3 skip, Gateway 17 pass/3 skip, Food PostgreSQL 3 pass, Core PostgreSQL 3 pass, E2E 15 pass, Bash/PowerShell migration và Docker build/health pass; Gemini 4 calls fallback do provider error; không commit/push | - |
+| Team P-018 | Final Agent orchestration pass: reconcile deterministic/model intents, preserve Gemini semantic enrichment, prove five-turn public confirmation flow, and sync evidence | ✅ Done | Added reconciliation and deterministic semantic-slot precedence; Agent 50 passed; Food 21 passed/3 skipped; Gateway 18 passed/3 skipped plus lint/build; registry HTTP 200 with 21 tools; live structured decision accepted with no fallback; fresh Vietnamese five-turn public flow ended in `confirmation_form` / `PLACE_FOOD_ORDER` with final `prepare_food_order_confirmation`; bypass emitted no transaction tool; migration/env/Compose checks passed; no commit/push | - |
+
 > Ghi lại tất cả công việc đã làm theo ngày của các thành viên trong đội. Đảm bảo minh bạch tiến độ, kết quả công việc và theo dõi sử dụng AI.
 >
 > Quy ước cột Member: mỗi dòng chỉ dùng một tên người hoặc `Team P-018` cho công việc chung của cả đội.
+
+---
+
+## 2026-08-06
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Vũ Văn Phong | Triển khai Food ordering vertical slice backend | ✅ Done | Food FastAPI domain/API/PostgreSQL migration-seed; Gateway auth, typed Food/Agent clients, Tool Registry/Executor, confirmation, payment sandbox, workflow; Gateway-only structured LangGraph agent; contracts, Compose/env, docs, tests và `job.txt`; giữ nguyên phạm vi không sửa frontend/restaurant-service | - |
+
+**Tổng kết ngày:** Đã nối happy path backend từ intent tiếng Việt → Gateway tool → Food preview → confirmation → sandbox payment → order tracking/refund path. Gateway Core durable repository và timer reconciliation vẫn được ghi nhận là follow-up.
 
 ---
 

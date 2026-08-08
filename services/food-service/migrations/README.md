@@ -1,3 +1,3 @@
 # Migrations
 
-No food schema exists yet. Add service-owned Alembic revisions with the first merchant, menu, or order table.
+Run `001_food_vertical_slice.sql` through `005_food_idempotency_eligibility.sql` against `xone_food`. The additive migrations add due-workflow claims, normalized driver locking, voucher redemptions, cart/order versions, transaction indexes, transition operation idempotency, cart payload hashes, voucher eligibility indexes, and actor-scoped address discovery without rewriting earlier migrations.

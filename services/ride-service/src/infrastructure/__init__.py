@@ -1,0 +1,1 @@
+"""Ride-owned persistence adapters."""

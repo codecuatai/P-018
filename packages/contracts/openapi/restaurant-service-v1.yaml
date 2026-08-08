@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: X-One Restaurant Service
+  version: 1.0.0
+paths:
+  /v1/restaurants:
+    get:
+      summary: Discover active restaurants
+      responses:
+        '200': {description: Success}
+  /v1/restaurants/{restaurant_id}/availability:
+    post:
+      summary: Check table availability
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+      responses:
+        '200': {description: Success}
+        '404': {description: Restaurant not found}
+  /v1/reservation-holds:
+    post:
+      summary: Create an idempotent reservation hold
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201': {description: Hold created or replayed}
+        '409': {description: Conflict}
+  /v1/reservations:
+    post:
+      summary: Consume a validated hold into a reservation
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '201': {description: Reservation created or replayed}
+        '409': {description: Conflict}
+components:
+  parameters:
+    InternalToken:
+      name: X-Internal-Service-Token
+      in: header
+      required: true
+      schema: {type: string}
+    ActorId:
+      name: X-Actor-Id
+      in: header
+      required: true
+      schema: {type: string}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: {type: string}

@@ -11,6 +11,7 @@ os.environ.setdefault("SERVICE_PORT", "8001")
 os.environ.setdefault("DATABASE_URL", "postgresql://agent_user:test-password@postgres:5432/xone_agent")
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
 os.environ.setdefault("GEMINI_MODEL", "test-model")
+os.environ.setdefault("AGENT_MODEL_MODE", "deterministic")
 os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
 
 if not hasattr(langchain, "debug"):

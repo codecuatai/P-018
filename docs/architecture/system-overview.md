@@ -70,5 +70,4 @@ flowchart TB
     Food -.->|SQL Connection| FoodDB
 ```
 
-Current implementation is a foundation: health/config boundaries exist; agent retains a deterministic demo; domain services, gateway workflows, payments, and real booking/order APIs are skeleton/planned. The evidence-backed component matrix, ports, local commands, and limits live in the canonical [current architecture state](current-state.md). Non-goals are queues, service mesh, Kubernetes, Redis, multi-agent orchestration, and production payment/authentication in this foundation.
-
+The current integrated local scope covers Food ordering, Ride booking simulation, Restaurant dine-in discovery/availability/holds, and Healthcare doctor/slot/holds through Gateway orchestration and typed Agent requests. Food is the most complete vertical slice; final Restaurant and Healthcare confirmation actions remain intentionally gated, and Ride remains a local simulation. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md). Non-goals are queues, service mesh, Kubernetes, Redis, multi-agent orchestration, and production payment/authentication.

@@ -1,0 +1,5 @@
+import os
+
+os.environ.setdefault("SERVICE_PORT", "8103")
+os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")

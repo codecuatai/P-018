@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: X-One Agent Service
+  version: 1.0.0
+  description: >
+    Internal interpretation boundary. The service returns safe language,
+    a proposed state patch, and at most one typed tool request. It performs no
+    domain or payment side effect. Provider output, when used, is validated at
+    the private adapter boundary and never authorizes a tool or confirmation.
+paths:
+  /api/v1/chat:
+    post:
+      operationId: interpretChatTurn
+      security:
+        - internalServiceToken: []
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: A validated interpretation proposal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatEnvelope'
+        '401':
+          description: Internal service authentication failed.
+        '422':
+          description: Request validation failed.
+        '500':
+          description: Safe interpretation failure.
+  /api/v1/ride-chat:
+    post:
+      operationId: interpretRideChatTurn
+      security:
+        - internalServiceToken: []
+      parameters:
+        - in: header
+          name: X-Correlation-Id
+          required: false
+          schema:
+            type: string
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RideChatRequest'
+      responses:
+        '200':
+          description: A validated Ride interpretation proposal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideChatEnvelope'
+        '401':
+          description: Internal service authentication failed.
+        '422':
+          description: Request validation failed.
+        '500':
+          description: Safe interpretation failure.
+components:
+  securitySchemes:
+    internalServiceToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Token
+  schemas:
+    ChatRequest:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        workflow_id:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 128
+        context:
+          $ref: '#/components/schemas/AgentContext'
+      additionalProperties: false
+    RideChatRequest:
+      type: object
+      required: [message, workflow_id]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        workflow_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        context:
+          type: object
+          additionalProperties: true
+        client_turn_id:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 100
+      additionalProperties: false
+    AgentContext:
+      type: object
+      properties:
+        active_domain:
+          type: [string, 'null']
+          enum: [ride, restaurant, healthcare, food, null]
+        ride:
+          $ref: '#/components/schemas/RideContext'
+      additionalProperties: false
+    RideContext:
+      type: object
+      properties:
+        pickup_address: { type: [string, 'null'], maxLength: 300 }
+        dropoff_address: { type: [string, 'null'], maxLength: 300 }
+        vehicle_type: { enum: [BIKE, CAR_4, CAR_7], default: CAR_4 }
+        promo_code: { type: [string, 'null'], maxLength: 50 }
+        latest_quote_id: { type: [string, 'null'], maxLength: 128 }
+        latest_booking_id: { type: [string, 'null'], maxLength: 128 }
+        quote_version: { type: [string, 'null'], maxLength: 128 }
+        quote_amount: { type: [integer, 'null'], minimum: 0 }
+        quote_currency:
+          type: [string, 'null']
+          pattern: '^[A-Z]{3}$'
+        quote_expires_at: { type: [string, 'null'], format: date-time }
+        revision: { type: integer, minimum: 0, default: 0 }
+        pending_action: { type: [string, 'null'], maxLength: 64 }
+      additionalProperties: false
+    ChatEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ChatResponse'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      additionalProperties: false
+    RideChatEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/RideChatResponse'
+        meta:
+          $ref: '#/components/schemas/ResponseMeta'
+      additionalProperties: false
+    RideChatResponse:
+      type: object
+      required: [response, workflow_id, intent, missing_fields, state_patch]
+      properties:
+        response: { type: string }
+        workflow_id: { type: string, minLength: 1, maxLength: 128 }
+        intent: { type: string }
+        missing_fields:
+          type: array
+          items: { type: string }
+        state_patch:
+          $ref: '#/components/schemas/RideStatePatch'
+        tool_request:
+          oneOf:
+            - $ref: '#/components/schemas/ToolRequest'
+            - type: 'null'
+      additionalProperties: false
+    RideStatePatch:
+      type: object
+      required: [slot_updates, clear_fields, revision]
+      properties:
+        active_domain:
+          type: [string, 'null']
+          enum: [ride, restaurant, healthcare, food, null]
+        slot_updates:
+          type: array
+          items: { type: object, additionalProperties: true }
+        clear_fields:
+          type: array
+          items: { type: string }
+        revision: { type: integer, minimum: 0 }
+        pending_action: { type: [string, 'null'] }
+      additionalProperties: false
+    ChatResponse:
+      type: object
+      required:
+        - response
+        - workflow_id
+        - intent
+        - missing_fields
+        - state_patch
+      properties:
+        response: { type: string }
+        workflow_id: { type: string, minLength: 1, maxLength: 128 }
+        intent:
+          enum:
+            - help
+            - out_of_scope
+            - clarify_ride
+            - request_ride_quote
+            - prepare_ride_booking
+            - get_ride_status
+            - prepare_ride_cancellation
+        missing_fields:
+          type: array
+          items: { type: string }
+        state_patch:
+          $ref: '#/components/schemas/StatePatch'
+        tool_request:
+          oneOf:
+            - $ref: '#/components/schemas/ToolRequest'
+            - type: 'null'
+      additionalProperties: false
+    StatePatch:
+      type: object
+      required: [slot_updates, clear_fields, revision]
+      properties:
+        active_domain:
+          type: [string, 'null']
+          enum: [ride, restaurant, healthcare, food, null]
+        slot_updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/SlotUpdate'
+        clear_fields:
+          type: array
+          items: { type: string }
+        revision: { type: integer, minimum: 0 }
+        pending_action: { type: [string, 'null'], maxLength: 64 }
+      additionalProperties: false
+    SlotUpdate:
+      type: object
+      required: [slot, value, source, confidence]
+      properties:
+        slot:
+          enum:
+            - pickup_address
+            - dropoff_address
+            - vehicle_type
+            - promo_code
+            - latest_quote_id
+            - latest_booking_id
+        value: { type: string }
+        source: { const: user }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+      additionalProperties: false
+    ToolRequest:
+      type: object
+      required: [tool_name, risk_level, arguments, workflow_id]
+      properties:
+        tool_name: { type: string, minLength: 1, maxLength: 128 }
+        risk_level:
+          enum: [READ, REVERSIBLE_WRITE, FINANCIAL_OR_FINAL]
+        arguments: { type: object }
+        workflow_id: { type: string, minLength: 1, maxLength: 128 }
+      additionalProperties: false
+    ResponseMeta:
+      type: object
+      required: [request_id, timestamp]
+      properties:
+        request_id: { type: string }
+        timestamp: { type: string, format: date-time }
+      additionalProperties: false

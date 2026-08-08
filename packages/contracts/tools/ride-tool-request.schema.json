@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://x-one.local/contracts/tools/ride-tool-request.schema.json",
+  "title": "X-One Ride Tool Request",
+  "description": "Ride capability proposal emitted by the agent for gateway validation. It never represents an executed domain action.",
+  "oneOf": [
+    { "$ref": "#/$defs/quoteRequest" },
+    { "$ref": "#/$defs/bookingPrepareRequest" },
+    { "$ref": "#/$defs/bookingStatusRequest" },
+    { "$ref": "#/$defs/bookingCancelPrepareRequest" }
+  ],
+  "$defs": {
+    "base": {
+      "type": "object",
+      "required": ["tool_name", "risk_level", "arguments", "workflow_id"],
+      "properties": {
+        "tool_name": { "type": "string" },
+        "risk_level": {
+          "enum": ["READ", "REVERSIBLE_WRITE", "FINANCIAL_OR_FINAL"]
+        },
+        "arguments": { "type": "object" },
+        "workflow_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    },
+    "quoteRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "tool_name": { "const": "ride.quote.create" },
+            "risk_level": { "const": "READ" },
+            "arguments": {
+              "type": "object",
+              "required": ["pickup_address", "dropoff_address", "vehicle_type"],
+              "properties": {
+                "pickup_address": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "dropoff_address": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "vehicle_type": {
+                  "enum": ["BIKE", "CAR_4", "CAR_7"]
+                },
+                "promo_code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "bookingPrepareRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "tool_name": { "const": "ride.booking.prepare" },
+            "risk_level": { "const": "REVERSIBLE_WRITE" },
+            "arguments": { "$ref": "#/$defs/quoteIdArguments" }
+          }
+        }
+      ]
+    },
+    "bookingStatusRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "tool_name": { "const": "ride.booking.status.get" },
+            "risk_level": { "const": "READ" },
+            "arguments": { "$ref": "#/$defs/bookingIdArguments" }
+          }
+        }
+      ]
+    },
+    "bookingCancelPrepareRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/base" },
+        {
+          "properties": {
+            "tool_name": { "const": "ride.booking.cancel.prepare" },
+            "risk_level": { "const": "REVERSIBLE_WRITE" },
+            "arguments": { "$ref": "#/$defs/bookingIdArguments" }
+          }
+        }
+      ]
+    },
+    "quoteIdArguments": {
+      "type": "object",
+      "required": ["quote_id"],
+      "properties": {
+        "quote_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    },
+    "bookingIdArguments": {
+      "type": "object",
+      "required": ["booking_id"],
+      "properties": {
+        "booking_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

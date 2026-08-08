@@ -65,3 +65,6 @@ out/
 .ai-log/archive/
 
 phong.md
+job.txt
+.pnpm-store/
+plan.md

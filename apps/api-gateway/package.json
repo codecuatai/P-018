@@ -15,14 +15,16 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "express": "^5.0.1",
+    "pg": "8.13.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.1",
-    "@types/jest": "^29.5.14",
     "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
     "@types/node": "^22.10.2",
+    "@types/pg": "8.10.9",
     "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
     "supertest": "^7.0.0",

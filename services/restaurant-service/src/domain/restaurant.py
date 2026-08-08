@@ -1,10 +1,10 @@
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 
-class ReservationStatus(str, Enum):
+class ReservationStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
     MODIFIED = "MODIFIED"
@@ -19,8 +19,8 @@ class Restaurant(BaseModel):
     rating: float
     total_capacity: int
     opening_hours: str
-    image_url: Optional[str] = None
-    description: Optional[str] = None
+    image_url: str | None = None
+    description: str | None = None
 
 
 class TableAvailability(BaseModel):
@@ -29,7 +29,7 @@ class TableAvailability(BaseModel):
     party_size: int
     available: bool
     available_tables: int
-    message: Optional[str] = None
+    message: str | None = None
 
 
 class Reservation(BaseModel):
@@ -41,8 +41,8 @@ class Reservation(BaseModel):
     party_size: int
     booking_time: str
     status: ReservationStatus = ReservationStatus.CONFIRMED
-    special_requests: Optional[str] = None
-    idempotency_key: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    special_requests: str | None = None
+    idempotency_key: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

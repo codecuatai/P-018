@@ -1,28 +1,12 @@
-@import "tailwindcss";
-
-.glass-pane {
-  background-color: rgba(18, 33, 49, 0.4);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-.glass-pane:hover {
-  box-shadow: inset 0 0 20px rgba(56, 189, 248, 0.05), 0 0 15px rgba(56, 189, 248, 0.1);
-  border-color: rgba(56, 189, 248, 0.3);
-}
-.text-glow {
-  text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
-}
-
 :root {
-  --primary: #38bdf8;      /* Cyan 400 */
-  --primary-dark: #0284c7; /* Cyan 600 */
-  --bg-color: #0b0f19;     /* Deep Obsidian */
-  --sidebar-bg: #090d16;   /* Dark Navy */
+  --primary: #3b82f6;      /* Blue 500 */
+  --primary-dark: #2563eb; /* Blue 600 */
+  --bg-color: #f8fafc;     /* Slate 50 */
+  --sidebar-bg: #0f172a;   /* Slate 900 */
   --sidebar-text: #94a3b8; /* Slate 400 */
-  --text-main: #f8fafc;    /* Slate 50 */
-  --text-muted: #94a3b8;   /* Slate 400 */
-  --border-color: rgba(255, 255, 255, 0.08);
+  --text-main: #0f172a;    /* Slate 900 */
+  --text-muted: #64748b;   /* Slate 500 */
+  --border-color: #e2e8f0; /* Slate 200 */
   --success: #10b981;      /* Emerald 500 */
   --warning: #f59e0b;      /* Amber 500 */
   --danger: #ef4444;       /* Red 500 */
@@ -32,14 +16,6 @@
   --radius-full: 9999px;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-
-  /* Adding custom dark-friendly card/input tokens */
-  --card-bg: rgba(15, 23, 42, 0.65);
-  --card-border: rgba(255, 255, 255, 0.08);
-  --input-bg: rgba(30, 41, 59, 0.4);
-  --input-border: rgba(255, 255, 255, 0.1);
-  --text-bright: #f8fafc;
-  --primary-accent: #38bdf8;
 }
 
 * {

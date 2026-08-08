@@ -15,7 +15,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { UserProfile } from "../types";
-import { ApiService } from "../api";
+import { isProfileComplete, MockService } from "../mocks/mockService";
 import "./ProfileSettings.css";
 
 interface Props {
@@ -79,7 +79,7 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
   }, []);
 
   const loadProfile = async () => {
-    const data = mergeProfile((await ApiService.getProfile()) as UserProfile | null);
+    const data = mergeProfile(await MockService.getUserProfile());
     setProfile(data);
     setSavedProfile(data);
   };
@@ -90,7 +90,7 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
   }, [profile]);
 
   const hasChanges = useMemo(() => JSON.stringify(profile) !== JSON.stringify(savedProfile), [profile, savedProfile]);
-  const profileReady = Boolean(profile.fullName && profile.phone && profile.email && profile.idNumber);
+  const profileReady = isProfileComplete(profile);
 
   const setField = <K extends keyof UserProfile>(name: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [name]: value }));
@@ -108,37 +108,56 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
     setField(name as keyof UserProfile, checked as UserProfile[keyof UserProfile]);
   };
 
-  const validate = (): boolean => {
-    const newErrors: ProfileErrors = {};
+  const validate = () => {
+    const nextErrors: ProfileErrors = {};
+    const phoneRegex = /^[0-9]{9,11}$/;
+    const idRegex = /^([0-9]{9}|[0-9]{12})$/;
+
     requiredFields.forEach((field) => {
       if (!String(profile[field] ?? "").trim()) {
-        newErrors[field] = "Trường này không được để trống";
+        nextErrors[field] = "Không được để trống.";
       }
     });
 
-    // Validate email
     if (profile.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
-      newErrors.email = "Email không hợp lệ";
+      nextErrors.email = "Email không hợp lệ.";
     }
 
-    // Validate phone
-    if (profile.phone && !/^\d{10,11}$/.test(profile.phone)) {
-      newErrors.phone = "Số điện thoại gồm 10-11 chữ số";
+    if (profile.phone && !phoneRegex.test(profile.phone)) {
+      nextErrors.phone = "Số điện thoại cần 9-11 chữ số.";
     }
 
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    if (profile.emergencyPhone && !phoneRegex.test(profile.emergencyPhone)) {
+      nextErrors.emergencyPhone = "Số điện thoại cần 9-11 chữ số.";
+    }
+
+    if (profile.idNumber && !idRegex.test(profile.idNumber)) {
+      nextErrors.idNumber = "CCCD/CMND cần 9 hoặc 12 chữ số.";
+    }
+
+    if (profile.dob && new Date(profile.dob) > new Date()) {
+      nextErrors.dob = "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
+
+    if (profile.idIssueDate && profile.dob && new Date(profile.idIssueDate) < new Date(profile.dob)) {
+      nextErrors.idIssueDate = "Ngày cấp phải sau ngày sinh.";
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setMessage(null);
+
     if (!validate()) {
       setMessage({ type: "error", text: "Vui lòng kiểm tra các trường đang báo lỗi." });
       return;
     }
 
     setLoading(true);
-    const success = await ApiService.updateProfile(profile as unknown as Record<string, unknown>);
+    const success = await MockService.updateUserProfile(profile);
     setLoading(false);
 
     if (success) {
@@ -151,24 +170,12 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
   };
 
   const handleFillDemo = async () => {
-    // Demo profile: fill local state only, then save to backend
-    const demoProfile = mergeProfile({
-      fullName: "Nguyễn Minh Anh", phone: "0901234567", email: "demo@assistant-018.ai",
-      idNumber: "012345678901", dob: "1995-04-12", gender: "female",
-      address: "25 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh", city: "TP. Hồ Chí Minh",
-      district: "Quận 1", nationality: "Việt Nam",
-      idIssueDate: "2021-05-20", idIssuePlace: "Cục Cảnh sát quản lý hành chính",
-      emergencyName: "Nguyễn Thanh Bình", emergencyPhone: "0912345678", emergencyRelation: "Anh trai",
-      preferredPayment: "momo", preferredCabin: "economy",
-      specialRequests: "ưu tiên chỗ gần cửa sổ, cần nhắc lịch trước chuyến đi.",
-      notifyEmail: true, notifySms: true, notifyReminder: true,
-    } as UserProfile);
     setLoading(true);
-    await ApiService.updateProfile(demoProfile as unknown as Record<string, unknown>);
-    setLoading(false);
+    const demoProfile = mergeProfile(await MockService.saveDemoProfile());
     setProfile(demoProfile);
     setSavedProfile(demoProfile);
     setErrors({});
+    setLoading(false);
     setMessage({ type: "success", text: "Đã điền hồ sơ demo đầy đủ. Bạn có thể quay lại Trợ lý đặt vé để xác nhận booking." });
     onSaved?.(demoProfile);
   };
@@ -212,7 +219,7 @@ export const ProfileSettings: React.FC<Props> = ({ onSaved }) => {
           </div>
 
           <div className="summary-card compact">
-            <strong>Danh sách kiểm tra demo</strong>
+            <strong>Checklist demo</strong>
             <ul>
               <li className={profile.fullName && profile.phone && profile.email ? "done" : ""}>Thông tin liên hệ</li>
               <li className={profile.idNumber && profile.dob ? "done" : ""}>Giấy tờ tùy thân</li>
