@@ -27,7 +27,9 @@ class Settings(BaseSettings):
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)
     max_graph_steps: int = Field(default=12, ge=1, le=20)
     max_tool_calls: int = Field(default=6, ge=1, le=10)
-    agent_model_mode: Literal["deterministic", "gemini"] = "deterministic"
+    # Gemini is the demo path. Tests and offline development can explicitly opt
+    # into deterministic mode without changing the production/demo default.
+    agent_model_mode: Literal["deterministic", "gemini"] = "gemini"
 
     # Database
     database_url: str = Field(min_length=1)

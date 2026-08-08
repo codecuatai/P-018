@@ -30,7 +30,9 @@ Validate without exposing values using `python scripts/validate-env-config.py` a
 
 Service-level `.env.example` files are optional references for a service running outside Compose. They contain only that service's variables. Since applications read process environment only, export/provide those values through your shell, IDE, or a service-specific Docker command; do not copy secrets among service files.
 
-The existing Web demo can also run separately with `cd apps/web && npm run dev`; its legacy scenarios remain mock-driven. When running services manually, apply service-owned migrations and deterministic seeds explicitly:
+The Web assistant can also run separately with `cd apps/web && npm run dev`; it
+uses the unified Gateway conversation/action endpoints and does not fabricate
+domain cards in the browser. When running services manually, apply service-owned migrations and deterministic seeds explicitly:
 
 ```powershell
 ./scripts/migrate.ps1 .env.example

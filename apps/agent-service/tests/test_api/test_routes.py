@@ -26,6 +26,42 @@ async def test_chat_requires_real_actor_and_conversation(client):
 async def test_agent_status(client):
     response = await client.get("/api/v1/status", headers={"X-Internal-Service-Token": "test-token"})
     assert response.status_code == 200
+    data = response.json()
+    assert data["model_mode"] == "deterministic"
+    assert data["model"] == "test-model"
+    assert data["api_key_configured"] is True
+    assert "gemini_api_key" not in data
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
+    response = await client.post(
+        "/api/v1/assistant-chat",
+        json={
+            "message": "Tim pho giao ve nha va dat lich kham than kinh sang mai",
+            "conversation_id": "conv-assistant-api-1",
+            "user_id": "actor-assistant-api-1",
+            "correlation_id": "corr-assistant-api-1",
+        },
+        headers={
+            "X-Internal-Service-Token": "test-token",
+            "X-Actor-Id": "actor-assistant-api-1",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["decision_source"] == "deterministic"
+    assert [task["domain"] for task in data["plan"]["tasks"]] == ["food", "healthcare"]
+    assert all("price" not in task.get("extracted_slots", {}) for task in data["plan"]["tasks"])
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_requires_gateway_auth(client):
+    response = await client.post(
+        "/api/v1/assistant-chat",
+        json={"message": "Tim mon an", "conversation_id": "conv-auth", "user_id": "actor-auth"},
+    )
+    assert response.status_code == 401
 
 
 @pytest.mark.asyncio

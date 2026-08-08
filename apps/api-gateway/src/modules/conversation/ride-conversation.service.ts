@@ -360,7 +360,23 @@ export class RideConversationService {
 
   private resolveWorkflow(actorId: string, requestedId: string | undefined): Workflow {
     if (requestedId) {
-      return this.ownedWorkflow(actorId, requestedId);
+      const existing = this.workflows.get(requestedId);
+      if (existing) return this.ownedWorkflow(actorId, requestedId);
+      // Unified Assistant workflows are allocated by the Gateway task store.
+      // They are still actor-owned, but the first quote call must be allowed to
+      // materialize the generated gateway identifier.
+      if (!requestedId.startsWith('gw_')) return this.ownedWorkflow(actorId, requestedId);
+      const workflow: Workflow = {
+        id: requestedId,
+        actorId,
+        stage: 'COLLECTING_DETAILS',
+        quote: null,
+        booking: null,
+        pendingOperation: null,
+        context: emptyContext(),
+      };
+      this.workflows.set(workflow.id, workflow);
+      return workflow;
     }
     const workflow: Workflow = {
       id: 'wf_' + randomUUID(),

@@ -41,6 +41,10 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
+        - name: restaurant_id
+          in: path
+          required: true
+          schema: {type: string}
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityRequest'}}}
@@ -142,7 +146,7 @@ components:
       name: Idempotency-Key
       in: header
       required: true
-      schema: {type: string}
+      schema: {type: string, minLength: 1, maxLength: 255}
   schemas:
     Envelope:
       type: object

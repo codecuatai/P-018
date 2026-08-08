@@ -16,15 +16,47 @@ sequenceDiagram
   G-->>C: safe response + correlation ID
 ```
 
-## Web assistant routing
+## Unified Web assistant routing
 
-The Web application is a thin Gateway client. Its primary navigation exposes only
-the four implemented domains: Ride, Food, Restaurant, and Healthcare. It keeps a
-separate workflow or conversation identifier for each domain, renders structured
-Gateway responses, and records activity only after a backend-confirmed result.
-Authentication uses `POST /api/v1/auth/login` followed by `GET /api/v1/auth/me`;
-the access token is held in the current browser session and is cleared on `401`.
-The Web does not call Agent or any domain service directly.
+The Web application is a thin Gateway client with one X-One conversation. It
+calls only `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/actions`,
+renders consumer-facing cards/actions, and records activity only after a
+backend-confirmed result. Authentication uses `POST /api/v1/auth/login`
+followed by `GET /api/v1/auth/me`; the access token is held in the current
+browser session and is cleared on `401`. The Web does not call Agent or any
+domain service directly.
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant W as Web
+  participant G as Gateway
+  participant A as Agent planner
+  participant D as Domain services
+  U->>W: One natural-language request
+  W->>G: /api/v1/assistant/chat
+  G->>A: bounded plan (max 4 tasks)
+  A-->>G: typed tasks and dependencies
+  G->>D: validated typed calls
+  D-->>G: authoritative options/holds/quotes
+  G-->>W: safe cards and explicit actions
+  U->>W: Select or confirm an action
+  W->>G: /api/v1/assistant/actions
+  G->>D: idempotent action/confirmation
+  D-->>G: authoritative result
+  G-->>W: updated conversation response
+```
+
+Restaurant-to-Ride composition keeps Ride blocked until the selected
+restaurant's authoritative location is available. No model-produced resource
+ID, price, availability, status, or final-success claim is trusted.
+
+Each unified task carries a revision. A turn processes only new or semantically
+changed tasks; untouched pending/completed tasks keep their authoritative card
+and actions. Selection actions share a task revision/cohort, so choosing one
+alternative invalidates its siblings and stale actions return
+`ACTION_NOT_AVAILABLE` without a domain call. An unrelated Food or Healthcare
+follow-up therefore does not re-quote an awaiting Restaurant or Ride task.
 
 ## Food ordering (target flow)
 
@@ -46,6 +78,11 @@ sequenceDiagram
 ```
 
 The Food flow is implemented for the backend slice. Final writes require an idempotency key from the first request, confirmation bound to action/payload/version/price/expiry, audit metadata, and an authoritative Food result. Payment success ends the request at `PAID -> RESTAURANT_CONFIRMING`; Food's due-workflow worker/lazy reconciliation advances later states. Restaurant rejection and cancellation are reconciled to one idempotent refund. Stale `PROCESSING` confirmations and `PENDING` payments are claimed/recovered by the Gateway worker using the same execution/payment keys.
+
+The unified Food task passes its task-scoped cumulative workflow context back to
+the Food Agent (`previous_context` merged with each `state_updates` delta). If
+Food returns no authoritative options, the Gateway emits an empty/clarifying
+card instead of manufacturing catalog items or prices.
 
 ## Restaurant reservation
 

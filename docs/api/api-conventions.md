@@ -12,6 +12,18 @@ Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/inte
 
 This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 
+The unified consumer conversation uses `POST /api/v1/assistant/chat` and
+`POST /api/v1/assistant/actions`, documented in
+[`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Its
+response contains `conversation_id`, safe assistant text, authoritative result
+cards, explicit action descriptors, and completed cards. It does not expose
+Agent plans, raw tool requests, workflow state, state patches, or internal
+confirmation records. The action endpoint requires a trimmed, non-blank
+`Idempotency-Key` of 1–255 characters; clients reuse the same key for a retry
+of the same action. Final and financial actions remain explicit confirmation
+steps. Consumer cards are discriminated by `kind` and omit internal fields
+such as `workflow_id`, `confirmation_id`, `tool_request`, and `resource_version`.
+
 Successful responses use:
 
 ```json

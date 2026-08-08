@@ -75,6 +75,13 @@ class RestaurantApplicationService:
                 if value is not None
             }
 
+        if not fields:
+            raise ValueError("NO_FIELDS_TO_UPDATE")
+        if "party_size" in fields and party_size is None:
+            raise ValueError("PARTY_SIZE_REQUIRED")
+        if "start_at" in fields and start_at is None:
+            raise ValueError("START_AT_REQUIRED")
+
         normalized_start = normalized_datetime(start_at) if "start_at" in fields else None
         payload = {"reservation_id": reservation_id, "fields": sorted(fields)}
         if "party_size" in fields:

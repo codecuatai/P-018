@@ -1,386 +1,77 @@
+import { CalendarDays, CarFront, Check, CircleDollarSign, MapPin, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
 import type { ReactNode } from "react";
-import { CheckCircle2, Clock3, CreditCard, MapPin, ShieldCheck, Sparkles } from "lucide-react";
-import { asArray, asRecord, numberValue, stringValue } from "../api";
-import type { Domain, DomainSession, WorkflowAction } from "../types";
+import type { AssistantAction, AssistantItem, AssistantResponse } from "../types";
 
-interface WorkflowCardsProps {
-  domain: Domain;
-  payload?: Record<string, unknown>;
-  session: DomainSession;
-  onAction: (action: WorkflowAction) => void;
+export function AssistantCards({ response, onAction, disabledActionId }: { response: AssistantResponse; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
+  const secondaryActions = response.actions.filter((action) => action.kind !== "select_restaurant" && action.kind !== "select_healthcare_slot");
+  return <div className="assistant-cards">
+    {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} />)}
+    {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
+  </div>;
 }
 
-type CardProps = {
-  payload: Record<string, unknown>;
-  session: DomainSession;
-  onAction: (action: WorkflowAction) => void;
-};
-
-export function WorkflowCards({ domain, payload, session, onAction }: WorkflowCardsProps) {
-  if (!payload) return null;
-  if (domain === "ride") return <RideCard payload={payload} session={session} onAction={onAction} />;
-  if (domain === "food") return <FoodCard payload={payload} session={session} onAction={onAction} />;
-  if (domain === "restaurant") return <RestaurantCard payload={payload} session={session} onAction={onAction} />;
-  return <HealthcareCard payload={payload} session={session} onAction={onAction} />;
+function AssistantCard({ item, actions, onAction, disabledActionId }: { item: AssistantItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
+  const kind = item.kind;
+  if (kind === "restaurant_options" || kind === "restaurant_unavailable") return <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+  if (kind === "restaurant_confirmation" || kind === "reservation") return <RestaurantConfirmation item={item} />;
+  if (kind === "ride_quote" || kind === "ride_booking") return <RideCard item={item} />;
+  if (kind === "healthcare_options" || kind === "healthcare_no_availability") return <HealthcareCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+  if (kind === "appointment" || kind === "healthcare_confirmation" || kind === "appointment_confirmed") return <HealthcareAppointment item={item} />;
+  if (kind === "food_options" || kind === "food_confirmation" || kind === "food_order" || kind === "food_empty") return <FoodCard item={item} />;
+  return <SimpleCard item={item} />;
 }
 
-function RideCard({ payload, session, onAction }: CardProps) {
-  const quote = asRecord(payload.quote);
-  const booking = asRecord(payload.booking);
-  const driver = asRecord(booking?.driver);
-  const stage = stringValue(payload.stage);
-  const vehicle = vehicleLabel(stringValue(quote?.vehicle_type));
-  const isCompleted = stage === "COMPLETED" && stringValue(booking?.status) === "DRIVER_ASSIGNED";
-  const isLatest = session.lastPayload === payload;
-
-  return (
-    <article className="workflow-card workflow-card-ride">
-      <CardHeader icon={<Sparkles size={17} />} eyebrow="RIDE · DỮ LIỆU GATEWAY" title={isCompleted ? "Chuyến xe đã hoàn tất" : "Báo giá chuyến xe"} />
-      {quote ? (
-        <div className="detail-grid">
-          <Detail label="Điểm đón" value={stringValue(quote.pickup_address, "Chưa có dữ liệu")} icon={<MapPin size={15} />} />
-          <Detail label="Điểm đến" value={stringValue(quote.dropoff_address, "Chưa có dữ liệu")} icon={<MapPin size={15} />} />
-          <Detail label="Loại xe" value={vehicle} />
-          <Detail label="Thời gian dự kiến" value={`${numberValue(quote.duration_minutes) ?? "—"} phút`} />
-          <Detail label="Khoảng cách" value={`${numberValue(quote.distance_km) ?? "—"} km`} />
-          <Detail label="Giá Gateway" value={money(quote.amount, stringValue(quote.currency, "VND"))} emphasized />
-        </div>
-      ) : null}
-      {booking ? (
-        <div className="result-strip">
-          <div><span>Mã booking</span><strong>{stringValue(booking.id, "Chưa có")}</strong></div>
-          <div><span>Trạng thái</span><strong>{rideStatus(stringValue(booking.status))}</strong></div>
-          {driver ? <div><span>Tài xế</span><strong>{driverName(driver)}</strong></div> : null}
-        </div>
-      ) : null}
-      {isCompleted && driver ? (
-        <div className="success-note"><CheckCircle2 size={16} /> Tài xế đã được Gateway gán cho booking này.</div>
-      ) : null}
-      {isLatest && stage === "SERVICE_CONFIRMATION" && quote ? (
-        <ActionRow
-          label="Xác nhận chuyến"
-          hint="Bước này chỉ xác nhận hành trình và báo giá; thanh toán là bước riêng."
-          onClick={() => onAction({ type: "ride-confirm", domain: "ride" })}
-          disabled={session.isSending}
-        />
-      ) : null}
-      {isLatest && stage === "PAYMENT_CONFIRMATION" && booking ? (
-        <ActionRow
-          label="Xác nhận thanh toán demo"
-          hint="Gateway sẽ thực hiện bước thanh toán sandbox và hoàn tất booking."
-          onClick={() => onAction({ type: "ride-payment", domain: "ride" })}
-          disabled={session.isSending}
-          icon={<CreditCard size={16} />}
-        />
-      ) : null}
-    </article>
-  );
+function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: AssistantItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
+  const options = records(item.options);
+  const selectionActions = actions.filter((action) => action.kind === "select_restaurant");
+  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Nhà hàng" title={item.title} />
+    {options.length ? <div className="option-list">{options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Nhà hàng")}</strong><span><MapPin size={13} /> {text(option.location, "Địa điểm đang được cập nhật")}</span></div>{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn quán</button> : option.rating !== undefined ? <b>{String(option.rating)} ★</b> : null}</div>)}</div> : <p className="card-note">Mình đang cập nhật thêm lựa chọn cho bạn.</p>}
+    {item.note ? <p className="card-note">{text(item.note)}</p> : null}
+  </article>;
 }
 
-function FoodCard({ payload, session, onAction }: CardProps) {
-  const state = asRecord(payload.state_updates) ?? {};
-  const candidates = records(state.restaurant_candidates ?? payload.restaurant_candidates);
-  const menuItems = records(state.menu_items ?? state.menu ?? payload.menu_items);
-  const cart = asRecord(state.cart ?? payload.cart);
-  const cartItems = records(cart?.items ?? state.cart_items ?? payload.cart_items);
-  const preview = asRecord(state.order_preview ?? payload.order_preview);
-  const order = asRecord(payload.order);
-  const payment = asRecord(payload.payment);
-  const pending = asRecord(payload.pending_confirmation);
-  const isLatest = session.lastPayload === payload;
-
-  return (
-    <article className="workflow-card workflow-card-food">
-      <CardHeader icon={<Sparkles size={17} />} eyebrow="FOOD · PHIÊN HỘI THOẠI" title={foodTitle(payload, order)} />
-      {candidates.length > 0 ? (
-        <div className="structured-list">
-          <span className="card-label">Quán được tìm thấy</span>
-          {candidates.slice(0, 5).map((candidate, index) => (
-            <div className="structured-row" key={`${stringValue(candidate.id, "candidate")}-${index}`}>
-              <div><strong>{stringValue(candidate.name, stringValue(candidate.restaurant_name, "Quán ăn"))}</strong><span>{stringValue(candidate.address, stringValue(candidate.location, "Địa chỉ do Gateway cung cấp"))}</span></div>
-              <span className="row-value">{formatMaybeMoney(candidate.price ?? candidate.min_price)}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {menuItems.length > 0 ? (
-        <div className="structured-list">
-          <span className="card-label">Món / lựa chọn</span>
-          {menuItems.slice(0, 6).map((item, index) => (
-            <div className="structured-row" key={`${stringValue(item.id, "item")}-${index}`}>
-              <div><strong>{stringValue(item.name, stringValue(item.title, "Món ăn"))}</strong><span>{stringValue(item.description, "")}</span></div>
-              <span className="row-value">{formatMaybeMoney(item.price)}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {cart || cartItems.length > 0 ? (
-        <div className="summary-box">
-          <div className="summary-box-heading"><span>Giỏ hàng</span><strong>{stringValue(cart?.restaurant_name, "Đơn nháp từ Food")}</strong></div>
-          {cartItems.slice(0, 5).map((item, index) => (
-            <div className="summary-line" key={`${stringValue(item.id, "cart-item")}-${index}`}>
-              <span>{stringValue(item.name, stringValue(item.title, "Món ăn"))} × {numberValue(item.quantity) ?? 1}</span>
-              <strong>{formatMaybeMoney(item.total ?? item.amount ?? item.price)}</strong>
-            </div>
-          ))}
-          <div className="summary-total"><span>Tổng từ Gateway</span><strong>{formatMaybeMoney(cart?.total ?? cart?.grand_total ?? preview?.total)}</strong></div>
-        </div>
-      ) : null}
-      {preview ? (
-        <div className="summary-box accent-box">
-          <div className="summary-box-heading"><span>Đơn hàng cần xác nhận</span><strong>{stringValue(preview.restaurant_name, stringValue(preview.restaurant, "Food"))}</strong></div>
-          <div className="summary-line"><span>Địa chỉ giao</span><strong>{stringValue(preview.address, stringValue(preview.delivery_address, "Theo lựa chọn của bạn"))}</strong></div>
-          <div className="summary-total"><span>Tổng tiền</span><strong>{formatMaybeMoney(preview.total ?? preview.amount)}</strong></div>
-        </div>
-      ) : null}
-      {isLatest && pending && stringValue(pending.action) === "PLACE_FOOD_ORDER" && session.pendingConfirmationId === stringValue(pending.id) ? (
-        <ActionRow
-          label="Xác nhận đặt món"
-          hint="Thanh toán card demo và tạo order bằng đúng confirmation của Gateway."
-          onClick={() => onAction({ type: "food-confirm", domain: "food" })}
-          disabled={session.isSending}
-          icon={<ShieldCheck size={16} />}
-        />
-      ) : null}
-      {order ? <OrderResult order={order} payment={payment} /> : null}
-    </article>
-  );
+function RestaurantConfirmation({ item }: { item: AssistantItem }) {
+  const restaurant = asRecord(item.restaurant);
+  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(restaurant?.location, "Đang cập nhật")} /><Detail label="Mã đặt bàn" value={text(item.reservation_code, "Chưa có mã đặt bàn")} /><Detail label="Thời gian" value={dateText(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}</article>;
 }
 
-function RestaurantCard({ payload, session, onAction }: CardProps) {
-  const result = asRecord(payload.tool_result);
-  const items = result ? records(result.items) : records(payload.tool_result);
-  const request = asRecord(payload.tool_request);
-  const args = asRecord(request?.arguments);
-  const pending = asRecord(payload.pending_confirmation);
-  const status = stringValue(payload.status);
-  const confirmedReservation = result && stringValue(result.status) === "CONFIRMED";
-  const isLatest = session.lastPayload === payload;
-
-  return (
-    <article className="workflow-card workflow-card-restaurant">
-      <CardHeader icon={<Clock3 size={17} />} eyebrow="RESTAURANT · ĐẶT BÀN" title={confirmedReservation ? "Đặt bàn thành công" : "Tiến trình đặt bàn"} />
-      {items.length > 0 ? (
-        <div className="structured-list">
-          <span className="card-label">Nhà hàng phù hợp</span>
-          {items.slice(0, 5).map((item, index) => (
-            <div className="structured-row" key={`${stringValue(item.id, "restaurant")}-${index}`}>
-              <div><strong>{stringValue(item.name, stringValue(item.restaurant_name, "Nhà hàng"))}</strong><span>{stringValue(item.address, stringValue(item.location, "Thông tin do Gateway cung cấp"))}</span></div>
-              <span className="row-value">{stringValue(item.cuisine_type, "")}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {result ? (
-        <div className="result-strip">
-          <div><span>Trạng thái</span><strong>{restaurantStatus(stringValue(result.status, status))}</strong></div>
-          {result.available !== undefined ? <div><span>Khả dụng</span><strong>{result.available === true ? "Có bàn" : "Chưa có"}</strong></div> : null}
-          {result.hold_id ? <div><span>Mã giữ bàn</span><strong>{stringValue(result.hold_id)}</strong></div> : null}
-          {confirmedReservation ? <div><span>Mã đặt chỗ</span><strong>{stringValue(result.id, stringValue(result.code, "Đã lưu"))}</strong></div> : null}
-        </div>
-      ) : null}
-      {isLatest && pending && status === "CONFIRMATION_REQUIRED" ? (
-        <div className="summary-box accent-box">
-          <div className="summary-box-heading"><span>Xác nhận cuối</span><strong>Đặt bàn sau khi giữ chỗ</strong></div>
-          <div className="summary-line"><span>Số khách</span><strong>{stringValue(args?.party_size, "Theo yêu cầu")}</strong></div>
-          <div className="summary-line"><span>Thời gian</span><strong>{formatDateTime(args?.start_at)}</strong></div>
-          <div className="summary-line"><span>Confirmation</span><strong>{stringValue(pending.id, "Đã tạo")}</strong></div>
-        </div>
-      ) : null}
-      {isLatest && pending && status === "CONFIRMATION_REQUIRED" && session.pendingConfirmationId === stringValue(pending.id) ? (
-        <ActionRow
-          label="Xác nhận đặt bàn"
-          hint="Chỉ thao tác này mới tạo reservation trong Restaurant Service."
-          onClick={() => onAction({ type: "restaurant-confirm", domain: "restaurant" })}
-          disabled={session.isSending}
-          icon={<ShieldCheck size={16} />}
-        />
-      ) : null}
-      {confirmedReservation ? <div className="success-note"><CheckCircle2 size={16} /> Reservation đã được backend xác nhận.</div> : null}
-    </article>
-  );
+function RideCard({ item }: { item: AssistantItem }) {
+  return <article className="assistant-card card-ride"><CardHeading icon={<CarFront size={17} />} label="Chuyến xe" title={item.title} /><div className="route-line"><div><span>Đón tại</span><strong>{text(item.pickup)}</strong></div><div className="route-arrow">→</div><div><span>Đến</span><strong>{text(item.dropoff)}</strong></div></div><div className="metric-row"><Metric label="Phương tiện" value={text(item.vehicle, "Theo lựa chọn")} /><Metric label="Thời gian" value={item.duration_minutes ? `${String(item.duration_minutes)} phút` : "Đang cập nhật"} /><Metric label="Chi phí" value={formatMoney(item.amount, text(item.currency, "VND"))} /></div></article>;
 }
 
-function HealthcareCard({ payload, session, onAction }: CardProps) {
-  const toolResult = asRecord(payload.tool_result);
-  const appointment = asRecord(payload.appointment) ?? asRecord(toolResult?.appointment) ?? (toolResult?.status ? toolResult : undefined);
-  const pending = asRecord(payload.pending_confirmation);
-  const departments = records(payload.departments);
-  const candidates = records(payload.candidates ?? payload.doctors);
-  const payment = asRecord(payload.payment);
-  const isPaymentRequired = payload.payment_required === true || stringValue(payload.status) === "PAYMENT_REQUIRED";
-  const isPaid = stringValue(payment?.status) === "SUCCEEDED" || appointment?.is_paid === true;
-  const isConfirmed = stringValue(appointment?.status) === "CONFIRMED";
-  const appointmentId = numberValue(appointment?.appointment_id ?? appointment?.id);
-  const isLatest = session.lastPayload === payload;
-
-  return (
-    <article className="workflow-card workflow-card-healthcare">
-      <CardHeader icon={<ShieldCheck size={17} />} eyebrow="HEALTHCARE · LỊCH KHÁM" title={isConfirmed ? "Lịch khám đã xác nhận" : "Tiến trình lịch khám"} />
-      {departments.length > 0 ? (
-        <div className="structured-list">
-          <span className="card-label">Chọn khoa</span>
-          {departments.slice(0, 6).map((department, index) => {
-            const name = stringValue(department.name, stringValue(department.department, "Khoa khám"));
-            return (
-              <button className="select-row" key={`${name}-${index}`} onClick={() => onAction({ type: "message", domain: "healthcare", text: `Chọn khoa ${name}`, context: healthcareContext(payload, { department: name }) })} type="button" disabled={session.isSending || !isLatest}>
-                <span><strong>{name}</strong><small>{stringValue(department.description, "Xem bác sĩ và khung giờ khả dụng")}</small></span>
-                <span aria-hidden="true">→</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      {candidates.length > 0 ? (
-        <div className="structured-list">
-          <span className="card-label">Bác sĩ và khung giờ</span>
-          {candidates.slice(0, 8).map((candidate, index) => {
-            const slot = asRecord(candidate.slot) ?? candidate;
-            const doctorName = stringValue(candidate.doctor_name, stringValue(candidate.name, "Bác sĩ"));
-            const department = stringValue(candidate.department, stringValue(asRecord(candidate.doctor)?.department, stringValue(asRecord(payload.slots)?.department, "Khoa khám")));
-            const slotId = numberValue(slot.id);
-            const price = candidate.price ?? asRecord(candidate.doctor)?.price;
-            return (
-              <div className="candidate-row" key={`${slotId ?? index}-${doctorName}`}>
-                <div><strong>{doctorName}</strong><span>{department} · {formatDateTime(slot.start_at ?? slot.starts_at ?? slot.datetime)}</span></div>
-                <div className="candidate-action"><strong>{formatMaybeMoney(price)}</strong>{slotId ? <button className="button button-small" type="button" disabled={session.isSending || !isLatest} onClick={() => onAction({ type: "message", domain: "healthcare", text: `Tôi muốn đặt lịch với bác sĩ ${doctorName}, xác nhận giữ slot id ${slotId}`, context: healthcareContext(payload, { department, slot_id: slotId }) })}>Giữ giờ này</button> : null}</div>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {appointment ? (
-        <div className="summary-box">
-          <div className="summary-box-heading"><span>Lịch hẹn</span><strong>#{stringValue(appointment.appointment_id, stringValue(appointment.id, "—"))}</strong></div>
-          <div className="summary-line"><span>Bác sĩ</span><strong>{stringValue(asRecord(appointment.doctor)?.name, stringValue(appointment.doctor_name, "Theo lựa chọn"))}</strong></div>
-          <div className="summary-line"><span>Trạng thái</span><strong>{stringValue(appointment.status, "DRAFT")}</strong></div>
-          <div className="summary-line"><span>Chi phí</span><strong>{formatMaybeMoney(appointment.price)}</strong></div>
-          {appointment.slot ? <div className="summary-line"><span>Khung giờ</span><strong>{formatDateTime(asRecord(appointment.slot)?.start_at ?? asRecord(appointment.slot)?.starts_at)}</strong></div> : null}
-        </div>
-      ) : null}
-      {isLatest && isPaymentRequired && appointmentId ? (
-        <ActionRow
-          label="Thanh toán demo"
-          hint="Đây là payment acknowledgement sandbox của Healthcare, chưa phải cổng thanh toán bệnh viện."
-          onClick={() => onAction({ type: "healthcare-payment", domain: "healthcare" })}
-          disabled={session.isSending}
-          icon={<CreditCard size={16} />}
-        />
-      ) : null}
-      {isLatest && isPaid && !pending && !isConfirmed && appointmentId ? (
-        <ActionRow
-          label="Tiếp tục xác nhận lịch"
-          hint="Lấy confirmation cuối từ Gateway trước khi tạo appointment chính thức."
-          onClick={() => onAction({ type: "message", domain: "healthcare", text: `Xác nhận lịch hẹn appointment id ${appointmentId}`, context: healthcareContext(payload, { appointment_id: appointmentId }) })}
-          disabled={session.isSending}
-        />
-      ) : null}
-      {isLatest && pending && session.pendingConfirmationId === stringValue(pending.id) ? (
-        <ActionRow
-          label="Xác nhận đặt lịch"
-          hint="Chỉ backend success với trạng thái CONFIRMED mới hoàn tất lịch khám."
-          onClick={() => onAction({ type: "healthcare-confirm", domain: "healthcare" })}
-          disabled={session.isSending}
-          icon={<ShieldCheck size={16} />}
-        />
-      ) : null}
-      {isConfirmed ? <div className="success-note"><CheckCircle2 size={16} /> Appointment đã được Healthcare Service xác nhận.</div> : null}
-    </article>
-  );
+function HealthcareCard({ item, actions, onAction, disabledActionId }: { item: AssistantItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
+  const options = records(item.options);
+  const departments = records(item.departments);
+  const selectionActions = actions.filter((action) => action.kind === "select_healthcare_slot");
+  return <article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} />
+    {options.length ? <div className="option-list">{options.map((option, index) => <div className="option-row" key={`${String(option.doctor)}-${index}`}><div><strong>{text(option.doctor, "Bác sĩ")}</strong><span>{text(option.department, "Khoa khám")} · {dateText(option.start_time)}</span></div>{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn lịch</button> : null}</div>)}</div> : departments.length ? <div className="option-list">{departments.slice(0, 6).map((department, index) => <div className="option-row" key={`${String(department.name)}-${index}`}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhắn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
+  </article>;
 }
 
-function OrderResult({ order, payment }: { order: Record<string, unknown>; payment?: Record<string, unknown> }) {
-  return (
-    <div className="result-strip result-strip-success">
-      <div><span>Mã order</span><strong>{stringValue(order.id, "Chưa có")}</strong></div>
-      <div><span>Order</span><strong>{stringValue(order.status, "Đã nhận")}</strong></div>
-      <div><span>Payment</span><strong>{stringValue(payment?.status, "Đã ghi nhận")}</strong></div>
-      <div><span>Số tiền</span><strong>{formatMaybeMoney(order.amount ?? order.total)}</strong></div>
-    </div>
-  );
+function HealthcareAppointment({ item }: { item: AssistantItem }) {
+  const appointment = asRecord(item.appointment);
+  return <article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} /><div className="detail-list"><Detail label="Bác sĩ" value={text(item.doctor, text(appointment?.doctor_name, "Theo lựa chọn"))} /><Detail label="Khoa" value={text(item.department, "Đang cập nhật")} /><Detail label="Thời gian" value={dateText(item.start_time ?? appointment?.start_time)} /><Detail label="Chi phí" value={formatMoney(item.price ?? appointment?.price, "VND")} /></div>{item.note || item.payment_note ? <p className="card-note">{text(item.note ?? item.payment_note)}</p> : null}</article>;
 }
 
-function CardHeader({ icon, eyebrow, title }: { icon: ReactNode; eyebrow: string; title: string }) {
-  return <div className="workflow-card-header"><div className="workflow-card-icon">{icon}</div><div><span className="card-eyebrow">{eyebrow}</span><h3>{title}</h3></div></div>;
+function FoodCard({ item }: { item: AssistantItem }) {
+  const options = records(item.options);
+  const order = asRecord(item.order);
+  return <article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{options.length ? <div className="option-list">{options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Món ăn")}</strong><span><Soup size={13} /> {text(option.restaurant, text(option.description, "Gợi ý giao hàng tận nơi"))}</span></div><b>{formatMoney(option.price, "VND")}</b></div>)}</div> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{order ? <div className="metric-row"><Metric label="Đơn hàng" value={text(order.id, "Đã tiếp nhận")} /><Metric label="Trạng thái" value="Đã nhận" /></div> : null}{item.note || item.payment_note ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note ?? item.payment_note)}</p> : null}</article>;
 }
 
-function Detail({ label, value, icon, emphasized }: { label: string; value: string; icon?: ReactNode; emphasized?: boolean }) {
-  return <div className={`detail-item ${emphasized ? "emphasized" : ""}`}><span>{icon}{label}</span><strong>{value}</strong></div>;
+function SimpleCard({ item }: { item: AssistantItem }) {
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} />{item.question ? <p>{text(item.question)}</p> : null}</article>;
 }
 
-function ActionRow({ label, hint, onClick, disabled, icon }: { label: string; hint: string; onClick: () => void; disabled: boolean; icon?: React.ReactNode }) {
-  return <div className="confirmation-row"><div><strong>{label}</strong><span>{hint}</span></div><button className="button button-primary" type="button" onClick={onClick} disabled={disabled}>{disabled ? "Đang xử lý…" : icon}{label}</button></div>;
+function CardHeading({ icon, label, title }: { icon: ReactNode; label: string; title: unknown }) {
+  return <div className="card-heading"><div className="card-icon">{icon}</div><div><span>{label}</span><h3>{text(title, "Thông tin mới")}</h3></div></div>;
 }
 
-function records(value: unknown): Record<string, unknown>[] {
-  return asArray(value).filter((item): item is Record<string, unknown> => Boolean(asRecord(item)));
-}
-
-function money(value: unknown, currency: string): string {
-  const amount = numberValue(value);
-  if (amount === undefined) return "—";
-  try { return new Intl.NumberFormat("vi-VN", { style: "currency", currency }).format(amount); } catch { return `${amount.toLocaleString("vi-VN")} ${currency}`; }
-}
-
-function formatMaybeMoney(value: unknown): string {
-  if (isMoneyObject(value)) return money(value.amount, stringValue(value.currency, "VND"));
-  return money(value, "VND");
-}
-
-function isMoneyObject(value: unknown): value is Record<string, unknown> {
-  const record = asRecord(value);
-  return Boolean(record && numberValue(record.amount) !== undefined);
-}
-
-function formatDateTime(value: unknown): string {
-  const text = stringValue(value);
-  if (!text) return "Theo yêu cầu";
-  const time = new Date(text);
-  if (Number.isNaN(time.getTime())) return text;
-  return new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(time);
-}
-
-function vehicleLabel(value: string): string {
-  if (value === "CAR_7") return "Xe 7 chỗ";
-  if (value === "BIKE") return "Xe máy";
-  if (value === "CAR_4") return "Xe 4 chỗ";
-  return value || "Theo lựa chọn";
-}
-
-function rideStatus(value: string): string {
-  if (value === "AWAITING_PAYMENT_CONFIRMATION") return "Chờ thanh toán demo";
-  if (value === "DRIVER_ASSIGNED") return "Đã gán tài xế";
-  return value || "Đang xử lý";
-}
-
-function restaurantStatus(value: string): string {
-  if (value === "ACTIVE") return "Đang giữ bàn";
-  if (value === "CONFIRMED") return "Đã xác nhận";
-  return value || "Đang xử lý";
-}
-
-function driverName(driver: Record<string, unknown>): string {
-  return stringValue(driver.name, stringValue(driver.driver_name, stringValue(driver.full_name, "Tài xế đã gán")));
-}
-
-function foodTitle(payload: Record<string, unknown>, order?: Record<string, unknown>): string {
-  if (order) return "Đơn đồ ăn đã được Gateway tiếp nhận";
-  const type = stringValue(payload.response_type);
-  if (type === "confirmation_form") return "Đơn hàng cần xác nhận";
-  if (type === "order_preview") return "Xem lại đơn hàng";
-  return "Thông tin đồ ăn từ Gateway";
-}
-
-function healthcareContext(payload: Record<string, unknown>, extra: Record<string, unknown>): Record<string, unknown> {
-  const slots = asRecord(payload.slots) ?? {};
-  const appointment = asRecord(payload.appointment);
-  const patientId = numberValue(payload.patient_id) ?? numberValue(slots.patient_id) ?? 1;
-  return {
-    slots: { ...slots, ...(extra.department ? { department: extra.department } : {}), ...(extra.slot_id ? { slot_id: extra.slot_id } : {}), ...(extra.appointment_id ? { appointment_id: extra.appointment_id } : {}), patient_id: patientId },
-    patient_id: patientId,
-    appointment_id: extra.appointment_id ?? appointment?.appointment_id ?? appointment?.id ?? null,
-    symptoms: stringValue(payload.symptoms, "dau bung"),
-    tool_name: stringValue(asRecord(payload.tool_request)?.tool_name, "healthcare.list_slots"),
-    tool_result: payload.tool_result ?? null,
-  };
-}
+function Detail({ label, value }: { label: string; value: string }) { return <div className="detail-item"><span>{label}</span><strong>{value}</strong></div>; }
+function Metric({ label, value }: { label: string; value: string }) { return <div><span>{label}</span><strong>{value}</strong></div>; }
+function records(value: unknown): Record<string, unknown>[] { return Array.isArray(value) ? value.filter(asRecord) : []; }
+function asRecord(value: unknown): Record<string, unknown> | undefined { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined; }
+function text(value: unknown, fallback = ""): string { return typeof value === "string" && value.trim() ? value : fallback; }
+function dateText(value: unknown): string { const raw = text(value); if (!raw) return "Theo lựa chọn"; const date = new Date(raw); return Number.isNaN(date.getTime()) ? raw : new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(date); }
+function formatMoney(value: unknown, currency = "VND"): string { const numeric = typeof value === "number" ? value : asRecord(value)?.amount; if (typeof numeric !== "number" || !Number.isFinite(numeric)) return "Đang cập nhật"; try { return new Intl.NumberFormat("vi-VN", { style: "currency", currency }).format(numeric); } catch { return `${numeric.toLocaleString("vi-VN")} ${currency}`; } }
+function SparkIcon() { return <Check size={17} />; }

@@ -1,68 +1,99 @@
-export type Domain = "ride" | "food" | "restaurant" | "healthcare";
-
-export type AppView = "assistant" | "services" | "activity" | "account";
-
 export interface AuthUser {
   sub: string;
   email: string;
   role: string;
 }
 
+export interface AssistantAction {
+  id: string;
+  kind: string;
+  label: string;
+}
+
+export interface AssistantOption {
+  name?: string;
+  title?: string;
+  location?: string;
+  cuisine?: string;
+  restaurant?: string;
+  description?: string;
+  doctor?: string;
+  department?: string;
+  start_time?: string;
+  price?: number;
+  rating?: number;
+}
+
+export interface AssistantRestaurant {
+  name: string;
+  location?: string;
+}
+
+export interface AssistantPreview {
+  subtotal?: number;
+  discount?: number;
+  cart_version?: number;
+  quote_version?: string;
+  total?: { amount?: number; currency?: string };
+  delivery?: { eta_minutes?: number; fee?: { amount?: number; currency?: string } };
+}
+
+export interface AssistantItem {
+  kind: string;
+  title: string;
+  note?: string;
+  question?: string;
+  options?: AssistantOption[];
+  departments?: AssistantOption[];
+  restaurant?: AssistantRestaurant;
+  reservation_code?: string;
+  party_size?: number;
+  start_at?: string;
+  status?: string;
+  expires_at?: string;
+  pickup?: string;
+  dropoff?: string;
+  vehicle?: string;
+  amount?: number;
+  currency?: string;
+  duration_minutes?: number;
+  driver?: string;
+  doctor?: string;
+  department?: string;
+  start_time?: string;
+  price?: number;
+  payment_note?: string;
+  appointment_id?: number;
+  appointment?: Record<string, unknown>;
+  order?: Record<string, unknown>;
+  payment?: Record<string, unknown>;
+  preview?: AssistantPreview;
+}
+
+export interface AssistantResponse {
+  conversation_id: string;
+  message: string;
+  items: AssistantItem[];
+  actions: AssistantAction[];
+  completed: AssistantItem[];
+}
+
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant";
   text: string;
-  domain?: Domain;
   timestamp: string;
-  payload?: Record<string, unknown>;
+  response?: AssistantResponse;
   requestStatus?: "sending" | "sent" | "error";
   retryText?: string;
-  retryContext?: Record<string, unknown>;
+  retryAction?: AssistantAction;
 }
-
-export interface DomainSession {
-  domain: Domain;
-  workflowId?: string;
-  conversationId?: string;
-  messages: ChatMessage[];
-  lastPayload?: Record<string, unknown>;
-  pendingConfirmationId?: string;
-  pendingConfirmationAction?: string;
-  pendingIdempotencyKey?: string;
-  pendingPaymentKey?: string;
-  isSending: boolean;
-}
-
-export type ClientSessions = Record<Domain, DomainSession>;
 
 export interface SessionActivity {
   id: string;
-  domain: Domain;
   title: string;
   reference: string;
   status: string;
   detail: string;
   timestamp: string;
-}
-
-export type WorkflowAction =
-  | { type: "ride-confirm"; domain: "ride" }
-  | { type: "ride-payment"; domain: "ride" }
-  | { type: "food-confirm"; domain: "food" }
-  | { type: "restaurant-confirm"; domain: "restaurant" }
-  | { type: "healthcare-payment"; domain: "healthcare" }
-  | { type: "healthcare-confirm"; domain: "healthcare" }
-  | { type: "message"; domain: Domain; text: string; context?: Record<string, unknown> };
-
-export function createClientSessions(): ClientSessions {
-  return {
-    ride: createDomainSession("ride"),
-    food: createDomainSession("food"),
-    restaurant: createDomainSession("restaurant"),
-    healthcare: createDomainSession("healthcare"),
-  };
-}
-
-function createDomainSession(domain: Domain): DomainSession {
-  return { domain, messages: [], isSending: false };
 }

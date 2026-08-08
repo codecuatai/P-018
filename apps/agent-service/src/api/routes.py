@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
+from src.agents.assistant_graph import assistant_agent, model_diagnostics
 from src.agents.graph import agent as food_agent
 from src.agents.healthcare_graph import agent as healthcare_agent
 from src.agents.restaurant_graph import agent as restaurant_agent
@@ -15,6 +16,7 @@ from src.application.workflow_store import workflow_store
 from src.config import get_settings
 from src.models.schemas import (
     AgentResponse,
+    AssistantChatRequest,
     ChatRequest,
     ChatResponse,
     HealthcareChatRequest,
@@ -25,6 +27,48 @@ from src.models.schemas import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/assistant-chat", response_model=None)
+async def assistant_chat(
+    request: AssistantChatRequest,
+    x_internal_service_token: str | None = Header(default=None),
+    x_actor_id: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Plan one or more X-One tasks; the Gateway remains the side-effect owner."""
+    settings = get_settings()
+    if (
+        not x_internal_service_token
+        or x_internal_service_token != settings.internal_service_token
+        or not x_actor_id
+        or x_actor_id != request.user_id
+    ):
+        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+    try:
+        result = await assistant_agent.ainvoke(
+            {
+                "query": request.message,
+                "conversation_id": request.conversation_id,
+                "messages": request.messages,
+                "conversation_state": request.conversation_state,
+                "authoritative_results": request.authoritative_results,
+                "mode": request.mode,
+            }
+        )
+        return {
+            "data": {
+                "conversation_id": request.conversation_id,
+                "assistant_message": result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này."),
+                "plan": result.get("plan", {}),
+                "decision_source": result.get("decision_source", "deterministic"),
+                "model": result.get("model", settings.gemini_model),
+                "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),
+            },
+            "meta": {"request_id": request.correlation_id},
+        }
+    except Exception:
+        logger.exception("Assistant planner execution failed")
+        raise HTTPException(status_code=500, detail="Unable to process the assistant request.") from None
 
 
 @router.post("/chat", response_model=None)
@@ -206,6 +250,6 @@ async def ride_chat(
 
 
 @router.get("/status")
-async def agent_status(_auth: None = Depends(require_internal_auth)) -> dict[str, str]:
+async def agent_status(_auth: None = Depends(require_internal_auth)) -> dict[str, Any]:
     """Check agent readiness without exposing provider details."""
-    return {"status": "ready", "agent": "LangGraph Agent v1.0"}
+    return {"status": "ready", "agent": "LangGraph Agent v1.0", **model_diagnostics()}

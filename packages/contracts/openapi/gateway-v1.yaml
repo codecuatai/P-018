@@ -3,6 +3,51 @@ info:
   title: X-One Gateway API
   version: 1.1.0
 paths:
+  /api/v1/assistant/chat:
+    post:
+      summary: Plan and run one unified X-One assistant turn across supported domains
+      description: >
+        The public consumer conversation endpoint. The response contains only
+        consumer-facing text, authoritative result cards, and explicit actions;
+        internal tool requests, workflow state, and model prompts are not exposed.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AssistantChatRequest'}
+      responses:
+        '200':
+          description: Consumer-facing assistant response
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/AssistantEnvelope'}}
+        '401': {description: Missing or invalid user token}
+        '422': {description: Invalid request}
+        '502': {description: Internal service failure}
+  /api/v1/assistant/actions:
+    post:
+      summary: Execute one explicit assistant action
+      description: >
+        Executes a user-selected reversible or confirmation action. Financial
+        and final actions remain explicit and idempotent.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/AssistantIdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AssistantActionRequest'}
+      responses:
+        '200':
+          description: Updated consumer-facing conversation response
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/AssistantEnvelope'}}
+        '401': {description: Missing or invalid user token}
+        '400': {description: Missing or blank Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Action is stale or confirmation precondition failed}
+
   /api/v1/healthcare-workflows/chat:
     post:
       summary: Process healthcare booking conversation and dispatch safe read/reversible tools
@@ -112,7 +157,225 @@ components:
         type: string
         minLength: 1
         maxLength: 255
+    AssistantIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
   schemas:
+    AssistantChatRequest:
+      type: object
+      required: [message]
+      additionalProperties: false
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        conversation_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AssistantActionRequest:
+      type: object
+      required: [conversation_id, action_id]
+      additionalProperties: false
+      properties:
+        conversation_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        action_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AssistantEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AssistantResponse'
+        meta:
+          type: object
+          additionalProperties: true
+    AssistantResponse:
+      type: object
+      required: [conversation_id, message, items, actions, completed]
+      additionalProperties: false
+      properties:
+        conversation_id: {type: string}
+        message: {type: string}
+        items:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/AssistantItem'}
+        actions:
+          type: array
+          maxItems: 16
+          items:
+            type: object
+            required: [id, kind, label]
+            additionalProperties: false
+            properties:
+              id: {type: string}
+              kind: {type: string}
+              label: {type: string}
+        completed:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/AssistantItem'}
+
+    AssistantItem:
+      oneOf:
+        - {$ref: '#/components/schemas/RestaurantOptionsItem'}
+        - {$ref: '#/components/schemas/RestaurantConfirmationItem'}
+        - {$ref: '#/components/schemas/RideItem'}
+        - {$ref: '#/components/schemas/FoodItem'}
+        - {$ref: '#/components/schemas/HealthcareItem'}
+        - {$ref: '#/components/schemas/AssistantProgressItem'}
+    RestaurantOptionsItem:
+      type: object
+      required: [kind, title, options]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [restaurant_options, restaurant_unavailable]}
+        title: {type: string}
+        options:
+          type: array
+          items: {$ref: '#/components/schemas/RestaurantOption'}
+        note: {type: string}
+    RestaurantOption:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        location: {type: string}
+        cuisine: {type: string}
+        rating: {type: number}
+    RestaurantConfirmationItem:
+      type: object
+      required: [kind, title, restaurant, reservation_code, party_size, start_at]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [restaurant_confirmation, reservation]}
+        title: {type: string}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        reservation_code: {type: string}
+        party_size: {type: integer}
+        start_at: {type: string, format: date-time}
+        status: {type: string}
+        note: {type: string}
+    RestaurantReference:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        location: {type: string}
+    RideItem:
+      type: object
+      required: [kind, title, pickup, dropoff, vehicle, amount, currency]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [ride_quote, ride_booking]}
+        title: {type: string}
+        pickup: {type: string}
+        dropoff: {type: string}
+        vehicle: {type: string}
+        amount: {type: integer}
+        currency: {type: string}
+        duration_minutes: {type: integer}
+        expires_at: {type: string, format: date-time}
+        driver: {type: string}
+    FoodItem:
+      type: object
+      required: [kind, title]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [food_options, food_confirmation, food_empty, food_order]}
+        title: {type: string}
+        options:
+          type: array
+          items: {$ref: '#/components/schemas/FoodOption'}
+        order: {type: object, additionalProperties: true}
+        payment: {type: object, additionalProperties: true}
+        preview: {$ref: '#/components/schemas/FoodPreview'}
+        note: {type: string}
+        payment_note: {type: string}
+    FoodOption:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        price: {type: integer}
+        restaurant: {type: string}
+        description: {type: string}
+    FoodPreview:
+      type: object
+      additionalProperties: false
+      properties:
+        subtotal: {type: integer}
+        discount: {type: integer}
+        cart_version: {type: integer}
+        quote_version: {type: string}
+        total:
+          type: object
+          additionalProperties: false
+          properties:
+            amount: {type: integer}
+            currency: {type: string}
+        delivery:
+          type: object
+          additionalProperties: false
+          properties:
+            eta_minutes: {type: integer}
+            fee:
+              type: object
+              additionalProperties: false
+              properties:
+                amount: {type: integer}
+                currency: {type: string}
+    HealthcareItem:
+      type: object
+      required: [kind, title]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [healthcare_options, healthcare_no_availability, appointment, healthcare_confirmation, appointment_confirmed]}
+        title: {type: string}
+        options: {type: array, items: {$ref: '#/components/schemas/HealthcareOption'}}
+        departments: {type: array, items: {type: object, additionalProperties: true}}
+        doctor: {type: string}
+        department: {type: string}
+        start_time: {type: string, format: date-time}
+        price: {type: integer}
+        appointment_id: {type: integer}
+        appointment: {type: object, additionalProperties: true}
+        note: {type: string}
+        payment_note: {type: string}
+    HealthcareOption:
+      type: object
+      required: [doctor, start_time]
+      additionalProperties: false
+      properties:
+        doctor: {type: string}
+        department: {type: string}
+        start_time: {type: string, format: date-time}
+        price: {type: integer}
+    AssistantProgressItem:
+      type: object
+      required: [kind, title]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [clarification, progress]}
+        title: {type: string}
+        question: {type: string}
+        note: {type: string}
+
     HealthcareChatRequest:
       type: object
       required: [message]

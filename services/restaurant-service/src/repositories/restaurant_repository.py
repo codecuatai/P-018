@@ -141,6 +141,38 @@ class RestaurantRepository:
     def _complete_idempotency(self, record: IdempotencyRecordRow, response: dict) -> None:
         record.response_json = self._response_json(response)
 
+    def _promote_surviving_create_evidence(self, db: Session, row: ReservationRow) -> None:
+        """Copy a still-present pre-0002 create key before lifecycle overwrite."""
+        prefix = "create_reservation:"
+        if not row.idempotency_key.startswith(prefix):
+            return
+        raw_key = row.idempotency_key[len(prefix):]
+        if not raw_key:
+            return
+        existing = db.scalar(
+            select(IdempotencyRecordRow).where(
+                IdempotencyRecordRow.actor_id == row.actor_id,
+                IdempotencyRecordRow.operation == "create_reservation",
+                IdempotencyRecordRow.idempotency_key == raw_key,
+            )
+        )
+        if existing:
+            return
+        table = db.get(TableRow, row.table_id)
+        restaurant = db.get(RestaurantRow, row.restaurant_id)
+        response = self.reservation_dict(row, table, restaurant.name if restaurant else None)
+        db.add(
+            IdempotencyRecordRow(
+                actor_id=row.actor_id,
+                operation="create_reservation",
+                idempotency_key=raw_key,
+                request_hash=row.request_hash,
+                response_json=self._response_json(response),
+                created_at=row.created_at,
+            )
+        )
+        db.flush()
+
     @staticmethod
     def _legacy_key(operation: str, key: str) -> str:
         return f"{operation}:{key}"
@@ -365,6 +397,8 @@ class RestaurantRepository:
             if row.status in {"CANCELLED", "COMPLETED", "NO_SHOW"}:
                 raise ValueError("INVALID_TRANSITION")
 
+            self._promote_surviving_create_evidence(db, row)
+
             fields = set(fields_set)
             current_start = self._as_utc(row.start_at)
             current_end = self._as_utc(row.end_at)
@@ -418,6 +452,7 @@ class RestaurantRepository:
             row = db.scalar(select(ReservationRow).where(ReservationRow.id == reservation_id, ReservationRow.actor_id == actor_id).with_for_update())
             if not row:
                 raise ValueError("RESERVATION_NOT_FOUND")
+            self._promote_surviving_create_evidence(db, row)
             if row.status == "CANCELLED":
                 result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
                 self._complete_idempotency(record, result)

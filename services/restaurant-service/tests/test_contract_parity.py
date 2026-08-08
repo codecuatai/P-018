@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import yaml
 from src.main import app
 
 CONTRACT_PATH_PATTERN = re.compile(r"^  (?P<path>/[^:]+):$")
@@ -32,5 +33,39 @@ def contract_operations() -> set[tuple[str, str]]:
     return operations
 
 
+def contract_document() -> dict:
+    contract_path = Path(__file__).resolve().parents[3] / "packages/contracts/openapi/restaurant-service-v1.yaml"
+    return yaml.safe_load(contract_path.read_text(encoding="utf-8"))
+
+
 def test_all_runtime_business_routes_are_described_in_openapi_contract() -> None:
     assert runtime_business_operations() == contract_operations()
+
+
+def test_contract_carries_semantic_parameters_and_write_safety_constraints() -> None:
+    runtime = app.openapi()["paths"]
+    contract = contract_document()["paths"]
+    availability = contract["/v1/restaurants/{restaurant_id}/availability"]["post"]
+    path_parameter = next(item for item in availability["parameters"] if item.get("name") == "restaurant_id")
+    assert path_parameter["in"] == "path"
+    assert path_parameter["required"] is True
+
+    side_effects = (
+        ("/v1/reservation-holds", "post"),
+        ("/v1/reservations", "post"),
+        ("/v1/reservations/{reservation_id}", "patch"),
+        ("/v1/reservations/{reservation_id}/cancel", "post"),
+    )
+    for path, method in side_effects:
+        operation = contract[path][method]
+        if "requestBody" in operation:
+            assert operation["requestBody"]["required"] is True
+        references = [item.get("$ref") for item in operation.get("parameters", [])]
+        assert "#/components/parameters/IdempotencyKey" in references
+
+    assert contract_document()["components"]["parameters"]["IdempotencyKey"]["schema"] == {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+    }
+    assert "parameters" in runtime["/v1/restaurants/{restaurant_id}/availability"]["post"]

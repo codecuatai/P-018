@@ -104,7 +104,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Write-Host 'Core and Food migrations applied.'
 
-    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0002_restaurant_idempotency_records.py' -EnvFile $envFile
+    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -EnvFile $envFile
     Write-Host 'Restaurant Service migrations applied.'
 
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile

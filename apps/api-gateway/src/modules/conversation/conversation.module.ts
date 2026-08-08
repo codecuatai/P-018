@@ -7,7 +7,12 @@ import { AuthModule } from '../auth/auth.module';
 import { DemoAuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { CoreModule, CoreStore } from '../core/core.module';
+import { ConfirmationModule } from '../confirmation/confirmation.module';
+import { ConfirmationService } from '../confirmation/confirmation.service';
 import { ToolModule } from '../tools/tool.module';
+import { HealthcareClient, RestaurantClient } from '../../clients/service.clients';
+import { AssistantController } from './assistant.controller';
+import { AssistantService } from './assistant.service';
 import { ConversationController as RideConversationController } from './conversation.controller';
 import { RideConversationService } from './ride-conversation.service';
 
@@ -22,10 +27,14 @@ class MessageDto {
 export class ConversationService {
   constructor(private readonly store: CoreStore, private readonly agent: AgentClient) {}
 
-  async send(conversationId: string, user: AuthUser, message: string, correlationId: string): Promise<JsonObject> {
+  async run(conversationId: string, user: AuthUser, message: string, correlationId: string, workflowContext?: JsonObject): Promise<JsonObject> {
     const current = await this.store.getConversation(conversationId, user.sub);
     const messages = current?.messages ?? [];
-    const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, messages, workflow_context: current?.state ?? {}, correlation_id: correlationId }, correlationId);
+    return this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, messages, workflow_context: workflowContext ?? current?.state ?? {}, correlation_id: correlationId }, correlationId);
+  }
+
+  async send(conversationId: string, user: AuthUser, message: string, correlationId: string): Promise<JsonObject> {
+    const response = await this.run(conversationId, user, message, correlationId);
     const userMessage = { role: 'user' as const, content: message, createdAt: new Date().toISOString() };
     const assistantMessage = { role: 'assistant' as const, content: String(response.message ?? response.response ?? ''), createdAt: new Date().toISOString() };
     const updates = response.state_updates;
@@ -53,8 +62,9 @@ export class FoodConversationController {
 }
 
 @Module({
-  imports: [AuthModule, CoreModule, ToolModule],
-  controllers: [FoodConversationController, RideConversationController],
-  providers: [ConversationService, AgentClient, RideConversationService],
+  imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule],
+  controllers: [FoodConversationController, RideConversationController, AssistantController],
+  providers: [ConversationService, AgentClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
+  exports: [ConversationService, RideConversationService, AssistantService],
 })
 export class ConversationModule {}

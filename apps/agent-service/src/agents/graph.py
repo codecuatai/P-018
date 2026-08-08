@@ -268,7 +268,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             registry = await gateway.registry(str(state.get("correlation_id")))
             prompt = json.dumps(
                 {
-                    "instruction": "Classify this food request. Return semantic slots only; never return database IDs. Propose only registered non-transaction tools.",
+                    "instruction": "Interpret the food-related part of this X-One conversation. Return semantic slots only; never return database IDs. Propose only registered non-transaction tools. The top-level assistant may be handling ride, restaurant, or healthcare tasks in the same turn, so do not claim that this subflow owns the whole conversation.",
                     "query": query,
                     "recent_messages": state.get("messages", [])[-20:],
                     "workflow_context": state.get("extracted_slots", {}),

@@ -280,6 +280,17 @@ export class AgentClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/api/v1/chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, actorId, 30000);
   }
 
+  assistantChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
+    const actorId = typeof payload.user_id === 'string' ? payload.user_id : undefined;
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/assistant-chat',
+      { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} },
+      correlationId,
+      actorId,
+      30000,
+    );
+  }
+
   restaurantChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
     const actorId = typeof payload.actor_id === 'string' ? payload.actor_id : undefined;
     return this.legacyRequest<JsonObject>('/api/v1/restaurant-chat', { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} }, correlationId, actorId, 30000);
@@ -413,6 +424,7 @@ export class RestaurantClient extends InternalServiceClient {
     }
     return this.request(path, context, { method, body }, headers, profile, envelopeValue);
   }
+
 }
 
 @Injectable()

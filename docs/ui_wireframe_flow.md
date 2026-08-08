@@ -10,11 +10,10 @@ Restaurant và Healthcare.
 ```mermaid
 flowchart TB
     Auth[Auth thật qua Gateway] --> Assistant[X-One Assistant]
-    Assistant --> Selector[Service selector]
-    Selector --> Ride[Ride]
-    Selector --> Food[Food]
-    Selector --> Restaurant[Restaurant]
-    Selector --> Healthcare[Healthcare]
+    Assistant --> Ride[Ride card]
+    Assistant --> Food[Food card]
+    Assistant --> Restaurant[Restaurant card]
+    Assistant --> Healthcare[Healthcare card]
     Ride --> Card[Authoritative response card]
     Food --> Card
     Restaurant --> Card
@@ -26,8 +25,8 @@ flowchart TB
 
 App shell có tối đa bốn khu vực:
 
-1. **Trợ lý** — màn hình mặc định, chat-first, có selector ngang và context card.
-2. **Dịch vụ** — đúng bốn card domain, mỗi card có mô tả và prompt được backend hỗ trợ.
+1. **Trợ lý** — màn hình mặc định, chat-first, hiển thị các card trong cùng cuộc trò chuyện.
+2. **Dịch vụ** — các card Ride/Food/Restaurant/Healthcare xuất hiện theo yêu cầu, không có tab/service selector tách riêng.
 3. **Hoạt động** — chỉ các kết quả đã được Gateway xác nhận trong browser session hiện tại.
 4. **Tài khoản** — identity từ `/api/v1/auth/me`, trạng thái phiên và đăng xuất.
 
@@ -57,7 +56,7 @@ frontend xóa phiên và quay lại màn hình đăng nhập.
 +----------------------+-------------------------------------------+
 | X-One                | Backend ●       [Phiên mới]              |
 | [Trợ lý]             | Bạn muốn làm gì hôm nay?                  |
-| [Dịch vụ]            | [Xe] [Đồ ăn] [Nhà hàng] [Sức khỏe]        |
+| [Dịch vụ]            | Các card Ride/Food/Restaurant/Healthcare   |
 | [Hoạt động]          +-------------------------------------------+
 | [Tài khoản]          | Chat bubbles                              |
 |                      | Authoritative workflow card               |
@@ -68,21 +67,22 @@ frontend xóa phiên và quay lại màn hình đăng nhập.
 ```
 
 Tin nhắn có role, domain, timestamp và payload cấu trúc tùy chọn. Text luôn được
-hiển thị trước; payload lạ chỉ rơi về summary an toàn. Mỗi domain giữ ID riêng:
+hiển thị trước; payload lạ chỉ rơi về summary an toàn. Workflow state và ID nội
+bộ do Gateway giữ; Web chỉ nhận response consumer và action id:
 
 ```text
-ride        -> workflow_id
-food        -> conversation_id ổn định
-restaurant  -> workflow_id
-healthcare  -> workflow_id
+conversation -> conversation_id
+action       -> action_id + stable Idempotency-Key per current session
+cards        -> authoritative consumer fields only
 ```
 
-Đổi domain không xóa kết quả đã hoàn tất của domain trước. Enter gửi, Shift+Enter
+Đổi yêu cầu không xóa kết quả đã hoàn tất của domain trước. Enter gửi, Shift+Enter
 xuống dòng; lỗi giữ lại nội dung để retry.
 
-## Service hub
+## Domain cards trong Assistant
 
-Service hub chỉ có bốn card:
+Assistant không yêu cầu người dùng chọn domain trước. Agent/Gateway tách nhiệm vụ
+từ ngôn ngữ tự nhiên và trả card authoritative tương ứng:
 
 | Domain | Ví dụ prompt | Kết quả hiển thị |
 | --- | --- | --- |
@@ -91,9 +91,16 @@ Service hub chỉ có bốn card:
 | Restaurant | Đặt bàn cho 2 người tối mai ở Hà Nội | candidate, availability, hold, reservation |
 | Healthcare | Tôi bị mệt và muốn đặt lịch khám | khoa, bác sĩ, slot, appointment |
 
-Nút **Bắt đầu** chuyển về Trợ lý, chọn active domain và focus composer.
+Các prompt gợi ý chỉ là nội dung khởi đầu; chúng không tạo giá, nhà hàng, món ăn,
+xe hay trạng thái đặt chỗ ở phía trình duyệt.
 
 ## Workflow confirmation flows
+
+The current Web surface uses one conversation boundary:
+`POST /api/v1/assistant/chat` for planning/authoritative cards and
+`POST /api/v1/assistant/actions` for explicit actions. The domain-specific routes
+below remain documented service/legacy workflow surfaces; the Web does not call
+them directly.
 
 ### Ride
 
@@ -137,8 +144,8 @@ POST /api/v1/restaurant-workflows/confirm
   -> reservation CONFIRMED
 ```
 
-Card xác nhận hiển thị số khách, thời gian, hold và confirmation ID do Gateway
-trả về. Frontend không bypass trạng thái `CONFIRMATION_REQUIRED`.
+Card xác nhận hiển thị tên/địa điểm authoritative, mã đặt bàn, số khách và thời
+gian do Gateway trả về. Frontend không bypass trạng thái `CONFIRMATION_REQUIRED`.
 
 ### Healthcare
 

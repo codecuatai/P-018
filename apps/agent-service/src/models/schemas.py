@@ -17,6 +17,19 @@ class ChatRequest(BaseModel):
     workflow_context: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssistantChatRequest(BaseModel):
+    """Top-level X-One planning/composition contract used by the Gateway."""
+
+    message: str = Field(..., min_length=1, max_length=5000)
+    conversation_id: str = Field(..., min_length=1, max_length=128)
+    user_id: str = Field(..., min_length=1, max_length=128)
+    correlation_id: str | None = None
+    messages: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    conversation_state: dict[str, Any] = Field(default_factory=dict)
+    authoritative_results: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
+    mode: Literal["plan", "compose"] = "plan"
+
+
 class RestaurantChatRequest(BaseModel):
     """Restaurant workflow contract kept separate from Food conversation state."""
 

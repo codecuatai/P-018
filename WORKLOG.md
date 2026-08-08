@@ -6,7 +6,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Final backend verification plus X-One frontend real integration and demo UI redesign: Gateway-only Auth/Ride/Food/Restaurant/Healthcare workflows, confirmation/idempotency UX, MockService isolation, responsive assistant, and docs sync; fixed bounded Agent tool-call IDs and Ride first-turn workflow handling after live 503 diagnosis | ✅ Done | Frontend npm install/build pass; Gateway lint/Jest 30 pass/3 skip/build pass; env/Compose/CORS checks pass; live public E2E 18/18; real login/me sanity check; no direct-service or MockService matches; Agent rebuild healthy; four-domain Gateway smoke pass; browser-control smoke unavailable; no commit/push/cloud | - |
+| Vũ Văn Phong (2A202601647) | Gộp final X-One correctness và Demo Hardening pass: unified Assistant cho Ride/Food/Restaurant/Healthcare, task revision/action cohort, idempotency retry, Food context, Healthcare requested time, Ride vehicle/location, Restaurant migration/validation/contract, stable consumer DTO, Gemini diagnostics, Gateway-only Web và UI cleanup | ✅ Done | Agent 78 pass; Food 22 pass/3 skip; Restaurant 18 pass/1 skip; Healthcare 20 pass/1 skip; Ride 10 pass; Gateway lint/Jest 40 pass/3 skip/build; Web build; migrations/seeds/Compose health pass; ephemeral Restaurant 0001→head replay proof giữ 2 reservation ID; live E2E 23/23 (3 unified regression cases bổ sung); parser ngày tuyệt đối và persistent E2E collision đã xử lý; Gemini live không chạy (deterministic acceptance), browser-control unavailable; không commit/push/cloud | - |
 
 ---
 

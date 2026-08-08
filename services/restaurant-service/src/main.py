@@ -24,8 +24,13 @@ app = FastAPI(title="X-One Restaurant Service", version="0.1.0", lifespan=lifesp
 
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException):
-    detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
-    return JSONResponse(status_code=exc.status_code, content={"type": "about:blank", "title": detail, "status": exc.status_code, "code": detail.upper().replace(" ", "_"), "detail": detail, "retryable": exc.status_code in {409, 429}, "request_id": request.headers.get("X-Correlation-Id")})
+    if isinstance(exc.detail, dict):
+        code = str(exc.detail.get("code", "REQUEST_FAILED"))
+        detail = str(exc.detail.get("detail", "Request failed"))
+    else:
+        detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+        code = detail.upper().replace(" ", "_")
+    return JSONResponse(status_code=exc.status_code, content={"type": "about:blank", "title": detail, "status": exc.status_code, "code": code, "detail": detail, "retryable": exc.status_code in {409, 429}, "request_id": request.headers.get("X-Correlation-Id")})
 
 
 @app.exception_handler(RequestValidationError)
