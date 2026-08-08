@@ -469,7 +469,7 @@ export const MockService = {
       customerPhone: profile?.phone,
     };
     bookingHistory.unshift(newBooking);
-    
+
     // Add bot confirmation message
     const botMsg: Message = {
       id: `msg-${Date.now()}`,
@@ -565,4 +565,3 @@ export const MockService = {
     return DEMO_PROFILE;
   }
 };
-

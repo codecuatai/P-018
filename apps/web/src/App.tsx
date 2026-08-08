@@ -83,21 +83,21 @@ export default function App() {
           </h2>
         </div>
         <nav className="sidebar-nav">
-          <button 
+          <button
             className={`nav-btn ${activeTab === "chat" ? "active" : ""}`}
             onClick={() => setActiveTab("chat")}
           >
             <MessageSquare size={20} />
             Trợ lý đặt dịch vụ
           </button>
-          <button 
+          <button
             className={`nav-btn ${activeTab === "history" ? "active" : ""}`}
             onClick={() => setActiveTab("history")}
           >
             <Clock size={20} />
             Lịch sử dịch vụ
           </button>
-          <button 
+          <button
             className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
             onClick={() => setActiveTab("profile")}
           >
@@ -153,7 +153,7 @@ export default function App() {
             </button>
           </div>
         </header>
-        
+
         <div className="content-area">
           {renderContent()}
         </div>
