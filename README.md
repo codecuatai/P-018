@@ -6,7 +6,7 @@ X-One is a backend-first conversational multi-service booking platform. The loca
 
 | Component | Port | Status |
 | --- | ---: | --- |
-| Web | 5173 | Ride chat UI remains MockService-first; optional backend helper uses the public Gateway |
+| Web | 5173 | X-One chat-first UI with real Gateway auth and Ride, Food, Restaurant, Healthcare workflow clients |
 | API Gateway | 3000 | Food, Restaurant, Healthcare, and Ride routing/orchestration with typed service clients |
 | Agent Service | 8001 (internal Compose DNS only) | Food graph plus typed Restaurant, Healthcare, and Ride request graphs; Gemini is optional with deterministic fallback |
 | Ride Service | 8101 (internal Compose DNS only) | Simulated quote/booking lifecycle with persistence and two explicit confirmations |
@@ -29,7 +29,7 @@ For the complete local stack, create exactly one root `.env` and use the checked
 # ./scripts/start-all.sh --seed-demo
 ```
 
-The setup script never overwrites an existing `.env`. Normal launcher runs do not seed or reset data; use `-SeedDemo`/`--seed-demo` only for deterministic local demo data. Compose reads root `.env` for interpolation and sends each container only its explicit, least-privilege values. Service-level `.env.example` files are only for standalone runs outside Compose. The Web ChatDashboard remains a legacy Ride presentation driven by `MockService`; its optional `sendChatMessage` helper calls only the public Gateway with actor/workflow headers.
+The setup script never overwrites an existing `.env`. Normal launcher runs do not seed or reset data; use `-SeedDemo`/`--seed-demo` only for deterministic local demo data. Compose reads root `.env` for interpolation and sends each container only its explicit, least-privilege values. Service-level `.env.example` files are only for standalone runs outside Compose. The Web assistant calls only the public Gateway; it keeps one session per supported domain and never exposes internal service URLs or credentials.
 
 For a disposable/template-based local verification, PowerShell also accepts `-EnvFile .env.example`; the default remains `.env`, and an existing user file is never overwritten.
 

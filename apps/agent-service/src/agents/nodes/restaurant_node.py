@@ -5,6 +5,7 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from src.agents.tool_ids import make_tool_call_id
 from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.models.schemas import ToolRequest
@@ -169,14 +170,14 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             tool_request = validate_tool_request(ToolRequest(
                 tool_name="restaurant.check_availability", risk_level="READ",
                 arguments={key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots},
-                workflow_id=state["workflow_id"], tool_call_id=f"tc-{state['workflow_id']}-{state.get('turn_id', '1')}",
+                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
             ))
             return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
         elif tool_name == "restaurant.check_availability" and _is_confirmation(query):
             tool_request = validate_tool_request(ToolRequest(
                 tool_name="restaurant.create_hold", risk_level="REVERSIBLE_WRITE",
                 arguments={key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots},
-                workflow_id=state["workflow_id"], tool_call_id=f"tc-{state['workflow_id']}-{state.get('turn_id', '1')}",
+                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
                 idempotency_key=f"hold-{state['workflow_id']}-{state.get('turn_id', '1')}",
             ))
             return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
@@ -186,7 +187,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             tool_request = validate_tool_request(ToolRequest(
                 tool_name="restaurant.create_reservation", risk_level="FINANCIAL_OR_FINAL",
                 arguments={"restaurant_id": slots.get("restaurant_id"), "party_size": slots.get("party_size"), "start_at": slots.get("start_at"), "duration_minutes": slots.get("duration_minutes", 120), "hold_id": hold_data.get("id")},
-                workflow_id=state["workflow_id"], tool_call_id=f"tc-{state['workflow_id']}-{state.get('turn_id', '1')}",
+                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
                 idempotency_key=f"reservation-{state['workflow_id']}-{state.get('turn_id', '1')}",
             ))
             return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
@@ -230,7 +231,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
         risk_level="READ",
         arguments=arguments,
         workflow_id=state["workflow_id"],
-        tool_call_id=f"tc-{state['workflow_id']}-{state.get('turn_id', '1')}",
+        tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
     ))
     return {"intent": "restaurant_booking", "slots": slots, "missing_slots": [], "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
 

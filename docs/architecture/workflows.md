@@ -16,6 +16,16 @@ sequenceDiagram
   G-->>C: safe response + correlation ID
 ```
 
+## Web assistant routing
+
+The Web application is a thin Gateway client. Its primary navigation exposes only
+the four implemented domains: Ride, Food, Restaurant, and Healthcare. It keeps a
+separate workflow or conversation identifier for each domain, renders structured
+Gateway responses, and records activity only after a backend-confirmed result.
+Authentication uses `POST /api/v1/auth/login` followed by `GET /api/v1/auth/me`;
+the access token is held in the current browser session and is cleared on `401`.
+The Web does not call Agent or any domain service directly.
+
 ## Food ordering (target flow)
 
 ```mermaid

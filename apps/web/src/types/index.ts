@@ -1,192 +1,68 @@
-export type ServiceType = "bus" | "flight" | "train" | "car" | "hotel" | "delivery" | "other";
+export type Domain = "ride" | "food" | "restaurant" | "healthcare";
 
-export interface UserProfile {
-  fullName: string;
-  phone: string;
-  email: string;
-  idNumber: string; // CCCD / Passport
-  dob: string; // YYYY-MM-DD
-  gender: "male" | "female" | "other" | "";
-  address: string;
-  city: string;
-  district: string;
-  nationality: string;
-  idIssueDate: string; // YYYY-MM-DD
-  idIssuePlace: string;
-  emergencyName: string;
-  emergencyPhone: string;
-  emergencyRelation: string;
-  preferredPayment: PaymentMethod | "";
-  preferredCabin: "economy" | "premium" | "business" | "";
-  specialRequests: string;
-  notifyEmail: boolean;
-  notifySms: boolean;
-  notifyReminder: boolean;
-  // Payment connection simulated fields
-  momoPhone?: string;
-  momoAccountName?: string;
-  momoLinked?: boolean;
-  cardNumber?: string;
-  cardHolder?: string;
-  cardExpiry?: string;
-  cardCvv?: string;
-  bankName?: string;
-  bankAccountNumber?: string;
-  bankAccountName?: string;
-  cashNote?: string;
-}
-
-export type UserRole = "admin" | "customer";
+export type AppView = "assistant" | "services" | "activity" | "account";
 
 export interface AuthUser {
-  id: string;
-  fullName: string;
+  sub: string;
   email: string;
-  role: UserRole;
+  role: string;
 }
 
-export interface AuthCredentials {
-  email: string;
-  password: string;
-}
-
-export interface RegisterPayload extends AuthCredentials {
-  fullName: string;
-  role: UserRole;
-}
-
-export interface AdminDashboardSummary {
-  totalBookings: number;
-  confirmedBookings: number;
-  completedBookings: number;
-  cancelledBookings: number;
-  paidRevenue: number;
-  refundedAmount: number;
-  averageRating: number;
-  activeUsers: number;
-  serviceBreakdown: Array<{
-    type: ServiceType;
-    count: number;
-  }>;
-  recentBookings: BookingHistory[];
-}
-
-
-export type BookingStatus = "pending_confirmation" | "confirmed" | "cancelled" | "completed";
-export type PaymentStatus = "unpaid" | "paid" | "refunded";
-export type PaymentMethod = "momo" | "bank_transfer" | "card" | "cash";
-
-export interface ServiceTicket {
+export interface ChatMessage {
   id: string;
-  type: ServiceType;
-  origin: string;
-  destination: string;
-  date: string; // YYYY-MM-DD
-  time: string; // HH:mm
-  price: number;
-  seats: string | number;
-  provider: string;
-  duration?: string;
-  note?: string;
-  baggage?: string;
-  refundPolicy?: string;
-}
-
-export interface ComboPackage {
-  id: string;
-  title: string;
-  badge: string;
-  discountPercent: number;
-  originalPrice: number;
-  comboPrice: number;
-  flight: ServiceTicket;
-  hotel: ServiceTicket;
-  highlights: string[];
-}
-
-export interface RescheduleOption {
-  oldTicket: ServiceTicket;
-  newTicket: ServiceTicket;
-  priceDifference: number; // Positive = pay extra, negative = refund
-  refundAmount: number;
-  refundPolicy: string;
-}
-
-export interface RideVehicleOption {
-  id: string;
-  name: string;
-  category: "4-seats" | "7-seats" | "limousine";
-  seats: string;
-  price: number;
-  eta: string;
-  vehicleModel: string;
-  highlights: string[];
-  driverName?: string;
-  licensePlate?: string;
-  driverPhone?: string;
-}
-
-export interface SupportTicketContext {
-  ticketId: string;
-  priority: "HIGH" | "MEDIUM" | "LOW";
-  category: string;
-  operatorName?: string;
-  operatorAvatar?: string;
-  status: "open" | "assigned" | "resolved";
-}
-
-export interface Message {
-  id: string;
-  role: "user" | "bot";
+  role: "user" | "assistant" | "system";
   text: string;
+  domain?: Domain;
   timestamp: string;
-  ticket?: ServiceTicket; // If the bot proposes a ticket
-  comboPackages?: ComboPackage[];
-  rescheduleComparison?: RescheduleOption;
-  handoffInfo?: SupportTicketContext;
-  rideOptions?: RideVehicleOption[];
-  demoFlow?: DemoFlowResult;
+  payload?: Record<string, unknown>;
+  requestStatus?: "sending" | "sent" | "error";
+  retryText?: string;
+  retryContext?: Record<string, unknown>;
 }
 
-export type DemoFlowKind = "ride" | "medical_ride" | "partial_failure" | "human_handoff";
-export type DemoStepStatus = "done" | "active" | "warning" | "blocked" | "pending";
-
-export interface DemoFlowStep {
-  label: string;
-  detail: string;
-  status: DemoStepStatus;
+export interface DomainSession {
+  domain: Domain;
+  workflowId?: string;
+  conversationId?: string;
+  messages: ChatMessage[];
+  lastPayload?: Record<string, unknown>;
+  pendingConfirmationId?: string;
+  pendingConfirmationAction?: string;
+  pendingIdempotencyKey?: string;
+  pendingPaymentKey?: string;
+  isSending: boolean;
 }
 
-export interface DemoFlowArtifact {
-  label: string;
-  value: string;
-  tone?: "default" | "success" | "warning" | "danger";
-}
+export type ClientSessions = Record<Domain, DomainSession>;
 
-export interface DemoFlowAction {
-  label: string;
-  prompt: string;
-  tone?: "primary" | "secondary" | "danger";
-}
-
-export interface DemoFlowResult {
-  kind: DemoFlowKind;
+export interface SessionActivity {
+  id: string;
+  domain: Domain;
   title: string;
-  subtitle: string;
-  statusLabel: string;
-  statusTone: "success" | "warning" | "danger" | "info";
-  steps: DemoFlowStep[];
-  artifacts: DemoFlowArtifact[];
-  actions: DemoFlowAction[];
+  reference: string;
+  status: string;
+  detail: string;
+  timestamp: string;
 }
 
-export interface BookingHistory extends ServiceTicket {
-  bookingId: string;
-  bookedAt: string;
-  status: BookingStatus;
-  paymentStatus: PaymentStatus;
-  paymentMethod?: PaymentMethod;
-  rating?: number;
-  customerName?: string;
-  customerPhone?: string;
+export type WorkflowAction =
+  | { type: "ride-confirm"; domain: "ride" }
+  | { type: "ride-payment"; domain: "ride" }
+  | { type: "food-confirm"; domain: "food" }
+  | { type: "restaurant-confirm"; domain: "restaurant" }
+  | { type: "healthcare-payment"; domain: "healthcare" }
+  | { type: "healthcare-confirm"; domain: "healthcare" }
+  | { type: "message"; domain: Domain; text: string; context?: Record<string, unknown> };
+
+export function createClientSessions(): ClientSessions {
+  return {
+    ride: createDomainSession("ride"),
+    food: createDomainSession("food"),
+    restaurant: createDomainSession("restaurant"),
+    healthcare: createDomainSession("healthcare"),
+  };
+}
+
+function createDomainSession(domain: Domain): DomainSession {
+  return { domain, messages: [], isSending: false };
 }

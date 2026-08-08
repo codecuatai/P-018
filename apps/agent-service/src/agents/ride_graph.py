@@ -6,6 +6,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from src.agents.tool_ids import make_tool_call_id
 from src.models.schemas import ToolRequest
 
 
@@ -90,7 +91,7 @@ def _tool(tool_name: str, risk_level: str, arguments: dict[str, Any], workflow_i
         risk_level=risk_level,  # type: ignore[arg-type]
         arguments=arguments,
         workflow_id=workflow_id,
-        tool_call_id=f"tc-{workflow_id}-{turn_id}",
+        tool_call_id=make_tool_call_id(workflow_id, turn_id),
     ).model_dump()
 
 

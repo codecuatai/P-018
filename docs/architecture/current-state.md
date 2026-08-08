@@ -27,7 +27,7 @@ Logical ownership is mandatory: each domain owns its schema/tables, migrations, 
 
 | Component | Status | Evidence | Current limitation |
 | --- | --- | --- | --- |
-| Web | implemented (Ride FE source) | apps/web/src/App.tsx, apps/web/src/mocks/mockService.ts, apps/web/src/api.ts | Ride's mock-driven presentation remains the source of truth; any browser backend calls use the public Gateway and do not own booking state. |
+| Web | implemented (Gateway-integrated pre-demo) | apps/web/src/App.tsx, apps/web/src/api.ts, apps/web/src/pages/ChatDashboard.tsx, apps/web/src/components/WorkflowCards.tsx | Browser traffic is centralized through the public Gateway. The UI keeps only current-tab workflow sessions and backend-confirmed activity; it is not an account-history authority. |
 | Mobile | skeleton | apps/mobile/App.tsx | Expo shell only; no API integration. |
 | API Gateway | implemented (four-domain orchestration) | apps/api-gateway/src/modules/{auth,tools,confirmation,payment,workflow,conversation}, apps/api-gateway/src/clients/{clients.module.ts,service.clients.ts}, apps/api-gateway/src/resilience/, migrations 001-006 | PostgreSQL is the runtime repository in Compose; in-memory Core repository is test-only. Food, Restaurant, Healthcare, and Ride use separate typed workflow/client boundaries; final or financial operations remain confirmation-gated. |
 | Agent service | implemented (four typed request graphs) | apps/agent-service/src/agents/{graph.py,restaurant_graph.py,healthcare_graph.py,ride_graph.py}, apps/agent-service/src/services/{gateway.py,llm.py}, apps/agent-service/src/api/routes.py | Food remains the canonical graph with validated structured output and deterministic fallback. Restaurant and Healthcare read-result persistence, natural-language selection, and final-confirmation proposals are tested; Gemini quota/rate-limit fallback is configured. The Agent still emits typed requests only and never executes a final side effect. |
@@ -49,7 +49,7 @@ This table describes intended authority, not a promise that an interface exists.
 
 | Component | Current status | Intended authority/data owner | Current deployment mode |
 | --- | --- | --- | --- |
-| Web | implemented (mock) | No authoritative domain data | standalone web demo |
+| Web | implemented (Gateway-integrated pre-demo) | No authoritative domain data | standalone web demo |
 | Mobile | skeleton | No authoritative domain data | standalone mobile shell |
 | Gateway | implemented (four-domain orchestration) | Public workflow/audit/idempotency metadata in Core; never domain state | standalone gateway runtime |
 | Agent | implemented (four typed request graphs) | Approved agent run/checkpoint metadata only | standalone agent runtime |
@@ -95,7 +95,7 @@ The equivalent shell helpers are scripts/setup-env.sh, scripts/migrate.sh, and s
 
 ## Verification observed in this audit
 
-On 2026-08-08 the integrated local scope passed environment validation, Compose configuration, whitespace/conflict-marker checks, migration parity, and the full service checks: Agent pytest 68 passed with Ruff; Food pytest 22 passed/3 skipped; Restaurant pytest 17 passed/1 skipped with Ruff; Healthcare pytest 20 passed/1 skipped with Ruff; Ride pytest 10 passed; Gateway Jest 30 passed/3 skipped with lint/build; Web production build; and targeted application Python Ruff. The full public root E2E suite passed 18/18 (Food plus Ride, Restaurant, and Healthcare) against a fresh disposable Gateway stack.
+On 2026-08-08 the integrated local scope passed environment validation, Compose configuration, whitespace/conflict-marker checks, migration parity, and the full service checks: Agent pytest 68 passed with Ruff; Food pytest 22 passed/3 skipped; Restaurant pytest 17 passed/1 skipped with Ruff; Healthcare pytest 20 passed/1 skipped with Ruff; Ride pytest 10 passed; Gateway Jest 30 passed/3 skipped with lint/build; and the Gateway-integrated Web production build passed. The earlier full public root E2E suite passed 18/18 (Food plus Ride, Restaurant, and Healthcare) against a fresh disposable Gateway stack. This frontend pass did not mark browser smoke as complete because no browser-control instance was available in the execution environment.
 
 Docker Compose built all six application images and PostgreSQL with `.env.example`; all application health checks and PostgreSQL reached healthy status. The migration and seed helpers applied Core, Food, Restaurant, Healthcare, and Ride migrations plus deterministic seeds without deleting the existing `p-018` volume. The disposable project `xone_final_qa2` was started with explicit Compose build, migration, and seed commands, passed all 18 public E2E tests, then passed a no-seed whole-stack restart with `food_orders` preserved at 12 before and after restart; its named volume was removed afterward, while `p-018` was restored with its original volume. The full PowerShell launcher/Web readiness path was not rerun because port 5173 was already occupied by an existing local Web process. The Healthcare live check also observed the `uq_appointments_active_slot` partial index and slot reuse/expiry paths.
 

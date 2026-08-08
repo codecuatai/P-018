@@ -1,152 +1,68 @@
-import React, { useState } from "react";
-import { Loader2, LockKeyhole, LogIn, Navigation, UserPlus } from "lucide-react";
-import { AuthUser, UserRole } from "../types";
-import { MockService } from "../mocks/mockService";
-import "./AuthPage.css";
+import { useState, type FormEvent } from "react";
+import { ArrowRight, Bot, Loader2, LockKeyhole } from "lucide-react";
+import { errorText, login } from "../api";
+import type { AuthUser } from "../types";
 
-interface Props {
+interface AuthPageProps {
   onAuthenticated: (user: AuthUser) => void;
 }
 
-export const AuthPage: React.FC<Props> = ({ onAuthenticated }) => {
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("admin@navigo.vn");
-  const [password, setPassword] = useState("admin123");
-  const [role, setRole] = useState<UserRole>("admin");
+export function AuthPage({ onAuthenticated }: AuthPageProps) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const submitAuth = async (event: React.FormEvent) => {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError("");
-
-    if (mode === "register" && fullName.trim().length < 2) {
-      setError("Vui lòng nhập họ tên.");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Mật khẩu cần tối thiểu 6 ký tự.");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const user = mode === "login"
-        ? await MockService.login({ email, password })
-        : await MockService.register({ fullName, email, password, role });
-      onAuthenticated(user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể xác thực tài khoản.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loginDemo = async (targetRole: UserRole) => {
     setError("");
     setLoading(true);
     try {
-      const user = await MockService.login({
-        email: targetRole === "admin" ? "admin@navigo.vn" : "user@navigo.vn",
-        password: targetRole === "admin" ? "admin123" : "user123",
-      });
+      const user = await login(email.trim(), password);
       onAuthenticated(user);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể đăng nhập demo.");
+    } catch (requestError) {
+      setError(errorText(requestError));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <main className="auth-page">
-      <section className="auth-panel">
-        <div className="auth-brand">
-          <div className="auth-logo">
-            <Navigation size={30} />
-          </div>
-          <div>
-            <h1>NaviGo Admin</h1>
-            <p>Quản trị vận hành đặt dịch vụ</p>
+    <main className="auth-screen">
+      <section className="auth-layout">
+        <div className="auth-intro">
+          <div className="brand-mark" aria-hidden="true"><Bot size={22} /></div>
+          <span className="eyebrow">X-ONE</span>
+          <h1>Một trợ lý.<br />Mọi dịch vụ hằng ngày.</h1>
+          <p>Đặt xe, đặt món, giữ bàn hoặc đặt lịch khám trong cùng một cuộc trò chuyện.</p>
+          <div className="auth-domain-list">
+            <span><ArrowRight size={14} /> Ride</span>
+            <span><ArrowRight size={14} /> Food</span>
+            <span><ArrowRight size={14} /> Restaurant</span>
+            <span><ArrowRight size={14} /> Healthcare</span>
           </div>
         </div>
 
         <div className="auth-card">
-          <div className="auth-tabs">
-            <button className={mode === "login" ? "active" : ""} onClick={() => setMode("login")} type="button">
-              <LogIn size={16} />
-              Đăng nhập
-            </button>
-            <button className={mode === "register" ? "active" : ""} onClick={() => setMode("register")} type="button">
-              <UserPlus size={16} />
-              Đăng ký
-            </button>
+          <div className="auth-card-heading">
+            <span className="eyebrow">ĐĂNG NHẬP</span>
+            <h2>Chào mừng trở lại</h2>
+            <p>Dùng tài khoản Gateway đang được cấu hình cho môi trường demo.</p>
           </div>
-
-          {error && <div className="auth-error">{error}</div>}
-
-          <form className="auth-form" onSubmit={submitAuth}>
-            {mode === "register" && (
-              <div className="auth-field">
-                <label>Họ tên</label>
-                <input value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Nguyễn Minh Anh" />
-              </div>
-            )}
-
-            <div className="auth-field">
-              <label>Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="admin@navigo.vn"
-                required
-              />
-            </div>
-
-            <div className="auth-field">
-              <label>Mật khẩu</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="Tối thiểu 6 ký tự"
-                required
-              />
-            </div>
-
-            {mode === "register" && (
-              <div className="auth-field">
-                <label>Vai trò</label>
-                <div className="role-control">
-                  <button type="button" className={role === "admin" ? "active" : ""} onClick={() => setRole("admin")}>
-                    Admin
-                  </button>
-                  <button type="button" className={role === "customer" ? "active" : ""} onClick={() => setRole("customer")}>
-                    Khách hàng
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <button className="auth-submit" disabled={loading} type="submit">
-              {loading ? <Loader2 className="spinner" size={18} /> : <LockKeyhole size={18} />}
-              {mode === "login" ? "Đăng nhập" : "Tạo tài khoản"}
+          {error ? <div className="form-error" role="alert">{error}</div> : null}
+          <form onSubmit={submit}>
+            <label className="field-label" htmlFor="email">Email</label>
+            <input id="email" name="email" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+            <label className="field-label" htmlFor="password">Mật khẩu</label>
+            <input id="password" name="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+            <button className="button button-primary button-wide" disabled={loading} type="submit">
+              {loading ? <Loader2 className="spinner" size={17} /> : <LockKeyhole size={17} />}
+              {loading ? "Đang xác thực…" : "Đăng nhập"}
             </button>
           </form>
-
-          <div className="demo-login-row">
-            <button type="button" onClick={() => loginDemo("admin")} disabled={loading}>
-              Admin demo
-            </button>
-            <button type="button" onClick={() => loginDemo("customer")} disabled={loading}>
-              User demo
-            </button>
-          </div>
+          <p className="auth-note">Phiên đăng nhập chỉ được giữ trong tab hiện tại. X-One không tạo tài khoản mới vì Gateway chưa cung cấp endpoint đăng ký.</p>
         </div>
       </section>
     </main>
   );
-};
+}

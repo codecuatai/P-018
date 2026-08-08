@@ -7,6 +7,7 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+from src.agents.tool_ids import make_tool_call_id
 from src.agents.policies.healthcare_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.config import get_settings
@@ -119,7 +120,7 @@ def _tool_request(
         risk_level=risk_level,  # type: ignore[arg-type]
         arguments=arguments,
         workflow_id=workflow_id,
-        tool_call_id=f"tc-{workflow_id}-{turn_id}",
+        tool_call_id=make_tool_call_id(workflow_id, turn_id),
         idempotency_key=idempotency_key,
     )
     return validate_tool_request(request).model_dump()

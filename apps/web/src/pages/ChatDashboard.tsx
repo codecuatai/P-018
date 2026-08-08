@@ -1,614 +1,530 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
+import { Bot, Check, CircleAlert, CircleCheck, Loader2, Plus, RefreshCw, Send, Sparkles } from "lucide-react";
 import {
-  ArrowRightLeft,
-  BadgeCheck,
-  Car,
-  CheckCircle2,
-  ChevronDown,
-  CircleAlert,
-  CreditCard,
-  Gift,
-  Headphones,
-  Hotel,
-  Loader2,
-  Lock,
-  Luggage,
-  Package,
-  Plane,
-  QrCode,
-  RefreshCw,
-  Send,
-  ShieldCheck,
-  Sparkles,
-  Train,
-  UserCheck,
-  X,
-  Zap,
-} from "lucide-react";
-import { ComboPackage, Message, PaymentMethod, RescheduleOption, RideVehicleOption, ServiceTicket, SupportTicketContext } from "../types";
-import { isProfileComplete, MockService } from "../mocks/mockService";
-import { MOCK_COMBOS, MOCK_SUGGESTIONS } from "../mocks/mockData";
-import { TicketCard } from "../components/TicketCard";
-import "./ChatDashboard.css";
+  acknowledgeHealthcarePayment,
+  asRecord,
+  checkGatewayHealth,
+  confirmHealthcare,
+  confirmRestaurant,
+  confirmRidePayment,
+  confirmRideService,
+  createIdempotencyKey,
+  errorText,
+  executeFoodConfirmation,
+  getFoodOrder,
+  responseText,
+  sendFoodMessage,
+  sendHealthcareMessage,
+  sendRestaurantMessage,
+  sendRideMessage,
+  stringValue,
+} from "../api";
+import { ServiceSelector, serviceDefinition } from "../components/ServiceSelector";
+import { WorkflowCards } from "../components/WorkflowCards";
+import type { AuthUser, ChatMessage, ClientSessions, Domain, DomainSession, SessionActivity, WorkflowAction } from "../types";
 
-interface Props {
-  onRequireProfile?: () => void;
-  onOpenHistory?: () => void;
-  profileComplete?: boolean;
+interface ChatDashboardProps {
+  user: AuthUser;
+  activeDomain: Domain;
+  sessions: ClientSessions;
+  onDomainChange: (domain: Domain) => void;
+  onSessionsChange: Dispatch<SetStateAction<ClientSessions>>;
+  onActivity: (activity: SessionActivity) => void;
+  onOpenServices: () => void;
 }
 
-const paymentLabels: Record<PaymentMethod, string> = {
-  momo: "Ví MoMo",
-  bank_transfer: "Chuyển khoản VietQR",
-  card: "Thẻ Visa / Mastercard",
-  cash: "Thanh toán tại quầy",
-};
+type GatewayStatus = "checking" | "online" | "offline";
 
-const demoScenarios = [
-  {
-    title: "1. Đặt vé máy bay",
-    subtitle: "Single Ticket Booking",
-    prompt: MOCK_SUGGESTIONS[0],
-    icon: <Plane size={18} />,
-    category: "Vé đơn",
-    type: "flight",
-  },
-  {
-    title: "2. Combo Trọn gói",
-    subtitle: "Bay + Khách sạn 4*",
-    prompt: MOCK_SUGGESTIONS[1],
-    icon: <Gift size={18} />,
-    category: "Combo 15%",
-    type: "hotel",
-  },
-  {
-    title: "3. Đổi vé & Hoàn tiền",
-    subtitle: "Chuyển sang Tàu hỏa",
-    prompt: MOCK_SUGGESTIONS[2],
-    icon: <RefreshCw size={18} />,
-    category: "Đổi lịch",
-    type: "train",
-  },
-  {
-    title: "4. Đặt xe & Chọn xe",
-    subtitle: "Ride & Vehicle Choice",
-    prompt: MOCK_SUGGESTIONS[3],
-    icon: <Car size={18} />,
-    category: "Xe đưa đón",
-    type: "car",
-  },
-];
-
-export const ChatDashboard: React.FC<Props> = ({
-  onRequireProfile,
-  onOpenHistory,
-}) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const paymentMethod: PaymentMethod = "momo";
-  const [notice, setNotice] = useState<{ type: "success" | "warning"; text: string } | null>(null);
-  const [lastBookingId, setLastBookingId] = useState<string | null>(null);
-  const [showScrollBottom, setShowScrollBottom] = useState(false);
-
-  // Flow 2 & Ticket Payment Modal States
-  const [selectedCombo, setSelectedCombo] = useState<ComboPackage | null>(null);
-  const [pendingTicket, setPendingTicket] = useState<ServiceTicket | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [authMethod, setAuthMethod] = useState<PaymentMethod>("momo");
-  const [otpCode, setOtpCode] = useState("888999");
-  const [isVerifying, setIsVerifying] = useState(false);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatMessagesRef = useRef<HTMLDivElement>(null);
+export function ChatDashboard({
+  user,
+  activeDomain,
+  sessions,
+  onDomainChange,
+  onSessionsChange,
+  onActivity,
+  onOpenServices,
+}: ChatDashboardProps) {
+  const [composer, setComposer] = useState("");
+  const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>("checking");
+  const feedRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const mountedRef = useRef(true);
+  const session = sessions[activeDomain];
+  const service = useMemo(() => serviceDefinition(activeDomain), [activeDomain]);
 
   useEffect(() => {
-    loadInitialMessages();
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
   }, []);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  useEffect(() => {
+    void refreshGatewayStatus();
+    const interval = globalThis.setInterval(() => { void refreshGatewayStatus(); }, 30_000);
+    return () => globalThis.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, loading]);
+    const feed = feedRef.current;
+    if (feed) feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+  }, [session.messages.length, session.isSending, activeDomain]);
 
-  const handleScroll = () => {
-    if (!chatMessagesRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = chatMessagesRef.current;
-    setShowScrollBottom(scrollHeight - scrollTop - clientHeight > 120);
-  };
+  useEffect(() => {
+    composerRef.current?.focus();
+  }, [activeDomain]);
 
-  const loadInitialMessages = async () => {
-    const msgs = await MockService.getMessages();
-    setMessages(msgs);
-  };
+  async function refreshGatewayStatus() {
+    setGatewayStatus("checking");
+    try {
+      await checkGatewayHealth();
+      if (mountedRef.current) setGatewayStatus("online");
+    } catch {
+      if (mountedRef.current) setGatewayStatus("offline");
+    }
+  }
 
-  const handleSend = async (text: string) => {
-    if (!text.trim() || loading) return;
-    setInput("");
-    setNotice(null);
-    setLoading(true);
-    const newMsgs = await MockService.sendMessage(text);
-    setMessages([...newMsgs]);
-    setLoading(false);
-  };
+  async function sendMessage(textOverride?: string, contextOverride?: Record<string, unknown>, domainOverride = activeDomain) {
+    const text = (textOverride ?? composer).trim();
+    const current = sessions[domainOverride];
+    if (!text || current.isSending) return;
 
-  const handleConfirm = async (ticket: ServiceTicket) => {
-    const profile = await MockService.getUserProfile();
-    if (!isProfileComplete(profile)) {
-      setNotice({
-        type: "warning",
-        text: "Bạn cần hoàn thiện hồ sơ hành khách trước khi xác nhận thanh toán.",
+    const userMessage: ChatMessage = {
+      id: createMessageId("user"),
+      role: "user",
+      text,
+      domain: domainOverride,
+      timestamp: new Date().toISOString(),
+      requestStatus: "sent",
+    };
+    const loadingId = createMessageId("assistant");
+    const loadingMessage: ChatMessage = {
+      id: loadingId,
+      role: "assistant",
+      text: "Đang xử lý yêu cầu…",
+      domain: domainOverride,
+      timestamp: new Date().toISOString(),
+      requestStatus: "sending",
+    };
+    const context = contextOverride ?? contextFor(domainOverride, current.lastPayload);
+    const workflowId = current.workflowId ?? (domainOverride === "ride" || domainOverride === "food" ? undefined : createMessageId(`${domainOverride}-workflow`));
+    const conversationId = current.conversationId ?? (domainOverride === "food" ? createMessageId("food-conversation") : undefined);
+
+    onSessionsChange((previous) => {
+      const next = { ...previous[domainOverride], isSending: true, messages: [...previous[domainOverride].messages, userMessage, loadingMessage] };
+      if (workflowId) next.workflowId = workflowId;
+      if (conversationId) next.conversationId = conversationId;
+      return { ...previous, [domainOverride]: next };
+    });
+    if (domainOverride === activeDomain) setComposer("");
+
+    try {
+      const payload = await dispatchMessage(domainOverride, text, workflowId, conversationId, context, user.sub);
+      if (!mountedRef.current) return;
+      updateResponse(domainOverride, loadingId, payload, context, workflowId, conversationId);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const detail = errorText(error);
+      onSessionsChange((previous) => {
+        const currentSession = previous[domainOverride];
+        return {
+          ...previous,
+          [domainOverride]: {
+            ...currentSession,
+            isSending: false,
+            messages: currentSession.messages.map((message) => message.id === loadingId ? {
+              ...message,
+              text: `Không thể hoàn tất yêu cầu. ${detail}`,
+              requestStatus: "error",
+              retryText: text,
+              retryContext: context,
+            } : message),
+          },
+        };
       });
-      onRequireProfile?.();
+      if (domainOverride === activeDomain) setComposer(text);
+    }
+  }
+
+  async function handleAction(action: WorkflowAction) {
+    if (action.type === "message") {
+      await sendMessage(action.text, action.context, action.domain);
       return;
     }
+    const current = sessions[action.domain];
+    if (current.isSending) return;
+    setSessionSending(action.domain, true);
 
-    setPendingTicket(ticket);
-    setSelectedCombo(null);
-    setShowAuthModal(true);
-  };
-
-  const handleRequestChange = async (ticket: ServiceTicket) => {
-    await handleSend(`Tôi muốn đổi phương án cho mã vé tham khảo ${ticket.id}`);
-  };
-
-  // Combo Selection & OTP Auth
-  const handleSelectComboPackage = (combo: ComboPackage) => {
-    setSelectedCombo(combo);
-    setPendingTicket(null);
-    setShowAuthModal(true);
-  };
-
-  const handleConfirmOtpPayment = async () => {
-    if (!selectedCombo && !pendingTicket) return;
-    setIsVerifying(true);
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    if (pendingTicket) {
-      const booking = await MockService.confirmBooking(pendingTicket, authMethod);
-      const msgs = await MockService.getMessages();
-      setLastBookingId(booking.bookingId);
-      setNotice({
-        type: "success",
-        text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã thanh toán và tạo mã đặt chỗ ${booking.bookingId}.`,
-      });
-      setMessages([...msgs]);
-      setPendingTicket(null);
-    } else if (selectedCombo) {
-      const bookingFlight = await MockService.confirmBooking(selectedCombo.flight, authMethod);
-      const bookingHotel = await MockService.confirmBooking(selectedCombo.hotel, authMethod);
-      const msgs = await MockService.getMessages();
-      setLastBookingId(bookingFlight.bookingId);
-      setNotice({
-        type: "success",
-        text: `Xác thực ${paymentLabels[authMethod]} THÀNH CÔNG! Đã tạo mã Booking Combo ${bookingFlight.bookingId} & ${bookingHotel.bookingId}.`,
-      });
-      setMessages([...msgs]);
-      setSelectedCombo(null);
+    try {
+      const workflowId = current.workflowId;
+      let payload: Record<string, unknown>;
+      if (action.type === "ride-confirm" && workflowId) {
+        payload = await confirmRideService(workflowId, user.sub) as unknown as Record<string, unknown>;
+      } else if (action.type === "ride-payment" && workflowId) {
+        payload = await confirmRidePayment(workflowId, user.sub) as unknown as Record<string, unknown>;
+      } else if (action.type === "food-confirm" && current.pendingConfirmationId && current.conversationId) {
+        const key = current.pendingIdempotencyKey ?? createIdempotencyKey("food-confirm");
+        rememberKey(action.domain, key);
+        payload = await executeFoodConfirmation(current.pendingConfirmationId, current.conversationId, key);
+        const order = asRecord(payload.order);
+        const orderId = stringValue(order?.id);
+        if (orderId) {
+          try {
+            const refreshed = await pollFoodOrder(orderId);
+            if (refreshed) payload = { ...payload, order: refreshed };
+          } catch {
+            // The order was already created by the confirmation; an optional read may retry later.
+          }
+        }
+      } else if (action.type === "restaurant-confirm" && current.pendingConfirmationId && workflowId) {
+        const key = current.pendingIdempotencyKey ?? createIdempotencyKey("restaurant-confirm");
+        rememberKey(action.domain, key);
+        payload = await confirmRestaurant(current.pendingConfirmationId, workflowId, key);
+      } else if (action.type === "healthcare-payment" && workflowId) {
+        const appointment = asRecord(current.lastPayload?.appointment);
+        const appointmentId = numberFrom(appointment?.appointment_id ?? appointment?.id);
+        if (!appointmentId) throw new Error("Lịch hẹn chưa có mã appointment hợp lệ.");
+        const key = current.pendingPaymentKey ?? createIdempotencyKey("healthcare-payment");
+        rememberKey(action.domain, key, true);
+        payload = await acknowledgeHealthcarePayment(appointmentId, workflowId, key);
+      } else if (action.type === "healthcare-confirm" && current.pendingConfirmationId && workflowId) {
+        const key = current.pendingIdempotencyKey ?? createIdempotencyKey("healthcare-confirm");
+        rememberKey(action.domain, key);
+        payload = await confirmHealthcare(current.pendingConfirmationId, workflowId, key);
+      } else {
+        throw new Error("Workflow chưa sẵn sàng cho thao tác này. Hãy tải lại dữ liệu mới nhất.");
+      }
+      if (!mountedRef.current) return;
+      updateActionResponse(action.domain, payload);
+    } catch (error) {
+      if (!mountedRef.current) return;
+      const detail = errorText(error);
+      onSessionsChange((previous) => ({
+        ...previous,
+        [action.domain]: {
+          ...previous[action.domain],
+          isSending: false,
+          messages: [...previous[action.domain].messages, {
+            id: createMessageId("error"),
+            role: "assistant",
+            text: `Không thể hoàn tất thao tác. ${detail}`,
+            domain: action.domain,
+            timestamp: new Date().toISOString(),
+            requestStatus: "error",
+          }],
+        },
+      }));
     }
+  }
 
-    setIsVerifying(false);
-    setShowAuthModal(false);
-  };
-
-  // Flow 3: Confirm Reschedule & Refund
-  const handleConfirmReschedule = async (reschedule: RescheduleOption) => {
-    setLoading(true);
-    const booking = await MockService.confirmBooking(reschedule.newTicket, "momo");
-    setLastBookingId(booking.bookingId);
-    setNotice({
-      type: "success",
-      text: `Đã đổi sang ${reschedule.newTicket.provider} và tự động hoàn trả 520.000 VND về Ví MoMo của bạn!`,
+  function updateResponse(
+    domain: Domain,
+    loadingId: string,
+    payload: Record<string, unknown>,
+    context: Record<string, unknown>,
+    workflowId?: string,
+    conversationId?: string,
+  ) {
+    const pending = asRecord(payload.pending_confirmation);
+    const terminal = activityFrom(domain, payload);
+    onSessionsChange((previous) => {
+      const currentSession = previous[domain];
+    const responseWorkflowId = domain === "ride" ? stringValue(payload.workflow_id) || workflowId : workflowId;
+    const next: DomainSession = {
+        ...currentSession,
+        isSending: false,
+        ...(responseWorkflowId ? { workflowId: responseWorkflowId } : {}),
+        ...(conversationId ? { conversationId } : {}),
+        lastPayload: payload,
+        messages: currentSession.messages.map((message) => message.id === loadingId ? {
+          ...message,
+          text: responseText(payload, "Gateway đã nhận yêu cầu và trả về dữ liệu mới."),
+          payload,
+          requestStatus: "sent",
+        } : message),
+      };
+      applyPendingState(next, pending, Boolean(terminal));
+      return { ...previous, [domain]: next };
     });
-    const msgs = await MockService.getMessages();
-    setMessages([...msgs]);
-    setLoading(false);
-  };
+    setGatewayStatus("online");
+    if (terminal) onActivity(terminal);
+  }
 
-  // Flow 4: CSKH Operator Handoff
-  const handleConnectOperator = async (handoff: SupportTicketContext) => {
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setNotice({
-      type: "success",
-      text: `Nhân viên ${handoff.operatorName} đã tham gia phiên chat hỗ trợ trực tiếp cho Ticket ${handoff.ticketId}.`,
+  function updateActionResponse(domain: Domain, payload: Record<string, unknown>) {
+    const terminal = activityFrom(domain, payload);
+    onSessionsChange((previous) => {
+      const currentSession = previous[domain];
+      const next: DomainSession = {
+        ...currentSession,
+        isSending: false,
+        lastPayload: payload,
+        messages: [...currentSession.messages, {
+          id: createMessageId("assistant"),
+          role: "assistant",
+          text: actionResponseText(domain, payload),
+          domain,
+          timestamp: new Date().toISOString(),
+          payload,
+          requestStatus: "sent",
+        }],
+      };
+      applyPendingState(next, asRecord(payload.pending_confirmation), Boolean(terminal));
+      return { ...previous, [domain]: next };
     });
-    setLoading(false);
-  };
+    setGatewayStatus("online");
+    if (terminal) onActivity(terminal);
+  }
 
-  // Flow 5: Select Ride Vehicle Option
-  const handleSelectRideOption = async (rideOpt: RideVehicleOption) => {
-    const rideTicket: ServiceTicket = {
-      id: `ride-${Date.now()}`,
-      type: "car",
-      origin: "Sân bay Đà Nẵng",
-      destination: "Khách sạn Minh An Riverside",
-      date: "2026-08-08",
-      time: "14:30",
-      price: rideOpt.price,
-      seats: rideOpt.seats,
-      provider: rideOpt.name,
-      duration: rideOpt.eta,
-      note: `Tài xế: ${rideOpt.driverName || "Nguyễn Văn Hùng"} · BSK: ${rideOpt.licensePlate || "43A-889.12"} · Mẫu xe: ${rideOpt.vehicleModel}`,
-      refundPolicy: "Miễn phí hủy trước giờ đón 30 phút.",
-    };
+  function setSessionSending(domain: Domain, isSending: boolean) {
+    onSessionsChange((previous) => ({ ...previous, [domain]: { ...previous[domain], isSending } }));
+  }
 
-    setLoading(true);
-    await handleSend(`Tôi chọn loại xe ${rideOpt.name} (${rideOpt.vehicleModel}) với giá ${rideOpt.price.toLocaleString("vi-VN")} VND`);
-  };
+  function rememberKey(domain: Domain, key: string, payment = false) {
+    onSessionsChange((previous) => ({
+      ...previous,
+      [domain]: { ...previous[domain], ...(payment ? { pendingPaymentKey: key } : { pendingIdempotencyKey: key }) },
+    }));
+  }
 
-  const renderRideOptions = (options: RideVehicleOption[]) => (
-    <div className="ride-options-grid">
-      {options.map((opt) => (
-        <div key={opt.id} className="ride-option-card">
-          <div className="ride-option-header">
-            <div className="ride-icon-badge"><Car size={18} /></div>
-            <div>
-              <h4>{opt.name}</h4>
-              <small>{opt.vehicleModel} · {opt.seats}</small>
-            </div>
-            <div className="ride-price-badge">
-              <strong>{opt.price.toLocaleString("vi-VN")} VND</strong>
-            </div>
-          </div>
-          <ul className="ride-highlights">
-            {opt.highlights.map((h, i) => (
-              <li key={i}><CheckCircle2 size={13} className="text-success" /> {h}</li>
-            ))}
-          </ul>
-          <div className="ride-driver-preview">
-            <span>Tài xế đề xuất: <strong>{opt.driverName}</strong> ({opt.licensePlate})</span>
-            <span className="eta-tag">Đón sau {opt.eta}</span>
-          </div>
-          <button
-            type="button"
-            className="btn-select-ride"
-            onClick={() => handleSelectRideOption(opt)}
-            disabled={loading}
-          >
-            <Car size={15} />
-            Chọn {opt.name}
-          </button>
-        </div>
-      ))}
-    </div>
-  );
+  function startNewConversation() {
+    onSessionsChange((previous) => ({
+      ...previous,
+      [activeDomain]: {
+        domain: activeDomain,
+        messages: [],
+        isSending: false,
+      },
+    }));
+    setComposer("");
+    composerRef.current?.focus();
+  }
 
-  const renderComboPackages = (packages: ComboPackage[]) => (
-    <div className="combo-packages-list">
-      {packages.map((combo) => (
-        <div className="combo-card" key={combo.id}>
-          <div className="combo-card-header">
-            <div className="combo-badge">{combo.badge}</div>
-            <h4>{combo.title}</h4>
-          </div>
-          <div className="combo-items-grid">
-            <div className="combo-item-box">
-              <span className="combo-item-type"><Plane size={15} /> Vé Máy Bay</span>
-              <strong>{combo.flight.origin} → {combo.flight.destination}</strong>
-              <small>{combo.flight.provider} · {combo.flight.date} {combo.flight.time}</small>
-            </div>
-            <div className="combo-item-box">
-              <span className="combo-item-type"><Hotel size={15} /> Khách Sạn</span>
-              <strong>{combo.hotel.destination}</strong>
-              <small>{combo.hotel.seats} · {combo.hotel.duration}</small>
-            </div>
-          </div>
-          <ul className="combo-highlights">
-            {combo.highlights.map((h, i) => (
-              <li key={i}><CheckCircle2 size={14} className="text-success" /> {h}</li>
-            ))}
-          </ul>
-          <div className="combo-price-bar">
-            <div className="price-details">
-              <span className="original-price">{combo.originalPrice.toLocaleString("vi-VN")} VND</span>
-              <strong className="combo-price">{combo.comboPrice.toLocaleString("vi-VN")} VND</strong>
-            </div>
-            <button
-              type="button"
-              className="btn-select-combo"
-              onClick={() => handleSelectComboPackage(combo)}
-            >
-              <Gift size={16} />
-              Chọn Gói Combo Này
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-
-  const renderRescheduleCard = (reschedule: RescheduleOption) => (
-    <div className="reschedule-card">
-      <div className="reschedule-header">
-        <ArrowRightLeft size={20} className="text-primary" />
-        <div>
-          <h4>So sánh Đổi Lịch trình & Hoàn tiền</h4>
-          <p>Tự động tính chênh lệch giá vé và hoàn tiền theo chính sách hãng</p>
-        </div>
-      </div>
-
-      <div className="reschedule-compare-grid">
-        <div className="ticket-compare-box old">
-          <span className="compare-label danger">Vé cũ (Đã đặt)</span>
-          <strong>{reschedule.oldTicket.provider} ({reschedule.oldTicket.origin} → {reschedule.oldTicket.destination})</strong>
-          <span className="compare-price">{reschedule.oldTicket.price.toLocaleString("vi-VN")} VND</span>
-        </div>
-
-        <div className="compare-arrow">➔</div>
-
-        <div className="ticket-compare-box new">
-          <span className="compare-label success">Vé mới (Đề xuất)</span>
-          <strong>{reschedule.newTicket.provider} ({reschedule.newTicket.origin} → {reschedule.newTicket.destination})</strong>
-          <span className="compare-price">{reschedule.newTicket.price.toLocaleString("vi-VN")} VND</span>
-        </div>
-      </div>
-
-      <div className="refund-summary-box">
-        <div className="refund-amount-row">
-          <span>Số tiền chênh lệch hoàn lại:</span>
-          <strong className="refund-value">{reschedule.refundAmount.toLocaleString("vi-VN")} VND</strong>
-        </div>
-        <p className="refund-policy-text"><ShieldCheck size={14} /> {reschedule.refundPolicy}</p>
-      </div>
-
-      <button
-        type="button"
-        className="btn-confirm-reschedule"
-        onClick={() => handleConfirmReschedule(reschedule)}
-        disabled={loading}
-      >
-        <RefreshCw size={16} />
-        Xác nhận đổi sang Tàu hỏa & Nhận hoàn tiền
-      </button>
-    </div>
-  );
-
-  const renderHandoffCard = (handoff: SupportTicketContext) => (
-    <div className="handoff-card">
-      <div className="handoff-header">
-        <div className="handoff-avatar">{handoff.operatorAvatar || "L"}</div>
-        <div>
-          <h4>{handoff.operatorName} (CSKH NaviGo)</h4>
-          <span className="handoff-status-badge">● Đã tiếp quản phiên hỗ trợ</span>
-        </div>
-      </div>
-      <div className="handoff-ticket-info">
-        <div><span>Mã Ticket:</span> <strong>{handoff.ticketId}</strong></div>
-        <div><span>Mức ưu tiên:</span> <strong className="priority-high">{handoff.priority}</strong></div>
-        <div><span>Nội dung:</span> <strong>{handoff.category}</strong></div>
-      </div>
-      <button
-        type="button"
-        className="btn-connect-operator"
-        onClick={() => handleConnectOperator(handoff)}
-        disabled={loading}
-      >
-        <Headphones size={16} />
-        Trò chuyện trực tiếp với CSKH Linh
-      </button>
-    </div>
-  );
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
+    }
+  }
 
   return (
-    <div className="chat-dashboard">
-      <section className="chat-main">
-        <div className="scenario-grid">
-          {demoScenarios.map((scenario) => (
-            <button
-              type="button"
-              key={scenario.title}
-              className={`scenario-card scenario-${scenario.type}`}
-              onClick={() => handleSend(scenario.prompt)}
-              disabled={loading}
-            >
-              <div className="scenario-card-header">
-                <span className={`scenario-icon icon-${scenario.type}`}>{scenario.icon}</span>
-                <span className={`scenario-badge badge-${scenario.type}`}>{scenario.category}</span>
-              </div>
-              <div className="scenario-card-body">
-                <strong>{scenario.title}</strong>
-                <small>{scenario.subtitle}</small>
-              </div>
-            </button>
-          ))}
+    <section className="assistant-page" aria-labelledby="assistant-title">
+      <header className="assistant-header">
+        <div className="assistant-heading">
+          <span className="eyebrow">TRỢ LÝ</span>
+          <h1 id="assistant-title">Bạn muốn làm gì hôm nay?</h1>
+          <p>Một cuộc trò chuyện, bốn dịch vụ có thể thực hiện qua Gateway.</p>
         </div>
-
-        {notice && (
-          <div className={`flow-notice ${notice.type}`}>
-            {notice.type === "success" ? <CheckCircle2 size={18} /> : <CircleAlert size={18} />}
-            <span>{notice.text}</span>
-            {lastBookingId && (
-              <button type="button" onClick={onOpenHistory}>
-                Xem lịch sử
-              </button>
-            )}
-          </div>
-        )}
-
-        <div className="chat-messages" ref={chatMessagesRef} onScroll={handleScroll}>
-          {messages.map((msg) => (
-            <div key={msg.id} className={`message-row ${msg.role}`}>
-              {msg.role === "bot" && (
-                <div className="bot-avatar">
-                  <Zap size={16} />
-                </div>
-              )}
-              <div className="message-content-wrapper">
-                <div className="message-bubble">
-                  <p className="message-text">{msg.text}</p>
-                  {msg.ticket && (
-                    <TicketCard
-                      ticket={msg.ticket}
-                      onConfirm={handleConfirm}
-                      onRequestChange={handleRequestChange}
-                    />
-                  )}
-                  {msg.comboPackages && renderComboPackages(msg.comboPackages)}
-                  {msg.rescheduleComparison && renderRescheduleCard(msg.rescheduleComparison)}
-                  {msg.handoffInfo && renderHandoffCard(msg.handoffInfo)}
-                  {msg.rideOptions && renderRideOptions(msg.rideOptions)}
-                  <span className="message-time">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="message-row bot">
-              <div className="bot-avatar">
-                <Zap size={16} />
-              </div>
-              <div className="message-content-wrapper">
-                <div className="message-bubble loading">
-                  <Loader2 className="spinner" size={20} />
-                  <span>Đang xử lý...</span>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
+        <div className="assistant-header-actions">
+          <GatewayStatus status={gatewayStatus} onRetry={() => void refreshGatewayStatus()} />
+          <button className="icon-button" type="button" onClick={startNewConversation} aria-label="Bắt đầu phiên mới" title="Phiên mới"><Plus size={18} /></button>
         </div>
+      </header>
 
-        {showScrollBottom && (
-          <button
-            type="button"
-            className="scroll-bottom-btn"
-            onClick={scrollToBottom}
-            aria-label="Cuộn xuống tin nhắn mới nhất"
-          >
-            <ChevronDown size={16} />
-            <span>Tin nhắn mới nhất</span>
-          </button>
-        )}
+      <ServiceSelector activeDomain={activeDomain} onSelect={onDomainChange} />
 
-        <div className="chat-input-container">
-          <div className="suggestions">
-            {MOCK_SUGGESTIONS.map((suggestion, idx) => (
-              <button key={idx} onClick={() => setInput(suggestion)} className="suggestion-chip">
-                <Zap size={14} className="suggestion-icon" />
-                {suggestion}
-              </button>
+      <div className="assistant-layout">
+        <div className="chat-column">
+          <div className="chat-feed" ref={feedRef}>
+            {session.messages.length === 0 ? (
+              <WelcomeState service={service} onStart={(domain, prompt) => { onDomainChange(domain); void sendMessage(prompt, undefined, domain); }} onOpenServices={onOpenServices} />
+            ) : null}
+            {session.messages.map((message) => (
+              <MessageBubble key={message.id} message={message} session={session} onAction={handleAction} onRetry={(text, context) => void sendMessage(text, context, activeDomain)} />
             ))}
           </div>
-          <form
-            className="input-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSend(input);
-            }}
-          >
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Nhập yêu cầu đặt dịch vụ..."
-              disabled={loading}
-            />
-            <button type="submit" disabled={!input.trim() || loading} className="btn-send" aria-label="Gửi yêu cầu">
-              <Send size={18} />
-            </button>
-          </form>
-        </div>
-      </section>
-
-      {showAuthModal && (selectedCombo || pendingTicket) && (
-        <div className="auth-modal-overlay">
-          <div className="auth-modal-content">
-            <div className="auth-modal-header">
-              <div className="modal-title">
-                <Lock size={20} className="text-primary" />
-                <h3>Xác thực Thanh toán {selectedCombo ? "Combo" : (pendingTicket?.type === "car" ? "Đặt xe đưa đón" : "Dịch vụ")}</h3>
-              </div>
-              <button type="button" className="btn-close-modal" onClick={() => setShowAuthModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="auth-modal-body">
-              <div className="selected-combo-summary">
-                <strong>{selectedCombo ? selectedCombo.title : `${pendingTicket?.provider} (${pendingTicket?.origin} → ${pendingTicket?.destination})`}</strong>
-                <span className="summary-price">{(selectedCombo ? selectedCombo.comboPrice : (pendingTicket?.price || 0)).toLocaleString("vi-VN")} VND</span>
-              </div>
-
-              <div className="form-group">
-                <label>Chọn Phương thức Thanh toán</label>
-                <div className="method-selector">
-                  {(["momo", "card", "bank_transfer"] as PaymentMethod[]).map((method) => (
-                    <button
-                      key={method}
-                      type="button"
-                      className={`method-btn ${authMethod === method ? "active" : ""}`}
-                      onClick={() => setAuthMethod(method)}
-                    >
-                      {paymentLabels[method]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {authMethod === "momo" && (
-                <div className="auth-step-box momo">
-                  <span className="momo-badge">Ví MoMo</span>
-                  <p>Nhập mã OTP 6 chữ số được gửi tới số điện thoại ví của bạn (Mã demo: <strong>888999</strong>):</p>
-                  <input
-                    type="text"
-                    className="otp-input"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="Nhập mã OTP (888999)"
-                    maxLength={6}
-                  />
-                </div>
-              )}
-
-              {authMethod === "card" && (
-                <div className="auth-step-box visa">
-                  <CreditCard size={20} className="text-primary" />
-                  <p>Cửa sổ xác thực 3D-Secure từ Ngân hàng (Visa/Mastercard). Nhập OTP giao dịch trực tuyến:</p>
-                  <input
-                    type="password"
-                    className="otp-input"
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="Mã OTP 3D-Secure"
-                    maxLength={6}
-                  />
-                </div>
-              )}
-
-              {authMethod === "bank_transfer" && (
-                <div className="auth-step-box qr">
-                  <QrCode size={24} className="text-primary" />
-                  <p>Mã VietQR tự động khớp nội dung chuyển khoản <strong>BKG-COMBO-9901</strong></p>
-                  <div className="mock-qr-placeholder">
-                    <span>[ MÃ VIETQR CODE DEMO ]</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="auth-modal-footer">
-              <button type="button" className="btn-cancel-modal" onClick={() => setShowAuthModal(false)}>
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                className="btn-confirm-otp"
-                onClick={handleConfirmOtpPayment}
-                disabled={isVerifying || !otpCode.trim()}
-              >
-                {isVerifying ? <Loader2 size={18} className="spinner" /> : <ShieldCheck size={18} />}
-                {isVerifying ? "Đang xác thực..." : "Xác nhận OTP & Hoàn tất"}
+          <div className="composer-wrap">
+            <div className="composer-label"><span>{service.label}</span><span>Enter gửi · Shift+Enter xuống dòng</span></div>
+            <div className="composer-box">
+              <textarea
+                ref={composerRef}
+                aria-label="Nhập yêu cầu"
+                disabled={session.isSending}
+                onChange={(event) => setComposer(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder={`Ví dụ: ${service.prompt}`}
+                rows={2}
+                value={composer}
+              />
+              <button className="send-button" type="button" onClick={() => void sendMessage()} disabled={session.isSending || !composer.trim()} aria-label="Gửi yêu cầu">
+                {session.isSending ? <Loader2 className="spinner" size={18} /> : <Send size={18} />}
               </button>
             </div>
           </div>
         </div>
-      )}
+        <aside className="assistant-context">
+          <div className="context-card">
+            <span className="eyebrow">PHIÊN HIỆN TẠI</span>
+            <ContextServiceIcon service={service} />
+            <p>{service.description}</p>
+            <dl className="context-list">
+              <div><dt>Workflow</dt><dd>{session.workflowId ? "Đã tạo" : "Chưa bắt đầu"}</dd></div>
+              <div><dt>Conversation</dt><dd>{session.conversationId ? "Đang giữ" : "Theo domain"}</dd></div>
+              <div><dt>Confirmation</dt><dd>{session.pendingConfirmationId ? "Đang chờ" : "Không có"}</dd></div>
+            </dl>
+          </div>
+          <div className="context-card context-card-muted">
+            <div className="context-card-title"><ShieldIcon /><strong>An toàn thao tác</strong></div>
+            <p>Giá, trạng thái và kết quả chỉ hiển thị sau khi Gateway trả về. Các bước cuối luôn cần xác nhận riêng.</p>
+          </div>
+          <button className="context-link" type="button" onClick={onOpenServices}>Xem tất cả dịch vụ <span aria-hidden="true">→</span></button>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function WelcomeState({ service, onStart, onOpenServices }: { service: ReturnType<typeof serviceDefinition>; onStart: (domain: Domain, prompt: string) => void; onOpenServices: () => void }) {
+  const ServiceIcon = service.icon;
+  return (
+    <div className="welcome-state">
+      <div className="welcome-icon"><Bot size={25} /></div>
+      <span className="eyebrow">X-ONE ASSISTANT</span>
+      <h2>Một trợ lý. Mọi dịch vụ hằng ngày.</h2>
+      <p>Chọn một gợi ý bên dưới hoặc nhập yêu cầu tự nhiên. X-One sẽ chuyển đúng domain và hiển thị các bước xác nhận rõ ràng.</p>
+      <div className="welcome-actions">
+        <button type="button" onClick={() => onStart(service.domain, service.prompt)}><ServiceIcon size={17} /> {service.label}</button>
+        <button type="button" onClick={onOpenServices}><Sparkles size={17} /> Chọn dịch vụ khác</button>
+      </div>
+      <div className="prompt-list">
+        {[
+          ["ride", "Từ sân bay Nội Bài đến Hoàn Kiếm bằng xe 4 chỗ"],
+          ["food", "Tìm phở bò dưới 100 nghìn ở Hà Nội"],
+          ["restaurant", "Đặt bàn cho 2 người tối mai ở Hà Nội"],
+          ["healthcare", "Tôi bị mệt và muốn đặt lịch khám"],
+        ].map(([domain, prompt]) => (
+          <button key={domain} type="button" onClick={() => onStart(domain as Domain, prompt)}><span>{prompt}</span><span aria-hidden="true">→</span></button>
+        ))}
+      </div>
     </div>
   );
-};
+}
+
+function MessageBubble({ message, session, onAction, onRetry }: { message: ChatMessage; session: DomainSession; onAction: (action: WorkflowAction) => void; onRetry: (text: string, context?: Record<string, unknown>) => void }) {
+  const isAssistant = message.role === "assistant";
+  return (
+    <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}>
+      <div className="message-avatar">{isAssistant ? <Bot size={17} /> : <span>U</span>}</div>
+      <div className="message-content">
+        <div className="message-meta"><strong>{isAssistant ? "X-One" : "Bạn"}</strong>{message.domain ? <span className="message-domain">{serviceDefinition(message.domain).shortLabel}</span> : null}<time>{formatTime(message.timestamp)}</time></div>
+        <div className="message-text">{message.text}</div>
+        {message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}
+        {message.payload && message.requestStatus === "sent" ? <WorkflowCards domain={message.domain ?? session.domain} payload={message.payload} session={session} onAction={onAction} /> : null}
+        {message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText!, message.retryContext)}><RefreshCw size={14} /> Thử lại</button> : null}
+      </div>
+    </article>
+  );
+}
+
+function GatewayStatus({ status, onRetry }: { status: GatewayStatus; onRetry: () => void }) {
+  if (status === "checking") return <span className="gateway-status checking"><Loader2 className="spinner" size={14} /> Đang kiểm tra backend</span>;
+  if (status === "online") return <span className="gateway-status online"><CircleCheck size={14} /> Backend đã kết nối</span>;
+  return <button className="gateway-status offline" type="button" onClick={onRetry}><CircleAlert size={14} /> Không kết nối được backend <RefreshCw size={13} /></button>;
+}
+
+async function dispatchMessage(domain: Domain, text: string, workflowId?: string, conversationId?: string, context?: Record<string, unknown>, actorId?: string): Promise<Record<string, unknown>> {
+  if (domain === "ride" && actorId) return await sendRideMessage(text, actorId, workflowId) as unknown as Record<string, unknown>;
+  if (domain === "food" && conversationId) return await sendFoodMessage(conversationId, text) as Record<string, unknown>;
+  if (domain === "restaurant" && workflowId) return await sendRestaurantMessage(text, workflowId, context) as Record<string, unknown>;
+  if (domain === "healthcare" && workflowId) return await sendHealthcareMessage(text, workflowId, context) as Record<string, unknown>;
+  throw new Error("Phiên dịch vụ chưa sẵn sàng.");
+}
+
+function contextFor(domain: Domain, payload?: Record<string, unknown>): Record<string, unknown> {
+  if (!payload) return {};
+  if (domain === "restaurant") return { slots: asRecord(payload.slots) ?? {}, tool_name: stringValue(asRecord(payload.tool_request)?.tool_name), tool_result: payload.tool_result ?? null };
+  if (domain === "healthcare") return {
+    slots: asRecord(payload.slots) ?? {},
+    patient_id: numberFrom(asRecord(payload.slots)?.patient_id) ?? 1,
+    appointment_id: numberFrom(asRecord(payload.appointment)?.appointment_id ?? asRecord(payload.appointment)?.id) ?? null,
+    tool_name: stringValue(asRecord(payload.tool_request)?.tool_name),
+    tool_result: payload.tool_result ?? null,
+    symptoms: stringValue(payload.symptoms, "dau bung"),
+  };
+  return {};
+}
+
+function applyPendingState(session: DomainSession, pending: Record<string, unknown> | undefined, terminal: boolean) {
+  if (pending) {
+    session.pendingConfirmationId = stringValue(pending.id) || undefined;
+    session.pendingConfirmationAction = stringValue(pending.action) || undefined;
+    return;
+  }
+  if (terminal) {
+    session.pendingConfirmationId = undefined;
+    session.pendingConfirmationAction = undefined;
+    session.pendingIdempotencyKey = undefined;
+  }
+}
+
+function activityFrom(domain: Domain, payload: Record<string, unknown>): SessionActivity | undefined {
+  const timestamp = new Date().toISOString();
+  if (domain === "ride") {
+    const booking = asRecord(payload.booking);
+    if (stringValue(payload.stage) !== "COMPLETED" || stringValue(booking?.status) !== "DRIVER_ASSIGNED" || !booking?.id) return undefined;
+    const quote = asRecord(payload.quote);
+    return { id: `ride-${String(booking.id)}`, domain, title: "Chuyến xe", reference: String(booking.id), status: "DRIVER_ASSIGNED", detail: `${stringValue(quote?.pickup_address, "Điểm đón")} → ${stringValue(quote?.dropoff_address, "Điểm đến")}`, timestamp };
+  }
+  if (domain === "food") {
+    const order = asRecord(payload.order);
+    const payment = asRecord(payload.payment);
+    if (!order?.id || stringValue(payment?.status) !== "SUCCEEDED") return undefined;
+    return { id: `food-${String(order.id)}`, domain, title: "Đơn đồ ăn", reference: String(order.id), status: stringValue(order.status, "Đã tạo"), detail: stringValue(order.restaurant_name, "Order từ Food Service"), timestamp };
+  }
+  if (domain === "restaurant") {
+    const result = asRecord(payload.tool_result) ?? asRecord(asRecord(payload.result)?.tool_result);
+    if (!result?.id || stringValue(result.status) !== "CONFIRMED") return undefined;
+    return { id: `restaurant-${String(result.id)}`, domain, title: "Đặt bàn", reference: String(result.id), status: "CONFIRMED", detail: stringValue(result.restaurant_name, "Reservation Restaurant Service"), timestamp };
+  }
+  const result = asRecord(payload.tool_result) ?? asRecord(asRecord(payload.result)?.tool_result);
+  const appointment = asRecord(result?.appointment) ?? (result?.status ? result : undefined) ?? asRecord(payload.appointment);
+  if (!appointment?.id && !appointment?.appointment_id || stringValue(appointment?.status) !== "CONFIRMED") return undefined;
+  const reference = String(appointment.id ?? appointment.appointment_id);
+  return { id: `healthcare-${reference}`, domain, title: "Lịch khám", reference, status: "CONFIRMED", detail: stringValue(asRecord(appointment.doctor)?.name, "Appointment Healthcare Service"), timestamp };
+}
+
+function actionResponseText(domain: Domain, payload: Record<string, unknown>): string {
+  const activity = activityFrom(domain, payload);
+  if (activity) {
+    if (domain === "ride") return "Gateway đã hoàn tất booking và trả về trạng thái DRIVER_ASSIGNED.";
+    if (domain === "food") return "Gateway đã tạo order và ghi nhận payment sandbox thành công.";
+    if (domain === "restaurant") return "Gateway đã xác nhận reservation. Đặt bàn thành công.";
+    return "Gateway đã xác nhận appointment. Lịch khám đã hoàn tất.";
+  }
+  if (domain === "healthcare" && stringValue(payload.status) === "PAYMENT_SUCCEEDED") return "Thanh toán demo đã được ghi nhận. Kiểm tra lại lịch hẹn rồi xác nhận bước cuối.";
+  return responseText(payload, "Gateway đã xử lý thao tác và trả về dữ liệu mới.");
+}
+
+function numberFrom(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isInteger(Number(value))) return Number(value);
+  return undefined;
+}
+
+function createMessageId(prefix: string): string {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return `${prefix}-${uuid ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+function formatTime(value: string): string {
+  const time = new Date(value);
+  return Number.isNaN(time.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(time);
+}
+
+async function pollFoodOrder(orderId: string): Promise<Record<string, unknown> | undefined> {
+  const deadline = Date.now() + 12_000;
+  let latest: Record<string, unknown> | undefined;
+  while (Date.now() < deadline) {
+    latest = await getFoodOrder(orderId);
+    const status = stringValue(latest.status);
+    if (["DELIVERED", "CANCELLED", "REFUNDED", "PAYMENT_FAILED"].includes(status)) return latest;
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 1_000));
+  }
+  return latest;
+}
+
+function ShieldIcon() {
+  return <Check size={16} />;
+}
+
+function ContextServiceIcon({ service }: { service: ReturnType<typeof serviceDefinition> }) {
+  const ServiceIcon = service.icon;
+  return <div className={`context-service service-${service.accent}`}><ServiceIcon size={18} /><strong>{service.label}</strong></div>;
+}

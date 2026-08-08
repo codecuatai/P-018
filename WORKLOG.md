@@ -6,7 +6,7 @@
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Final last-mile corrective pass: Restaurant PATCH/idempotency, Restaurant/Food OpenAPI parity, Bash host normalization, E2E harness project scoping, and disposable persistence verification | ✅ Done | Agent 68 pass; Food 22 pass/3 skip; Ride 10; Restaurant 17 pass/1 skip; Healthcare 20 pass/1 skip; Gateway 30 pass/3 skip + lint/build; Web build; fresh disposable migrations/seeds and live E2E 18/18; no-seed restart kept food_orders 12→12; p-018 Restaurant Alembic 0002/table and all containers healthy; env/Compose/migration/parity/static checks pass; no commit/push/cloud | - |
+| Vũ Văn Phong (2A202601647) | Final backend verification plus X-One frontend real integration and demo UI redesign: Gateway-only Auth/Ride/Food/Restaurant/Healthcare workflows, confirmation/idempotency UX, MockService isolation, responsive assistant, and docs sync; fixed bounded Agent tool-call IDs and Ride first-turn workflow handling after live 503 diagnosis | ✅ Done | Frontend npm install/build pass; Gateway lint/Jest 30 pass/3 skip/build pass; env/Compose/CORS checks pass; live public E2E 18/18; real login/me sanity check; no direct-service or MockService matches; Agent rebuild healthy; four-domain Gateway smoke pass; browser-control smoke unavailable; no commit/push/cloud | - |
 
 ---
 
