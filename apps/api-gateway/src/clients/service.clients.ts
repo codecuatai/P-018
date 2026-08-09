@@ -323,6 +323,21 @@ export class RideClient extends InternalServiceClient {
     );
   }
 
+  async getQuote(
+    actorId: string,
+    callContext: ServiceCallContext,
+    quoteId: string,
+  ): Promise<RideQuote> {
+    return this.request(
+      '/v1/quotes/' + encodeURIComponent(quoteId),
+      callContext,
+      { method: 'GET' },
+      actorHeaders(actorId),
+      operationProfile('ride.quote.get'),
+      (value) => parseQuote(envelopeData(value)),
+    );
+  }
+
   async prepareBooking(
     actorId: string,
     idempotencyKey: string,

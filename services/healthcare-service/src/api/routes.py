@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
+from src.config import get_settings
 from src.database import get_db
 from src.models.medical import (
     Appointment,
@@ -182,6 +183,11 @@ def _resolve_patient(db: Session, patient_id: int | None) -> Patient:
     return patient
 
 
+def _facility_data() -> dict[str, str]:
+    settings = get_settings()
+    return {"name": settings.healthcare_facility_name, "address": settings.healthcare_facility_address}
+
+
 def _appointment_data(appointment: Appointment) -> dict[str, Any]:
     slot = appointment.slot
     doctor = appointment.doctor
@@ -205,6 +211,7 @@ def _appointment_data(appointment: Appointment) -> dict[str, Any]:
             "name": department.name,
             "description": department.description,
         } if department else None,
+        "facility": _facility_data(),
         "slot": {
             "id": slot.id,
             "start_time": slot.start_time.isoformat(),
@@ -329,6 +336,7 @@ def hold_slot(
             "status": AppointmentStatus.DRAFT.value,
             "is_paid": False,
             "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
+            "facility": _facility_data(),
         }
         _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()

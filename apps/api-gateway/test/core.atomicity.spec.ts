@@ -70,4 +70,77 @@ describe('Core atomicity adapter', () => {
     expect((await repository.getConfirmation(terminal.id))?.status).toBe('FAILED_FINAL');
     expect((await repository.getConfirmation(terminal.id))?.failureCode).toBe('REFUND_FAILED');
   });
+
+  it('atomically advances the Assistant conversation and persists one response receipt', async () => {
+    const repository = new InMemoryCoreRepository();
+    const firstClaim = await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-1', 'hash-1');
+    expect(firstClaim.state).toBe('CLAIMED');
+    const response = { conversation_id: 'conversation-1', message: 'done', items: [{ kind: 'reservation', title: 'done' }] };
+    await repository.commitAssistantActionSuccess({
+      actorId: 'actor-1',
+      conversationId: 'conversation-1',
+      actionId: 'action-1',
+      idempotencyKey: 'key-1',
+      requestHash: 'hash-1',
+      userMessage: { role: 'user', content: '__assistant_action__:restaurant_confirm', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
+      stateUpdates: { actions: [] },
+      response,
+    });
+
+    const replay = await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-1', 'hash-1');
+    expect(replay.state).toBe('SUCCEEDED');
+    expect(replay.execution?.response).toEqual(response);
+    expect((await repository.getAssistantActionExecution('actor-1', 'conversation-1', 'action-1'))?.response).toEqual(response);
+    expect((await repository.getConversation('conversation-1', 'actor-1'))?.messages).toHaveLength(2);
+    expect((await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-2', 'hash-1')).state).toBe('ACTION_NOT_AVAILABLE');
+    expect((await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-1', 'hash-2')).state).toBe('IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('cannot consume a persisted action when a success commit cannot validate its processing receipt', async () => {
+    const repository = new InMemoryCoreRepository();
+    await repository.saveConversation({
+      conversationId: 'conversation-atomic-failure',
+      actorId: 'actor-atomic-failure',
+      messages: [],
+      state: { actions: [{ id: 'action-atomic-failure' }] },
+      version: 1,
+    });
+    await repository.claimAssistantActionExecution('actor-atomic-failure', 'conversation-atomic-failure', 'action-atomic-failure', 'key-atomic-failure', 'hash-atomic-failure');
+
+    await expect(repository.commitAssistantActionSuccess({
+      actorId: 'actor-atomic-failure',
+      conversationId: 'conversation-atomic-failure',
+      actionId: 'action-atomic-failure',
+      idempotencyKey: 'key-atomic-failure',
+      requestHash: 'changed-hash',
+      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
+      stateUpdates: { actions: [] },
+      response: { conversation_id: 'conversation-atomic-failure', message: 'done', items: [], actions: [], completed: [] },
+    })).rejects.toThrow('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING');
+
+    expect((await repository.getConversation('conversation-atomic-failure', 'actor-atomic-failure'))?.state).toEqual({ actions: [{ id: 'action-atomic-failure' }] });
+    expect((await repository.getAssistantActionExecution('actor-atomic-failure', 'conversation-atomic-failure', 'action-atomic-failure'))?.status).toBe('PROCESSING');
+  });
+
+  it('reclaims retryable and stale Assistant action receipts but blocks fresh concurrency', async () => {
+    const repository = new InMemoryCoreRepository();
+    const first = await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry');
+    expect(first.state).toBe('CLAIMED');
+    expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry')).state).toBe('PROCESSING');
+
+    await repository.completeAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry', 'FAILED_RETRYABLE');
+    expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry')).state).toBe('CLAIMED');
+
+    const records = (repository as unknown as { assistantActionExecutions: Map<string, { processingExpiresAt?: string }> }).assistantActionExecutions;
+    const record = records.get(JSON.stringify(['actor-retry', 'conversation-retry', 'action-retry']));
+    expect(record).toBeDefined();
+    record!.processingExpiresAt = new Date(Date.now() - 1).toISOString();
+    expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry')).state).toBe('CLAIMED');
+
+    expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'different-key', 'hash-retry')).state).toBe('ACTION_NOT_AVAILABLE');
+    await repository.completeAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry', 'FAILED_FINAL');
+    expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry')).state).toBe('FAILED_FINAL');
+  });
 });

@@ -51,12 +51,32 @@ Restaurant-to-Ride composition keeps Ride blocked until the selected
 restaurant's authoritative location is available. No model-produced resource
 ID, price, availability, status, or final-success claim is trusted.
 
+Healthcare-to-Ride composition keeps an early Ride quote available after
+Healthcare has held an appointment and returned its authoritative facility
+address and start time, but exposes no executable `ride_service` action until
+Healthcare is `COMPLETED`. Restaurant-to-Ride follows the same rule: selection
+may produce a quote, while the executable Ride action is withheld until the
+reservation is completed. The server rejects stale/manual dependent Ride
+actions when the prerequisite is not complete. The Gateway then requests a Ride
+quote using that address and uses the quote's authoritative duration to
+calculate `recommended_departure = appointment_start
+- duration - 20 minutes`. The 20-minute value is the named Gateway constant
+`HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES`. The card explicitly says that this
+is a recommendation: the local Ride contract does not schedule a future pickup,
+so X-One does not claim that dispatch was scheduled. If the recommended
+departure is already past or cannot be calculated, the Gateway persists a
+`ride_timing_conflict` card and does not book or cancel a Ride; completed
+Healthcare work remains in the conversation.
+
 Each unified task carries a revision. A turn processes only new or semantically
-changed tasks; untouched pending/completed tasks keep their authoritative card
-and actions. Selection actions share a task revision/cohort, so choosing one
-alternative invalidates its siblings and stale actions return
-`ACTION_NOT_AVAILABLE` without a domain call. An unrelated Food or Healthcare
-follow-up therefore does not re-quote an awaiting Restaurant or Ride task.
+changed tasks; a planner-targeted Food continuation also forwards the current
+message to the Food graph while preserving its cumulative Food context.
+Untouched pending/completed tasks keep their authoritative card and actions.
+Ambiguous short selections are clarified instead of mutating multiple tasks.
+Selection actions share a task revision/cohort, so choosing one alternative
+invalidates its siblings and stale actions return `ACTION_NOT_AVAILABLE` without
+a domain call. An unrelated Food or Healthcare follow-up therefore does not
+re-quote an awaiting Restaurant or Ride task.
 
 ## Food ordering (target flow)
 
@@ -130,3 +150,17 @@ sequenceDiagram
 ```
 
 Healthcare reconciles an expired hold before payment, confirmation, cancellation, and relevant reads. An expired hold becomes `EXPIRED`, releases the slot, clears its expiry, and remains unpaid; payment acknowledgement is only a local state acknowledgement and is not a provider refund. Healthcare write operations require actor-scoped idempotency keys. Restaurant and Healthcare final actions are never inferred from the first model turn. Gateway confirmation records bind actor, workflow, action, normalized payload, resource/quote version, expiry, and idempotency evidence before the domain write.
+
+An explicit Healthcare clock is matched exactly when available. If no exact slot
+exists, the response labels nearby or other real alternatives as unavailable at
+the requested time; it never silently changes a request such as 10:00 to 14:00.
+Daypart requests such as “sáng mai” remain a morning range preference rather
+than an invented exact 08:00 slot.
+
+Assistant action execution receipts are Core-owned. The first successful
+`/api/v1/assistant/actions` request stores the actor, conversation, action,
+idempotency key, request hash, status, and sanitized response. Replaying the
+same action with the same key returns the exact stored response, while a
+different key receives `ACTION_NOT_AVAILABLE` and cannot re-run the domain
+side effect. This applies uniformly to Restaurant, Ride, Healthcare, and Food
+actions.

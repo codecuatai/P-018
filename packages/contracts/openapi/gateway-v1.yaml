@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.1.0
+  version: 1.2.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -221,7 +221,7 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, food_confirm]}
               label: {type: string}
         completed:
           type: array
@@ -233,12 +233,13 @@ components:
         - {$ref: '#/components/schemas/RestaurantOptionsItem'}
         - {$ref: '#/components/schemas/RestaurantConfirmationItem'}
         - {$ref: '#/components/schemas/RideItem'}
+        - {$ref: '#/components/schemas/RideTimingConflictItem'}
         - {$ref: '#/components/schemas/FoodItem'}
         - {$ref: '#/components/schemas/HealthcareItem'}
         - {$ref: '#/components/schemas/AssistantProgressItem'}
     RestaurantOptionsItem:
       type: object
-      required: [kind, title, options]
+      required: [kind, title]
       additionalProperties: false
       properties:
         kind: {type: string, enum: [restaurant_options, restaurant_unavailable]}
@@ -291,6 +292,21 @@ components:
         duration_minutes: {type: integer}
         expires_at: {type: string, format: date-time}
         driver: {type: string}
+        appointment_start_time: {type: string, format: date-time}
+        recommended_departure: {type: string, format: date-time}
+        departure_buffer_minutes: {type: integer}
+        scheduled_pickup: {type: boolean}
+        schedule_note: {type: string}
+    RideTimingConflictItem:
+      type: object
+      required: [kind, title, note]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [ride_timing_conflict]}
+        title: {type: string}
+        appointment_start_time: {type: string, format: date-time}
+        recommended_departure: {type: string, format: date-time}
+        note: {type: string}
     FoodItem:
       type: object
       required: [kind, title]
@@ -355,6 +371,7 @@ components:
         price: {type: integer}
         appointment_id: {type: integer}
         appointment: {type: object, additionalProperties: true}
+        facility: {$ref: '#/components/schemas/HealthcareFacility'}
         note: {type: string}
         payment_note: {type: string}
     HealthcareOption:
@@ -366,6 +383,13 @@ components:
         department: {type: string}
         start_time: {type: string, format: date-time}
         price: {type: integer}
+    HealthcareFacility:
+      type: object
+      required: [name, address]
+      additionalProperties: false
+      properties:
+        name: {type: string}
+        address: {type: string}
     AssistantProgressItem:
       type: object
       required: [kind, title]

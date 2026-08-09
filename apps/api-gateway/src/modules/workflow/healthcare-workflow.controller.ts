@@ -98,7 +98,7 @@ function structuredData(toolName: string | undefined, result: unknown, slots: Re
       if (value.doctor) data.doctor = value.doctor;
       if (value.slot) data.slot = value.slot;
       if (value.price !== undefined) data.price = value.price;
-      if (value.is_paid !== undefined) data.payment = { status: value.is_paid === true ? 'SUCCEEDED' : 'REQUIRED' };
+      if (value.is_paid !== undefined) data.is_paid = value.is_paid;
     }
   }
   return data;
@@ -181,7 +181,6 @@ export class HealthcareWorkflowController {
             tool_result: appointment,
             ...structured,
             pending_confirmation: pending,
-            payment: { status: 'SUCCEEDED', appointment_id: appointmentId },
             status: 'CONFIRMATION_REQUIRED',
           },
           meta: { request_id: request.correlationId },

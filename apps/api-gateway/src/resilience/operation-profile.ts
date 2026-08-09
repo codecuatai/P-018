@@ -38,6 +38,18 @@ const profiles: Record<string, OperationProfile> = {
     retryableDomainCodes: [],
     retryAfterCapMs: 2_000,
   },
+  'ride.quote.get': {
+    serviceId: 'ride-service',
+    operationId: 'ride.quote.get',
+    contractVersion: 'v1',
+    risk: 'READ',
+    maxAttempts: 2,
+    perAttemptTimeoutMs: 5_000,
+    totalTimeoutMs: 11_000,
+    retryableStatuses: [408, 429, 502, 503, 504],
+    retryableDomainCodes: [],
+    retryAfterCapMs: 2_000,
+  },
   'ride.booking.prepare': {
     serviceId: 'ride-service',
     operationId: 'ride.booking.prepare',

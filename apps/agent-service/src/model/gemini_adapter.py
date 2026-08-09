@@ -3,7 +3,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
-from src.services.llm import build_chat_model, gemini_model_names, is_quota_or_rate_limit_error
+from src.services.llm import build_chat_model, gemini_model_names, should_attempt_fallback_model
 
 
 class GeminiExtraction(BaseModel):
@@ -38,7 +38,7 @@ class GeminiAdapter:
                 return result.model_dump()
             except Exception as error:
                 last_error = error
-                if not is_quota_or_rate_limit_error(error) or index == len(model_names) - 1:
+                if not should_attempt_fallback_model(error) or index == len(model_names) - 1:
                     raise
         if last_error:
             raise last_error

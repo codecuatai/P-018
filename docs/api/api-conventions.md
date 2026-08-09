@@ -23,6 +23,10 @@ confirmation records. The action endpoint requires a trimmed, non-blank
 of the same action. Final and financial actions remain explicit confirmation
 steps. Consumer cards are discriminated by `kind` and omit internal fields
 such as `workflow_id`, `confirmation_id`, `tool_request`, and `resource_version`.
+The `ride_timing_conflict` card is a truthful no-booking result when a
+Healthcare-dependent departure is impossible. Healthcare appointment cards may
+carry the domain-owned facility name/address; the Gateway does not invent or
+persist that authority.
 
 Successful responses use:
 
@@ -38,4 +42,4 @@ Errors use RFC-7807-inspired JSON: `type`, `title`, `status`, `code`, safe `deta
 
 Every write that may be retried or cause a side effect receives `Idempotency-Key` from its first request, not only after a failure. The domain scopes it to the authenticated actor, operation, and retention window; the same key and normalized payload return the same logical result, while a changed payload is rejected with a safe conflict. Gateway propagation does not replace the domain guarantee. Do not log raw sensitive payloads solely to implement idempotency.
 
-Final/financial confirmation is not a boolean. The contract binds it to the actor, action, normalized payload or hash, quote/resource version, price/currency, expiry, issuance/consumption time, and one-time audit evidence. The Food slice implements this through Gateway confirmation and Payment Sandbox modules. Core persistence is PostgreSQL at runtime with an in-memory adapter only for deterministic tests; additive claim/idempotency/payment/refund/recovery/provider fields are in `apps/api-gateway/migrations/003_core_atomicity.sql`, `004_core_recovery.sql`, and `005_core_payment_provider_saga.sql`. Food order creation requires `expected_snapshot_hash`, `expected_cart_version`, `expected_amount`, `expected_currency`, and `expected_quote_version`; Food recomputes the quote under row locks before inserting an order.
+Final/financial confirmation is not a boolean. The contract binds it to the actor, action, normalized payload or hash, quote/resource version, price/currency, expiry, issuance/consumption time, and one-time audit evidence. The Food slice implements this through Gateway confirmation and Payment Sandbox modules. Core persistence is PostgreSQL at runtime with an in-memory adapter only for deterministic tests; additive claim/idempotency/payment/refund/recovery/provider fields are in `apps/api-gateway/migrations/003_core_atomicity.sql`, `004_core_recovery.sql`, `005_core_payment_provider_saga.sql`, and `006_core_payment_recovery_claims.sql`. Assistant action receipts are additive in `apps/api-gateway/migrations/007_core_assistant_action_executions.sql` and `008_core_assistant_action_recovery.sql`; successful retries return the stored sanitized response, retryable failures and stale processing leases can be reclaimed with the same key, and a different key cannot consume the same action. Food order creation requires `expected_snapshot_hash`, `expected_cart_version`, `expected_amount`, `expected_currency`, and `expected_quote_version`; Food recomputes the quote under row locks before inserting an order.

@@ -19,8 +19,11 @@ The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`:
 planner. It accepts one conversation turn and returns a Pydantic-validated
 `AssistantPlan` with at most four tasks for Ride, Food, Restaurant, and
 Healthcare. It can express a bounded dependency such as Restaurant selection
-before a Ride destination, while the Gateway—not the Agent—executes typed
-service calls and confirmation actions. Gemini is the demo primary when
+before a Ride destination, or Healthcare hold before a Ride destination, while
+the Gateway—not the Agent—executes typed service calls and confirmation
+actions. A Healthcare-dependent Ride contains only the user-provided pickup;
+the facility destination is resolved from the authoritative Healthcare result.
+Gemini is the demo primary when
 `AGENT_MODEL_MODE=gemini` and a key is configured; quota/rate-limit and
 validation failures use the conservative deterministic planner. The internal
 Agent status endpoint exposes only model mode/name, fallback name, key
@@ -28,13 +31,18 @@ configured boolean, and last-call diagnostics.
 
 The planner sanitizes model slots before returning them. IDs, prices,
 availability, status, and other authoritative resource facts are resolved by
-the Gateway from domain results. A second composition call may explain those
-results, but it receives only sanitized cards and cannot change their values.
+the Gateway from domain results. The Gateway sends the top-level planner only a
+planner-safe projection of task references, domains, goals, phases, semantic
+slots, and bounded pending-choice summaries; confirmation/workflow/tool IDs,
+order/appointment/reservation IDs, provider references, raw authoritative
+payloads, and resource versions are excluded. A second composition call may
+explain sanitized results but cannot change their values.
 
 Slot normalization is domain-specific: Ride accepts only bounded addresses and
 `BIKE`/`CAR_4`/`CAR_7`; Restaurant and Healthcare require timezone-aware
-`start_at` values and bounded party/symptom fields; Food accepts bounded query,
-location, and delivery preference fields. The adapter records the configured
+`start_at` values and bounded party/symptom fields; Healthcare dayparts are
+bounded semantic preferences and explicit clock times remain exact; Food
+accepts bounded query, location, and delivery preference fields. The adapter records the configured
 primary/fallback, actual last model, fallback usage, call time, and safe status
 for `/api/v1/status`; it never reports keys or raw prompts.
 

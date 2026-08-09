@@ -42,6 +42,7 @@ class ReconciliationGateway:
                 ("add_to_cart", "draft_write"),
                 ("list_food_delivery_addresses", "read"),
                 ("quote_delivery", "preview"),
+                ("preview_order", "preview"),
                 ("prepare_food_order_confirmation", "confirmation_prepare"),
             )
         ]
@@ -90,6 +91,8 @@ class ReconciliationGateway:
             return {"addresses": [{"id": "address_opaque_1", "label": "Nhà riêng"}]}
         if name == "quote_delivery":
             return {"restaurant": {"id": arguments["restaurant_id"]}, "address": {"id": arguments["address_id"]}}
+        if name == "preview_order":
+            return {"subtotal": 130000, "discount": 0, "total": {"amount": 130000, "currency": "VND"}, "snapshot_hash": "snapshot_opaque"}
         if name == "prepare_food_order_confirmation":
             return {"id": "confirmation_opaque_1", "action": "PLACE_FOOD_ORDER"}
         raise AssertionError(f"Unexpected tool: {name}")
@@ -155,6 +158,20 @@ async def test_place_order_reconciles_model_quote_and_prepares_confirmation() ->
     assert gateway.calls == ["prepare_food_order_confirmation"]
     assert result["response_type"] == "confirmation_form"
     assert result["pending_confirmation"]["action"] == "PLACE_FOOD_ORDER"
+
+
+@pytest.mark.asyncio
+async def test_preview_order_wraps_authoritative_quote_for_gateway_consumers() -> None:
+    gateway = ReconciliationGateway()
+    result = await graph_input(
+        "Xem t\u1ed5ng ti\u1ec1n",
+        DisagreeingLLM("general_food_support"),
+        gateway,
+        {"cart_id": "cart_opaque_1", "address_id": "address_opaque_1"},
+    )
+
+    assert result["response_type"] == "order_preview"
+    assert result["data"]["preview"]["total"] == {"amount": 130000, "currency": "VND"}
 
 
 @pytest.mark.asyncio

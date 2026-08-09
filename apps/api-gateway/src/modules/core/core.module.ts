@@ -123,6 +123,44 @@ export interface RefundProviderTransaction {
 export interface ExecutionRecord { status: string; payloadHash: string; result?: Record<string, unknown>; payload?: Record<string, unknown> }
 export interface WorkflowReconciliationRecord { orderId: string; actorId: string; paymentId: string; refundId?: string; status: string; lastErrorCode?: string; attemptCount: number; nextAttemptAt?: string; completedAt?: string; claimedAt?: string; claimOwner?: string }
 
+export type AssistantActionExecutionStatus = 'PROCESSING' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL';
+export interface AssistantActionExecutionRecord {
+  actorId: string;
+  conversationId: string;
+  actionId: string;
+  idempotencyKey: string;
+  requestHash: string;
+  status: AssistantActionExecutionStatus;
+  response?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  processingExpiresAt?: string;
+  completedAt?: string;
+}
+export type AssistantActionExecutionClaimState = 'CLAIMED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED_RETRYABLE' | 'FAILED_FINAL' | 'IDEMPOTENCY_KEY_REUSED' | 'ACTION_NOT_AVAILABLE';
+export interface AssistantActionExecutionClaim {
+  state: AssistantActionExecutionClaimState;
+  execution?: AssistantActionExecutionRecord;
+}
+
+/**
+ * The Core-owned unit of persistence for a successful Assistant action.
+ * Conversation advancement and receipt completion must never be committed
+ * separately: a downstream side effect may be retried with its idempotency key
+ * only while the original public action remains present in persisted state.
+ */
+export interface AssistantActionSuccessCommit {
+  actorId: string;
+  conversationId: string;
+  actionId: string;
+  idempotencyKey: string;
+  requestHash: string;
+  userMessage: ConversationRecord['messages'][number];
+  assistantMessage: ConversationRecord['messages'][number];
+  stateUpdates: Record<string, unknown>;
+  response: Record<string, unknown>;
+}
+
 export interface CoreRepository {
   createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord>;
   getConfirmation(id: string): Promise<ConfirmationRecord | undefined>;
@@ -159,6 +197,10 @@ export interface CoreRepository {
   getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined>;
   appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord>;
   mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void>;
+  getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined>;
+  claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim>;
+  commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord>;
+  completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void>;
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void>;
   checkHealth(): Promise<boolean>;
   close(): Promise<void>;
@@ -175,6 +217,7 @@ export class InMemoryCoreRepository implements CoreRepository {
   private readonly providerPayments = new Map<string, PaymentProviderTransaction>();
   private readonly providerRefunds = new Map<string, RefundProviderTransaction>();
   private readonly conversations = new Map<string, ConversationRecord>();
+  private readonly assistantActionExecutions = new Map<string, AssistantActionExecutionRecord>();
   private readonly audits: Array<Record<string, unknown>> = [];
 
   async createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord> { const saved = { ...value, status: value.status ?? 'PENDING', version: value.version ?? 0 }; this.confirmations.set(saved.id, clone(saved)); return clone(saved); }
@@ -257,6 +300,82 @@ export class InMemoryCoreRepository implements CoreRepository {
   async getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { const value = this.conversations.get(id); return value && value.actorId === actorId ? clone(value) : undefined; }
   async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { const existing = this.conversations.get(value.conversationId); if (existing && existing.actorId !== value.actorId) throw new Error('FORBIDDEN'); const next: ConversationRecord = existing ? clone(existing) : { conversationId: value.conversationId, actorId: value.actorId, messages: [], state: {}, version: 0 }; next.messages.push(clone(value.userMessage), clone(value.assistantMessage)); next.state = { ...next.state, ...clone(value.stateUpdates) }; next.version = (next.version ?? 0) + 1; this.conversations.set(next.conversationId, clone(next)); return clone(next); }
   async mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void> { const existing = this.conversations.get(conversationId); if (existing && existing.actorId !== actorId) throw new Error('FORBIDDEN'); if (!existing) { this.conversations.set(conversationId, { conversationId, actorId, messages: [], state: clone(stateUpdates), version: 1 }); return; } existing.state = { ...existing.state, ...clone(stateUpdates) }; existing.version = (existing.version ?? 0) + 1; }
+  private assistantActionKey(actorId: string, conversationId: string, actionId: string): string { return JSON.stringify([actorId, conversationId, actionId]); }
+  async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> { const value = this.assistantActionExecutions.get(this.assistantActionKey(actorId, conversationId, actionId)); return value ? clone(value) : undefined; }
+  async claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim> {
+    const key = this.assistantActionKey(actorId, conversationId, actionId);
+    const existing = this.assistantActionExecutions.get(key);
+    if (existing) {
+      if (existing.idempotencyKey !== idempotencyKey) return { state: 'ACTION_NOT_AVAILABLE', execution: clone(existing) };
+      if (existing.requestHash !== requestHash) return { state: 'IDEMPOTENCY_KEY_REUSED', execution: clone(existing) };
+      if (existing.status === 'SUCCEEDED') return { state: 'SUCCEEDED', execution: clone(existing) };
+      if (existing.status === 'FAILED_FINAL') return { state: 'FAILED_FINAL', execution: clone(existing) };
+      const stale = existing.status === 'FAILED_RETRYABLE'
+        || (existing.status === 'PROCESSING' && Boolean(existing.processingExpiresAt) && Date.parse(existing.processingExpiresAt!) <= Date.now());
+      if (stale) {
+        existing.status = 'PROCESSING';
+        existing.processingExpiresAt = new Date(Date.now() + 30_000).toISOString();
+        existing.updatedAt = new Date().toISOString();
+        existing.completedAt = undefined;
+        existing.response = undefined;
+        return { state: 'CLAIMED', execution: clone(existing) };
+      }
+      return { state: 'PROCESSING', execution: clone(existing) };
+    }
+    const now = new Date();
+    const created: AssistantActionExecutionRecord = { actorId, conversationId, actionId, idempotencyKey, requestHash, status: 'PROCESSING', createdAt: now.toISOString(), updatedAt: now.toISOString(), processingExpiresAt: new Date(now.getTime() + 30_000).toISOString() };
+    this.assistantActionExecutions.set(key, clone(created));
+    return { state: 'CLAIMED', execution: clone(created) };
+  }
+  async commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord> {
+    const executionKey = this.assistantActionKey(value.actorId, value.conversationId, value.actionId);
+    const execution = this.assistantActionExecutions.get(executionKey);
+    if (
+      !execution
+      || execution.idempotencyKey !== value.idempotencyKey
+      || execution.requestHash !== value.requestHash
+      || execution.status !== 'PROCESSING'
+    ) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING');
+
+    const existingConversation = this.conversations.get(value.conversationId);
+    if (existingConversation && existingConversation.actorId !== value.actorId) throw new Error('FORBIDDEN');
+    const nextConversation: ConversationRecord = existingConversation
+      ? clone(existingConversation)
+      : { conversationId: value.conversationId, actorId: value.actorId, messages: [], state: {}, version: 0 };
+    nextConversation.messages.push(clone(value.userMessage), clone(value.assistantMessage));
+    nextConversation.state = { ...nextConversation.state, ...clone(value.stateUpdates) };
+    nextConversation.version = (nextConversation.version ?? 0) + 1;
+
+    const now = new Date().toISOString();
+    const nextExecution: AssistantActionExecutionRecord = {
+      ...clone(execution),
+      status: 'SUCCEEDED',
+      response: clone(value.response),
+      processingExpiresAt: undefined,
+      updatedAt: now,
+      completedAt: now,
+    };
+    // Prepare all clones before either map is touched. Map writes are
+    // synchronous, giving the test adapter the same all-or-nothing observable
+    // result as the PostgreSQL transaction below.
+    const persistedConversation = clone(nextConversation);
+    const persistedExecution = clone(nextExecution);
+    this.conversations.set(value.conversationId, persistedConversation);
+    this.assistantActionExecutions.set(executionKey, persistedExecution);
+    return clone(persistedConversation);
+  }
+  async completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void> {
+    const key = this.assistantActionKey(actorId, conversationId, actionId);
+    const existing = this.assistantActionExecutions.get(key);
+    if (!existing || existing.idempotencyKey !== idempotencyKey || existing.requestHash !== requestHash) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_FOUND');
+    if (existing.status === 'SUCCEEDED') return;
+    if (existing.status === 'FAILED_FINAL') return;
+    existing.status = status;
+    existing.response = response ? clone(response) : undefined;
+    existing.processingExpiresAt = undefined;
+    existing.updatedAt = new Date().toISOString();
+    existing.completedAt = status === 'FAILED_FINAL' ? new Date().toISOString() : undefined;
+  }
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { this.audits.push(clone(value)); }
   async checkHealth(): Promise<boolean> { return true; }
   async close(): Promise<void> {}
@@ -340,6 +459,11 @@ export class PostgresCoreRepository implements CoreRepository {
   async getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { const result = await this.pool.query('SELECT * FROM conversation_states WHERE conversation_id=$1 AND actor_id=$2', [id,actorId]); const row = result.rows[0]; return row ? { conversationId: String(row.conversation_id), actorId: String(row.actor_id), messages: row.messages, state: row.state, version: Number(row.version ?? 0) } : undefined; }
   async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { return this.transaction(async (client) => { const result = await client.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version) VALUES ($1,$2,$3::jsonb,$4::jsonb,1) ON CONFLICT (conversation_id) DO UPDATE SET messages=conversation_states.messages || EXCLUDED.messages,state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id RETURNING *', [value.conversationId,value.actorId,JSON.stringify([value.userMessage,value.assistantMessage]),JSON.stringify(value.stateUpdates)]); const row = result.rows[0]; if (!row) throw new Error('FORBIDDEN'); return { conversationId: String(row.conversation_id), actorId: String(row.actor_id), messages: row.messages, state: row.state, version: Number(row.version) }; }); }
   async mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void> { await this.pool.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version) VALUES ($1,$2,\'[]\'::jsonb,$3::jsonb,1) ON CONFLICT (conversation_id) DO UPDATE SET state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id', [conversationId,actorId,JSON.stringify(stateUpdates)]); }
+  private assistantActionExecutionFromRow(row: Record<string, unknown>): AssistantActionExecutionRecord { const response = row.response_json; return { actorId: String(row.actor_id), conversationId: String(row.conversation_id), actionId: String(row.action_id), idempotencyKey: String(row.idempotency_key), requestHash: String(row.request_hash), status: row.status as AssistantActionExecutionStatus, ...(response && typeof response === 'object' && !Array.isArray(response) ? { response: response as Record<string, unknown> } : {}), createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at ?? row.created_at)).toISOString(), processingExpiresAt: row.processing_expires_at ? new Date(String(row.processing_expires_at)).toISOString() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : undefined }; }
+  async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> { const result = await this.pool.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3', [actorId, conversationId, actionId]); return result.rows[0] ? this.assistantActionExecutionFromRow(result.rows[0]) : undefined; }
+  async claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim> { return this.transaction(async (client) => { const inserted = await client.query("INSERT INTO assistant_action_executions (actor_id,conversation_id,action_id,idempotency_key,request_hash,status,processing_expires_at,updated_at) VALUES ($1,$2,$3,$4,$5,'PROCESSING',now()+interval '30 seconds',now()) ON CONFLICT (actor_id,conversation_id,action_id) DO NOTHING", [actorId,conversationId,actionId,idempotencyKey,requestHash]); const result = await client.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 FOR UPDATE', [actorId,conversationId,actionId]); const row = result.rows[0] as Record<string, unknown> | undefined; if (!row) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_FOUND'); const execution = this.assistantActionExecutionFromRow(row); if (execution.idempotencyKey !== idempotencyKey) return { state: 'ACTION_NOT_AVAILABLE' as const, execution }; if (execution.requestHash !== requestHash) return { state: 'IDEMPOTENCY_KEY_REUSED' as const, execution }; if (execution.status === 'SUCCEEDED') return { state: 'SUCCEEDED' as const, execution }; if (execution.status === 'FAILED_FINAL') return { state: 'FAILED_FINAL' as const, execution }; const stale = execution.status === 'FAILED_RETRYABLE' || (execution.status === 'PROCESSING' && Boolean(execution.processingExpiresAt) && Date.parse(execution.processingExpiresAt!) <= Date.now()); if (stale) { const reclaimed = await client.query("UPDATE assistant_action_executions SET status='PROCESSING',response_json=NULL,completed_at=NULL,processing_expires_at=now()+interval '30 seconds',updated_at=now() WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 RETURNING *", [actorId,conversationId,actionId]); return { state: 'CLAIMED' as const, execution: this.assistantActionExecutionFromRow(reclaimed.rows[0]) }; } return { state: inserted.rowCount ? 'CLAIMED' as const : 'PROCESSING' as const, execution }; }); }
+  async commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord> { return this.transaction(async (client) => { const receipt = await client.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 FOR UPDATE', [value.actorId,value.conversationId,value.actionId]); const row = receipt.rows[0] as Record<string, unknown> | undefined; if (!row || String(row.idempotency_key) !== value.idempotencyKey || String(row.request_hash) !== value.requestHash || row.status !== 'PROCESSING') throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING'); const conversation = await client.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version) VALUES ($1,$2,$3::jsonb,$4::jsonb,1) ON CONFLICT (conversation_id) DO UPDATE SET messages=conversation_states.messages || EXCLUDED.messages,state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id RETURNING *', [value.conversationId,value.actorId,JSON.stringify([value.userMessage,value.assistantMessage]),JSON.stringify(value.stateUpdates)]); const conversationRow = conversation.rows[0] as Record<string, unknown> | undefined; if (!conversationRow) throw new Error('FORBIDDEN'); const completed = await client.query("UPDATE assistant_action_executions SET status='SUCCEEDED',response_json=$1::jsonb,completed_at=now(),processing_expires_at=NULL,updated_at=now() WHERE actor_id=$2 AND conversation_id=$3 AND action_id=$4 AND idempotency_key=$5 AND request_hash=$6 AND status='PROCESSING' RETURNING action_id", [JSON.stringify(value.response),value.actorId,value.conversationId,value.actionId,value.idempotencyKey,value.requestHash]); if (!completed.rowCount) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING'); return { conversationId: String(conversationRow.conversation_id), actorId: String(conversationRow.actor_id), messages: conversationRow.messages as ConversationRecord['messages'], state: conversationRow.state as Record<string, unknown>, version: Number(conversationRow.version) }; }); }
+  async completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void> { await this.transaction(async (client) => { const result = await client.query("UPDATE assistant_action_executions SET status=$1,response_json=$2::jsonb,completed_at=CASE WHEN $1 = 'FAILED_FINAL' THEN now() ELSE NULL END,processing_expires_at=NULL,updated_at=now() WHERE actor_id=$3 AND conversation_id=$4 AND action_id=$5 AND idempotency_key=$6 AND request_hash=$7 AND status='PROCESSING' RETURNING action_id", [status,response ? JSON.stringify(response) : null,actorId,conversationId,actionId,idempotencyKey,requestHash]); if (!result.rowCount) { const existing = await client.query('SELECT status FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 AND idempotency_key=$4 AND request_hash=$5', [actorId,conversationId,actionId,idempotencyKey,requestHash]); if (existing.rows[0]?.status === status) return; throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_FOUND'); } }); }
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { await this.pool.query('INSERT INTO audit_events (action,actor_id,resource_id,correlation_id,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)', [value.action,value.actorId ?? null,value.resourceId ?? null,value.correlationId ?? null,JSON.stringify(value.metadata ?? {})]); }
   async checkHealth(): Promise<boolean> { try { await this.pool.query('SELECT 1'); return true; } catch { return false; } }
   async close(): Promise<void> { await this.pool.end(); }
@@ -384,6 +508,10 @@ export class CoreStore implements OnModuleDestroy {
   getConversation(id: string, actorId: string): Promise<ConversationRecord | undefined> { return this.repository.getConversation(id, actorId); }
   appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { return this.repository.appendConversationTurn(value); }
   mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void> { return this.repository.mergeConversationState(conversationId, actorId, stateUpdates); }
+  getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> { return this.repository.getAssistantActionExecution(actorId, conversationId, actionId); }
+  claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim> { return this.repository.claimAssistantActionExecution(actorId, conversationId, actionId, idempotencyKey, requestHash); }
+  commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord> { return this.repository.commitAssistantActionSuccess(value); }
+  completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void> { return this.repository.completeAssistantActionExecution(actorId, conversationId, actionId, idempotencyKey, requestHash, status, response); }
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { return this.repository.audit(value); }
   checkHealth(): Promise<boolean> { return this.repository.checkHealth(); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }

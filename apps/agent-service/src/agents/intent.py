@@ -24,6 +24,12 @@ def classify(query: str) -> str:
     if any(value in text for value in ("voucher", "ma giam", "ap ma")):
         return "apply_voucher"
     if any(value in text for value in ("phi giao", "ship bao nhieu", "giao den", "giao ve", "giao toi")):
+        # An initial food search can naturally include its eventual delivery
+        # preference (for example, "Tìm phở giao về nhà").  It must first
+        # find authoritative restaurant/item candidates; a delivery quote
+        # only makes sense after that selection is present in workflow context.
+        if any(value in text for value in ("tim", "an gi")):
+            return "search_food"
         return "quote_delivery"
     if any(value in text for value in ("xem menu", "thuc don", "menu")):
         return "view_menu"
@@ -51,6 +57,7 @@ def _dish_query(text: str) -> str | None:
     cleaned = re.sub(r"\bap ma\b.*$", " ", cleaned)
     cleaned = re.sub(r"\b(?:mot|hai|ba|bon|nam|[1-9][0-9]?)\b", " ", cleaned)
     cleaned = re.sub(r"\b(?:co lon|size lon|size thuong|khong cay|it cay|cay|nha rieng|duoi \d+ nghin)\b", " ", cleaned)
+    cleaned = re.split(r"\b(?:giao\s+(?:ve|toi)|ship|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b", cleaned, maxsplit=1)[0]
     cleaned = re.sub(r"\b(?:o|tai|khu vuc)\s+[a-z ]+[.!?,;:]*$", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,!?;:")
     return cleaned or None

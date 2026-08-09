@@ -298,7 +298,6 @@ export class ConfirmationService {
         workflow_id: workflowId,
         tool_request: tool,
         tool_result: isRecord(toolResult) ? toolResult : { data: toolResult },
-        ...(confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT' ? { payment: { status: 'SUCCEEDED', appointment_id: tool.arguments.appointment_id } } : {}),
       };
       await this.store.completeConfirmation(id, user.sub, executionKey, 'SUCCEEDED', result);
       await this.store.audit({ action: 'domain_confirmation.executed', actorId: user.sub, resourceId: id, correlationId, metadata: { action: confirmation.action, workflow_id: workflowId } });

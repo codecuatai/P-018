@@ -45,6 +45,11 @@ type Workflow = {
   pendingOperation: PendingRideOperation | null;
 };
 
+export type RideWorkflowHydration = {
+  quoteId: string;
+  bookingId?: string;
+};
+
 export type PublicWorkflow = {
   workflow_id: string;
   response: string;
@@ -70,6 +75,76 @@ export class RideConversationService {
     private readonly ride: RideClient,
     private readonly tools: ToolRegistry,
   ) {}
+
+  /**
+   * Rebuild only the Gateway's orchestration projection from Core references.
+   * Ride remains authoritative: IDs are used only to read the current quote
+   * and booking, while amount/status/version always come from those reads.
+   */
+  async hydrateWorkflow(
+    actorId: string,
+    workflowId: string,
+    references: RideWorkflowHydration,
+    correlationId: string,
+  ): Promise<void> {
+    if (!workflowId || !references.quoteId) {
+      throw new ConflictException('A durable Ride quote is required to resume this action.');
+    }
+    const existing = this.workflows.get(workflowId);
+    if (existing && existing.actorId !== actorId) {
+      throw new NotFoundException('Workflow not found.');
+    }
+
+    const context: ServiceCallContext = { correlationId, workflowId, toolCallId: 'hydrate_quote' };
+    const quote = await this.ride.getQuote(actorId, context, references.quoteId);
+    let booking = existing?.booking ?? null;
+    if (references.bookingId) {
+      booking = await this.ride.getBooking(
+        actorId,
+        { correlationId, workflowId, toolCallId: 'hydrate_booking' },
+        references.bookingId,
+      );
+    }
+    if (booking && (
+      booking.quote_id !== quote.id
+      || booking.quote_version !== quote.quote_version
+      || booking.amount !== quote.amount
+      || booking.currency !== quote.currency
+    )) {
+      throw new ConflictException('Durable Ride state no longer matches the authoritative quote.');
+    }
+
+    const workflow: Workflow = existing ?? {
+      id: workflowId,
+      actorId,
+      context: emptyContext(),
+      stage: 'COLLECTING_DETAILS',
+      quote: null,
+      booking: null,
+      pendingOperation: null,
+    };
+    workflow.quote = quote;
+    workflow.booking = booking;
+    workflow.stage = hydratedStage(booking);
+    workflow.pendingOperation = null;
+    workflow.context.active_domain = 'ride';
+    workflow.context.ride.pickup_address = quote.pickup_address;
+    workflow.context.ride.dropoff_address = quote.dropoff_address;
+    workflow.context.ride.vehicle_type = quote.vehicle_type;
+    workflow.context.ride.latest_quote_id = quote.id;
+    workflow.context.ride.latest_booking_id = booking?.id ?? null;
+    workflow.context.ride.quote_version = quote.quote_version;
+    workflow.context.ride.quote_amount = quote.amount;
+    workflow.context.ride.quote_currency = quote.currency;
+    workflow.context.ride.quote_expires_at = quote.expires_at;
+    workflow.context.ride.revision = Math.max(workflow.context.ride.revision, booking ? 2 : 1);
+    workflow.context.ride.pending_action = workflow.stage === 'SERVICE_CONFIRMATION'
+      ? 'ride.booking.prepare'
+      : workflow.stage === 'PAYMENT_CONFIRMATION'
+        ? 'ride.booking.confirm'
+        : null;
+    this.workflows.set(workflowId, workflow);
+  }
 
   async chat(
     actorId: string,
@@ -432,6 +507,13 @@ export class RideConversationService {
 
 function ambiguousOutcome(error: unknown): unknown {
   return isAmbiguous(error) ? error.withOutcome('AMBIGUOUS', 'OUTCOME_UNKNOWN') : error;
+}
+
+function hydratedStage(booking: RideBooking | null): WorkflowStage {
+  if (!booking) return 'SERVICE_CONFIRMATION';
+  if (booking.status === 'AWAITING_PAYMENT_CONFIRMATION') return 'PAYMENT_CONFIRMATION';
+  if (booking.status === 'DRIVER_ASSIGNED') return 'COMPLETED';
+  throw new ConflictException('The durable Ride booking is no longer actionable.');
 }
 
 function isAmbiguous(error: unknown): error is ServiceCallError {

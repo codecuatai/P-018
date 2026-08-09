@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, Bot, CheckCircle2, Loader2, Plus, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
-import { createIdempotencyKey, errorText, runAssistantAction, sendAssistantMessage } from "../api";
+import { createIdempotencyKey, errorText, isRecord, runAssistantAction, sendAssistantMessage } from "../api";
 import { AssistantCards } from "../components/WorkflowCards";
 import type { AssistantAction, AssistantResponse, AuthUser, ChatMessage, SessionActivity } from "../types";
 
@@ -173,7 +173,9 @@ function MessageBubble({ message, onAction, onRetry, onRetryAction, activeAction
 
 function recordActivities(response: AssistantResponse, onActivity: (activity: SessionActivity) => void) {
   for (const item of response.completed) {
-    onActivity({ id: `${response.conversation_id}-${item.kind}-${String(item.reservation_code ?? item.appointment_id ?? item.kind)}`, title: item.title, reference: String(item.reservation_code ?? item.appointment_id ?? "Đã lưu"), status: "Đã hoàn tất", detail: "Kết quả đã được xác nhận trong cuộc trò chuyện.", timestamp: new Date().toISOString() });
+    const safeItem: Record<string, unknown> = isRecord(item) ? item : {};
+    const reference = safeItem["reservation_code"] ?? safeItem["appointment_id"] ?? item.kind;
+    onActivity({ id: `${response.conversation_id}-${item.kind}-${String(reference)}`, title: item.title, reference: String(reference ?? "Đã lưu"), status: "Đã hoàn tất", detail: "Kết quả đã được xác nhận trong cuộc trò chuyện.", timestamp: new Date().toISOString() });
   }
 }
 

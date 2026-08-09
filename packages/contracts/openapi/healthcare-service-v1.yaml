@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: X-One Healthcare Service
-  version: 1.1.0
-  description: Healthcare-owned appointment and slot state boundary. The Gateway is the only runtime caller.
+  version: 1.2.0
+  description: Healthcare-owned appointment, facility, and slot state boundary. The Gateway is the only runtime caller.
 paths:
   /api/v1/departments:
     get:
@@ -30,7 +30,7 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/HoldRequest'}}}
       responses:
-        '200': {description: Held appointment}
+        '200': {description: Held appointment with Healthcare-owned facility identity}
         '400': {description: Missing actor or Idempotency-Key}
         '422': {description: Invalid Idempotency-Key or request}
         '409': {description: Slot unavailable}
@@ -41,7 +41,7 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/ActorId'}
         - {$ref: '#/components/parameters/AppointmentId'}
-      responses: {'200': {description: Appointment state}}
+      responses: {'200': {description: Appointment state including Healthcare-owned facility identity}}
   /api/v1/payment/webhook:
     post:
       summary: Local payment acknowledgement boundary; it is not a provider refund

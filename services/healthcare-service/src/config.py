@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     service_port: int
     database_url: str
     internal_service_token: str
+    # Facility identity is owned by Healthcare and supplied to this service
+    # through its explicit environment mapping.
+    healthcare_facility_name: str
+    healthcare_facility_address: str
 
 
 @lru_cache

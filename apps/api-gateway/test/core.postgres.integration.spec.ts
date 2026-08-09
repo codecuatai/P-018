@@ -14,7 +14,7 @@ describe('Core PostgreSQL persistence', () => {
   beforeAll(async () => {
     if (!databaseUrl) return;
     const migrationPool = new Pool({ connectionString: databaseUrl });
-    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql', '005_core_payment_provider_saga.sql', '006_core_payment_recovery_claims.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
+    for (const name of ['001_core_vertical_slice.sql', '002_core_persistence_slice.sql', '003_core_atomicity.sql', '004_core_recovery.sql', '005_core_payment_provider_saga.sql', '006_core_payment_recovery_claims.sql', '007_core_assistant_action_executions.sql', '008_core_assistant_action_recovery.sql']) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
     await migrationPool.end();
     repository = new PostgresCoreRepository(databaseUrl);
   });
@@ -52,5 +52,63 @@ describe('Core PostgreSQL persistence', () => {
     await repository.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', attemptCount: 0, nextAttemptAt: new Date().toISOString() });
     const claimed = await repository.claimDueWorkflowReconciliations(new Date().toISOString(), 10, `test:${suffix}`);
     expect(claimed.map((item) => item.orderId)).toContain(payment.orderId);
+  });
+
+  integration('atomically persists one Assistant action conversation turn and receipt', async () => {
+    const suffix = Date.now();
+    const actorId = `usr_pg_assistant_${suffix}`;
+    const conversationId = `conv_pg_assistant_${suffix}`;
+    const actionId = `act_pg_assistant_${suffix}`;
+    const response = { conversation_id: conversationId, message: 'done', items: [], actions: [], completed: [] };
+    expect((await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-key-1', 'assistant-hash')).state).toBe('CLAIMED');
+    await repository.commitAssistantActionSuccess({
+      actorId,
+      conversationId,
+      actionId,
+      idempotencyKey: 'assistant-key-1',
+      requestHash: 'assistant-hash',
+      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
+      stateUpdates: { actions: [] },
+      response,
+    });
+    const replay = await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-key-1', 'assistant-hash');
+    expect(replay.state).toBe('SUCCEEDED');
+    expect(replay.execution?.response).toEqual(response);
+    expect((await repository.getConversation(conversationId, actorId))?.messages).toHaveLength(2);
+    expect((await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-key-2', 'assistant-hash')).state).toBe('ACTION_NOT_AVAILABLE');
+  });
+
+  integration('rolls back the conversation append when receipt response persistence fails', async () => {
+    const suffix = Date.now();
+    const actorId = `usr_pg_assistant_rollback_${suffix}`;
+    const conversationId = `conv_pg_assistant_rollback_${suffix}`;
+    const actionId = `act_pg_assistant_rollback_${suffix}`;
+    await repository.saveConversation({
+      conversationId,
+      actorId,
+      messages: [],
+      state: { actions: [{ id: actionId }] },
+      version: 1,
+    });
+    expect((await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-rollback-key', 'assistant-rollback-hash')).state).toBe('CLAIMED');
+
+    await expect(repository.commitAssistantActionSuccess({
+      actorId,
+      conversationId,
+      actionId,
+      idempotencyKey: 'assistant-rollback-key',
+      requestHash: 'assistant-rollback-hash',
+      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
+      stateUpdates: { actions: [] },
+      // This fails while serializing response_json after the conversation
+      // update query has run, so the repository transaction must roll it back.
+      response: { unsafe_test_value: BigInt(1) } as unknown as Record<string, unknown>,
+    })).rejects.toThrow();
+
+    expect((await repository.getConversation(conversationId, actorId))?.messages).toEqual([]);
+    expect((await repository.getConversation(conversationId, actorId))?.state).toEqual({ actions: [{ id: actionId }] });
+    expect((await repository.getAssistantActionExecution(actorId, conversationId, actionId))?.status).toBe('PROCESSING');
   });
 });

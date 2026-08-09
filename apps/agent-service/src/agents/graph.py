@@ -549,6 +549,13 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "data": {},
                 "state_updates": updates,
             }
+        if intent == "preview_order" and results:
+            return {
+                "response_type": "order_preview",
+                "response": "Xem truoc don hang.",
+                "data": {"preview": results[-1].get("data", {})},
+                "state_updates": updates,
+            }
         if intent == "select_restaurant":
             name = slots.get("restaurant_name")
             return {

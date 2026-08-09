@@ -198,3 +198,14 @@ def test_confirm_cannot_bypass_payment() -> None:
     )
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "PAYMENT_REQUIRED"
+
+
+def test_healthcare_owns_facility_identity_in_hold_and_appointment_responses() -> None:
+    appointment = hold(client, key="facility-hold")
+    assert appointment["facility"] == {
+        "name": "X-One Healthcare Clinic",
+        "address": "12 Nguyen Trai, Thanh Xuan, Ha Noi",
+    }
+    current = client.get(f"/api/v1/appointments/{appointment['appointment_id']}", headers=headers())
+    assert current.status_code == 200
+    assert current.json()["data"]["facility"] == appointment["facility"]

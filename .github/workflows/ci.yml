@@ -18,9 +18,8 @@ jobs:
         with: { python-version: '3.11' }
       - name: Install service with test dependencies
         run: pip install "${{ matrix.service }}[dev]"
-      - name: Lint agent
-        if: matrix.service == 'apps/agent-service'
-        run: ruff check apps/agent-service/src apps/agent-service/tests
+      - name: Lint service
+        run: ruff check "${{ matrix.service }}/src" "${{ matrix.service }}/tests"
       - name: Test service
         run: |
           if [ "${{ matrix.service }}" = "services/food-service" ]; then

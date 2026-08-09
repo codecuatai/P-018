@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-08-09
+
+### Evidence-only code-freeze recount
+
+- BASE SUITES: the exact `python -m pytest tests -q` command ran once per service. Food: `22 passed, 3 skipped` (`25` collected); Ride: `10 passed` (`10` collected); Restaurant: `20 passed, 1 skipped` (`21` collected); Healthcare: `21 passed, 1 skipped` (`22` collected). Ruff, targeted PostgreSQL, deterministic public E2E, and live Gemini are separate categories and were not added to these counts.
+- SOURCE RECONCILIATION: commands ran from `C:/Users/ADMIN/Personal_proj/AIBuildPhase/P-018` at HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367` after capturing the dirty worktree. All collected service test sources are tracked and inside the root; no untracked, ignored, generated, or outside-root test source was counted. `develop.xml` lists but omits packed content for the four tracked service `tests/test_config.py` files; their node IDs contribute exactly Food `+4`, Ride `+3`, Restaurant `+3`, and Healthcare `+4`. This explains the incomplete `21/7/18/18` snapshot recount and proves repository collection `25/10/21/22`; exact node IDs are in `docs/development/testing-strategy.md`. No test was changed.
+- TARGETED POSTGRESQL remains separate: Food `3/3`; Gateway Core `5/5`.
+- DETERMINISTIC PUBLIC E2E source collection: `31 tests collected`; the recorded runtime proof remains `31 passed`, zero skipped, including Ride Gateway-restart/replay proof. LIVE GEMINI evidence is unchanged: primary Gemini 3.5 success, fallback Gemini 3.1 success, public Agent `decision_source=model`, Food public `201/201`, demo-critical `4/5`, and one Healthcare category-C assertion/wording mismatch with no state/action bug. Prior `25/31` live-provider evidence remains `3 B/transient + 3 C/assertion-only`, with no D/E failure.
+- NPM ADVISORY: both full and omit-dev audits report one high transitive `nanoid@3.3.16` through `vite@6.4.3 -> postcss@8.5.25`; affected `<3.3.17`, with compatible patched `3.3.17`/`3.3.18` and `fixAvailable=true`. Omit-dev still reports it because the build toolchain is declared/locked as production. It is build-only for this deployment: Vite runs in the Docker builder, final Nginx/browser assets contain no Nanoid/PostCSS/custom-generator code, and PostCSS uses constant `nanoid(6)`, not the vulnerable zero-size path. No dependency/lockfile change was made.
+- Direct CI/lockfile verification passed: all three lockfiles/workflow files are tracked; working-tree CI covers Ruff for all five Python services, Gateway frozen pnpm install, and Web `npm ci`.
+- Static checks passed: compileall, migration parity (`15 files`), environment validation (`81 root variables, 77 Compose variables`), Compose config, shell syntax/host normalization, and `git diff --check`. `.gemini/settings.json` uses `STITCH_API_KEY` env expansion; no literal credential was printed; `medical_tools.py` is absent; Web/Agent boundaries remain clean.
+- Browser smoke: `UNVERIFIED`. SECURITY ACTION REQUIRED BY USER: revoke/rotate the previously exposed Stitch API key. No runtime/business/test logic was changed in this pass; no re-merge, commit, push, cloud action, or PostgreSQL volume deletion.
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Vũ Văn Phong (2A202601647) | X-ONE final evidence pass: security, CI/lockfile, base suites, PostgreSQL, deterministic public E2E và live Gemini demo | ✅ Done | Tracked Stitch setting dùng env expansion; secret scan 0 findings; Agent `103 passed`; Food `22 passed, 3 skipped`; Ride `10 passed`; Restaurant `20 passed, 1 skipped`; Healthcare `21 passed, 1 skipped`; Gateway `55 passed, 5 skipped, 60 total`/build; Web `npm ci`/build; Food PG `3/3`, Gateway PG `5/5`; public E2E `31/31` trong `164.95s`, zero skip, Ride restart/replay/different-key rejection pass; live demo `4/5` assertion passes, one Healthcare mismatch classified C; browser UNVERIFIED. Người dùng vẫn cần revoke/rotate Stitch key đã từng bị lộ; không commit/push/cloud, không xoá volume p-018 | - |
+
+**Tổng kết ngày:** Đã tách rõ BASE SUITES, TARGETED POSTGRESQL, DETERMINISTIC PUBLIC E2E và LIVE GEMINI SMOKE. Kết quả acceptance là PASS: deterministic public E2E `31/31`; live demo `4/5`, lỗi còn lại là category C (assertion/model wording, không có state/action bug). Sáu lỗi live-provider cũ đã được phân loại an toàn trong `docs/development/testing-strategy.md` và `job.txt`, không còn ghi chung là “provider variability”. Browser giữ `UNVERIFIED`; không in key/prompt/provider payload, không xoá volume `p-018`, không commit/push/cloud. Người dùng vẫn cần revoke/rotate Stitch key đã từng bị lộ.
+
+---
+
 ## 2026-08-08
 
 | Member | Task | Status | Output | Time |

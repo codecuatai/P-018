@@ -169,6 +169,46 @@ def test_patch_explicit_null_clears_special_requests():
     assert response.json()["data"]["special_requests"] is None
 
 
+def test_patch_empty_body_is_rejected_without_side_effect():
+    reservation = create_direct_reservation("2030-09-03T20:00:00+07:00", "patch-empty-001", special_requests="window seat")
+
+    response = client.patch(
+        f"/v1/reservations/{reservation['id']}",
+        json={},
+        headers={**AUTH, "Idempotency-Key": "patch-empty-002"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "NO_FIELDS_TO_UPDATE"
+    read = client.get(f"/v1/reservations/{reservation['id']}", headers=AUTH)
+    assert read.status_code == 200
+    assert read.json()["data"]["resource_version"] == reservation["resource_version"]
+
+
+def test_idempotency_key_accepts_one_and_255_characters_but_rejects_256():
+    payload = {"restaurant_id": "rest-001", "party_size": 2, "start_at": "2030-09-07T18:00:00+07:00", "duration_minutes": 120}
+    one = client.post(
+        "/v1/reservation-holds",
+        json=payload,
+        headers={**AUTH, "Idempotency-Key": "a"},
+    )
+    max_length = client.post(
+        "/v1/reservation-holds",
+        json={**payload, "start_at": "2030-09-07T20:00:00+07:00"},
+        headers={**AUTH, "Idempotency-Key": "b" * 255},
+    )
+    too_long = client.post(
+        "/v1/reservation-holds",
+        json={**payload, "start_at": "2030-09-07T22:00:00+07:00"},
+        headers={**AUTH, "Idempotency-Key": "c" * 256},
+    )
+
+    assert one.status_code == 201, one.text
+    assert max_length.status_code == 201, max_length.text
+    assert too_long.status_code == 422
+    assert too_long.json()["code"] == "IDEMPOTENCY_KEY_INVALID"
+
+
 def test_update_idempotency_survives_later_update_and_changed_payload_conflicts():
     reservation = create_direct_reservation("2030-09-04T18:00:00+07:00", "patch-replay-001", special_requests="original")
     first = client.patch(
