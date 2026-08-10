@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-08-10
+
+### Phase 0 — baseline + contract + security + ownership foundation
+
+- Baseline and changed-surface verification: Agent Ruff and `103 passed`; Gateway lint/build and `17` passed suites with `72 passed, 5 skipped` tests; Food `22 passed, 3 skipped`; Ride `10 passed`; Restaurant `20 passed, 1 skipped`; Healthcare `21 passed, 1 skipped`; contract tests `2 passed`; Web `npm ci` and build; environment validation, Compose example config, migration parity, Python syntax, and `git diff --check` passed.
+- Foundation delivered: canonical API inventory, versioned shared OpenAPI primitives, Tool Registry v2 specification, auth/address/Healthcare ownership ADRs, additive migration policy, Gateway CORS/security headers/body limit/rate profiles, safe parser/rate-limit envelopes, fail-closed development/test-only demo auth, production `PATIENT_LINK_REQUIRED` boundary, explicit Food legacy-address adapter contract, and explicit non-credentialed CORS on internal FastAPI apps.
+- Security handling: the user-provided Gemini key remains in the Agent service environment; its value was not read, printed, copied, or added to source/docs. No raw prompt, provider payload, or chain-of-thought was added.
+- Runtime status: fresh current-worktree acceptance used disposable project `xone-phase0-corrective-20260810-1` with `.env.example`, dummy values, deterministic Agent mode, and a test-only Gateway login-limit override. All seven containers were healthy after migrations/seeds; Gateway live/readiness returned `200/200`; public deterministic E2E passed `31/31` in `166.89s`; the disposable project/volume was removed afterward; existing `p-018` was not touched. Gemini was not called and the key was preserved.
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Vũ Văn Phong (2A202601647) | Corrective review/fix and fresh acceptance for Phase 0 Baseline + Contract + Security + Ownership Foundation | ✅ Phase 0 PASS | Demo auth fail-closed tests, production-safe Compose/env/patient boundary, shared Address/Food legacy contract test, Tool Registry v2 audit, Agent/domain/Gateway/Web checks, fresh disposable health/migrations/seeds and deterministic public E2E `31/31`; Browser `UNVERIFIED`; no commit/push | - |
+
+**Tổng kết ngày:** Corrective Phase 0 review is complete and the fresh disposable runtime gate passed. Production/demo-auth, patient-link, Address ownership, and Tool Registry statuses are synchronized; no secret was exposed, no `p-018` volume was deleted, and no commit/push was made.
+
+---
+
 ## 2026-08-09
 
 ### Evidence-only code-freeze recount

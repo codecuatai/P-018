@@ -2,6 +2,8 @@
 
 Versioned OpenAPI descriptions belong here. The Restaurant Service business contract is captured in `restaurant-service-v1.yaml`; generated clients must be produced from this contract and never hand-edited.
 
+`shared-primitives.v1.yaml` is the Phase 0 source for `GeoPoint`, `Money`, `Address`, `OpeningHours`, `Rating`, `ImageRef`, `DatasetSource`, `CurrentLocation`, `PaginationMeta`, `TimestampRange`, and the public success/list/error envelope shapes. Domain contracts may refine these shapes but must not silently change their meaning.
+
 The Gateway's Restaurant walking slice is `POST /api/v1/restaurant-workflows/chat` followed by `POST /api/v1/restaurant-workflows/confirm`. The first request may prepare a hold and a pending final confirmation; only the explicit confirmation endpoint can call `POST /v1/reservations`, with actor/workflow validation and the original idempotency key.
 
 Healthcare uses the same Gateway-only orchestration boundary at

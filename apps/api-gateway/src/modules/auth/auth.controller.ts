@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from './auth.guard';
+import { DemoAuthGuard, isDemoAuthEnabled } from './auth.guard';
 import { issueDemoToken } from './auth.token';
 import { AuthUser } from './auth.types';
 
@@ -22,7 +22,7 @@ export class AuthController {
 
   @Post('login')
   login(@Body() body: LoginDto, @Req() request: CorrelatedRequest): object {
-    if (this.config.get<string>('DEMO_AUTH_ENABLED') !== 'true') throw new ServiceUnavailableException({ code: 'DEMO_AUTH_DISABLED', detail: 'Demo authentication is disabled in this environment.' });
+    if (!isDemoAuthEnabled(this.config)) throw new ServiceUnavailableException({ code: 'DEMO_AUTH_DISABLED', detail: 'Demo authentication is disabled in this environment.' });
     const email = this.config.getOrThrow<string>('DEMO_AUTH_EMAIL');
     const password = this.config.getOrThrow<string>('DEMO_AUTH_PASSWORD');
     if (body.email !== email || body.password !== password) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', detail: 'Email hoặc mật khẩu không đúng.' });

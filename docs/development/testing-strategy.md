@@ -4,7 +4,16 @@ Unit tests cover application/domain code; config tests prove fail-fast process s
 
 Before a PR, run environment validation, Compose config, Python lint/pytest and package/import checks for changed services, gateway lint/test/build, and web build when affected. Add deterministic tests with every behavior, config, contract, or migration change.
 
-## 2026-08-09 verification evidence
+## 2026-08-10 corrective review evidence
+
+- Gateway current corrective checks: Jest `17 passed` suites, `72 passed, 5 skipped` tests; lint and build pass. Demo-auth tests cover development enabled, test disabled, production signed-token rejection, malformed token, and expired token with stable safe errors. Contract tests for shared Address/Food legacy compatibility pass `2/2`.
+- Agent Ruff and pytest pass (`103 passed`); Food `22 passed, 3 skipped`; Ride `10 passed`; Restaurant `20 passed, 1 skipped`; Healthcare `21 passed, 1 skipped`.
+- A fresh disposable Compose project `xone-phase0-corrective-20260810-1` was built from the current worktree with `.env.example`, dummy values, and `AGENT_MODEL_MODE=deterministic`. All seven containers became healthy; migrations/seeds passed; Gateway live/readiness returned `200/200`; and `python -m pytest tests/e2e -q` passed `31/31` in `166.89s`.
+- The E2E-only project used `GATEWAY_AUTH_LOGIN_RATE_LIMIT=1000` because the suite intentionally performs more than five logins from one client IP. The checked-in/default security profile remains `5/60s`; Gateway security tests cover that configured profile. The disposable project and volume were removed after the proof, and the existing `p-018` project/volume was not touched.
+- Web `npm ci` and production build pass. npm reports one existing high transitive `nanoid` build-tool advisory; no dependency or lockfile change was made. Browser smoke is `UNVERIFIED`, which is not a Phase 0 acceptance blocker.
+- Deterministic acceptance did not call Gemini. The Agent-service Gemini key was not read, printed, copied, or overwritten. Historical live Gemini evidence remains below as historical evidence only.
+
+## 2026-08-09 historical verification evidence
 
 ### BASE SUITES
 
@@ -34,7 +43,7 @@ Food PostgreSQL integration passed `3/3`; Gateway Core PostgreSQL integration pa
 
 ### DETERMINISTIC PUBLIC E2E
 
-`python -m pytest tests/e2e --collect-only -q` was run in this pass and collected `31 tests`. The previously recorded deterministic disposable stack passed `31 passed in 164.95s`, zero skipped; that expensive runtime suite is preserved and not rerun here. The Ride restart test covered two Gateway restarts, Ride/payment survival, same-key exact replay, and different-key rejection. Browser smoke remains `UNVERIFIED`.
+`python -m pytest tests/e2e --collect-only -q` was run in that historical pass and collected `31 tests`. Its recorded deterministic disposable stack passed `31 passed in 164.95s`, zero skipped. The current corrective run and result are recorded above and supersede this historical runtime proof for the current worktree.
 
 ### LIVE GEMINI SMOKE
 

@@ -447,7 +447,15 @@ export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
 
   get defaultPatientId(): number {
-    return this.config.get<number>('HEALTHCARE_DEFAULT_PATIENT_ID', 1);
+    if (this.config.get<string>('APP_ENV') === 'production') {
+      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A Healthcare patient link is required in production.' });
+    }
+    const configured = this.config.get<string>('HEALTHCARE_DEFAULT_PATIENT_ID');
+    const patientId = Number(configured);
+    if (!Number.isInteger(patientId) || patientId < 1) {
+      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A demo Healthcare patient is not configured.' });
+    }
+    return patientId;
   }
 
   async getAppointment(appointmentId: number, actorId: string, correlationId: string): Promise<JsonObject> {

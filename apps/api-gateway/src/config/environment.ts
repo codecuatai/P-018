@@ -1,3 +1,60 @@
+export type GatewayEnvironment = 'development' | 'test' | 'production';
+
+export type GatewayRateLimitProfile = {
+  name: string;
+  method: string;
+  path: string | RegExp;
+  maxRequests: number;
+  windowMs: number;
+};
+
+export type GatewaySecurityConfig = {
+  appEnv: GatewayEnvironment;
+  corsOrigins: string[];
+  bodyLimitBytes: number;
+  rateLimitProfiles: GatewayRateLimitProfile[];
+};
+
+const DEFAULT_BODY_LIMIT_BYTES = 262_144;
+const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
+const DEFAULT_AUTH_LOGIN_RATE_LIMIT = 5;
+const DEFAULT_ASSISTANT_CHAT_RATE_LIMIT = 30;
+const DEFAULT_ASSISTANT_ACTION_RATE_LIMIT = 20;
+const DEFAULT_FUTURE_AUTH_RATE_LIMIT = 5;
+
+export function parseConfiguredOrigins(value: unknown): string[] {
+  if (typeof value !== 'string') throw new Error('GATEWAY_CORS_ORIGINS is required.');
+  const rawOrigins = value.split(',').map((origin) => origin.trim()).filter(Boolean);
+  if (rawOrigins.length === 0) throw new Error('GATEWAY_CORS_ORIGINS must contain at least one origin.');
+  if (rawOrigins.includes('*')) throw new Error('GATEWAY_CORS_ORIGINS must not contain a wildcard origin.');
+
+  return rawOrigins.map((origin) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(`GATEWAY_CORS_ORIGINS contains an invalid origin: ${origin}.`);
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash || parsed.origin === 'null') {
+      throw new Error(`GATEWAY_CORS_ORIGINS contains an invalid origin: ${origin}.`);
+    }
+    return parsed.origin;
+  });
+}
+
+function positiveInteger(
+  config: Record<string, unknown>,
+  name: string,
+  fallback: number,
+  maximum: number,
+): number {
+  const value = config[name] ?? fallback;
+  if (!Number.isInteger(Number(value)) || Number(value) < 1 || Number(value) > maximum) {
+    throw new Error(`${name} must be an integer between 1 and ${maximum}.`);
+  }
+  return Number(value);
+}
+
 export function validateEnvironment(config: Record<string, unknown>): Record<string, unknown> {
   if (!['development', 'test', 'production'].includes(String(config.APP_ENV))) throw new Error('APP_ENV must be development, test, or production.');
   const requiredStrings = [
@@ -35,6 +92,13 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   if (String(config.JWT_SECRET).length < 16) {
     throw new Error('JWT_SECRET must be at least 16 characters.');
   }
+  const corsOrigins = parseConfiguredOrigins(config.GATEWAY_CORS_ORIGINS);
+  if (String(config.APP_ENV) === 'production' && corsOrigins.some((origin) => {
+    const hostname = new URL(origin).hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  })) {
+    throw new Error('GATEWAY_CORS_ORIGINS must not contain localhost origins in production.');
+  }
   const demoAuthEnabled = String(config.DEMO_AUTH_ENABLED).toLowerCase();
   if (!['true', 'false'].includes(demoAuthEnabled)) throw new Error('DEMO_AUTH_ENABLED must be true or false.');
   if (String(config.APP_ENV) === 'production' && demoAuthEnabled === 'true') throw new Error('Demo auth must be disabled in production.');
@@ -46,8 +110,51 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['UPSTREAM_TIMEOUT_MS', 'CONFIRMATION_TTL_SECONDS', 'GATEWAY_WORKFLOW_POLL_INTERVAL_MS']) {
     if (config[name] !== undefined && (!Number.isInteger(Number(config[name])) || Number(config[name]) < 1)) throw new Error(`${name} must be a positive integer.`);
   }
-  if (config.HEALTHCARE_DEFAULT_PATIENT_ID !== undefined && (!Number.isInteger(Number(config.HEALTHCARE_DEFAULT_PATIENT_ID)) || Number(config.HEALTHCARE_DEFAULT_PATIENT_ID) < 1)) {
+  const configuredPatientId = config.HEALTHCARE_DEFAULT_PATIENT_ID;
+  if (String(config.APP_ENV) !== 'production' && (configuredPatientId === undefined || String(configuredPatientId).trim() === '')) {
+    throw new Error('HEALTHCARE_DEFAULT_PATIENT_ID is required outside production.');
+  }
+  if (configuredPatientId !== undefined && String(configuredPatientId).trim() !== '' && (!Number.isInteger(Number(configuredPatientId)) || Number(configuredPatientId) < 1)) {
     throw new Error('HEALTHCARE_DEFAULT_PATIENT_ID must be a positive integer.');
   }
-  return { ...config, PORT: port };
+  const bodyLimitBytes = positiveInteger(config, 'GATEWAY_BODY_LIMIT_BYTES', DEFAULT_BODY_LIMIT_BYTES, 10 * 1024 * 1024);
+  const rateLimitWindowSeconds = positiveInteger(config, 'GATEWAY_RATE_LIMIT_WINDOW_SECONDS', DEFAULT_RATE_LIMIT_WINDOW_SECONDS, 3_600);
+  const authLoginRateLimit = positiveInteger(config, 'GATEWAY_AUTH_LOGIN_RATE_LIMIT', DEFAULT_AUTH_LOGIN_RATE_LIMIT, 10_000);
+  const assistantChatRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_CHAT_RATE_LIMIT', DEFAULT_ASSISTANT_CHAT_RATE_LIMIT, 10_000);
+  const assistantActionRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_ACTION_RATE_LIMIT', DEFAULT_ASSISTANT_ACTION_RATE_LIMIT, 10_000);
+  const futureAuthRateLimit = positiveInteger(config, 'GATEWAY_FUTURE_AUTH_RATE_LIMIT', DEFAULT_FUTURE_AUTH_RATE_LIMIT, 10_000);
+  return {
+    ...config,
+    PORT: port,
+    GATEWAY_CORS_ORIGINS: corsOrigins.join(','),
+    GATEWAY_BODY_LIMIT_BYTES: bodyLimitBytes,
+    GATEWAY_RATE_LIMIT_WINDOW_SECONDS: rateLimitWindowSeconds,
+    GATEWAY_AUTH_LOGIN_RATE_LIMIT: authLoginRateLimit,
+    GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: assistantChatRateLimit,
+    GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: assistantActionRateLimit,
+    GATEWAY_FUTURE_AUTH_RATE_LIMIT: futureAuthRateLimit,
+  };
+}
+
+export function getGatewaySecurityConfig(config: Record<string, unknown> = process.env): GatewaySecurityConfig {
+  const validated = validateEnvironment(config);
+  const appEnv = String(validated.APP_ENV) as GatewayEnvironment;
+  const windowMs = Number(validated.GATEWAY_RATE_LIMIT_WINDOW_SECONDS) * 1_000;
+  return {
+    appEnv,
+    corsOrigins: parseConfiguredOrigins(validated.GATEWAY_CORS_ORIGINS),
+    bodyLimitBytes: Number(validated.GATEWAY_BODY_LIMIT_BYTES),
+    rateLimitProfiles: [
+      { name: 'auth.login', method: 'POST', path: '/api/v1/auth/login', maxRequests: Number(validated.GATEWAY_AUTH_LOGIN_RATE_LIMIT), windowMs },
+      { name: 'assistant.chat', method: 'POST', path: '/api/v1/assistant/chat', maxRequests: Number(validated.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT), windowMs },
+      { name: 'assistant.actions', method: 'POST', path: '/api/v1/assistant/actions', maxRequests: Number(validated.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT), windowMs },
+      {
+        name: 'future.auth',
+        method: 'POST',
+        path: /^\/api\/v1\/auth\/(register|forgot-password|reset-password|refresh)$/,
+        maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT),
+        windowMs,
+      },
+    ],
+  };
 }

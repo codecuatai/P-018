@@ -1,4 +1,11 @@
 process.env.PORT = '3000';
+process.env.GATEWAY_CORS_ORIGINS = 'http://localhost:5173,http://localhost:3000';
+process.env.GATEWAY_BODY_LIMIT_BYTES = '262144';
+process.env.GATEWAY_RATE_LIMIT_WINDOW_SECONDS = '60';
+process.env.GATEWAY_AUTH_LOGIN_RATE_LIMIT = '5';
+process.env.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT = '30';
+process.env.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT = '20';
+process.env.GATEWAY_FUTURE_AUTH_RATE_LIMIT = '5';
 process.env.DATABASE_URL = 'postgresql://core_user:test-password@postgres:5432/xone_core';
 process.env.AGENT_SERVICE_URL = 'http://agent-service:8001';
 process.env.RIDE_SERVICE_URL = 'http://ride-service:8101';

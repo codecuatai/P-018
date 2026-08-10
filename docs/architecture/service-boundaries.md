@@ -12,3 +12,5 @@ This is the target responsibility map, not a claim that every listed interface i
 | Food | merchants, menus, items, order quotes/drafts, orders/items/events | gateway | manage tables/reservations |
 
 Gateway may orchestrate multiple services, but a domain service remains authoritative for its own business invariants and state transitions. Restaurant Service = table reservation. Food Service = menu ordering and food delivery. No booking/order belongs to both services. Domain route prefixes follow the checked-in versioned contracts; current prefixes differ by incremental slice. See [API conventions](../api/api-conventions.md). Contracts, not SQL, carry cross-boundary references and snapshots.
+
+Ownership decisions locked in Phase 0: Core/Gateway owns saved addresses and resolves them through a future contract; Food/Ride persist immutable transaction snapshots. Core owns X-One identity references; Healthcare owns patient identity and medical data. The current Food address endpoint and Healthcare default patient are legacy/demo compatibility boundaries, not exceptions to these ownership rules.

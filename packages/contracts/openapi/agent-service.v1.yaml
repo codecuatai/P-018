@@ -1,12 +1,37 @@
 openapi: 3.1.0
 info:
   title: X-One Agent Service
-  version: 1.1.0
+  version: 1.2.0
   description: >
     Internal interpretation boundary. The Agent returns safe language and a
     validated typed tool request. It never calls a domain service, database,
     payment provider, or final side effect.
 paths:
+  /api/v1/assistant-chat:
+    post:
+      operationId: planUnifiedAssistantTurn
+      description: The current bounded multi-domain planner. It returns a validated plan only; the Gateway owns all tool execution and side effects.
+      security: [{internalServiceToken: []}]
+      parameters: [{ $ref: '#/components/parameters/ActorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/AssistantChatRequest'}}
+      responses:
+        '200':
+          description: Planner result with safe diagnostics and no raw prompt or chain-of-thought.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/AssistantEnvelope'}}
+        '401': {description: Internal service authentication failed.}
+        '422': {description: Request validation failed.}
+  /api/v1/status:
+    get:
+      operationId: getAgentStatus
+      description: Safe internal model diagnostics. Keys, prompts, and provider payloads are never returned.
+      security: [{internalServiceToken: []}]
+      responses:
+        '200': {description: Safe Agent status}
+        '401': {description: Internal service authentication failed.}
   /api/v1/chat:
     post:
       operationId: interpretFoodChatTurn
@@ -83,6 +108,26 @@ components:
       required: false
       schema: {type: string, minLength: 1, maxLength: 128}
   schemas:
+    AssistantChatRequest:
+      type: object
+      required: [message, conversation_id, user_id]
+      properties:
+        message: {type: string, minLength: 1, maxLength: 5000}
+        conversation_id: {type: string, minLength: 1, maxLength: 128}
+        user_id: {type: string, minLength: 1, maxLength: 128}
+        correlation_id: {type: [string, 'null'], maxLength: 128}
+        messages: {type: array, items: {type: object, additionalProperties: true}}
+        conversation_state: {type: object, additionalProperties: true}
+        authoritative_results: {type: array, items: {type: object, additionalProperties: true}}
+        mode: {type: string, enum: [plan, compose]}
+      additionalProperties: false
+    AssistantEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, additionalProperties: true}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+      additionalProperties: false
     ChatRequest:
       type: object
       required: [message, conversation_id, user_id]

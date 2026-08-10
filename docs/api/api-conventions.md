@@ -12,6 +12,10 @@ Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/inte
 
 This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 
+The canonical route inventory is [api-inventory.md](api-inventory.md). Shared primitives and the minimum response envelopes are versioned in [shared-primitives.v1.yaml](../../packages/contracts/openapi/shared-primitives.v1.yaml). The current Gateway keeps legacy Ride and vertical workflow routes for compatibility; they are not permission to add new browser callers or bypass the unified assistant confirmation boundary.
+
+The shared `Address` contract requires `id`, `label`, `address_text`, `latitude`, `longitude`, and `city`; `ward` and `district` remain optional. Food's actor-scoped `/addresses` response is explicitly a Food-owned `FoodLegacyAddress` compatibility shape, not a Core saved-address resource. A Gateway adapter must map/validate it before producing the shared shape; no `Core.user_addresses` table exists in Phase 0.
+
 The unified consumer conversation uses `POST /api/v1/assistant/chat` and
 `POST /api/v1/assistant/actions`, documented in
 [`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Its
@@ -35,6 +39,8 @@ Successful responses use:
 ```
 
 Errors use RFC-7807-inspired JSON: `type`, `title`, `status`, `code`, safe `detail`, `retryable`, and `request_id`; never return a stack trace. Collection responses use cursor or explicit `limit`/`offset` pagination with metadata.
+
+The minimum public success contract is `{ data, meta: { request_id } }`. A list uses `{ data: { items }, meta: { request_id, pagination: { cursor, has_more } } }`. Extra safe metadata such as `timestamp` or a compatibility `actor_id` may remain on an existing endpoint, but must not contain credentials, raw prompts, internal confirmation IDs, provider payloads, or chain-of-thought.
 
 `X-Correlation-Id` is accepted/generated for every request. `X-Workflow-Id` and `X-Tool-Call-Id` apply to orchestrated workflows. Internal calls require service authentication. Standard status codes apply: 200/201 success, 202 accepted, 400/401/403/404/409/422 client errors, and 429/5xx only where appropriate.
 

@@ -9,7 +9,8 @@
 - [Workflows](architecture/workflows.md)
 - [Data architecture](architecture/data-architecture.md)
 - [Runtime architecture](architecture/runtime-architecture.md)
-- [API conventions](api/api-conventions.md) and [tool contracts](api/tool-contracts.md)
+- [Security architecture baseline](architecture/security-architecture.md)
+- [API conventions](api/api-conventions.md), [canonical API inventory](api/api-inventory.md), [shared/tool contracts](api/tool-contracts.md), and [Tool Registry v2 specification](api/tool-registry-v2.md)
 - [Local development](development/local-development.md), [environment variables](development/environment-variables.md), [database and migrations](development/database-and-migrations.md), [contributing](development/contributing.md), [new-service checklist](development/new-service-checklist.md), [testing strategy](development/testing-strategy.md), [ADRs](adr/README.md), and [project status](project-status.md)
 - [Implementation plans](plan/agent-service-single-agent-plan.md) and [Restaurant Service improvement plan](plan/restaurant-service-improvement-plan.md)
 

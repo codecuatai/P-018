@@ -18,4 +18,8 @@ Restaurant owns dine-in restaurant, hold, table-availability, reservation state,
 
 Logical ownership is mandatory from the first vertical slice: each domain owns its schema/table/migration boundary, validates its own writes, and shares API snapshots/external references rather than tables. There are no cross-database queries/FKs or shared ORM entities. Each service owns its migration, seed, transaction boundary, and domain idempotency.
 
+Phase 0 ownership decisions are explicit: Core/Gateway will own saved addresses, while Food and Ride own immutable transaction address snapshots; the current Food actor-scoped address endpoint is legacy compatibility only. Core owns X-One user identity references, while Healthcare owns patient identity, medical history, symptoms, appointments, and future user-to-patient links. `HEALTHCARE_DEFAULT_PATIENT_ID` is a demo fallback, not an identity mapping. See ADR-0006 and ADR-0007; neither target table is created in Phase 0.
+
+Migration governance is additive and owner-local: applied migrations are immutable, no runtime `create_all()` or destructive startup migration is allowed, and a schema change requires an owned migration plus data-architecture/test updates. The current filesystem baseline and next revision convention are recorded in [Database and Migrations](../development/database-and-migrations.md).
+
 Physical database-instance/cluster separation is a later operational decision, not a claim about the current Compose layout. Defer it until measured scale, reliability, security, compliance, team-ownership, deployment-independence, or isolation needs justify it. Bootstrap runs only on a new PostgreSQL volume.
