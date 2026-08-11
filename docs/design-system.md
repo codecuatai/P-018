@@ -11,6 +11,28 @@ theatre. The X-One four-path junction is the recognisable signature whenever a
 surface communicates orchestration; it is a structural diagram, not a glowing
 AI decoration.
 
+For the landing page, prefer real product media and scroll-linked focus over
+decorative diagrams. The landing is a cinematic product editorial sequence:
+one clear hero object, generous typography, restrained overlays and meaningful
+media slots. A media slot must remain useful when its optional asset is absent;
+it may show a neutral placeholder, never a fabricated screenshot or map.
+
+### Landing media contract
+
+Optional public assets live under `apps/web/public/media/`:
+
+| Purpose | Expected path | Fallback |
+| --- | --- | --- |
+| Hero ambient video | `/media/hero-loop.mp4` | neutral media layer or poster |
+| Hero poster / reduced-motion frame | `/media/hero-poster.webp` | porcelain neutral layer |
+| Hanoi marketing map | `/media/hanoi-map.webp` | explicit map media slot |
+| X-One chat capture | `/media/xone-chat-example.webp` | explicit product media slot |
+| X-One confirmation capture | `/media/xone-confirmation-example.webp` | explicit product media slot |
+
+`NEXT_PUBLIC_HERO_VIDEO_URL` and `NEXT_PUBLIC_HERO_POSTER_URL` may override
+the two hero paths. These assets are marketing media only: they do not become
+authoritative UI, location state, Maps API integration, or product data.
+
 ## Colour and type tokens
 
 | Token | Value | Role |
@@ -76,7 +98,7 @@ an honest planned state, never a mock CRUD flow.
 - Honour reduced motion; functional status never depends on movement.
 - Never expose secrets, raw reset tokens, internal workflow state, chain of
   thought or fabricated transaction success in the UI.
-- The vector map is labelled as an illustration, not location/tracking.
+- The map image is labelled as a marketing illustration, not location/tracking.
 - The assistant may prepare a choice but cannot claim a booking/payment is
   complete without the Gateway's confirmed result.
 
@@ -85,5 +107,8 @@ an honest planned state, never a mock CRUD flow.
 Do not use purple/blue AI gradients, mesh backgrounds, glowing orbs, generic
 robot marks, chrome-like glassmorphism, stock SaaS dashboard templates, fake
 metrics, testimonials/logos, huge text, excessive pills, gratuitous card grids,
-or `transition: all`. Do not use every rounded element as an invitation to
-float or animate. Calm clarity is more distinctive than visual noise.
+or `transition: all`. Do not use decorative service networks, fake SVG maps,
+floating service labels, or repeated fake chat windows when a real product
+media slot is the honest choice. Do not use every rounded element as an
+invitation to float or animate. Calm clarity is more distinctive than visual
+noise.

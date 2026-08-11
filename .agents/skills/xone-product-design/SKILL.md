@@ -11,7 +11,7 @@ Read `docs/design-system.md` and `docs/motion-system.md` before designing or cha
 
 - Ground each screen in a real user task and use plain Vietnamese end-user copy.
 - Preserve the Calm Kinetic Concierge direction: calm, capable, precise, human, and trustworthy; premium without luxury or sci-fi cues.
-- Give each major surface one useful signature element. Prefer the X-One service-network/junction language when orchestration is the subject.
+- Give each major surface one useful signature element. Prefer real product media and scroll-linked focus over decorative diagrams. Use the X-One service-network/junction language only when a real structural explanation needs it; it is not the default landing hero visual.
 - Keep hierarchy intentional: Be Vietnam Pro for reading, IBM Plex Mono only for small structured utility labels, and no Inter fallback as the intended face.
 - Use semantic X-One tokens, restrained surfaces, clear borders, and the documented radius scale. Do not add rainbow domain theming.
 - Avoid AI-slop: glowing gradients, orbs, blobs, glass everywhere, generic robot branding, fake metrics/testimonials/logos, decorative clutter, or card stacks without information value.

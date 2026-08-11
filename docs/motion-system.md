@@ -23,11 +23,26 @@ multiple bouncing/elastic eases on a single screen. A hover may shift roughly
 
 ## Landing sequence
 
-The hero may sequence mark -> eyebrow -> headline -> supporting copy -> CTA ->
-four-path network. The network may draw rails and send a low-frequency signal
-between existing service nodes. Section reveals occur once when useful to
-reading; they do not replay on every scroll. The optional hero video is ambient
-only, muted and decorative--never required to understand the page.
+Prefer real product media and scroll-linked focus over decorative diagrams. The
+landing uses a reusable `ScrollFocusScene` primitive for meaningful sections.
+It maps the section's bounded `useScroll({ target })` progress through
+`useTransform()` rather than a one-time `whileInView` reveal:
+
+```text
+progress: [0, .22, .5, .78, 1]
+opacity:  [.12, .42, 1, .42, .12]
+scale:    [.975, .99, 1, .99, .975]
+y:        [40, 14, 0, -14, -40]
+```
+
+Tune scene height and composition per section. Apply the primitive to a few
+meaningful editorial blocks, not every icon, label, or media detail. Motion is
+bounded to opacity and transform; it never hijacks scrolling, adds custom
+smooth scrolling, or updates React state on every scroll frame.
+
+The hero video is ambient only, muted, looped and decorative--never required
+to understand the page. It sits behind a readable overlay and the chat
+composer remains the hero's authoritative product object.
 
 Authenticated product views favor immediate state feedback over entrance
 animation. Sending, retrying, confirmation and error states are explicit text
@@ -36,9 +51,11 @@ or controls first; any animation is secondary.
 ## Reduced motion
 
 Honour `prefers-reduced-motion` at the CSS root and in `motion/react` client
-islands. Replace movement with a static/opacity result where useful. Disable
-parallax, signal loops, large transforms, animated rail drawing and autoplay
-hero video. Keep all functional state visible without animation.
+islands. For `ScrollFocusScene`, keep content at opacity `1`, scale `1`, and
+`y=0`. Disable parallax, signal loops, large transforms, animated rail
+drawing, rotating prompts, and autoplay hero video; show one static prompt and
+the poster or neutral fallback. Keep all functional state visible without
+animation.
 
 ## Performance guardrails
 

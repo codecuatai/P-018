@@ -4,6 +4,22 @@
 
 ## 2026-08-11
 
+### Phase 1 - focused visual polish pass
+
+- Replaced the landing network-diagram hero with a centered X-One composer,
+  ambient local media, editorial service/story sections, real map media, and
+  optional product screenshot slots. Added bounded Motion scroll-linked focus
+  with a static reduced-motion path.
+- Added the Radix marketing auth dialog with Login/Register switching and
+  shared auth form components while preserving the standalone auth routes and
+  Gateway contract. Removed HeroNetwork, travelling signals, StoryBoard and
+  fake SVG map presentation.
+- Web lint/typecheck, Jest (`6` suites / `14` tests), frozen workspace install,
+  production build (`15` routes), and `git diff --check` passed. Browser visual
+  evidence at 375px, 768px and 1440px remains `UNVERIFIED` because no browser
+  instance was available. No cloud side effects, secrets printed, commit or
+  push.
+
 ### Phase 1 - Next.js migration, landing, routing, and real authentication
 
 - Delivered the Web migration from Vite/React Router to Next.js App Router with a calm X-One landing page, product routes, loading/error/not-found states, memory-only access-token handling, and Gateway-only browser requests. The landing advertises exactly Food, Ride, Restaurant, and Healthcare; optional hero-video hooks do not bundle or generate video assets.
