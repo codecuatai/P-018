@@ -8,7 +8,7 @@ export function ConnectPreview() {
     <ProductPreviewFrame label="Các lựa chọn liên quan">
       <div className={styles.previewBody}>
         <div className={styles.previewGreeting}>
-          <span>Trong cùng một luồng</span>
+          <span>Trong cùng một trải nghiệm</span>
           <strong>X-One giữ những bước liên quan ở cạnh nhau.</strong>
         </div>
         <div className={styles.resultStack} aria-label="Ví dụ kết nối nhà hàng và chuyến xe">

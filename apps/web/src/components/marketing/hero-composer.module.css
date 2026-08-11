@@ -16,6 +16,8 @@
 }
 
 .topline { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 3px 12px; }
+.topline label,
+.topline span { flex-shrink: 0; white-space: nowrap; }
 .topline label { color: var(--color-navy); font-size: 0.86rem; font-weight: 750; }
 .topline span { color: var(--color-muted-soft); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.61rem; letter-spacing: 0.08em; text-transform: uppercase; }
 
@@ -37,13 +39,18 @@
   color: var(--color-surface);
   background: var(--color-primary);
   border: 0;
-  border-radius: 50%;
-  transition: background-color 160ms ease, transform 160ms ease;
+  border-radius: 999px;
+  transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
 }
 
-.submit:hover { background: var(--color-primary-strong); transform: translateY(-2px); }
+.submit:hover { background: var(--color-primary-strong); box-shadow: 0 7px 15px rgb(49 94 245 / 22%); transform: translateY(-1px); }
+.submit:active { transform: translateY(0) scale(0.98); }
 .footnote { display: flex; align-items: center; gap: 7px; margin: 11px 3px 0; color: var(--color-muted-soft); font-size: 0.68rem; }
 .footnote svg { color: var(--color-success); }
+
+@media (min-width: 561px) {
+  .footnote { white-space: nowrap; }
+}
 
 @media (max-width: 560px) {
   .composer { padding: 17px 16px 14px; margin-top: 27px; border-radius: 13px; }

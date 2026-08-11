@@ -1,13 +1,12 @@
 # WORKLOG — Team P-018
 
-## 2026-08-11
+## 2026-08-12
 
 | Member | Task | Status | Output | Time |
 |--------|------|--------|--------|------|
-| Codex / Team P-018 | Focused X-One Phase 1 final marketing visual pass | ✅ Implementation PASS; browser UNVERIFIED | Added floating hero shell, localized hero scrim, poster-crossfade video loop, four transparent WebP service visuals with fallback seam, coded three-stage product carousel, text-led story fallback, Hanoi route story, targeted Web tests and design/motion guidance. Web typecheck, Jest 9 suites/24 tests and production build pass; browser surfaces unavailable; no backend, auth, commit, push or deploy changes | - |
-| Vũ Văn Phong (2A202601647) | Thực hiện focused visual redesign cho landing Phase 1 của X-One | ✅ Done | Header fixed; hero gọn hơn với tiêu đề desktop đúng hai dòng; video Hanoi rõ hơn; composer được giữ và tinh chỉnh; section dịch vụ thành đúng 4 visual cards; bổ sung tonal surfaces, entrance reveal, scroll-linked focus/exit, reduced-motion path và tách CSS marketing; cập nhật docs, tests, WORKLOG.md, job.txt; auth, Gateway boundary, XOneMark, backend và media assets được giữ nguyên | - |
+| Vũ Văn Phong (2A202601647) | Focused frontend visual + bugfix pass cho landing X-One | ✅ Implementation PASS; browser UNVERIFIED | Hoàn thiện visual/motion pass cho landing: hero video-first hiển thị ngay khi render với native poster fallback, chủ động gọi và retry playback, không dùng native loop, giữ poster 2 giây sau khi video kết thúc và hỗ trợ reduced-motion; sửa root layout Section 2 thành composition responsive với đúng 4 service slabs, loại bỏ copy hướng dẫn thừa; tinh chỉnh Section 3 thành product theater với đúng 3 stage, keyboard/manual controls, autoplay và pause theo viewport/document; giảm trùng visibility owner, cập nhật CSS Modules và regression tests. `corepack pnpm --dir apps/web typecheck`, Jest 12 suites/46 tests, Next production build và `git diff --check` đều pass. Browser visual inspection chưa xác minh vì môi trường không có browser session; không thay đổi backend, auth, database, commit, push hoặc deploy. | - |
 
-**Tổng kết ngày:** Hoàn tất redesign landing Phase 1 và các kiểm tra tự động: install frozen, typecheck, Jest 7 suites/16 tests, production build, environment validation, Compose config và git diff --check. Browser visual acceptance chưa xác minh vì môi trường không có browser instance khả dụng; không commit, push hoặc deploy.
+**Tổng kết ngày:** Đã gộp các hạng mục landing/frontend trùng lặp vào một dòng duy nhất của Vũ Văn Phong; implementation và automated checks pass, browser acceptance vẫn chờ môi trường có browser session.
 
 ## 2026-08-10
 

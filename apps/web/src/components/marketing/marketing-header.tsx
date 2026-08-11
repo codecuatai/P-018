@@ -31,22 +31,28 @@ export function MarketingHeader() {
     <a className="skip-link" href="#main-content">Bỏ qua điều hướng</a>
     <span ref={sentinel} className={styles.scrollSentinel} aria-hidden="true" />
     <header className={`${styles.header} ${raised ? styles.headerRaised : ""}`}>
-      <div className={styles.headerInner}>
-        <Link className={styles.brand} href="/" aria-label="X-One trang chủ"><XOneMark size={30} /><span>X-One</span></Link>
-        <nav className={styles.nav} aria-label="Điều hướng chính"><a href="#dich-vu">Dịch vụ</a><a href="#cach-hoat-dong">Cách hoạt động</a><a href="#an-toan">An toàn</a></nav>
-        <div className={styles.actions}><button className={`text-link ${styles.authTrigger}`} type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></div>
-        <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-          <SheetTrigger asChild><button className={`icon-button ${styles.menuButton}`} type="button" aria-label="Mở menu"><Menu size={20} /></button></SheetTrigger>
-          <SheetContent title="Điều hướng X-One">
-            <nav className={styles.mobileNav} aria-label="Điều hướng di động">
-              <SheetClose asChild><a href="#dich-vu">Dịch vụ</a></SheetClose>
-              <SheetClose asChild><a href="#cach-hoat-dong">Cách hoạt động</a></SheetClose>
-              <SheetClose asChild><a href="#an-toan">An toàn</a></SheetClose>
-              <SheetClose asChild><button type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button></SheetClose>
-              <SheetClose asChild><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></SheetClose>
-            </nav>
-          </SheetContent>
-        </Sheet>
+      <div className={styles.headerFrame}>
+        <div className={styles.brandIsland}>
+          <Link className={styles.brand} href="/" aria-label="X-One trang chủ"><XOneMark size={30} /><span>X-One</span></Link>
+        </div>
+        <div className={styles.navIsland}>
+          <nav className={styles.nav} aria-label="Điều hướng chính"><a href="#dich-vu">Dịch vụ</a><a href="#cach-hoat-dong">Cách hoạt động</a><a href="#an-toan">An toàn</a></nav>
+          <div className={styles.actions}><button className={`text-link ${styles.authTrigger}`} type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></div>
+        </div>
+        <div className={styles.mobileMenuIsland}>
+          <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+            <SheetTrigger asChild><button className={`icon-button ${styles.menuButton}`} type="button" aria-label="Mở menu"><Menu size={20} /></button></SheetTrigger>
+            <SheetContent title="Điều hướng X-One">
+              <nav className={styles.mobileNav} aria-label="Điều hướng di động">
+                <SheetClose asChild><a href="#dich-vu">Dịch vụ</a></SheetClose>
+                <SheetClose asChild><a href="#cach-hoat-dong">Cách hoạt động</a></SheetClose>
+                <SheetClose asChild><a href="#an-toan">An toàn</a></SheetClose>
+                <SheetClose asChild><button type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button></SheetClose>
+                <SheetClose asChild><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></SheetClose>
+              </nav>
+            </SheetContent>
+          </Sheet>
+        </div>
       </div>
     </header>
   </>;

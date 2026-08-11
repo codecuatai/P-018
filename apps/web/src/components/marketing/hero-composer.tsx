@@ -78,7 +78,6 @@ export function HeroComposer() {
           <ArrowUp size={22} strokeWidth={2.4} />
         </button>
       </div>
-      <p className={styles.footnote}><ShieldCheck size={15} /> Bạn luôn xem lại trước khi một bước quan trọng được thực hiện.</p>
     </form>
   );
 }

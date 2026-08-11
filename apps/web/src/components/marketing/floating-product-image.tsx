@@ -33,7 +33,7 @@ export function FloatingProductImage({
   return (
     <motion.div
       className={`${styles.image} ${className} ${failed ? styles.imageFallback : ""}`}
-      whileHover={reduceMotion || failed ? undefined : { y: -8, scale: 1.025, rotate: 0.45 }}
+      whileHover={reduceMotion || failed ? undefined : { y: -8, scale: 1.025 }}
       transition={hoverTransition}
     >
       {failed ? fallback : <Image src={src} alt={alt} width={width} height={height} sizes={sizes} onError={() => setFailed(true)} />}

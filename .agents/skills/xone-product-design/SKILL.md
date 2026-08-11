@@ -25,8 +25,8 @@ Read `docs/design-system.md` and `docs/motion-system.md` before designing or cha
 
 ## Apply motion with restraint
 
-- Keep scroll-triggered entrance and scroll-linked focus/exit as two separate concepts. Use `RevealScene`/`RevealItem` for one-time viewport entrances, then `ScrollFocusScene` only for restrained depth after entry.
-- Use approximately 450–650ms section entrances, `once: true`, `amount: 0.15–0.25`, and 70–100ms child staggers. Keep leaving-focus content readable; do not pin future sections at low opacity on page load.
+- Keep scroll-triggered entrance and scroll-linked focus/exit as two separate concepts. Use `RevealScene`/`RevealItem` for viewport entrances, with `replayOnReenter` opt-in on marketing sections, then `ScrollFocusScene` only for restrained depth after entry.
+- Use approximately 450–650ms section entrances, `once: !replayOnReenter`, `amount: 0.15–0.25`, a restrained root margin, and 70–100ms child staggers. Replay-capable landing content softly fades/shifts inactive outside the viewport; do not pin future sections at low opacity on page load.
 - Reuse only the canonical primitives: fade, fade-up, scale-in, stagger, line-draw, soft-hover, and scroll-progress.
 - Animate primarily opacity and transform. Keep interaction feedback immediate and do not use `transition: all`.
 - Reserve expressive motion for the landing hero and multi-service story; authenticated product screens prioritize clarity and task completion.
@@ -35,28 +35,57 @@ Read `docs/design-system.md` and `docs/motion-system.md` before designing or cha
 
 - The marketing header is fixed, subtle at the top and lightly raised after scroll; offset content and anchor targets for its height.
 - Use the existing hero video/poster/map assets when present. When screenshot assets are absent, render a polished neutral product panel—never `MEDIA SLOT`, a public file path or developer placeholder copy.
-- Keep the service scene as exactly four visual cards for Food, Ride, Restaurant and Healthcare. Use bounded accents and tonal surfaces; avoid gradients, blobs, or decorative SVG networks.
+- Keep the service scene as exactly four selectable visual items for Food, Ride, Restaurant and Healthcare in an asymmetric floating-slab composition. Use bounded accents and tonal surfaces; avoid orbit wheels, continuous rotation, gradients, blobs, or decorative SVG networks.
 
 ### Phase 1 final marketing visual pass
 
-- Use a centered floating navigation shell over the hero; the page must not
-  render a full-width white header strip.
+- Use one fixed positioning frame with two independent floating navigation
+  islands over the hero: a brand island near the left gutter and a
+  navigation/action island near the right gutter. The page must not render a
+  full-width white header strip or visually connect the islands.
 - Keep the hero video legible and place contrast treatment only behind the
-  copy. The loop uses a poster crossfade near the end of playback and reduced
-  motion renders the poster only.
+  copy. The lifecycle is playing → poster → 2-second poster hold → restart at
+  time zero → crossfade after `playing`; reduced motion renders the poster only.
 - Use the supplied transparent WebP service media at
   `/media/services/food.webp`, `ride.webp`, `restaurant.webp` and
   `healthcare.webp`. A missing asset keeps the image-first layout intact and
-  never exposes a filesystem path or debug placeholder.
-- How X-One Works is one auto-sliding, keyboard-accessible carousel with
-  exactly three labeled stages. Its previews are coded product UI with real
-  X-One copy and confirmation language; do not build generic screenshot
-  rectangles or include tool/debug traces.
+  never exposes a filesystem path or debug placeholder. Compose the assets as
+  four varied pale material slabs with restrained perspective, selection settle
+  and keyboard activation; there is no autoplay or orbital rotation. Reduced
+  motion removes the 3D tilt while keeping selection available.
+- How X-One Works is one auto-sliding, keyboard-accessible horizontal carousel
+  with exactly three labeled stages, a ~2.2-second timer, and visible previous /
+  next controls. Its previews are coded product UI with real X-One copy and
+  confirmation language; do not build generic screenshot rectangles or include
+  tool/debug traces. Hover, focus, hidden-document state, viewport exit and
+  reduced motion pause auto-advance.
+- The multi-service story uses a replay-capable coded conversation cascade to show
+  one request carrying related restaurant and ride steps. It must keep the
+  confirmation boundary visible and must not imply autonomous execution or
+  produce tool/debug UI.
 - The Hanoi scene uses `/media/hanoi-map.webp` plus a small aria-hidden SVG
-  route overlay for marketing relationships only. Route paths draw once and
-  remain visible; reduced motion shows the complete route immediately.
+  route overlay for marketing relationships only. Use at most four visibly
+  curved base route paths plus cobalt tracers, keep the base paths visible,
+  repeat tracer motion only while visible, and show the static base scene under
+  reduced motion.
+- The final CTA is a light full-height editorial scene in the same tonal family
+  as the preceding section. Use `/media/final/xone-object.webp` when present,
+  replay the object reveal when the landing scene re-enters, keep one primary
+  cobalt pill CTA, omit the final login action, and integrate only a minimal
+  legal footer strip.
 - Keep eyebrow usage sparse, preserve auth modal behavior and XOneMark, and
   use CSS Modules with small client islands for browser state and motion.
+
+### Phase 1 motion-family checklist
+
+Assign one motion family per major section: hero media lifecycle and prompt;
+service slab selection settle plus physical hover; horizontal carousel;
+replay-capable multi-service conversation cascade; map mask plus persistent
+base routes and repeated tracers; safety row cascade; assistant split reveal
+plus underline; and final object reveal. Do not wrap the whole landing in a
+repeated `ScrollFocusScene`. Reserve that primitive for a specific focus
+relationship, and use `RevealItem`/`whileInView` with explicit replay opt-in for
+simple entrances.
 
 ## Review before handoff
 

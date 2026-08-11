@@ -10,7 +10,6 @@ export function ProductPreviewFrame({ label, children }: { label: string; childr
       <div className={styles.productTopbar}>
         <div className={styles.productBrand}><XOneMark size={24} /><strong>X-One</strong></div>
         <span className={styles.productView}>{label}</span>
-        <span className={styles.productStatus}><span aria-hidden="true" /> Đang ở trong luồng</span>
       </div>
       {children}
     </div>

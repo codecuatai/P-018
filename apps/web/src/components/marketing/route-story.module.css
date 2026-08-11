@@ -1,6 +1,6 @@
 .scene {
   position: relative;
-  min-height: 360px;
+  min-height: 480px;
   overflow: hidden;
   background: #E5ECEB;
   border: 1px solid #C9D9D6;
@@ -11,6 +11,13 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  transform-origin: center;
+  will-change: clip-path;
+}
+
+.mapArt {
+  position: absolute;
+  inset: 0;
   transform-origin: center;
 }
 
@@ -33,14 +40,15 @@
   height: 100%;
 }
 
-.routePath {
+.routePathBase,
+.routePathTracer {
   fill: none;
-  stroke: var(--color-primary);
   stroke-linecap: round;
-  stroke-width: 5;
+  stroke-width: 3.2;
 }
 
-.routePathTeal { stroke: var(--color-success); }
+.routePathBase { stroke: var(--color-primary); opacity: 0.32; }
+.routePathTracer { stroke: var(--color-primary); stroke-width: 3.8; }
 
 .originMarker,
 .destinationMarker {
@@ -84,14 +92,16 @@
   bottom: 12px;
   padding: 4px 7px;
   color: rgb(17 24 39 / 74%);
-  background: rgb(255 255 255 / 74%);
-  border-radius: 4px;
+  background: rgb(255 255 255 / 78%);
+  border: 1px solid rgb(22 50 79 / 9%);
+  border-radius: 999px;
   font-size: 0.62rem;
+  white-space: nowrap;
 }
 
 .sceneFallback {
   display: grid;
-  min-height: 360px;
+  min-height: 480px;
   place-items: center;
   padding: 30px;
 }
@@ -119,15 +129,15 @@
 .fallbackPanel p { margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.6; }
 
 @media (max-width: 820px) {
-  .scene { min-height: 320px; }
+  .scene { min-height: 390px; }
   .originMarker text,
   .destinationMarker text { font-size: 15px; }
 }
 
 @media (max-width: 560px) {
   .scene,
-  .sceneFallback { min-height: 250px; }
+  .sceneFallback { min-height: 300px; }
   .originMarker text,
   .destinationMarker text { font-size: 12px; stroke-width: 6px; }
-  .sceneCaption { right: 9px; bottom: 9px; font-size: 0.56rem; }
+  .sceneCaption { right: 9px; bottom: 9px; max-width: calc(100% - 18px); overflow: hidden; font-size: 0.56rem; text-overflow: ellipsis; }
 }

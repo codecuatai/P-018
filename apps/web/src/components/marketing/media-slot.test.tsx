@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 
 const mockUseReducedMotion = jest.fn(() => false);
+let originalMediaPlay: typeof HTMLMediaElement.prototype.play;
 
 jest.mock("motion/react", () => ({
   ...jest.requireActual("motion/react"),
@@ -10,7 +11,25 @@ jest.mock("motion/react", () => ({
 import { HanoiMapMedia, HeroMedia, ProductMediaSlot } from "@/components/marketing/media-slot";
 
 describe("landing media slots", () => {
-  beforeEach(() => mockUseReducedMotion.mockReturnValue(false));
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockUseReducedMotion.mockReturnValue(false);
+    originalMediaPlay = HTMLMediaElement.prototype.play;
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      writable: true,
+      value: jest.fn().mockResolvedValue(undefined),
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, "play", {
+      configurable: true,
+      writable: true,
+      value: originalMediaPlay,
+    });
+    jest.useRealTimers();
+  });
 
   it("falls back without rendering a fake SVG map when the map asset is absent", () => {
     const { container } = render(<HanoiMapMedia />);
@@ -29,28 +48,121 @@ describe("landing media slots", () => {
     expect(container.textContent).not.toContain("/media/xone-chat-example.webp");
   });
 
+  it("shows the video immediately with its native poster while normal-motion media loads", () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video")!;
+
+    expect(video).toHaveAttribute("poster", "/media/hero-poster.webp");
+    expect(video).toHaveAttribute("data-hero-video-state", "visible");
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "hidden");
+  });
+
+  it("requests playback on mount even when the load event was missed during hydration", async () => {
+    const originalPlay = HTMLMediaElement.prototype.play;
+    const play = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, writable: true, value: play });
+
+    try {
+      render(<HeroMedia />);
+      await act(async () => { await Promise.resolve(); });
+
+      expect(play).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(HTMLMediaElement.prototype, "play", { configurable: true, writable: true, value: originalPlay });
+    }
+  });
+
+  it("retries a temporarily blocked autoplay request when the page becomes visible", async () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video") as HTMLVideoElement;
+    const play = jest.fn()
+      .mockRejectedValueOnce(new Error("autoplay blocked while inactive"))
+      .mockResolvedValueOnce(undefined);
+    video.play = play;
+
+    fireEvent.canPlay(video);
+    await act(async () => { await Promise.resolve(); });
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
+
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows video immediately when playback starts", () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video")!;
+
+    fireEvent.playing(video);
+
+    expect(video).toHaveAttribute("data-hero-video-state", "visible");
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "hidden");
+  });
+
+  it("crossfades from video to poster, holds, then restarts and fades video back in", () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video") as HTMLVideoElement;
+    video.play = jest.fn().mockResolvedValue(undefined);
+
+    fireEvent.playing(video);
+    fireEvent.ended(video);
+
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
+    expect(video).toHaveAttribute("data-hero-video-state", "waiting");
+
+    act(() => { jest.advanceTimersByTime(1999); });
+    expect(video.play).not.toHaveBeenCalled();
+
+    act(() => { jest.advanceTimersByTime(1); });
+    expect(video.play).toHaveBeenCalledTimes(1);
+    expect(video.currentTime).toBe(0);
+    expect(video).toHaveAttribute("data-hero-video-state", "waiting");
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
+
+    fireEvent.playing(video);
+    expect(video).toHaveAttribute("data-hero-video-state", "visible");
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "hidden");
+  });
+
+  it("falls back to the poster when video playback fails", () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video")!;
+
+    fireEvent.error(video);
+
+    expect(container.querySelector("video")).not.toBeInTheDocument();
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
+  });
+
+  it("keeps the poster visible when autoplay is rejected", async () => {
+    const { container } = render(<HeroMedia />);
+    const video = container.querySelector("video") as HTMLVideoElement;
+    video.play = jest.fn().mockRejectedValue(new Error("autoplay blocked"));
+
+    await act(async () => {
+      fireEvent.canPlay(video);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector("video")).toBeInTheDocument();
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
+  });
+
   it("uses the poster without starting video under reduced motion", () => {
     mockUseReducedMotion.mockReturnValue(true);
     const { container } = render(<HeroMedia />);
 
     expect(container.querySelector("video")).not.toBeInTheDocument();
-    expect(container.querySelector("img")).toBeInTheDocument();
-  });
-
-  it("handles the poster-crossfade loop boundary without native looping", () => {
-    const { container } = render(<HeroMedia />);
-    const video = container.querySelector("video") as HTMLVideoElement;
-    Object.defineProperty(video, "duration", { configurable: true, value: 10 });
-    Object.defineProperty(video, "currentTime", { configurable: true, writable: true, value: 1 });
-    video.play = jest.fn().mockResolvedValue(undefined);
-
-    fireEvent.playing(video);
-    Object.defineProperty(video, "currentTime", { configurable: true, writable: true, value: 9.5 });
-    fireEvent.timeUpdate(video);
-    fireEvent.ended(video);
-    fireEvent.playing(video);
-
-    expect(video.loop).toBe(false);
-    expect(video.play).toHaveBeenCalled();
+    expect(container.querySelector("[data-hero-poster-state]"))
+      .toHaveAttribute("data-hero-poster-state", "visible");
   });
 });

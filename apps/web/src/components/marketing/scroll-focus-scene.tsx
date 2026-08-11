@@ -1,19 +1,20 @@
 "use client";
 
 import { motion, useInView, useReducedMotion, useScroll, useTransform } from "motion/react";
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 type SceneProps = {
   children: ReactNode;
   className?: string;
   id?: string;
   role?: string;
+  replayOnReenter?: boolean;
   "aria-label"?: string;
   "aria-labelledby"?: string;
 };
 
 type RevealElement = "article" | "div" | "header";
-type RevealVariant = "up" | "left" | "right" | "scale";
+type RevealVariant = "up" | "left" | "right" | "scale" | "object";
 
 const enterTransition = {
   duration: 0.56,
@@ -22,25 +23,59 @@ const enterTransition = {
 
 const visibleState = { opacity: 1, x: 0, y: 0, scale: 1 };
 
+const oneShotViewport = { once: true, amount: 0.18 } as const;
+type MotionMarginValue = `${number}${"px" | "%"}`;
+type MotionMargin = MotionMarginValue | `${MotionMarginValue} ${MotionMarginValue}` | `${MotionMarginValue} ${MotionMarginValue} ${MotionMarginValue}` | `${MotionMarginValue} ${MotionMarginValue} ${MotionMarginValue} ${MotionMarginValue}`;
+export const DEFAULT_REPLAY_RESET_MARGIN: MotionMargin = "150% 0px 150% 0px";
+
+export function resolveDelayedReplayActive(previousActive: boolean, entered: boolean, insideResetZone: boolean, reduceMotion = false) {
+  if (reduceMotion) return true;
+  if (entered) return true;
+  if (!insideResetZone) return false;
+  return previousActive;
+}
+
 /**
- * The scene owns the one-time section entrance. It does not dim future content
- * on page load; Motion only runs the entrance when the section approaches the
- * viewport.
+ * Keeps a replay-capable presentation visible through its normal viewport exit.
+ * It only resets once the element has left the larger reset zone.
  */
-export function RevealScene({ children, className, id, role, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy }: SceneProps) {
+export function useDelayedReplay(ref: RefObject<Element | null>, enabled = true, resetMargin: MotionMargin = DEFAULT_REPLAY_RESET_MARGIN, reduceMotion = false) {
+  const entered = useInView(ref, { once: false, amount: 0.18, margin: "-10% 0px -10% 0px" });
+  const insideResetZone = useInView(ref, { once: false, amount: 0.01, margin: resetMargin });
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+    setActive((previousActive) => resolveDelayedReplayActive(previousActive, entered, insideResetZone, reduceMotion));
+  }, [enabled, entered, insideResetZone, reduceMotion]);
+
+  return enabled ? reduceMotion || active : false;
+}
+
+/**
+ * The scene owns a safe one-time entrance by default. Marketing sections may
+ * opt into a controlled replay when they leave and re-enter the viewport.
+ */
+export function RevealScene({ children, className, id, role, replayOnReenter = false, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy }: SceneProps) {
   const reduceMotion = useReducedMotion() === true;
+  const target = useRef<HTMLDivElement>(null);
+  const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
 
   return (
     <motion.section
+      ref={target}
       className={className}
       id={id}
       role={role}
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
       data-motion-scene
-      initial={reduceMotion ? false : { opacity: 0, y: 34, scale: 0.985 }}
-      whileInView={reduceMotion ? undefined : visibleState}
-      viewport={{ once: true, amount: 0.18 }}
+      data-replay-on-reenter={replayOnReenter ? "true" : "false"}
+      data-motion-active={replayOnReenter ? delayedActive : undefined}
+      initial={reduceMotion ? false : { opacity: 0, y: 28, scale: 0.99 }}
+      animate={replayOnReenter && !reduceMotion ? (delayedActive ? visibleState : { opacity: 0, y: 28, scale: 0.99 }) : undefined}
+      whileInView={!replayOnReenter && !reduceMotion ? visibleState : undefined}
+      viewport={!replayOnReenter ? oneShotViewport : undefined}
       transition={enterTransition}
     >
       {children}
@@ -49,23 +84,30 @@ export function RevealScene({ children, className, id, role, "aria-label": ariaL
 }
 
 /** A local reading-order reveal for headings, cards, rows and media. */
-export function RevealItem({ children, className, as = "div", delay = 0, variant = "up" }: { children: ReactNode; className?: string; as?: RevealElement; delay?: number; variant?: RevealVariant }) {
+export function RevealItem({ children, className, as = "div", delay = 0, variant = "up", replayOnReenter = false }: { children: ReactNode; className?: string; as?: RevealElement; delay?: number; variant?: RevealVariant; replayOnReenter?: boolean }) {
   const reduceMotion = useReducedMotion() === true;
+  const target = useRef<HTMLDivElement>(null);
+  const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
   const hiddenState = {
     up: { opacity: 0, y: 28, scale: 0.99 },
     left: { opacity: 0, x: -30, scale: 0.99 },
     right: { opacity: 0, x: 30, scale: 0.99 },
     scale: { opacity: 0, scale: 0.965 },
+    object: { opacity: 0, y: 32, scale: 0.97 },
   }[variant];
   const MotionElement = as === "article" ? motion.article : as === "header" ? motion.header : motion.div;
 
   return (
     <MotionElement
+      ref={target}
       className={className}
       data-motion-item
+      data-replay-on-reenter={replayOnReenter ? "true" : "false"}
+      data-motion-active={replayOnReenter ? delayedActive : undefined}
       initial={reduceMotion ? false : hiddenState}
-      whileInView={reduceMotion ? undefined : visibleState}
-      viewport={{ once: true, amount: 0.2 }}
+      animate={replayOnReenter && !reduceMotion ? (delayedActive ? visibleState : hiddenState) : undefined}
+      whileInView={!replayOnReenter && !reduceMotion ? visibleState : undefined}
+      viewport={!replayOnReenter ? { ...oneShotViewport, amount: 0.2 } : undefined}
       transition={{ ...enterTransition, delay }}
     >
       {children}
@@ -99,17 +141,23 @@ export function ScrollFocusScene({ children, className }: { children: ReactNode;
   );
 }
 
-export function RevealLine({ className, delay = 0 }: { className?: string; delay?: number }) {
+export function RevealLine({ className, delay = 0, replayOnReenter = false }: { className?: string; delay?: number; replayOnReenter?: boolean }) {
   const reduceMotion = useReducedMotion() === true;
+  const target = useRef<HTMLSpanElement>(null);
+  const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
 
   return (
     <motion.span
+      ref={target}
       className={className}
       aria-hidden="true"
       data-motion-line
+      data-replay-on-reenter={replayOnReenter ? "true" : "false"}
+      data-motion-active={replayOnReenter ? delayedActive : undefined}
       initial={reduceMotion ? false : { opacity: 0, scaleX: 0 }}
-      whileInView={reduceMotion ? undefined : { opacity: 1, scaleX: 1 }}
-      viewport={{ once: true, amount: 0.25 }}
+      animate={replayOnReenter && !reduceMotion ? (delayedActive ? { opacity: 1, scaleX: 1 } : { opacity: 0, scaleX: 0 }) : undefined}
+      whileInView={!replayOnReenter && !reduceMotion ? { opacity: 1, scaleX: 1 } : undefined}
+      viewport={!replayOnReenter ? { ...oneShotViewport, amount: 0.25 } : undefined}
       transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}
       style={{ transformOrigin: "left center" }}
     />

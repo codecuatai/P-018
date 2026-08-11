@@ -28,6 +28,10 @@ describe("marketing authentication dialog", () => {
 
   it("opens Login from the marketing header", () => {
     render(<MarketingHarness />);
+    const header = screen.getByRole("banner");
+
+    expect(header.querySelector(".brandIsland")).toBeInTheDocument();
+    expect(header.querySelector(".navIsland")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
