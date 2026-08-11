@@ -131,7 +131,7 @@ export function HowItWorksCarousel() {
         animate={contentVisible ? { opacity: 1, x: 0 } : { opacity: 0, x: -24 }}
         transition={sectionTransition}
       >
-        <h2 id="how-title">Bạn nói một lần. X-One giữ mạch cho những bước tiếp theo.</h2>
+        <h2 id="how-title">Bạn nói một lần. X-One suy luận những bước tiếp theo.</h2>
         <p>Từ điều bạn nói đến lúc xem lại và xác nhận, mọi thứ được giữ trong cùng một trải nghiệm.</p>
       </motion.header>
 
