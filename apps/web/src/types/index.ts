@@ -1,7 +1,22 @@
 export interface AuthUser {
+  id?: string;
   sub: string;
   email: string;
   role: string;
+  full_name?: string;
+  phone?: string;
+  status?: string;
+  session_id?: string;
+  authentication_kind?: "real" | "demo";
+}
+
+export interface AuthSessionSummary {
+  id: string;
+  created_at: string;
+  last_used_at: string;
+  expires_at: string;
+  current: boolean;
+  user_agent?: string;
 }
 
 export type AssistantActionKind =

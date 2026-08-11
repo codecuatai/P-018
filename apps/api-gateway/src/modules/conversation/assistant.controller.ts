@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Headers, Post, Req, Unprocessabl
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { AssistantService } from './assistant.service';
 
@@ -34,7 +34,7 @@ class AssistantActionBody {
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };
 
 @Controller('api/v1/assistant')
-@UseGuards(DemoAuthGuard)
+@UseGuards(AuthGuard)
 export class AssistantController {
   constructor(private readonly assistant: AssistantService) {}
 

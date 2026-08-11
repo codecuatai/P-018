@@ -2,7 +2,7 @@ import { BadRequestException, Body, ConflictException, Controller, Headers, Post
 
 import { AgentClient, HealthcareClient, HealthcareTool, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 
@@ -113,7 +113,7 @@ export class HealthcareWorkflowController {
   ) {}
 
   @Post('chat')
-  @UseGuards(DemoAuthGuard)
+  @UseGuards(AuthGuard)
   async chat(@Body() body: HealthcareChatBody, @Req() request: AuthenticatedRequest) {
     const workflowId = body.workflow_id ?? `wf-${Date.now()}`;
     const actorId = String(request.user.sub);
@@ -226,7 +226,7 @@ export class HealthcareWorkflowController {
   }
 
   @Post('payment')
-  @UseGuards(DemoAuthGuard)
+  @UseGuards(AuthGuard)
   async payment(
     @Body() body: HealthcarePaymentBody,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
@@ -256,7 +256,7 @@ export class HealthcareWorkflowController {
   }
 
   @Post('confirm')
-  @UseGuards(DemoAuthGuard)
+  @UseGuards(AuthGuard)
   async confirm(
     @Body() body: HealthcareConfirmationBody,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

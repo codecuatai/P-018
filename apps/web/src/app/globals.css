@@ -1,0 +1,30 @@
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/be-vietnam-pro/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "tailwindcss";
+
+:root {
+  --background: #F5F7F8;
+  --foreground: #111827;
+  --surface: #FFFFFF;
+  --primary: #315EF5;
+  --primary-foreground: #FFFFFF;
+  --muted: #E9EEF1;
+  --muted-foreground: #596474;
+  --border: #D5DEE4;
+  --ring: rgb(49 94 245 / 35%);
+  --success: #0E8E83;
+  --danger: #B54237;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

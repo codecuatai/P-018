@@ -1,73 +1,91 @@
 # Testing Strategy
 
-Unit tests cover application/domain code; config tests prove fail-fast process settings; API tests cover health/validation; contract tests cover versioned provider/consumer behavior; integration/E2E tests live under root `tests/`; agent evaluations cover intent/slots/tool selection and native/fallback structured-output safety. Default tests use fake LLMs and never call Gemini or a live payment/domain system. Durable Assistant receipt tests cover in-memory claim/replay/conflict semantics, retryable failure, stale lease reclaim, and an optional PostgreSQL integration path. Healthcare tests cover exact-clock matching, daypart behavior, and domain-owned facility responses. The separate live smoke is limited to a small fixed set of public scenarios and reports configured-key/provider/schema status without exposing secrets.
+Tests prove one behaviour at the boundary that owns it. Unit tests use
+deterministic adapters and fake LLMs; they do not call Gemini, a live payment
+provider or a live domain system. Contract tests protect public envelopes and
+typed service boundaries. PostgreSQL tests run only against an explicitly
+provided disposable target. Browser acceptance is recorded only after an
+actual browser run.
 
-Before a PR, run environment validation, Compose config, Python lint/pytest and package/import checks for changed services, gateway lint/test/build, and web build when affected. Add deterministic tests with every behavior, config, contract, or migration change.
+## Phase 1 required checks
 
-## 2026-08-10 corrective review evidence
+Run the changed-scope checks before handoff:
 
-- Gateway current corrective checks: Jest `17 passed` suites, `72 passed, 5 skipped` tests; lint and build pass. Demo-auth tests cover development enabled, test disabled, production signed-token rejection, malformed token, and expired token with stable safe errors. Contract tests for shared Address/Food legacy compatibility pass `2/2`.
-- Agent Ruff and pytest pass (`103 passed`); Food `22 passed, 3 skipped`; Ride `10 passed`; Restaurant `20 passed, 1 skipped`; Healthcare `21 passed, 1 skipped`.
-- A fresh disposable Compose project `xone-phase0-corrective-20260810-1` was built from the current worktree with `.env.example`, dummy values, and `AGENT_MODEL_MODE=deterministic`. All seven containers became healthy; migrations/seeds passed; Gateway live/readiness returned `200/200`; and `python -m pytest tests/e2e -q` passed `31/31` in `166.89s`.
-- The E2E-only project used `GATEWAY_AUTH_LOGIN_RATE_LIMIT=1000` because the suite intentionally performs more than five logins from one client IP. The checked-in/default security profile remains `5/60s`; Gateway security tests cover that configured profile. The disposable project and volume were removed after the proof, and the existing `p-018` project/volume was not touched.
-- Web `npm ci` and production build pass. npm reports one existing high transitive `nanoid` build-tool advisory; no dependency or lockfile change was made. Browser smoke is `UNVERIFIED`, which is not a Phase 0 acceptance blocker.
-- Deterministic acceptance did not call Gemini. The Agent-service Gemini key was not read, printed, copied, or overwritten. Historical live Gemini evidence remains below as historical evidence only.
+```powershell
+python scripts/validate-env-config.py
+docker compose --env-file .env.example config --quiet
+python scripts/check-migration-parity.py
 
-## 2026-08-09 historical verification evidence
+corepack pnpm --dir apps/api-gateway install --frozen-lockfile
+corepack pnpm --dir apps/api-gateway run lint
+corepack pnpm --dir apps/api-gateway test
+corepack pnpm --dir apps/api-gateway run build
 
-### BASE SUITES
+corepack pnpm --dir apps/web install --frozen-lockfile
+corepack pnpm --dir apps/web run lint
+corepack pnpm --dir apps/web run typecheck
+corepack pnpm --dir apps/web test
+corepack pnpm --dir apps/web run build
+```
 
-For this evidence-only pass, the four required service commands and their collection commands were each run exactly once from the owning service directory. Exact stdout summaries:
+The Web suite covers memory-only access-token behaviour, one shared refresh
+for concurrent protected requests, auth-provider restoration/failure,
+registration validation and one reduced-motion hero path. Gateway unit/HTTP
+tests cover Argon2id policy, same-safe login failures, maintained-library JWT
+claims/algorithm restriction, cookie attributes, origin validation, rotation,
+family-reuse invalidation, actor-scoped sessions, password change and reset.
 
-- Food (`services/food-service`): `python -m pytest tests -q` -> `22 passed, 3 skipped, 1 warning in 0.45s`; collection -> `25 tests collected in 0.28s`.
-- Ride (`services/ride-service`): `python -m pytest tests -q` -> `10 passed, 1 warning in 0.26s`; collection -> `10 tests collected in 0.01s`.
-- Restaurant (`services/restaurant-service`): `python -m pytest tests -q` -> `20 passed, 1 skipped, 1 warning in 1.15s`; collection -> `21 tests collected in 0.80s`.
-- Healthcare (`services/healthcare-service`): `python -m pytest tests -q` -> `21 passed, 1 skipped, 23 warnings in 0.94s`; collection -> `22 tests collected in 0.60s`.
+For Core/Auth persistence, provide the same disposable PostgreSQL URL to both
+variables:
 
-These are BASE SUITES counts only. Ruff, targeted PostgreSQL, deterministic public E2E, and live Gemini evidence are separate categories. Previously recorded Agent, Gateway, and Web checks remain unchanged.
+```powershell
+$env:CORE_TEST_DATABASE_URL = 'postgresql://.../xone_core'
+$env:AUTH_TEST_DATABASE_URL = $env:CORE_TEST_DATABASE_URL
+corepack pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts test/auth.postgres.integration.spec.ts
+```
 
-The source/count contradiction is resolved. The pass ran from repository root `C:/Users/ADMIN/Personal_proj/AIBuildPhase/P-018` at HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367`, after capturing the dirty working-tree status. Disk inventory and `git ls-files` agreed for every `test_*.py` under the four service test directories: no test source was untracked, ignored, generated, symlinked outside the root, or collected from outside the root. Ignored entries were bytecode under `__pycache__` only and are not evidence.
+The Auth PostgreSQL test applies owned migrations through `009_core_auth.sql`,
+then proves the atomic registration rows, Argon2id/hash-only storage, rotation
+replay revocation, one-time reset hash and session invalidation. It must never
+target a user-owned volume.
 
-`develop.xml` is the source of the lower `21/7/18/18` recount: its directory index names each service `tests/test_config.py`, but its packed file-content section omits all four files. The snapshot itself warns that packed contents may exclude files, so it is not a complete test-source authority. Git proves all four omitted files are tracked at HEAD, and the following omitted node IDs account for the complete `+4/+3/+3/+4` difference:
+## CI
 
-- Food, tracked `services/food-service/tests/test_config.py`: `test_service_config_reads_process_environment`, `test_service_config_fails_when_token_missing`, `test_invalid_persistence_fails_closed`, `test_production_memory_is_rejected`.
-- Ride, tracked `services/ride-service/tests/test_config.py`: `test_service_config_reads_process_environment`, `test_service_config_fails_when_token_missing`, `test_postgresql_url_selects_declared_psycopg_driver`.
-- Restaurant, tracked `services/restaurant-service/tests/test_config.py`: `test_service_config_reads_process_environment`, `test_service_config_fails_when_token_missing`, `test_postgresql_url_uses_declared_psycopg_v3_driver`.
-- Healthcare, tracked `services/healthcare-service/tests/test_config.py`: `test_postgres_url_uses_installed_psycopg_driver`, `test_department_lookup_folds_accents`, `test_service_config_reads_process_environment`, `test_service_config_fails_when_token_missing`.
+CI installs Gateway and Web dependencies with the root frozen pnpm lockfile.
+The Web job runs lint, typecheck, Jest and `next build`. The PostgreSQL job runs
+both Core and Auth integration suites against GitHub Actions' disposable
+PostgreSQL service. Compose validation builds the Gateway, Web, Agent and Food
+images.
 
-Therefore repository BASE SUITES are `25/10/21/22` collected, not the incomplete snapshot recount. No test was changed to reconcile the count.
+## Browser and disposable-stack acceptance
 
-### TARGETED POSTGRESQL
+Create a uniquely named disposable Compose project; do not reuse or delete the
+developer's normal project/volume. Run owned migrations, then test the public
+Web/Gateway flow: landing at 320px and desktop widths, register, refresh,
+logout/login, settings/session action, and a reduced-motion rendering path.
+Record a check as **PASS** only with its observed result. If browser automation
+is unavailable, record it as **UNVERIFIED**, not passed.
 
-Food PostgreSQL integration passed `3/3`; Gateway Core PostgreSQL integration passed `5/5`. These targeted counts were run against disposable databases and are separate from BASE SUITES totals; they are not summed into them.
+## Current Phase 1 evidence
 
-### DETERMINISTIC PUBLIC E2E
+The final verification run for this worktree passed the following gates:
 
-`python -m pytest tests/e2e --collect-only -q` was run in that historical pass and collected `31 tests`. Its recorded deterministic disposable stack passed `31 passed in 164.95s`, zero skipped. The current corrective run and result are recorded above and supersede this historical runtime proof for the current worktree.
+- Environment validation: `99` root variables / `95` Compose variables;
+  Compose config passed; migration parity passed with `16` files.
+- Gateway: frozen install, lint, Jest and build passed; Jest reported `20`
+  passing suites and `82 passed, 7 skipped, 89 total` tests.
+- Web: frozen install, lint, typecheck, Jest and `next build` passed; Jest
+  reported `4` suites / `6` tests and the build generated `15` route entries.
+- Python: Agent `103 passed`; Ride `10 passed`; Restaurant `20 passed, 1
+  skipped`; Healthcare `21 passed, 1 skipped`; Food `22 passed, 3 skipped`.
+  Ruff passed in all five relevant service scopes.
+- Disposable runtime: Compose project `xone-phase1-20260811-005855` reached
+  eight healthy containers. Owned migrations were applied twice, Core/Auth
+  PostgreSQL integration reported `2` suites / `7` tests, and direct HTTP auth
+  acceptance plus fourteen Web routes returned the expected successful results.
+  The named project and only its newly created volume were removed after the
+  run.
 
-### LIVE GEMINI SMOKE
-
-Safe Agent status after live calls: primary `gemini-3.5-flash-lite`, structured invocation, call status `success`, fallback `false`; no key, prompt, or provider payload was recorded. Public Agent returned HTTP 200 with `decision_source=model`; the forced fallback probe recovered on `gemini-3.1-flash-lite`; and the public Gateway Food two-turn probe returned HTTP 201 twice. The five demo-critical live flows produced `4/5` assertion passes: Food full order, Restaurant explicit confirmation, Healthcare-to-Ride handoff, and Food/Healthcare ambiguity passed; the Healthcare symptom flow had an assertion-only first-step mismatch, classified C with no product state/action bug. Food's one permitted rerun followed a local disposable-container DNS/configuration correction.
-
-The earlier live-provider E2E was `25 passed, 6 failed` and is not deterministic acceptance evidence. It remains classified as `3 B/transient` and `3 C/assertion-only`; no failure was classified D or E. Categories are A=provider quota/rate limit, B=provider temporary/network/timeout, C=model wording/assertion nondeterminism only, D=invalid structured plan with deterministic safety recovery, E=actual orchestration/state/action bug, and F=unknown. The safe prior diagnostics are:
-
-| Test | HTTP | Safe category | decision_source | last_model_used | fallback |
-|---|---:|---|---|---|---|
-| `test_payment_failure_converges_without_receipt` | unknown | B — ReadTimeout | not captured | not captured | not captured |
-| `test_restart_preserves_order_payment_and_conversation` | unknown | B — ReadTimeout | not captured | not captured | not captured |
-| `test_healthcare_public_flow_reconciles_expiry_and_reuses_slots` | unknown | C — assertion only | not captured | not captured | not captured |
-| `test_unified_assistant_preserves_restaurant_confirmation_when_food_is_added` | 503 | B — temporary unavailable | not captured | not captured | not captured |
-| `test_unified_assistant_preserves_bike_vehicle_type` | unknown | C — assertion only | not captured | not captured | not captured |
-| `test_unified_b_food_completion_exposes_only_authoritative_payment` | unknown | C — assertion only | not captured | not captured | not captured |
-
-No prior failure was classified D or E from the safe evidence. `llm.py` centrally omits `temperature`, `top_p`, and `top_k` for Gemini 3 names (with or without `models/`); Restaurant uses the shared model builder. Keep the live smoke limited and never log secrets or provider payloads.
-
-The root lockfile was regenerated with `corepack pnpm install --lockfile-only`; the exact Gateway frozen install then passed. The first Web `npm ci` hit a stale generated junction under `apps/web/node_modules`; that untracked dependency directory was verified as non-source, removed, and `npm ci` plus the production build passed from a clean dependency state. The tracked manifests and lockfile are now synchronized. In this code-freeze pass, the direct frozen Gateway install and Web `npm ci` were rerun and passed; npm printed one existing high-severity audit advisory, with no install/lockfile failure; no lockfile was regenerated.
-
-### NPM HIGH-SEVERITY ADVISORY CLASSIFICATION
-
-From `apps/web`, both `npm audit --json` and `npm audit --omit=dev --json` reported one high advisory: transitive `nanoid@3.3.16` through root dependency `vite@6.4.3 -> postcss@8.5.25 -> nanoid@3.3.16`. The advisory is GHSA-2v37-7h3g-55p8, affects `<3.3.17`, and concerns a custom generator looping when its size is zero. `nanoid` is not direct (`isDirect=false`); npm reports `fixAvailable=true`. Non-breaking patched `3.3.17` and `3.3.18` releases exist and satisfy PostCSS's current `^3.3.16` range.
-
-The production-class audit still sees the package because Vite is declared under `dependencies`, making Vite, PostCSS, and Nanoid `dev=false` in the lockfile. Deployment inspection shows the chain is nevertheless build tooling only: the multi-stage Web image runs Vite in the builder and copies only static `dist` output into the final Nginx image; neither Web source nor built browser assets contain `nanoid`, `postcss`, `customAlphabet`, or `customRandom`. PostCSS's installed call site invokes `nanoid(6)` with a constant nonzero size. The vulnerable zero-size custom-generator path is therefore neither shipped in the browser/final image nor reachable in this deployment. Because `npm audit --omit=dev` does report the manifest-classified build dependency, this pass does not claim that command returned zero high findings. No dependency or lockfile was changed, consistent with the instruction not to patch a non-runtime advisory during code freeze.
-
-The additive Restaurant proof also ran on an ephemeral PostgreSQL container: legacy `create_reservation:*` rows were inserted at revision 0001, upgraded through 0002 and 0003, runtime promotion was exercised before update/cancel, both original create keys replayed to the same two reservation IDs, the reservation count remained 2, and a second `alembic upgrade head` was a no-op. The temporary container had no volume and was removed after the proof.
+Interactive browser evidence is **UNVERIFIED** because the available browser
+runtime reported no browser. No screenshot, responsive, interactive or
+browser-console check is counted as a pass.

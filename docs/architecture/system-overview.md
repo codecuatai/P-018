@@ -24,11 +24,11 @@ flowchart TB
     classDef database fill:#EAECEE,stroke:#34495E,stroke-width:2px,color:#1B2631;
 
     subgraph ClientLayer["1. Client Layer"]
-        Web["Web Application\n(React / Vite)"]:::client
+        Web["Web Application\n(Next.js App Router)"]:::client
         Mobile["Mobile Shell\n(React Native / Expo)"]:::client
     end
 
-    subgraph GatewayLayer["2. API Gateway Layer (BFF & Orchestration)"]
+    subgraph GatewayLayer["2. Public Gateway & Orchestration"]
         Gateway["NestJS API Gateway (Port :3000)\n- Core Workflow Orchestration\n- Confirmation & Idempotency Engine\n- Audit Log & Payment Sandbox"]:::gateway
     end
 
@@ -70,4 +70,4 @@ flowchart TB
     Food -.->|SQL Connection| FoodDB
 ```
 
-The current integrated local scope covers Food ordering, Ride booking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, and Healthcare doctor/slot/hold/payment acknowledgement/final confirmation/cancellation through Gateway orchestration and typed Agent requests. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md). Non-goals are queues, service mesh, Kubernetes, Redis, multi-agent orchestration, and production payment/authentication.
+The current integrated local scope covers Food ordering, Ride booking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, and Healthcare doctor/slot/hold/payment acknowledgement/final confirmation/cancellation through Gateway orchestration and typed Agent requests. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. Phase 1 adds real Core-owned user/session authentication and the Next.js App Router Web; it does not add production payment providers, queues, service mesh, Kubernetes, Redis or multi-agent orchestration. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md).

@@ -21,6 +21,13 @@ describe('environment validation', () => {
     INTERNAL_SERVICE_TOKEN: 'test-token',
     JWT_SECRET: 'test-jwt-secret-12345',
     DEMO_AUTH_ENABLED: 'false',
+    AUTH_ACCESS_TOKEN_TTL_SECONDS: '900',
+    AUTH_REFRESH_TOKEN_TTL_SECONDS: '2592000',
+    AUTH_RESET_TOKEN_TTL_SECONDS: '1800',
+    AUTH_ISSUER: 'x-one',
+    AUTH_AUDIENCE: 'x-one-web',
+    AUTH_REFRESH_COOKIE_NAME: 'xone_refresh',
+    AUTH_DEV_RESET_TOKEN_CAPTURE: 'true',
   };
 
   it('accepts complete process configuration', () => {
@@ -56,6 +63,7 @@ describe('environment validation', () => {
       APP_ENV: 'production',
       GATEWAY_CORS_ORIGINS: 'https://app.example.com',
       DEMO_AUTH_ENABLED: 'false',
+      AUTH_DEV_RESET_TOKEN_CAPTURE: 'false',
       HEALTHCARE_DEFAULT_PATIENT_ID: '',
     };
     expect(validateEnvironment(productionConfig).APP_ENV).toBe('production');

@@ -61,6 +61,13 @@ services:
       DEMO_AUTH_EMAIL: ${DEMO_AUTH_EMAIL:-}
       DEMO_AUTH_PASSWORD: ${DEMO_AUTH_PASSWORD:-}
       DEMO_AUTH_USER_ID: ${DEMO_AUTH_USER_ID:-}
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:?AUTH_ACCESS_TOKEN_TTL_SECONDS is required}
+      AUTH_REFRESH_TOKEN_TTL_SECONDS: ${AUTH_REFRESH_TOKEN_TTL_SECONDS:?AUTH_REFRESH_TOKEN_TTL_SECONDS is required}
+      AUTH_RESET_TOKEN_TTL_SECONDS: ${AUTH_RESET_TOKEN_TTL_SECONDS:?AUTH_RESET_TOKEN_TTL_SECONDS is required}
+      AUTH_ISSUER: ${AUTH_ISSUER:?AUTH_ISSUER is required}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:?AUTH_AUDIENCE is required}
+      AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:?AUTH_REFRESH_COOKIE_NAME is required}
+      AUTH_DEV_RESET_TOKEN_CAPTURE: ${AUTH_DEV_RESET_TOKEN_CAPTURE:?AUTH_DEV_RESET_TOKEN_CAPTURE is required}
       UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:?UPSTREAM_TIMEOUT_MS is required}
       CONFIRMATION_TTL_SECONDS: ${CONFIRMATION_TTL_SECONDS:?CONFIRMATION_TTL_SECONDS is required}
       CONFIRMATION_PROCESSING_TIMEOUT_SECONDS: ${CONFIRMATION_PROCESSING_TIMEOUT_SECONDS:?CONFIRMATION_PROCESSING_TIMEOUT_SECONDS is required}
@@ -70,6 +77,30 @@ services:
       RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
       RESTAURANT_FORCE_RESULT: ${RESTAURANT_FORCE_RESULT:-}
     ports: ["${API_GATEWAY_PORT}:3000"]
+    restart: unless-stopped
+    networks: [xone_internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        NEXT_PUBLIC_HERO_VIDEO_URL: ${NEXT_PUBLIC_HERO_VIDEO_URL:-}
+        NEXT_PUBLIC_HERO_POSTER_URL: ${NEXT_PUBLIC_HERO_POSTER_URL:-}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports: ["${WEB_PORT}:3000"]
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
     networks: [xone_internal]
 

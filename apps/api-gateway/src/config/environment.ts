@@ -21,6 +21,9 @@ const DEFAULT_AUTH_LOGIN_RATE_LIMIT = 5;
 const DEFAULT_ASSISTANT_CHAT_RATE_LIMIT = 30;
 const DEFAULT_ASSISTANT_ACTION_RATE_LIMIT = 20;
 const DEFAULT_FUTURE_AUTH_RATE_LIMIT = 5;
+const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
+const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS = 2_592_000;
+const DEFAULT_AUTH_RESET_TOKEN_TTL_SECONDS = 1_800;
 
 export function parseConfiguredOrigins(value: unknown): string[] {
   if (typeof value !== 'string') throw new Error('GATEWAY_CORS_ORIGINS is required.');
@@ -110,6 +113,17 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['UPSTREAM_TIMEOUT_MS', 'CONFIRMATION_TTL_SECONDS', 'GATEWAY_WORKFLOW_POLL_INTERVAL_MS']) {
     if (config[name] !== undefined && (!Number.isInteger(Number(config[name])) || Number(config[name]) < 1)) throw new Error(`${name} must be a positive integer.`);
   }
+  for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
+    if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
+  }
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(config.AUTH_REFRESH_COOKIE_NAME))) {
+    throw new Error('AUTH_REFRESH_COOKIE_NAME must use only letters, numbers, underscores, or hyphens.');
+  }
+  const authDevResetTokenCapture = String(config.AUTH_DEV_RESET_TOKEN_CAPTURE ?? 'false').toLowerCase();
+  if (!['true', 'false'].includes(authDevResetTokenCapture)) throw new Error('AUTH_DEV_RESET_TOKEN_CAPTURE must be true or false.');
+  if (String(config.APP_ENV) === 'production' && authDevResetTokenCapture === 'true') {
+    throw new Error('AUTH_DEV_RESET_TOKEN_CAPTURE must be disabled in production.');
+  }
   const configuredPatientId = config.HEALTHCARE_DEFAULT_PATIENT_ID;
   if (String(config.APP_ENV) !== 'production' && (configuredPatientId === undefined || String(configuredPatientId).trim() === '')) {
     throw new Error('HEALTHCARE_DEFAULT_PATIENT_ID is required outside production.');
@@ -123,6 +137,9 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   const assistantChatRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_CHAT_RATE_LIMIT', DEFAULT_ASSISTANT_CHAT_RATE_LIMIT, 10_000);
   const assistantActionRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_ACTION_RATE_LIMIT', DEFAULT_ASSISTANT_ACTION_RATE_LIMIT, 10_000);
   const futureAuthRateLimit = positiveInteger(config, 'GATEWAY_FUTURE_AUTH_RATE_LIMIT', DEFAULT_FUTURE_AUTH_RATE_LIMIT, 10_000);
+  const accessTokenTtlSeconds = positiveInteger(config, 'AUTH_ACCESS_TOKEN_TTL_SECONDS', DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS, 3_600);
+  const refreshTokenTtlSeconds = positiveInteger(config, 'AUTH_REFRESH_TOKEN_TTL_SECONDS', DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS, 7_776_000);
+  const resetTokenTtlSeconds = positiveInteger(config, 'AUTH_RESET_TOKEN_TTL_SECONDS', DEFAULT_AUTH_RESET_TOKEN_TTL_SECONDS, 86_400);
   return {
     ...config,
     PORT: port,
@@ -133,6 +150,13 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: assistantChatRateLimit,
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: assistantActionRateLimit,
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: futureAuthRateLimit,
+    AUTH_ACCESS_TOKEN_TTL_SECONDS: accessTokenTtlSeconds,
+    AUTH_REFRESH_TOKEN_TTL_SECONDS: refreshTokenTtlSeconds,
+    AUTH_RESET_TOKEN_TTL_SECONDS: resetTokenTtlSeconds,
+    AUTH_ISSUER: String(config.AUTH_ISSUER).trim(),
+    AUTH_AUDIENCE: String(config.AUTH_AUDIENCE).trim(),
+    AUTH_REFRESH_COOKIE_NAME: String(config.AUTH_REFRESH_COOKIE_NAME).trim(),
+    AUTH_DEV_RESET_TOKEN_CAPTURE: authDevResetTokenCapture === 'true',
   };
 }
 
@@ -148,13 +172,10 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
       { name: 'auth.login', method: 'POST', path: '/api/v1/auth/login', maxRequests: Number(validated.GATEWAY_AUTH_LOGIN_RATE_LIMIT), windowMs },
       { name: 'assistant.chat', method: 'POST', path: '/api/v1/assistant/chat', maxRequests: Number(validated.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT), windowMs },
       { name: 'assistant.actions', method: 'POST', path: '/api/v1/assistant/actions', maxRequests: Number(validated.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT), windowMs },
-      {
-        name: 'future.auth',
-        method: 'POST',
-        path: /^\/api\/v1\/auth\/(register|forgot-password|reset-password|refresh)$/,
-        maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT),
-        windowMs,
-      },
+      { name: 'auth.register', method: 'POST', path: '/api/v1/auth/register', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
+      { name: 'auth.forgot-password', method: 'POST', path: '/api/v1/auth/forgot-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
+      { name: 'auth.reset-password', method: 'POST', path: '/api/v1/auth/reset-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
+      { name: 'auth.refresh', method: 'POST', path: '/api/v1/auth/refresh', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
     ],
   };
 }

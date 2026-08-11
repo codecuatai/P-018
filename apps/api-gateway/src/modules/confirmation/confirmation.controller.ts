@@ -1,12 +1,12 @@
 import { Body, Controller, Get, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from './confirmation.service';
 
 @Controller('api/v1/confirmations')
-@UseGuards(DemoAuthGuard)
+@UseGuards(AuthGuard)
 export class ConfirmationController {
   constructor(private readonly confirmations: ConfirmationService) {}
 

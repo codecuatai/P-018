@@ -4,7 +4,7 @@ import { Injectable, Module } from '@nestjs/common';
 
 import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
@@ -128,7 +128,7 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
 }
 
 @Controller('api/v1/food/orders')
-@UseGuards(DemoAuthGuard)
+@UseGuards(AuthGuard)
 export class WorkflowController {
   constructor(private readonly workflow: WorkflowService) {}
 

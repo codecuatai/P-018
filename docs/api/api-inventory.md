@@ -2,7 +2,7 @@
 
 This inventory is derived from the checked-in NestJS controllers, FastAPI routers, and OpenAPI files. It describes routes that exist now; roadmap paths without a controller/router are intentionally not listed as implemented. `PUBLIC_CANONICAL` is the supported consumer surface, `INTERNAL` is a private service or health boundary, `LEGACY_COMPAT` is retained for current demos/tests, and `DEPRECATED` is not part of the X-One runtime.
 
-All public product traffic terminates at the Gateway. Public Gateway authentication is the current development-only Bearer demo token. Internal calls use the configured service token and, where a resource is actor-scoped, an actor assertion. Public success responses use `{ data, meta: { request_id } }`; public errors use the RFC-7807-inspired fields documented in [API conventions](api-conventions.md).
+All public product traffic terminates at the Gateway. Public Gateway authentication uses a short-lived Bearer JWT kept only in Web memory plus an opaque rotating HttpOnly refresh cookie; development/test demo auth is a compatibility path only. Internal calls use the configured service token and, where a resource is actor-scoped, an actor assertion. Public success responses use `{ data, meta: { request_id } }`; public errors use the RFC-7807-inspired fields documented in [API conventions](api-conventions.md).
 
 ## Gateway — public and operational boundary
 
@@ -12,8 +12,15 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | --- | --- | --- | --- | --- | --- | --- |
 | Gateway | GET | `/health/live` | Compose/orchestrator | none; liveness only | `INTERNAL` | Keep as operational probe. |
 | Gateway | GET | `/health/ready` | Compose/orchestrator | none; readiness checks Gateway-owned dependencies | `INTERNAL` | Keep as operational probe. |
-| Gateway | POST | `/api/v1/auth/login` | Web/mobile | Demo credentials; development/test only | `PUBLIC_CANONICAL` | Same path becomes real Argon2id/session-backed auth in Phase 1; demo auth must fail fast in production. |
-| Gateway | GET | `/api/v1/auth/me` | Web/mobile | Bearer demo token | `PUBLIC_CANONICAL` | Same path remains the identity read after real auth is implemented. |
+| Gateway | POST | `/api/v1/auth/register` | Web/mobile | Public; creates Core user, Argon2id credential and initial session atomically | `PUBLIC_CANONICAL` | Real Phase 1 auth; see `gateway-auth-v1.yaml`. |
+| Gateway | POST | `/api/v1/auth/login` | Web/mobile | Public; real credential verification, with demo only in development/test | `PUBLIC_CANONICAL` | Real Phase 1 auth; safe invalid-credential error and rate limit. |
+| Gateway | POST | `/api/v1/auth/refresh` | Web/mobile | Opaque HttpOnly refresh cookie + trusted Origin/Referer | `PUBLIC_CANONICAL` | Rotates one token generation; replay revokes its family. |
+| Gateway | GET | `/api/v1/auth/me` | Web/mobile | Bearer real JWT (or explicit dev/test demo JWT) | `PUBLIC_CANONICAL` | Safe identity read. |
+| Gateway | POST | `/api/v1/auth/logout`, `/logout-all` | Web/mobile | Current cookie family / bearer actor plus trusted Origin | `PUBLIC_CANONICAL` | Revokes current family or all actor sessions. |
+| Gateway | GET | `/api/v1/auth/sessions` | Web/mobile | Bearer real JWT | `PUBLIC_CANONICAL` | Lists actor-owned active session families only. |
+| Gateway | DELETE | `/api/v1/auth/sessions/{sessionId}` | Web/mobile | Bearer real JWT + trusted Origin | `PUBLIC_CANONICAL` | Revokes one actor-owned family. |
+| Gateway | POST | `/api/v1/auth/change-password` | Web/mobile | Bearer real JWT + trusted Origin | `PUBLIC_CANONICAL` | Updates Argon2id credential and revokes all sessions. |
+| Gateway | POST | `/api/v1/auth/forgot-password`, `/reset-password` | Web/mobile | Public; reset is one-time, expiring and hash-only | `PUBLIC_CANONICAL` | Email delivery remains a configured future seam; dev/test capture is not a production contract. |
 | Gateway | POST | `/api/v1/assistant/chat` | Web/mobile | Bearer token; Gateway calls Agent internally | `PUBLIC_CANONICAL` | Current unified assistant surface. |
 | Gateway | POST | `/api/v1/assistant/actions` | Web/mobile | Bearer token plus required `Idempotency-Key`; final actions use Gateway confirmation | `PUBLIC_CANONICAL` | Current executable assistant action surface. |
 | Gateway | POST | `/api/v1/conversations/{conversationId}/messages` | Web/mobile | Bearer token; actor scoped in Core | `PUBLIC_CANONICAL` | Existing conversation compatibility surface; new cross-domain consumers should prefer `/api/v1/assistant/chat`. |

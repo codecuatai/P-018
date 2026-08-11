@@ -98,6 +98,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/006_core_payment_recovery_claims.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/007_core_assistant_action_executions.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/008_core_assistant_action_recovery.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/009_core_auth.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile

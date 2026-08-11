@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-08-11
+
+### Phase 1 - Next.js migration, landing, routing, and real authentication
+
+- Delivered the Web migration from Vite/React Router to Next.js App Router with a calm X-One landing page, product routes, loading/error/not-found states, memory-only access-token handling, and Gateway-only browser requests. The landing advertises exactly Food, Ride, Restaurant, and Healthcare; optional hero-video hooks do not bundle or generate video assets.
+- Delivered Gateway Auth v1: Argon2id credentials, maintained-library HS256 JWT signing/verification, refresh-token rotation and reuse invalidation, HttpOnly refresh cookies, origin checks, session management, password change/reset, owned `009_core_auth.sql` migration, OpenAPI contract, and PostgreSQL integration coverage.
+- Final checks passed: environment validation `99/95`, migration parity `16`; Gateway `20` suites with `82 passed, 7 skipped, 89 total`; Web `4` suites / `6` tests and `15` generated routes; Agent `103 passed`; Ride `10 passed`; Restaurant `20 passed, 1 skipped`; Healthcare `21 passed, 1 skipped`; Food `22 passed, 3 skipped`; Ruff passed in all five Python scopes.
+- Fresh disposable Compose project `xone-phase1-20260811-005855` reached eight healthy containers. Migrations were run twice, Core/Auth PostgreSQL reported `2` suites / `7` tests, direct auth HTTP acceptance passed, and fourteen Web routes plus landing SSR returned HTTP `200`. The isolated project and its newly created volume were removed afterward; no existing persistent volume was touched.
+- Browser control was unavailable, so screenshot, responsive, interactive, and browser-console acceptance are explicitly `UNVERIFIED`. No cloud side effects, commit, push, secret printing, AI-video generation, Phase 2 work, or manual `.ai-log` editing occurred.
+
+| Member | Task | Status | Output | Time |
+|--------|------|--------|--------|------|
+| Team P-018 | Phase 1 Next.js migration + landing + product routing + real auth | Implementation/runtime PASS; browser UNVERIFIED | Next App Router Web, real Gateway Auth v1, owned migration/contract/docs/CI, full non-browser regression and disposable runtime evidence | - |
+
+**Daily summary:** Phase 1 implementation and all available non-browser acceptance gates passed. Browser evidence remains intentionally unverified because this environment has no usable browser instance.
+
+---
+
 ## 2026-08-10
 
 ### Phase 0 — baseline + contract + security + ownership foundation

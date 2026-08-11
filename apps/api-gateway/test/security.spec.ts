@@ -20,14 +20,14 @@ describe('Gateway security baseline', () => {
 
   afterAll(async () => app.close());
 
-  it('uses explicit CORS origins without credentialed browser cookies', async () => {
+  it('uses explicit CORS origins with credentialed refresh-cookie support', async () => {
     const response = await request(app.getHttpServer())
       .get('/health/live')
       .set('Origin', 'http://localhost:5173')
       .expect(200);
 
     expect(response.headers['access-control-allow-origin']).toBe('http://localhost:5173');
-    expect(response.headers['access-control-allow-credentials']).toBeUndefined();
+    expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
 
   it('adds baseline security headers', async () => {

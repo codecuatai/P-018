@@ -4,7 +4,7 @@ import { IsString, MaxLength, MinLength } from 'class-validator';
 import { AgentClient, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthModule } from '../auth/auth.module';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { CoreModule, CoreStore } from '../core/core.module';
 import { ConfirmationModule } from '../confirmation/confirmation.module';
@@ -45,7 +45,7 @@ export class ConversationService {
 }
 
 @Controller('api/v1/conversations')
-@UseGuards(DemoAuthGuard)
+@UseGuards(AuthGuard)
 export class FoodConversationController {
   constructor(private readonly conversations: ConversationService, private readonly store: CoreStore) {}
 

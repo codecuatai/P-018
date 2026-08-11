@@ -1,30 +1,64 @@
-# Security Architecture Baseline
+# Security Architecture
 
-This document separates behavior implemented in Phase 0 from the authentication architecture locked for Phase 1. It does not claim that a production identity/session system exists today.
+## Implemented Phase 1 baseline
 
-## Implemented now
+- Browser and mobile traffic terminate at the Gateway. The configured
+  `GATEWAY_CORS_ORIGINS` allowlist is exact; wildcard origins are rejected and
+  production rejects localhost origins. CORS enables credentials only for that
+  allowlist, never for `*`.
+- Gateway emits `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a
+  restrictive referrer policy, API CSP, permissions policy and production
+  HSTS. JSON and URL-encoded bodies have an explicit bounded limit and safe
+  `REQUEST_BODY_TOO_LARGE` response.
+- Real accounts use Argon2id (`19 MiB`, time cost `2`, parallelism `1`), with
+  a 15--128 Unicode-character password policy. Passwords, access tokens,
+  refresh tokens and reset tokens are never logged or persisted in plaintext.
+- Access tokens are JWTs created and verified by `jsonwebtoken`, constrained
+  to HS256, signature, issuer, audience, expiry, token type and required
+  `iss`, `aud`, `sub`, `sid`, `role`, `iat`, `exp` and `jti` claims. The Web
+  holds the access token in JavaScript memory only, never in localStorage,
+  sessionStorage or a cookie.
+- Refresh tokens are opaque random values. Only their SHA-256 hashes persist
+  in Core's `user_sessions`; the raw value is issued only as an HttpOnly,
+  SameSite=Lax cookie scoped to `/api/v1/auth` and marked Secure outside local
+  HTTP development. Refresh rotates the token generation transactionally. A
+  replay revokes every generation in that token family and is audited.
+- Registration commits `users`, `user_credentials`, and the initial refresh
+  session in one Core PostgreSQL transaction. Password reset tokens are
+  one-time, expiring, hash-only rows; reset and password change revoke all
+  user sessions. Session listing/revocation is actor scoped.
+- Login intentionally makes unknown-user and wrong-password results
+  indistinguishable. Demo tokens remain a development/test compatibility mode
+  only; production environment validation rejects enabling them.
+- The Gateway applies bounded process-local profiles to login, registration,
+  password reset/refresh and assistant routes. A shared/distributed limiter is
+  still required before a multi-instance production deployment; this phase
+  deliberately does not add Redis or queue infrastructure.
 
-- Browser/mobile traffic terminates at the Gateway. The Gateway uses the configured `GATEWAY_CORS_ORIGINS` allowlist; wildcard origins are rejected in every environment and localhost origins are rejected in production. Gateway CORS does not enable credentialed cookies in Phase 0 because the current public contract uses Bearer demo auth.
-- Gateway security headers are applied to responses: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, a deny-by-default API CSP, a restrictive `Permissions-Policy`, and HSTS in production.
-- Gateway JSON and URL-encoded bodies have an explicit default 262,144-byte limit, configurable through `GATEWAY_BODY_LIMIT_BYTES`, with a safe `REQUEST_BODY_TOO_LARGE` response.
-- A bounded process-local limiter is wired only to current Gateway routes: demo login is 5 requests per 60 seconds per client IP, unified assistant chat is 30 per 60 seconds, and assistant actions are 20 per 60 seconds. A 5-per-60-second profile is reserved for future register/forgot/reset/refresh routes but no such route is implemented. A distributed limiter remains a deployment requirement for a multi-instance production Gateway; Phase 0 does not add Redis or another queue/cache.
-- The Gateway error filter and parser middleware expose `code`, safe `detail`, `retryable`, and `request_id` without stack traces, credentials, passwords, raw prompts, provider payloads, or chain-of-thought.
-- `DemoAuthGuard` fails closed unless `APP_ENV` is `development` or `test` and `DEMO_AUTH_ENABLED=true`. Production and disabled-mode requests return `DEMO_AUTH_DISABLED`, missing credentials return `AUTHENTICATION_REQUIRED`, and malformed, invalid-signature, or expired tokens return the stable safe `AUTHENTICATION_FAILED` error.
-- `GEMINI_API_KEY` is supplied only to the Agent container through the explicit Compose mapping. The Agent reports only a boolean configured flag and safe model diagnostics; the key value is never copied to the browser, Gateway, docs, fixtures, or logs. The current local environment has a user-provided Gemini key in the Agent service environment; no key value was read or printed during this Phase 0 pass.
-- Core audit records keep actor, operation, correlation, and safe resource metadata for current workflows. Raw conversation/reasoning retention is not introduced by this phase.
+## Cookie-origin and CSRF policy
 
-## Origin, cookie, and CSRF policy
+Cookie-authenticated refresh/logout operations require an `Origin` in the
+configured exact allowlist, or an allowed `Referer` origin fallback when no
+Origin exists. Missing, malformed or foreign origin evidence returns a safe
+403. CORS is not treated as CSRF protection. The same origin check is applied
+to bearer-authenticated operations that clear or revoke a browser refresh
+cookie (`logout-all`, session revocation and password change). `SameSite=Lax`
+adds browser-level cross-site protection while retaining same-site Web-to-
+Gateway development on the documented origins.
 
-Phase 0 public calls use a Bearer access token and do not rely on browser cookies. The Gateway rejects wildcard CORS and does not set `Access-Control-Allow-Credentials`.
+## Reset delivery and audit policy
 
-Phase 1 may introduce an HttpOnly refresh cookie only under the auth ADR. Cookie-authenticated state-changing requests must validate `Origin` against the configured allowlist, use an exact-origin `Referer` fallback only when policy permits, and require the selected CSRF token strategy. Missing or foreign origin/referer evidence is rejected; CORS is not treated as CSRF protection.
+The current reset-delivery seam does not claim to send email. It returns the
+same accepted response for known and unknown accounts. The
+`AUTH_DEV_RESET_TOKEN_CAPTURE=true` escape hatch is valid only in development
+or test and exists for deterministic tests/local debugging; production
+configuration rejects it, the Web does not render it, and it must not be used
+as a production delivery channel.
 
-Internal service authentication uses the service token plus actor/resource assertions where required. Domain services independently validate the request and never trust an Agent/model claim as authority.
-
-## Secret and audit policy
-
-Secrets are process environment or deployment-secret inputs, not source, OpenAPI examples, browser configuration, logs, or raw test fixtures. Passwords are never logged or stored in plaintext. Provider keys are redacted from diagnostics. Audit metadata is bounded and excludes raw prompts, chain-of-thought, full payment credentials, and unnecessary sensitive PII.
-
-## Explicit non-goals for Phase 0
-
-Real user/session tables, register, refresh, reset-password, logout, Argon2id password hashing, refresh-token rotation, and production payment providers are Phase 1+ work. Demo auth remains development/test-only, production validation rejects enabling it, and a signed demo token is not an exception to that guard.
+Core audit events record a bounded action, actor, correlation ID and safe
+resource metadata for registration, login success/failure, refresh-reuse
+detection, logout, session revocation, password change and reset activity.
+They omit raw credentials, raw tokens, provider secrets, raw prompts and
+chain-of-thought. The Agent accepts untrusted content only as validated typed
+tool requests; it cannot authenticate a user, call a domain database or make a
+side effect.
