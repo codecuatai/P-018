@@ -1,38 +1,71 @@
 "use client";
 
-import { MapPin, Navigation } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import Image from "next/image";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { LANDING_MEDIA, type LandingMediaKey } from "@/components/marketing/landing-media";
+import { HanoiRouteStory } from "@/components/marketing/route-story";
 import styles from "@/components/marketing/media-slot.module.css";
-
-const mediaTransition = { duration: 0.62, ease: [0.22, 1, 0.36, 1] as const };
 
 export function HeroMedia() {
   const reduceMotion = useReducedMotion() === true;
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [videoFailed, setVideoFailed] = useState(false);
   const [posterFailed, setPosterFailed] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const [loopCrossfading, setLoopCrossfading] = useState(false);
+  const loopFadeStarted = useRef(false);
+
+  function startLoopCrossfade() {
+    if (loopFadeStarted.current) return;
+    loopFadeStarted.current = true;
+    setLoopCrossfading(true);
+  }
+
+  function restartVideo() {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = 0;
+    void video.play().catch(() => setVideoFailed(true));
+  }
+
+  function handlePlaying() {
+    if (loopFadeStarted.current && (videoRef.current?.currentTime ?? 1) < 0.35) {
+      loopFadeStarted.current = false;
+      setLoopCrossfading(false);
+    }
+    setVideoReady(true);
+  }
 
   return (
     <div className={styles.heroMedia} aria-hidden="true">
       {!reduceMotion && !videoFailed ? (
         <video
-          className={styles.heroMediaVideo}
+          ref={videoRef}
+          className={`${styles.heroMediaVideo} ${videoReady && !loopCrossfading ? styles.heroMediaVideoReady : ""}`}
           autoPlay
           muted
-          loop
           playsInline
+          preload="auto"
           poster={posterFailed ? undefined : LANDING_MEDIA.heroPoster}
           onError={() => setVideoFailed(true)}
+          onPlaying={handlePlaying}
+          onTimeUpdate={(event) => {
+            const video = event.currentTarget;
+            if (Number.isFinite(video.duration) && video.duration - video.currentTime <= 0.68) startLoopCrossfade();
+          }}
+          onEnded={() => {
+            startLoopCrossfade();
+            restartVideo();
+          }}
         >
           <source src={LANDING_MEDIA.heroVideo} type="video/mp4" />
         </video>
       ) : null}
       {!posterFailed ? (
         <Image
-          className={styles.heroMediaPoster}
+          className={`${styles.heroMediaPoster} ${videoReady && !loopCrossfading ? styles.heroMediaPosterCovered : ""}`}
           src={LANDING_MEDIA.heroPoster}
           alt=""
           fill
@@ -88,42 +121,5 @@ export function ProductMediaSlot({ mediaKey, title, description, caption, classN
 }
 
 export function HanoiMapMedia() {
-  const reduceMotion = useReducedMotion() === true;
-  const [failed, setFailed] = useState(false);
-
-  return (
-    <div className={`${styles.mapMedia} ${failed ? styles.mapFallback : ""}`} role="img" aria-label="Bản đồ minh hoạ khu vực Hồ Hoàn Kiếm">
-      {failed ? (
-        <div className={styles.mapFallbackPanel}>
-          <div className={styles.mapFallbackGrid} aria-hidden="true" />
-          <strong>Bản đồ khu vực Hà Nội</strong>
-          <p>Bản minh hoạ giúp đặt điểm đón và điểm đến trong cùng một ngữ cảnh.</p>
-        </div>
-      ) : (
-        <motion.div
-          className={styles.mapImage}
-          initial={reduceMotion ? false : { opacity: 0.78, scale: 1.035 }}
-          whileInView={reduceMotion ? undefined : { opacity: 1, scale: 1 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={mediaTransition}
-        >
-          <Image
-            src={LANDING_MEDIA.hanoiMap}
-            alt="Bản đồ minh hoạ khu vực Hồ Hoàn Kiếm"
-            fill
-            sizes="(max-width: 820px) 100vw, 58vw"
-            onError={() => setFailed(true)}
-          />
-        </motion.div>
-      )}
-      {!failed ? (
-        <>
-          <motion.span className={styles.routeAccent} aria-hidden="true" initial={reduceMotion ? false : { opacity: 0, scaleX: 0 }} whileInView={reduceMotion ? undefined : { opacity: 0.92, scaleX: 1 }} viewport={{ once: true, amount: 0.25 }} transition={{ ...mediaTransition, delay: 0.28 }} />
-          <motion.span className={`${styles.marker} ${styles.markerPickup}`} initial={reduceMotion ? false : { opacity: 0, scale: 0.82 }} whileInView={reduceMotion ? undefined : { opacity: 1, scale: 1 }} viewport={{ once: true, amount: 0.25 }} transition={{ ...mediaTransition, delay: 0.42 }}><MapPin size={15} /> Điểm đón</motion.span>
-          <motion.span className={`${styles.marker} ${styles.markerDestination}`} initial={reduceMotion ? false : { opacity: 0, scale: 0.82 }} whileInView={reduceMotion ? undefined : { opacity: 1, scale: 1 }} viewport={{ once: true, amount: 0.25 }} transition={{ ...mediaTransition, delay: 0.5 }}><Navigation size={15} /> Điểm đến</motion.span>
-          <span className={styles.mapCaption}>Bản đồ minh hoạ Hà Nội · không phải theo dõi trực tiếp</span>
-        </>
-      ) : null}
-    </div>
-  );
+  return <HanoiRouteStory />;
 }

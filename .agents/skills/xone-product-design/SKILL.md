@@ -37,6 +37,27 @@ Read `docs/design-system.md` and `docs/motion-system.md` before designing or cha
 - Use the existing hero video/poster/map assets when present. When screenshot assets are absent, render a polished neutral product panel—never `MEDIA SLOT`, a public file path or developer placeholder copy.
 - Keep the service scene as exactly four visual cards for Food, Ride, Restaurant and Healthcare. Use bounded accents and tonal surfaces; avoid gradients, blobs, or decorative SVG networks.
 
+### Phase 1 final marketing visual pass
+
+- Use a centered floating navigation shell over the hero; the page must not
+  render a full-width white header strip.
+- Keep the hero video legible and place contrast treatment only behind the
+  copy. The loop uses a poster crossfade near the end of playback and reduced
+  motion renders the poster only.
+- Use the supplied transparent WebP service media at
+  `/media/services/food.webp`, `ride.webp`, `restaurant.webp` and
+  `healthcare.webp`. A missing asset keeps the image-first layout intact and
+  never exposes a filesystem path or debug placeholder.
+- How X-One Works is one auto-sliding, keyboard-accessible carousel with
+  exactly three labeled stages. Its previews are coded product UI with real
+  X-One copy and confirmation language; do not build generic screenshot
+  rectangles or include tool/debug traces.
+- The Hanoi scene uses `/media/hanoi-map.webp` plus a small aria-hidden SVG
+  route overlay for marketing relationships only. Route paths draw once and
+  remain visible; reduced motion shows the complete route immediately.
+- Keep eyebrow usage sparse, preserve auth modal behavior and XOneMark, and
+  use CSS Modules with small client islands for browser state and motion.
+
 ## Review before handoff
 
 - Inspect a rendered screenshot when the environment supports it.

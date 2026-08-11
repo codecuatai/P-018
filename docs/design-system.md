@@ -61,10 +61,12 @@ The landing uses this tonal rhythm:
 | CTA | Deep Navy |
 | Footer | darker Navy |
 
-The marketing header is fixed at the top: approximately 70px on desktop and
-62px on mobile. Its initial state is nearly transparent white; after the page
-leaves the top it becomes roughly 95% white with a thin divider and subtle
-backdrop blur, never a heavy shadow. Landing anchors account for that offset.
+The marketing header is fixed over the hero inside a centered floating shell:
+approximately 58–64px tall, 14–18px from the viewport edge, with a restrained
+white surface, quiet border, backdrop blur and soft tinted shadow. After the
+page leaves the top, the shell becomes slightly more opaque and raised without
+changing shape. Landing anchors account for the shell offset; mobile keeps a
+compact shell with the existing Sheet menu.
 
 The hero begins its meaningful content about 28–44px below the fixed header.
 Its video is a full cinematic bleed, while the title and composer remain the
@@ -76,9 +78,11 @@ Một yêu cầu.
 Nhiều việc được kết nối.
 ```
 
-The supported-services scene is one four-card grid, not a duplicate section.
-Cards use a white/off-white surface, a 14px maximum radius, a quiet border,
-sparse shadow, domain icon and one bounded accent line or icon surface.
+The supported-services scene is one four-card image-first gallery, not a
+duplicate section. Cards use a white/off-white surface, a 14px maximum radius,
+a quiet border, sparse shadow and transparent WebP visuals for Food, Ride,
+Restaurant and Healthcare. Domain accents stay local to a small detail; icons
+do not replace the supplied category artwork.
 
 ## Landing media contract
 
@@ -88,7 +92,12 @@ Optional public assets live under `apps/web/public/media/`:
 | --- | --- | --- |
 | Hero ambient video | `/media/hero-loop.mp4` | hero poster or neutral media layer |
 | Hero poster / reduced-motion frame | `/media/hero-poster.webp` | porcelain neutral layer |
+| Service visual — Food | `/media/services/food.webp` | reserved image area with calm label |
+| Service visual — Ride | `/media/services/ride.webp` | reserved image area with calm label |
+| Service visual — Restaurant | `/media/services/restaurant.webp` | reserved image area with calm label |
+| Service visual — Healthcare | `/media/services/healthcare.webp` | reserved image area with calm label |
 | Hanoi marketing map | `/media/hanoi-map.webp` | neutral map presentation |
+| Optional multi-service capture | `/media/xone-multiservice-example.webp` | text-led relationship story |
 | X-One chat capture | `/media/xone-chat-example.webp` | polished neutral product panel |
 | X-One confirmation capture | `/media/xone-confirmation-example.webp` | polished neutral product panel |
 
@@ -96,10 +105,10 @@ Optional public assets live under `apps/web/public/media/`:
 the two hero paths. These are marketing assets only: they do not become
 authoritative UI, location state, Maps API integration or product data.
 
-When a screenshot asset is absent, the public landing must not show `MEDIA
-SLOT`, a file path or developer-facing copy. It renders an intentionally
-designed neutral product panel and remains honest that the visual is a
-presentation surface rather than a real app capture.
+When an optional capture is absent, the public landing must not show `MEDIA
+SLOT`, a file path or developer-facing copy. It uses the intended text-led
+relationship fallback, and expected local media is checked before rendering so
+missing optional files do not create repeated broken-image requests.
 
 ## Spacing, shape and elevation
 
@@ -120,6 +129,11 @@ presentation surface rather than a real app capture.
   complete without the Gateway's confirmed result.
 - `prefers-reduced-motion` shows the hero poster, stops prompt rotation and
   removes reveal/focus transforms while keeping every content block visible.
+- The How X-One Works carousel shows one coded product preview at a time,
+  keeps three labeled stage buttons available, pauses on hover/focus and
+  disables autoplay under reduced motion.
+- The route scene uses the real Hanoi map with a bounded, aria-hidden SVG route
+  overlay; it is a marketing illustration and never implies live coordinates.
 - Never expose secrets, raw reset tokens, internal workflow state, chain of
   thought or fabricated transaction success in the UI.
 

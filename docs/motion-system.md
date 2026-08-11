@@ -18,11 +18,11 @@ ease-out over roughly 450–650ms. Use `whileInView`/`useInView` with
 roughly 70–100ms. Each section chooses its own order and direction:
 
 - services: heading, then four cards;
-- how it works: heading, line-draw, then three steps;
-- story: copy from left/up, then workflow rows;
-- map: media scale-in, route, then markers and copy;
-- safety: copy, then confirmation media;
-- assistant: media from left and copy from right;
+- how it works: heading, then one coded product preview and three stage controls;
+- story: copy from left/up, then a text-led service relationship;
+- map: media scale-in, route drawing, then markers and copy;
+- safety: copy, then the confirmation checklist;
+- assistant: product signal from left and copy from right;
 - CTA: simple group reveal.
 
 Use transform and opacity. Do not continuously animate width, height, top,
@@ -54,6 +54,14 @@ maximum scale of 1.01. Cards do not float continuously. The landing hero may
 carry the most expressive composition; authenticated product views prioritize
 task state and immediate feedback.
 
+The Phase 1 marketing signature uses purpose-specific motion: the hero video
+crossfades to the poster during its final ~680ms, transparent service visuals
+use a pointer-only spring hover of roughly 8px and 1.025 scale, the How X-One
+Works preview uses a small 350–500ms horizontal slide between labeled stages,
+and the Hanoi scene draws at most four SVG route paths once in sequence. The
+route scene may carry a bounded scroll-linked scale of no more than 1.015;
+routes do not erase when the section leaves focus.
+
 | Context | Duration | Intent |
 | --- | ---: | --- |
 | Micro feedback | 120–180ms | focus, icon, acknowledgement |
@@ -72,6 +80,10 @@ Reduced motion must:
 - disable scroll-linked transforms, stagger movement and line drawing;
 - show sections and children immediately at full opacity and normal scale;
 - preserve every functional label, form, status and confirmation boundary.
+- show the first How X-One Works preview without auto-advancing while keeping
+  the three manual stage controls usable;
+- show the complete Hanoi route scene immediately without path drawing;
+- keep the hero on the poster and never invoke the video loop transition.
 
 ## Performance guardrails
 

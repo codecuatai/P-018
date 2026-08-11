@@ -1,11 +1,11 @@
 .landingPage { min-width: 0; overflow-x: clip; background: var(--color-surface); }
-.landingPage [id] { scroll-margin-top: 88px; }
+.landingPage [id] { scroll-margin-top: 94px; }
 .container { width: min(1160px, calc(100% - 48px)); margin: 0 auto; }
 
 .hero {
   position: relative;
   min-height: min(800px, max(680px, calc(100svh - 10px)));
-  padding: 102px 0 72px;
+  padding: 108px 0 72px;
   overflow: clip;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
@@ -13,16 +13,15 @@
 
 .heroMediaBleed { position: absolute; inset: 0; pointer-events: none; }
 .heroStage { position: relative; z-index: 1; }
-.heroKicker { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.heroKickerMeta { color: var(--color-muted-soft); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.64rem; font-weight: 600; letter-spacing: 0.11em; }
-.heroCopy { max-width: 1120px; margin: 0 auto; text-align: center; }
+.heroKicker { display: flex; align-items: center; min-height: 18px; }
+.heroCopy { position: relative; z-index: 0; max-width: 1120px; margin: 0 auto; isolation: isolate; text-align: center; }
+.heroCopy::before { position: absolute; z-index: -1; top: -44px; right: -92px; bottom: -42px; left: -92px; content: ""; background: radial-gradient(ellipse at center, rgb(255 255 255 / 78%) 0%, rgb(255 255 255 / 52%) 39%, rgb(255 255 255 / 15%) 67%, transparent 79%); pointer-events: none; }
 .heroTitle { margin: 27px 0 0; color: var(--color-navy); font-size: clamp(3.2rem, 5.15vw, 5rem); font-weight: 780; letter-spacing: -0.075em; line-height: 0.98; }
 .heroTitleLine { display: block; }
 .heroTitleSecond { font-size: 0.94em; }
-.heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-muted); font-size: 0.98rem; line-height: 1.7; }
-.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-muted); font-size: 0.79rem; font-weight: 650; }
+.heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-ink); font-size: 0.98rem; line-height: 1.7; }
+.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-navy); font-size: 0.79rem; font-weight: 650; }
 .heroNote svg { color: var(--color-success); }
-.heroBottomNote { position: absolute; right: 0; bottom: 25px; left: 0; color: #687985; font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.61rem; letter-spacing: 0.08em; text-align: center; text-transform: uppercase; }
 
 .section { padding: clamp(76px, 9vw, 124px) 0; }
 .focusScene { width: 100%; }
@@ -47,38 +46,34 @@
 .serviceCard {
   position: relative;
   display: flex;
-  min-height: 248px;
+  min-height: 350px;
   flex-direction: column;
-  padding: 23px 21px 22px;
   overflow: hidden;
-  background: rgb(255 255 255 / 86%);
-  border: 1px solid rgb(22 50 79 / 11%);
-  border-top: 3px solid var(--service-accent);
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid rgb(22 50 79 / 12%);
   border-radius: 14px;
-  box-shadow: 0 10px 24px rgb(22 50 79 / 6%);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+  box-shadow: 0 10px 24px rgb(22 50 79 / 5%);
+  transition: border-color 180ms ease, box-shadow 220ms ease;
 }
-
-.serviceCard:hover { border-color: color-mix(in srgb, var(--service-accent) 45%, var(--color-border)); box-shadow: 0 14px 28px rgb(22 50 79 / 9%); transform: translateY(-3px) scale(1.005); }
-.serviceCardFood { --service-accent: var(--accent-food); --service-icon-surface: #FBF1DF; }
-.serviceCardRide { --service-accent: var(--accent-ride); --service-icon-surface: #EAF0FF; }
-.serviceCardRestaurant { --service-accent: var(--accent-restaurant); --service-icon-surface: #FAEEF1; }
-.serviceCardHealthcare { --service-accent: var(--accent-healthcare); --service-icon-surface: #E6F5F2; }
-.serviceIcon { display: grid; width: 46px; height: 46px; place-items: center; color: var(--service-accent); background: var(--service-icon-surface); border-radius: 11px; }
-.serviceCard h3 { margin: 24px 0 0; color: var(--color-navy); font-size: 1.12rem; letter-spacing: -0.035em; }
-.serviceCard p { margin: 9px 0 0; color: var(--color-muted); font-size: 0.79rem; line-height: 1.65; }
+.serviceCard:hover { border-color: rgb(22 50 79 / 19%); box-shadow: 0 16px 32px rgb(22 50 79 / 9%); }
+.serviceCardFood { --service-accent: var(--accent-food); }
+.serviceCardRide { --service-accent: var(--accent-ride); }
+.serviceCardRestaurant { --service-accent: var(--accent-restaurant); }
+.serviceCardHealthcare { --service-accent: var(--accent-healthcare); }
+.serviceMediaFrame { display: grid; min-height: 240px; aspect-ratio: 1.08; place-items: center; padding: 17px 16px 6px; background: var(--color-surface); }
+.serviceMediaFrame > div { min-height: 100%; }
+.serviceMediaFallback { display: grid; width: 100%; height: 100%; min-height: 220px; place-items: center; align-content: center; gap: 7px; color: var(--color-navy); background: var(--color-canvas); border: 1px dashed rgb(22 50 79 / 18%); border-radius: 10px; text-align: center; }
+.serviceMediaFallback span { font-size: 1.1rem; font-weight: 750; letter-spacing: -0.04em; }
+.serviceMediaFallback small { color: var(--color-muted-soft); font-size: 0.67rem; }
+.serviceCardBody { display: grid; gap: 8px; margin-top: auto; padding: 18px 20px 22px; }
+.serviceAccentMark { width: 28px; height: 3px; background: var(--service-accent); border-radius: 99px; }
+.serviceCard h3 { margin: 0; color: var(--color-navy); font-size: 1.12rem; letter-spacing: -0.035em; }
+.serviceCard p { max-width: 235px; margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.65; }
 
 .how { background: var(--color-surface); }
 .howHeading { max-width: 720px; margin: 0 auto; text-align: center; }
-.howRail { position: relative; height: 2px; margin-top: 51px; background: var(--color-border); }
-.howRailFill { position: absolute; inset: 0 auto 0 0; width: 100%; background: var(--color-primary); transform-origin: left center; }
-.howSteps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; border-bottom: 1px solid var(--color-border); }
-.howStep { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 18px; min-height: 174px; padding: 25px 30px 10px 0; }
-.howStep:not(:last-child) { border-right: 1px solid var(--color-border); }
-.howStep:not(:first-child) { padding-left: 30px; }
-.howStepIndex { color: var(--color-primary-strong); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.7rem; font-weight: 700; }
-.howStep h3 { margin: 0; color: var(--color-navy); font-size: 1.02rem; letter-spacing: -0.03em; }
-.howStep p { max-width: 260px; margin: 9px 0 0; color: var(--color-muted); font-size: 0.8rem; line-height: 1.62; }
+.howLead { max-width: 450px; margin: 17px auto 0; color: var(--color-muted); font-size: 0.92rem; line-height: 1.65; }
+.howCarouselReveal { width: 100%; }
 
 .story { background: var(--surface-sand); }
 .storyLayout,
@@ -88,29 +83,40 @@
 .mapCopy p,
 .safetyCopy > p,
 .assistantCopy > p { max-width: 550px; margin: 19px 0 0; color: var(--color-muted); font-size: 0.94rem; line-height: 1.7; }
-.storySequence { padding: 19px 20px 6px; background: rgb(255 255 255 / 54%); border: 1px solid rgb(22 50 79 / 12%); border-radius: 12px; }
-.storySequenceHeading { display: flex; justify-content: space-between; gap: 20px; padding: 0 0 13px; color: var(--color-muted-soft); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.59rem; letter-spacing: 0.08em; }
-.storyRow { position: relative; display: grid; grid-template-columns: 35px 1fr auto; gap: 16px; align-items: baseline; padding: 20px 0; border-top: 1px solid rgb(22 50 79 / 13%); }
-.storyRow > span:first-child { color: var(--color-muted-soft); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.66rem; }
-.storyRow strong { color: var(--color-navy); font-size: 1.05rem; letter-spacing: -0.03em; }
-.storyRow > span:last-child { color: var(--color-muted); font-size: 0.75rem; }
-.storyRowActive { background: rgb(255 255 255 / 40%); }
-.storyRowActive strong { color: var(--color-primary-strong); }
-.storySweep { position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: var(--color-primary); }
+.storyVisual { min-width: 0; }
+.storyMediaFrame { position: relative; margin: 0; overflow: hidden; background: var(--color-surface); border: 1px solid rgb(22 50 79 / 12%); border-radius: 14px; box-shadow: 0 14px 30px rgb(22 50 79 / 7%); }
+.storyMediaFrame img { display: block; width: 100%; height: auto; }
+.storyMediaFrame figcaption { position: absolute; right: 14px; bottom: 12px; left: 14px; color: rgb(17 24 39 / 72%); background: rgb(255 255 255 / 78%); font-size: 0.64rem; line-height: 1.45; }
+.storyFlow { display: grid; gap: 0; padding: 5px 0; }
+.storyFlowStep { display: grid; gap: 7px; padding: 23px 2px; border-top: 1px solid rgb(22 50 79 / 18%); }
+.storyFlowStep:last-child { border-bottom: 1px solid rgb(22 50 79 / 18%); }
+.storyFlowStep > span { color: var(--color-primary-strong); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; }
+.storyFlowStep strong { color: var(--color-navy); font-size: 1.22rem; letter-spacing: -0.04em; }
+.storyFlowStep p { margin: 0; color: var(--color-muted); font-size: 0.76rem; line-height: 1.55; }
+.storyFlowActive { padding-left: 15px; background: rgb(255 255 255 / 38%); border-left: 3px solid var(--color-primary); }
+.storyFlowConnector { width: 1px; height: 18px; margin-left: 10px; background: rgb(22 50 79 / 24%); }
 
 .map { background: var(--surface-mist); }
 .mapLayout { grid-template-columns: minmax(0, 1.12fr) minmax(290px, 0.88fr); }
 .mapCopy { min-width: 0; }
-.mediaNote { display: inline-block; margin-top: 25px; color: var(--color-muted-soft); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.62rem; letter-spacing: 0.05em; }
+.mediaNote { display: inline-block; margin-top: 25px; color: var(--color-muted-soft); font-size: 0.69rem; line-height: 1.5; }
 
 .safety { background: var(--color-surface); }
 .safetyPanel { padding: clamp(24px, 4vw, 48px); background: var(--surface-mist); border: 1px solid #D5EAE5; border-radius: 16px; }
-.safetyPoints { display: grid; gap: 11px; margin-top: 27px; }
-.safetyPoints span { display: flex; align-items: center; gap: 9px; color: var(--color-navy); font-size: 0.8rem; font-weight: 710; }
-.safetyPoints svg { color: var(--color-success); }
+.safetyChecklist { display: grid; gap: 0; padding: 4px 0; }
+.safetyChecklistHeading { display: flex; align-items: center; gap: 10px; padding-bottom: 16px; color: var(--color-navy); border-bottom: 1px solid rgb(14 142 131 / 20%); }
+.safetyChecklistHeading svg { color: var(--color-success); }
+.safetyChecklistHeading strong { font-size: 0.9rem; }
+.safetyChecklistItem { display: flex; align-items: flex-start; gap: 11px; padding: 16px 0; color: var(--color-navy); border-bottom: 1px solid rgb(14 142 131 / 16%); font-size: 0.8rem; line-height: 1.55; }
+.safetyChecklistItem:last-child { border-bottom: 0; }
+.safetyChecklistItem svg { flex: 0 0 auto; margin-top: 1px; color: var(--color-success); }
 
 .assistant { background: var(--surface-slate); }
 .assistantLayout { grid-template-columns: minmax(0, 0.9fr) minmax(390px, 1.1fr); }
+.assistantSignal { display: grid; max-width: 430px; gap: 17px; padding: 30px; color: var(--color-navy); background: var(--color-surface); border: 1px solid rgb(22 50 79 / 12%); border-radius: 16px; box-shadow: 0 14px 30px rgb(22 50 79 / 6%); }
+.assistantSignal svg { color: var(--color-primary); }
+.assistantSignal p { margin: 0; font-size: clamp(1.2rem, 2.3vw, 1.65rem); font-weight: 650; letter-spacing: -0.045em; line-height: 1.25; }
+.assistantSignal span { color: var(--color-muted); font-size: 0.8rem; line-height: 1.6; }
 .assistantCopy .textLink { margin-top: 26px; }
 
 .cta { padding: 88px 0; color: var(--color-surface); background: var(--color-navy); }
@@ -146,10 +152,7 @@
   .mapLayout,
   .editorialSplit,
   .assistantLayout { grid-template-columns: 1fr; }
-  .howSteps { grid-template-columns: 1fr; max-width: 590px; margin-right: auto; margin-left: auto; }
-  .howStep,
-  .howStep:not(:first-child) { min-height: 0; padding: 23px 0; border-right: 0; border-bottom: 1px solid var(--color-border); }
-  .howStep:last-child { border-bottom: 0; }
+  .assistantSignal { max-width: none; }
   .cta .container { grid-template-columns: 1fr; gap: 18px; }
   .ctaActions { justify-content: flex-start; }
 }
@@ -157,11 +160,9 @@
 @media (max-width: 560px) {
   .container { width: calc(100% - 28px); }
   .hero { min-height: 680px; padding: 90px 0 58px; }
-  .heroKicker { align-items: flex-start; flex-direction: column; gap: 8px; }
   .heroTitle { margin-top: 23px; font-size: clamp(2.55rem, 10.9vw, 3.3rem); line-height: 1; }
   .heroTitleLine { white-space: normal; }
   .heroLede { font-size: 0.91rem; }
-  .heroBottomNote { right: 14px; bottom: 18px; left: 14px; font-size: 0.55rem; line-height: 1.5; }
   .section { padding: 78px 0; }
   .sectionHeading h2,
   .storyCopy h2,
@@ -169,12 +170,11 @@
   .safetyCopy h2,
   .assistantCopy h2 { font-size: 1.82rem; }
   .serviceGrid { grid-template-columns: 1fr; margin-top: 35px; }
-  .serviceCard { min-height: 214px; }
-  .howRail { margin-top: 34px; }
-  .storySequence { padding: 16px 14px 3px; }
-  .storyRow { grid-template-columns: 28px 1fr; gap: 11px; }
-  .storyRow > span:last-child { grid-column: 2; }
+  .serviceCard { min-height: 330px; }
+  .serviceMediaFrame { min-height: 230px; }
+  .storyFlowStep strong { font-size: 1.08rem; }
   .safetyPanel { padding: 22px 18px; border-radius: 14px; }
+  .assistantSignal { padding: 24px; }
   .cta { padding: 62px 0; }
   .ctaActions { justify-content: stretch; }
   .ctaActions :global(.button) { flex: 1; }
