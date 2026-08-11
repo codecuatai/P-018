@@ -25,9 +25,17 @@ Read `docs/design-system.md` and `docs/motion-system.md` before designing or cha
 
 ## Apply motion with restraint
 
+- Keep scroll-triggered entrance and scroll-linked focus/exit as two separate concepts. Use `RevealScene`/`RevealItem` for one-time viewport entrances, then `ScrollFocusScene` only for restrained depth after entry.
+- Use approximately 450–650ms section entrances, `once: true`, `amount: 0.15–0.25`, and 70–100ms child staggers. Keep leaving-focus content readable; do not pin future sections at low opacity on page load.
 - Reuse only the canonical primitives: fade, fade-up, scale-in, stagger, line-draw, soft-hover, and scroll-progress.
 - Animate primarily opacity and transform. Keep interaction feedback immediate and do not use `transition: all`.
 - Reserve expressive motion for the landing hero and multi-service story; authenticated product screens prioritize clarity and task completion.
+
+## Marketing landing guardrails
+
+- The marketing header is fixed, subtle at the top and lightly raised after scroll; offset content and anchor targets for its height.
+- Use the existing hero video/poster/map assets when present. When screenshot assets are absent, render a polished neutral product panel—never `MEDIA SLOT`, a public file path or developer placeholder copy.
+- Keep the service scene as exactly four visual cards for Food, Ride, Restaurant and Healthcare. Use bounded accents and tonal surfaces; avoid gradients, blobs, or decorative SVG networks.
 
 ## Review before handoff
 

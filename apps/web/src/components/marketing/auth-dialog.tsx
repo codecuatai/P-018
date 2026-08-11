@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import styles from "@/components/marketing/auth-dialog.module.css";
 import { LoginForm, RegisterForm } from "@/features/auth/auth-pages";
 import type { AuthDialogMode } from "@/components/marketing/marketing-auth";
 
@@ -20,12 +21,12 @@ export function AuthDialog({ open, mode, onOpenChange, onModeChange }: AuthDialo
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <div className="auth-dialog-heading">
+        <div className={styles.heading}>
           <span className="eyebrow">X-ONE / TÀI KHOẢN</span>
           <DialogTitle>{isLogin ? "Đăng nhập" : "Bắt đầu với X-One"}</DialogTitle>
           <DialogDescription>{isLogin ? "Tiếp tục những việc bạn đang làm cùng X-One." : "Một nơi để giữ các bước dịch vụ của bạn rõ ràng."}</DialogDescription>
         </div>
-        <div className="auth-dialog-form">
+        <div className={styles.form}>
           {isLogin ? (
             <LoginForm
               onSuccess={() => { onOpenChange(false); router.replace("/app"); }}

@@ -1,11 +1,12 @@
 "use client";
 
 import { ArrowUp, ShieldCheck } from "lucide-react";
-import { motion, useReducedMotion, AnimatePresence } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { useMarketingAuth } from "@/components/marketing/marketing-auth";
+import styles from "@/components/marketing/hero-composer.module.css";
 import { useAuth } from "@/providers/auth-provider";
 
 export const HERO_PROMPTS = [
@@ -46,14 +47,14 @@ export function HeroComposer() {
   }
 
   return (
-    <form className="hero-composer" onSubmit={submit} aria-label="Bắt đầu yêu cầu với X-One">
-      <div className="hero-composer-topline">
+    <form className={styles.composer} onSubmit={submit} aria-label="Bắt đầu yêu cầu với X-One">
+      <div className={styles.topline}>
         <label htmlFor="hero-composer-input">X-One có thể giúp gì cho bạn?</label>
         <span>Trợ lý dịch vụ</span>
       </div>
-      <div className="hero-composer-field">
+      <div className={styles.field}>
         {!draft && !hasInteracted ? (
-          <div className="hero-prompt" aria-hidden="true">
+          <div className={styles.prompt} aria-hidden="true">
             {reduceMotion ? (
               <span>{HERO_PROMPTS[0]}</span>
             ) : (
@@ -73,11 +74,11 @@ export function HeroComposer() {
           rows={2}
           aria-label="Nhập yêu cầu của bạn"
         />
-        <button className="hero-composer-submit" type="submit" aria-label="Gửi yêu cầu">
+        <button className={styles.submit} type="submit" aria-label="Gửi yêu cầu">
           <ArrowUp size={22} strokeWidth={2.4} />
         </button>
       </div>
-      <p className="hero-composer-footnote"><ShieldCheck size={15} /> Bạn luôn xem lại trước khi một bước quan trọng được thực hiện.</p>
+      <p className={styles.footnote}><ShieldCheck size={15} /> Bạn luôn xem lại trước khi một bước quan trọng được thực hiện.</p>
     </form>
   );
 }

@@ -6,109 +6,127 @@ shell and future service surfaces.
 ## Direction
 
 **Calm Kinetic Concierge** is calm, capable, precise, human and trustworthy.
-It makes a multi-step task feel coordinated without becoming futuristic
-theatre. The X-One four-path junction is the recognisable signature whenever a
-surface communicates orchestration; it is a structural diagram, not a glowing
-AI decoration.
+The Phase 1 landing evolves that direction into a cinematic product editorial:
+strong scenes, real product media, clear reading order and controlled depth.
+It should feel like X-One is calmly keeping a thread together, not like a
+generic AI dashboard or a decorative technology demo.
 
-For the landing page, prefer real product media and scroll-linked focus over
-decorative diagrams. The landing is a cinematic product editorial sequence:
-one clear hero object, generous typography, restrained overlays and meaningful
-media slots. A media slot must remain useful when its optional asset is absent;
-it may show a neutral placeholder, never a fabricated screenshot or map.
+The X-One four-path junction remains a structural signature when a surface
+needs to explain orchestration. It is not a default hero decoration. Landing
+surfaces prefer the real Hanoi media, the composer and the service story.
 
-### Landing media contract
+## Colour and type tokens
+
+The only canonical token definitions live in `apps/web/src/app/globals.css`.
+Marketing and product CSS should use these semantic names instead of scattering
+new hex values through components.
+
+| Token | Value | Role |
+| --- | --- | --- |
+| `--color-canvas` | `#F5F7F8` | shared porcelain canvas |
+| `--color-surface` | `#FFFFFF` | paper/card surface |
+| `--color-ink` | `#111827` | primary text |
+| `--color-muted` | `#667085` | supporting text |
+| `--color-navy` | `#16324F` | structural dark and primary headings |
+| `--color-primary` | `#315EF5` | primary action and active route |
+| `--color-success` | `#0E8E83` | connected/confirmed state |
+| `--color-border` | `#D9E0E7` | quiet visible boundary |
+| `--surface-ice` | `#F1F4FF` | supported-services atmosphere |
+| `--surface-sand` | `#F7F2EC` | multi-service story atmosphere |
+| `--surface-mist` | `#EEF8F6` | map/safety atmosphere |
+| `--surface-slate` | `#F1F5F8` | assistant atmosphere |
+
+Domain accents are bounded to local service cards: muted amber for Food,
+cobalt for Ride, muted berry for Restaurant and teal for Healthcare. They are
+never used as full-card fills or as the only status signal.
+
+Use **Be Vietnam Pro** for headings and prose, with controlled high-density
+headlines and roughly 1.5–1.7 body line height. Use **IBM Plex Mono** only for
+small status, timestamp or structured utility labels. Inter is not the intended
+product face.
+
+## Landing composition
+
+The landing uses this tonal rhythm:
+
+| Scene | Surface |
+| --- | --- |
+| Hero | white with Hanoi video |
+| Supported services | Ice Cobalt |
+| How X-One works | white |
+| Multi-service story | Warm Sand |
+| Map | Mist Teal |
+| Safety | white with a Mist Teal panel |
+| Assistant | Cool Slate |
+| CTA | Deep Navy |
+| Footer | darker Navy |
+
+The marketing header is fixed at the top: approximately 70px on desktop and
+62px on mobile. Its initial state is nearly transparent white; after the page
+leaves the top it becomes roughly 95% white with a thin divider and subtle
+backdrop blur, never a heavy shadow. Landing anchors account for that offset.
+
+The hero begins its meaningful content about 28–44px below the fixed header.
+Its video is a full cinematic bleed, while the title and composer remain the
+authoritative readable objects. On desktop the title is intentionally two
+lines:
+
+```text
+Một yêu cầu.
+Nhiều việc được kết nối.
+```
+
+The supported-services scene is one four-card grid, not a duplicate section.
+Cards use a white/off-white surface, a 14px maximum radius, a quiet border,
+sparse shadow, domain icon and one bounded accent line or icon surface.
+
+## Landing media contract
 
 Optional public assets live under `apps/web/public/media/`:
 
 | Purpose | Expected path | Fallback |
 | --- | --- | --- |
-| Hero ambient video | `/media/hero-loop.mp4` | neutral media layer or poster |
+| Hero ambient video | `/media/hero-loop.mp4` | hero poster or neutral media layer |
 | Hero poster / reduced-motion frame | `/media/hero-poster.webp` | porcelain neutral layer |
-| Hanoi marketing map | `/media/hanoi-map.webp` | explicit map media slot |
-| X-One chat capture | `/media/xone-chat-example.webp` | explicit product media slot |
-| X-One confirmation capture | `/media/xone-confirmation-example.webp` | explicit product media slot |
+| Hanoi marketing map | `/media/hanoi-map.webp` | neutral map presentation |
+| X-One chat capture | `/media/xone-chat-example.webp` | polished neutral product panel |
+| X-One confirmation capture | `/media/xone-confirmation-example.webp` | polished neutral product panel |
 
 `NEXT_PUBLIC_HERO_VIDEO_URL` and `NEXT_PUBLIC_HERO_POSTER_URL` may override
-the two hero paths. These assets are marketing media only: they do not become
-authoritative UI, location state, Maps API integration, or product data.
+the two hero paths. These are marketing assets only: they do not become
+authoritative UI, location state, Maps API integration or product data.
 
-## Colour and type tokens
-
-| Token | Value | Role |
-| --- | --- | --- |
-| `--background` | `#F5F7F8` | porcelain page canvas |
-| `--surface` | `#FFFFFF` | paper/card surface |
-| `--foreground` | `#111827` | primary text |
-| `--muted` | `#667085` | supporting text |
-| `--border` | `#D9E0E7` | clear, quiet boundaries |
-| `--navy` | `#16324F` | structural dark, footer and contrast |
-| `--primary` | `#315EF5` | primary action / active navigation |
-| `--success` | `#0E8E83` | connected or successful state |
-| Food accent | muted amber | bounded Food context |
-| Ride accent | restrained cobalt | bounded Ride context |
-| Restaurant accent | muted berry | bounded Restaurant context |
-| Healthcare accent | teal | bounded Healthcare context |
-
-Accents label a local context; a screen never uses all four as decoration.
-Status must never rely on colour alone.
-
-Use **Be Vietnam Pro** for headings and prose, with controlled high-density
-headlines and roughly 1.5--1.7 body line height. Use **IBM Plex Mono** only for
-small status, timestamp or structured utility labels. Inter is not the intended
-product face.
+When a screenshot asset is absent, the public landing must not show `MEDIA
+SLOT`, a file path or developer-facing copy. It renders an intentionally
+designed neutral product panel and remains honest that the visual is a
+presentation surface rather than a real app capture.
 
 ## Spacing, shape and elevation
 
 - Use a 4px base spacing scale. Common gaps: 8, 12, 16, 24, 32, 48 and 64px.
 - Use 8px radius for small controls, 12px for inputs/cards/forms and 16px for
-  large panels. Do not create a random radius per component.
+  large panels. Service cards cap at 14px.
 - Borders are light but visible; low-contrast glass panes are not a substitute
-  for grouping. Shadows are short, soft and sparse--never coloured glows.
-- Icons come from Lucide, normally 16--20px in controls and 20--24px in
-  service contexts. An icon supports a label; it is not a mystery control.
-
-## Layout and responsive rules
-
-Build from 320px upward. Use a centred landing/product container, readable
-line lengths and generous section rhythm rather than a dense wall of cards.
-Desktop navigation may be horizontal; mobile uses the same real links inside a
-Radix Sheet. Preserve 44px-ish tap targets, keyboard focus, no horizontal
-overflow and a visible skip link. Collapse multi-column layouts before text or
-actions become cramped.
-
-The landing is a composed editorial sequence: navigation, clear two/three-line
-hero, four distinct service blocks, three steps, one multi-service story,
-truthful map illustration, safety/confirmation explanation, assistant preview,
-CTA and simple footer. Product surfaces prioritize task state, then available
-actions, then supporting context.
-
-## Component philosophy
-
-Use semantic HTML first and compose the local shadcn-style primitives for
-buttons, inputs, labels, cards, Sheet, AlertDialog, separators and skeletons.
-Use real `next/link` navigation, native labels, visible focus, `aria-live`
-feedback, safe errors, loading/empty states and direct language. A button must
-perform a real in-scope action; an unavailable Phase 2 capability is shown as
-an honest planned state, never a mock CRUD flow.
+  for grouping. Shadows are short, soft and sparse—never coloured glows.
+- Icons come from Lucide, normally 16–20px in controls and 20–24px in service
+  contexts. An icon supports a label; it is not a mystery control.
 
 ## Accessibility and content guardrails
 
-- Maintain readable contrast, visible focus and programmatic labels.
-- Honour reduced motion; functional status never depends on movement.
-- Never expose secrets, raw reset tokens, internal workflow state, chain of
-  thought or fabricated transaction success in the UI.
-- The map image is labelled as a marketing illustration, not location/tracking.
+- Build from 320px upward; preserve readable line lengths, tap targets,
+  keyboard focus, no horizontal overflow and a visible skip link.
+- The map is labelled as a marketing illustration, not live location/tracking.
 - The assistant may prepare a choice but cannot claim a booking/payment is
   complete without the Gateway's confirmed result.
+- `prefers-reduced-motion` shows the hero poster, stops prompt rotation and
+  removes reveal/focus transforms while keeping every content block visible.
+- Never expose secrets, raw reset tokens, internal workflow state, chain of
+  thought or fabricated transaction success in the UI.
 
 ## Anti-patterns
 
 Do not use purple/blue AI gradients, mesh backgrounds, glowing orbs, generic
 robot marks, chrome-like glassmorphism, stock SaaS dashboard templates, fake
-metrics, testimonials/logos, huge text, excessive pills, gratuitous card grids,
-or `transition: all`. Do not use decorative service networks, fake SVG maps,
-floating service labels, or repeated fake chat windows when a real product
-media slot is the honest choice. Do not use every rounded element as an
-invitation to float or animate. Calm clarity is more distinctive than visual
-noise.
+metrics, testimonials/logos, huge text, excessive pills, decorative service
+networks, fake SVG maps, floating service labels, repeated fake chat windows,
+or `transition: all`. Calm clarity is more distinctive than visual noise.

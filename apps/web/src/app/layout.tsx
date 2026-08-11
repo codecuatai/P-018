@@ -2,7 +2,10 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
-import "../styles.css";
+import "../styles/shared.css";
+import "../styles/auth.css";
+import "../styles/assistant.css";
+import "../styles/product.css";
 
 export const metadata: Metadata = {
   title: {

@@ -6,6 +6,7 @@ const config = {
   testEnvironment: "jsdom",
   testMatch: ["<rootDir>/src/**/*.test.ts", "<rootDir>/src/**/*.test.tsx"],
   moduleNameMapper: {
+    "^.+\\.css$": "<rootDir>/src/test/style-mock.cjs",
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   transform: {

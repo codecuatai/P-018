@@ -4,21 +4,28 @@
 
 ## 2026-08-11
 
-### Phase 1 - focused visual polish pass
+### Phase 1 - focused landing visual redesign pass
 
-- Replaced the landing network-diagram hero with a centered X-One composer,
-  ambient local media, editorial service/story sections, real map media, and
-  optional product screenshot slots. Added bounded Motion scroll-linked focus
-  with a static reduced-motion path.
-- Added the Radix marketing auth dialog with Login/Register switching and
-  shared auth form components while preserving the standalone auth routes and
-  Gateway contract. Removed HeroNetwork, travelling signals, StoryBoard and
-  fake SVG map presentation.
-- Web lint/typecheck, Jest (`6` suites / `14` tests), frozen workspace install,
-  production build (`15` routes), and `git diff --check` passed. Browser visual
-  evidence at 375px, 768px and 1440px remains `UNVERIFIED` because no browser
-  instance was available. No cloud side effects, secrets printed, commit or
-  push.
+- Changed the marketing header to a true fixed header, tightened the hero and
+  made the desktop title two intentional lines over clearer full-bleed Hanoi
+  media while preserving the composer, rotating prompts and reduced-motion
+  poster path.
+- Split Motion into one-time `RevealScene`/`RevealItem` entrances and bounded
+  post-entry `ScrollFocusScene` depth, with section-specific choreography for
+  services, steps, story, map, safety, assistant and CTA.
+- Redesigned the existing supported-services scene into exactly four visual
+  cards, added Ice/Sand/Mist/Slate tonal surfaces, kept the real map asset, and
+  replaced public screenshot fallbacks that exposed `MEDIA SLOT`/file paths
+  with neutral product panels.
+- Replaced the monolithic Web stylesheet with canonical globals, feature CSS
+  files and scoped marketing modules. Auth dialog behavior, Gateway boundary,
+  standalone auth routes, current media assets and XOneMark remain unchanged.
+- Frozen workspace install, Web typecheck, Jest (`7` suites / `16` tests),
+  production build (`15` routes), targeted landing-contract tests and
+  `git diff --check` passed. Browser visual evidence is `UNVERIFIED`: the
+  in-app browser reported no available instances and the fallback
+  `agent-browser` CLI is not installed. No cloud side effects, secrets
+  printed, commit or push.
 
 ### Phase 1 - Next.js migration, landing, routing, and real authentication
 
