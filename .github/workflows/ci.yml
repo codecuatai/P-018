@@ -13,65 +13,41 @@ concurrency:
 jobs:
   python-services:
     runs-on: [self-hosted, linux, x64]
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - "apps/agent-service"
+          - "services/ride-service"
+          - "services/restaurant-service"
+          - "services/healthcare-service"
+          - "services/food-service"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: |
-            apps/agent-service/pyproject.toml
-            services/ride-service/pyproject.toml
-            services/restaurant-service/pyproject.toml
-            services/healthcare-service/pyproject.toml
-            services/food-service/pyproject.toml
-      - name: Create shared Python CI environment
+          cache-dependency-path: ${{ matrix.service }}/pyproject.toml
+      - name: Create Python CI environment
         run: python -m venv .ci-venv
-      - name: Install all Python service dependencies
+      - name: Install dependencies
         shell: bash
         run: |
-          .ci-venv/bin/python -m pip install \
-            -e "apps/agent-service[dev]" \
-            -e "services/ride-service[dev]" \
-            -e "services/restaurant-service[dev]" \
-            -e "services/healthcare-service[dev]" \
-            -e "services/food-service[dev]"
-      - name: Lint and test all Python services
+          .ci-venv/bin/python -m pip install -e "${{ matrix.service }}[dev]"
+      - name: Lint service
         shell: bash
         run: |
-          set +e
-          failed=0
-          python_bin="$PWD/.ci-venv/bin/python"
-          services=(
-            "apps/agent-service"
-            "services/ride-service"
-            "services/restaurant-service"
-            "services/healthcare-service"
-            "services/food-service"
-          )
+          .ci-venv/bin/python -m ruff check "${{ matrix.service }}/src" "${{ matrix.service }}/tests"
+      - name: Test service
+        shell: bash
+        run: |
+          if [ "${{ matrix.service }}" = "services/food-service" ]; then
+            cd "${{ matrix.service }}" && ../../.ci-venv/bin/python -m pytest tests -q --ignore=tests/test_postgres_integration.py
+          else
+            cd "${{ matrix.service }}" && ../../.ci-venv/bin/python -m pytest tests -q
+          fi
 
-          for service in "${services[@]}"; do
-            echo "::group::Lint $service"
-            "$python_bin" -m ruff check "$service/src" "$service/tests"
-            if [ $? -ne 0 ]; then
-              failed=1
-            fi
-            echo "::endgroup::"
-
-            echo "::group::Test $service"
-            if [ "$service" = "services/food-service" ]; then
-              (cd "$service" && \
-                "$python_bin" -m pytest tests -q --ignore=tests/test_postgres_integration.py)
-            else
-              (cd "$service" && "$python_bin" -m pytest tests -q)
-            fi
-            if [ $? -ne 0 ]; then
-              failed=1
-            fi
-            echo "::endgroup::"
-          done
-
-          exit "$failed"
 
   gateway:
     runs-on: [self-hosted, linux, x64]
