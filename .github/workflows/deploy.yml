@@ -1,13 +1,18 @@
 name: VPS Staging CI/CD (SSH Deploy)
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches:
       - staging
+    types:
+      - completed
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
     steps:
       # Thực thi lệnh trên VPS qua SSH để tự động kéo code và build
       - name: SSH and Deploy on VPS

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop, 'feature/**']
+    branches: [main, develop, staging, 'feature/**']
   pull_request:
     branches: [main, develop]
 
@@ -61,19 +61,8 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - name: Cache gateway node_modules
-        id: gateway-modules-cache
-        uses: actions/cache@v4
-        with:
-          path: apps/api-gateway/node_modules
-          key: gateway-node-modules-${{ runner.os }}-node22-pnpm9.15.0-${{ hashFiles('pnpm-lock.yaml', 'apps/api-gateway/package.json') }}
-      - name: Ensure gateway dependencies
-        shell: bash
-        run: |
-          if [ ! -x apps/api-gateway/node_modules/.bin/jest ] || \
-             [ ! -x apps/api-gateway/node_modules/.bin/tsc ]; then
-            pnpm --dir apps/api-gateway install --frozen-lockfile --prefer-offline
-          fi
+      - name: Install gateway dependencies
+        run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
       - run: pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
 
   postgres-integration:
@@ -113,12 +102,7 @@ jobs:
         with:
           path: services/food-service/.ci-venv
           key: python-venv-${{ runner.os }}-${{ runner.arch }}-3.11-services/food-service-${{ hashFiles('services/food-service/pyproject.toml') }}
-      - name: Cache gateway node_modules
-        id: integration-gateway-modules-cache
-        uses: actions/cache@v4
-        with:
-          path: apps/api-gateway/node_modules
-          key: gateway-node-modules-${{ runner.os }}-node22-pnpm9.15.0-${{ hashFiles('pnpm-lock.yaml', 'apps/api-gateway/package.json') }}
+
       - name: Ensure Food service dependencies
         shell: bash
         run: |
@@ -147,9 +131,7 @@ jobs:
       - name: Run Gateway PostgreSQL integration
         shell: bash
         run: |
-          if [ ! -x apps/api-gateway/node_modules/.bin/jest ]; then
-            pnpm --dir apps/api-gateway install --frozen-lockfile --prefer-offline
-          fi
+          pnpm install --filter @x-one/api-gateway... --frozen-lockfile
           CORE_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/xone_core pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
 
   web:
