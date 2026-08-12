@@ -12,9 +12,10 @@ concurrency:
 
 jobs:
   python-services:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         service:
           - "apps/agent-service"
@@ -50,7 +51,8 @@ jobs:
 
 
   gateway:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
+    needs: [python-services]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -67,7 +69,8 @@ jobs:
 
   postgres-integration:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
+    needs: [gateway]
     services:
       postgres:
         image: postgres:16-alpine
@@ -121,7 +124,8 @@ jobs:
           CORE_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/xone_core pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
+    needs: [gateway]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -143,7 +147,8 @@ jobs:
 
   compose:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64]
+    needs: [postgres-integration, web]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
