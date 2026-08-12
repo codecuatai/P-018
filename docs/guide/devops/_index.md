@@ -9,3 +9,5 @@ Phần này hướng dẫn cách đóng gói và triển khai dự án AI Agent 
 ## Trang trong mục này
 
 - [Docker & CI/CD](docker-cicd.md) — Multi-stage Dockerfile, Docker commands, GitHub Actions CI, env vars và git workflow
+- [VPS Deployment Guide](vps-deployment-guide.md) — Hướng dẫn tạo máy ảo GCP, cấu hình môi trường bảo mật, phân tách cơ sở dữ liệu Postgres logic, và thiết lập luồng CI/CD chuẩn doanh nghiệp
+
