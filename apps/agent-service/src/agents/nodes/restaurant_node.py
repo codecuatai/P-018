@@ -5,10 +5,10 @@ import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from src.agents.policies.tool_policy import validate_tool_request
-from src.agents.state import AgentState
-from src.agents.tool_ids import make_tool_call_id
-from src.models.schemas import ToolRequest
+from ...models.schemas import ToolRequest
+from ..policies.tool_policy import validate_tool_request
+from ..state import AgentState
+from ..tool_ids import make_tool_call_id
 
 TZ = timezone(timedelta(hours=7))
 
@@ -202,9 +202,9 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     now = datetime.now(TZ)
     slots = _extract_slots(query, context.get("slots", state.get("slots", {})), now)
     try:
-        from src.config import get_settings
+        from ...config import get_settings
         if get_settings().agent_model_mode == "gemini":
-            from src.model.gemini_adapter import GeminiAdapter
+            from ...model.gemini_adapter import GeminiAdapter
             model_result = await GeminiAdapter().extract(query, context)
             if model_result.get("intent") in {"healthcare_request", "general_chat"}:
                 return {"intent": model_result["intent"], "slots": slots, "status": "COMPLETED", "unsupported": model_result["intent"] == "healthcare_request"}

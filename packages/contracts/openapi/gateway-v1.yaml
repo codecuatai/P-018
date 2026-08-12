@@ -328,7 +328,7 @@ components:
       additionalProperties: false
       properties:
         name: {type: string}
-        price: {type: integer}
+        price: {type: [integer, 'null']}
         restaurant: {type: string}
         description: {type: string}
     FoodPreview:
@@ -368,7 +368,7 @@ components:
         doctor: {type: string}
         department: {type: string}
         start_time: {type: string, format: date-time}
-        price: {type: integer}
+        price: {type: [integer, 'null']}
         appointment_id: {type: integer}
         appointment: {type: object, additionalProperties: true}
         facility: {$ref: '#/components/schemas/HealthcareFacility'}
@@ -382,14 +382,19 @@ components:
         doctor: {type: string}
         department: {type: string}
         start_time: {type: string, format: date-time}
-        price: {type: integer}
+        price: {type: [integer, 'null']}
     HealthcareFacility:
       type: object
       required: [name, address]
       additionalProperties: false
       properties:
+        id: {type: integer}
+        source_id: {type: string}
         name: {type: string}
         address: {type: string}
+        city: {type: string}
+        district: {type: string}
+        website: {type: string}
     AssistantProgressItem:
       type: object
       required: [kind, title]

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from src.database import Base
@@ -11,6 +11,33 @@ class SlotStatus(StrEnum):
     AVAILABLE = "AVAILABLE"
     HOLDING = "HOLDING"
     BOOKED = "BOOKED"
+
+
+class HealthcareFacility(Base):
+    __tablename__ = "healthcare_facilities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_id = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    facility_type = Column(String(80), nullable=True)
+    address = Column(String(500), nullable=True)
+    ward = Column(String(255), nullable=True)
+    district = Column(String(255), nullable=True)
+    city = Column(String(255), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    phone = Column(String(64), nullable=True)
+    website = Column(String(500), nullable=True)
+    description = Column(Text, nullable=True)
+    emergency_available = Column(Boolean, nullable=True)
+    opening_hours = Column(String(255), nullable=True)
+    image_url = Column(String(500), nullable=True)
+    source_name = Column(String(255), nullable=True)
+    source_url = Column(String(500), nullable=True)
+    fetched_at = Column(DateTime, nullable=True)
+
+    departments = relationship("Department", back_populates="facility")
+    doctors = relationship("Doctor", back_populates="facility")
 
 class AppointmentStatus(StrEnum):
     DRAFT = "DRAFT"
@@ -22,9 +49,12 @@ class Department(Base):
     __tablename__ = "departments"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True, nullable=False)
+    source_id = Column(String(255), nullable=True, index=True)
+    facility_id = Column(Integer, ForeignKey("healthcare_facilities.id"), nullable=True, index=True)
+    name = Column(String, index=True, nullable=False)
     description = Column(Text, nullable=True)
 
+    facility = relationship("HealthcareFacility", back_populates="departments")
     doctors = relationship("Doctor", back_populates="department")
 
 class Doctor(Base):
@@ -32,11 +62,18 @@ class Doctor(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=False)
+    source_id = Column(String(255), unique=True, nullable=True, index=True)
+    facility_id = Column(Integer, ForeignKey("healthcare_facilities.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
-    price = Column(Integer, nullable=False)
+    title = Column(String(80), nullable=True)
+    specialty = Column(String(120), nullable=True)
+    price = Column(Integer, nullable=True)
     description = Column(Text, nullable=True)
+    image_url = Column(String(500), nullable=True)
+    source_url = Column(String(500), nullable=True)
 
     department = relationship("Department", back_populates="doctors")
+    facility = relationship("HealthcareFacility", back_populates="doctors")
     slots = relationship("TimeSlot", back_populates="doctor")
     appointments = relationship("Appointment", back_populates="doctor")
 

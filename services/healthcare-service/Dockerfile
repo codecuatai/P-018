@@ -4,6 +4,7 @@ COPY pyproject.toml ./
 COPY src ./src
 COPY migrations ./migrations
 COPY seeds ./seeds
+COPY bacsi.csv benhvien.csv chuyenkhoa.csv ./import-data/
 RUN pip install --no-cache-dir .
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
