@@ -164,3 +164,30 @@ same action with the same key returns the exact stored response, while a
 different key receives `ACTION_NOT_AVAILABLE` and cannot re-run the domain
 side effect. This applies uniformly to Restaurant, Ride, Healthcare, and Food
 actions.
+
+## Multi-service reliability (Phase 9)
+
+The Gateway persists a Core-owned plan before a multi-service caller records
+domain results. `restaurant_ride` and `healthcare_ride` use
+`STOP_DEPENDENTS`: the selected authoritative resource must succeed before a
+Ride step can run. `food_healthcare` uses independent steps so a failure in one
+does not block the other. The state machine exposes `PENDING`, `RUNNING`,
+`COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `COMPENSATING`, and
+`RECOVERY_REQUIRED`.
+
+The public plan request carries only the selected resource ID and owning
+authority. The Gateway re-reads the active resource through the typed
+Restaurant or Healthcare client before creating the snapshot; caller-supplied
+address and coordinates are not authoritative. Restaurant/Healthcare
+coordinates enter Ride only through that domain-owned `AuthoritativeResource`
+snapshot. Suspicious default coordinates are retained as provenance but are not
+used as real distance inputs. A Healthcare success followed by `NO_DRIVER` is
+`PARTIAL_SUCCESS`; the appointment remains authoritative and is not
+auto-cancelled. Compensation is declared per step: Healthcare is `NONE`, Food
+may require a new user confirmation, and automatic compensation is permitted
+only for an explicitly safe domain policy.
+
+Workflow plans and step idempotency evidence are persisted in Core migration
+`011_core_multi_service_workflows.sql`. Re-reading the plan after Gateway
+process recreation returns the same state; domain writes still use their own
+typed clients, confirmation evidence, and domain idempotency keys.

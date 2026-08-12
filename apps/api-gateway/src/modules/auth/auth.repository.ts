@@ -25,6 +25,7 @@ export interface AuthRepository {
   createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount>;
   getUserByEmailNormalized(emailNormalized: string): Promise<AuthAccount | undefined>;
   getUserById(id: string): Promise<AuthAccount | undefined>;
+  updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined>;
   createSession(session: AuthSession): Promise<AuthSession>;
   getSessionByRefreshHash(refreshTokenHash: string): Promise<AuthSession | undefined>;
   rotateRefreshToken(currentHash: string, nextSession: AuthSession, now: string): Promise<RefreshRotation>;
@@ -76,6 +77,19 @@ export class InMemoryAuthRepository implements AuthRepository {
   async getUserById(id: string): Promise<AuthAccount | undefined> {
     const account = this.usersById.get(id);
     return account ? clone(account) : undefined;
+  }
+
+  async updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> {
+    const account = this.usersById.get(id);
+    if (!account) return undefined;
+    if (patch.fullName !== undefined) account.fullName = patch.fullName;
+    if (patch.phone !== undefined) account.phone = patch.phone || undefined;
+    if (patch.avatarUrl !== undefined) account.avatarUrl = patch.avatarUrl || undefined;
+    if (patch.language !== undefined) account.language = patch.language || undefined;
+    if (patch.timezone !== undefined) account.timezone = patch.timezone || undefined;
+    if (patch.onboardingCompletedAt !== undefined) account.onboardingCompletedAt = patch.onboardingCompletedAt || undefined;
+    account.updatedAt = new Date().toISOString();
+    return clone(account);
   }
 
   async createSession(session: AuthSession): Promise<AuthSession> {
@@ -249,6 +263,22 @@ export class PostgresAuthRepository implements AuthRepository {
     return result.rows[0] ? this.accountFromRow(result.rows[0] as Record<string, unknown>) : undefined;
   }
 
+  async updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> {
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    const add = (column: string, value: unknown): void => { fields.push(`${column}=$${values.length + 1}`); values.push(value); };
+    if (patch.fullName !== undefined) add('full_name', patch.fullName);
+    if (patch.phone !== undefined) add('phone', patch.phone || null);
+    if (patch.avatarUrl !== undefined) add('avatar_url', patch.avatarUrl || null);
+    if (patch.language !== undefined) add('language', patch.language || null);
+    if (patch.timezone !== undefined) add('timezone', patch.timezone || null);
+    if (patch.onboardingCompletedAt !== undefined) add('onboarding_completed_at', patch.onboardingCompletedAt || null);
+    if (!fields.length) return this.getUserById(id);
+    values.push(id);
+    const result = await this.pool.query(`UPDATE users SET ${fields.join(',')},updated_at=now() WHERE id=$${values.length} RETURNING id`, values);
+    return result.rows[0] ? this.getUserById(id) : undefined;
+  }
+
   async createSession(session: AuthSession): Promise<AuthSession> {
     const result = await this.pool.query(
       `INSERT INTO user_sessions (id,user_id,refresh_token_hash,token_family_id,expires_at,revoked_at,revoked_reason,consumed_at,replaced_by_session_id,created_at,last_used_at,user_agent,ip_hash)
@@ -377,7 +407,7 @@ export class PostgresAuthRepository implements AuthRepository {
     const resetFields = sessionAlias === 'reset'
       ? 'reset.id AS reset_id,reset.used_at,reset.expires_at AS reset_expires_at'
       : 'NULL::uuid AS reset_id,NULL::timestamptz AS used_at,NULL::timestamptz AS reset_expires_at';
-    return `SELECT u.id,u.email,u.email_normalized,u.full_name,u.phone,u.role,u.status,u.created_at,u.updated_at,c.password_hash,c.password_changed_at,
+    return `SELECT u.id,u.email,u.email_normalized,u.full_name,u.phone,u.avatar_url,u.language,u.timezone,u.onboarding_completed_at,u.role,u.status,u.created_at,u.updated_at,c.password_hash,c.password_changed_at,
       ${sessionFields}, ${resetFields}
       FROM users u JOIN user_credentials c ON c.user_id=u.id ${sessionJoin} ${resetJoin} WHERE ${where}`;
   }
@@ -389,6 +419,10 @@ export class PostgresAuthRepository implements AuthRepository {
       emailNormalized: String(row.email_normalized),
       fullName: String(row.full_name),
       phone: row.phone ? String(row.phone) : undefined,
+      avatarUrl: row.avatar_url ? String(row.avatar_url) : undefined,
+      language: row.language ? String(row.language) : undefined,
+      timezone: row.timezone ? String(row.timezone) : undefined,
+      onboardingCompletedAt: row.onboarding_completed_at ? new Date(String(row.onboarding_completed_at)).toISOString() : undefined,
       role: String(row.role) === 'admin' ? 'admin' : 'customer',
       status: String(row.status) === 'disabled' ? 'disabled' : 'active',
       passwordHash: String(row.password_hash),
@@ -456,6 +490,7 @@ export class AuthStore implements OnModuleDestroy {
   createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount> { return this.repository.createUserWithSession(account, session); }
   getUserByEmailNormalized(email: string): Promise<AuthAccount | undefined> { return this.repository.getUserByEmailNormalized(email); }
   getUserById(id: string): Promise<AuthAccount | undefined> { return this.repository.getUserById(id); }
+  updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> { return this.repository.updateProfile(id, patch); }
   createSession(session: AuthSession): Promise<AuthSession> { return this.repository.createSession(session); }
   getSessionByRefreshHash(hash: string): Promise<AuthSession | undefined> { return this.repository.getSessionByRefreshHash(hash); }
   rotateRefreshToken(hash: string, session: AuthSession, now: string): Promise<RefreshRotation> { return this.repository.rotateRefreshToken(hash, session, now); }

@@ -7,7 +7,7 @@ typed service boundaries. PostgreSQL tests run only against an explicitly
 provided disposable target. Browser acceptance is recorded only after an
 actual browser run.
 
-## Phase 1 required checks
+## Phase 2–9 required checks
 
 Run the changed-scope checks before handoff:
 
@@ -44,7 +44,7 @@ $env:AUTH_TEST_DATABASE_URL = $env:CORE_TEST_DATABASE_URL
 corepack pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts test/auth.postgres.integration.spec.ts
 ```
 
-The Auth PostgreSQL test applies owned migrations through `009_core_auth.sql`,
+The Auth PostgreSQL test applies owned migrations through `011_core_multi_service_workflows.sql`,
 then proves the atomic registration rows, Argon2id/hash-only storage, rotation
 replay revocation, one-time reset hash and session invalidation. It must never
 target a user-owned volume.
@@ -66,25 +66,26 @@ logout/login, settings/session action, and a reduced-motion rendering path.
 Record a check as **PASS** only with its observed result. If browser automation
 is unavailable, record it as **UNVERIFIED**, not passed.
 
-## Current Phase 1 evidence
+## Current Phase 9 evidence
 
 The final verification run for this worktree passed the following gates:
 
-- Environment validation: `99` root variables / `95` Compose variables;
-  Compose config passed; migration parity passed with `16` files.
-- Gateway: frozen install, lint, Jest and build passed; Jest reported `20`
-  passing suites and `82 passed, 7 skipped, 89 total` tests.
-- Web: frozen install, lint, typecheck, Jest and `next build` passed; Jest
-  reported `4` suites / `6` tests and the build generated `15` route entries.
-- Python: Agent `103 passed`; Ride `10 passed`; Restaurant `20 passed, 1
-  skipped`; Healthcare `21 passed, 1 skipped`; Food `22 passed, 3 skipped`.
-  Ruff passed in all five relevant service scopes.
-- Disposable runtime: Compose project `xone-phase1-20260811-005855` reached
-  eight healthy containers. Owned migrations were applied twice, Core/Auth
-  PostgreSQL integration reported `2` suites / `7` tests, and direct HTTP auth
-  acceptance plus fourteen Web routes returned the expected successful results.
-  The named project and only its newly created volume were removed after the
-  run.
+- Environment validation: `101` root variables / `97` Compose variables;
+  Compose config passed; migration parity passed with `22` paths.
+- Gateway: lint, Jest and build passed; Jest reported `24` passing suites,
+  `101 passed, 7 skipped, 108 total` tests, including runtime dependency and
+  partial-success acceptance.
+- Web: typecheck, Jest and `next build` passed; Jest reported `12` suites / `46`
+  tests and the build generated `19` App Router entries.
+- Python: Agent baseline passed; Ride `14 passed`; Restaurant `20 passed, 1
+  skipped`; Healthcare `23 passed, 1 skipped`; Food `23 passed, 3 skipped`.
+  Ruff passed in all relevant service scopes.
+- Data: read-only catalog plans passed for Food `17,596`, Restaurant `1,307`
+  and Healthcare `281` records; `70` specialty rows were repaired only in
+  derived output, and `scripts/dataops` plus cross-data tests passed (`9`).
+- Disposable runtime: images, PostgreSQL and Gateway reached healthy state,
+  but Web host port `5173` was occupied. The project was stopped without
+  deleting its persistent volume, so full-stack runtime is **PARTIAL/UNVERIFIED**.
 
 Interactive browser evidence is **UNVERIFIED** because the available browser
 runtime reported no browser. No screenshot, responsive, interactive or

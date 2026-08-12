@@ -1,6 +1,6 @@
 # Current Architecture State
 
-This is the canonical, filesystem-backed status for X-One as of 2026-08-11.
+This is the canonical, filesystem-backed status for X-One as of 2026-08-12.
 It supersedes earlier Phase 0 descriptions that referred to a Vite Web demo or
 demo-only public authentication. Historic work evidence belongs in
 `WORKLOG.md`; it is not a claim about the current implementation.
@@ -35,13 +35,16 @@ business logic are prohibited.
 
 | Component | Status | Evidence | Current limitation |
 | --- | --- | --- | --- |
-| Web | implemented | `apps/web/src/app/`, `src/components/marketing/`, `src/features/`, `src/providers/auth-provider.tsx`, `src/lib/api-client.ts` | Next.js App Router provides landing, auth, app/admin route guards and product shells. Conversation history, saved addresses and service-specific CRUD remain honest planned states rather than fabricated browser data. |
-| Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | The landing uses the existing local hero video/poster/map assets; screenshot fallbacks are neutral presentation panels, and the map remains an illustration rather than live tracking. |
+| Web | implemented | `apps/web/src/app/`, `src/components/marketing/`, `src/features/`, `src/providers/auth-provider.tsx`, `src/lib/api-client.ts` | Next.js App Router provides landing, auth, app/admin route guards, persistent conversations/history, saved-address CRUD, service browsing, map/location and Ride tracking states. Live browser visual acceptance remains unverified. |
+| Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | Calm task-first Vietnamese UI has route loading/error/empty/disabled states, reduced-motion handling, responsive shells, location/map panels, and tracking polling. The map is a deterministic visual snapshot, not a claim of a production map provider. |
 | Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
-| Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`009` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are test adapters only. |
-| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and confirmation boundaries are preserved; no Phase 2 domain expansion was added. |
-| Product routes | implemented/skeleton | `apps/web/src/app/app/`, `apps/web/src/app/admin/` | `/app`, conversation/history IDs, services, profile, addresses, settings and `/admin` route correctly. Profile/settings make real Gateway calls; address/history/service administration are labeled planned where no backend capability exists. |
-| Local Compose | implemented, runtime verification pending | `docker-compose.yml`, Web/Gateway Dockerfiles, `scripts/start-all.{ps1,sh}` | Compose publishes Web and Gateway; actual disposable-stack evidence is recorded only after a fresh run. |
+| Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
+| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. |
+| Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
+| Catalog data pipeline | implemented, apply unverified | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Read-only plans validate Food `17,596`, Restaurant `1,307`, Healthcare `281` normalized records; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. Explicit `--apply` remains operator-controlled and no database apply is claimed here. |
+| Recommendation + multi-service reliability | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, Core migration `011`, tests | Deterministic ranking, owning-service resource re-read, dependency/partial-success/compensation semantics, step idempotency, and durable plan readback are wired. Route-provider ETA is available for explicit routes/quotes; browser E2E remains unverified. |
+| Product routes | implemented | `apps/web/src/app/app/`, `apps/web/src/app/admin/` | `/app`, conversations, history/detail, services/browse, profile, addresses, settings and `/admin` routes build with route-level loading/error/empty states. |
+| Local Compose | implemented, runtime partially verified | `docker-compose.yml`, Web/Gateway Dockerfiles, `scripts/start-all.{ps1,sh}` | Images/PostgreSQL/Gateway reached healthy state in the disposable attempt, but Web could not bind host port 5173 because it was already occupied; full-stack runtime remains unverified. |
 | Mobile | skeleton | `apps/mobile/App.tsx` | Expo shell only; no Phase 1 mobile implementation. |
 | Deployment/cloud | planned | no deployment manifest outside local Compose | No cloud deployment, commit, push or external publish is part of this phase. |
 
@@ -83,28 +86,14 @@ state; it never contains access/refresh credentials.
 
 ## Current verification evidence
 
-The following Phase 1 checks passed on this worktree:
+The following checks passed on this worktree:
 
-- Environment and Compose: `python scripts/validate-env-config.py` reported
-  `99` root variables and `95` Compose variables; `docker compose --env-file
-  .env.example config --quiet` passed; migration parity reported `16` files.
-- Gateway: frozen install, lint, Jest and build passed. Jest reported `20`
-  passing suites and `82 passed, 7 skipped, 89 total` tests.
-- Web: frozen install, lint, typecheck, Jest and `next build` passed. Jest
-  reported `4` suites / `6` tests; the build generated `15` route entries.
-- Python services: Agent `103 passed`; Ride `10 passed`; Restaurant `20
-  passed, 1 skipped`; Healthcare `21 passed, 1 skipped`; Food `22 passed, 3
-  skipped`. Ruff passed for all five service scopes.
-- A fresh disposable Compose project
-  `xone-phase1-20260811-005855` reached eight healthy containers. Owned
-  migrations passed twice, and isolated Core/Auth PostgreSQL tests passed with
-  `2` suites / `7` tests. The project and its newly created volume were removed
-  afterward; no existing persistent volume was touched.
-- Direct runtime HTTP acceptance passed for registration, refresh, logout,
-  login, session listing, logout-all, old-access invalidation and Web health.
-  Fourteen routed Web pages returned HTTP `200`, and the landing page rendered
-  through SSR.
+- Environment/Compose: `python scripts/validate-env-config.py`, `docker compose --env-file .env.example config --quiet`, and migration parity (`22` migration paths) passed.
+- Gateway: lint, Jest and build passed after Phase 9 (`24` suites passed, `2` skipped; `101 passed, 7 skipped, 108 total`).
+- Web: typecheck, Jest and `next build` passed (`12` suites / `46` tests; 19 App Router entries).
+- Python: Agent baseline passed; Ride `14 passed`, Restaurant `20 passed/1 skipped`, Healthcare `25 passed/1 skipped`, Food `23 passed/3 skipped`; Ruff passed for all service scopes after the new contract test.
+- Data: `python -m pytest -q scripts/dataops tests/data` passed (`9` tests); read-only importer plans passed for Food `17,596`, Restaurant `1,307`, Healthcare `281` records. Healthcare reports `70` repaired specialty rows, `36` missing source URLs and `102` missing prices without fabricating values.
+- Multi-service tests cover Restaurant→Ride dependency blocking, Healthcare→Ride partial success, independent Food/Healthcare continuation, idempotency conflict/replay, compensation safety, ranking, and Core-backed restart readback.
+- A disposable Compose attempt built the stack and reached healthy PostgreSQL/Gateway state, but Web host port `5173` was already in use; the project was stopped without deleting its persistent volume. Full Compose acceptance is therefore **PARTIAL/UNVERIFIED**.
 
-Interactive browser acceptance remains **UNVERIFIED**. The environment exposed
-no browser binding, so screenshots, responsive visual review and browser-console
-evidence were not fabricated or treated as passing evidence.
+Interactive browser visual acceptance remains **UNVERIFIED**. No browser screenshot/console run was used as evidence; the Web build and automated tests are the current evidence.

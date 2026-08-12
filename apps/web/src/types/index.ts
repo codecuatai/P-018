@@ -5,9 +5,161 @@ export interface AuthUser {
   role: string;
   full_name?: string;
   phone?: string;
+  avatar_url?: string;
+  language?: string;
+  timezone?: string;
+  onboarding_completed_at?: string;
   status?: string;
   session_id?: string;
   authentication_kind?: "real" | "demo";
+}
+
+export interface SavedAddress {
+  id: string;
+  label: string;
+  address_text: string;
+  city?: string;
+  district?: string;
+  ward?: string;
+  latitude?: number;
+  longitude?: number;
+  provider?: string;
+  source: 'manual' | 'geocoded' | 'imported';
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HealthcarePatient {
+  id: number;
+  name: string;
+  phone: string;
+  relationship: "self" | "child" | "parent" | "dependent";
+  is_default: boolean;
+}
+
+export interface GeocodeCandidate {
+  address_text: string;
+  latitude: number | null;
+  longitude: number | null;
+  confidence: number;
+}
+
+export interface GeocodeResult {
+  provider: string;
+  status: "RESOLVED" | "NEEDS_CONFIRMATION";
+  query: string;
+  candidates: GeocodeCandidate[];
+  retryable?: boolean;
+}
+
+export interface RouteResult {
+  provider: string;
+  status: "RESOLVED" | "ESTIMATED";
+  distance_km: number;
+  duration_minutes: number;
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  route_distance_meters?: number;
+  route_duration_seconds?: number;
+  route_polyline?: string | null;
+  route_snapshot_hash?: string;
+  retryable?: boolean;
+}
+
+export type ServiceKey = "food" | "ride" | "restaurant" | "healthcare";
+
+export interface ServiceCatalogItem {
+  key: ServiceKey;
+  label: string;
+  description: string;
+  accent: ServiceKey;
+}
+
+export interface RideTracking {
+  booking_id: string;
+  status: string;
+  progress: number;
+  eta_seconds: number;
+  driver?: Record<string, unknown> | null;
+  driver_location?: { latitude: number; longitude: number } | null;
+  current_location?: { latitude: number; longitude: number } | null;
+  route?: Record<string, unknown>;
+  route_provider?: string;
+  updated_at?: string;
+}
+
+export interface RideQuote {
+  id: string;
+  pickup_address: string;
+  dropoff_address: string;
+  vehicle_type: string;
+  distance_km: number;
+  duration_minutes: number;
+  amount: number;
+  currency: string;
+  tariff_version: string;
+  quote_version: string;
+  expires_at: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  dropoff_latitude?: number | null;
+  dropoff_longitude?: number | null;
+  route_provider?: string;
+  route_distance_meters?: number | null;
+  route_duration_seconds?: number | null;
+  route_polyline?: string | null;
+}
+
+export interface ServiceCatalogEntry {
+  id: "food" | "ride" | "restaurant" | "healthcare";
+  label: string;
+  description: string;
+  status: "AVAILABLE" | "DEGRADED";
+  browse_mode: "results" | "quote" | "departments";
+  capabilities: string[];
+  items: Record<string, unknown>[];
+  source: string;
+}
+
+export interface ServiceCatalog {
+  items: ServiceCatalogEntry[];
+  checked_at: string;
+}
+
+export type HistoryType = 'food_order' | 'ride_booking' | 'restaurant_reservation' | 'healthcare_appointment';
+
+export interface HistoryItem {
+  id: string;
+  type: HistoryType;
+  title: string;
+  status: string;
+  detail: string;
+  timestamp: string;
+  source: HistoryType;
+  resource: Record<string, unknown>;
+}
+
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  data?: AssistantResponse;
+}
+
+export interface ConversationRecord {
+  conversationId: string;
+  actorId: string;
+  title?: string;
+  status?: "ACTIVE" | "ARCHIVED";
+  archivedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  lastMessageAt?: string;
+  serviceContext?: string;
+  messages: ConversationMessage[];
+  state: Record<string, unknown>;
+  version?: number;
 }
 
 export interface AuthSessionSummary {
@@ -208,6 +360,7 @@ export interface AssistantResponse {
   items: AssistantItem[];
   actions: AssistantAction[];
   completed: AssistantItem[];
+  workflow_status?: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED";
 }
 
 export interface ChatMessage {

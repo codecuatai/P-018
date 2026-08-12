@@ -115,14 +115,21 @@ async def remove_voucher(cart_id: str, actor_id: str = Depends(require_actor), f
 
 @router.post("/delivery/quote")
 async def delivery_quote(payload: DeliveryQuoteRequest, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
-    return {"data": await food.delivery_quote(payload.restaurant_id, payload.address_id, actor_id)}
+    snapshot = payload.address_snapshot.model_dump() if payload.address_snapshot is not None else None
+    return {"data": await food.delivery_quote(payload.restaurant_id, payload.address_id, actor_id, snapshot)}
 
 
 @router.post("/orders/preview")
 async def preview(payload: PreviewOrderRequest, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
     if actor_id != payload.user_id:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "detail": "Actor does not match order owner."})
-    return {"data": await food.preview_order(payload.cart_id, payload.address_id, payload.user_id)}
+    snapshot = payload.address_snapshot.model_dump() if payload.address_snapshot is not None else None
+    return {"data": await food.preview_order(payload.cart_id, payload.address_id, payload.user_id, snapshot)}
+
+
+@router.get("/orders")
+async def list_orders(actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+    return {"data": {"items": await food.list_orders(actor_id)}}
 
 
 @router.post("/orders", dependencies=[Depends(require_internal)])

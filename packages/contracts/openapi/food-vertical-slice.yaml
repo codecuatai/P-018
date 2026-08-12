@@ -230,6 +230,15 @@ paths:
         '404': {$ref: '#/components/responses/Error404'}
         '409': {$ref: '#/components/responses/Error409'}
   /orders:
+    get:
+      tags: [order]
+      summary: List orders owned by the asserted actor
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+      responses:
+        '200': {description: Actor-owned order history}
+        '401': {$ref: '#/components/responses/Error401'}
     post:
       tags: [order]
       summary: Create a payment-pending order through the Gateway
@@ -346,8 +355,23 @@ components:
     CartItem: {type: object, additionalProperties: false, required: [menu_item_id, quantity], properties: {menu_item_id: {type: string, minLength: 1}, quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: array, items: {$ref: '#/components/schemas/SelectedOption'}, default: []}, note: {type: [string, 'null'], maxLength: 500}}}
     UpdateCartItem: {type: object, additionalProperties: false, required: [quantity], properties: {quantity: {type: integer, minimum: 1, maximum: 50}, selected_options: {type: [array, 'null'], items: {$ref: '#/components/schemas/SelectedOption'}}, note: {type: [string, 'null'], maxLength: 500}}}
     Voucher: {type: object, additionalProperties: false, required: [code], properties: {code: {type: string, minLength: 1, maxLength: 40}}}
-    DeliveryQuote: {type: object, additionalProperties: false, required: [restaurant_id, address_id], properties: {restaurant_id: {type: string}, address_id: {type: string}}}
-    PreviewOrder: {type: object, additionalProperties: false, required: [cart_id, address_id, user_id], properties: {cart_id: {type: string}, address_id: {type: string}, user_id: {type: string}}}
+    DeliveryAddressSnapshot:
+      type: object
+      additionalProperties: false
+      required: [user_id, address_text]
+      properties:
+        user_id: {type: string, minLength: 1}
+        address_text: {type: string, minLength: 3, maxLength: 500}
+        label: {type: [string, 'null'], maxLength: 80}
+        city: {type: [string, 'null'], maxLength: 120}
+        district: {type: [string, 'null'], maxLength: 120}
+        ward: {type: [string, 'null'], maxLength: 120}
+        latitude: {type: [number, 'null'], minimum: -90, maximum: 90}
+        longitude: {type: [number, 'null'], minimum: -180, maximum: 180}
+        provider: {type: [string, 'null'], maxLength: 80}
+        source: {type: [string, 'null'], maxLength: 80}
+    DeliveryQuote: {type: object, additionalProperties: false, required: [restaurant_id, address_id], properties: {restaurant_id: {type: string}, address_id: {type: string}, address_snapshot: {$ref: '#/components/schemas/DeliveryAddressSnapshot'}}}
+    PreviewOrder: {type: object, additionalProperties: false, required: [cart_id, address_id, user_id], properties: {cart_id: {type: string}, address_id: {type: string}, user_id: {type: string}, address_snapshot: {$ref: '#/components/schemas/DeliveryAddressSnapshot'}}}
     CreateOrder:
       allOf:
         - {$ref: '#/components/schemas/PreviewOrder'}

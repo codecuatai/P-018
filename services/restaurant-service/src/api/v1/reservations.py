@@ -40,6 +40,11 @@ def get_reservation(reservation_id: str, request: Request, actor_id=Depends(requ
     return envelope(result, request)
 
 
+@router.get("/reservations")
+def list_reservations(request: Request, actor_id=Depends(require_internal_auth)):
+    return envelope({"items": request.app.state.restaurant_service.list_reservations(actor_id)}, request)
+
+
 @router.patch("/reservations/{reservation_id}")
 def update_reservation(reservation_id: str, body: ReservationUpdateRequest, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), actor_id=Depends(require_internal_auth)):
     key = require_idempotency_key(idempotency_key)

@@ -1,6 +1,6 @@
 # Service Boundaries
 
-This is the target responsibility map, not a claim that every listed interface is implemented. Consult [current architecture state](current-state.md) for evidence and limitations.
+This is the current responsibility map. Consult [current architecture state](current-state.md) for verification evidence and limitations.
 
 | Component | Owns | Consumers/dependencies | Must not do |
 | --- | --- | --- | --- |
@@ -13,4 +13,4 @@ This is the target responsibility map, not a claim that every listed interface i
 
 Gateway may orchestrate multiple services, but a domain service remains authoritative for its own business invariants and state transitions. Restaurant Service = table reservation. Food Service = menu ordering and food delivery. No booking/order belongs to both services. Domain route prefixes follow the checked-in versioned contracts; current prefixes differ by incremental slice. See [API conventions](../api/api-conventions.md). Contracts, not SQL, carry cross-boundary references and snapshots.
 
-Core/Gateway owns X-One user identity, credentials, session and audit evidence; it does not own a domain booking/order invariant. Saved addresses remain a future Core contract while Food/Ride persist immutable transaction snapshots. Healthcare owns patient identity and medical data. The current Food address endpoint and Healthcare default patient are legacy/demo compatibility boundaries, not exceptions to these ownership rules.
+Core/Gateway owns X-One user identity, credentials, session, audit evidence, profile context, saved addresses, conversations, and orchestration state; it does not own a domain booking/order invariant. Food/Ride persist immutable transaction snapshots of Core addresses and never query Core directly. Healthcare owns patient identity, medical data, and actor-to-patient links; the Gateway exposes an actor-scoped public proxy. The current Food address endpoint and development-only Healthcare default patient are compatibility boundaries, not second authorities.

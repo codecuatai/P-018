@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Injectable, Module, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { Body, Controller, Delete, Get, Injectable, Module, NotFoundException, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { randomUUID } from 'crypto';
 
 import { AgentClient, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -42,12 +43,39 @@ export class ConversationService {
     await this.store.appendConversationTurn({ conversationId, actorId: user.sub, userMessage, assistantMessage, stateUpdates });
     return response;
   }
+
+  create(conversationId: string, user: AuthUser, title?: string, serviceContext?: string): Promise<import('../core/core.module').ConversationRecord> {
+    return this.store.createConversation({ conversationId, actorId: user.sub, title, serviceContext });
+  }
+}
+
+class ConversationDto {
+  @IsString()
+  @MaxLength(160)
+  title!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  service_context?: string;
 }
 
 @Controller('api/v1/conversations')
 @UseGuards(AuthGuard)
 export class FoodConversationController {
   constructor(private readonly conversations: ConversationService, private readonly store: CoreStore) {}
+
+  @Get()
+  async list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const includeArchived = request.query?.include_archived === 'true';
+    return { data: { items: await this.store.listConversations(request.user.sub, { includeArchived }) }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post()
+  async create(@Body() body: ConversationDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const conversation = await this.conversations.create(`conv_${randomUUID()}`, request.user, body.title, body.service_context);
+    return { data: conversation, meta: { request_id: request.correlationId } };
+  }
 
   @Post(':conversationId/messages')
   message(@Param('conversationId') conversationId: string, @Body() body: MessageDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
@@ -57,7 +85,26 @@ export class FoodConversationController {
   @Get(':conversationId')
   async get(@Param('conversationId') conversationId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const conversation = await this.store.getConversation(conversationId, request.user.sub);
-    return { data: { conversation_id: conversationId, messages: conversation?.messages ?? [], state: conversation?.state ?? {} }, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
+    return { data: conversation ?? { conversation_id: conversationId, messages: [], state: {}, status: 'ACTIVE' }, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
+  }
+
+  @Patch(':conversationId')
+  async update(@Param('conversationId') conversationId: string, @Body() body: Partial<ConversationDto> & { status?: 'ACTIVE' | 'ARCHIVED' }, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const updated = await this.store.updateConversation(conversationId, request.user.sub, { title: body.title, status: body.status });
+    if (!updated) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Post(':conversationId/archive')
+  archive(@Param('conversationId') conversationId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return this.update(conversationId, { status: 'ARCHIVED' }, request); }
+
+  @Post(':conversationId/unarchive')
+  unarchive(@Param('conversationId') conversationId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return this.update(conversationId, { status: 'ACTIVE' }, request); }
+
+  @Delete(':conversationId')
+  async remove(@Param('conversationId') conversationId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    if (!await this.store.deleteConversation(conversationId, request.user.sub)) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
+    return { data: { deleted: true }, meta: { request_id: request.correlationId } };
   }
 }
 

@@ -9,7 +9,16 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from src.database import Base, get_db
 from src.main import app
-from src.models.medical import Appointment, Department, Doctor, Patient, SlotStatus, TimeSlot
+from src.models.medical import (
+    Appointment,
+    Department,
+    Doctor,
+    HealthcareFacility,
+    Patient,
+    PatientUserLink,
+    SlotStatus,
+    TimeSlot,
+)
 
 engine = create_engine(
     "sqlite://",
@@ -41,6 +50,10 @@ def reset_database() -> None:
         patient = Patient(name="Bệnh nhân test", phone="0900000000")
         db.add_all([department, doctor, patient])
         db.flush()
+        db.add_all([
+            PatientUserLink(actor_user_id=actor, patient_id=patient.id, relationship_type="self", is_default=index == 0)
+            for index, actor in enumerate(("actor-health-test", "actor-replacement", "actor-other"))
+        ])
         base = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
         db.add_all(
             [
@@ -111,6 +124,30 @@ def test_healthcare_writes_reject_oversized_idempotency_key() -> None:
     )
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "IDEMPOTENCY_KEY_INVALID"
+
+
+def test_doctor_without_source_price_is_browseable_but_not_holdable() -> None:
+    with TestingSessionLocal() as db:
+        doctor = Doctor(name="BS. Chưa có giá", price=None, description="Needs price", department_id=1)
+        db.add(doctor)
+        db.flush()
+        slot = TimeSlot(
+            doctor_id=doctor.id,
+            start_time=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=2),
+            end_time=datetime.now(UTC).replace(tzinfo=None) + timedelta(days=2, minutes=30),
+            status=SlotStatus.AVAILABLE.value,
+        )
+        db.add(slot)
+        db.commit()
+        slot_id = slot.id
+
+    response = client.post(
+        "/api/v1/slots/hold",
+        headers=headers(key="missing-price-hold"),
+        json={"slot_id": slot_id, "patient_id": 1, "symptoms": "test"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "DOCTOR_PRICE_UNAVAILABLE"
 
 
 def test_expired_hold_rejects_payment_and_final_confirmation_and_releases_slot() -> None:
@@ -209,3 +246,68 @@ def test_healthcare_owns_facility_identity_in_hold_and_appointment_responses() -
     current = client.get(f"/api/v1/appointments/{appointment['appointment_id']}", headers=headers())
     assert current.status_code == 200
     assert current.json()["data"]["facility"] == appointment["facility"]
+
+
+def test_facility_lookup_returns_only_active_healthcare_catalog_data() -> None:
+    with TestingSessionLocal() as db:
+        db.add(
+            HealthcareFacility(
+                source_id="facility-test-001",
+                name="Bệnh viện X-One",
+                address="1 Đường Mẫu, Hà Nội",
+                city="Hà Nội",
+                latitude=21.03,
+                longitude=105.81,
+                source_name="test-catalog",
+            )
+        )
+        db.commit()
+
+    response = client.get("/api/v1/facilities/facility-test-001", headers=headers())
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "source_id": "facility-test-001",
+        "name": "Bệnh viện X-One",
+        "address": "1 Đường Mẫu, Hà Nội",
+        "facility_type": None,
+        "ward": None,
+        "district": None,
+        "city": "Hà Nội",
+        "latitude": 21.03,
+        "longitude": 105.81,
+        "coordinate_status": "validated",
+        "phone": None,
+        "website": None,
+        "source": "test-catalog",
+    }
+
+    missing = client.get("/api/v1/facilities/not-found", headers=headers())
+    assert missing.status_code == 404
+    assert missing.json()["detail"]["code"] == "FACILITY_NOT_FOUND"
+
+
+def test_patient_links_are_actor_scoped_and_support_default_dependents() -> None:
+    linked = client.get("/api/v1/patients", headers=headers())
+    assert linked.status_code == 200
+    assert linked.json()["data"]["items"][0]["relationship"] == "self"
+    dependent = client.post(
+        "/api/v1/patients",
+        headers=headers(key="patient-dependent"),
+        json={"name": "Người phụ thuộc", "phone": "0911111111", "relationship": "dependent"},
+    )
+    assert dependent.status_code == 200
+    dependent_id = dependent.json()["data"]["id"]
+    selected = client.post(f"/api/v1/patients/{dependent_id}/default", headers=headers(key="patient-default"))
+    assert selected.status_code == 200
+    assert selected.json()["data"]["is_default"] is True
+
+    other_actor = client.get("/api/v1/patients", headers=headers(actor="actor-unlinked"))
+    assert other_actor.status_code == 200
+    assert other_actor.json()["data"]["items"] == []
+    denied = client.post(
+        "/api/v1/slots/hold",
+        headers=headers(actor="actor-unlinked", key="unlinked-patient-hold"),
+        json={"slot_id": 1, "patient_id": 1, "symptoms": "test"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "PATIENT_NOT_LINKED"

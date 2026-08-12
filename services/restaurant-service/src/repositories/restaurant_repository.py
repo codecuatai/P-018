@@ -205,7 +205,12 @@ class RestaurantRepository:
     def restaurant_dict(row):
         return {"id": row.id, "name": row.name, "location": row.location, "cuisine_type": row.cuisine_type,
                 "budget_range": row.budget_range, "rating": row.rating, "timezone": row.timezone,
-                "description": row.description, "image_url": row.image_url}
+                "description": row.description, "image_url": row.image_url,
+                **({"address": row.address} if row.address else {}), **({"ward": row.ward} if row.ward else {}),
+                **({"district": row.district} if row.district else {}), **({"city": row.city} if row.city else {}),
+                **({"latitude": row.latitude, "longitude": row.longitude} if row.latitude is not None and row.longitude is not None else {}),
+                **({"coordinate_status": row.coordinate_status} if row.coordinate_status else {}),
+                **({"source": {"name": row.source_name, "record_id": row.source_record_id, "url": row.source_url, "dataset_version": row.dataset_version}} if row.source_record_id else {})}
 
     def _available_table(self, db: Session, restaurant_id, party_size, start_at, end_at, seating_type=None, exclude_id=None):
         stmt = select(TableRow).where(TableRow.restaurant_id == restaurant_id, TableRow.active.is_(True), TableRow.capacity >= party_size).order_by(TableRow.capacity, TableRow.id).with_for_update()
@@ -340,6 +345,20 @@ class RestaurantRepository:
                 return None
             restaurant = db.get(RestaurantRow, result[0].restaurant_id)
             return self.reservation_dict(result[0], result[1], restaurant.name if restaurant else None)
+
+    def list_reservations(self, actor_id):
+        with self.factory() as db:
+            stmt = (
+                select(ReservationRow, TableRow)
+                .join(TableRow, TableRow.id == ReservationRow.table_id)
+                .where(ReservationRow.actor_id == actor_id)
+                .order_by(ReservationRow.start_at.desc())
+            )
+            result = db.execute(stmt).all()
+            return [
+                self.reservation_dict(row, table, (db.get(RestaurantRow, row.restaurant_id).name if db.get(RestaurantRow, row.restaurant_id) else None))
+                for row, table in result
+            ]
 
     @staticmethod
     def reservation_dict(row, table, restaurant_name=None):

@@ -50,6 +50,13 @@ export type RideWorkflowHydration = {
   bookingId?: string;
 };
 
+export type RideRouteContext = {
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  dropoff_latitude?: number;
+  dropoff_longitude?: number;
+};
+
 export type PublicWorkflow = {
   workflow_id: string;
   response: string;
@@ -151,6 +158,7 @@ export class RideConversationService {
     message: string,
     requestedWorkflowId: string | undefined,
     correlationId: string,
+    routeContext?: RideRouteContext,
   ): Promise<PublicWorkflow> {
     const workflow = this.resolveWorkflow(actorId, requestedWorkflowId);
     const decision = await this.agent.interpret(
@@ -181,6 +189,7 @@ export class RideConversationService {
             dropoff_address: dropoffAddress,
             vehicle_type: vehicleType,
             ...(promoCode ? { promo_code: promoCode } : {}),
+            ...validatedRouteContext(routeContext),
           },
         );
         workflow.quote = quote;
@@ -607,6 +616,18 @@ function requiredVehicle(value: unknown): 'BIKE' | 'CAR_4' | 'CAR_7' {
     return value;
   }
   throw new BadGatewayException('Agent proposed an invalid vehicle type.');
+}
+
+function validatedRouteContext(value: RideRouteContext | undefined): RideRouteContext {
+  if (!value) return {};
+  const result: RideRouteContext = {};
+  for (const [key, coordinate] of Object.entries(value) as Array<[keyof RideRouteContext, number | undefined]>) {
+    if (typeof coordinate !== 'number' || !Number.isFinite(coordinate)) continue;
+    const latitude = key.endsWith('latitude');
+    if (latitude && coordinate >= -90 && coordinate <= 90) result[key] = coordinate;
+    if (!latitude && coordinate >= -180 && coordinate <= 180) result[key] = coordinate;
+  }
+  return result;
 }
 
 function evidence(

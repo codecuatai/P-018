@@ -1,6 +1,6 @@
 "use client";
 
-import type { AssistantResponse, AuthSessionSummary, AuthUser } from "@/types";
+import type { AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, GeocodeResult, HealthcarePatient, HistoryItem, HistoryType, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -143,6 +143,95 @@ export async function register(fullName: string, email: string, password: string
 
 export function getCurrentUser(): Promise<AuthUser> {
   return request<AuthUser>("/api/v1/auth/me", { method: "GET" });
+}
+
+export function getProfile(): Promise<AuthUser> {
+  return request<AuthUser>("/api/v1/users/me", { method: "GET" });
+}
+
+export function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
+  return request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function listSavedAddresses(): Promise<{ items: SavedAddress[] }> {
+  return request("/api/v1/addresses", { method: "GET" });
+}
+
+export function createSavedAddress(value: Omit<SavedAddress, "id" | "created_at" | "updated_at" | "is_default"> & { is_default?: boolean }): Promise<SavedAddress> {
+  return request("/api/v1/addresses", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("address") });
+}
+
+export function updateSavedAddress(id: string, value: Partial<SavedAddress>): Promise<SavedAddress> {
+  return request(`/api/v1/addresses/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) });
+}
+
+export function deleteSavedAddress(id: string): Promise<{ deleted: boolean }> {
+  return request(`/api/v1/addresses/${encodeURIComponent(id)}`, { method: "DELETE" }, { retryAuth: false });
+}
+
+export function listHealthcarePatients(): Promise<{ items: HealthcarePatient[] }> {
+  return request("/api/v1/healthcare/patients", { method: "GET" });
+}
+
+export function createHealthcarePatient(value: { name: string; phone: string; relationship: HealthcarePatient["relationship"]; blood_type?: string; medical_history?: string }): Promise<HealthcarePatient> {
+  return request("/api/v1/healthcare/patients", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("patient") });
+}
+
+export function setDefaultHealthcarePatient(id: number): Promise<HealthcarePatient> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}/default`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("patient-default") });
+}
+
+export function resolveAddress(addressText: string): Promise<GeocodeResult> {
+  return request("/api/v1/location/geocode", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
+}
+
+export function routeLocation(origin: RouteResult["origin"], destination: RouteResult["destination"]): Promise<RouteResult> {
+  return request("/api/v1/location/route", { method: "POST", body: JSON.stringify({ origin, destination }) });
+}
+
+export function listServiceCatalog(): Promise<ServiceCatalog> {
+  return request("/api/v1/services/catalog", { method: "GET" });
+}
+
+export function getRideTracking(bookingId: string): Promise<RideTracking> {
+  return request(`/api/v1/rides/${encodeURIComponent(bookingId)}/tracking`, { method: "GET" });
+}
+
+export function browseService(service: "food" | "ride" | "restaurant" | "healthcare", keyword?: string): Promise<{ items: Record<string, unknown>[]; source: string; partial: boolean }> {
+  const query = keyword?.trim() ? `?q=${encodeURIComponent(keyword.trim())}` : "";
+  return request(`/api/v1/services/${service}${query}`, { method: "GET" });
+}
+
+export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number }): Promise<RideQuote> {
+  return request("/api/v1/services/ride/quote", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("ride-quote") });
+}
+
+export function listHistory(): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
+  return request("/api/v1/history", { method: "GET" });
+}
+
+export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function listConversations(includeArchived = false): Promise<{ items: ConversationRecord[] }> {
+  return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" });
+}
+
+export function getConversation(id: string): Promise<ConversationRecord> {
+  return request(`/api/v1/conversations/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function createConversation(title = "Cuộc trò chuyện mới", serviceContext?: string): Promise<ConversationRecord> {
+  return request("/api/v1/conversations", { method: "POST", body: JSON.stringify({ title, ...(serviceContext ? { service_context: serviceContext } : {}) }) }, { idempotencyKey: createIdempotencyKey("conversation") });
+}
+
+export function updateConversation(id: string, patch: { title?: string; status?: "ACTIVE" | "ARCHIVED" }): Promise<ConversationRecord> {
+  return request(`/api/v1/conversations/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function deleteConversation(id: string): Promise<{ deleted: boolean }> {
+  return request(`/api/v1/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }, { retryAuth: false });
 }
 
 export async function logout(): Promise<void> {

@@ -67,6 +67,14 @@ paths:
         '201': {description: Hold created or replayed}
         '409': {description: Conflict}
   /v1/reservations:
+    get:
+      summary: List reservations owned by the asserted actor
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+      responses:
+        '200': {description: Actor-owned reservations}
+    post:
     post:
       summary: Consume a validated hold into a reservation
       parameters:

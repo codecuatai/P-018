@@ -22,6 +22,7 @@ from src.domain.ride import (
     prepare_confirmation_payload,
     quote_request_payload,
     simulated_driver,
+    tracking_snapshot,
     utc_now,
 )
 from src.repositories.ride import RideRepository
@@ -50,6 +51,9 @@ class RideApplication:
     def get_quote(self, quote_id: str, actor_id: str) -> dict:
         quote = self._owned_quote(quote_id, actor_id)
         return quote.snapshot()
+
+    def list_quotes(self, actor_id: str) -> list[dict]:
+        return [quote.snapshot() for quote in self.repository.list_quotes(actor_id)]
 
     def prepare_booking(self, command: PrepareBookingCommand, idempotency_key: str) -> dict:
         operation = "ride.booking.prepare"
@@ -83,6 +87,8 @@ class RideApplication:
             driver=None,
             created_at=now,
             updated_at=now,
+            driver_id=None,
+            tracking_started_at=None,
         )
         payload = booking.snapshot()
         try:
@@ -116,9 +122,11 @@ class RideApplication:
         )
         booking.payment_reference = command.payment_reference
         booking.driver = simulated_driver(self._owned_quote(booking.quote_id, command.actor_id).vehicle_type)
+        booking.driver_id = str(booking.driver.get("id")) if booking.driver else None
         booking.status = BookingStatus.DRIVER_ASSIGNED.value
         booking.resource_version += 1
         booking.updated_at = utc_now()
+        booking.tracking_started_at = booking.updated_at
         payload = booking.snapshot()
         try:
             self.repository.consume_confirmation(command.confirmation)
@@ -164,6 +172,14 @@ class RideApplication:
 
     def get_booking(self, booking_id: str, actor_id: str) -> dict:
         return self._owned_booking(booking_id, actor_id).snapshot()
+
+    def list_bookings(self, actor_id: str) -> list[dict]:
+        return [booking.snapshot() for booking in self.repository.list_bookings(actor_id)]
+
+    def get_tracking(self, booking_id: str, actor_id: str) -> dict:
+        booking = self._owned_booking(booking_id, actor_id)
+        quote = self._owned_quote(booking.quote_id, actor_id)
+        return tracking_snapshot(booking, quote)
 
     def _owned_quote(self, quote_id: str, actor_id: str) -> Quote:
         quote = self.repository.get_quote(quote_id)

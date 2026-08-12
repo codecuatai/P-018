@@ -1,10 +1,57 @@
 "use client";
 
-import { CircleUserRound, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, CircleUserRound, Loader2, MapPinned, Save, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { errorText } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 
 export function ProfilePage() {
-  const { user } = useAuth();
-  return <section className="account-page" aria-labelledby="profile-title"><header className="section-heading"><div><span className="eyebrow">HỒ SƠ</span><h1 id="profile-title">Thông tin tài khoản</h1><p>Đây là danh tính X-One đang được dùng cho phiên hiện tại.</p></div></header><div className="profile-grid"><article className="profile-identity"><span className="profile-avatar"><CircleUserRound size={34} /></span><span className="eyebrow">X-ONE</span><h2>{user?.full_name || "Tài khoản X-One"}</h2><p>{user?.email}</p><span className="status-badge"><ShieldCheck size={15} /> {user?.status === "active" ? "Đang hoạt động" : "Trạng thái tài khoản"}</span></article><article className="profile-details"><h2>Thông tin hiện có</h2><dl><div><dt>Họ và tên</dt><dd>{user?.full_name || "Chưa có"}</dd></div><div><dt>Email</dt><dd>{user?.email}</dd></div><div><dt>Vai trò</dt><dd>{user?.role === "admin" ? "Quản trị viên" : "Khách hàng"}</dd></div></dl><p className="inline-note">Chỉnh sửa hồ sơ và địa chỉ đã lưu sẽ được bổ sung trong Phase 2.</p></article></div></section>;
+  const { user, updateProfile } = useAuth();
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [language, setLanguage] = useState("vi");
+  const [timezone, setTimezone] = useState("Asia/Ho_Chi_Minh");
+  const [saving, setSaving] = useState(false);
+  const [onboardingSaving, setOnboardingSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setFullName(user?.full_name ?? "");
+    setPhone(user?.phone ?? "");
+    setLanguage(user?.language ?? "vi");
+    setTimezone(user?.timezone ?? "Asia/Ho_Chi_Minh");
+  }, [user]);
+
+  async function save(): Promise<void> {
+    if (!fullName.trim() || saving) return;
+    setSaving(true); setFeedback(""); setError("");
+    try {
+      await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim(), onboarding_completed: true });
+      setFeedback("Hồ sơ đã được cập nhật.");
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function skipOptionalOnboarding(): Promise<void> {
+    if (onboardingSaving) return;
+    setOnboardingSaving(true); setError("");
+    try { await updateProfile({ onboarding_completed: true }); setFeedback("Bạn có thể bổ sung địa chỉ hoặc hồ sơ y tế bất cứ lúc nào."); }
+    catch (reason) { setError(errorText(reason)); }
+    finally { setOnboardingSaving(false); }
+  }
+
+  return <section className="account-page" aria-labelledby="profile-title">
+    <header className="section-heading"><div><span className="eyebrow">HỒ SƠ</span><h1 id="profile-title">Thông tin tài khoản</h1><p>Danh tính này được dùng để giữ ngữ cảnh, địa chỉ và lịch sử đúng theo tài khoản của bạn.</p></div></header>
+    {!user?.onboarding_completed_at ? <article className="onboarding-card"><div><span className="eyebrow">BƯỚC TIẾP THEO</span><h2>Hoàn tất ngữ cảnh cá nhân</h2><p>Thêm tên và số điện thoại là đủ để bắt đầu. Địa chỉ hiện tại và hồ sơ người bệnh đều là bước tùy chọn, có thể làm sau.</p></div><div className="onboarding-actions"><Link className="button button-secondary" href="/app/addresses"><MapPinned size={16} />Thêm địa chỉ <ArrowRight size={15} /></Link><button className="text-button" type="button" onClick={() => void skipOptionalOnboarding()} disabled={onboardingSaving}>{onboardingSaving ? "Đang lưu…" : "Bỏ qua bước tùy chọn"}</button></div></article> : null}
+    <div className="profile-grid">
+      <article className="profile-identity"><span className="profile-avatar"><CircleUserRound size={34} /></span><span className="eyebrow">X-ONE</span><h2>{user?.full_name || "Tài khoản X-One"}</h2><p>{user?.email}</p><span className="status-badge"><ShieldCheck size={15} /> {user?.status === "active" ? "Đang hoạt động" : "Trạng thái tài khoản"}</span></article>
+      <article className="profile-details"><h2>Chỉnh sửa hồ sơ</h2><div className="profile-form"><label className="form-field"><span>Họ và tên</span><input value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" /></label><label className="form-field"><span>Số điện thoại</span><input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" inputMode="tel" /></label><label className="form-field"><span>Email</span><input value={user?.email ?? ""} disabled aria-describedby="email-note" /><small id="email-note" className="field-hint">Email chưa được thay đổi trong luồng này.</small></label><div className="profile-form-row"><label className="form-field"><span>Ngôn ngữ</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label><label className="form-field"><span>Múi giờ</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Ho_Chi_Minh">Hà Nội</option><option value="UTC">UTC</option></select></label></div>{error ? <p className="form-error" role="alert">{error}</p> : null}{feedback ? <p className="form-success" role="status">{feedback}</p> : null}<button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !fullName.trim()}>{saving ? <Loader2 className="spinner" size={16} /> : <Save size={16} />}{saving ? "Đang lưu…" : "Lưu thay đổi"}</button></div></article>
+    </div>
+  </section>;
 }

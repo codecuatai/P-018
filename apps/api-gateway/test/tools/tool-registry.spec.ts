@@ -44,4 +44,22 @@ describe('ToolRegistry', () => {
       }),
     ).toThrow(BadGatewayException);
   });
+
+  it('exposes versioned metadata for all four domain owners', () => {
+    const tools = registry.list();
+    expect(new Set(tools.map((tool) => tool.domain))).toEqual(new Set(['food', 'ride', 'restaurant', 'healthcare']));
+    for (const tool of tools) {
+      expect(tool.version).toBe(2);
+      expect(tool.toolName).toBe(tool.name);
+      expect(tool.owner).toBeTruthy();
+      expect(tool.argumentSchema).toBeTruthy();
+      expect(tool.resultSchema).toBeTruthy();
+    }
+  });
+
+  it('rejects model-supplied authoritative fields and unknown tools', () => {
+    expect(() => registry.require({ tool_name: 'unknown.execute', workflow_id: 'wf_test', arguments: {} })).toThrow(BadGatewayException);
+    expect(() => registry.require({ tool_name: 'restaurant.search', risk_level: 'READ', workflow_id: 'wf_test', arguments: { location: 'Hà Nội', price: 0 } })).toThrow(BadGatewayException);
+    expect(() => registry.require({ tool_name: 'healthcare.hold_slot', workflow_id: 'wf_test', arguments: { slot_id: 10, patient_id: 99 } })).toThrow(BadGatewayException);
+  });
 });

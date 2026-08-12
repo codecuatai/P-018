@@ -6,17 +6,17 @@
 
 ## Decision
 
-Core owns X-One user identity and authentication references. Healthcare owns the medical patient identity and medical data, including patient records, blood type, medical history, symptoms, doctor/slot/appointment relationships, and future patient-to-user links such as `patient_user_links`.
+Core owns X-One user identity and authentication references. Healthcare owns the medical patient identity and medical data, including patient records, blood type, medical history, symptoms, doctor/slot/appointment relationships, and the `patient_user_links` actor mapping.
 
 Core may hold only the minimum opaque reference needed for authorization/orchestration. Core must not store Healthcare medical history or become a second medical record owner. Gateway passes the authenticated actor and an explicit Healthcare patient reference through the contract; Healthcare validates access and owns patient state.
 
 ## Current compatibility
 
-`HEALTHCARE_DEFAULT_PATIENT_ID` and the current demo patient seed are legacy/demo compatibility only. They are not a user-to-patient identity model. The current local vertical slice keeps them so existing deterministic demos and tests remain runnable. The Gateway must not silently treat the fallback as production identity; the real product path requires an authenticated actor-to-patient link.
+`HEALTHCARE_DEFAULT_PATIENT_ID` and the current demo patient seed are legacy/demo compatibility only. The Healthcare-owned `003_patient_user_links.sql` mapping and actor-scoped Gateway `/api/v1/healthcare/patients` boundary now provide the real local identity path. The fallback remains only for development/test when no explicit patient link is selected; production returns `PATIENT_LINK_REQUIRED` rather than silently selecting it.
 
 ## Migration path
 
-Phase 1/2 will add the Core identity/session boundary and a Healthcare-owned link/mapping contract, with authorization tests for actor-to-patient access. Existing appointments remain Healthcare-owned and retain their patient IDs. The fallback is removed or disabled for the real product path after the link contract is available; no patient migration is required in Phase 0.
+Phase 1/2 added the Core identity/session boundary and a Healthcare-owned link/mapping contract, with authorization tests for actor-to-patient access. Existing appointments remain Healthcare-owned and retain their patient IDs. No patient migration is required; future production hardening may disable the development fallback entirely.
 
 ## Consequences
 

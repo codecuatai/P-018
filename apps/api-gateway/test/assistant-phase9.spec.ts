@@ -1,0 +1,147 @@
+import { ServiceCallError } from '../src/resilience/service-call-error';
+import { InMemoryCoreRepository } from '../src/modules/core/core.module';
+import { AssistantService } from '../src/modules/conversation/assistant.service';
+
+describe('Phase 9 assistant runtime acceptance', () => {
+  const user = { sub: 'actor-phase9', email: 'phase9@xone.vn', role: 'USER' };
+
+  function planner(tasks: Array<Record<string, unknown>>) {
+    return {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã cập nhật trạng thái các dịch vụ.' }
+        : { plan: { tasks } }),
+    };
+  }
+
+  it('does not execute a dependent Ride when Restaurant preparation fails', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = planner([
+      { domain: 'restaurant', goal: 'Restaurant', normalized_request: 'Restaurant', extracted_slots: { location: 'Hanoi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' } },
+      { domain: 'ride', goal: 'Ride', normalized_request: 'Ride to restaurant', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'restaurant' }, depends_on: [0] },
+    ]);
+    const restaurant = { executeTool: jest.fn().mockRejectedValue(new Error('restaurant unavailable')) };
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tìm nhà hàng rồi gọi xe.', undefined, 'phase9-restaurant-fail');
+
+    expect(restaurant.executeTool).toHaveBeenCalled();
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(response.workflow_status).toBe('FAILED');
+    const saved = await store.getConversation(response.conversation_id, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.domain === 'ride')).toEqual(expect.objectContaining({
+      phase: 'FAILED',
+      failure_code: 'DEPENDENCY_BLOCKED',
+    }));
+  });
+
+  it('continues an independent Food task when Healthcare preparation fails', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = planner([
+      { domain: 'food', goal: 'Food', normalized_request: 'Find food', extracted_slots: { query: 'pho' } },
+      { domain: 'healthcare', goal: 'Healthcare', normalized_request: 'Find appointment', extracted_slots: { department: 'neurology' } },
+    ]);
+    const foodAgent = {
+      ...agent,
+      chat: jest.fn().mockResolvedValue({ response_type: 'options', message: 'Food options', data: { items: [] }, state_updates: {} }),
+    };
+    const healthcare = { executeTool: jest.fn().mockRejectedValue(new Error('healthcare unavailable')), acknowledgePayment: jest.fn(), defaultPatientId: 1 };
+    const service = new AssistantService(
+      store as never,
+      foodAgent as never,
+      { executeTool: jest.fn() } as never,
+      healthcare as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tìm món ăn và lịch khám.', undefined, 'phase9-independent-fail');
+
+    expect(foodAgent.chat).toHaveBeenCalled();
+    expect(healthcare.executeTool).toHaveBeenCalled();
+    expect(response.workflow_status).toBe('PARTIAL_SUCCESS');
+    const saved = await store.getConversation(response.conversation_id, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.domain === 'food')).toEqual(expect.objectContaining({ phase: 'IN_PROGRESS' }));
+    expect(tasks.find((task) => task.domain === 'healthcare')).toEqual(expect.objectContaining({ phase: 'FAILED' }));
+  });
+
+  it('keeps a completed Healthcare appointment when final Ride payment fails', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-phase9-partial';
+    await store.saveConversation({
+      conversationId,
+      actorId: user.sub,
+      messages: [],
+      state: {
+        tasks: [
+          {
+            id: 'healthcare-task',
+            domain: 'healthcare',
+            goal: 'Healthcare',
+            normalized_request: 'Appointment',
+            extracted_slots: {},
+            depends_on: [],
+            phase: 'COMPLETED',
+            revision: 0,
+            public_item: { kind: 'appointment_confirmed', status: 'CONFIRMED' },
+          },
+          {
+            id: 'ride-task',
+            domain: 'ride',
+            goal: 'Ride',
+            normalized_request: 'Ride home',
+            extracted_slots: {},
+            depends_on: [],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'ride-workflow-1',
+            authoritative: { quote: { id: 'quote-1' }, booking: { id: 'booking-1', quote_id: 'quote-1' } },
+          },
+        ],
+        actions: [{ id: 'ride-payment-action', kind: 'ride_payment', task_id: 'ride-task', task_revision: 0, cohort_id: 'ride-cohort', workflow_id: 'ride-workflow-1' }],
+      },
+      status: 'ACTIVE',
+    });
+    const ride = {
+      confirmPayment: jest.fn().mockRejectedValue(new ServiceCallError({
+        service: 'ride-service',
+        operation: 'ride.booking.confirm',
+        contractVersion: 'v1',
+        httpStatus: 409,
+        code: 'NO_DRIVER',
+        detail: 'No driver is available.',
+        category: 'BUSINESS',
+        retryable: false,
+        retryAfterMs: null,
+        outcome: 'RESPONSE_RECEIVED',
+      })),
+    };
+    const service = new AssistantService(
+      store as never,
+      { assistantChat: jest.fn() } as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.act(user, { conversation_id: conversationId, action_id: 'ride-payment-action' }, 'phase9-ride-fail', 'phase9-ride-payment');
+
+    expect(ride.confirmPayment).toHaveBeenCalledWith(user.sub, 'ride-workflow-1', 'phase9-ride-fail');
+    expect(response.workflow_status).toBe('PARTIAL_SUCCESS');
+    expect(response.items[0]).toEqual(expect.objectContaining({ kind: 'task_error', error_code: 'NO_DRIVER' }));
+    const saved = await store.getConversation(conversationId, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.domain === 'healthcare')).toEqual(expect.objectContaining({ phase: 'COMPLETED' }));
+    expect(tasks.find((task) => task.domain === 'ride')).toEqual(expect.objectContaining({ phase: 'FAILED' }));
+  });
+});

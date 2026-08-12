@@ -116,6 +116,16 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
     if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
   }
+  for (const name of ['LOCATION_PROVIDER_URL']) {
+    if (config[name] !== undefined && String(config[name]).trim() !== '') {
+      try {
+        const url = new URL(String(config[name]).trim());
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid');
+      } catch {
+        throw new Error(`${name} must be a valid HTTP(S) URL when configured.`);
+      }
+    }
+  }
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(String(config.AUTH_REFRESH_COOKIE_NAME))) {
     throw new Error('AUTH_REFRESH_COOKIE_NAME must use only letters, numbers, underscores, or hyphens.');
   }

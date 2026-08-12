@@ -197,6 +197,13 @@ export class AuthService {
     return account ? this.toPublicUser(account, claims.sid) : undefined;
   }
 
+  async updateProfile(user: AuthUser, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthUser> {
+    const updated = await this.store.updateProfile(user.sub, patch);
+    if (!updated) throw new NotFoundException({ code: 'USER_NOT_FOUND', detail: 'Không tìm thấy hồ sơ.', retryable: false });
+    await this.audit('PROFILE_UPDATED', user.sub, user.session_id ?? 'profile');
+    return this.toPublicUser(updated, user.session_id);
+  }
+
   toPublicUser(account: AuthAccount, sessionId?: string): AuthUser {
     return {
       id: account.id,
@@ -204,6 +211,10 @@ export class AuthService {
       email: account.email,
       full_name: account.fullName,
       ...(account.phone ? { phone: account.phone } : {}),
+      ...(account.avatarUrl ? { avatar_url: account.avatarUrl } : {}),
+      ...(account.language ? { language: account.language } : {}),
+      ...(account.timezone ? { timezone: account.timezone } : {}),
+      ...(account.onboardingCompletedAt ? { onboarding_completed_at: account.onboardingCompletedAt } : {}),
       role: account.role,
       status: account.status,
       ...(sessionId ? { session_id: sessionId } : {}),

@@ -1,0 +1,514 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Injectable,
+  Module,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
+
+import { CorrelatedRequest } from '../../common/correlation-id.middleware';
+import { HealthcareClient } from '../../clients/service.clients';
+import { AuthGuard } from '../auth/auth.guard';
+import { AuthService } from '../auth/auth.service';
+import { AuthUser } from '../auth/auth.types';
+import { CoreModule, CoreStore, SavedAddressRecord } from '../core/core.module';
+import { AuthModule } from '../auth/auth.module';
+
+class ProfilePatchDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(200)
+  full_name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  avatar_url?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  language?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  timezone?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  onboarding_completed?: boolean;
+}
+
+class SavedAddressDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  label!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  address_text!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  ward?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  provider?: string;
+
+  @IsOptional()
+  @IsIn(['manual', 'geocoded', 'imported'])
+  source?: SavedAddressRecord['source'];
+
+  @IsOptional()
+  @IsBoolean()
+  is_default?: boolean;
+}
+
+class SavedAddressPatchDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  label?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  address_text?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  ward?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  provider?: string;
+
+  @IsOptional()
+  @IsIn(['manual', 'geocoded', 'imported'])
+  source?: SavedAddressRecord['source'];
+
+  @IsOptional()
+  @IsBoolean()
+  is_default?: boolean;
+}
+
+class PatientCreateDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  name!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(64)
+  phone!: string;
+
+  @IsOptional()
+  @IsIn(['self', 'child', 'parent', 'dependent'])
+  relationship?: 'self' | 'child' | 'parent' | 'dependent';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  blood_type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  medical_history?: string;
+}
+
+export interface LocationCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+type GeocodeCandidate = {
+  address_text: string;
+  latitude: number | null;
+  longitude: number | null;
+  confidence: number;
+};
+
+type GeocodeResult = {
+  provider: string;
+  status: 'RESOLVED' | 'NEEDS_CONFIRMATION';
+  query: string;
+  candidates: GeocodeCandidate[];
+  retryable?: boolean;
+};
+
+type RouteResult = {
+  provider: string;
+  status: 'RESOLVED' | 'ESTIMATED';
+  distance_km: number;
+  duration_minutes: number;
+  origin: LocationCoordinate;
+  destination: LocationCoordinate;
+  route_distance_meters?: number;
+  route_duration_seconds?: number;
+  route_polyline?: string | null;
+  route_snapshot_hash?: string;
+  retryable?: boolean;
+};
+
+@Injectable()
+export class LocationService {
+  constructor(private readonly config: ConfigService) {}
+
+  async geocode(addressText: string): Promise<GeocodeResult> {
+    const query = addressText.trim().replace(/\s+/g, ' ');
+    if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Địa chỉ cần ít nhất 3 ký tự.', retryable: false });
+
+    const providerUrl = this.providerUrl();
+    if (!providerUrl) {
+      return { provider: 'deterministic-manual', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }] };
+    }
+
+    try {
+      const url = new URL('/search', providerUrl);
+      url.searchParams.set('q', query);
+      url.searchParams.set('format', 'jsonv2');
+      url.searchParams.set('limit', '3');
+      const payload = await this.fetchJson(url);
+      const candidates = Array.isArray(payload)
+        ? payload.map((item) => this.parseGeocodeCandidate(item)).filter((item): item is GeocodeCandidate => item !== undefined)
+        : [];
+      if (candidates.length) return { provider: 'configured-location-provider', status: 'RESOLVED', query, candidates };
+      return { provider: 'configured-location-provider', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }] };
+    } catch {
+      return { provider: 'configured-location-provider-unavailable', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }], retryable: true };
+    }
+  }
+
+  async route(origin: LocationCoordinate, destination: LocationCoordinate): Promise<RouteResult> {
+    assertCoordinate(origin, 'origin');
+    assertCoordinate(destination, 'destination');
+    const providerUrl = this.providerUrl();
+    if (providerUrl) {
+      try {
+        const url = new URL(`/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`, providerUrl);
+        url.searchParams.set('overview', 'full');
+        url.searchParams.set('geometries', 'polyline');
+        const payload = await this.fetchJson(url);
+        const route = isRecord(payload) && Array.isArray(payload.routes) && isRecord(payload.routes[0]) ? payload.routes[0] : undefined;
+        const distanceMeters = numberValue(route?.distance);
+        const durationSeconds = numberValue(route?.duration);
+        if (distanceMeters !== undefined && durationSeconds !== undefined) {
+          const polyline = typeof route?.geometry === 'string' ? route.geometry : null;
+          return {
+            provider: 'configured-routing-provider',
+            status: 'RESOLVED',
+            distance_km: Number((distanceMeters / 1000).toFixed(2)),
+            duration_minutes: Math.max(1, Math.ceil(durationSeconds / 60)),
+            origin,
+            destination,
+            route_distance_meters: Math.round(distanceMeters),
+            route_duration_seconds: Math.round(durationSeconds),
+            route_polyline: polyline,
+            route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, polyline }),
+          };
+        }
+      } catch {
+        // Fall through to a transparent estimate. No provider response is
+        // authoritative until it passes the shape and numeric checks above.
+      }
+    }
+    const distance = haversineKm(origin, destination);
+    return {
+      provider: providerUrl ? 'configured-routing-provider-unavailable' : 'deterministic-straight-line',
+      status: 'ESTIMATED',
+      distance_km: Number(distance.toFixed(2)),
+      duration_minutes: Math.max(1, Math.ceil(distance / 22 * 60)),
+      origin,
+      destination,
+      route_snapshot_hash: stableHash({ origin, destination, distance_km: Number(distance.toFixed(2)), mode: 'straight-line' }),
+      ...(providerUrl ? { retryable: true } : {}),
+    };
+  }
+
+  private providerUrl(): URL | undefined {
+    const configured = this.config.get<string>('LOCATION_PROVIDER_URL')?.trim();
+    if (!configured) return undefined;
+    try {
+      return new URL(configured.endsWith('/') ? configured : `${configured}/`);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async fetchJson(url: URL): Promise<unknown> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
+    try {
+      const token = this.config.get<string>('LOCATION_PROVIDER_TOKEN')?.trim();
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) throw new Error('location-provider-http-error');
+      return response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private parseGeocodeCandidate(value: unknown): GeocodeCandidate | undefined {
+    if (!isRecord(value)) return undefined;
+    const latitude = numberValue(value.lat);
+    const longitude = numberValue(value.lon);
+    const addressText = stringValue(value.display_name);
+    if (latitude === undefined || longitude === undefined || !addressText || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+    return { address_text: addressText, latitude, longitude, confidence: 1 };
+  }
+}
+
+@Controller('api/v1/users')
+@UseGuards(AuthGuard)
+export class PersonalProfileController {
+  constructor(private readonly auth: AuthService) {}
+
+  @Get('me')
+  get(@Req() request: CorrelatedRequest & { user: AuthUser }): object {
+    return { data: request.user, meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('me')
+  async patch(@Body() body: ProfilePatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const updated = await this.auth.updateProfile(request.user, {
+      ...(body.full_name !== undefined ? { fullName: body.full_name.trim() } : {}),
+      ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      ...(body.avatar_url !== undefined ? { avatarUrl: body.avatar_url.trim() } : {}),
+      ...(body.language !== undefined ? { language: body.language.trim() } : {}),
+      ...(body.timezone !== undefined ? { timezone: body.timezone.trim() } : {}),
+      ...(body.onboarding_completed !== undefined ? { onboardingCompletedAt: body.onboarding_completed ? new Date().toISOString() : '' } : {}),
+    });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+}
+
+@Controller('api/v1/addresses')
+@UseGuards(AuthGuard)
+export class SavedAddressController {
+  constructor(private readonly store: CoreStore, private readonly locations: LocationService) {}
+
+  @Get()
+  async list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: { items: (await this.store.listSavedAddresses(request.user.sub)).map(toPublicAddress) }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post()
+  async create(@Body() body: SavedAddressDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    assertCoordinatePair(body.latitude, body.longitude);
+    const now = new Date().toISOString();
+    const saved = await this.store.createSavedAddress({ id: `addr_${randomUUID().replaceAll('-', '').slice(0, 16)}`, actorId: request.user.sub, label: body.label.trim(), addressText: body.address_text.trim(), city: clean(body.city), district: clean(body.district), ward: clean(body.ward), latitude: body.latitude, longitude: body.longitude, provider: clean(body.provider), source: body.source ?? 'manual', isDefault: body.is_default === true, createdAt: now, updatedAt: now });
+    return { data: toPublicAddress(saved), meta: { request_id: request.correlationId } };
+  }
+
+  @Patch(':id')
+  async patch(@Param('id') id: string, @Body() body: SavedAddressPatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    assertCoordinatePair(body.latitude, body.longitude);
+    const updated = await this.store.updateSavedAddress(id, request.user.sub, { ...(body.label !== undefined ? { label: body.label.trim() } : {}), ...(body.address_text !== undefined ? { addressText: body.address_text.trim() } : {}), ...(body.city !== undefined ? { city: clean(body.city) } : {}), ...(body.district !== undefined ? { district: clean(body.district) } : {}), ...(body.ward !== undefined ? { ward: clean(body.ward) } : {}), ...(body.latitude !== undefined ? { latitude: body.latitude } : {}), ...(body.longitude !== undefined ? { longitude: body.longitude } : {}), ...(body.provider !== undefined ? { provider: clean(body.provider) } : {}), ...(body.source !== undefined ? { source: body.source } : {}), ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}) });
+    if (!updated) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
+    return { data: toPublicAddress(updated), meta: { request_id: request.correlationId } };
+  }
+
+  @Post(':id/default')
+  async setDefault(@Param('id') id: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const updated = await this.store.updateSavedAddress(id, request.user.sub, { isDefault: true });
+    if (!updated) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
+    return { data: toPublicAddress(updated), meta: { request_id: request.correlationId } };
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const deleted = await this.store.deleteSavedAddress(id, request.user.sub);
+    if (!deleted) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
+    return { data: { deleted: true }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('resolve')
+  async resolve(@Body() body: { address_text?: string }): Promise<object> {
+    return { data: await this.locations.geocode(typeof body.address_text === 'string' ? body.address_text : '') };
+  }
+}
+
+@Controller('api/v1/location')
+@UseGuards(AuthGuard)
+export class LocationController {
+  constructor(private readonly locations: LocationService) {}
+
+  @Post('geocode')
+  async geocode(@Body() body: { address_text?: string }): Promise<object> {
+    return { data: await this.locations.geocode(typeof body.address_text === 'string' ? body.address_text : '') };
+  }
+
+  @Post('route')
+  async route(@Body() body: { origin?: LocationCoordinate; destination?: LocationCoordinate }): Promise<object> {
+    if (!body.origin || !body.destination) throw new BadRequestException({ code: 'COORDINATES_REQUIRED', detail: 'Cần có điểm đi và điểm đến.', retryable: false });
+    return { data: await this.locations.route(body.origin, body.destination) };
+  }
+}
+
+@Controller('api/v1/healthcare/patients')
+@UseGuards(AuthGuard)
+export class HealthcarePatientController {
+  constructor(private readonly healthcare: HealthcareClient) {}
+
+  @Get()
+  async list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.healthcare.listPatients(request.user.sub, request.correlationId ?? 'cor_unknown'), meta: { request_id: request.correlationId } };
+  }
+
+  @Post()
+  async create(@Body() body: PatientCreateDto, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const key = idempotencyKey?.trim();
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for a patient write.', retryable: false });
+    const data = await this.healthcare.createPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, {
+      name: body.name.trim(),
+      phone: body.phone.trim(),
+      relationship: body.relationship ?? 'self',
+      ...(body.blood_type !== undefined ? { blood_type: body.blood_type.trim() } : {}),
+      ...(body.medical_history !== undefined ? { medical_history: body.medical_history.trim() } : {}),
+    });
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Post(':id/default')
+  async setDefault(@Param('id') id: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const patientId = Number(id);
+    const key = idempotencyKey?.trim();
+    if (!Number.isInteger(patientId) || patientId < 1) throw new BadRequestException({ code: 'PATIENT_ID_INVALID', detail: 'Patient id is invalid.', retryable: false });
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for a patient write.', retryable: false });
+    const data = await this.healthcare.setDefaultPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId);
+    return { data, meta: { request_id: request.correlationId } };
+  }
+}
+
+function assertCoordinatePair(latitude: number | undefined, longitude: number | undefined): void {
+  if ((latitude === undefined) !== (longitude === undefined)) throw new BadRequestException({ code: 'COORDINATE_PAIR_REQUIRED', detail: 'Vĩ độ và kinh độ phải được gửi cùng nhau.', retryable: false });
+}
+
+function clean(value: string | undefined): string | undefined {
+  const cleaned = value?.trim();
+  return cleaned || undefined;
+}
+
+function assertCoordinate(value: LocationCoordinate, name: string): void {
+  if (!Number.isFinite(value.latitude) || !Number.isFinite(value.longitude) || value.latitude < -90 || value.latitude > 90 || value.longitude < -180 || value.longitude > 180) {
+    throw new BadRequestException({ code: 'INVALID_COORDINATES', detail: `Tọa độ ${name} không hợp lệ.`, retryable: false });
+  }
+}
+
+function toPublicAddress(value: SavedAddressRecord): object {
+  return { id: value.id, label: value.label, address_text: value.addressText, ...(value.city ? { city: value.city } : {}), ...(value.district ? { district: value.district } : {}), ...(value.ward ? { ward: value.ward } : {}), ...(value.latitude !== undefined ? { latitude: value.latitude } : {}), ...(value.longitude !== undefined ? { longitude: value.longitude } : {}), ...(value.provider ? { provider: value.provider } : {}), source: value.source, is_default: value.isDefault, created_at: value.createdAt, updated_at: value.updatedAt };
+}
+
+function haversineKm(left: LocationCoordinate, right: LocationCoordinate): number {
+  const radius = 6371;
+  const latitude = (right.latitude - left.latitude) * Math.PI / 180;
+  const longitude = (right.longitude - left.longitude) * Math.PI / 180;
+  const a = Math.sin(latitude / 2) ** 2 + Math.cos(left.latitude * Math.PI / 180) * Math.cos(right.latitude * Math.PI / 180) * Math.sin(longitude / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' && value.trim() && Number.isFinite(Number(value)) ? Number(value) : undefined;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stableHash(value: unknown): string {
+  const serialized = JSON.stringify(value, Object.keys(value as object).sort());
+  let hash = 0;
+  for (let index = 0; index < serialized.length; index += 1) hash = ((hash << 5) - hash + serialized.charCodeAt(index)) | 0;
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+@Module({ imports: [AuthModule, CoreModule], controllers: [PersonalProfileController, SavedAddressController, LocationController, HealthcarePatientController], providers: [LocationService], exports: [LocationService] })
+export class PersonalModule {}

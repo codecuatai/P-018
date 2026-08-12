@@ -2,7 +2,7 @@
 
 A tool is a governed domain capability, not a raw REST endpoint. The Tool Registry belongs to the gateway. The agent can only emit the versioned JSON-schema request in `packages/contracts/tools/`; it cannot invoke a tool itself.
 
-The canonical Phase 0 registry specification is [Tool Registry v2](tool-registry-v2.md). It maps the current runtime names, canonical v2 names, all four domains, risk, argument/result schema references, idempotency, confirmation, owner, and implemented-vs-Gateway-only status. This is a spec only; no Phase 4 capability is represented as implemented.
+The canonical registry specification is [Tool Registry v2](tool-registry-v2.md). It maps the current runtime names, canonical v2 names, all four domains, risk, argument/result schema references, idempotency, confirmation, owner, and implemented-vs-Gateway-only status. Phase 9 recommendation/workflow endpoints are Gateway orchestration APIs, not new Agent tools; the Agent still emits typed proposals and cannot mutate the workflow or domain state directly.
 
 | Risk | Example behavior | Confirmation |
 | --- | --- | --- |
@@ -20,4 +20,7 @@ from Healthcare and the duration from Ride. The public action descriptors are
 the only executable Assistant surface. Core migration
 `007_core_assistant_action_executions.sql` records one durable action receipt
 per actor/conversation/action so Restaurant, Ride, Healthcare, and Food replay
-the same safe response without repeating a domain write.
+the same safe response without repeating a domain write. Core migration
+`011_core_multi_service_workflows.sql` separately records Gateway orchestration
+plans and typed step results; it is not an authority for a Restaurant,
+Healthcare, Ride, or Food booking/order.

@@ -48,6 +48,27 @@ class FoodApplicationService:
             FoodOrderStatus.DELIVERING: self.settings.delivery_delay_ms,
         }.get(status, 0)
 
+    @staticmethod
+    def _delivery_address(address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
+        if address_snapshot is not None:
+            address_text = address_snapshot.get("address_text") or address_snapshot.get("address")
+            if address_snapshot.get("user_id") != user_id or not str(address_text or "").strip():
+                raise DomainError("FORBIDDEN", "Core address does not belong to the current actor.")
+            return {
+                "id": address_id,
+                "user_id": user_id,
+                "label": address_snapshot.get("label"),
+                "address": str(address_text).strip(),
+                "city": address_snapshot.get("city"),
+                "district": address_snapshot.get("district"),
+                "ward": address_snapshot.get("ward"),
+                "latitude": address_snapshot.get("latitude"),
+                "longitude": address_snapshot.get("longitude"),
+                "provider": address_snapshot.get("provider"),
+                "source": address_snapshot.get("source") or "core_saved_address",
+            }
+        return {}
+
     async def search(self, **filters: Any) -> list[dict]:
         return await self.repository.search(**filters)
 
@@ -163,9 +184,9 @@ class FoodApplicationService:
         cart["voucher"] = None
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
-    async def delivery_quote(self, restaurant_id: str, address_id: str, user_id: str) -> dict:
+    async def delivery_quote(self, restaurant_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
         restaurant = await self.restaurant(restaurant_id)
-        address = await self.repository.get_address(address_id)
+        address = self._delivery_address(address_id, user_id, address_snapshot) if address_snapshot is not None else await self.repository.get_address(address_id)
         if address is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy địa chỉ giao hàng.")
         if address.get("user_id") != user_id:
@@ -186,13 +207,13 @@ class FoodApplicationService:
             cart_item.update({"name": item["name"], "base_price": item["price"], "unit_price": unit_price, "selected_options": options})
         return await self._recalculate(cart, persist=persist, expected_version=int(cart.get("version", 0)) if persist else None)
 
-    async def preview_order(self, cart_id: str, address_id: str, user_id: str) -> dict:
+    async def preview_order(self, cart_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
         cart = await self._cart(cart_id)
         if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
         if not cart["items"]:
             raise DomainError("CART_EMPTY", "Giỏ hàng đang trống.")
-        address = await self.repository.get_address(address_id)
+        address = self._delivery_address(address_id, user_id, address_snapshot) if address_snapshot is not None else await self.repository.get_address(address_id)
         if address is None or address.get("user_id") != user_id:
             raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
         restaurant = await self.restaurant(cart["restaurant_id"])
@@ -209,12 +230,21 @@ class FoodApplicationService:
             if existing.get("cart_id") != payload.get("cart_id") or existing.get("address", {}).get("id") != payload.get("address_id") or existing.get("payment_method") != payload.get("payment_method"):
                 raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
             return existing
+        if payload.get("address_snapshot") is not None:
+            payload = {
+                **payload,
+                "address_snapshot": self._delivery_address(
+                    str(payload["address_id"]),
+                    str(payload["user_id"]),
+                    payload["address_snapshot"],
+                ),
+            }
         if "expected_snapshot_hash" not in payload:
-            preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"])
+            preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"], payload.get("address_snapshot"))
             payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}
         expected = {"snapshot_hash": payload["expected_snapshot_hash"], "cart_version": payload["expected_cart_version"], "amount": payload["expected_amount"], "currency": payload["expected_currency"], "quote_version": payload["expected_quote_version"]}
         order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": datetime.now(UTC).isoformat(), "reason": "Order created", "actor_type": "gateway"}]}
-        return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"])
+        return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"], payload.get("address_snapshot"))
 
     async def get_order(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.repository.get_order(order_id)
@@ -223,6 +253,10 @@ class FoodApplicationService:
         if user_id is not None and order["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Đơn hàng không thuộc user hiện tại.")
         return order
+
+    async def list_orders(self, user_id: str) -> list[dict]:
+        orders = await self.repository.list_orders()
+        return sorted((order for order in orders if order.get("user_id") == user_id), key=lambda order: str(order.get("created_at", "")), reverse=True)
 
     async def reconcile_due_orders(self) -> int:
         now = datetime.now(UTC)

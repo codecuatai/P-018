@@ -9,6 +9,10 @@ export interface AuthUser {
   role: AuthRole | string;
   full_name?: string;
   phone?: string;
+  avatar_url?: string;
+  language?: string;
+  timezone?: string;
+  onboarding_completed_at?: string;
   status?: AuthUserStatus | string;
   session_id?: string;
   authentication_kind?: 'real' | 'demo';
@@ -20,6 +24,10 @@ export interface AuthAccount {
   emailNormalized: string;
   fullName: string;
   phone?: string;
+  avatarUrl?: string;
+  language?: string;
+  timezone?: string;
+  onboardingCompletedAt?: string;
   role: AuthRole;
   status: AuthUserStatus;
   passwordHash: string;

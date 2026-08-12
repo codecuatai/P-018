@@ -35,6 +35,40 @@ async def test_required_option_and_preview() -> None:
 
 
 @pytest.mark.asyncio
+async def test_core_saved_address_is_received_as_an_immutable_food_snapshot() -> None:
+    food = make_service()
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-core-address-key")
+    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    snapshot = {
+        "user_id": "usr_demo_001",
+        "address_text": "25 Le Dai Hanh, Hai Ba Trung, Ha Noi",
+        "label": "Nha rieng",
+        "district": "Hai Ba Trung",
+        "latitude": 21.0125,
+        "longitude": 105.848,
+        "source": "geocoded",
+    }
+    preview = await food.preview_order(cart["id"], "core_addr_home", "usr_demo_001", snapshot)
+    assert preview["address"]["id"] == "core_addr_home"
+    assert preview["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
+    assert preview["address"]["latitude"] == 21.0125
+    order = await food.create_order({
+        "cart_id": cart["id"],
+        "address_id": "core_addr_home",
+        "address_snapshot": snapshot,
+        "user_id": "usr_demo_001",
+        "idempotency_key": "order-core-address-key",
+        "payment_method": "card",
+        "expected_snapshot_hash": preview["snapshot_hash"],
+        "expected_cart_version": preview["cart_version"],
+        "expected_amount": preview["total"]["amount"],
+        "expected_currency": preview["total"]["currency"],
+        "expected_quote_version": preview["quote_version"],
+    })
+    assert order["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
+
+
+@pytest.mark.asyncio
 async def test_order_and_voucher_are_atomic_and_idempotent() -> None:
     repository = InMemoryFoodRepository()
     food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))

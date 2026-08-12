@@ -110,6 +110,25 @@ export class PaymentService {
     return payment;
   }
 
+  async consumerSummaryForOrder(orderId: string, actorId: string): Promise<Record<string, unknown> | undefined> {
+    const payment = await this.store.findPaymentByOrder(orderId, actorId);
+    if (!payment) return undefined;
+    const receipt = payment.status === 'SUCCEEDED' ? await this.store.getReceipt(payment.id) : undefined;
+    const refunds = await this.store.listRefunds(payment.id);
+    return {
+      payment_id: payment.id,
+      status: payment.status,
+      amount: payment.amount,
+      currency: payment.currency,
+      method: payment.method,
+      created_at: payment.createdAt,
+      ...(payment.authorizedAt ? { paid_at: payment.authorizedAt } : {}),
+      ...(payment.receiptId ? { receipt_id: payment.receiptId } : {}),
+      ...(receipt ? { receipt } : {}),
+      refunds: refunds.map((refund) => ({ id: refund.id, amount: refund.amount, currency: refund.currency, status: refund.status, reason: refund.reason, created_at: refund.createdAt, ...(refund.completedAt ? { completed_at: refund.completedAt } : {}) })),
+    };
+  }
+
   async refund(paymentId: string, actorId: string, idempotencyKey: string, reason = 'customer_request'): Promise<RefundRecord> {
     const payment = await this.get(paymentId, actorId);
     if (payment.status !== 'SUCCEEDED') throw new ConflictException({ code: 'PAYMENT_NOT_REFUNDABLE', detail: 'Only a succeeded payment can be refunded.' });

@@ -1,6 +1,6 @@
 "use client";
 
-import { History, LogOut, MapPinned, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
+import { HeartPulse, History, LogOut, MapPinned, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -15,6 +15,7 @@ const navigation = [
   { href: "/app/services", label: "Dịch vụ", icon: Store },
   { href: "/app/profile", label: "Hồ sơ", icon: UserRound },
   { href: "/app/addresses", label: "Địa chỉ", icon: MapPinned },
+  { href: "/app/patients", label: "Hồ sơ y tế", icon: HeartPulse },
   { href: "/app/settings", label: "Cài đặt", icon: Settings },
 ];
 

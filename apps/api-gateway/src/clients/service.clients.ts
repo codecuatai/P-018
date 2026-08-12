@@ -67,6 +67,16 @@ export type RideQuote = {
   tariff_version: string;
   quote_version: string;
   expires_at: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  dropoff_latitude?: number | null;
+  dropoff_longitude?: number | null;
+  route_provider?: string;
+  route_distance_meters?: number | null;
+  route_duration_seconds?: number | null;
+  route_polyline?: string | null;
+  route_snapshot_hash?: string | null;
+  tariff_snapshot?: Record<string, unknown> | null;
 };
 
 export type RideBooking = {
@@ -75,12 +85,14 @@ export type RideBooking = {
   quote_version: string;
   amount: number;
   currency: string;
-  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'DRIVER_ASSIGNED' | 'CANCELLED';
+  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'DRIVER_ASSIGNED' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   resource_version: number;
   payment_reference: string | null;
   driver: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  driver_id?: string | null;
+  tracking_started_at?: string | null;
 };
 
 export type ConfirmationEvidence = {
@@ -115,7 +127,7 @@ abstract class InternalServiceClient {
     return this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN');
   }
 
-  protected async legacyRequest<T extends JsonObject>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
+  protected async legacyRequest<T>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
@@ -248,6 +260,7 @@ export interface HealthcareTool {
 }
 
 export type RestaurantReadTool = RestaurantTool;
+export type FoodCatalogResponse = JsonObject[] | JsonObject;
 
 @Injectable()
 export class AgentClient extends InternalServiceClient {
@@ -305,6 +318,10 @@ export class AgentClient extends InternalServiceClient {
 export class RideClient extends InternalServiceClient {
   constructor(config: ConfigService) {
     super(config, 'RIDE_SERVICE_URL');
+  }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
   async createQuote(
@@ -385,11 +402,53 @@ export class RideClient extends InternalServiceClient {
       (value) => parseBooking(envelopeData(value)),
     );
   }
+
+  async listBookings(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/bookings', { method: 'GET' }, callContext.correlationId, actorId);
+  }
+
+  async listQuotes(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/quotes', { method: 'GET' }, callContext.correlationId, actorId);
+  }
+
+  async getTracking(actorId: string, callContext: ServiceCallContext, bookingId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/bookings/${encodeURIComponent(bookingId)}/tracking`, { method: 'GET' }, callContext.correlationId, actorId);
+  }
 }
 
 @Injectable()
 export class RestaurantClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'RESTAURANT_SERVICE_URL'); }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async searchCatalog(filters: { location?: string; cuisineType?: string; budgetRange?: string; limit?: number }, correlationId: string): Promise<JsonObject> {
+    const query = new URLSearchParams();
+    if (filters.location) query.set('location', filters.location);
+    if (filters.cuisineType) query.set('cuisine_type', filters.cuisineType);
+    if (filters.budgetRange) query.set('budget_range', filters.budgetRange);
+    query.set('limit', String(filters.limit ?? 8));
+    return this.legacyRequest<JsonObject>(`/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  async listReservations(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listRestaurants(actorId: string, correlationId: string, keyword?: string): Promise<JsonObject> {
+    const query = keyword ? `?location=${encodeURIComponent(keyword)}` : '';
+    return this.legacyRequest<JsonObject>(`/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async getRestaurant(restaurantId: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/restaurants/${encodeURIComponent(restaurantId)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async getReservation(id: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(id)}`, { method: 'GET' }, correlationId, actorId);
+  }
 
   async executeTool(tool: RestaurantTool, actorId: string, correlationId: string): Promise<unknown> {
     const context: ServiceCallContext = {
@@ -445,6 +504,38 @@ export class RestaurantClient extends InternalServiceClient {
 @Injectable()
 export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async listDepartmentsCatalog(correlationId: string): Promise<JsonObject[]> {
+    return this.legacyRequest<JsonObject[]>('/api/v1/departments', { method: 'GET' }, correlationId);
+  }
+
+  async listAppointments(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/appointments', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listDepartments(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/departments', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async getFacility(facilitySourceId: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/facilities/${encodeURIComponent(facilitySourceId)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listPatients(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/patients', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async createPatient(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/patients', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async setDefaultPatient(actorId: string, correlationId: string, idempotencyKey: string, patientId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}/default`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
 
   get defaultPatientId(): number {
     if (this.config.get<string>('APP_ENV') === 'production') {
@@ -531,6 +622,10 @@ export class FoodClient extends InternalServiceClient {
     super(config, 'FOOD_SERVICE_URL');
   }
 
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
   get(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>(path, { method: 'GET' }, correlationId, actorId);
   }
@@ -550,6 +645,17 @@ export class FoodClient extends InternalServiceClient {
 
   delete(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>(path, { method: 'DELETE' }, correlationId, actorId);
+  }
+
+  async searchCatalog(filters: { keyword?: string; district?: string; category?: string; limit?: number }, correlationId: string): Promise<FoodCatalogResponse> {
+    const query = new URLSearchParams({ keyword: filters.keyword ?? '', limit: String(filters.limit ?? 8) });
+    if (filters.district) query.set('district', filters.district);
+    if (filters.category) query.set('category', filters.category);
+    return this.legacyRequest<FoodCatalogResponse>(`/api/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  listOrders(correlationId: string, actorId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/orders', { method: 'GET' }, correlationId, actorId);
   }
 }
 
@@ -630,6 +736,7 @@ function envelopeValue(payload: unknown): unknown {
   if (!isRecord(payload) || !('data' in payload)) {
     throw new Error('Internal service returned an invalid envelope.');
   }
+
   return payload.data;
 }
 
@@ -679,6 +786,16 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     tariff_version: data.tariff_version,
     quote_version: data.quote_version,
     expires_at: data.expires_at,
+    ...(typeof data.pickup_latitude === 'number' || data.pickup_latitude === null ? { pickup_latitude: data.pickup_latitude as number | null } : {}),
+    ...(typeof data.pickup_longitude === 'number' || data.pickup_longitude === null ? { pickup_longitude: data.pickup_longitude as number | null } : {}),
+    ...(typeof data.dropoff_latitude === 'number' || data.dropoff_latitude === null ? { dropoff_latitude: data.dropoff_latitude as number | null } : {}),
+    ...(typeof data.dropoff_longitude === 'number' || data.dropoff_longitude === null ? { dropoff_longitude: data.dropoff_longitude as number | null } : {}),
+    ...(typeof data.route_provider === 'string' ? { route_provider: data.route_provider } : {}),
+    ...(typeof data.route_distance_meters === 'number' ? { route_distance_meters: data.route_distance_meters } : {}),
+    ...(typeof data.route_duration_seconds === 'number' ? { route_duration_seconds: data.route_duration_seconds } : {}),
+    ...(typeof data.route_polyline === 'string' || data.route_polyline === null ? { route_polyline: data.route_polyline as string | null } : {}),
+    ...(typeof data.route_snapshot_hash === 'string' || data.route_snapshot_hash === null ? { route_snapshot_hash: data.route_snapshot_hash as string | null } : {}),
+    ...(isRecord(data.tariff_snapshot) || data.tariff_snapshot === null ? { tariff_snapshot: data.tariff_snapshot as Record<string, unknown> | null } : {}),
   };
 }
 
@@ -689,7 +806,7 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     || typeof data.quote_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
-    || !['AWAITING_PAYMENT_CONFIRMATION', 'DRIVER_ASSIGNED', 'CANCELLED'].includes(
+    || !['AWAITING_PAYMENT_CONFIRMATION', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].includes(
       String(data.status),
     )
     || typeof data.resource_version !== 'number'
@@ -712,6 +829,8 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     driver: data.driver,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    ...(typeof data.driver_id === 'string' || data.driver_id === null ? { driver_id: data.driver_id as string | null } : {}),
+    ...(typeof data.tracking_started_at === 'string' || data.tracking_started_at === null ? { tracking_started_at: data.tracking_started_at as string | null } : {}),
   };
 }
 

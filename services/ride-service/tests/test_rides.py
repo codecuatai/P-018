@@ -223,3 +223,52 @@ def test_cancellation_is_bound_to_current_resource_version(client: TestClient) -
     result = response.json()["data"]
     assert result["status"] == "CANCELLED"
     assert result["resource_version"] == booking["resource_version"] + 1
+
+
+def test_v2_quote_keeps_coordinate_route_snapshot_and_tariff(client: TestClient) -> None:
+    response = client.post(
+        "/v1/quotes",
+        headers=_headers(key="coordinate-quote"),
+        json={
+            "pickup_address": "VinUni",
+            "dropoff_address": "Ho Guom",
+            "vehicle_type": "CAR_4",
+            "pickup_latitude": 21.0001,
+            "pickup_longitude": 105.9001,
+            "dropoff_latitude": 21.0285,
+            "dropoff_longitude": 105.8048,
+        },
+    )
+    assert response.status_code == 201
+    quote = response.json()["data"]
+    assert quote["route_provider"] == "deterministic-haversine"
+    assert quote["route_distance_meters"] > 0
+    assert quote["route_snapshot_hash"]
+    assert quote["tariff_snapshot"]["version"] == quote["tariff_version"]
+
+
+def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: TestClient) -> None:
+    quote = _create_quote(client, key="tracking-quote")
+    booking = _prepare(client, quote)
+    payment_reference = "payment_tracking"
+    bound_payload = {
+        "action": "ride.booking.confirm",
+        "actor_id": ACTOR,
+        "booking_id": booking["id"],
+        "quote_id": quote["id"],
+        "quote_version": quote["quote_version"],
+        "amount": quote["amount"],
+        "currency": quote["currency"],
+        "payment_reference": payment_reference,
+    }
+    confirmed = client.post(
+        f"/v1/bookings/{booking['id']}:confirm",
+        headers=_headers(key="tracking-confirm"),
+        json={"payment_reference": payment_reference, "confirmation": _confirmation("ride.booking.confirm", bound_payload, quote)},
+    )
+    assert confirmed.status_code == 200
+    first = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    assert first.status_code == 200
+    assert first.json()["data"] == second.json()["data"]
+    assert first.json()["data"]["driver_location"] is None

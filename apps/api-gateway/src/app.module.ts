@@ -12,6 +12,10 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { ToolModule } from './modules/tools/tool.module';
 import { WorkflowModule } from './modules/workflow/workflow.module';
 import { CoreModule } from './modules/core/core.module';
+import { PersonalModule } from './modules/personal/personal.module';
+import { HistoryModule } from './modules/history/history.module';
+import { ServicesModule } from './modules/services/services.module';
+import { ReliabilityModule } from './modules/workflow/reliability.module';
 
 @Module({
   imports: [
@@ -19,9 +23,13 @@ import { CoreModule } from './modules/core/core.module';
     ClientsModule,
     HealthModule,
     CoreModule,
+    PersonalModule,
+    HistoryModule,
+    ServicesModule,
     AuthModule,
     ConversationModule,
     WorkflowModule,
+    ReliabilityModule,
     ConfirmationModule,
     PaymentModule,
     ToolModule,

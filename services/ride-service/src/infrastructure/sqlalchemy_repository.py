@@ -20,12 +20,20 @@ class SqlAlchemyRideRepository:
         row = self.session.get(QuoteRow, quote_id)
         return _quote_from_row(row) if row else None
 
+    def list_quotes(self, actor_id: str) -> list[Quote]:
+        rows = self.session.scalars(select(QuoteRow).where(QuoteRow.actor_id == actor_id).order_by(QuoteRow.created_at.desc())).all()
+        return [_quote_from_row(row) for row in rows]
+
     def save_quote(self, quote: Quote) -> None:
         self.session.add(QuoteRow(**quote.__dict__))
 
     def get_booking(self, booking_id: str) -> Booking | None:
         row = self.session.get(BookingRow, booking_id)
         return _booking_from_row(row) if row else None
+
+    def list_bookings(self, actor_id: str) -> list[Booking]:
+        rows = self.session.scalars(select(BookingRow).where(BookingRow.actor_id == actor_id).order_by(BookingRow.created_at.desc())).all()
+        return [_booking_from_row(row) for row in rows]
 
     def save_booking(self, booking: Booking) -> None:
         row = self.session.get(BookingRow, booking.id)
@@ -107,6 +115,16 @@ def _quote_from_row(row: QuoteRow) -> Quote:
         quote_version=row.quote_version,
         expires_at=row.expires_at,
         created_at=row.created_at,
+        pickup_latitude=row.pickup_latitude,
+        pickup_longitude=row.pickup_longitude,
+        dropoff_latitude=row.dropoff_latitude,
+        dropoff_longitude=row.dropoff_longitude,
+        route_provider=row.route_provider,
+        route_distance_meters=row.route_distance_meters,
+        route_duration_seconds=row.route_duration_seconds,
+        route_polyline=row.route_polyline,
+        route_snapshot_hash=row.route_snapshot_hash,
+        tariff_snapshot=row.tariff_snapshot,
     )
 
 
@@ -124,4 +142,6 @@ def _booking_from_row(row: BookingRow) -> Booking:
         driver=row.driver,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        driver_id=row.driver_id,
+        tracking_started_at=row.tracking_started_at,
     )

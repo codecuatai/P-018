@@ -1,6 +1,11 @@
 # Tool Registry v2 Specification
 
-Status: **Phase 0 contract/specification only**. This document does not claim that a v2 runtime registry or a new tool executor exists. The current Gateway and Agent bindings remain in their existing bounded adapters; the Agent emits typed proposals and the Gateway validates policy, arguments, actor scope, confirmation, and domain results.
+Status: **Implemented runtime registry**. The Gateway exposes the validated
+registry at `GET /internal/tools/registry-v2`; the Agent still emits typed
+proposals and bounded domain adapters execute them. The registry validates
+tool name/alias, version, risk, argument shape, actor scope, idempotency and
+confirmation policy before an executor can run. It is not a generic executor
+or a source of authoritative domain state.
 
 ## Required metadata
 
@@ -70,14 +75,22 @@ The v2 names below are the canonical names for future contract use. A legacy ali
 | `healthcare.confirm_appointment` | healthcare | 2 | FINANCIAL_OR_FINAL | `HealthcareAppointmentArguments` | `HealthcareAppointmentResult` | required | explicit_gateway_confirmation | healthcare-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
 | `healthcare.cancel_appointment` | healthcare | 2 | REVERSIBLE_WRITE | `HealthcareAppointmentArguments` | `HealthcareAppointmentResult` | required | policy-dependent | healthcare-service | `IMPLEMENTED_RUNTIME` | — |
 
-No Phase 4 capability is registered as implemented in this Phase 0 spec. A future entry must be labelled `PLANNED_PHASE_4`, have all required metadata, and remain unavailable to runtime validation until its owner, OpenAPI contract, tests, idempotency, and confirmation policy exist.
+The runtime registry is version `2` and its four-domain entries are covered by
+`apps/api-gateway/test/tools/tool-registry.spec.ts`. Any future capability
+must have an owner, OpenAPI/tool contract, tests, idempotency and confirmation
+policy before it can move beyond `PROPOSAL_ONLY` or `PLANNED_PHASE_4`.
+
+Phase 9 ranking and multi-service plan APIs remain Gateway orchestration
+surfaces rather than Agent tools. They accept validated, actor-scoped inputs
+and typed domain results; the Agent cannot call a domain, choose a destination,
+confirm a booking, or mark a workflow successful.
 
 ## Ride evidence audit
 
 - `ride.quote.create` is emitted by `apps/agent-service/src/agents/ride_graph.py`, validated by `apps/api-gateway/src/modules/tools/tool-registry.ts`, and executed through `RideConversationService` and `RideClient`.
 - `ride.booking.prepare` and `ride.booking.confirm` are performed by Gateway confirmation endpoints and `RideClient`; the Agent does not directly execute either final domain operation.
 - `ride.booking.cancel` exists as an authoritative Ride route and application operation, but no current Gateway client/confirmation path exposes it to the Agent; it is therefore `IMPLEMENTED_DOMAIN_ONLY`.
-- `ride.booking.cancel.prepare` is accepted as a Gateway proposal shape only. It is not an alias for `ride.booking.cancel`, and this Phase 0 task does not add a cancellation workflow or rewrite the runtime registry.
+- `ride.booking.cancel.prepare` is accepted as a Gateway proposal shape only. It is not an alias for `ride.booking.cancel`; cancellation remains outside the current Agent final-tool surface.
 
 ## Boundary rules
 

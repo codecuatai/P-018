@@ -23,8 +23,24 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | POST | `/api/v1/auth/forgot-password`, `/reset-password` | Web/mobile | Public; reset is one-time, expiring and hash-only | `PUBLIC_CANONICAL` | Email delivery remains a configured future seam; dev/test capture is not a production contract. |
 | Gateway | POST | `/api/v1/assistant/chat` | Web/mobile | Bearer token; Gateway calls Agent internally | `PUBLIC_CANONICAL` | Current unified assistant surface. |
 | Gateway | POST | `/api/v1/assistant/actions` | Web/mobile | Bearer token plus required `Idempotency-Key`; final actions use Gateway confirmation | `PUBLIC_CANONICAL` | Current executable assistant action surface. |
+| Gateway | GET, POST | `/api/v1/conversations` | Web/mobile | Bearer token; Core actor scope | `PUBLIC_CANONICAL` | Core-owned conversation list/create. |
 | Gateway | POST | `/api/v1/conversations/{conversationId}/messages` | Web/mobile | Bearer token; actor scoped in Core | `PUBLIC_CANONICAL` | Existing conversation compatibility surface; new cross-domain consumers should prefer `/api/v1/assistant/chat`. |
-| Gateway | GET | `/api/v1/conversations/{conversationId}` | Web/mobile | Bearer token; actor scoped in Core | `PUBLIC_CANONICAL` | Existing conversation read; keep until consumers migrate to the unified response model. |
+| Gateway | GET, PATCH, DELETE | `/api/v1/conversations/{conversationId}` | Web/mobile | Bearer token; actor scoped in Core | `PUBLIC_CANONICAL` | Read, rename/archive, or delete one Core conversation. |
+| Gateway | POST | `/api/v1/conversations/{conversationId}/archive`, `/unarchive` | Web/mobile | Bearer token; actor scoped in Core | `PUBLIC_CANONICAL` | Explicit conversation lifecycle actions. |
+| Gateway | GET, PATCH | `/api/v1/users/me` | Web/mobile | Bearer token; Core actor | `PUBLIC_CANONICAL` | Safe profile context; no credential material. |
+| Gateway | GET, POST, PATCH, DELETE | `/api/v1/addresses`, `/api/v1/addresses/{id}` | Web/mobile | Bearer token; Core actor scope | `PUBLIC_CANONICAL` | Core saved addresses; domain writes receive immutable snapshots only. |
+| Gateway | POST | `/api/v1/addresses/{id}/default`, `/api/v1/addresses/resolve` | Web/mobile | Bearer token; Core actor / location adapter | `PUBLIC_CANONICAL` | Default selection and address resolution. |
+| Gateway | POST | `/api/v1/location/geocode`, `/api/v1/location/route` | Web/mobile | Bearer token; configured provider or deterministic safe fallback | `PUBLIC_CANONICAL` | Location adapter; it never becomes booking authority. |
+| Gateway | GET, POST | `/api/v1/healthcare/patients`, `/api/v1/healthcare/patients/default` | Web/mobile | Bearer token; Healthcare actor-patient ownership | `PUBLIC_CANONICAL` | Patient link/default selection remains Healthcare-owned. |
+| Gateway | GET, POST | `/api/v1/healthcare/patients`, `/api/v1/healthcare/patients/{patientId}/default` | Web/mobile | Bearer token; Gateway actor scope plus Healthcare actor assertion and idempotency for writes | `PUBLIC_CANONICAL` | Healthcare-owned patient links; the Gateway is only the public boundary. |
+| Gateway | GET | `/api/v1/services`, `/api/v1/services/catalog`, `/api/v1/services/{service}` | Web/mobile | Bearer token; typed domain clients | `PUBLIC_CANONICAL` | Service Hub entry points, degraded/partial-aware browse. |
+| Gateway | POST | `/api/v1/services/ride/quote` | Web/mobile | Bearer token plus required `Idempotency-Key`; Ride typed client | `PUBLIC_CANONICAL` | Actor-scoped Ride quote. |
+| Gateway | GET | `/api/v1/rides/{bookingId}/tracking` | Web/mobile | Bearer token; actor-scoped Ride typed client | `PUBLIC_CANONICAL` | Pollable tracking snapshot with route/current location. |
+| Gateway | GET | `/api/v1/history`, `/api/v1/history/{type}/{id}` | Web/mobile | Bearer token; actor-scoped domain reads | `PUBLIC_CANONICAL` | Unified history with partial dependency reporting and authoritative detail links. |
+| Gateway | POST | `/api/v1/recommendations/rank` | Web/mobile | Bearer token; read-only deterministic rank adapter | `PUBLIC_CANONICAL` | V1 ranking by relevance/location/ETA/price/rating; no ML or side effect. |
+| Gateway | POST, GET | `/api/v1/workflows/multi-service/plan`, `/api/v1/workflows/multi-service/{workflowId}` | Web/mobile/internal orchestration UI | Bearer token; Core actor scope plus required idempotency for writes | `PUBLIC_CANONICAL` | Durable plan state; selected domain resources remain authoritative. |
+| Gateway | POST | `/api/v1/workflows/multi-service/{workflowId}/steps/{stepId}/result` | Typed Gateway/domain workflow caller | Bearer token plus required `Idempotency-Key` | `PUBLIC_CANONICAL` | Applies dependency policy to a typed result; no direct domain SQL. |
+| Gateway | POST | `/api/v1/workflows/multi-service/{workflowId}/compensations/{compensationId}/result` | Typed Gateway/domain workflow caller | Bearer token plus required `Idempotency-Key` | `PUBLIC_CANONICAL` | Explicit compensation result; Healthcare is never auto-cancelled by Ride failure. |
 | Gateway | POST | `/api/v1/confirmations/food-order` | Web/mobile | Bearer token; first/final confirmation evidence in Core | `PUBLIC_CANONICAL` | Food confirmation boundary retained; assistant actions may prepare it. |
 | Gateway | POST | `/api/v1/confirmations/food-order-cancellation` | Web/mobile | Bearer token; actor-scoped confirmation | `PUBLIC_CANONICAL` | Food cancellation confirmation boundary retained. |
 | Gateway | GET | `/api/v1/confirmations/{confirmationId}` | Web/mobile | Bearer token; actor scoped | `PUBLIC_CANONICAL` | Keep while confirmation UI consumes this resource. |
@@ -37,6 +53,7 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | GET | `/api/v1/payments/{paymentId}` | Web/mobile | Bearer token; actor-scoped Core read | `PUBLIC_CANONICAL` | Keep for current payment sandbox/readback. |
 | Gateway | GET | `/api/v1/payments/{paymentId}/receipt` | Web/mobile | Bearer token; actor-scoped Core read | `PUBLIC_CANONICAL` | Keep for current sandbox receipt surface. |
 | Gateway | GET | `/api/v1/payments/{paymentId}/refunds` | Web/mobile | Bearer token; actor-scoped Core read | `PUBLIC_CANONICAL` | Keep for current refund/recovery read surface. |
+| Gateway | GET | `/internal/tools/registry-v2` | Agent service | `X-Internal-Service-Token` | `INTERNAL` | Versioned capability registry; validates policy metadata and never exposes domain authority to browsers. |
 | Gateway | POST | `/api/v1/chat` | Web/mobile/demo tests | Legacy `X-Actor-Id` development identity; no real auth | `LEGACY_COMPAT` | Migrate Ride consumers to `/api/v1/assistant/chat` and `/api/v1/assistant/actions`; do not remove before tests/demo migrate. |
 | Gateway | POST | `/api/v1/workflows/{workflowId}/confirm-service` | Web/mobile/demo tests | Legacy `X-Actor-Id` and Gateway confirmation state | `LEGACY_COMPAT` | Migrate Ride to assistant action descriptors and explicit confirmation. |
 | Gateway | POST | `/api/v1/workflows/{workflowId}/confirm-payment` | Web/mobile/demo tests | Legacy `X-Actor-Id` and Gateway payment sandbox | `LEGACY_COMPAT` | Migrate Ride to assistant action descriptors and explicit payment confirmation. |
@@ -48,7 +65,7 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | GET | `/internal/tools` | Agent service | `X-Internal-Service-Token` | `INTERNAL` | Agent capability discovery only; never expose to browsers. |
 | Gateway | POST | `/internal/tools/execute` | Agent service | Internal token plus actor assertion; transaction tools are blocked | `INTERNAL` | Agent continues to emit proposals; final actions go through public Gateway confirmation. |
 
-The target paths `/api/v1/users/*`, `/api/v1/addresses/*`, `/api/v1/history/*`, and `/api/v1/services/*` have no current Gateway controller and are therefore not implemented or inventoried as runnable endpoints. Their Phase 1/2 contracts must be added before implementation.
+The checked-in `gateway-v1.yaml` documents the Phase 2–9 Gateway additions above. A route may still be runtime-dependent on a domain service or external location provider; that is reported as a degraded/partial response or an explicit unverified runtime check, not as fabricated data.
 
 ## Agent service — private interpretation boundary
 
@@ -133,6 +150,7 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | GET | `/health/live` | none; liveness | `INTERNAL` |
 | GET | `/health/ready` | none; readiness | `INTERNAL` |
 | GET | `/api/v1/departments` | Internal token | `INTERNAL` |
+| GET | `/api/v1/facilities/{facility_source_id}` | Internal token; Healthcare-owned active catalog lookup | `INTERNAL` |
 | GET | `/api/v1/doctors` | Internal token | `INTERNAL` |
 | POST | `/api/v1/slots/hold` | Internal token, actor assertion, idempotency | `INTERNAL` |
 | GET | `/api/v1/appointments/{appointment_id}` | Internal token plus actor assertion | `INTERNAL` |
@@ -144,4 +162,4 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 
 `services/healthcare-sandbox/src/main.py` contains a standalone mock with `/api/v1/departments`, `/api/v1/doctors`, `/api/v1/slots/hold`, `/api/v1/appointments/{appointment_id}/confirm`, `/api/v1/appointments/{appointment_id}/cancel`, and `/api/v1/payment/webhook`. It is not wired into Compose or Gateway and is classified `DEPRECATED`; use `services/healthcare-service` through Gateway for any current flow. It must not be read as a second Healthcare owner.
 
-No `/api/v1/users/*`, `/api/v1/addresses/*` saved-address Gateway resource, `/api/v1/history/*`, or `/api/v1/services/*` implementation exists yet. These remain planned Phase 1/2 surfaces and are excluded from the runnable inventory until their contracts, owner, auth, and tests exist.
+The legacy Food address route remains a private domain compatibility endpoint; the canonical saved-address API is the actor-scoped Gateway resource above. All new public browser callers must use Gateway routes and the `gateway-v1.yaml` contract.

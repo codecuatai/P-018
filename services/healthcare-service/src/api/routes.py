@@ -19,8 +19,10 @@ from src.models.medical import (
     AuditLog,
     Department,
     Doctor,
+    HealthcareFacility,
     IdempotencyRecord,
     Patient,
+    PatientUserLink,
     SlotStatus,
     TimeSlot,
 )
@@ -36,6 +38,14 @@ class HoldSlotRequest(BaseModel):
 
 class WebhookRequest(BaseModel):
     appointment_id: int = Field(ge=1)
+
+
+class CreatePatientRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    phone: str = Field(min_length=6, max_length=64)
+    relationship: str = Field(default="self", pattern="^(self|child|parent|dependent)$")
+    blood_type: str | None = Field(default=None, max_length=16)
+    medical_history: str | None = Field(default=None, max_length=4000)
 
 
 def _require_actor(x_actor_id: str | None) -> str:
@@ -172,23 +182,54 @@ def _commit_reconciliation(db: Session, expired_appointment_ids: set[int]) -> No
         db.commit()
 
 
-def _resolve_patient(db: Session, patient_id: int | None) -> Patient:
-    patient = (
-        db.query(Patient).filter(Patient.id == patient_id).first()
-        if patient_id is not None
-        else db.query(Patient).order_by(Patient.id).first()
-    )
+def _resolve_patient(db: Session, patient_id: int | None, actor_id: str) -> Patient:
+    links = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).all()
+    if patient_id is not None:
+        patient = db.query(Patient).filter(Patient.id == patient_id).first()
+        if not any(link.patient_id == patient_id for link in links):
+            raise HTTPException(status_code=403, detail={"code": "PATIENT_NOT_LINKED", "detail": "The patient is not linked to this account."})
+    else:
+        default_link = next((link for link in links if link.is_default), None) or (links[0] if links else None)
+        patient = db.query(Patient).filter(Patient.id == default_link.patient_id).first() if default_link else db.query(Patient).order_by(Patient.id).first()
     if not patient:
         raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_FOUND", "detail": "Patient was not found."})
     return patient
 
 
-def _facility_data() -> dict[str, str]:
+def _facility_data(db: Session | None = None, facility_source_id: str | None = None) -> dict[str, Any]:
+    facility = None
+    if db is not None:
+        query = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True))
+        if facility_source_id:
+            query = query.filter(HealthcareFacility.source_id == facility_source_id)
+        facility = query.order_by(HealthcareFacility.source_id).first()
+    if facility:
+        coordinates = {
+            "latitude": facility.latitude,
+            "longitude": facility.longitude,
+            "coordinate_status": "validated" if facility.latitude is not None and facility.longitude is not None else "missing",
+        }
+        return {
+            "source_id": facility.source_id,
+            "name": facility.name,
+            "address": facility.address,
+            "facility_type": facility.facility_type,
+            "ward": facility.ward,
+            "district": facility.district,
+            "city": facility.city,
+            **coordinates,
+            "phone": facility.phone,
+            "website": facility.website,
+            "source": facility.source_name or "healthcare_catalog",
+        }
     settings = get_settings()
-    return {"name": settings.healthcare_facility_name, "address": settings.healthcare_facility_address}
+    return {
+        "name": settings.healthcare_facility_name,
+        "address": settings.healthcare_facility_address,
+    }
 
 
-def _appointment_data(appointment: Appointment) -> dict[str, Any]:
+def _appointment_data(appointment: Appointment, db: Session | None = None) -> dict[str, Any]:
     slot = appointment.slot
     doctor = appointment.doctor
     department = doctor.department if doctor else None
@@ -196,6 +237,11 @@ def _appointment_data(appointment: Appointment) -> dict[str, Any]:
         "appointment_id": appointment.id,
         "actor_id": appointment.actor_id,
         "patient_id": appointment.patient_id,
+        "patient": {
+            "id": appointment.patient.id,
+            "name": appointment.patient.name,
+            "phone": appointment.patient.phone,
+        } if appointment.patient else None,
         "symptoms": appointment.symptoms,
         "status": appointment.status,
         "is_paid": appointment.is_paid,
@@ -205,13 +251,14 @@ def _appointment_data(appointment: Appointment) -> dict[str, Any]:
             "name": doctor.name,
             "description": doctor.description,
             "price": doctor.price,
+            "facility_source_id": doctor.facility_source_id,
         } if doctor else None,
         "department": {
             "id": department.id,
             "name": department.name,
             "description": department.description,
         } if department else None,
-        "facility": _facility_data(),
+        "facility": _facility_data(db, doctor.facility_source_id if doctor else None),
         "slot": {
             "id": slot.id,
             "start_time": slot.start_time.isoformat(),
@@ -227,8 +274,113 @@ def get_departments(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
-    departments = db.query(Department).order_by(Department.name).all()
-    return {"data": [{"id": department.id, "name": department.name, "description": department.description} for department in departments]}
+    departments = db.query(Department).filter(Department.is_active.is_(True)).order_by(Department.name).all()
+    return {
+        "data": [
+            {
+                "id": department.id,
+                "name": department.name,
+                "description": department.description,
+                "facility": _facility_data(db, department.facility_source_id),
+            }
+            for department in departments
+        ]
+    }
+
+
+@router.get("/facilities/{facility_source_id}")
+def get_facility(
+    facility_source_id: str,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+) -> dict[str, Any]:
+    facility = (
+        db.query(HealthcareFacility)
+        .filter(HealthcareFacility.source_id == facility_source_id, HealthcareFacility.is_active.is_(True))
+        .first()
+    )
+    if not facility:
+        raise HTTPException(status_code=404, detail={"code": "FACILITY_NOT_FOUND", "detail": "Healthcare facility was not found."})
+    return {"data": _facility_data(db, facility_source_id)}
+
+
+@router.get("/patients")
+def get_patients(
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    links = (
+        db.query(PatientUserLink)
+        .filter(PatientUserLink.actor_user_id == actor_id)
+        .order_by(PatientUserLink.is_default.desc(), PatientUserLink.created_at.asc())
+        .all()
+    )
+    return {"data": {"items": [{"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": link.is_default} for link in links]}}
+
+
+@router.post("/patients")
+def create_patient(
+    request: CreatePatientRequest,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
+    operation = "healthcare.patient.create"
+    payload = request.model_dump()
+    request_hash = _request_hash(operation, payload)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
+    if cached is not None:
+        return {"data": cached}
+    try:
+        patient = Patient(name=request.name.strip(), phone=request.phone.strip(), blood_type=request.blood_type, medical_history=request.medical_history)
+        db.add(patient)
+        db.flush()
+        has_default = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id, PatientUserLink.is_default.is_(True)).first() is not None
+        link = PatientUserLink(actor_user_id=actor_id, patient_id=patient.id, relationship_type=request.relationship, is_default=not has_default)
+        db.add(link)
+        db.flush()
+        response = {"id": patient.id, "name": patient.name, "phone": patient.phone, "relationship": link.relationship_type, "is_default": link.is_default}
+        _save_idempotency(db, key, actor_id, operation, request_hash, response)
+        db.commit()
+        return {"data": response}
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception:
+        db.rollback()
+        raise HTTPException(status_code=500, detail={"code": "PATIENT_CREATE_FAILED", "detail": "Unable to create the patient profile."}) from None
+
+
+@router.post("/patients/{patient_id}/default")
+def set_default_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
+    operation = "healthcare.patient.default"
+    payload = {"patient_id": patient_id}
+    request_hash = _request_hash(operation, payload)
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
+    if cached is not None:
+        return {"data": cached}
+    link = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id, PatientUserLink.patient_id == patient_id).first()
+    if link is None:
+        raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_LINKED", "detail": "The patient is not linked to this account."})
+    for candidate in db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).all():
+        candidate.is_default = candidate.id == link.id
+    response = {"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": True}
+    _save_idempotency(db, key, actor_id, operation, request_hash, response)
+    db.commit()
+    return {"data": response}
 
 
 @router.get("/doctors")
@@ -252,7 +404,7 @@ def get_doctors_by_department(
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
     doctors: list[dict[str, Any]] = []
-    for doctor in db.query(Doctor).filter(Doctor.department_id == department_record.id).order_by(Doctor.name).all():
+    for doctor in db.query(Doctor).filter(Doctor.department_id == department_record.id, Doctor.is_active.is_(True)).order_by(Doctor.name).all():
         slots = (
             db.query(TimeSlot)
             .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
@@ -265,6 +417,9 @@ def get_doctors_by_department(
                 "name": doctor.name,
                 "price": doctor.price,
                 "description": doctor.description,
+                "title": doctor.title,
+                "specialty": doctor.specialty,
+                "facility": _facility_data(db, doctor.facility_source_id),
                 "department": {
                     "id": department_record.id,
                     "name": department_record.name,
@@ -303,12 +458,14 @@ def hold_slot(
 
     try:
         _reconcile_expired_holds(db)
-        patient = _resolve_patient(db, request.patient_id)
+        patient = _resolve_patient(db, request.patient_id, actor_id)
         slot = db.query(TimeSlot).filter(TimeSlot.id == request.slot_id).with_for_update().first()
         if not slot:
             raise HTTPException(status_code=404, detail={"code": "SLOT_NOT_FOUND", "detail": "Time slot was not found."})
         if slot.status != SlotStatus.AVAILABLE.value:
             raise HTTPException(status_code=409, detail={"code": "SLOT_UNAVAILABLE", "detail": "Time slot is not available."})
+        if slot.doctor is None or slot.doctor.price is None:
+            raise HTTPException(status_code=422, detail={"code": "DOCTOR_PRICE_UNAVAILABLE", "detail": "This doctor does not have an authoritative consultation price yet."})
 
         slot.status = SlotStatus.HOLDING.value
         slot.hold_expires_at = _now() + timedelta(minutes=10)
@@ -336,7 +493,7 @@ def hold_slot(
             "status": AppointmentStatus.DRAFT.value,
             "is_paid": False,
             "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
-            "facility": _facility_data(),
+            "facility": _facility_data(db, slot.doctor.facility_source_id if slot.doctor else None),
         }
         _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
@@ -367,7 +524,20 @@ def get_appointment(
         _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "APPOINTMENT_NOT_FOUND", "detail": "Appointment was not found."})
     _commit_reconciliation(db, expired_appointment_ids)
-    return {"data": _appointment_data(appointment)}
+    return {"data": _appointment_data(appointment, db)}
+
+
+@router.get("/appointments")
+def list_appointments(
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    expired_appointment_ids = _reconcile_expired_holds(db)
+    appointments = db.query(Appointment).filter(Appointment.actor_id == actor_id).order_by(Appointment.id.desc()).all()
+    _commit_reconciliation(db, expired_appointment_ids)
+    return {"data": {"items": [_appointment_data(appointment, db) for appointment in appointments]}}
 
 
 @router.post("/appointments/{appointment_id}/confirm")
@@ -416,7 +586,7 @@ def confirm_booking(
         slot.status = SlotStatus.BOOKED.value
         slot.hold_expires_at = None
         db.add(AuditLog(appointment_id=appointment.id, action="BOOKING_CONFIRMED", details="Booking confirmed."))
-        response = {"status": "success", "appointment_id": appointment.id, "message": "Booking confirmed.", "appointment": _appointment_data(appointment)}
+        response = {"status": "success", "appointment_id": appointment.id, "message": "Booking confirmed.", "appointment": _appointment_data(appointment, db)}
         _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()
         return {"data": response}

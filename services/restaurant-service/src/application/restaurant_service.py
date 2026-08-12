@@ -53,6 +53,9 @@ class RestaurantApplicationService:
     def get_reservation(self, reservation_id, actor_id):
         return self.repo.get_reservation_by_id(reservation_id, actor_id)
 
+    def list_reservations(self, actor_id):
+        return self.repo.list_reservations(actor_id)
+
     def update_reservation(
         self,
         actor_id,

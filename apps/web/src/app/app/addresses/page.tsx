@@ -1,5 +1,71 @@
-import Link from "next/link";
+"use client";
+
+import { LocateFixed, MapPinned, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+
+import { createSavedAddress, deleteSavedAddress, errorText, listSavedAddresses, resolveAddress, updateSavedAddress } from "@/lib/api-client";
+import type { GeocodeCandidate, SavedAddress } from "@/types";
+import { XOneMap } from "@/features/product/xone-map";
+
+type Coordinates = { latitude: number; longitude: number };
 
 export default function AddressesPage() {
-  return <section className="route-shell"><span className="eyebrow">PHASE 2</span><h1>Địa chỉ đã lưu chưa sẵn sàng.</h1><p>Tính năng lưu và quản lý địa chỉ cần một Core-owned resource ở Phase 2. X-One chưa tạo hoặc lưu địa chỉ mới ở đây.</p><Link className="text-link arrow-link" href="/app">Về trợ lý</Link></section>;
+  const [items, setItems] = useState<SavedAddress[]>([]);
+  const [label, setLabel] = useState("Nhà");
+  const [addressText, setAddressText] = useState("");
+  const [coordinates, setCoordinates] = useState<Coordinates | undefined>();
+  const [provider, setProvider] = useState<string | undefined>();
+  const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [error, setError] = useState("");
+  const [locationNote, setLocationNote] = useState("");
+
+  const load = useCallback(async () => { setLoading(true); setError(""); try { setItems((await listSavedAddresses()).items); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  async function resolve(): Promise<void> {
+    if (!addressText.trim() || locating) return;
+    setLocating(true); setError(""); setLocationNote("");
+    try {
+      const result = await resolveAddress(addressText.trim());
+      setCandidates(result.candidates);
+      setProvider(result.provider);
+      setLocationNote(result.status === "RESOLVED" ? "Hãy chọn kết quả đúng trước khi lưu." : "Chưa có tọa độ chắc chắn; bạn có thể lưu địa chỉ thủ công.");
+    } catch (reason) { setError(errorText(reason)); } finally { setLocating(false); }
+  }
+
+  function selectCandidate(candidate: GeocodeCandidate): void {
+    setAddressText(candidate.address_text);
+    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude });
+    setLocationNote("Đã chọn tọa độ từ kết quả định vị. Kiểm tra lại địa chỉ trước khi lưu.");
+  }
+
+  function useBrowserLocation(): void {
+    if (!navigator.geolocation) { setLocationNote("Trình duyệt này không hỗ trợ vị trí hiện tại."); return; }
+    setLocating(true); setError("");
+    navigator.geolocation.getCurrentPosition(
+      (position) => { setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude }); setProvider("browser-geolocation"); setLocationNote("Đã nhận vị trí hiện tại từ trình duyệt. Hãy nhập địa chỉ để lưu nhãn dễ nhớ."); setLocating(false); },
+      () => { setLocationNote("Không thể nhận vị trí. Bạn vẫn có thể nhập và lưu địa chỉ thủ công."); setLocating(false); },
+      { enableHighAccuracy: false, maximumAge: 60_000, timeout: 8_000 },
+    );
+  }
+
+  function changeAddress(value: string): void { setAddressText(value); setCandidates([]); setCoordinates(undefined); setProvider(undefined); setLocationNote(""); }
+
+  async function add(): Promise<void> {
+    if (!label.trim() || !addressText.trim() || saving) return;
+    setSaving(true); setError("");
+    try {
+      const created = await createSavedAddress({ label: label.trim(), address_text: addressText.trim(), ...(coordinates ?? {}), ...(provider ? { provider } : {}), source: coordinates ? "geocoded" : "manual" });
+      setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setAddressText(""); setCoordinates(undefined); setCandidates([]); setLocationNote("");
+    } catch (reason) { setError(errorText(reason)); } finally { setSaving(false); }
+  }
+
+  async function remove(item: SavedAddress): Promise<void> { try { await deleteSavedAddress(item.id); setItems((current) => current.filter((candidate) => candidate.id !== item.id)); } catch (reason) { setError(errorText(reason)); } }
+  async function makeDefault(item: SavedAddress): Promise<void> { try { const updated = await updateSavedAddress(item.id, { is_default: true }); setItems((current) => current.map((candidate) => ({ ...candidate, is_default: candidate.id === updated.id }))); } catch (reason) { setError(errorText(reason)); } }
+
+  return <section className="route-shell" aria-labelledby="addresses-title"><header className="section-heading"><div><span className="eyebrow">ĐỊA CHỈ</span><h1 id="addresses-title">Địa chỉ đã lưu</h1><p>Địa chỉ thuộc tài khoản Core của bạn. Tọa độ chỉ xuất hiện khi đã được xác nhận bởi nguồn định vị.</p></div><button className="icon-button" type="button" onClick={() => void load()} aria-label="Tải lại địa chỉ"><RefreshCw size={18} /></button></header><div className="address-form"><label><span>Nhãn</span><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label><label><span>Địa chỉ</span><input value={addressText} onChange={(event) => changeAddress(event.target.value)} placeholder="Số nhà, đường, quận, thành phố" /></label><div className="address-form-actions"><button className="button button-secondary" type="button" onClick={() => void resolve()} disabled={locating || !addressText.trim()}><MapPinned size={16} />{locating ? "Đang xác nhận…" : "Xác nhận vị trí"}</button><button className="button button-secondary" type="button" onClick={useBrowserLocation} disabled={locating}><LocateFixed size={16} />Vị trí hiện tại</button><button className="button button-primary" type="button" onClick={() => void add()} disabled={saving || !label.trim() || !addressText.trim()}><Plus size={16} />{saving ? "Đang lưu…" : "Lưu địa chỉ"}</button></div></div>{locationNote ? <p className="inline-note location-note" aria-live="polite">{locationNote}</p> : null}{candidates.length ? <div className="location-candidates" aria-label="Kết quả định vị">{candidates.map((candidate, index) => <button className="location-candidate" type="button" key={`${candidate.address_text}-${index}`} onClick={() => selectCandidate(candidate)}><strong>{candidate.address_text}</strong><small>{candidate.latitude !== null && candidate.longitude !== null ? `${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}` : "Chưa có tọa độ"}</small></button>)}</div> : null}<XOneMap destination={coordinates} label="Vị trí địa chỉ" />{error ? <div className="error-panel" role="alert"><p>{error}</p></div> : null}{loading ? <p className="inline-note">Đang tải địa chỉ…</p> : items.length === 0 ? <div className="empty-state"><MapPinned size={24} /><h2>Chưa có địa chỉ</h2><p>Lưu một điểm đến để các luồng đặt xe và giao hàng có thể dùng lại sau khi bạn xác nhận.</p></div> : <div className="address-list">{items.map((item) => <article className="address-row" key={item.id}><div><div className="address-title"><strong>{item.label}</strong>{item.is_default ? <span className="status-badge">Mặc định</span> : null}</div><p>{item.address_text}</p><small>{item.city ?? "Chưa phân loại"}{item.provider ? ` · ${item.provider}` : ""}</small></div><div className="address-actions">{!item.is_default ? <button className="text-button" type="button" onClick={() => void makeDefault(item)}>Đặt mặc định</button> : null}<button className="icon-button danger" type="button" onClick={() => void remove(item)} aria-label={`Xóa ${item.label}`}><Trash2 size={16} /></button></div></article>)}</div>}</section>;
 }

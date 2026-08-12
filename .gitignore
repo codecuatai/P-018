@@ -33,6 +33,7 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+artifacts/dataops/
 *.db
 *.sqlite3
 

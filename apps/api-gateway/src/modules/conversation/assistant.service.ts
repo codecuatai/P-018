@@ -12,7 +12,13 @@ import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore } from '../core/core.module';
 import { ServiceCallError } from '../../resilience/service-call-error';
-import { RideConversationService as RideWorkflowService, RideWorkflowHydration } from './ride-conversation.service';
+import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
+import {
+  buildOrchestrationSnapshot,
+  hasFailedDependency,
+  OrchestrationSnapshot,
+  WorkflowStatus,
+} from './orchestration';
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
 type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
@@ -43,6 +49,7 @@ type StoredTask = {
   authoritative?: JsonObject;
   public_item?: JsonObject;
   latest_message?: string;
+  failure_code?: string;
 };
 
 type AssistantState = {
@@ -50,6 +57,7 @@ type AssistantState = {
   actions: StoredAction[];
   food_context?: JsonObject;
   decision_source?: string;
+  orchestration?: OrchestrationSnapshot;
 };
 
 type MergeResult = {
@@ -77,6 +85,7 @@ export type AssistantResponse = {
   items: JsonObject[];
   actions: Array<{ id: string; kind: ActionKind; label: string }>;
   completed: JsonObject[];
+  workflow_status: WorkflowStatus;
 };
 
 type AgentPlanTask = {
@@ -149,6 +158,20 @@ function assistantActionFailureStatus(error: unknown): 'FAILED_RETRYABLE' | 'FAI
     return 'FAILED_RETRYABLE';
   }
   return 'FAILED_FINAL';
+}
+
+function publicFailureCode(error: unknown): string {
+  const candidate = error instanceof ServiceCallError
+    ? error.code
+    : error instanceof HttpException
+      ? (() => {
+        const response = error.getResponse();
+        if (!isRecord(response)) return undefined;
+        if (typeof response.code === 'string') return response.code;
+        return isRecord(response.detail) && typeof response.detail.code === 'string' ? response.detail.code : undefined;
+      })()
+      : undefined;
+  return candidate && /^[A-Z][A-Z0-9_]{2,63}$/.test(candidate) ? candidate : 'TASK_EXECUTION_FAILED';
 }
 
 /**
@@ -275,6 +298,7 @@ function storedState(value: unknown): AssistantState {
     ...(isRecord(task.authoritative) ? { authoritative: task.authoritative } : {}),
     ...(isRecord(task.public_item) ? { public_item: task.public_item } : {}),
     ...(stringValue(task.latest_message) ? { latest_message: task.latest_message as string } : {}),
+    ...(stringValue(task.failure_code) ? { failure_code: task.failure_code as string } : {}),
   }));
   const actions: StoredAction[] = arrayValue(value.actions).filter(isRecord).map((action) => ({
     id: stringValue(action.id) ?? `action_${randomUUID().slice(0, 8)}`,
@@ -293,6 +317,7 @@ function storedState(value: unknown): AssistantState {
     actions,
     ...(isRecord(value.food_context) ? { food_context: value.food_context } : {}),
     ...(decisionSource ? { decision_source: decisionSource } : {}),
+    ...(isRecord(value.orchestration) ? { orchestration: value.orchestration as unknown as OrchestrationSnapshot } : {}),
   };
 }
 
@@ -532,15 +557,46 @@ export class AssistantService {
         if (task.public_item) items.push(task.public_item);
         continue;
       }
+      if (hasFailedDependency(task, merged)) {
+        const publicItem = {
+          kind: 'task_error',
+          title: 'BÆ°á»›c phÃ¹ thuá»™c chÆ°a thá»ƒ tiáº¿p tá»¥c',
+          note: 'MÃ¬nh Ä‘Ã£ dá»«ng bÆ°á»›c phÃ­a sau vÃ¬ má»™t dá»‹ch vá»¥ trÆ°á»›c Ä‘Ã³ khÃ´ng hoÃ n táº¥t.',
+          error_code: 'DEPENDENCY_BLOCKED',
+          retryable: false,
+        };
+        task.phase = 'FAILED';
+        task.failure_code = 'DEPENDENCY_BLOCKED';
+        task.public_item = publicItem;
+        items.push(publicItem);
+        resultsForComposition.push(publicItem);
+        continue;
+      }
       if (!this.dependenciesReady(task, merged)) continue;
-      const result = await this.processTask(task, merged, user, conversationId, correlationId);
-      task.phase = result.phase;
-      if (result.authoritative) task.authoritative = result.authoritative;
-      if (result.publicItem) task.public_item = result.publicItem;
-      if (result.workflowId) task.workflow_id = result.workflowId;
-      if (result.actions) actions.push(...result.actions);
-      if (result.items) items.push(...result.items);
-      if (result.publicItem) resultsForComposition.push(result.publicItem);
+      try {
+        const result = await this.processTask(task, merged, user, conversationId, correlationId);
+        task.phase = result.phase;
+        if (result.authoritative) task.authoritative = result.authoritative;
+        if (result.publicItem) task.public_item = result.publicItem;
+        if (result.workflowId) task.workflow_id = result.workflowId;
+        if (result.actions) actions.push(...result.actions);
+        if (result.items) items.push(...result.items);
+        if (result.publicItem) resultsForComposition.push(result.publicItem);
+      } catch (error: unknown) {
+        const code = publicFailureCode(error);
+        const publicItem = {
+          kind: 'task_error',
+          title: 'Dá»‹ch vá»¥ chÆ°a hoÃ n táº¥t',
+          note: 'MÃ¬nh Ä‘Ã£ giá»¯ nguyÃªn cÃ¡c dá»‹ch vá»¥ Ä‘á»™c láº­p vÃ  ghi nháº­n bÆ°á»›c nÃ y lÃ  tháº¥t báº¡i an toÃ n.',
+          error_code: code,
+          retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE',
+        };
+        task.phase = 'FAILED';
+        task.failure_code = code;
+        task.public_item = publicItem;
+        items.push(publicItem);
+        resultsForComposition.push(publicItem);
+      }
     }
 
     const foodTask = merged.find((task) => task.domain === 'food');
@@ -556,6 +612,10 @@ export class AssistantService {
       decision_source: stringValue(planner.decision_source) ?? 'deterministic',
       ...(foodContext ? { food_context: foodContext } : {}),
     };
+    nextState.orchestration = buildOrchestrationSnapshot(
+      merged,
+      Object.fromEntries(merged.flatMap((task) => task.failure_code ? [[task.id, task.failure_code]] : [])),
+    );
     const baseMessage = this.messageFor(message, plan, merged, items, actions);
     const composed = await this.compose(message, conversationId, user.sub, merged, resultsForComposition, correlationId, baseMessage);
     const response = await this.persistTurn(conversationId, user, message, composed, nextState, items, actions, completed);
@@ -616,19 +676,40 @@ export class AssistantService {
           || !this.dependenciesReady(dependent, state.tasks)
         ) continue;
         state.actions = state.actions.filter((candidate) => candidate.task_id !== dependent.id);
-        const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId);
-        dependent.phase = dependentResult.phase;
-        if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
-        if (dependentResult.publicItem) {
-          dependent.public_item = dependentResult.publicItem;
-          remainingItems.push(dependentResult.publicItem);
+        if (hasFailedDependency(dependent, state.tasks)) {
+          dependent.phase = 'FAILED';
+          dependent.failure_code = 'DEPENDENCY_BLOCKED';
+          const publicItem = { kind: 'task_error', title: 'Dependency blocked', note: 'The dependent step was stopped because a prerequisite failed.', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
+          dependent.public_item = publicItem;
+          remainingItems.push(publicItem);
+          continue;
         }
-        if (dependentResult.workflowId) dependent.workflow_id = dependentResult.workflowId;
-        if (dependentResult.actions) {
-          dependentActions.push(...dependentResult.actions);
-          state.actions.push(...dependentResult.actions);
+        try {
+          const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId);
+          dependent.phase = dependentResult.phase;
+          if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
+          if (dependentResult.publicItem) {
+            dependent.public_item = dependentResult.publicItem;
+            remainingItems.push(dependentResult.publicItem);
+          }
+          if (dependentResult.workflowId) dependent.workflow_id = dependentResult.workflowId;
+          if (dependentResult.actions) {
+            dependentActions.push(...dependentResult.actions);
+            state.actions.push(...dependentResult.actions);
+          }
+        } catch (error: unknown) {
+          const code = publicFailureCode(error);
+          dependent.phase = 'FAILED';
+          dependent.failure_code = code;
+          const publicItem = { kind: 'task_error', title: 'Dependent service failed', note: 'The prerequisite completed, but this next step could not be prepared.', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
+          dependent.public_item = publicItem;
+          remainingItems.push(publicItem);
         }
       }
+      state.orchestration = buildOrchestrationSnapshot(
+        state.tasks,
+        Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
+      );
       const message = dependentActions.length
         ? `${result.message} Mình cũng đã chuẩn bị bước tiếp theo cho chuyến xe của bạn.`
         : result.message;
@@ -667,6 +748,50 @@ export class AssistantService {
           detail: 'The action result is being saved. Retry shortly with the same idempotency key.',
           retryable: true,
         });
+      }
+      if ((action.kind === 'ride_service' || action.kind === 'ride_payment') && assistantActionFailureStatus(error) === 'FAILED_FINAL') {
+        const code = publicFailureCode(error);
+        task.phase = 'FAILED';
+        task.failure_code = code;
+        const publicItem = {
+          kind: 'task_error',
+          title: 'Ride chÆ°a hoÃ n táº¥t',
+          note: 'Lá»‹ch khÃ¡m hoáº·c dá»‹ch vá»¥ Ä‘á»™c láº­p khÃ´ng bá»‹ tá»± Ä‘á»™ng há»§y; hiá»‡n chÆ°a thá»ƒ hoÃ n táº¥t chuyáº¿n xe.',
+          error_code: code,
+          retryable: false,
+        };
+        task.public_item = publicItem;
+        state.actions = state.actions.filter((candidate) => candidate.task_id !== task.id);
+        state.orchestration = buildOrchestrationSnapshot(
+          state.tasks,
+          Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
+        );
+        const failedTurn = this.buildTurn(
+          request.conversation_id,
+          user,
+          `__assistant_action__:${action.kind}`,
+          'DÃ£ ghi nháº­n tháº¥t báº¡i cá»§a Ride vÃ  giá»¯ nguyÃªn cÃ¡c dá»‹ch vá»¥ Ä‘á»™c láº­p.',
+          state,
+          [publicItem],
+          state.actions,
+          [],
+        );
+        try {
+          await this.commitAssistantActionSuccess({
+            actorId: user.sub,
+            conversationId: request.conversation_id,
+            actionId: request.action_id,
+            idempotencyKey,
+            requestHash,
+            userMessage: failedTurn.userMessage,
+            assistantMessage: failedTurn.assistantMessage,
+            stateUpdates: failedTurn.stateUpdates,
+            response: failedTurn.response as unknown as Record<string, unknown>,
+          });
+        } catch {
+          throw new AssistantActionCommitFailure();
+        }
+        return failedTurn.response;
       }
       const status = assistantActionFailureStatus(error);
       await this.completeAssistantActionExecution(user.sub, request.conversation_id, request.action_id, idempotencyKey, requestHash, status);
@@ -981,6 +1106,7 @@ export class AssistantService {
 
   private async processRide(task: StoredTask, allTasks: StoredTask[], user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
     const slots = { ...task.extracted_slots };
+    let healthcareFacility: JsonObject | undefined;
     const dependency = task.depends_on.map((id) => allTasks.find((candidate) => candidate.id === id)).find((candidate) => candidate?.domain === 'restaurant');
     const healthcareDependency = task.depends_on
       .map((id) => allTasks.find((candidate) => candidate.id === id))
@@ -1005,6 +1131,7 @@ export class AssistantService {
       // Only the Healthcare response can supply the facility address.
       delete slots.dropoff_address;
       const facilityAddress = stringValue(facility?.address);
+      healthcareFacility = facility;
       if (facilityAddress) slots.dropoff_address = facilityAddress;
     }
     const pickup = stringValue(slots.pickup_address);
@@ -1040,7 +1167,15 @@ export class AssistantService {
       await hydrate.call(this.ride, user.sub, task.workflow_id, references, correlationId);
     }
     const request = `Đặt xe từ ${pickup} đến ${dropoff}${slots.vehicle_type === 'BIKE' ? ' bằng xe máy' : slots.vehicle_type === 'CAR_4' ? ' bằng xe 4 chỗ' : slots.vehicle_type === 'CAR_7' ? ' bằng xe 7 chỗ' : ''}`;
-    const result = await this.ride.chat(user.sub, request, workflowId, correlationId);
+    const selectedRestaurant = dependency?.authoritative?.selected;
+    const routeContext = this.authoritativeRideRouteContext(
+      slots,
+      healthcareFacility,
+      isRecord(selectedRestaurant) ? selectedRestaurant : undefined,
+    );
+    const result = routeContext
+      ? await this.ride.chat(user.sub, request, workflowId, correlationId, routeContext)
+      : await this.ride.chat(user.sub, request, workflowId, correlationId);
     const quote = isRecord(result.quote) ? result.quote : undefined;
     if (healthcareDependency && quote) {
       const heldAppointment = dependentHealthcareAppointment;
@@ -1287,17 +1422,20 @@ export class AssistantService {
   } {
     const safeMessage = safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
     const now = new Date().toISOString();
-    return {
-      response: {
+    const orchestration = state.orchestration ?? buildOrchestrationSnapshot(state.tasks);
+    const response: AssistantResponse = {
         conversation_id: conversationId,
         message: safeMessage,
         items: items.map((item) => this.sanitizeConsumerItem(item)),
         actions: actions.map((action) => this.publicAction(action)),
         completed: completed.map((item) => this.sanitizeConsumerItem(item)),
-      },
+        workflow_status: orchestration.status,
+    };
+    return {
+      response,
       userMessage: { role: 'user', content: userMessage, createdAt: now },
-      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: now },
-      stateUpdates: { ...state, actions } as unknown as Record<string, unknown>,
+      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: now, data: response as unknown as Record<string, unknown> },
+      stateUpdates: { ...state, actions, orchestration } as unknown as Record<string, unknown>,
     };
   }
 
@@ -1312,21 +1450,24 @@ export class AssistantService {
     completed: JsonObject[] = [],
   ): Promise<AssistantResponse> {
     const safeMessage = safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
-    const finalState = { ...state, actions };
-    await this.store.appendConversationTurn({
-      conversationId,
-      actorId: user.sub,
-      userMessage: { role: 'user', content: userMessage, createdAt: new Date().toISOString() },
-      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: new Date().toISOString() },
-      stateUpdates: finalState as unknown as Record<string, unknown>,
-    });
-    return {
+    const orchestration = state.orchestration ?? buildOrchestrationSnapshot(state.tasks);
+    const finalState = { ...state, actions, orchestration };
+    const response: AssistantResponse = {
       conversation_id: conversationId,
       message: safeMessage,
       items: items.map((item) => this.sanitizeConsumerItem(item)),
       actions: actions.map((action) => this.publicAction(action)),
       completed: completed.map((item) => this.sanitizeConsumerItem(item)),
+      workflow_status: orchestration.status,
     };
+    await this.store.appendConversationTurn({
+      conversationId,
+      actorId: user.sub,
+      userMessage: { role: 'user', content: userMessage, createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: new Date().toISOString(), data: response as unknown as Record<string, unknown> },
+      stateUpdates: finalState as unknown as Record<string, unknown>,
+    });
+    return response;
   }
 
   private messageFor(message: string, plan: JsonObject, tasks: StoredTask[], items: JsonObject[], actions: StoredAction[]): string {
@@ -1424,6 +1565,18 @@ export class AssistantService {
     return 'Phương tiện phù hợp';
   }
 
+  private authoritativeRideRouteContext(
+    _slots: Record<string, unknown>,
+    facility?: JsonObject,
+    restaurant?: JsonObject,
+  ): RideRouteContext | undefined {
+    const destination = facility ?? restaurant;
+    const latitude = numberValue(destination?.latitude);
+    const longitude = numberValue(destination?.longitude);
+    if (latitude === undefined || longitude === undefined || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+    return { dropoff_latitude: latitude, dropoff_longitude: longitude };
+  }
+
   private foodData(data: JsonObject): JsonObject {
     const items = arrayValue(data.items ?? data.results ?? data.options).filter(isRecord).slice(0, 6).map((entry) => {
       const item = isRecord(entry.item) ? entry.item : entry;
@@ -1446,6 +1599,7 @@ export class AssistantService {
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',
       'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note',
       'appointment_id', 'appointment', 'facility', 'order', 'payment', 'preview',
+      'error_code', 'retryable',
     ]);
     const result: JsonObject = {};
     for (const [key, value] of Object.entries(item)) {

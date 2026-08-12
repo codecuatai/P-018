@@ -99,12 +99,15 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/007_core_assistant_action_executions.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/008_core_assistant_action_recovery.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/009_core_auth.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/010_core_personal_context.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/011_core_multi_service_workflows.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/003_food_atomicity.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/004_food_authoritative_operations.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Write-Host 'Core and Food migrations applied.'
 
     Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -EnvFile $envFile
@@ -112,6 +115,9 @@ try {
 
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003_patient_user_links.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
     Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260806_0001_ride_simulation.py' -EnvFile $envFile

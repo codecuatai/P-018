@@ -18,6 +18,9 @@ class VehicleType(StrEnum):
 class BookingStatus(StrEnum):
     AWAITING_PAYMENT_CONFIRMATION = "AWAITING_PAYMENT_CONFIRMATION"
     DRIVER_ASSIGNED = "DRIVER_ASSIGNED"
+    DRIVER_ARRIVED = "DRIVER_ARRIVED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
@@ -29,6 +32,10 @@ class QuoteCommand:
     vehicle_type: VehicleType
     promo_code: str | None
     pickup_time: datetime | None
+    pickup_latitude: float | None = None
+    pickup_longitude: float | None = None
+    dropoff_latitude: float | None = None
+    dropoff_longitude: float | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,16 @@ class Quote:
     quote_version: str
     expires_at: datetime
     created_at: datetime
+    pickup_latitude: float | None = None
+    pickup_longitude: float | None = None
+    dropoff_latitude: float | None = None
+    dropoff_longitude: float | None = None
+    route_provider: str = "deterministic-address-hash"
+    route_distance_meters: int | None = None
+    route_duration_seconds: int | None = None
+    route_polyline: str | None = None
+    route_snapshot_hash: str | None = None
+    tariff_snapshot: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -105,6 +122,8 @@ class Booking:
     driver: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
+    driver_id: str | None = None
+    tracking_started_at: datetime | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -151,6 +170,7 @@ SIMULATED_DRIVERS = {
             "color": "Đen",
             "license_plate": "29K1-390.80",
         },
+        "location": {"latitude": 21.0285, "longitude": 105.8048},
         "eta_seconds": 180,
     },
     VehicleType.CAR_4: {
@@ -165,6 +185,7 @@ SIMULATED_DRIVERS = {
             "color": "Trắng",
             "license_plate": "30H-482.19",
         },
+        "location": {"latitude": 21.0301, "longitude": 105.8122},
         "eta_seconds": 240,
     },
     VehicleType.CAR_7: {
@@ -179,6 +200,7 @@ SIMULATED_DRIVERS = {
             "color": "Bạc",
             "license_plate": "30G-552.07",
         },
+        "location": {"latitude": 21.0186, "longitude": 105.8230},
         "eta_seconds": 300,
     },
 }
@@ -242,8 +264,13 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
     seed = hashlib.sha256(
         f"{command.pickup_address.strip().casefold()}|{command.dropoff_address.strip().casefold()}".encode()
     ).hexdigest()
-    distance_km = 3 + int(seed[:4], 16) % 28
-    duration_minutes = distance_km * 3 + int(seed[4:6], 16) % 10
+    coordinates_available = all(value is not None for value in (command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude))
+    if coordinates_available:
+        distance_km = max(1, round(_haversine_km(command.pickup_latitude or 0, command.pickup_longitude or 0, command.dropoff_latitude or 0, command.dropoff_longitude or 0)))
+        duration_minutes = max(3, round(distance_km * 3.2))
+    else:
+        distance_km = 3 + int(seed[:4], 16) % 28
+        duration_minutes = distance_km * 3 + int(seed[4:6], 16) % 10
     tariff = TARIFFS[command.vehicle_type]
     peak_surcharge = 5_000 if command.pickup_time and _is_peak(command.pickup_time) else 0
     discount = PROMO_DISCOUNTS.get((command.promo_code or "").upper(), 0)
@@ -252,6 +279,18 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
     time_fee = duration_minutes * tariff["per_minute"]
     amount = max(0, base_fee + distance_fee + time_fee + peak_surcharge - discount)
     quote_id = f"quote_{uuid4().hex[:20]}"
+    route_provider = "deterministic-haversine" if coordinates_available else "deterministic-address-hash"
+    route_distance_meters = distance_km * 1000
+    route_duration_seconds = duration_minutes * 60
+    route_polyline = _route_polyline(command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude)
+    route_snapshot = {
+        "provider": route_provider,
+        "origin": {"latitude": command.pickup_latitude, "longitude": command.pickup_longitude},
+        "destination": {"latitude": command.dropoff_latitude, "longitude": command.dropoff_longitude},
+        "distance_meters": route_distance_meters,
+        "duration_seconds": route_duration_seconds,
+        "polyline": route_polyline,
+    }
     return Quote(
         id=quote_id,
         actor_id=command.actor_id,
@@ -271,6 +310,16 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
         quote_version=f"{TARIFF_VERSION}:{quote_id}",
         expires_at=now + QUOTE_TTL,
         created_at=now,
+        pickup_latitude=command.pickup_latitude,
+        pickup_longitude=command.pickup_longitude,
+        dropoff_latitude=command.dropoff_latitude,
+        dropoff_longitude=command.dropoff_longitude,
+        route_provider=route_provider,
+        route_distance_meters=route_distance_meters,
+        route_duration_seconds=route_duration_seconds,
+        route_polyline=route_polyline,
+        route_snapshot_hash=normalized_hash(route_snapshot),
+        tariff_snapshot={"version": TARIFF_VERSION, **tariff},
     )
 
 
@@ -278,9 +327,142 @@ def simulated_driver(vehicle_type: str) -> dict[str, Any]:
     return json.loads(json.dumps(SIMULATED_DRIVERS[VehicleType(vehicle_type)], ensure_ascii=False))
 
 
+def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = None) -> dict[str, Any]:
+    now = now or utc_now()
+    snapshot_at = _tracking_clock(_as_utc(now))
+    route = {
+        "provider": quote.route_provider,
+        "distance_meters": quote.route_distance_meters,
+        "duration_seconds": quote.route_duration_seconds,
+        "polyline": quote.route_polyline,
+        "origin": _point(quote.pickup_latitude, quote.pickup_longitude),
+        "destination": _point(quote.dropoff_latitude, quote.dropoff_longitude),
+    }
+    if booking.status == BookingStatus.CANCELLED.value:
+        return {
+            "booking_id": booking.id,
+            "status": BookingStatus.CANCELLED.value,
+            "progress": 0.0,
+            "eta_seconds": 0,
+            "driver": booking.driver,
+            "driver_location": None,
+            "current_location": None,
+            "route": route,
+            "route_provider": quote.route_provider,
+            "route_snapshot_hash": quote.route_snapshot_hash,
+            "updated_at": snapshot_at.isoformat(),
+        }
+    driver = booking.driver or {}
+    eta_seconds = int(driver.get("eta_seconds", 0))
+    started = _as_utc(booking.tracking_started_at or booking.updated_at)
+    # The simulator advances on a coarse, deterministic clock tick.  This keeps
+    # two immediate polling requests stable while still moving the trip every
+    # couple of seconds, which is the cadence used by the demo client.
+    elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
+    elapsed = float(int(elapsed // 2) * 2)
+    travel_seconds = max(60, int(quote.route_duration_seconds or quote.duration_minutes * 60))
+    if elapsed < eta_seconds:
+        status = BookingStatus.DRIVER_ASSIGNED.value
+        progress = elapsed / max(1, eta_seconds)
+        eta_remaining = max(0, eta_seconds - int(elapsed))
+    elif elapsed < eta_seconds + 60:
+        status = BookingStatus.DRIVER_ARRIVED.value
+        progress = 1.0
+        eta_remaining = 0
+    elif elapsed < eta_seconds + 60 + travel_seconds:
+        status = BookingStatus.IN_PROGRESS.value
+        progress = min(1.0, (elapsed - eta_seconds - 60) / travel_seconds)
+        eta_remaining = max(0, int(eta_seconds + 60 + travel_seconds - elapsed))
+    else:
+        status = BookingStatus.COMPLETED.value
+        progress = 1.0
+        eta_remaining = 0
+    driver_location = _simulated_driver_location(driver, quote, elapsed, eta_seconds, travel_seconds, status)
+    return {
+        "booking_id": booking.id,
+        "status": status,
+        "progress": round(progress, 4),
+        "eta_seconds": eta_remaining,
+        "driver": driver,
+        "driver_location": driver_location,
+        "current_location": driver_location,
+        "route": route,
+        "route_provider": quote.route_provider,
+        "route_snapshot_hash": quote.route_snapshot_hash,
+        "updated_at": snapshot_at.isoformat(),
+    }
+
+
 def _is_peak(value: datetime) -> bool:
     hour = value.astimezone(UTC).hour if value.tzinfo else value.hour
     return 0 <= hour < 2 or 10 <= hour < 13
+
+
+def _haversine_km(latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float) -> float:
+    from math import atan2, cos, radians, sin, sqrt
+    d_lat = radians(latitude_b - latitude_a)
+    d_lon = radians(longitude_b - longitude_a)
+    value = sin(d_lat / 2) ** 2 + cos(radians(latitude_a)) * cos(radians(latitude_b)) * sin(d_lon / 2) ** 2
+    return 6371 * 2 * atan2(sqrt(value), sqrt(1 - value))
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _tracking_clock(value: datetime) -> datetime:
+    """Return the two-second simulator tick used by polling clients."""
+
+    return value.replace(second=value.second - value.second % 2, microsecond=0)
+
+
+def _point(latitude: float | None, longitude: float | None) -> dict[str, float] | None:
+    if latitude is None or longitude is None:
+        return None
+    return {"latitude": latitude, "longitude": longitude}
+
+
+def _route_polyline(
+    pickup_latitude: float | None,
+    pickup_longitude: float | None,
+    dropoff_latitude: float | None,
+    dropoff_longitude: float | None,
+) -> str | None:
+    points = [_point(pickup_latitude, pickup_longitude), _point(dropoff_latitude, dropoff_longitude)]
+    if any(point is None for point in points):
+        return None
+    return json.dumps(points, ensure_ascii=False, separators=(",", ":"))
+
+
+def _simulated_driver_location(
+    driver: dict[str, Any],
+    quote: Quote,
+    elapsed: float,
+    eta_seconds: int,
+    travel_seconds: int,
+    status: str,
+) -> dict[str, float] | None:
+    pickup = _point(quote.pickup_latitude, quote.pickup_longitude)
+    destination = _point(quote.dropoff_latitude, quote.dropoff_longitude)
+    start = driver.get("location") if isinstance(driver.get("location"), dict) else None
+    if not pickup or not destination or not start:
+        return None
+    if status == BookingStatus.DRIVER_ASSIGNED.value:
+        return _interpolate(start, pickup, elapsed / max(1, eta_seconds))
+    if status == BookingStatus.DRIVER_ARRIVED.value:
+        return pickup
+    if status in {BookingStatus.IN_PROGRESS.value, BookingStatus.COMPLETED.value}:
+        ratio = 1.0 if status == BookingStatus.COMPLETED.value else (elapsed - eta_seconds - 60) / max(1, travel_seconds)
+        return _interpolate(pickup, destination, ratio)
+    return start
+
+
+def _interpolate(start: dict[str, Any], end: dict[str, Any], ratio: float) -> dict[str, float]:
+    bounded = min(1.0, max(0.0, ratio))
+    return {
+        "latitude": round(float(start["latitude"]) + (float(end["latitude"]) - float(start["latitude"])) * bounded, 6),
+        "longitude": round(float(start["longitude"]) + (float(end["longitude"]) - float(start["longitude"])) * bounded, 6),
+    }
 
 
 def _json_safe(value: Any) -> Any:
