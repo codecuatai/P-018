@@ -417,7 +417,7 @@ export class RestaurantClient extends InternalServiceClient {
       });
     } else if (tool.tool_name === 'restaurant.search') {
       const query = new URLSearchParams();
-      for (const key of ['location', 'cuisine_type', 'budget_range', 'limit', 'offset']) {
+      for (const key of ['location', 'cuisine_type', 'budget_range', 'limit', 'offset', 'query']) {
         const value = tool.arguments[key];
         if (value !== undefined && value !== null) query.set(key, String(value));
       }

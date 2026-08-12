@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -177,9 +179,11 @@ class RestaurantRepository:
     def _legacy_key(operation: str, key: str) -> str:
         return f"{operation}:{key}"
 
-    def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
+    def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, query=None, limit=50, offset=0):
         with self.factory() as db:
             stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
+
+            # 1. Lọc theo địa điểm
             if location:
                 aliases = {
                     "hà nội": ("Hà Nội", "Hanoi"),
@@ -189,12 +193,21 @@ class RestaurantRepository:
                 }
                 candidates = aliases.get(location.strip().lower(), (location,))
                 stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))
+            # Nếu không parse được địa điểm cụ thể nhưng có query thô, fallback tìm kiếm tương đối trên cột location
+            elif query:
+                stmt = stmt.where(RestaurantRow.location.ilike(f"%{query}%"))
+
+            # 2. Lọc theo loại hình ẩm thực
             if cuisine_type:
                 stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{cuisine_type}%"))
+
+            # 3. Lọc theo khoảng giá
             if budget_range:
                 stmt = stmt.where(RestaurantRow.budget_range == budget_range)
+
             rows = db.scalars(stmt.offset(offset).limit(limit)).all()
             return [self.restaurant_dict(row) for row in rows]
+
 
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:

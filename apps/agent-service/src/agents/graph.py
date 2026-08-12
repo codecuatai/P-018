@@ -8,14 +8,14 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.agents.intent import classify, extract_slots
-from src.agents.option_resolution import resolve_options
-from src.agents.reference_resolution import resolve_references
-from src.agents.state import AgentState, FoodWorkflowContext
-from src.agents.tool_selection import select_tools
-from src.config import get_settings
-from src.services.gateway import GatewayToolClient, GatewayToolError
-from src.services.llm import GeminiAdapter, LLMAdapter
+from ..config import get_settings
+from ..services.gateway import GatewayToolClient, GatewayToolError
+from ..services.llm import GeminiAdapter, LLMAdapter
+from .intent import classify, extract_slots
+from .option_resolution import resolve_options
+from .reference_resolution import resolve_references
+from .state import AgentState, FoodWorkflowContext
+from .tool_selection import select_tools
 
 logger = logging.getLogger(__name__)
 

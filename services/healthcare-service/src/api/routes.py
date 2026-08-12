@@ -183,7 +183,18 @@ def _resolve_patient(db: Session, patient_id: int | None) -> Patient:
     return patient
 
 
-def _facility_data() -> dict[str, str]:
+def _facility_data(doctor: Doctor | None = None) -> dict[str, Any]:
+    facility = doctor.facility if doctor else None
+    if facility:
+        return {
+            "id": facility.id,
+            "source_id": facility.source_id,
+            "name": facility.name,
+            "address": facility.address,
+            "city": facility.city,
+            "district": facility.district,
+            "website": facility.website,
+        }
     settings = get_settings()
     return {"name": settings.healthcare_facility_name, "address": settings.healthcare_facility_address}
 
@@ -211,7 +222,7 @@ def _appointment_data(appointment: Appointment) -> dict[str, Any]:
             "name": department.name,
             "description": department.description,
         } if department else None,
-        "facility": _facility_data(),
+        "facility": _facility_data(doctor),
         "slot": {
             "id": slot.id,
             "start_time": slot.start_time.isoformat(),
@@ -228,7 +239,17 @@ def get_departments(
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
     departments = db.query(Department).order_by(Department.name).all()
-    return {"data": [{"id": department.id, "name": department.name, "description": department.description} for department in departments]}
+    return {
+        "data": [
+            {
+                "id": department.id,
+                "name": department.name,
+                "description": department.description,
+                "facility": _facility_data(department.doctors[0] if department.doctors else None),
+            }
+            for department in departments
+        ]
+    }
 
 
 @router.get("/doctors")
@@ -239,20 +260,18 @@ def get_doctors_by_department(
 ) -> dict[str, Any]:
     expired_appointment_ids = _reconcile_expired_holds(db)
     folded_department = _fold_department_name(department)
-    department_record = next(
-        (
-            candidate
-            for candidate in db.query(Department).all()
-            if folded_department in _fold_department_name(candidate.name)
-        ),
-        None,
-    )
-    if not department_record:
+    department_records = [
+        candidate
+        for candidate in db.query(Department).all()
+        if folded_department in _fold_department_name(candidate.name)
+    ]
+    if not department_records:
         _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
     doctors: list[dict[str, Any]] = []
-    for doctor in db.query(Doctor).filter(Doctor.department_id == department_record.id).order_by(Doctor.name).all():
+    department_ids = [department.id for department in department_records]
+    for doctor in db.query(Doctor).filter(Doctor.department_id.in_(department_ids)).order_by(Doctor.name).all():
         slots = (
             db.query(TimeSlot)
             .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
@@ -264,11 +283,16 @@ def get_doctors_by_department(
                 "id": doctor.id,
                 "name": doctor.name,
                 "price": doctor.price,
+                "title": doctor.title,
+                "specialty": doctor.specialty,
                 "description": doctor.description,
+                "image_url": doctor.image_url,
+                "source_id": doctor.source_id,
+                "facility": _facility_data(doctor),
                 "department": {
-                    "id": department_record.id,
-                    "name": department_record.name,
-                    "description": department_record.description,
+                    "id": doctor.department.id,
+                    "name": doctor.department.name,
+                    "description": doctor.department.description,
                 },
                 "available_slots": [
                     {
@@ -309,6 +333,11 @@ def hold_slot(
             raise HTTPException(status_code=404, detail={"code": "SLOT_NOT_FOUND", "detail": "Time slot was not found."})
         if slot.status != SlotStatus.AVAILABLE.value:
             raise HTTPException(status_code=409, detail={"code": "SLOT_UNAVAILABLE", "detail": "Time slot is not available."})
+        if slot.doctor.price is None:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "CONSULTATION_PRICE_UNAVAILABLE", "detail": "The consultation price is not available for this doctor yet."},
+            )
 
         slot.status = SlotStatus.HOLDING.value
         slot.hold_expires_at = _now() + timedelta(minutes=10)
@@ -336,7 +365,7 @@ def hold_slot(
             "status": AppointmentStatus.DRAFT.value,
             "is_paid": False,
             "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
-            "facility": _facility_data(),
+            "facility": _facility_data(slot.doctor),
         }
         _save_idempotency(db, key, actor_id, operation, request_hash, response)
         db.commit()

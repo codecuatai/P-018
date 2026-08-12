@@ -1,7 +1,7 @@
 from langgraph.graph import END, StateGraph
 
-from src.agents.nodes.restaurant_node import classify_and_extract, compose_restaurant_response
-from src.agents.state import AgentState
+from .nodes.restaurant_node import classify_and_extract, compose_restaurant_response
+from .state import AgentState
 
 
 def build_restaurant_graph():

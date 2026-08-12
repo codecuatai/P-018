@@ -104,6 +104,7 @@ services:
       SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
       DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [xone_internal]

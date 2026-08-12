@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from src.config import get_settings
+from ..config import get_settings
 
 
 class GatewayToolError(RuntimeError):
