@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   python-services:
     runs-on: [self-hosted, linux, x64]
@@ -15,7 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ${{ matrix.service }}/pyproject.toml
       - name: Install service with test dependencies
         run: pip install "${{ matrix.service }}[dev]"
       - name: Lint service
@@ -32,8 +39,14 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - run: corepack enable && pnpm --dir apps/api-gateway install --frozen-lockfile
       - run: corepack enable && pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
 
@@ -55,10 +68,19 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - uses: actions/setup-python@v5
-        with: { python-version: '3.11' }
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/food-service/pyproject.toml
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
       - name: Create Food database
@@ -88,6 +110,8 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
       - run: python scripts/validate-env-config.py
       - run: python scripts/check-migration-parity.py
       - run: docker compose --env-file .env.example config --quiet
