@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.domain.ride import Booking, ConfirmationEvidence, IdempotencyRecord, Quote, utc_now
+from src.domain.ride import Booking, ConfirmationEvidence, IdempotencyRecord, Quote, normalize_booking_status, utc_now
 from src.infrastructure.models import (
     BookingRow,
     ConfirmationConsumptionRow,
@@ -80,6 +80,14 @@ class SqlAlchemyRideRepository:
             "distance_to_pickup_km": round(distance_km, 3),
         }
 
+    def release_driver(self, driver_id: str) -> None:
+        driver = self.session.get(RideDriverRow, driver_id)
+        if driver is None:
+            return
+        if driver.availability_status == "ASSIGNED":
+            driver.availability_status = "AVAILABLE"
+            driver.updated_at = utc_now()
+
     def record_tracking_event(
         self,
         booking_id: str,
@@ -107,7 +115,12 @@ class SqlAlchemyRideRepository:
         return [_quote_from_row(row) for row in rows]
 
     def save_quote(self, quote: Quote) -> None:
-        self.session.add(QuoteRow(**quote.__dict__))
+        row = self.session.get(QuoteRow, quote.id)
+        if row is None:
+            self.session.add(QuoteRow(**quote.__dict__))
+            return
+        for name, value in quote.__dict__.items():
+            setattr(row, name, value)
 
     def get_booking(self, booking_id: str) -> Booking | None:
         row = self.session.get(BookingRow, booking_id)
@@ -145,16 +158,27 @@ class SqlAlchemyRideRepository:
         )
 
     def save_idempotency(self, record: IdempotencyRecord) -> None:
-        self.session.add(
-            IdempotencyRow(
-                actor_id=record.actor_id,
-                operation=record.operation,
-                idempotency_key=record.key,
-                request_hash=record.request_hash,
-                response_payload=record.response_payload,
-                created_at=record.created_at,
+        row = self.session.scalar(
+            select(IdempotencyRow).where(
+                IdempotencyRow.actor_id == record.actor_id,
+                IdempotencyRow.operation == record.operation,
+                IdempotencyRow.idempotency_key == record.key,
             )
         )
+        if row is None:
+            self.session.add(
+                IdempotencyRow(
+                    actor_id=record.actor_id,
+                    operation=record.operation,
+                    idempotency_key=record.key,
+                    request_hash=record.request_hash,
+                    response_payload=record.response_payload,
+                    created_at=record.created_at,
+                )
+            )
+            return
+        row.request_hash = record.request_hash
+        row.response_payload = record.response_payload
 
     def is_confirmation_consumed(self, confirmation_id: str) -> bool:
         return self.session.get(ConfirmationConsumptionRow, confirmation_id) is not None
@@ -176,11 +200,11 @@ class SqlAlchemyRideRepository:
     def rollback(self) -> None:
         self.session.rollback()
 
-
 def _quote_from_row(row: QuoteRow) -> Quote:
     return Quote(
         id=row.id,
         actor_id=row.actor_id,
+        status=row.status,
         pickup_address=row.pickup_address,
         dropoff_address=row.dropoff_address,
         vehicle_type=row.vehicle_type,
@@ -218,7 +242,7 @@ def _booking_from_row(row: BookingRow) -> Booking:
         quote_version=row.quote_version,
         amount=row.amount,
         currency=row.currency,
-        status=row.status,
+        status=normalize_booking_status(row.status),
         resource_version=row.resource_version,
         payment_reference=row.payment_reference,
         driver=row.driver,

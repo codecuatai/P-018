@@ -51,6 +51,7 @@ class CancelBookingRequest(StrictModel):
 class QuoteOut(StrictModel):
     id: str
     actor_id: str
+    status: str
     pickup_address: str
     dropoff_address: str
     vehicle_type: str

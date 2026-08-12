@@ -78,6 +78,31 @@ invalidates its siblings and stale actions return `ACTION_NOT_AVAILABLE` without
 a domain call. An unrelated Food or Healthcare follow-up therefore does not
 re-quote an awaiting Restaurant or Ride task.
 
+## Ride lifecycle (current runtime)
+
+Ride is the authority for quote and booking state. A quote moves through
+`QUOTE_CREATED -> AWAITING_CONFIRMATION -> CONSUMED` or `EXPIRED`; a booking
+starts at `AWAITING_CONFIRMATION` and requires two explicit user confirmations:
+service details first, then payment/final confirmation. The normal dispatch
+path is:
+
+```text
+AWAITING_CONFIRMATION
+  -> SEARCHING_DRIVER
+  -> DRIVER_ASSIGNED
+  -> DRIVER_TO_PICKUP
+  -> DRIVER_ARRIVED
+  -> IN_PROGRESS
+  -> COMPLETED
+```
+
+`NO_DRIVER`, `PAYMENT_FAILED`, `FAILED`, and `CANCELLED` are terminal outcomes
+where applicable. The Ride domain validates every transition, persists a
+monotonic `resource_version`, records tracking events, resolves tariffs and
+drivers from its own database, and enforces actor/operation idempotency. The
+Gateway may retry or reconcile a result, but it never infers driver, price,
+availability, or final success from model output.
+
 ## Food ordering (target flow)
 
 ```mermaid

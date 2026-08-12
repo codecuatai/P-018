@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,21 +35,62 @@ class RestaurantRepository:
 
     def seed(self) -> None:
         with self.factory() as db:
-            if db.scalar(select(RestaurantRow.id).limit(1)):
-                return
-            for index, (rid, name, location, cuisine, budget, rating) in enumerate(RESTAURANT_SEEDS):
-                restaurant = RestaurantRow(id=rid, name=name, location=location, cuisine_type=cuisine,
-                    budget_range=budget, rating=rating, timezone="Asia/Ho_Chi_Minh", active=True)
-                db.add(restaurant)
-                # Flush the parent before inserting FK children. OpeningHourRow
-                # intentionally keeps a scalar FK without an ORM relationship.
+            restaurants = list(
+                db.scalars(select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id))
+            )
+            if not restaurants:
+                for rid, name, location, cuisine, budget, rating in RESTAURANT_SEEDS:
+                    restaurants.append(
+                        RestaurantRow(
+                            id=rid,
+                            name=name,
+                            location=location,
+                            cuisine_type=cuisine,
+                            budget_range=budget,
+                            rating=rating,
+                            timezone="Asia/Ho_Chi_Minh",
+                            active=True,
+                        )
+                    )
+                    db.add(restaurants[-1])
                 db.flush()
-                capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
-                for table_index, capacity in enumerate(capacities, 1):
-                    db.add(TableRow(restaurant_id=rid, table_code=f"T{table_index:02d}", capacity=capacity,
-                        seating_type="standard", active=True))
-                for weekday in range(7):
-                    db.add(OpeningHourRow(restaurant_id=rid, weekday=weekday, opens_at="06:00", closes_at="23:00"))
+
+            # Imported catalog rows are authoritative.  Add only the minimal
+            # deterministic booking resources that an imported row may lack.
+            # This keeps seed idempotent and makes real catalog records bookable
+            # without replacing or mutating their imported identity.
+            for index, restaurant in enumerate(restaurants):
+                table_count = db.scalar(
+                    select(func.count(TableRow.id)).where(TableRow.restaurant_id == restaurant.id)
+                )
+                if not table_count:
+                    capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
+                    for table_index, capacity in enumerate(capacities, 1):
+                        db.add(
+                            TableRow(
+                                restaurant_id=restaurant.id,
+                                table_code=f"T{table_index:02d}",
+                                capacity=capacity,
+                                seating_type="standard",
+                                active=True,
+                            )
+                        )
+
+                hour_count = db.scalar(
+                    select(func.count(OpeningHourRow.id)).where(
+                        OpeningHourRow.restaurant_id == restaurant.id
+                    )
+                )
+                if not hour_count:
+                    for weekday in range(7):
+                        db.add(
+                            OpeningHourRow(
+                                restaurant_id=restaurant.id,
+                                weekday=weekday,
+                                opens_at="06:00",
+                                closes_at="23:00",
+                            )
+                        )
             db.commit()
 
     @staticmethod

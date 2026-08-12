@@ -4,7 +4,9 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 from src.domain.ride import normalized_hash
+from src.infrastructure.models import BookingRow, QuoteRow, RideTrackingEventRow
 
 ACTOR = "user_ride_test"
 
@@ -73,6 +75,40 @@ def _prepare(client: TestClient, quote: dict) -> dict:
     return response.json()["data"]
 
 
+def _confirm(client: TestClient, quote: dict, booking: dict, *, key: str = "confirm-key") -> dict:
+    payment_reference = f"payment_{key}"
+    bound_payload = {
+        "action": "ride.booking.confirm",
+        "actor_id": ACTOR,
+        "booking_id": booking["id"],
+        "quote_id": quote["id"],
+        "quote_version": quote["quote_version"],
+        "amount": quote["amount"],
+        "currency": quote["currency"],
+        "payment_reference": payment_reference,
+    }
+    response = client.post(
+        f"/v1/bookings/{booking['id']}:confirm",
+        headers=_headers(key=key),
+        json={
+            "payment_reference": payment_reference,
+            "confirmation": _confirmation("ride.booking.confirm", bound_payload, quote),
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["data"]
+
+
+def _set_tracking_start(client: TestClient, booking_id: str, *, seconds_ago: int) -> None:
+    engine = getattr(client, "ride_engine")
+    started_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+    with Session(engine) as session:
+        booking = session.get(BookingRow, booking_id)
+        assert booking is not None
+        booking.tracking_started_at = started_at
+        session.commit()
+
+
 def test_internal_auth_and_idempotency_headers_are_required(client: TestClient) -> None:
     missing_auth = client.post("/v1/quotes", json={})
     assert missing_auth.status_code == 401
@@ -97,6 +133,7 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
     replay = _create_quote(client)
     assert replay == first
     assert first["currency"] == "VND"
+    assert first["status"] == "QUOTE_CREATED"
     assert first["tariff_version"] == "TEST_2026_V1"
 
     conflict = client.post(
@@ -115,7 +152,7 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
 def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> None:
     quote = _create_quote(client)
     booking = _prepare(client, quote)
-    assert booking["status"] == "AWAITING_PAYMENT_CONFIRMATION"
+    assert booking["status"] == "AWAITING_CONFIRMATION"
     assert booking["driver"] is None
     assert booking["payment_reference"] is None
 
@@ -142,9 +179,10 @@ def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> Non
     assert confirmed.status_code == 200
     result = confirmed.json()["data"]
     assert result["status"] == "DRIVER_ASSIGNED"
-    assert result["resource_version"] == 2
+    assert result["resource_version"] == 3
     assert result["payment_reference"] == payment_reference
     assert result["driver"]["id"].startswith("driver_simulated")
+    assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "CONSUMED"
 
     replay = client.post(
         f"/v1/bookings/{booking['id']}:confirm",
@@ -276,3 +314,55 @@ def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: Te
     assert first.json()["data"] == second.json()["data"]
     assert first.json()["data"]["status"] == "NO_DRIVER"
     assert first.json()["data"]["driver_location"] is None
+
+
+def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClient) -> None:
+    quote = _create_quote(client, key="lifecycle-quote")
+    booking = _prepare(client, quote)
+    assert booking["status"] == "AWAITING_CONFIRMATION"
+    assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "AWAITING_CONFIRMATION"
+
+    confirmed = _confirm(client, quote, booking, key="lifecycle-confirm")
+    assert confirmed["status"] == "DRIVER_ASSIGNED"
+    eta_seconds = confirmed["driver"]["eta_seconds"]
+    route_seconds = quote["route_duration_seconds"]
+
+    expected_states = [
+        (2, "DRIVER_TO_PICKUP"),
+        (eta_seconds + 2, "DRIVER_ARRIVED"),
+        (eta_seconds + 62, "IN_PROGRESS"),
+        (eta_seconds + 62 + route_seconds + 2, "COMPLETED"),
+    ]
+    for seconds_ago, expected_status in expected_states:
+        _set_tracking_start(client, confirmed["id"], seconds_ago=seconds_ago)
+        response = client.get(f"/v1/bookings/{confirmed['id']}/tracking", headers=_headers())
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == expected_status
+        assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == expected_status
+
+    engine = getattr(client, "ride_engine")
+    with Session(engine) as session:
+        events = session.query(RideTrackingEventRow).filter_by(booking_id=confirmed["id"]).order_by(RideTrackingEventRow.occurred_at, RideTrackingEventRow.id).all()
+        assert [event.status for event in events] == [
+            "AWAITING_CONFIRMATION",
+            "SEARCHING_DRIVER",
+            "DRIVER_ASSIGNED",
+            "DRIVER_TO_PICKUP",
+            "DRIVER_ARRIVED",
+            "IN_PROGRESS",
+            "COMPLETED",
+        ]
+
+
+def test_expired_quote_is_persisted_and_cannot_be_prepared(client: TestClient) -> None:
+    quote = _create_quote(client, key="expired-quote")
+    engine = getattr(client, "ride_engine")
+    with Session(engine) as session:
+        row = session.get(QuoteRow, quote["id"])
+        assert row is not None
+        row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+
+    expired = client.get(f"/v1/quotes/{quote['id']}", headers=_headers())
+    assert expired.status_code == 200
+    assert expired.json()["data"]["status"] == "EXPIRED"

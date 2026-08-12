@@ -2,10 +2,17 @@ import { render, screen, waitFor } from "@testing-library/react";
 
 const mockRefreshAccessToken = jest.fn();
 const mockGetCurrentUser = jest.fn();
+const mockGetAccessToken = jest.fn(() => null);
+const mockPathname = jest.fn(() => "/app");
+
+jest.mock("next/navigation", () => ({
+  usePathname: () => mockPathname(),
+}));
 
 jest.mock("@/lib/api-client", () => ({
   clearAuthSession: jest.fn(),
   configureApiClient: jest.fn(),
+  getAccessToken: mockGetAccessToken,
   getCurrentUser: mockGetCurrentUser,
   login: jest.fn(),
   logout: jest.fn(),
@@ -21,6 +28,12 @@ function StatusProbe() {
 }
 
 describe("AuthProvider", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPathname.mockReturnValue("/app");
+    mockGetAccessToken.mockReturnValue(null);
+  });
+
   it("restores the authenticated user from the opaque refresh cookie", async () => {
     mockRefreshAccessToken.mockResolvedValueOnce("access-token");
     mockGetCurrentUser.mockResolvedValueOnce({ sub: "usr-1", email: "an@example.test", role: "customer" });
@@ -39,5 +52,14 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(screen.getByText("unauthenticated:none")).toBeInTheDocument());
     expect(mockGetCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh while the public landing page is open", async () => {
+    mockPathname.mockReturnValue("/");
+
+    render(<AuthProvider><StatusProbe /></AuthProvider>);
+
+    await waitFor(() => expect(screen.getByText("unauthenticated:none")).toBeInTheDocument());
+    expect(mockRefreshAccessToken).not.toHaveBeenCalled();
   });
 });

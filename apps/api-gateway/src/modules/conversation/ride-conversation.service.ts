@@ -277,7 +277,12 @@ export class RideConversationService {
   ): Promise<PublicWorkflow> {
     const workflow = this.ownedWorkflow(actorId, workflowId);
     if (workflow.stage === 'COMPLETED' && workflow.booking) {
-      return this.view(workflow, 'Booking đã hoàn tất và tài xế đã được gán.', 'ride_completed', []);
+      return this.view(
+        workflow,
+        `Booking đã được ghi nhận. Trạng thái chuyến hiện tại: ${workflow.booking.status}.`,
+        'ride_booking_confirmed',
+        [],
+      );
     }
     if (workflow.stage !== 'PAYMENT_CONFIRMATION' || !workflow.booking || !workflow.quote) {
       throw new ConflictException('Workflow is not awaiting payment confirmation.');
@@ -316,8 +321,8 @@ export class RideConversationService {
     workflow.context.ride.revision += 1;
     return this.view(
       workflow,
-      'Thanh toán sandbox đã được xác nhận. Ride đã hoàn tất booking và gán tài xế.',
-      'ride_completed',
+      `Thanh toán sandbox đã được xác nhận. Booking đã chuyển sang trạng thái ${workflow.booking.status}; chuyến sẽ tiếp tục được theo dõi theo trạng thái Ride authoritative.`,
+      'ride_booking_confirmed',
       [],
     );
   }
@@ -411,7 +416,7 @@ export class RideConversationService {
         pending.bookingId,
       );
       if (
-        booking.status === 'DRIVER_ASSIGNED'
+        isRideAfterPayment(booking.status)
         && booking.quote_id === workflow.quote?.id
         && booking.quote_version === workflow.quote?.quote_version
         && booking.amount === workflow.quote?.amount
@@ -520,9 +525,24 @@ function ambiguousOutcome(error: unknown): unknown {
 
 function hydratedStage(booking: RideBooking | null): WorkflowStage {
   if (!booking) return 'SERVICE_CONFIRMATION';
-  if (booking.status === 'AWAITING_PAYMENT_CONFIRMATION') return 'PAYMENT_CONFIRMATION';
-  if (booking.status === 'DRIVER_ASSIGNED') return 'COMPLETED';
+  if (booking.status === 'AWAITING_CONFIRMATION' || booking.status === 'AWAITING_PAYMENT_CONFIRMATION') return 'PAYMENT_CONFIRMATION';
+  if (isRideAfterPayment(booking.status)) return 'COMPLETED';
   throw new ConflictException('The durable Ride booking is no longer actionable.');
+}
+
+function isRideAfterPayment(status: RideBooking['status']): boolean {
+  return [
+    'SEARCHING_DRIVER',
+    'DRIVER_ASSIGNED',
+    'DRIVER_TO_PICKUP',
+    'DRIVER_ARRIVED',
+    'IN_PROGRESS',
+    'COMPLETED',
+    'NO_DRIVER',
+    'FAILED',
+    'PAYMENT_FAILED',
+    'CANCELLED',
+  ].includes(status);
 }
 
 function isAmbiguous(error: unknown): error is ServiceCallError {

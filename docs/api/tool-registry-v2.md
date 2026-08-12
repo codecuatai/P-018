@@ -1,100 +1,93 @@
 # Tool Registry v2 Specification
 
-Status: **Implemented runtime registry**. The Gateway exposes the validated
-registry at `GET /internal/tools/registry-v2`; the Agent still emits typed
-proposals and bounded domain adapters execute them. The registry validates
-tool name/alias, version, risk, argument shape, actor scope, idempotency and
-confirmation policy before an executor can run. It is not a generic executor
-or a source of authoritative domain state.
+Status: `IMPLEMENTED_RUNTIME`. The Gateway exposes the validated registry at
+`GET /internal/tools/registry-v2`; the machine-readable canonical inventory is
+[`packages/contracts/tools/tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json).
+The Agent emits typed proposals and bounded policies; it never calls a domain,
+database, payment provider, or final side effect.
 
-## Required metadata
+## Contract and authority rules
 
-Every v2 entry has these fields:
+Each inventory entry contains `name`, `domain`, `version`, `risk`,
+`argument_schema`, `result_schema`, `idempotency_requirement`,
+`confirmation_requirement`, `owner`, and `classification`. A `ToolRequest`
+uses `tool_name`; the JSON inventory uses `name` so it can also describe the
+canonical alias mapping.
 
-```json
-{
-  "tool_name": "food.search",
-  "domain": "food",
-  "version": "2",
-  "risk": "READ",
-  "argument_schema": {"$ref": "#/schemas/FoodSearchArguments"},
-  "result_schema": {"$ref": "#/schemas/FoodSearchResult"},
-  "idempotency_requirement": "none",
-  "confirmation_requirement": "none",
-  "owner": "food-service"
-}
-```
+Allowed risks are `READ`, `REVERSIBLE_WRITE`, and `FINANCIAL_OR_FINAL`.
+Every write, hold, cancellation, payment acknowledgement, or final action
+requires a domain-enforced idempotency key from the first write request.
+Financial/final operations require `explicit_gateway_confirmation`. The
+registry rejects unknown arguments and model-supplied authoritative IDs,
+prices, availability, coordinates, status, payment state, or success claims.
+There is no SQL/database tool and no generic executor entry.
 
-Allowed domains are `food`, `ride`, `restaurant`, and `healthcare`. Allowed risks are `READ`, `REVERSIBLE_WRITE`, and `FINANCIAL_OR_FINAL`. A model response cannot assign or elevate risk, supply authoritative IDs/prices/status, satisfy confirmation, or report final transaction success.
+## Current inventory
 
-`idempotency_requirement` is `none` only for a read that has no side effect. Every write, hold, cancellation, payment acknowledgement, or final action requires a domain-enforced key from the first write request. `confirmation_requirement` is `none`, `policy-dependent`, or `explicit_gateway_confirmation`; the last value is mandatory for final/financial actions. There is no SQL/database tool and no generic executor entry.
+The v2 file contains 46 canonical entries across all four domains:
 
-## Current capability map
+| Domain | `IMPLEMENTED_AGENT_TOOL` | `IMPLEMENTED_GATEWAY_ACTION` | `IMPLEMENTED_DOMAIN_API` | Total |
+| --- | ---: | ---: | ---: | ---: |
+| Food | 14 | 1 | 3 | 18 |
+| Ride | 1 | 8 | 1 | 10 |
+| Restaurant | 4 | 2 | 2 | 8 |
+| Healthcare | 4 | 1 | 5 | 10 |
+| **Total** | **23** | **12** | **11** | **46** |
 
-The v2 names below are the canonical names for future contract use. A legacy alias is a runtime name that currently exists; an alias is not a second authority and must not be added to new model prompts. Statuses are evidence-based: `IMPLEMENTED_RUNTIME` means an Agent proposal has a bounded Gateway/domain execution path; `IMPLEMENTED_GATEWAY_ONLY` means a Gateway client/confirmation path exists but the Agent cannot invoke the operation as a final tool; `IMPLEMENTED_DOMAIN_ONLY` means only the domain route is present; `PROPOSAL_ONLY` means validation/recognition exists but no current executor completes the operation; and `PLANNED_PHASE_4` is reserved for a future capability. A proposal-only name is never an executable alias.
+The classifications are evidence-based:
 
-| tool_name | domain | version | risk | argument_schema | result_schema | idempotency_requirement | confirmation_requirement | owner | status | legacy alias |
-| --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- |
-| `food.search` | food | 2 | READ | `FoodSearchArguments` | `FoodSearchResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `search_food` |
-| `food.menu.get` | food | 2 | READ | `FoodMenuArguments` | `FoodMenuResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `view_menu` |
-| `food.menu_item.get` | food | 2 | READ | `FoodMenuItemArguments` | `FoodMenuItemResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `view_menu_item` |
-| `food.address.list` | food | 2 | READ | `FoodAddressListArguments` | `FoodAddressListResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `list_food_delivery_addresses` |
-| `food.cart.get` | food | 2 | READ | `FoodCartArguments` | `FoodCartResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `get_food_cart` |
-| `food.cart.create` | food | 2 | REVERSIBLE_WRITE | `FoodCartCreateArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `create_cart` |
-| `food.cart.item.add` | food | 2 | REVERSIBLE_WRITE | `FoodCartItemArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `add_to_cart` |
-| `food.cart.item.update` | food | 2 | REVERSIBLE_WRITE | `FoodCartItemUpdateArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `update_food_cart_item` |
-| `food.cart.item.remove` | food | 2 | REVERSIBLE_WRITE | `FoodCartItemRemoveArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `remove_food_cart_item` |
-| `food.cart.voucher.apply` | food | 2 | REVERSIBLE_WRITE | `FoodVoucherArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `apply_voucher` |
-| `food.cart.voucher.remove` | food | 2 | REVERSIBLE_WRITE | `FoodCartArguments` | `FoodCartResult` | required at domain boundary | policy-dependent | food-service | `IMPLEMENTED_RUNTIME` | `remove_food_voucher` |
-| `food.delivery.quote` | food | 2 | READ | `FoodDeliveryQuoteArguments` | `FoodDeliveryQuoteResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `quote_delivery` |
-| `food.order.preview` | food | 2 | READ | `FoodOrderPreviewArguments` | `FoodOrderPreviewResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `preview_order` |
-| `food.order.get` | food | 2 | READ | `FoodOrderArguments` | `FoodOrderResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `get_food_order` |
-| `food.order.track` | food | 2 | READ | `FoodOrderArguments` | `FoodTrackingResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `track_food_order` |
-| `food.order.cancel.preview` | food | 2 | READ | `FoodOrderArguments` | `FoodCancellationPreviewResult` | none | none | food-service | `IMPLEMENTED_RUNTIME` | `preview_food_order_cancellation` |
-| `food.order.confirm.prepare` | food | 2 | FINANCIAL_OR_FINAL | `FoodOrderPreviewArguments` | `ConfirmationForm` | required at confirmation boundary | explicit_gateway_confirmation | gateway/Core + food-service | `IMPLEMENTED_RUNTIME` | `prepare_food_order_confirmation` |
-| `food.order.cancel.confirm.prepare` | food | 2 | FINANCIAL_OR_FINAL | `FoodOrderArguments` | `ConfirmationForm` | required at confirmation boundary | explicit_gateway_confirmation | gateway/Core + food-service | `IMPLEMENTED_RUNTIME` | `prepare_food_order_cancellation_confirmation` |
-| `food.order.confirm` | food | 2 | FINANCIAL_OR_FINAL | `FoodOrderConfirmationArguments` | `FoodOrderResult` | required | explicit_gateway_confirmation | gateway/Core + food-service | `IMPLEMENTED_GATEWAY_ONLY` | `execute_food_order` |
-| `food.order.cancel` | food | 2 | REVERSIBLE_WRITE | `FoodOrderCancellationArguments` | `FoodOrderResult` | required | explicit_gateway_confirmation | gateway/Core + food-service | `IMPLEMENTED_GATEWAY_ONLY` | `execute_food_order_cancellation` |
-| `food.refund.execute` | food | 2 | FINANCIAL_OR_FINAL | `FoodRefundArguments` | `RefundResult` | required | explicit_gateway_confirmation or recovery claim | gateway/Core + food-service | `IMPLEMENTED_GATEWAY_ONLY` | `execute_food_refund` |
-| `ride.quote.create` | ride | 2 | READ | `RideQuoteArguments` | `RideQuoteResult` | required at domain boundary | none | ride-service | `IMPLEMENTED_RUNTIME` | — |
-| `ride.quote.get` | ride | 2 | READ | `RideQuoteGetArguments` | `RideQuoteResult` | none | none | ride-service | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `ride.booking.prepare` | ride | 2 | REVERSIBLE_WRITE | `RideBookingPrepareArguments` | `RideBookingResult` | required | explicit service-details confirmation | ride-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `ride.booking.get` | ride | 2 | READ | `RideBookingGetArguments` | `RideBookingResult` | none | none | ride-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | `ride.booking.status.get` (proposal-only; not executed by current Ride conversation) |
-| `ride.booking.confirm` | ride | 2 | FINANCIAL_OR_FINAL | `RideBookingConfirmArguments` | `RideBookingResult` | required | explicit_gateway_confirmation | ride-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `ride.booking.cancel.prepare` | ride | 2 | REVERSIBLE_WRITE | `RideBookingCancelArguments` | `RideCancellationProposal` | none | explicit_gateway_confirmation | Gateway ToolRegistry | `PROPOSAL_ONLY` | — |
-| `ride.booking.cancel` | ride | 2 | REVERSIBLE_WRITE | `RideBookingCancelArguments` | `RideBookingResult` | required | policy-dependent | ride-service | `IMPLEMENTED_DOMAIN_ONLY` | — |
-| `restaurant.search` | restaurant | 2 | READ | `RestaurantSearchArguments` | `RestaurantSearchResult` | none | none | restaurant-service | `IMPLEMENTED_RUNTIME` | — |
-| `restaurant.get` | restaurant | 2 | READ | `RestaurantGetArguments` | `RestaurantResult` | none | none | restaurant-service | `IMPLEMENTED_RUNTIME` | — |
-| `restaurant.check_availability` | restaurant | 2 | READ | `RestaurantAvailabilityArguments` | `RestaurantAvailabilityResult` | none | none | restaurant-service | `IMPLEMENTED_RUNTIME` | — |
-| `restaurant.create_hold` | restaurant | 2 | REVERSIBLE_WRITE | `RestaurantHoldArguments` | `RestaurantHoldResult` | required | policy-dependent | restaurant-service | `IMPLEMENTED_RUNTIME` | — |
-| `restaurant.create_reservation` | restaurant | 2 | FINANCIAL_OR_FINAL | `RestaurantReservationArguments` | `RestaurantReservationResult` | required | explicit_gateway_confirmation | restaurant-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `healthcare.list_departments` | healthcare | 2 | READ | `HealthcareDepartmentArguments` | `HealthcareDepartmentResult` | none | none | healthcare-service | `IMPLEMENTED_RUNTIME` | — |
-| `healthcare.list_slots` | healthcare | 2 | READ | `HealthcareSlotArguments` | `HealthcareSlotResult` | none | none | healthcare-service | `IMPLEMENTED_RUNTIME` | — |
-| `healthcare.hold_slot` | healthcare | 2 | REVERSIBLE_WRITE | `HealthcareHoldArguments` | `HealthcareAppointmentResult` | required | policy-dependent | healthcare-service | `IMPLEMENTED_RUNTIME` | — |
-| `healthcare.payment.acknowledge` | healthcare | 2 | FINANCIAL_OR_FINAL | `HealthcarePaymentArguments` | `HealthcarePaymentResult` | required | explicit Gateway payment step | healthcare-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `healthcare.confirm_appointment` | healthcare | 2 | FINANCIAL_OR_FINAL | `HealthcareAppointmentArguments` | `HealthcareAppointmentResult` | required | explicit_gateway_confirmation | healthcare-service + Gateway | `IMPLEMENTED_GATEWAY_ONLY` | — |
-| `healthcare.cancel_appointment` | healthcare | 2 | REVERSIBLE_WRITE | `HealthcareAppointmentArguments` | `HealthcareAppointmentResult` | required | policy-dependent | healthcare-service | `IMPLEMENTED_RUNTIME` | — |
+- `IMPLEMENTED_AGENT_TOOL`: the Agent policy can propose the canonical tool
+  and the Gateway has a bounded executor/domain path.
+- `IMPLEMENTED_GATEWAY_ACTION`: the Gateway has the typed action or
+  confirmation path, but the Agent does not execute the final operation as a
+  free-standing tool.
+- `IMPLEMENTED_DOMAIN_API`: the owning service route and schema are present;
+  it is not currently an Agent action surface.
+- `LEGACY_COMPAT`: an old alias or route retained while callers migrate.
+- `DEPRECATED`: not part of the runtime and not an executable alias.
 
-The runtime registry is version `2` and its four-domain entries are covered by
-`apps/api-gateway/test/tools/tool-registry.spec.ts`. Any future capability
-must have an owner, OpenAPI/tool contract, tests, idempotency and confirmation
-policy before it can move beyond `PROPOSAL_ONLY` or `PLANNED_PHASE_4`.
+The canonical names are grouped below; the JSON file remains the source of
+truth for schemas, risk, owner, idempotency, confirmation, and aliases.
 
-Phase 9 ranking and multi-service plan APIs remain Gateway orchestration
-surfaces rather than Agent tools. They accept validated, actor-scoped inputs
-and typed domain results; the Agent cannot call a domain, choose a destination,
-confirm a booking, or mark a workflow successful.
+| Domain | Canonical names |
+| --- | --- |
+| Food | `food.search`, `food.get_restaurant`, `food.list_menu`, `food.get_menu_item`, `food.create_cart`, `food.add_cart_item`, `food.update_cart_item`, `food.remove_cart_item`, `food.quote_delivery`, `food.apply_voucher`, `food.remove_voucher`, `food.preview_order`, `food.prepare_order`, `food.get_order`, `food.list_orders`, `food.track_order`, `food.prepare_cancel_order`, `food.cancel_order` |
+| Ride | `ride.quote.create`, `ride.quote.get`, `ride.booking.prepare`, `ride.booking.confirm`, `ride.booking.get`, `ride.booking.list`, `ride.booking.status.get`, `ride.tracking.get`, `ride.booking.cancel.prepare`, `ride.booking.cancel` |
+| Restaurant | `restaurant.search`, `restaurant.get`, `restaurant.check_availability`, `restaurant.create_hold`, `restaurant.create_reservation`, `restaurant.get_reservation`, `restaurant.list_reservations`, `restaurant.cancel_reservation` |
+| Healthcare | `healthcare.search_facilities`, `healthcare.get_facility`, `healthcare.list_departments`, `healthcare.list_doctors`, `healthcare.list_slots`, `healthcare.hold_slot`, `healthcare.get_appointment`, `healthcare.list_appointments`, `healthcare.confirm_appointment`, `healthcare.cancel_appointment` |
+
+Legacy Food names such as `view_menu`, `view_menu_item`, `create_cart`,
+`add_to_cart`, `preview_order`, and `track_food_order` are compatibility inputs
+mapped to the canonical definitions. They are not additional authorities and
+must not be added to new model prompts. The runtime parity test rejects a
+registry entry that is absent from the JSON inventory or has mismatched
+metadata.
 
 ## Ride evidence audit
 
-- `ride.quote.create` is emitted by `apps/agent-service/src/agents/ride_graph.py`, validated by `apps/api-gateway/src/modules/tools/tool-registry.ts`, and executed through `RideConversationService` and `RideClient`.
-- `ride.booking.prepare` and `ride.booking.confirm` are performed by Gateway confirmation endpoints and `RideClient`; the Agent does not directly execute either final domain operation.
-- `ride.booking.cancel` exists as an authoritative Ride route and application operation, but no current Gateway client/confirmation path exposes it to the Agent; it is therefore `IMPLEMENTED_DOMAIN_ONLY`.
-- `ride.booking.cancel.prepare` is accepted as a Gateway proposal shape only. It is not an alias for `ride.booking.cancel`; cancellation remains outside the current Agent final-tool surface.
+- `ride.quote.create` is Agent-proposable and executes through
+  `RideConversationService`/`RideClient`; Ride remains authoritative for the
+  tariff, route snapshot, expiry, and quote version.
+- `ride.booking.prepare` and `ride.booking.confirm` are Gateway actions with
+  two explicit confirmations. The final result exposes the Ride booking
+  status, including `NO_DRIVER`, rather than inferring success.
+- `ride.tracking.get`, booking status/list, and cancellation are represented
+  as Gateway/domain capabilities with actor scope and idempotency requirements
+  in the canonical inventory.
 
 ## Boundary rules
 
-- The Gateway owns the public action/confirmation boundary; a final tool proposal cannot call a domain final endpoint directly.
-- Domain services validate the request again and remain authoritative for IDs, prices, availability, state transitions, idempotency, and result status.
-- The Agent may use legacy aliases only while the Gateway maintains the compatibility adapter. It never receives database credentials and never creates authoritative IDs, prices, availability, or success status.
-- Tool results are untrusted data until schema validation and policy checks pass. Raw provider/tool payloads, prompts, and chain-of-thought are not public response fields.
+- The Gateway owns the public action/confirmation boundary; a final proposal
+  cannot call a domain final endpoint directly.
+- Domain services validate again and own IDs, prices, availability, state
+  transitions, idempotency, and result status.
+- Agent content and tool results are untrusted until schema, policy, and
+  domain validation pass. Raw prompts, provider payloads, and chain-of-thought
+  are never public response fields.
+- Phase 9 ranking and multi-service plan APIs remain Gateway orchestration
+  surfaces rather than Agent tools. They accept validated actor-scoped inputs
+  and typed domain results; the Agent cannot choose a destination, confirm a
+  booking, or mark a workflow successful.
+
+Parity evidence: `apps/api-gateway/test/tools/tool-registry.spec.ts` and
+`apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.

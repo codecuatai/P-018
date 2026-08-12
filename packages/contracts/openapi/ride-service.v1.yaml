@@ -389,6 +389,7 @@ components:
       required:
         - id
         - actor_id
+        - status
         - pickup_address
         - dropoff_address
         - vehicle_type
@@ -418,6 +419,7 @@ components:
       properties:
         id: {type: string}
         actor_id: {type: string}
+        status: {type: string, enum: [QUOTE_CREATED, AWAITING_CONFIRMATION, CONSUMED, EXPIRED]}
         pickup_address: {type: string}
         dropoff_address: {type: string}
         vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
@@ -443,15 +445,6 @@ components:
         route_polyline: {type: [string, "null"]}
         route_snapshot_hash: {type: [string, "null"]}
         created_at: {type: string, format: date-time}
-        pickup_latitude: {type: [number, "null"]}
-        pickup_longitude: {type: [number, "null"]}
-        dropoff_latitude: {type: [number, "null"]}
-        dropoff_longitude: {type: [number, "null"]}
-        route_provider: {type: string}
-        route_distance_meters: {type: [integer, "null"]}
-        route_duration_seconds: {type: [integer, "null"]}
-        route_polyline: {type: [string, "null"]}
-        route_snapshot_hash: {type: [string, "null"]}
         tariff_snapshot: {type: [object, "null"], additionalProperties: true}
     Booking:
       type: object
@@ -480,7 +473,7 @@ components:
         currency: {type: string}
         status:
           type: string
-          enum: [AWAITING_PAYMENT_CONFIRMATION, DRIVER_ASSIGNED, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED]
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
         resource_version: {type: integer}
         payment_reference:
           type: [string, "null"]
@@ -497,7 +490,7 @@ components:
       required: [booking_id, status, progress, eta_seconds, driver, driver_location, current_location, route, route_provider, route_snapshot_hash, updated_at]
       properties:
         booking_id: {type: string}
-        status: {type: string, enum: [DRIVER_ASSIGNED, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, CANCELLED]}
+        status: {type: string, enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]}
         progress: {type: number, minimum: 0, maximum: 1}
         eta_seconds: {type: integer, minimum: 0}
         driver: {type: [object, "null"], additionalProperties: true}

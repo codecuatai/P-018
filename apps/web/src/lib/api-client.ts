@@ -403,6 +403,7 @@ function shouldRefresh(path: string, problem: ApiProblem, options: RequestOption
 }
 
 async function rawRefresh(): Promise<string | null> {
+  const tokenAtStart = accessToken;
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
@@ -411,14 +412,23 @@ async function rawRefresh(): Promise<string | null> {
     });
     const body = await parseJson(response);
     if (!response.ok || !isRecord(body) || !isRecord(body.data) || typeof body.data.access_token !== "string") {
-      clearAuthSession();
-      return null;
+      // A login/register may have completed while this refresh was in flight.
+      // Never clear the newer in-memory session because an older refresh failed.
+      if (accessToken === tokenAtStart) {
+        clearAuthSession();
+        return null;
+      }
+      return accessToken;
     }
+    if (accessToken !== tokenAtStart) return accessToken;
     setAccessToken(body.data.access_token);
     return body.data.access_token;
   } catch {
-    clearAuthSession();
-    return null;
+    if (accessToken === tokenAtStart) {
+      clearAuthSession();
+      return null;
+    }
+    return accessToken;
   }
 }
 

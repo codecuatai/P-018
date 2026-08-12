@@ -78,19 +78,29 @@ export interface ServiceCatalogItem {
 
 export interface RideTracking {
   booking_id: string;
-  status: string;
+  status: "AWAITING_CONFIRMATION" | "SEARCHING_DRIVER" | "DRIVER_ASSIGNED" | "DRIVER_TO_PICKUP" | "DRIVER_ARRIVED" | "IN_PROGRESS" | "COMPLETED" | "NO_DRIVER" | "FAILED" | "PAYMENT_FAILED" | "CANCELLED" | string;
   progress: number;
   eta_seconds: number;
   driver?: Record<string, unknown> | null;
   driver_location?: { latitude: number; longitude: number } | null;
   current_location?: { latitude: number; longitude: number } | null;
-  route?: Record<string, unknown>;
+  route?: {
+    provider?: string;
+    distance_meters?: number | null;
+    duration_seconds?: number | null;
+    polyline?: string | null;
+    origin?: { latitude: number; longitude: number } | null;
+    destination?: { latitude: number; longitude: number } | null;
+    [key: string]: unknown;
+  };
   route_provider?: string;
+  route_snapshot_hash?: string | null;
   updated_at?: string;
 }
 
 export interface RideQuote {
   id: string;
+  status: "QUOTE_CREATED" | "AWAITING_CONFIRMATION" | "CONSUMED" | "EXPIRED" | string;
   pickup_address: string;
   dropoff_address: string;
   vehicle_type: string;

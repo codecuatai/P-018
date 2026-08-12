@@ -58,6 +58,7 @@ def client() -> Iterator[TestClient]:
 
     app.dependency_overrides[get_session] = override_session
     with TestClient(app) as test_client:
+        setattr(test_client, "ride_engine", engine)
         yield test_client
     app.dependency_overrides.clear()
     Base.metadata.drop_all(engine)

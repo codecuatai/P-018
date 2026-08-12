@@ -42,6 +42,16 @@ def unique_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
 
 
+def create_conversation(client: httpx.Client, token: str, title: str) -> str:
+    response = client.post(
+        "/api/v1/conversations",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"title": title, "service_context": "food"},
+    )
+    response.raise_for_status()
+    return str(response.json()["data"]["conversationId"])
+
+
 def stable_hash(value: object) -> str:
     return hashlib.sha256(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
@@ -69,7 +79,7 @@ def db_scalar(sql: str, database: str, user: str) -> str:
 
 
 def prepare_order(client: httpx.Client, token: str, with_voucher: bool = False) -> tuple[dict, str, str]:
-    conversation_id = unique_id("e2e-conversation")
+    conversation_id = create_conversation(client, token, "Food E2E")
     search = chat(client, token, conversation_id, "Tìm phở bò dưới 100 nghìn ở Hà Nội.")
     assert search["state_updates"].get("restaurant_candidates")
     chat(client, token, conversation_id, "Chọn quán đầu tiên.")
@@ -158,7 +168,16 @@ def test_stale_quote_rejects_before_order_insert() -> None:
         token = login(client)
         form, conversation_id, cart_id = prepare_order(client, token)
         before_version = int(db_scalar(f"SELECT version FROM food_carts WHERE id={sql_literal(cart_id)}", "xone_food", "food_user"))
-        chat(client, token, conversation_id, "Thêm một bát phở gà.")
+        cart_response = client.get(f"/api/v1/service-actions/food/cart/{cart_id}", headers={"Authorization": f"Bearer {token}"})
+        cart_response.raise_for_status()
+        cart = cart_response.json()["data"]
+        first_item = cart["items"][0]
+        changed = client.patch(
+            f"/api/v1/service-actions/food/cart/{cart_id}/items/{first_item['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"quantity": int(first_item["quantity"]) + 1},
+        )
+        changed.raise_for_status()
         assert int(db_scalar(f"SELECT version FROM food_carts WHERE id={sql_literal(cart_id)}", "xone_food", "food_user")) > before_version
         response = execute_order(client, token, form, conversation_id, unique_id("e2e-stale-quote"))
         assert response.status_code == 409
@@ -430,7 +449,7 @@ def test_concurrent_conversation_turns_append_without_loss() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
         token = login(client)
-        conversation_id = unique_id("e2e-concurrency")
+        conversation_id = create_conversation(client, token, "Food concurrency E2E")
         with ThreadPoolExecutor(max_workers=2) as executor:
             futures = [executor.submit(chat, client, token, conversation_id, message) for message in ("Tìm phở bò", "Tìm bún chả")]
             [future.result() for future in futures]

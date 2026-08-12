@@ -15,7 +15,17 @@ class VehicleType(StrEnum):
     CAR_7 = "CAR_7"
 
 
+class QuoteStatus(StrEnum):
+    QUOTE_CREATED = "QUOTE_CREATED"
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
+    CONSUMED = "CONSUMED"
+    EXPIRED = "EXPIRED"
+
+
 class BookingStatus(StrEnum):
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
+    # Kept only to read rows created before the lifecycle correction. Runtime
+    # responses normalize this value to AWAITING_CONFIRMATION.
     AWAITING_PAYMENT_CONFIRMATION = "AWAITING_PAYMENT_CONFIRMATION"
     SEARCHING_DRIVER = "SEARCHING_DRIVER"
     DRIVER_ASSIGNED = "DRIVER_ASSIGNED"
@@ -82,6 +92,7 @@ class CancelBookingCommand:
 class Quote:
     id: str
     actor_id: str
+    status: str
     pickup_address: str
     dropoff_address: str
     vehicle_type: str
@@ -153,6 +164,62 @@ class RideError(Exception):
         self.retryable = retryable
 
 
+BOOKING_TRANSITIONS: dict[str, frozenset[str]] = {
+    BookingStatus.AWAITING_CONFIRMATION.value: frozenset(
+        {
+            BookingStatus.SEARCHING_DRIVER.value,
+            BookingStatus.CANCELLED.value,
+            BookingStatus.PAYMENT_FAILED.value,
+            BookingStatus.FAILED.value,
+        }
+    ),
+    BookingStatus.SEARCHING_DRIVER.value: frozenset(
+        {
+            BookingStatus.DRIVER_ASSIGNED.value,
+            BookingStatus.NO_DRIVER.value,
+            BookingStatus.CANCELLED.value,
+            BookingStatus.FAILED.value,
+        }
+    ),
+    BookingStatus.DRIVER_ASSIGNED.value: frozenset(
+        {
+            BookingStatus.DRIVER_TO_PICKUP.value,
+            BookingStatus.CANCELLED.value,
+        }
+    ),
+    BookingStatus.DRIVER_TO_PICKUP.value: frozenset(
+        {
+            BookingStatus.DRIVER_ARRIVED.value,
+            BookingStatus.CANCELLED.value,
+        }
+    ),
+    BookingStatus.DRIVER_ARRIVED.value: frozenset(
+        {
+            BookingStatus.IN_PROGRESS.value,
+            BookingStatus.CANCELLED.value,
+        }
+    ),
+    BookingStatus.IN_PROGRESS.value: frozenset(
+        {
+            BookingStatus.COMPLETED.value,
+            BookingStatus.FAILED.value,
+        }
+    ),
+    BookingStatus.COMPLETED.value: frozenset(),
+    BookingStatus.NO_DRIVER.value: frozenset(),
+    BookingStatus.FAILED.value: frozenset(),
+    BookingStatus.PAYMENT_FAILED.value: frozenset(),
+    BookingStatus.CANCELLED.value: frozenset(),
+}
+
+QUOTE_TRANSITIONS: dict[str, frozenset[str]] = {
+    QuoteStatus.QUOTE_CREATED.value: frozenset({QuoteStatus.AWAITING_CONFIRMATION.value, QuoteStatus.EXPIRED.value}),
+    QuoteStatus.AWAITING_CONFIRMATION.value: frozenset({QuoteStatus.CONSUMED.value, QuoteStatus.EXPIRED.value}),
+    QuoteStatus.CONSUMED.value: frozenset(),
+    QuoteStatus.EXPIRED.value: frozenset(),
+}
+
+
 QUOTE_TTL = timedelta(minutes=10)
 PROMO_DISCOUNTS = {"SAVE5000": 5_000}
 
@@ -166,8 +233,67 @@ def normalized_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def confirmation_request_payload(evidence: ConfirmationEvidence) -> dict[str, Any]:
+    """Return the stable request-bound part of confirmation evidence.
+
+    Issuance timestamps are validity evidence, not the normalized payload for
+    an idempotent write. Excluding them lets a gateway retry with the same
+    actor/operation/key and payload without turning a harmless clock change
+    into an idempotency conflict.
+    """
+    return {
+        key: value
+        for key, value in asdict(evidence).items()
+        if key not in {"issued_at", "expires_at"}
+    }
+
+
 def quote_request_payload(command: QuoteCommand) -> dict[str, Any]:
     return _json_safe(asdict(command))
+
+
+def normalize_booking_status(status: str) -> str:
+    if status == BookingStatus.AWAITING_PAYMENT_CONFIRMATION.value:
+        return BookingStatus.AWAITING_CONFIRMATION.value
+    return status
+
+
+def validate_booking_transition(current: str, target: str) -> None:
+    normalized_current = normalize_booking_status(current)
+    if target == normalized_current:
+        return
+    if target not in BOOKING_TRANSITIONS.get(normalized_current, frozenset()):
+        raise RideError(
+            409,
+            "INVALID_BOOKING_TRANSITION",
+            f"Cannot transition booking from {normalized_current} to {target}.",
+        )
+
+
+def transition_booking(booking: Booking, target: str) -> None:
+    current = normalize_booking_status(booking.status)
+    validate_booking_transition(current, target)
+    if target == current:
+        return
+    booking.status = target
+    booking.resource_version += 1
+    booking.updated_at = utc_now()
+
+
+def validate_quote_transition(current: str, target: str) -> None:
+    if target == current:
+        return
+    if target not in QUOTE_TRANSITIONS.get(current, frozenset()):
+        raise RideError(
+            409,
+            "INVALID_QUOTE_TRANSITION",
+            f"Cannot transition quote from {current} to {target}.",
+        )
+
+
+def transition_quote(quote: Quote, target: str) -> None:
+    validate_quote_transition(quote.status, target)
+    quote.status = target
 
 
 def prepare_confirmation_payload(quote: Quote, actor_id: str) -> dict[str, Any]:
@@ -245,6 +371,7 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
     return Quote(
         id=quote_id,
         actor_id=command.actor_id,
+        status=QuoteStatus.QUOTE_CREATED.value,
         pickup_address=command.pickup_address.strip(),
         dropoff_address=command.dropoff_address.strip(),
         vehicle_type=command.vehicle_type.value,
@@ -276,7 +403,10 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
 
 def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = None) -> dict[str, Any]:
     now = now or utc_now()
-    snapshot_at = _tracking_clock(_as_utc(now))
+    # The booking record is the authoritative timestamp. Polling must not
+    # manufacture a newer response timestamp when no lifecycle transition was
+    # persisted, otherwise two immediate reads are observably different.
+    snapshot_at = _as_utc(booking.updated_at)
     route = {
         "provider": quote.route_provider,
         "distance_meters": quote.route_distance_meters,
@@ -285,7 +415,28 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
         "origin": _point(quote.pickup_latitude, quote.pickup_longitude),
         "destination": _point(quote.dropoff_latitude, quote.dropoff_longitude),
     }
-    if booking.status == BookingStatus.CANCELLED.value:
+    status = normalize_booking_status(booking.status)
+    if status in {
+        BookingStatus.AWAITING_CONFIRMATION.value,
+        BookingStatus.SEARCHING_DRIVER.value,
+        BookingStatus.NO_DRIVER.value,
+        BookingStatus.FAILED.value,
+        BookingStatus.PAYMENT_FAILED.value,
+    }:
+        return {
+            "booking_id": booking.id,
+            "status": status,
+            "progress": 0.0,
+            "eta_seconds": 0,
+            "driver": booking.driver if status not in {BookingStatus.SEARCHING_DRIVER.value, BookingStatus.NO_DRIVER.value} else None,
+            "driver_location": None,
+            "current_location": None,
+            "route": route,
+            "route_provider": quote.route_provider,
+            "route_snapshot_hash": quote.route_snapshot_hash,
+            "updated_at": snapshot_at.isoformat(),
+        }
+    if status == BookingStatus.CANCELLED.value:
         return {
             "booking_id": booking.id,
             "status": BookingStatus.CANCELLED.value,
@@ -299,15 +450,15 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
             "route_snapshot_hash": quote.route_snapshot_hash,
             "updated_at": snapshot_at.isoformat(),
         }
-    if booking.status == BookingStatus.NO_DRIVER.value:
+    if status == BookingStatus.COMPLETED.value:
         return {
             "booking_id": booking.id,
-            "status": BookingStatus.NO_DRIVER.value,
-            "progress": 0.0,
+            "status": BookingStatus.COMPLETED.value,
+            "progress": 1.0,
             "eta_seconds": 0,
-            "driver": None,
-            "driver_location": None,
-            "current_location": None,
+            "driver": booking.driver,
+            "driver_location": _simulated_driver_location(booking.driver or {}, quote, 0, 0, 1, status),
+            "current_location": _simulated_driver_location(booking.driver or {}, quote, 0, 0, 1, status),
             "route": route,
             "route_provider": quote.route_provider,
             "route_snapshot_hash": quote.route_snapshot_hash,
@@ -322,22 +473,15 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
     elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
     elapsed = float(int(elapsed // 2) * 2)
     travel_seconds = max(60, int(quote.route_duration_seconds or quote.duration_minutes * 60))
-    if elapsed < eta_seconds:
-        status = BookingStatus.DRIVER_ASSIGNED.value
-        progress = elapsed / max(1, eta_seconds)
-        eta_remaining = max(0, eta_seconds - int(elapsed))
-    elif elapsed < eta_seconds + 60:
-        status = BookingStatus.DRIVER_ARRIVED.value
-        progress = 1.0
-        eta_remaining = 0
-    elif elapsed < eta_seconds + 60 + travel_seconds:
-        status = BookingStatus.IN_PROGRESS.value
-        progress = min(1.0, (elapsed - eta_seconds - 60) / travel_seconds)
-        eta_remaining = max(0, int(eta_seconds + 60 + travel_seconds - elapsed))
-    else:
-        status = BookingStatus.COMPLETED.value
-        progress = 1.0
-        eta_remaining = 0
+    status = tracking_status_for_elapsed(status, elapsed, eta_seconds, travel_seconds)
+    progress = tracking_progress(status, elapsed, eta_seconds, travel_seconds)
+    eta_remaining = (
+        max(0, eta_seconds - int(elapsed))
+        if status in {BookingStatus.DRIVER_ASSIGNED.value, BookingStatus.DRIVER_TO_PICKUP.value}
+        else max(0, int(eta_seconds + 60 + travel_seconds - elapsed))
+        if status == BookingStatus.IN_PROGRESS.value
+        else 0
+    )
     driver_location = _simulated_driver_location(driver, quote, elapsed, eta_seconds, travel_seconds, status)
     return {
         "booking_id": booking.id,
@@ -371,12 +515,6 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _tracking_clock(value: datetime) -> datetime:
-    """Return the two-second simulator tick used by polling clients."""
-
-    return value.replace(second=value.second - value.second % 2, microsecond=0)
-
-
 def _point(latitude: float | None, longitude: float | None) -> dict[str, float] | None:
     if latitude is None or longitude is None:
         return None
@@ -408,7 +546,7 @@ def _simulated_driver_location(
     start = driver.get("location") if isinstance(driver.get("location"), dict) else None
     if not pickup or not destination or not start:
         return None
-    if status == BookingStatus.DRIVER_ASSIGNED.value:
+    if status in {BookingStatus.DRIVER_ASSIGNED.value, BookingStatus.DRIVER_TO_PICKUP.value}:
         return _interpolate(start, pickup, elapsed / max(1, eta_seconds))
     if status == BookingStatus.DRIVER_ARRIVED.value:
         return pickup
@@ -424,6 +562,71 @@ def _interpolate(start: dict[str, Any], end: dict[str, Any], ratio: float) -> di
         "latitude": round(float(start["latitude"]) + (float(end["latitude"]) - float(start["latitude"])) * bounded, 6),
         "longitude": round(float(start["longitude"]) + (float(end["longitude"]) - float(start["longitude"])) * bounded, 6),
     }
+
+
+def tracking_elapsed(booking: Booking, now: datetime) -> float:
+    started = _as_utc(booking.tracking_started_at or booking.updated_at)
+    elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
+    return float(int(elapsed // 2) * 2)
+
+
+def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> str:
+    normalized = normalize_booking_status(status)
+    if normalized == BookingStatus.DRIVER_ASSIGNED.value:
+        if elapsed <= 0:
+            return normalized
+        if elapsed < eta_seconds:
+            return BookingStatus.DRIVER_TO_PICKUP.value
+        if elapsed < eta_seconds + 60:
+            return BookingStatus.DRIVER_ARRIVED.value
+        if elapsed < eta_seconds + 60 + travel_seconds:
+            return BookingStatus.IN_PROGRESS.value
+        return BookingStatus.COMPLETED.value
+    if normalized == BookingStatus.DRIVER_TO_PICKUP.value:
+        if elapsed < eta_seconds:
+            return normalized
+        if elapsed < eta_seconds + 60:
+            return BookingStatus.DRIVER_ARRIVED.value
+        if elapsed < eta_seconds + 60 + travel_seconds:
+            return BookingStatus.IN_PROGRESS.value
+        return BookingStatus.COMPLETED.value
+    if normalized == BookingStatus.DRIVER_ARRIVED.value:
+        if elapsed < eta_seconds + 60:
+            return normalized
+        if elapsed < eta_seconds + 60 + travel_seconds:
+            return BookingStatus.IN_PROGRESS.value
+        return BookingStatus.COMPLETED.value
+    if normalized == BookingStatus.IN_PROGRESS.value:
+        return BookingStatus.IN_PROGRESS.value if elapsed < eta_seconds + 60 + travel_seconds else BookingStatus.COMPLETED.value
+    return normalized
+
+
+def next_tracking_status(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> str | None:
+    normalized = normalize_booking_status(status)
+    if normalized == BookingStatus.DRIVER_ASSIGNED.value and elapsed > 0:
+        return BookingStatus.DRIVER_TO_PICKUP.value
+    if normalized == BookingStatus.DRIVER_TO_PICKUP.value and elapsed >= eta_seconds:
+        return BookingStatus.DRIVER_ARRIVED.value
+    if normalized == BookingStatus.DRIVER_ARRIVED.value and elapsed >= eta_seconds + 60:
+        return BookingStatus.IN_PROGRESS.value
+    if normalized == BookingStatus.IN_PROGRESS.value and elapsed >= eta_seconds + 60 + travel_seconds:
+        return BookingStatus.COMPLETED.value
+    return None
+
+
+def tracking_progress(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> float:
+    normalized = normalize_booking_status(status)
+    if normalized == BookingStatus.DRIVER_ASSIGNED.value:
+        return 0.0
+    if normalized == BookingStatus.DRIVER_TO_PICKUP.value:
+        return min(0.25, max(0.0, elapsed / max(1, eta_seconds) * 0.25))
+    if normalized == BookingStatus.DRIVER_ARRIVED.value:
+        return 0.25
+    if normalized == BookingStatus.IN_PROGRESS.value:
+        return min(1.0, 0.25 + max(0.0, elapsed - eta_seconds - 60) / max(1, travel_seconds) * 0.75)
+    if normalized == BookingStatus.COMPLETED.value:
+        return 1.0
+    return 0.0
 
 
 def _json_safe(value: Any) -> Any:

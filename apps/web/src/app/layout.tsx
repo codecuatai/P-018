@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 
+import { AuthProvider } from "@/providers/auth-provider";
 import "./globals.css";
 import "../styles/shared.css";
 import "../styles/auth.css";
 import "../styles/assistant.css";
 import "../styles/product.css";
+import "leaflet/dist/leaflet.css";
 
 export const metadata: Metadata = {
   title: {
@@ -28,5 +30,5 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
-  return <html lang="vi"><body>{children}</body></html>;
+  return <html lang="vi"><body><AuthProvider>{children}</AuthProvider></body></html>;
 }

@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Column,
@@ -15,9 +16,12 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from src.database import Base
+
+PROVENANCE_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class SlotStatus(StrEnum):
@@ -46,7 +50,7 @@ class Department(Base):
     dataset_version = Column(String(120), nullable=True)
     content_hash = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    provenance_json = Column(Text, nullable=True)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
     doctors = relationship("Doctor", back_populates="department")
 
@@ -69,7 +73,7 @@ class Doctor(Base):
     dataset_version = Column(String(120), nullable=True)
     content_hash = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    provenance_json = Column(Text, nullable=True)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
     department = relationship("Department", back_populates="doctors")
     slots = relationship("TimeSlot", back_populates="doctor")
@@ -100,7 +104,7 @@ class HealthcareFacility(Base):
     dataset_version = Column(String(120), nullable=True)
     content_hash = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    provenance_json = Column(Text, nullable=True)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
 class Patient(Base):
     __tablename__ = "patients"

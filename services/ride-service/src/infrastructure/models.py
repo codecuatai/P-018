@@ -16,6 +16,7 @@ class QuoteRow(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     actor_id: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(40), default="QUOTE_CREATED")
     pickup_address: Mapped[str] = mapped_column(Text)
     dropoff_address: Mapped[str] = mapped_column(Text)
     vehicle_type: Mapped[str] = mapped_column(String(16))

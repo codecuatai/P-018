@@ -17,6 +17,7 @@ paths:
         - in: path
           name: facility_source_id
           required: true
+          description: Imported source IDs may contain slashes; the FastAPI path converter preserves the full source ID.
           schema: {type: string, minLength: 1, maxLength: 255}
       responses:
         '200': {description: Healthcare-owned facility envelope}

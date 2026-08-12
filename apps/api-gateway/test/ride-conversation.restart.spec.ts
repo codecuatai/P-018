@@ -22,7 +22,7 @@ describe('Unified Ride workflow hydration', () => {
     quote_version: quote.quote_version,
     amount: quote.amount,
     currency: quote.currency,
-    status: 'AWAITING_PAYMENT_CONFIRMATION' as const,
+    status: 'AWAITING_CONFIRMATION' as const,
     resource_version: 1,
     payment_reference: null,
     driver: null,
@@ -32,7 +32,7 @@ describe('Unified Ride workflow hydration', () => {
   const confirmed = {
     ...prepared,
     status: 'DRIVER_ASSIGNED' as const,
-    resource_version: 2,
+    resource_version: 3,
     payment_reference: 'pay_sandbox_restart',
     driver: { id: 'driver_restart', display_name: 'Minh Anh' },
   };

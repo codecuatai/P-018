@@ -294,13 +294,6 @@ export class ConfirmationService {
       throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The pending action is not a final operation.' });
     }
 
-    if (confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
-      const appointmentId = Number(tool.arguments.appointment_id);
-      const appointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
-      const stateError = healthcareFinalStateError(appointment);
-      if (stateError) throw new ConflictException(stateError);
-    }
-
     const executionHash = stableHash({ confirmation_id: id, action: confirmation.action, workflow_id: workflowId, action_body: body });
     const executionKey = `confirmation:${id}:${idempotencyKey}`;
     const claim = await this.claim(id, user, executionKey, executionHash, { workflow_id: workflowId, action: confirmation.action, tool_request: tool });

@@ -17,8 +17,8 @@ Argon2id credentials, refresh-session generations and one-time reset-token
 hashes, migration 010 adds profile/saved-address/conversation context, and
 migration 011 persists multi-service workflow plans and step idempotency.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
-`0001` through `0004`; Healthcare owns SQL migrations `001` through `005`; and
-Ride owns its Alembic revisions through `20260812_0002_ride_v2`. Each owner
+`0001` through `0005`; Healthcare owns SQL migrations `001` through `005`; and
+Ride owns its Alembic revisions through `20260812_0003_ride_lifecycle`. Each owner
 controls its own data boundary.
 
 ## Migration policy
@@ -36,8 +36,8 @@ repair state.
 | Core/Gateway | `001` through `011` SQL | `012` or greater, additive SQL |
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
 | Healthcare | `001` through `005` SQL | `006` or greater, additive SQL |
-| Restaurant | Alembic `0001` through `0004` | a new Alembic revision from `head` |
-| Ride | Alembic through `20260812_0002_ride_v2` | a new Alembic revision from `head` |
+| Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
+| Ride | Alembic through `20260812_0003_ride_lifecycle` | a new Alembic revision from `head` |
 
 Run `python scripts/check-migration-parity.py` after changing migration helpers.
 The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`

@@ -51,7 +51,7 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
         <span>{tracking.eta_seconds > 0 ? `Còn khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Đã cập nhật"}</span>
         <span>{Math.round(tracking.progress * 100)}% hành trình</span>
       </div>
-      <XOneMap origin={origin} destination={destination} current={current} label="Theo dõi chuyến xe" />
+      <XOneMap origin={origin} destination={destination} current={current} driver={current} routePolyline={tracking.route?.polyline} routeProvider={tracking.route_provider ?? tracking.route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.route?.distance_meters} routeDurationSeconds={tracking.route?.duration_seconds} label="Theo dõi chuyến xe" />
       <p className="tracking-footnote">Snapshot mô phỏng được làm mới mỗi 3 giây. Tọa độ chỉ hiển thị khi Ride Service có dữ liệu hợp lệ.</p>
     </> : <p className="inline-note">Chưa có dữ liệu tracking.</p>}
   </section>;
@@ -64,5 +64,5 @@ function pointFrom(value: unknown): { latitude: number; longitude: number } | un
 }
 
 function trackingLabel(status: string): string {
-  return ({ DRIVER_ASSIGNED: "Tài xế đang đến điểm đón", DRIVER_ARRIVED: "Tài xế đã đến", IN_PROGRESS: "Đang di chuyển", COMPLETED: "Đã hoàn tất", CANCELLED: "Đã hủy" } as Record<string, string>)[status] ?? status;
+  return ({ AWAITING_CONFIRMATION: "Đang chờ xác nhận", SEARCHING_DRIVER: "Đang tìm tài xế", DRIVER_ASSIGNED: "Tài xế đã được gán", DRIVER_TO_PICKUP: "Tài xế đang đến điểm đón", DRIVER_ARRIVED: "Tài xế đã đến", IN_PROGRESS: "Đang di chuyển", COMPLETED: "Đã hoàn tất", NO_DRIVER: "Chưa tìm thấy tài xế", FAILED: "Chuyến thất bại", PAYMENT_FAILED: "Thanh toán thất bại", CANCELLED: "Đã hủy" } as Record<string, string>)[status] ?? status;
 }

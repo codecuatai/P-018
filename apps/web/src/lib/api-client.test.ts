@@ -1,4 +1,4 @@
-import { configureApiClient, getAccessToken, request, setAccessToken } from "@/lib/api-client";
+import { configureApiClient, getAccessToken, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -51,5 +51,30 @@ describe("browser API client", () => {
 
     expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/v1/auth/refresh"))).toHaveLength(1);
     expect(getAccessToken()).toBe("refreshed-access-token");
+  });
+
+  it("does not let a late failed refresh erase a successful login", async () => {
+    let releaseRefresh!: () => void;
+    let refreshStarted!: () => void;
+    const refreshGate = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+    const refreshStartedGate = new Promise<void>((resolve) => { refreshStarted = resolve; });
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        refreshStarted();
+        await refreshGate;
+        return jsonResponse(429, { code: "RATE_LIMITED", detail: "retry later" });
+      }
+      return jsonResponse(201, { data: { access_token: "login-access-token", token_type: "bearer", expires_in: 900, user: { sub: "usr-1", email: "an@example.test", role: "customer", authentication_kind: "real" } } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const staleRefresh = refreshAccessToken();
+    await refreshStartedGate;
+    await login("an@example.test", "a reliable local passphrase");
+    releaseRefresh();
+
+    await expect(staleRefresh).resolves.toBe("login-access-token");
+    expect(getAccessToken()).toBe("login-access-token");
   });
 });

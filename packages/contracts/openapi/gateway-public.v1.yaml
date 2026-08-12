@@ -178,6 +178,7 @@ components:
       type: object
       required:
         - id
+        - status
         - pickup_address
         - dropoff_address
         - vehicle_type
@@ -190,6 +191,7 @@ components:
         - expires_at
       properties:
         id: {type: string}
+        status: {type: string, enum: [QUOTE_CREATED, AWAITING_CONFIRMATION, CONSUMED, EXPIRED]}
         pickup_address: {type: string}
         dropoff_address: {type: string}
         vehicle_type: {enum: [BIKE, CAR_4, CAR_7]}
@@ -221,7 +223,7 @@ components:
         amount: {type: integer}
         currency: {type: string}
         status:
-          enum: [AWAITING_PAYMENT_CONFIRMATION, DRIVER_ASSIGNED, CANCELLED]
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
         resource_version: {type: integer}
         payment_reference:
           type: [string, "null"]

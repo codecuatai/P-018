@@ -57,6 +57,7 @@ export type AgentDecision = {
 
 export type RideQuote = {
   id: string;
+  status: 'QUOTE_CREATED' | 'AWAITING_CONFIRMATION' | 'CONSUMED' | 'EXPIRED';
   pickup_address: string;
   dropoff_address: string;
   vehicle_type: 'BIKE' | 'CAR_4' | 'CAR_7';
@@ -85,7 +86,7 @@ export type RideBooking = {
   quote_version: string;
   amount: number;
   currency: string;
-  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
+  status: 'AWAITING_CONFIRMATION' | 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
   resource_version: number;
   payment_reference: string | null;
   driver: Record<string, unknown> | null;
@@ -837,6 +838,7 @@ function parseAgentDecision(data: Record<string, unknown>): AgentDecision {
 function parseQuote(data: Record<string, unknown>): RideQuote {
   if (
     typeof data.id !== 'string'
+    || !['QUOTE_CREATED', 'AWAITING_CONFIRMATION', 'CONSUMED', 'EXPIRED'].includes(String(data.status))
     || typeof data.pickup_address !== 'string'
     || typeof data.dropoff_address !== 'string'
     || !['BIKE', 'CAR_4', 'CAR_7'].includes(String(data.vehicle_type))
@@ -852,6 +854,7 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
   }
   return {
     id: data.id,
+    status: data.status as RideQuote['status'],
     pickup_address: data.pickup_address,
     dropoff_address: data.dropoff_address,
     vehicle_type: data.vehicle_type as RideQuote['vehicle_type'],
@@ -882,7 +885,7 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     || typeof data.quote_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
-    || !['AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
+    || !['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
       String(data.status),
     )
     || typeof data.resource_version !== 'number'

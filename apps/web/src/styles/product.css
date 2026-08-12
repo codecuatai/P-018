@@ -557,3 +557,16 @@
   .history-filters { grid-template-columns: 1fr; }
   .history-filter-reset { width: 100%; }
 }
+
+/* Leaflet map surface: restrained X-One chrome around a real basemap. */
+.xone-map-leaflet { min-height: 220px; overflow: hidden; border: 1px solid #C9DCE2; border-radius: 8px; background: #EAF1F3; }
+.xone-map-leaflet .leaflet-control-attribution { font-size: 9px; }
+.xone-map-leaflet .leaflet-control-zoom a { color: var(--color-navy); }
+.xone-map-toolbar button:disabled { cursor: not-allowed; opacity: 0.45; }
+.xone-map-fallback { display: grid; gap: 7px; min-height: 170px; align-content: center; padding: 20px; color: var(--color-muted); background: #F7FAFC; border: 1px dashed #BFCFDB; border-radius: 8px; text-align: center; }
+.xone-map-fallback strong { color: var(--color-navy); font-size: 0.8rem; }
+.xone-map-fallback span { font-size: 0.7rem; line-height: 1.45; }
+.xone-map-fallback dl { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin: 3px 0 0; }
+.xone-map-fallback dl div { display: grid; gap: 2px; }
+.xone-map-fallback dt { color: var(--color-muted-soft); font-size: 0.6rem; text-transform: uppercase; }
+.xone-map-fallback dd { margin: 0; color: var(--color-ink); font-size: 0.7rem; font-weight: 750; }

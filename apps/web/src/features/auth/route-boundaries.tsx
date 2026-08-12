@@ -13,7 +13,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (status === "unauthenticated") router.replace("/login");
+    if (status === "unauthenticated") router.replace("/");
   }, [router, status]);
   if (status === "loading") return <LoadingState>Đang khôi phục phiên…</LoadingState>;
   if (status !== "authenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;

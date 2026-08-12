@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { clearAuthSession, configureApiClient, getCurrentUser, login as apiLogin, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
+import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, login as apiLogin, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
 import type { AuthUser } from "@/types";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated";
@@ -18,11 +19,18 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function requiresAuthentication(pathname: string | null): boolean {
+  return pathname === "/admin" || pathname === "/app" || pathname?.startsWith("/app/") === true;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
+  const authGeneration = useRef(0);
 
   const clear = useCallback(() => {
+    authGeneration.current += 1;
     clearAuthSession();
     setUser(null);
     setStatus("unauthenticated");
@@ -31,26 +39,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     configureApiClient({ onUnauthorized: clear });
     let mounted = true;
+    const generation = ++authGeneration.current;
+
+    // The landing/auth recovery surface is public. Waiting for a refresh
+    // cookie there creates needless refresh traffic and can race a login
+    // submitted from the landing dialog. Protected routes restore explicitly.
+    if (!requiresAuthentication(pathname)) {
+      if (!getAccessToken()) setStatus("unauthenticated");
+      return () => { mounted = false; };
+    }
+
+    // A successful login/register in this same browser session is already
+    // authoritative in memory; do not rotate a second session on navigation.
+    if (getAccessToken()) return () => { mounted = false; };
+
     void (async () => {
       const token = await refreshAccessToken();
+      if (!mounted || authGeneration.current !== generation) return;
       if (!token) {
-        if (mounted) setStatus("unauthenticated");
+        setStatus("unauthenticated");
         return;
       }
       try {
         const restored = await getCurrentUser();
-        if (mounted) {
+        if (mounted && authGeneration.current === generation) {
           setUser(restored);
           setStatus("authenticated");
         }
       } catch {
-        if (mounted) clear();
+        if (mounted && authGeneration.current === generation) clear();
       }
     })();
     return () => { mounted = false; };
-  }, [clear]);
+  }, [clear, pathname]);
 
   const login = useCallback(async (email: string, password: string) => {
+    authGeneration.current += 1;
     const authenticated = await apiLogin(email, password);
     setUser(authenticated);
     setStatus("authenticated");
@@ -58,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (fullName: string, email: string, password: string) => {
+    authGeneration.current += 1;
     const authenticated = await apiRegister(fullName, email, password);
     setUser(authenticated);
     setStatus("authenticated");

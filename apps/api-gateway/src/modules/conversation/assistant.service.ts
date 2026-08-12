@@ -1357,7 +1357,11 @@ export class AssistantService {
     }
     if (action.kind === 'ride_payment') {
       const result = await this.ride.confirmPayment(user.sub, action.workflow_id ?? task.workflow_id ?? '', correlationId);
-      return { phase: 'COMPLETED', message: 'Chuyến xe đã được đặt thành công.', publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
+      const status = stringValue(result.booking?.status) ?? 'UNKNOWN';
+      const message = status === 'NO_DRIVER'
+        ? 'Chưa có tài xế phù hợp; trạng thái authoritative của chuyến là NO_DRIVER.'
+        : `Thanh toán đã được ghi nhận; trạng thái authoritative của chuyến là ${status}.`;
+      return { phase: 'COMPLETED', message, publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
     }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
@@ -1555,7 +1559,7 @@ export class AssistantService {
       ...(typeof task.authoritative.scheduled_pickup === 'boolean' ? { scheduled_pickup: task.authoritative.scheduled_pickup } : {}),
       ...(stringValue(task.authoritative.schedule_note) ? { schedule_note: task.authoritative.schedule_note } : {}),
     };
-    return quote ? { kind: booking ? 'ride_booking' : 'ride_quote', title: booking ? 'Chuyến xe đã cập nhật' : 'Chuyến xe phù hợp', pickup: quote.pickup_address, dropoff: quote.dropoff_address, vehicle: this.vehicleLabel(quote.vehicle_type), amount: quote.amount, currency: quote.currency, ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}), ...timing, ...(booking ? { driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}) } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
+    return quote ? { kind: booking ? 'ride_booking' : 'ride_quote', title: booking ? 'Chuyến xe đã cập nhật' : 'Chuyến xe phù hợp', pickup: quote.pickup_address, dropoff: quote.dropoff_address, vehicle: this.vehicleLabel(quote.vehicle_type), amount: quote.amount, currency: quote.currency, ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}), ...timing, ...(booking ? { status: booking.status, driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}) } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
   }
 
   private vehicleLabel(value: unknown): string {

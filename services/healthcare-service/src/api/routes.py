@@ -288,7 +288,7 @@ def get_departments(
     }
 
 
-@router.get("/facilities/{facility_source_id}")
+@router.get("/facilities/{facility_source_id:path}")
 def get_facility(
     facility_source_id: str,
     db: Session = Depends(get_db),

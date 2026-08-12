@@ -29,7 +29,7 @@ describe('Ride conversation workflow', () => {
     quote_version: quote.quote_version,
     amount: quote.amount,
     currency: quote.currency,
-    status: 'AWAITING_PAYMENT_CONFIRMATION' as const,
+    status: 'AWAITING_CONFIRMATION' as const,
     resource_version: 1,
     payment_reference: null,
     driver: null,
@@ -39,7 +39,7 @@ describe('Ride conversation workflow', () => {
   const confirmed = {
     ...prepared,
     status: 'DRIVER_ASSIGNED' as const,
-    resource_version: 2,
+    resource_version: 3,
     payment_reference: 'pay_sandbox_test',
     driver: { id: 'driver_simulated_001', display_name: 'Minh Anh' },
   };
@@ -112,7 +112,7 @@ describe('Ride conversation workflow', () => {
       .set('X-Actor-Id', 'actor_test')
       .expect(201);
     expect(serviceConfirmation.body.data.stage).toBe('PAYMENT_CONFIRMATION');
-    expect(serviceConfirmation.body.data.booking.status).toBe('AWAITING_PAYMENT_CONFIRMATION');
+    expect(serviceConfirmation.body.data.booking.status).toBe('AWAITING_CONFIRMATION');
 
     const paymentConfirmation = await request(app.getHttpServer())
       .post('/api/v1/workflows/' + workflowId + '/confirm-payment')
@@ -120,6 +120,7 @@ describe('Ride conversation workflow', () => {
       .expect(201);
     expect(paymentConfirmation.body.data.stage).toBe('COMPLETED');
     expect(paymentConfirmation.body.data.booking.status).toBe('DRIVER_ASSIGNED');
+    expect(paymentConfirmation.body.data.response).toContain('DRIVER_ASSIGNED');
 
     const firstEvidence = JSON.parse(ride.prepareBooking.mock.calls[0][3]).confirmation;
     const finalEvidence = JSON.parse(ride.confirmBooking.mock.calls[0][4]).confirmation;
@@ -224,6 +225,7 @@ describe('Ride conversation workflow', () => {
       .expect(({ body }) => {
         expect(body.data.stage).toBe('COMPLETED');
         expect(body.data.booking.status).toBe('DRIVER_ASSIGNED');
+        expect(body.data.response).toContain('DRIVER_ASSIGNED');
       });
 
     expect(ride.getBooking).toHaveBeenCalledTimes(1);

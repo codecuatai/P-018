@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   async function handleLogout() {
-    try { await logout(); } finally { router.replace("/login"); }
+    try { await logout(); } finally { router.replace("/"); }
   }
 
   return <div className="app-shell"><a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>

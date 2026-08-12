@@ -1,6 +1,6 @@
 # Canonical API Inventory
 
-This inventory is derived from the checked-in NestJS controllers, FastAPI routers, and OpenAPI files. It describes routes that exist now; roadmap paths without a controller/router are intentionally not listed as implemented. `PUBLIC_CANONICAL` is the supported consumer surface, `INTERNAL` is a private service or health boundary, `LEGACY_COMPAT` is retained for current demos/tests, and `DEPRECATED` is not part of the X-One runtime.
+This inventory is derived from the checked-in NestJS controllers, FastAPI routers, and OpenAPI files. It describes routes that exist now; roadmap paths without a controller/router are intentionally not listed as implemented. `PUBLIC_CANONICAL` is the supported consumer surface, `INTERNAL` is a private service or health boundary, `LEGACY_COMPAT` is retained for current demos/tests, and `DEPRECATED` is not part of the X-One runtime. Tool capability status is documented separately as `IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`, `IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, or `DEPRECATED`.
 
 All public product traffic terminates at the Gateway. Public Gateway authentication uses a short-lived Bearer JWT kept only in Web memory plus an opaque rotating HttpOnly refresh cookie; development/test demo auth is a compatibility path only. Internal calls use the configured service token and, where a resource is actor-scoped, an actor assertion. Public success responses use `{ data, meta: { request_id } }`; public errors use the RFC-7807-inspired fields documented in [API conventions](api-conventions.md).
 
@@ -36,6 +36,8 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | GET | `/api/v1/services`, `/api/v1/services/catalog`, `/api/v1/services/{service}` | Web/mobile | Bearer token; typed domain clients | `PUBLIC_CANONICAL` | Service Hub entry points, degraded/partial-aware browse. |
 | Gateway | GET, POST, PATCH, DELETE | `/api/v1/service-actions/food/**`, `/api/v1/service-actions/restaurant/**`, `/api/v1/service-actions/healthcare/**`, `/api/v1/service-actions/ride/**` | Web/mobile | Bearer token; typed domain clients; idempotency on writes | `PUBLIC_CANONICAL` | Gateway-only browse, cart, hold, slot, and Ride confirmation actions; domain services remain state owners. |
 | Gateway | POST | `/api/v1/services/ride/quote` | Web/mobile | Bearer token plus required `Idempotency-Key`; Ride typed client | `PUBLIC_CANONICAL` | Actor-scoped Ride quote. |
+| Gateway | POST | `/api/v1/service-actions/ride/prepare` | Web/mobile | Bearer token plus required `Idempotency-Key`; first confirmation evidence | `PUBLIC_CANONICAL` | Creates an `AWAITING_CONFIRMATION` Ride booking projection from the authoritative quote. |
+| Gateway | POST | `/api/v1/service-actions/ride/{bookingId}/confirm` | Web/mobile | Bearer token plus required `Idempotency-Key`; final confirmation evidence | `PUBLIC_CANONICAL` | Executes the second confirmation through Ride; status remains domain-authoritative, including `NO_DRIVER`. |
 | Gateway | GET | `/api/v1/rides/{bookingId}/tracking` | Web/mobile | Bearer token; actor-scoped Ride typed client | `PUBLIC_CANONICAL` | Pollable tracking snapshot with route/current location. |
 | Gateway | GET | `/api/v1/history`, `/api/v1/history/{type}/{id}` | Web/mobile | Bearer token; actor-scoped domain reads | `PUBLIC_CANONICAL` | Unified history with service/status/date filters, pagination, partial dependency reporting and authoritative detail links. |
 | Gateway | POST | `/api/v1/recommendations/rank` | Web/mobile | Bearer token; read-only deterministic rank adapter | `PUBLIC_CANONICAL` | V1 ranking by relevance/location/ETA/price/rating; no ML or side effect. |
@@ -66,7 +68,7 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | GET | `/internal/tools` | Agent service | `X-Internal-Service-Token` | `INTERNAL` | Agent capability discovery only; never expose to browsers. |
 | Gateway | POST | `/internal/tools/execute` | Agent service | Internal token plus actor assertion; transaction tools are blocked | `INTERNAL` | Agent continues to emit proposals; final actions go through public Gateway confirmation. |
 
-The checked-in `gateway-v1.yaml` documents the Phase 2–9 Gateway additions above. A route may still be runtime-dependent on a domain service or external location provider; that is reported as a degraded/partial response or an explicit unverified runtime check, not as fabricated data.
+The checked-in `gateway-v1.yaml` documents the Phase 2–9 Gateway additions above. A route may still be runtime-dependent on a domain service or external location provider; that is reported as a degraded/partial response or an explicit unverified runtime check, not as fabricated data. The current live acceptance exercised the public Food, Ride, Restaurant and Healthcare transactions, including idempotent replay and actor-scoped history.
 
 ## Agent service — private interpretation boundary
 
@@ -128,6 +130,7 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | POST | `/v1/bookings/{booking_id}:confirm` | Internal token, actor assertion, idempotency, final confirmation evidence | `INTERNAL` |
 | POST | `/v1/bookings/{booking_id}:cancel` | Internal token, actor assertion, idempotency, cancellation evidence | `INTERNAL` |
 | GET | `/v1/bookings/{booking_id}` | Internal token plus actor assertion | `INTERNAL` |
+| GET | `/v1/bookings/{booking_id}/tracking` | Internal token plus actor assertion | `INTERNAL` |
 
 ### Restaurant service
 
@@ -151,7 +154,7 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | GET | `/health/live` | none; liveness | `INTERNAL` |
 | GET | `/health/ready` | none; readiness | `INTERNAL` |
 | GET | `/api/v1/departments` | Internal token | `INTERNAL` |
-| GET | `/api/v1/facilities/{facility_source_id}` | Internal token; Healthcare-owned active catalog lookup | `INTERNAL` |
+| GET | `/api/v1/facilities/{facility_source_id:path}` | Internal token; Healthcare-owned active catalog lookup, including slash-bearing source IDs | `INTERNAL` |
 | GET | `/api/v1/doctors` | Internal token | `INTERNAL` |
 | POST | `/api/v1/slots/hold` | Internal token, actor assertion, idempotency | `INTERNAL` |
 | GET | `/api/v1/appointments/{appointment_id}` | Internal token plus actor assertion | `INTERNAL` |

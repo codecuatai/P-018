@@ -23,7 +23,7 @@ describe('Unified Assistant Ride receipt recovery', () => {
     quote_version: quote.quote_version,
     amount: quote.amount,
     currency: quote.currency,
-    status: 'AWAITING_PAYMENT_CONFIRMATION' as const,
+    status: 'AWAITING_CONFIRMATION' as const,
     resource_version: 1,
     payment_reference: null,
     driver: null,
@@ -33,7 +33,7 @@ describe('Unified Assistant Ride receipt recovery', () => {
   const completed = {
     ...prepared,
     status: 'DRIVER_ASSIGNED' as const,
-    resource_version: 2,
+    resource_version: 3,
     payment_reference: 'pay_sandbox_assistant_recovery',
     driver: { id: 'driver_assistant_recovery', display_name: 'Minh Anh' },
   };

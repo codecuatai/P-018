@@ -14,14 +14,20 @@ from src.domain.ride import (
     PrepareBookingCommand,
     Quote,
     QuoteCommand,
+    QuoteStatus,
     RideError,
     cancel_confirmation_payload,
     confirm_confirmation_payload,
+    confirmation_request_payload,
     create_quote,
+    next_tracking_status,
     normalized_hash,
     prepare_confirmation_payload,
     quote_request_payload,
+    tracking_elapsed,
     tracking_snapshot,
+    transition_booking,
+    transition_quote,
     utc_now,
 )
 from src.repositories.ride import RideRepository
@@ -52,10 +58,21 @@ class RideApplication:
 
     def get_quote(self, quote_id: str, actor_id: str) -> dict:
         quote = self._owned_quote(quote_id, actor_id)
+        self._expire_quote_if_needed(quote)
         return quote.snapshot()
 
     def list_quotes(self, actor_id: str) -> list[dict]:
-        return [quote.snapshot() for quote in self.repository.list_quotes(actor_id)]
+        quotes = self.repository.list_quotes(actor_id)
+        changed = False
+        for quote in quotes:
+            changed = self._expire_quote_if_needed(quote, commit=False) or changed
+        if changed:
+            try:
+                self.repository.commit()
+            except Exception:
+                self.repository.rollback()
+                raise
+        return [quote.snapshot() for quote in quotes]
 
     def prepare_booking(self, command: PrepareBookingCommand, idempotency_key: str) -> dict:
         operation = "ride.booking.prepare"
@@ -63,18 +80,21 @@ class RideApplication:
             {
                 "actor_id": command.actor_id,
                 "quote_id": command.quote_id,
-                "confirmation": command.confirmation.__dict__,
+                "confirmation": confirmation_request_payload(command.confirmation),
             }
         )
         if replay := self._replay(command.actor_id, operation, idempotency_key, request_hash):
             return replay
         quote = self._owned_quote(command.quote_id, command.actor_id)
         if _aware(quote.expires_at) <= utc_now():
+            self._expire_quote_if_needed(quote)
             raise RideError(409, "QUOTE_EXPIRED", "The quote has expired; request a new quote.")
         self._validate_confirmation(
             command.confirmation,
             prepare_confirmation_payload(quote, command.actor_id),
         )
+        if quote.status != QuoteStatus.QUOTE_CREATED.value:
+            raise RideError(409, "QUOTE_NOT_AVAILABLE", "The quote is no longer available for a new booking.")
         now = utc_now()
         booking = Booking(
             id=f"ride_{uuid4().hex[:20]}",
@@ -83,7 +103,7 @@ class RideApplication:
             quote_version=quote.quote_version,
             amount=quote.amount,
             currency=quote.currency,
-            status=BookingStatus.AWAITING_PAYMENT_CONFIRMATION.value,
+            status=BookingStatus.AWAITING_CONFIRMATION.value,
             resource_version=1,
             payment_reference=None,
             driver=None,
@@ -95,7 +115,15 @@ class RideApplication:
         payload = booking.snapshot()
         try:
             self.repository.consume_confirmation(command.confirmation)
+            transition_quote(quote, QuoteStatus.AWAITING_CONFIRMATION.value)
+            self.repository.save_quote(quote)
             self.repository.save_booking(booking)
+            self.repository.record_tracking_event(
+                booking.id,
+                booking.status,
+                0.0,
+                None,
+            )
             self._save_idempotency(command.actor_id, operation, idempotency_key, request_hash, payload)
             self.repository.commit()
             return payload
@@ -110,35 +138,110 @@ class RideApplication:
                 "actor_id": command.actor_id,
                 "booking_id": command.booking_id,
                 "payment_reference": command.payment_reference,
-                "confirmation": command.confirmation.__dict__,
+                "confirmation": confirmation_request_payload(command.confirmation),
             }
         )
-        if replay := self._replay(command.actor_id, operation, idempotency_key, request_hash):
-            return replay
+        existing = self.repository.get_idempotency(command.actor_id, operation, idempotency_key)
+        if existing is not None:
+            if not compare_digest(existing.request_hash, request_hash):
+                raise RideError(
+                    409,
+                    "IDEMPOTENCY_CONFLICT",
+                    "The idempotency key was already used with a different payload.",
+                )
+            if existing.response_payload.get("status") != BookingStatus.SEARCHING_DRIVER.value:
+                return existing.response_payload
+            booking = self._owned_booking(command.booking_id, command.actor_id)
+            quote = self._owned_quote(booking.quote_id, command.actor_id)
+            return self._complete_driver_search(
+                booking,
+                quote,
+                command.actor_id,
+                operation,
+                idempotency_key,
+                request_hash,
+            )
         booking = self._owned_booking(command.booking_id, command.actor_id)
-        if booking.status != BookingStatus.AWAITING_PAYMENT_CONFIRMATION.value:
+        if booking.status != BookingStatus.AWAITING_CONFIRMATION.value:
             raise RideError(409, "INVALID_BOOKING_STATE", f"Cannot confirm booking in state {booking.status}.")
         self._validate_confirmation(
             command.confirmation,
             confirm_confirmation_payload(booking, command.actor_id, command.payment_reference),
         )
-        booking.payment_reference = command.payment_reference
         quote = self._owned_quote(booking.quote_id, command.actor_id)
-        booking.driver = self.repository.find_and_assign_driver(
-            quote.vehicle_type,
-            quote.pickup_latitude,
-            quote.pickup_longitude,
-        )
-        booking.driver_id = str(booking.driver.get("id")) if booking.driver else None
-        booking.status = BookingStatus.DRIVER_ASSIGNED.value if booking.driver else BookingStatus.NO_DRIVER.value
-        booking.resource_version += 1
-        booking.updated_at = utc_now()
-        booking.tracking_started_at = booking.updated_at
-        payload = booking.snapshot()
+        if _aware(quote.expires_at) <= utc_now():
+            self._expire_quote_if_needed(quote)
+            raise RideError(409, "QUOTE_EXPIRED", "The quote has expired; request a new quote.")
+        if quote.status != QuoteStatus.AWAITING_CONFIRMATION.value:
+            raise RideError(409, "QUOTE_NOT_AVAILABLE", "The quote is no longer awaiting booking confirmation.")
+        booking.payment_reference = command.payment_reference
         try:
             self.repository.consume_confirmation(command.confirmation)
+            transition_booking(booking, BookingStatus.SEARCHING_DRIVER.value)
+            transition_quote(quote, QuoteStatus.CONSUMED.value)
+            self.repository.save_quote(quote)
             self.repository.save_booking(booking)
-            self._save_idempotency(command.actor_id, operation, idempotency_key, request_hash, payload)
+            self.repository.record_tracking_event(
+                booking.id,
+                booking.status,
+                0.0,
+                None,
+            )
+            # Persist the search state before the separate driver-assignment
+            # transition. A retry can safely resume from this durable state.
+            self._save_idempotency(
+                command.actor_id,
+                operation,
+                idempotency_key,
+                request_hash,
+                booking.snapshot(),
+            )
+            self.repository.commit()
+        except Exception:
+            self.repository.rollback()
+            raise
+        return self._complete_driver_search(
+            booking,
+            quote,
+            command.actor_id,
+            operation,
+            idempotency_key,
+            request_hash,
+        )
+
+    def _complete_driver_search(
+        self,
+        booking: Booking,
+        quote: Quote,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        request_hash: str,
+    ) -> dict:
+        if booking.status != BookingStatus.SEARCHING_DRIVER.value:
+            raise RideError(409, "INVALID_BOOKING_STATE", f"Cannot assign a driver from state {booking.status}.")
+        try:
+            booking.driver = self.repository.find_and_assign_driver(
+                quote.vehicle_type,
+                quote.pickup_latitude,
+                quote.pickup_longitude,
+            )
+            booking.driver_id = str(booking.driver.get("id")) if booking.driver else None
+            if booking.driver:
+                booking.tracking_started_at = utc_now()
+                target = BookingStatus.DRIVER_ASSIGNED.value
+            else:
+                target = BookingStatus.NO_DRIVER.value
+            transition_booking(booking, target)
+            self.repository.save_booking(booking)
+            self.repository.record_tracking_event(
+                booking.id,
+                booking.status,
+                0.0,
+                None,
+            )
+            payload = booking.snapshot()
+            self._save_idempotency(actor_id, operation, idempotency_key, request_hash, payload)
             self.repository.commit()
             return payload
         except Exception:
@@ -151,7 +254,7 @@ class RideApplication:
             {
                 "actor_id": command.actor_id,
                 "booking_id": command.booking_id,
-                "confirmation": command.confirmation.__dict__,
+                "confirmation": confirmation_request_payload(command.confirmation),
             }
         )
         if replay := self._replay(command.actor_id, operation, idempotency_key, request_hash):
@@ -163,13 +266,14 @@ class RideApplication:
             command.confirmation,
             cancel_confirmation_payload(booking, command.actor_id),
         )
-        booking.status = BookingStatus.CANCELLED.value
-        booking.resource_version += 1
-        booking.updated_at = utc_now()
-        payload = booking.snapshot()
         try:
             self.repository.consume_confirmation(command.confirmation)
+            transition_booking(booking, BookingStatus.CANCELLED.value)
+            if booking.driver_id:
+                self.repository.release_driver(booking.driver_id)
             self.repository.save_booking(booking)
+            self.repository.record_tracking_event(booking.id, booking.status, 0.0, None)
+            payload = booking.snapshot()
             self._save_idempotency(command.actor_id, operation, idempotency_key, request_hash, payload)
             self.repository.commit()
             return payload
@@ -186,30 +290,51 @@ class RideApplication:
     def get_tracking(self, booking_id: str, actor_id: str) -> dict:
         booking = self._owned_booking(booking_id, actor_id)
         quote = self._owned_quote(booking.quote_id, actor_id)
-        snapshot = tracking_snapshot(booking, quote)
-        if snapshot["status"] != booking.status and snapshot["status"] not in {BookingStatus.CANCELLED.value, BookingStatus.NO_DRIVER.value}:
-            booking.status = str(snapshot["status"])
-            booking.resource_version += 1
-            booking.updated_at = utc_now()
+        now = utc_now()
+        driver = booking.driver or {}
+        eta_seconds = int(driver.get("eta_seconds", 0))
+        travel_seconds = max(60, int(quote.route_duration_seconds or quote.duration_minutes * 60))
+        elapsed = tracking_elapsed(booking, now)
+        changed = False
+        for _ in range(4):
+            target = next_tracking_status(booking.status, elapsed, eta_seconds, travel_seconds)
+            if target is None:
+                break
+            transition_booking(booking, target)
             self.repository.save_booking(booking)
-            self.repository.record_tracking_event(
-                booking.id,
-                str(snapshot["status"]),
-                float(snapshot["progress"]),
-                snapshot.get("current_location"),
-            )
+            self.repository.record_tracking_event(booking.id, target, 0.0 if target != BookingStatus.COMPLETED.value else 1.0, None)
+            changed = True
+        if changed:
             try:
                 self.repository.commit()
             except Exception:
                 self.repository.rollback()
                 raise
-        return snapshot
+        # Recalculate after persistence so the API response and authoritative
+        # booking record always expose the same lifecycle state.
+        return tracking_snapshot(booking, quote, now=now)
 
     def _owned_quote(self, quote_id: str, actor_id: str) -> Quote:
         quote = self.repository.get_quote(quote_id)
         if quote is None or quote.actor_id != actor_id:
             raise RideError(404, "QUOTE_NOT_FOUND", "Quote not found.")
         return quote
+
+    def _expire_quote_if_needed(self, quote: Quote, *, commit: bool = True) -> bool:
+        if quote.status not in {
+            QuoteStatus.QUOTE_CREATED.value,
+            QuoteStatus.AWAITING_CONFIRMATION.value,
+        } or _aware(quote.expires_at) > utc_now():
+            return False
+        transition_quote(quote, QuoteStatus.EXPIRED.value)
+        self.repository.save_quote(quote)
+        if commit:
+            try:
+                self.repository.commit()
+            except Exception:
+                self.repository.rollback()
+                raise
+        return True
 
     def _owned_booking(self, booking_id: str, actor_id: str) -> Booking:
         booking = self.repository.get_booking(booking_id)

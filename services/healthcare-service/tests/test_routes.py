@@ -281,6 +281,25 @@ def test_facility_lookup_returns_only_active_healthcare_catalog_data() -> None:
         "source": "test-catalog",
     }
 
+    slash_source_id = "osm/way-218625367"
+    with TestingSessionLocal() as db:
+        db.add(
+            HealthcareFacility(
+                source_id=slash_source_id,
+                name="Phòng khám có source ID dạng path",
+                address="2 Đường Mẫu, Hà Nội",
+                city="Hà Nội",
+                latitude=21.031,
+                longitude=105.811,
+                source_name="test-catalog",
+            )
+        )
+        db.commit()
+
+    slash_response = client.get(f"/api/v1/facilities/{slash_source_id}", headers=headers())
+    assert slash_response.status_code == 200
+    assert slash_response.json()["data"]["source_id"] == slash_source_id
+
     missing = client.get("/api/v1/facilities/not-found", headers=headers())
     assert missing.status_code == 404
     assert missing.json()["detail"]["code"] == "FACILITY_NOT_FOUND"

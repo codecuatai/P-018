@@ -2,6 +2,8 @@ import os
 import sys
 from datetime import datetime, timedelta
 
+from sqlalchemy import text
+
 # Add the project root to sys.path so we can import src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -13,6 +15,7 @@ from src.models.medical import (
     Doctor,
     IdempotencyRecord,
     Patient,
+    PatientUserLink,
     SlotStatus,
     TimeSlot,
 )
@@ -48,6 +51,7 @@ def seed_data():
     db.query(AuditLog).delete()
     db.query(Appointment).delete()
     db.query(IdempotencyRecord).delete()
+    db.query(PatientUserLink).delete()
     db.query(Patient).delete()
     db.query(TimeSlot).delete()
     db.query(Doctor).delete()
@@ -57,8 +61,12 @@ def seed_data():
     print("Seeding Patient...")
     # Keep the local demo identity stable so the Gateway adapter can use its
     # documented default without exposing an internal patient lookup to users.
-    patient = Patient(id=1, name="Nguyễn Văn Bệnh Nhân", phone="0987654321", blood_type="O+", medical_history="Cao huyết áp")
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("ALTER SEQUENCE patients_id_seq RESTART WITH 1"))
+    patient = Patient(name="Nguyễn Văn Bệnh Nhân", phone="0987654321", blood_type="O+", medical_history="Cao huyết áp")
     db.add(patient)
+    db.commit()
+    db.add(PatientUserLink(actor_user_id="usr_demo_001", patient_id=patient.id, relationship_type="self", is_default=True))
     db.commit()
 
     depts = []
