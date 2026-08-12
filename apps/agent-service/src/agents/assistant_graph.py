@@ -316,7 +316,7 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
 def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: list[int] | None = None) -> PlannedTask:
     missing: list[str] = []
     if domain == "restaurant":
-        for key in ("location", "party_size", "start_at"):
+        for key in ("location",):
             if not slots.get(key):
                 missing.append(key)
     if domain == "ride":

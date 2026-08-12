@@ -24,8 +24,8 @@ class RestaurantApplicationService:
     def __init__(self, repo: RestaurantRepository):
         self.repo = repo
 
-    def search_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
-        return self.repo.list_restaurants(location, cuisine_type, budget_range, limit, offset)
+    def search_restaurants(self, location=None, cuisine_type=None, budget_range=None, query=None, limit=50, offset=0):
+        return self.repo.list_restaurants(location, cuisine_type, budget_range, query, limit, offset)
 
     def get_restaurant(self, restaurant_id):
         return self.repo.get_restaurant_by_id(restaurant_id)

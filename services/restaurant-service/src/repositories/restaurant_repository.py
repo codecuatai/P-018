@@ -1,4 +1,6 @@
 import json
+import os
+import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -177,22 +179,81 @@ class RestaurantRepository:
     def _legacy_key(operation: str, key: str) -> str:
         return f"{operation}:{key}"
 
-    def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
+    @staticmethod
+    def _parse_query_with_llm(query: str, api_key: str) -> dict[str, str | None]:
+        import httpx
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        prompt = f"""
+Analyze the following restaurant search query and extract three fields in JSON format:
+- "location": any city, district, or area mentioned (e.g., "Hoan Kiem", "Tay Ho", "Hanoi", "District 1"). Keep the location name. If none, return null.
+- "cuisine_type": the type of food or restaurant style (e.g., "Vietnamese", "Italian", "Japanese", "French", "Korean"). Translate to English name if possible (e.g. "món Ý" -> "Italian"). If none, return null.
+- "budget_range": the price tier if mentioned (e.g., "$" for cheap, "$$" for moderate, "$$$" for expensive). If none, return null.
+
+Query: "{query}"
+
+Respond with ONLY the JSON object, no markdown, no other text.
+Example:
+{{"location": "Tay Ho", "cuisine_type": "Italian", "budget_range": "$$$"}}
+"""
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json"}
+        }
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            res_data = response.json()
+            text_response = res_data["candidates"][0]["content"]["parts"][0]["text"]
+            import json
+            return json.loads(text_response.strip())
+
+    def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, query=None, limit=50, offset=0):
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+        parsed_location = None
+        parsed_cuisine = None
+        parsed_budget = None
+
+        if query and api_key:
+            try:
+                parsed = self._parse_query_with_llm(query, api_key)
+                parsed_location = parsed.get("location")
+                parsed_cuisine = parsed.get("cuisine_type")
+                parsed_budget = parsed.get("budget_range")
+            except Exception as e:
+                print(f"LLM parsing failed: {e}", file=sys.stderr)
+                pass
+
+        final_location = location or parsed_location
+        final_cuisine = cuisine_type or parsed_cuisine
+        final_budget = budget_range or parsed_budget
+
         with self.factory() as db:
             stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
-            if location:
+
+            # 1. Lọc theo địa điểm (cả từ tham số trực tiếp hoặc từ LLM parse)
+            if final_location:
                 aliases = {
                     "hà nội": ("Hà Nội", "Hanoi"),
                     "ha noi": ("Hà Nội", "Hanoi"),
                     "hồ chí minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
                     "ho chi minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
                 }
-                candidates = aliases.get(location.strip().lower(), (location,))
+                candidates = aliases.get(final_location.strip().lower(), (final_location,))
                 stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))
-            if cuisine_type:
-                stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{cuisine_type}%"))
-            if budget_range:
-                stmt = stmt.where(RestaurantRow.budget_range == budget_range)
+            # Nếu không parse được địa điểm cụ thể nhưng có query thô, fallback tìm kiếm tương đối trên cột location
+            elif query:
+                stmt = stmt.where(RestaurantRow.location.ilike(f"%{query}%"))
+
+            # 2. Lọc theo loại hình ẩm thực
+            if final_cuisine:
+                stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{final_cuisine}%"))
+
+            # 3. Lọc theo khoảng giá
+            if final_budget:
+                stmt = stmt.where(RestaurantRow.budget_range == final_budget)
+
             rows = db.scalars(stmt.offset(offset).limit(limit)).all()
             return [self.restaurant_dict(row) for row in rows]
 
