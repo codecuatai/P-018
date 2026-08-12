@@ -24,8 +24,67 @@ class RestaurantApplicationService:
     def __init__(self, repo: RestaurantRepository):
         self.repo = repo
 
+    @staticmethod
+    def _parse_query_with_llm(query: str, api_key: str) -> dict[str, str | None]:
+        import httpx
+        import json
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        prompt = f"""
+Analyze the following restaurant search query and extract three fields in JSON format:
+- "location": any city, district, or area mentioned (e.g., "Hoan Kiem", "Tay Ho", "Hanoi", "District 1"). Keep the location name. If none, return null.
+- "cuisine_type": the type of food or restaurant style (e.g., "Vietnamese", "Italian", "Japanese", "French", "Korean"). Translate to English name if possible (e.g. "món Ý" -> "Italian"). If none, return null.
+- "budget_range": the price tier if mentioned (e.g., "$" for cheap, "$$" for moderate, "$$$" for expensive). If none, return null.
+
+Query: "{query}"
+
+Respond with ONLY the JSON object, no markdown, no other text.
+Example:
+{{"location": "Tay Ho", "cuisine_type": "Italian", "budget_range": "$$$"}}
+"""
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json"}
+        }
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            res_data = response.json()
+            text_response = res_data["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(text_response.strip())
+
     def search_restaurants(self, location=None, cuisine_type=None, budget_range=None, query=None, limit=50, offset=0):
-        return self.repo.list_restaurants(location, cuisine_type, budget_range, query, limit, offset)
+        import os
+        import sys
+        api_key = os.environ.get("GEMINI_API_KEY")
+
+        parsed_location = None
+        parsed_cuisine = None
+        parsed_budget = None
+
+        if query and api_key:
+            try:
+                parsed = self._parse_query_with_llm(query, api_key)
+                parsed_location = parsed.get("location")
+                parsed_cuisine = parsed.get("cuisine_type")
+                parsed_budget = parsed.get("budget_range")
+            except Exception as e:
+                print(f"LLM parsing failed: {e}", file=sys.stderr)
+                pass
+
+        final_location = location or parsed_location
+        final_cuisine = cuisine_type or parsed_cuisine
+        final_budget = budget_range or parsed_budget
+
+        return self.repo.list_restaurants(
+            location=final_location,
+            cuisine_type=final_cuisine,
+            budget_range=final_budget,
+            query=query,
+            limit=limit,
+            offset=offset
+        )
+
 
     def get_restaurant(self, restaurant_id):
         return self.repo.get_restaurant_by_id(restaurant_id)
