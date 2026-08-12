@@ -11,48 +11,181 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python-services:
+  # ----------------------------------------------------
+  # Job Detect: Quét Git Diff để phát hiện thư mục thay đổi
+  # ----------------------------------------------------
+  detect-changes:
     runs-on: [self-hosted, linux, x64]
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        service:
-          - "apps/agent-service"
-          - "services/ride-service"
-          - "services/restaurant-service"
-          - "services/healthcare-service"
-          - "services/food-service"
+    outputs:
+      agent: ${{ steps.filter.outputs.agent }}
+      ride: ${{ steps.filter.outputs.ride }}
+      restaurant: ${{ steps.filter.outputs.restaurant }}
+      healthcare: ${{ steps.filter.outputs.healthcare }}
+      food: ${{ steps.filter.outputs.food }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      web: ${{ steps.filter.outputs.web }}
+      compose: ${{ steps.filter.outputs.compose }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect path changes
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # Nếu thay đổi các file cấu hình toàn cục, ta bắt buộc chạy toàn bộ tests
+          filters: |
+            global: &global
+              - '.github/workflows/ci.yml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'packages/**'
+              - 'infra/**'
+              - 'scripts/**'
+            agent:
+              - *global
+              - 'apps/agent-service/**'
+            ride:
+              - *global
+              - 'services/ride-service/**'
+            restaurant:
+              - *global
+              - 'services/restaurant-service/**'
+            healthcare:
+              - *global
+              - 'services/healthcare-service/**'
+            food:
+              - *global
+              - 'services/food-service/**'
+            gateway:
+              - *global
+              - 'apps/api-gateway/**'
+            web:
+              - *global
+              - 'apps/web/**'
+            compose:
+              - *global
+              - 'docker-compose.yml'
+              - 'apps/api-gateway/**'
+              - 'apps/agent-service/**'
+              - 'services/**'
+
+  # ----------------------------------------------------
+  # Các Job kiểm thử riêng biệt cho từng Python Service
+  # ----------------------------------------------------
+  agent-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.agent == 'true' }}
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: ${{ matrix.service }}/pyproject.toml
-      - name: Create Python CI environment
+          cache-dependency-path: apps/agent-service/pyproject.toml
+      - name: Create Python environment
         run: python -m venv .ci-venv
       - name: Install dependencies
-        shell: bash
-        run: |
-          .ci-venv/bin/python -m pip install -e "${{ matrix.service }}[dev]"
+        run: .ci-venv/bin/python -m pip install -e "apps/agent-service[dev]"
       - name: Lint service
-        shell: bash
-        run: |
-          .ci-venv/bin/python -m ruff check "${{ matrix.service }}/src" "${{ matrix.service }}/tests"
+        run: .ci-venv/bin/python -m ruff check "apps/agent-service/src" "apps/agent-service/tests"
       - name: Test service
-        shell: bash
         run: |
-          if [ "${{ matrix.service }}" = "services/food-service" ]; then
-            cd "${{ matrix.service }}" && ../../.ci-venv/bin/python -m pytest tests -q --ignore=tests/test_postgres_integration.py
-          else
-            cd "${{ matrix.service }}" && ../../.ci-venv/bin/python -m pytest tests -q
-          fi
+          cd apps/agent-service && ../../.ci-venv/bin/python -m pytest tests -q
 
-
-  gateway:
+  ride-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.ride == 'true' }}
     runs-on: [self-hosted, linux, x64]
-    needs: [python-services]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/ride-service/pyproject.toml
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/ride-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/ride-service/src" "services/ride-service/tests"
+      - name: Test service
+        run: |
+          cd services/ride-service && ../../.ci-venv/bin/python -m pytest tests -q
+
+  restaurant-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.restaurant == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/restaurant-service/pyproject.toml
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/restaurant-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/restaurant-service/src" "services/restaurant-service/tests"
+      - name: Test service
+        run: |
+          cd services/restaurant-service && ../../.ci-venv/bin/python -m pytest tests -q
+
+  healthcare-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.healthcare == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/healthcare-service/pyproject.toml
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/healthcare-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/healthcare-service/src" "services/healthcare-service/tests"
+      - name: Test service
+        run: |
+          cd services/healthcare-service && ../../.ci-venv/bin/python -m pytest tests -q
+
+  food-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.food == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: services/food-service/pyproject.toml
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/food-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/food-service/src" "services/food-service/tests"
+      - name: Test service
+        run: |
+          cd services/food-service && ../../.ci-venv/bin/python -m pytest tests -q --ignore=tests/test_postgres_integration.py
+
+  # ----------------------------------------------------
+  # Job Gateway NestJS
+  # ----------------------------------------------------
+  gateway:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.gateway == 'true' }}
+    runs-on: [self-hosted, linux, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -67,10 +200,13 @@ jobs:
         run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
       - run: pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
 
+  # ----------------------------------------------------
+  # Job Test tích hợp PostgreSQL
+  # ----------------------------------------------------
   postgres-integration:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (needs.detect-changes.outputs.food == 'true' || needs.detect-changes.outputs.gateway == 'true')
+    needs: detect-changes
     runs-on: [self-hosted, linux, x64]
-    needs: [gateway]
     services:
       postgres:
         image: postgres:16-alpine
@@ -123,9 +259,13 @@ jobs:
           pnpm install --filter @x-one/api-gateway... --frozen-lockfile
           CORE_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/xone_core pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
 
+  # ----------------------------------------------------
+  # Job Frontend Web
+  # ----------------------------------------------------
   web:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.web == 'true' }}
     runs-on: [self-hosted, linux, x64]
-    needs: [gateway]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -145,10 +285,13 @@ jobs:
           fi
       - run: cd apps/web && npm run build
 
+  # ----------------------------------------------------
+  # Job Validate Docker Compose
+  # ----------------------------------------------------
   compose:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && needs.detect-changes.outputs.compose == 'true'
+    needs: detect-changes
     runs-on: [self-hosted, linux, x64]
-    needs: [postgres-integration, web]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
