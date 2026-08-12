@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 import { useAuth } from "@/providers/auth-provider";
@@ -21,13 +21,31 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 export function GuestOnly({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (status === "authenticated") router.replace("/app");
-  }, [router, status]);
+    if (status === "authenticated") router.replace(user?.onboarding_completed_at || user?.authentication_kind === "demo" ? "/app" : "/app/onboarding");
+  }, [router, status, user]);
   if (status === "loading") return <LoadingState>Đang mở X-One…</LoadingState>;
   if (status === "authenticated") return <LoadingState>Đang chuyển tới không gian của bạn…</LoadingState>;
+  return <>{children}</>;
+}
+
+export function OnboardingGate({ children }: { children: ReactNode }) {
+  const { status, user } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  const isOnboarding = pathname === "/app/onboarding";
+  const needsOnboarding = Boolean(user && !user.onboarding_completed_at && user.authentication_kind !== "demo");
+
+  useEffect(() => {
+    if (status !== "authenticated" || !user) return;
+    if (needsOnboarding && !isOnboarding) router.replace("/app/onboarding");
+    if (!needsOnboarding && isOnboarding) router.replace("/app");
+  }, [isOnboarding, needsOnboarding, router, status, user]);
+
+  if (status === "loading") return <LoadingState>Đang chuẩn bị hồ sơ của bạn…</LoadingState>;
+  if (status === "authenticated" && needsOnboarding !== isOnboarding) return <LoadingState>Đang mở bước thiết lập đầu tiên…</LoadingState>;
   return <>{children}</>;
 }
 

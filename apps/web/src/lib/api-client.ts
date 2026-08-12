@@ -1,6 +1,6 @@
 "use client";
 
-import type { AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, GeocodeResult, HealthcarePatient, HistoryItem, HistoryType, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog } from "@/types";
+import type { AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -202,12 +202,120 @@ export function browseService(service: "food" | "ride" | "restaurant" | "healthc
   return request(`/api/v1/services/${service}${query}`, { method: "GET" });
 }
 
+export function getFoodRestaurant(id: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function getFoodMenu(id: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}/menu`, { method: "GET" });
+}
+
+export function createFoodCart(restaurantId: string): Promise<Record<string, unknown>> {
+  return request("/api/v1/service-actions/food/cart", { method: "POST", body: JSON.stringify({ restaurant_id: restaurantId }) }, { idempotencyKey: createIdempotencyKey("food-cart") });
+}
+
+export function getFoodCart(cartId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}`, { method: "GET" });
+}
+
+export function addFoodCartItem(cartId: string, value: { menu_item_id: string; quantity: number; note?: string }): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) });
+}
+
+export function updateFoodCartItem(cartId: string, itemId: string, value: { quantity: number; note?: string }): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) });
+}
+
+export function removeFoodCartItem(cartId: string, itemId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+}
+
+export function applyFoodVoucher(cartId: string, code: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "POST", body: JSON.stringify({ code }) });
+}
+
+export function removeFoodVoucher(cartId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "DELETE" });
+}
+
+export function prepareFoodOrder(value: { cart_id: string; address_id: string }): Promise<Record<string, unknown>> {
+  return request("/api/v1/confirmations/food-order", { method: "POST", body: JSON.stringify(value) });
+}
+
+export function executeConfirmation(confirmationId: string, value: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request(`/api/v1/confirmations/${encodeURIComponent(confirmationId)}/execute`, { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("confirmation") });
+}
+
+export function prepareFoodCancellation(orderId: string): Promise<Record<string, unknown>> {
+  return request("/api/v1/confirmations/food-order-cancellation", { method: "POST", body: JSON.stringify({ order_id: orderId }) });
+}
+
+export function executeCancellation(confirmationId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/confirmations/${encodeURIComponent(confirmationId)}/execute-cancellation`, { method: "POST", body: JSON.stringify({}) }, { idempotencyKey: createIdempotencyKey("food-cancel") });
+}
+
+export function getRestaurantDetail(id: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/restaurant/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function checkRestaurantAvailability(value: { restaurant_id: string; party_size: number; start_at: string; duration_minutes?: number }): Promise<Record<string, unknown>> {
+  return request("/api/v1/service-actions/restaurant/availability", { method: "POST", body: JSON.stringify(value) });
+}
+
+export function createRestaurantHold(value: { restaurant_id: string; party_size: number; start_at: string; duration_minutes?: number }): Promise<Record<string, unknown>> {
+  return request("/api/v1/service-actions/restaurant/hold", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("restaurant-hold") });
+}
+
+export function prepareRestaurantReservation(value: { restaurant_id: string; hold_id: string; party_size: number; start_at: string; duration_minutes?: number; special_requests?: string }): Promise<Record<string, unknown>> {
+  return request("/api/v1/confirmations/restaurant-reservation", { method: "POST", body: JSON.stringify(value) });
+}
+
+export function cancelRestaurantReservation(id: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/restaurant/${encodeURIComponent(id)}/cancel`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("restaurant-cancel") });
+}
+
+export function listHealthcareDoctors(department: string): Promise<Record<string, unknown>[]> {
+  return request(`/api/v1/service-actions/healthcare/doctors?department=${encodeURIComponent(department)}`, { method: "GET" });
+}
+
+export function holdHealthcareSlot(value: { slot_id: number; patient_id?: number; symptoms: string }): Promise<Record<string, unknown>> {
+  return request("/api/v1/service-actions/healthcare/hold", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("healthcare-hold") });
+}
+
+export function acknowledgeHealthcarePayment(appointmentId: number): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/healthcare/${encodeURIComponent(String(appointmentId))}/payment`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("healthcare-payment") });
+}
+
+export function prepareHealthcareAppointment(appointmentId: number): Promise<Record<string, unknown>> {
+  return request("/api/v1/confirmations/healthcare-appointment", { method: "POST", body: JSON.stringify({ appointment_id: appointmentId }) });
+}
+
+export function cancelHealthcareAppointment(appointmentId: number): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/healthcare/${encodeURIComponent(String(appointmentId))}/cancel`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("healthcare-cancel") });
+}
+
 export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number }): Promise<RideQuote> {
   return request("/api/v1/services/ride/quote", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("ride-quote") });
 }
 
-export function listHistory(): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
-  return request("/api/v1/history", { method: "GET" });
+export function prepareRideBooking(quoteId: string): Promise<Record<string, unknown>> {
+  return request("/api/v1/service-actions/ride/prepare", { method: "POST", body: JSON.stringify({ quote_id: quoteId }) }, { idempotencyKey: createIdempotencyKey("ride-prepare") });
+}
+
+export function confirmRideBooking(bookingId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/ride/${encodeURIComponent(bookingId)}/confirm`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("ride-confirm") });
+}
+
+export function listHistory(filters: HistoryFilters = {}): Promise<HistoryResult> {
+  const params = new URLSearchParams();
+  if (filters.service) params.set("service", filters.service);
+  if (filters.status?.trim()) params.set("status", filters.status.trim());
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.page_size) params.set("page_size", String(filters.page_size));
+  const query = params.toString();
+  return request(`/api/v1/history${query ? `?${query}` : ""}`, { method: "GET" });
 }
 
 export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<string, unknown>> {

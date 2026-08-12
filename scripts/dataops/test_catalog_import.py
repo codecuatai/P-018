@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from catalog_import import ROOT, build_plan
+from catalog_import import ROOT, build_plan, database_timestamp, database_timestamp_without_timezone
+
+
+def test_database_timestamp_converts_iso_offset_to_aware_datetime() -> None:
+    value = database_timestamp("2026-08-11T01:42:47+07:00")
+    assert value is not None
+    assert value.isoformat() == "2026-08-11T01:42:47+07:00"
+    assert database_timestamp(None) is None
+
+
+def test_healthcare_timestamp_adapter_matches_timestamp_without_timezone() -> None:
+    value = database_timestamp_without_timezone("2026-08-11T01:42:47+07:00")
+    assert value is not None
+    assert value.tzinfo is None
 
 
 def test_food_plan_is_versioned_and_keeps_source_provenance() -> None:

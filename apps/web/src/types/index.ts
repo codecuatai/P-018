@@ -140,6 +140,25 @@ export interface HistoryItem {
   resource: Record<string, unknown>;
 }
 
+export interface HistoryFilters {
+  service?: HistoryType;
+  status?: string;
+  from?: string;
+  to?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface HistoryResult {
+  items: HistoryItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+  partial: boolean;
+  unavailable: string[];
+}
+
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;

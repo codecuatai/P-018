@@ -75,6 +75,15 @@ Final/financial confirmation is not a boolean. The contract binds it to the acto
 
 `POST /api/v1/recommendations/rank` is a deterministic V1 ranking adapter. It consumes authoritative candidates and combines relevance, distance, ETA, price, and rating; suspicious default coordinates are excluded from distance scoring. It is deliberately not an ML claim and does not create a booking.
 
+The Gateway-only Service Hub action surface is documented in
+[`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml): Food
+restaurant/menu/cart reads and writes, Restaurant detail/availability/hold,
+Healthcare doctor/slot actions, and Ride quote-based prepare/final confirmation
+are all typed Gateway routes. Domain services remain authoritative; every
+retryable write carries `Idempotency-Key`, and final Ride/Restaurant/Healthcare
+actions pass through explicit confirmation evidence. `GET /api/v1/history`
+accepts `service`, `status`, `from`, `to`, `page`, and `page_size` filters.
+
 Assistant responses include `workflow_status` (`PENDING`, `RUNNING`,
 `COMPLETED`, `PARTIAL_SUCCESS`, or `FAILED`) and safe task-error cards. A
 failed dependent task is reported as `DEPENDENCY_BLOCKED`; independent tasks

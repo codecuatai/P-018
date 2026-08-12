@@ -7,6 +7,8 @@ import { AuthModule } from '../auth/auth.module';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { rankByDistance } from './location-ranking';
+import { ServiceActionsController } from './service-actions.controller';
+import { RideActionsController } from './ride-actions.controller';
 
 export type ServiceKey = 'food' | 'ride' | 'restaurant' | 'healthcare';
 
@@ -169,5 +171,5 @@ function parseCoordinate(value: string | undefined, minimum: number, maximum: nu
   return Number.isFinite(number) && number >= minimum && number <= maximum ? number : undefined;
 }
 
-@Module({ imports: [AuthModule], controllers: [ServiceHubController, RideTrackingController], providers: [ServiceHubService], exports: [ServiceHubService] })
+@Module({ imports: [AuthModule], controllers: [ServiceHubController, RideTrackingController, ServiceActionsController, RideActionsController], providers: [ServiceHubService, FoodClient, RideClient, RestaurantClient, HealthcareClient], exports: [ServiceHubService] })
 export class ServicesModule {}

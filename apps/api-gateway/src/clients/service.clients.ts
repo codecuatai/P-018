@@ -85,7 +85,7 @@ export type RideBooking = {
   quote_version: string;
   amount: number;
   currency: string;
-  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'DRIVER_ASSIGNED' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
   resource_version: number;
   payment_reference: string | null;
   driver: Record<string, unknown> | null;
@@ -437,9 +437,25 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'GET' }, correlationId, actorId);
   }
 
+  async checkAvailability(actorId: string, correlationId: string, restaurantId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/restaurants/${encodeURIComponent(restaurantId)}/availability`, { method: 'POST', body: JSON.stringify(payload) }, correlationId, actorId);
+  }
+
+  async createHold(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservation-holds', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async createReservation(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async cancelReservation(actorId: string, correlationId: string, idempotencyKey: string, reservationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(reservationId)}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
   async listRestaurants(actorId: string, correlationId: string, keyword?: string): Promise<JsonObject> {
     const query = keyword ? `?location=${encodeURIComponent(keyword)}` : '';
-    return this.legacyRequest<JsonObject>(`/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
+    return this.legacyRequest<JsonObject>(`/v1/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
   }
 
   async getRestaurant(restaurantId: string, actorId: string, correlationId: string): Promise<JsonObject> {
@@ -519,6 +535,22 @@ export class HealthcareClient extends InternalServiceClient {
 
   async listDepartments(actorId: string, correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/api/v1/departments', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listDoctors(actorId: string, correlationId: string, department: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/doctors?department=${encodeURIComponent(department)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async holdSlot(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/slots/hold', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async confirmAppointment(actorId: string, correlationId: string, idempotencyKey: string, appointmentId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/appointments/${encodeURIComponent(String(appointmentId))}/confirm`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async cancelAppointment(actorId: string, correlationId: string, idempotencyKey: string, appointmentId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/appointments/${encodeURIComponent(String(appointmentId))}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
   }
 
   async getFacility(facilitySourceId: string, actorId: string, correlationId: string): Promise<JsonObject> {
@@ -656,6 +688,50 @@ export class FoodClient extends InternalServiceClient {
 
   listOrders(correlationId: string, actorId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/api/v1/orders', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async createCart(actorId: string, correlationId: string, idempotencyKey: string, restaurantId: string): Promise<JsonObject> {
+    return this.post('/api/v1/carts', { user_id: actorId, restaurant_id: restaurantId }, correlationId, idempotencyKey, actorId);
+  }
+
+  async getCart(actorId: string, correlationId: string, cartId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/carts/${encodeURIComponent(cartId)}`, correlationId, actorId);
+  }
+
+  async addCartItem(actorId: string, correlationId: string, cartId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/items`, payload, correlationId, undefined, actorId);
+  }
+
+  async updateCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.patch(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, payload, correlationId, actorId);
+  }
+
+  async removeCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string): Promise<JsonObject> {
+    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, correlationId, actorId);
+  }
+
+  async applyVoucher(actorId: string, correlationId: string, cartId: string, code: string): Promise<JsonObject> {
+    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/voucher`, { code }, correlationId, undefined, actorId);
+  }
+
+  async removeVoucher(actorId: string, correlationId: string, cartId: string): Promise<JsonObject> {
+    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/voucher`, correlationId, actorId);
+  }
+
+  async deliveryQuote(actorId: string, correlationId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.post('/api/v1/delivery/quote', payload, correlationId, undefined, actorId);
+  }
+
+  async previewOrder(actorId: string, correlationId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.post('/api/v1/orders/preview', payload, correlationId, undefined, actorId);
+  }
+
+  async getOrder(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}`, correlationId, actorId);
+  }
+
+  async getOrderTracking(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, correlationId, actorId);
   }
 }
 
@@ -806,7 +882,7 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     || typeof data.quote_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
-    || !['AWAITING_PAYMENT_CONFIRMATION', 'DRIVER_ASSIGNED', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].includes(
+    || !['AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
       String(data.status),
     )
     || typeof data.resource_version !== 'number'

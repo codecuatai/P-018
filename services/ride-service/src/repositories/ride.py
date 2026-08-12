@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 from src.domain.ride import Booking, ConfirmationEvidence, IdempotencyRecord, Quote
 
 
 class RideRepository(Protocol):
+    def get_active_tariff(self, vehicle_type: str) -> dict[str, Any] | None: ...
+
+    def find_and_assign_driver(self, vehicle_type: str, pickup_latitude: float | None, pickup_longitude: float | None) -> dict[str, Any] | None: ...
+
+    def record_tracking_event(self, booking_id: str, status: str, progress: float, current_location: dict[str, Any] | None) -> None: ...
+
     def get_quote(self, quote_id: str) -> Quote | None: ...
 
     def list_quotes(self, actor_id: str) -> list[Quote]: ...

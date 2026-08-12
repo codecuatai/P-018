@@ -3,7 +3,7 @@
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0004_restaurant_catalog_provenance"
+revision = "0004_restaurant_catalog"
 down_revision = "0003_restaurant_legacy_backfill"
 branch_labels = None
 depends_on = None

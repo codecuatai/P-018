@@ -1,52 +1,122 @@
 "use client";
 
 import Link from "next/link";
-import { Archive, ClipboardList, MessageSquareText, RefreshCw } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardList, Edit3, MessageSquareText, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { errorText, listConversations, listHistory, updateConversation } from "@/lib/api-client";
-import type { ConversationRecord, HistoryItem } from "@/types";
+import { deleteConversation, errorText, listConversations, listHistory, updateConversation } from "@/lib/api-client";
+import type { ConversationRecord, HistoryType, HistoryItem } from "@/types";
+
+const pageSize = 20;
 
 export default function HistoryPage() {
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [resources, setResources] = useState<HistoryItem[]>([]);
+  const [totalResources, setTotalResources] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [unavailable, setUnavailable] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState("");
+  const [editingTitle, setEditingTitle] = useState("");
+  const [deleteId, setDeleteId] = useState("");
+  const [service, setService] = useState<HistoryType | "">("");
+  const [status, setStatus] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
 
   const load = useCallback(async () => {
-    setLoading(true); setError("");
-    const [conversationResult, historyResult] = await Promise.allSettled([listConversations(), listHistory()]);
+    setLoading(true);
+    setError("");
+    const [conversationResult, historyResult] = await Promise.allSettled([
+      listConversations(true),
+      listHistory({ service: service || undefined, status: status || undefined, from: from || undefined, to: to || undefined, page, page_size: pageSize }),
+    ]);
     const failures: string[] = [];
     if (conversationResult.status === "fulfilled") setConversations(conversationResult.value.items);
     else failures.push(errorText(conversationResult.reason));
-    if (historyResult.status === "fulfilled") { setResources(historyResult.value.items); setUnavailable(historyResult.value.unavailable); }
-    else failures.push(errorText(historyResult.reason));
+    if (historyResult.status === "fulfilled") {
+      setResources(historyResult.value.items);
+      setTotalResources(historyResult.value.total);
+      setHasMore(historyResult.value.has_more);
+      setUnavailable(historyResult.value.unavailable);
+    } else failures.push(errorText(historyResult.reason));
     if (conversationResult.status === "rejected" && historyResult.status === "rejected") setError(failures[0] ?? "Không thể tải lịch sử.");
     else if (failures.length) setError("Một phần lịch sử chưa sẵn sàng. Bạn vẫn có thể xem dữ liệu còn lại.");
     setLoading(false);
-  }, []);
+  }, [from, page, service, status, to]);
 
   useEffect(() => { void load(); }, [load]);
 
-  async function archive(id: string): Promise<void> {
-    try { await updateConversation(id, { status: "ARCHIVED" }); setConversations((current) => current.filter((item) => item.conversationId !== id)); }
-    catch (reason) { setError(errorText(reason)); }
+  function updateFilter<T>(setter: (value: T) => void, value: T): void {
+    setPage(1);
+    setter(value);
   }
 
+  function resetFilters(): void {
+    setService("");
+    setStatus("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  }
+
+  async function archive(id: string, nextStatus: "ACTIVE" | "ARCHIVED"): Promise<void> {
+    try {
+      const updated = await updateConversation(id, { status: nextStatus });
+      setConversations((current) => current.map((item) => item.conversationId === id ? updated : item));
+    } catch (reason) { setError(errorText(reason)); }
+  }
+
+  function beginRename(item: ConversationRecord): void {
+    setDeleteId("");
+    setEditingId(item.conversationId);
+    setEditingTitle(item.title ?? "");
+  }
+
+  async function saveRename(id: string): Promise<void> {
+    const title = editingTitle.trim();
+    if (!title) return;
+    try {
+      const updated = await updateConversation(id, { title });
+      setConversations((current) => current.map((item) => item.conversationId === id ? updated : item));
+      setEditingId("");
+      setEditingTitle("");
+    } catch (reason) { setError(errorText(reason)); }
+  }
+
+  async function remove(id: string): Promise<void> {
+    if (deleteId !== id) { setDeleteId(id); setEditingId(""); return; }
+    try {
+      await deleteConversation(id);
+      setConversations((current) => current.filter((item) => item.conversationId !== id));
+      setDeleteId("");
+    } catch (reason) { setError(errorText(reason)); }
+  }
+
+  const activeConversations = conversations.filter((item) => item.status !== "ARCHIVED");
+  const archivedConversations = conversations.filter((item) => item.status === "ARCHIVED");
   const isEmpty = !loading && !error && conversations.length === 0 && resources.length === 0;
+
   return <section className="route-shell history-page" aria-labelledby="history-title">
-    <header className="section-heading"><div><span className="eyebrow">LỊCH SỬ</span><h1 id="history-title">Những việc bạn đã làm</h1><p>Cuộc trò chuyện và giao dịch được ghép từ Core cùng các domain; dữ liệu lỗi ở một nguồn không che mất nguồn còn lại.</p></div><button className="icon-button" type="button" onClick={() => void load()} aria-label="Tải lại lịch sử"><RefreshCw size={18} /></button></header>
+    <header className="section-heading"><div><span className="eyebrow">LỊCH SỬ</span><h1 id="history-title">Những việc bạn đã làm</h1><p>Cuộc trò chuyện và giao dịch được ghép từ Core cùng các domain; lỗi ở một nguồn không che mất nguồn còn lại.</p></div><div className="history-header-actions"><Link className="button button-primary" href="/app"><Plus size={16} /> Cuộc trò chuyện mới</Link><button className="icon-button" type="button" onClick={() => void load()} aria-label="Tải lại lịch sử"><RefreshCw size={18} /></button></div></header>
+    <section className="history-filters" aria-label="Bộ lọc lịch sử"><label><span>Dịch vụ</span><select value={service} onChange={(event) => updateFilter(setService, event.target.value as HistoryType | "")}><option value="">Tất cả</option><option value="food_order">Đồ ăn</option><option value="ride_booking">Chuyến xe</option><option value="restaurant_reservation">Đặt bàn</option><option value="healthcare_appointment">Lịch khám</option></select></label><label><span>Trạng thái</span><select value={status} onChange={(event) => updateFilter(setStatus, event.target.value)}><option value="">Tất cả</option><option value="CONFIRMED">Đã xác nhận</option><option value="COMPLETED">Đã hoàn tất</option><option value="CANCELLED">Đã hủy</option><option value="NO_DRIVER">Không có tài xế</option><option value="FAILED">Thất bại</option></select></label><label><span>Từ ngày</span><input type="date" value={from} onChange={(event) => updateFilter(setFrom, event.target.value)} /></label><label><span>Đến ngày</span><input type="date" value={to} onChange={(event) => updateFilter(setTo, event.target.value)} /></label><button className="button button-secondary history-filter-reset" type="button" onClick={resetFilters}>Xóa bộ lọc</button></section>
     {loading ? <p className="inline-note" aria-live="polite">Đang tải lịch sử…</p> : error && conversations.length === 0 && resources.length === 0 ? <div className="error-panel" role="alert"><p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load()}>Thử lại</button></div> : null}
     {error && !isEmpty && !loading ? <p className="partial-note" role="status">{error}</p> : null}
     {unavailable.length ? <p className="partial-note" role="status">Nguồn tạm thời chưa có: {unavailable.map(displayType).join(", ")}.</p> : null}
     {isEmpty ? <div className="empty-state"><MessageSquareText size={24} /><h2>Chưa có hoạt động nào</h2><p>Bắt đầu với trợ lý hoặc mở một dịch vụ để X-One lưu lại mạch công việc cho bạn.</p><Link className="button button-primary" href="/app">Mở trợ lý</Link></div> : null}
-    {resources.length ? <section className="history-section" aria-labelledby="resource-history-title"><div className="history-section-heading"><div><span className="eyebrow">GIAO DỊCH</span><h2 id="resource-history-title">Hoạt động dịch vụ</h2></div><span className="activity-count">{resources.length} mục</span></div><div className="history-list">{resources.map((item) => <Link className="history-resource-row" key={`${item.type}-${item.id}`} href={`/app/history/${item.type}/${encodeURIComponent(item.id)}`}><span className={`history-resource-mark ${item.type.split("_")[0]}`} aria-hidden="true"><ClipboardList size={17} /></span><span className="history-resource-copy"><strong>{item.title}</strong><span>{item.detail}</span><small>{formatStatus(item.status)} · {formatDate(item.timestamp)}</small></span><span className="history-resource-arrow" aria-hidden="true">→</span></Link>)}</div></section> : null}
-    {conversations.length ? <section className="history-section" aria-labelledby="conversation-history-title"><div className="history-section-heading"><div><span className="eyebrow">TRÒ CHUYỆN</span><h2 id="conversation-history-title">Cuộc trò chuyện gần đây</h2></div></div><div className="history-list">{conversations.map((item) => <article className="history-row" key={item.conversationId}><Link href={`/app/conversations/${encodeURIComponent(item.conversationId)}`}><span className="eyebrow">{item.serviceContext ?? "X-ONE"}</span><h3>{item.title ?? "Cuộc trò chuyện"}</h3><p>{lastPreview(item)}</p><time>{formatDate(item.updatedAt ?? item.lastMessageAt)}</time></Link><button className="icon-button" type="button" onClick={() => void archive(item.conversationId)} aria-label={`Lưu trữ ${item.title ?? "cuộc trò chuyện"}`}><Archive size={17} /></button></article>)}</div></section> : null}
+    {resources.length ? <section className="history-section" aria-labelledby="resource-history-title"><div className="history-section-heading"><div><span className="eyebrow">GIAO DỊCH</span><h2 id="resource-history-title">Hoạt động dịch vụ</h2></div><span className="activity-count">{totalResources} mục · trang {page}</span></div><div className="history-list">{resources.map((item) => <Link className="history-resource-row" key={`${item.type}-${item.id}`} href={`/app/history/${item.type}/${encodeURIComponent(item.id)}`}><span className={`history-resource-mark ${item.type.split("_")[0]}`} aria-hidden="true"><ClipboardList size={17} /></span><span className="history-resource-copy"><strong>{item.title}</strong><span>{item.detail}</span><small>{formatStatus(item.status)} · {formatDate(item.timestamp)}</small></span><span className="history-resource-arrow" aria-hidden="true">→</span></Link>)}</div><div className="history-pagination"><button className="button button-secondary" type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>← Mới hơn</button><button className="button button-secondary" type="button" disabled={!hasMore || loading} onClick={() => setPage((value) => value + 1)}>Cũ hơn →</button></div></section> : null}
+    {activeConversations.length ? <ConversationSection title="Cuộc trò chuyện gần đây" items={activeConversations} editingId={editingId} editingTitle={editingTitle} deleteId={deleteId} onBeginRename={beginRename} onChangeTitle={setEditingTitle} onSaveRename={(id) => void saveRename(id)} onCancelRename={() => setEditingId("")} onArchive={(id) => void archive(id, "ARCHIVED")} onDelete={(id) => void remove(id)} /> : null}
+    {archivedConversations.length ? <ConversationSection title="Đã lưu trữ" items={archivedConversations} editingId={editingId} editingTitle={editingTitle} deleteId={deleteId} onBeginRename={beginRename} onChangeTitle={setEditingTitle} onSaveRename={(id) => void saveRename(id)} onCancelRename={() => setEditingId("")} onArchive={(id) => void archive(id, "ACTIVE")} onDelete={(id) => void remove(id)} archived /> : null}
   </section>;
+}
+
+function ConversationSection({ title, items, archived = false, editingId, editingTitle, deleteId, onBeginRename, onChangeTitle, onSaveRename, onCancelRename, onArchive, onDelete }: { title: string; items: ConversationRecord[]; archived?: boolean; editingId: string; editingTitle: string; deleteId: string; onBeginRename: (item: ConversationRecord) => void; onChangeTitle: (value: string) => void; onSaveRename: (id: string) => void; onCancelRename: () => void; onArchive: (id: string) => void; onDelete: (id: string) => void }) {
+  return <section className="history-section" aria-labelledby={archived ? "archived-conversation-title" : "conversation-history-title"}><div className="history-section-heading"><div><span className="eyebrow">TRÒ CHUYỆN</span><h2 id={archived ? "archived-conversation-title" : "conversation-history-title"}>{title}</h2></div><span className="activity-count">{items.length} cuộc</span></div><div className="history-list">{items.map((item) => <article className="history-row" key={item.conversationId}>{editingId === item.conversationId ? <div className="history-edit-form"><label htmlFor={`conversation-title-${item.conversationId}`}>Tên cuộc trò chuyện</label><input id={`conversation-title-${item.conversationId}`} value={editingTitle} onChange={(event) => onChangeTitle(event.target.value)} autoFocus /><div><button className="button button-primary" type="button" onClick={() => onSaveRename(item.conversationId)}>Lưu tên</button><button className="text-button" type="button" onClick={onCancelRename}>Hủy</button></div></div> : <Link href={`/app/conversations/${encodeURIComponent(item.conversationId)}`}><span className="eyebrow">{item.serviceContext ?? "X-ONE"}</span><h3>{item.title ?? "Cuộc trò chuyện"}</h3><p>{lastPreview(item)}</p><time>{formatDate(item.updatedAt ?? item.lastMessageAt)}</time></Link>}<div className="history-row-actions"><button className="icon-button" type="button" onClick={() => onBeginRename(item)} aria-label={`Đổi tên ${item.title ?? "cuộc trò chuyện"}`}><Edit3 size={16} /></button><button className="icon-button" type="button" onClick={() => onArchive(item.conversationId)} aria-label={archived ? `Bỏ lưu trữ ${item.title ?? "cuộc trò chuyện"}` : `Lưu trữ ${item.title ?? "cuộc trò chuyện"}`}>{archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}</button><button className={`icon-button ${deleteId === item.conversationId ? "danger is-confirming" : ""}`} type="button" onClick={() => onDelete(item.conversationId)} aria-label={deleteId === item.conversationId ? "Bấm lần nữa để xóa hẳn" : `Xóa ${item.title ?? "cuộc trò chuyện"}`}><Trash2 size={16} /></button></div></article>)}</div></section>;
 }
 
 function lastPreview(item: ConversationRecord): string { return item.messages[item.messages.length - 1]?.content || "Chưa có tin nhắn"; }
 function formatDate(value?: string): string { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(date); }
-function formatStatus(value: string): string { return ({ CONFIRMED: "Đã xác nhận", COMPLETED: "Đã hoàn tất", DRIVER_ASSIGNED: "Đã tìm thấy tài xế", CANCELLED: "Đã hủy", DRAFT: "Đang giữ", ACTIVE: "Đang hoạt động" } as Record<string, string>)[value] ?? value; }
+function formatStatus(value: string): string { return ({ CONFIRMED: "Đã xác nhận", COMPLETED: "Đã hoàn tất", DRIVER_ASSIGNED: "Đã tìm thấy tài xế", CANCELLED: "Đã hủy", NO_DRIVER: "Chưa có tài xế", FAILED: "Thất bại", DRAFT: "Đang giữ", ACTIVE: "Đang hoạt động" } as Record<string, string>)[value] ?? value; }
 function displayType(value: string): string { return ({ food_order: "đơn đồ ăn", ride_booking: "chuyến xe", restaurant_reservation: "đặt bàn", healthcare_appointment: "lịch khám" } as Record<string, string>)[value] ?? value; }

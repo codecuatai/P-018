@@ -17,10 +17,15 @@ class VehicleType(StrEnum):
 
 class BookingStatus(StrEnum):
     AWAITING_PAYMENT_CONFIRMATION = "AWAITING_PAYMENT_CONFIRMATION"
+    SEARCHING_DRIVER = "SEARCHING_DRIVER"
     DRIVER_ASSIGNED = "DRIVER_ASSIGNED"
+    DRIVER_TO_PICKUP = "DRIVER_TO_PICKUP"
     DRIVER_ARRIVED = "DRIVER_ARRIVED"
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
+    NO_DRIVER = "NO_DRIVER"
+    FAILED = "FAILED"
+    PAYMENT_FAILED = "PAYMENT_FAILED"
     CANCELLED = "CANCELLED"
 
 
@@ -148,62 +153,8 @@ class RideError(Exception):
         self.retryable = retryable
 
 
-TARIFF_VERSION = "SIM_2026_08_V1"
 QUOTE_TTL = timedelta(minutes=10)
-TARIFFS = {
-    VehicleType.BIKE: {"base": 8_000, "per_km": 5_000, "per_minute": 700},
-    VehicleType.CAR_4: {"base": 10_000, "per_km": 7_000, "per_minute": 1_000},
-    VehicleType.CAR_7: {"base": 15_000, "per_km": 9_000, "per_minute": 1_300},
-}
 PROMO_DISCOUNTS = {"SAVE5000": 5_000}
-
-SIMULATED_DRIVERS = {
-    VehicleType.BIKE: {
-        "id": "driver_simulated_bike_001",
-        "display_name": "Quang Huy",
-        "phone_masked": "*** *** 3908",
-        "rating": 4.9,
-        "vehicle": {
-            "type": "BIKE",
-            "make": "Honda",
-            "model": "Wave RSX",
-            "color": "Đen",
-            "license_plate": "29K1-390.80",
-        },
-        "location": {"latitude": 21.0285, "longitude": 105.8048},
-        "eta_seconds": 180,
-    },
-    VehicleType.CAR_4: {
-        "id": "driver_simulated_001",
-        "display_name": "Minh Anh",
-        "phone_masked": "*** *** 4821",
-        "rating": 4.9,
-        "vehicle": {
-            "type": "CAR_4",
-            "make": "Toyota",
-            "model": "Vios",
-            "color": "Trắng",
-            "license_plate": "30H-482.19",
-        },
-        "location": {"latitude": 21.0301, "longitude": 105.8122},
-        "eta_seconds": 240,
-    },
-    VehicleType.CAR_7: {
-        "id": "driver_simulated_car7_001",
-        "display_name": "Đức Long",
-        "phone_masked": "*** *** 5520",
-        "rating": 4.9,
-        "vehicle": {
-            "type": "CAR_7",
-            "make": "Mitsubishi",
-            "model": "Xpander",
-            "color": "Bạc",
-            "license_plate": "30G-552.07",
-        },
-        "location": {"latitude": 21.0186, "longitude": 105.8230},
-        "eta_seconds": 300,
-    },
-}
 
 
 def utc_now() -> datetime:
@@ -259,7 +210,7 @@ def cancel_confirmation_payload(booking: Booking, actor_id: str) -> dict[str, An
     }
 
 
-def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None) -> Quote:
+def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime | None = None) -> Quote:
     now = now or utc_now()
     seed = hashlib.sha256(
         f"{command.pickup_address.strip().casefold()}|{command.dropoff_address.strip().casefold()}".encode()
@@ -271,12 +222,12 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
     else:
         distance_km = 3 + int(seed[:4], 16) % 28
         duration_minutes = distance_km * 3 + int(seed[4:6], 16) % 10
-    tariff = TARIFFS[command.vehicle_type]
+    tariff_version = str(tariff["version"])
     peak_surcharge = 5_000 if command.pickup_time and _is_peak(command.pickup_time) else 0
     discount = PROMO_DISCOUNTS.get((command.promo_code or "").upper(), 0)
-    base_fee = tariff["base"]
-    distance_fee = distance_km * tariff["per_km"]
-    time_fee = duration_minutes * tariff["per_minute"]
+    base_fee = int(tariff["base_fee"])
+    distance_fee = distance_km * int(tariff["per_km"])
+    time_fee = duration_minutes * int(tariff["per_minute"])
     amount = max(0, base_fee + distance_fee + time_fee + peak_surcharge - discount)
     quote_id = f"quote_{uuid4().hex[:20]}"
     route_provider = "deterministic-haversine" if coordinates_available else "deterministic-address-hash"
@@ -306,8 +257,8 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
         discount=discount,
         amount=amount,
         currency="VND",
-        tariff_version=TARIFF_VERSION,
-        quote_version=f"{TARIFF_VERSION}:{quote_id}",
+        tariff_version=tariff_version,
+        quote_version=f"{tariff_version}:{quote_id}",
         expires_at=now + QUOTE_TTL,
         created_at=now,
         pickup_latitude=command.pickup_latitude,
@@ -319,12 +270,8 @@ def create_simulated_quote(command: QuoteCommand, *, now: datetime | None = None
         route_duration_seconds=route_duration_seconds,
         route_polyline=route_polyline,
         route_snapshot_hash=normalized_hash(route_snapshot),
-        tariff_snapshot={"version": TARIFF_VERSION, **tariff},
+        tariff_snapshot={"version": tariff_version, **tariff},
     )
-
-
-def simulated_driver(vehicle_type: str) -> dict[str, Any]:
-    return json.loads(json.dumps(SIMULATED_DRIVERS[VehicleType(vehicle_type)], ensure_ascii=False))
 
 
 def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = None) -> dict[str, Any]:
@@ -345,6 +292,20 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
             "progress": 0.0,
             "eta_seconds": 0,
             "driver": booking.driver,
+            "driver_location": None,
+            "current_location": None,
+            "route": route,
+            "route_provider": quote.route_provider,
+            "route_snapshot_hash": quote.route_snapshot_hash,
+            "updated_at": snapshot_at.isoformat(),
+        }
+    if booking.status == BookingStatus.NO_DRIVER.value:
+        return {
+            "booking_id": booking.id,
+            "status": BookingStatus.NO_DRIVER.value,
+            "progress": 0.0,
+            "eta_seconds": 0,
+            "driver": None,
             "driver_location": None,
             "current_location": None,
             "route": route,

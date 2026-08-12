@@ -17,11 +17,10 @@ from src.domain.ride import (
     RideError,
     cancel_confirmation_payload,
     confirm_confirmation_payload,
-    create_simulated_quote,
+    create_quote,
     normalized_hash,
     prepare_confirmation_payload,
     quote_request_payload,
-    simulated_driver,
     tracking_snapshot,
     utc_now,
 )
@@ -37,7 +36,10 @@ class RideApplication:
         request_hash = normalized_hash(quote_request_payload(command))
         if replay := self._replay(command.actor_id, operation, idempotency_key, request_hash):
             return replay
-        quote = create_simulated_quote(command)
+        tariff = self.repository.get_active_tariff(command.vehicle_type.value)
+        if tariff is None:
+            raise RideError(503, "TARIFF_UNAVAILABLE", "No active tariff is configured for this vehicle type.", retryable=True)
+        quote = create_quote(command, tariff)
         payload = quote.snapshot()
         try:
             self.repository.save_quote(quote)
@@ -121,9 +123,14 @@ class RideApplication:
             confirm_confirmation_payload(booking, command.actor_id, command.payment_reference),
         )
         booking.payment_reference = command.payment_reference
-        booking.driver = simulated_driver(self._owned_quote(booking.quote_id, command.actor_id).vehicle_type)
+        quote = self._owned_quote(booking.quote_id, command.actor_id)
+        booking.driver = self.repository.find_and_assign_driver(
+            quote.vehicle_type,
+            quote.pickup_latitude,
+            quote.pickup_longitude,
+        )
         booking.driver_id = str(booking.driver.get("id")) if booking.driver else None
-        booking.status = BookingStatus.DRIVER_ASSIGNED.value
+        booking.status = BookingStatus.DRIVER_ASSIGNED.value if booking.driver else BookingStatus.NO_DRIVER.value
         booking.resource_version += 1
         booking.updated_at = utc_now()
         booking.tracking_started_at = booking.updated_at
@@ -179,7 +186,24 @@ class RideApplication:
     def get_tracking(self, booking_id: str, actor_id: str) -> dict:
         booking = self._owned_booking(booking_id, actor_id)
         quote = self._owned_quote(booking.quote_id, actor_id)
-        return tracking_snapshot(booking, quote)
+        snapshot = tracking_snapshot(booking, quote)
+        if snapshot["status"] != booking.status and snapshot["status"] not in {BookingStatus.CANCELLED.value, BookingStatus.NO_DRIVER.value}:
+            booking.status = str(snapshot["status"])
+            booking.resource_version += 1
+            booking.updated_at = utc_now()
+            self.repository.save_booking(booking)
+            self.repository.record_tracking_event(
+                booking.id,
+                str(snapshot["status"]),
+                float(snapshot["progress"]),
+                snapshot.get("current_location"),
+            )
+            try:
+                self.repository.commit()
+            except Exception:
+                self.repository.rollback()
+                raise
+        return snapshot
 
     def _owned_quote(self, quote_id: str, actor_id: str) -> Quote:
         quote = self.repository.get_quote(quote_id)

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.2.0
+  version: 1.3.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -192,6 +192,141 @@ paths:
         '401': {description: Missing or invalid user token}
         '409': {description: Idempotency conflict}
 
+  /api/v1/service-actions/food/restaurants/{restaurantId}:
+    get:
+      summary: Read one Food restaurant through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Authoritative Food restaurant detail}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/food/restaurants/{restaurantId}/menu:
+    get:
+      summary: Read an authoritative Food menu through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Food menu for the restaurant}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/food/cart:
+    post:
+      summary: Create an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartRequest'}}}
+      responses:
+        '201': {description: Created Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency conflict}
+  /api/v1/service-actions/food/cart/{cartId}:
+    get:
+      summary: Read an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CartId'}]
+      responses:
+        '200': {description: Food cart}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart not found}
+  /api/v1/service-actions/food/cart/{cartId}/items:
+    post:
+      summary: Add a menu item to an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CartId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartItemRequest'}}}
+      responses:
+        '200': {description: Updated Food cart}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart or menu item not found}
+  /api/v1/service-actions/restaurant/{restaurantId}:
+    get:
+      summary: Read one Restaurant catalog record through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Authoritative Restaurant detail}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/restaurant/availability:
+    post:
+      summary: Check authoritative Restaurant table availability
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}}}
+      responses:
+        '200': {description: Availability result}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/restaurant/hold:
+    post:
+      summary: Create an actor-scoped Restaurant reservation hold
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantHoldRequest'}}}
+      responses:
+        '201': {description: Reservation hold}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency or availability conflict}
+  /api/v1/service-actions/healthcare/doctors:
+    get:
+      summary: List authoritative Healthcare doctors by department
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: department
+          in: query
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200': {description: Healthcare doctor results}
+        '400': {description: Department is required}
+        '401': {description: Missing or invalid user token}
+  /api/v1/service-actions/healthcare/hold:
+    post:
+      summary: Hold an actor-scoped Healthcare slot
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/HealthcareHoldRequest'}}}
+      responses:
+        '201': {description: Healthcare appointment hold}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Slot or idempotency conflict}
+  /api/v1/service-actions/ride/prepare:
+    post:
+      summary: Prepare an explicit Ride booking from a quote
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RidePrepareRequest'}}}
+      responses:
+        '200': {description: Prepared Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Quote, confirmation, or idempotency conflict}
+  /api/v1/service-actions/ride/{bookingId}/confirm:
+    post:
+      summary: Execute explicit final Ride booking confirmation
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+        - {$ref: '#/components/parameters/BookingId'}
+      responses:
+        '200': {description: Confirmed Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Confirmation, payment, or idempotency conflict}
+
   /api/v1/rides/{bookingId}/tracking:
     get:
       summary: Read actor-scoped Ride tracking and route snapshot
@@ -207,6 +342,25 @@ paths:
     get:
       summary: List unified actor-scoped history across domain services and Core conversations
       security: [{bearerAuth: []}]
+      parameters:
+        - name: service
+          in: query
+          schema: {type: string, enum: [food_order, ride_booking, restaurant_reservation, healthcare_appointment]}
+        - name: status
+          in: query
+          schema: {type: string, maxLength: 80}
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
         '200': {description: Unified history; partial and unavailable fields identify degraded domains}
         '401': {description: Missing or invalid user token}
@@ -506,6 +660,16 @@ components:
     ResourceId:
       in: path
       name: id
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    RestaurantId:
+      in: path
+      name: restaurantId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    CartId:
+      in: path
+      name: cartId
       required: true
       schema: {type: string, minLength: 1, maxLength: 128}
     PatientId:
@@ -834,6 +998,57 @@ components:
       properties:
         data: {type: object, additionalProperties: true}
         meta: {type: object, additionalProperties: true}
+    FoodCartRequest:
+      type: object
+      required: [restaurant_id]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string, minLength: 1}
+    FoodCartItemRequest:
+      type: object
+      required: [menu_item_id, quantity]
+      additionalProperties: false
+      properties:
+        menu_item_id: {type: string, minLength: 1}
+        quantity: {type: integer, minimum: 1, maximum: 50}
+        note: {type: string, maxLength: 500}
+        selected_options:
+          type: array
+          items:
+            type: object
+            required: [group_id, option_id]
+            additionalProperties: false
+            properties:
+              group_id: {type: string, minLength: 1}
+              option_id: {type: string, minLength: 1}
+    RestaurantAvailabilityRequest:
+      type: object
+      required: [restaurant_id, party_size, start_at]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string, minLength: 1}
+        party_size: {type: integer, minimum: 1, maximum: 50}
+        start_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
+        seating_type: {type: string, maxLength: 80}
+    RestaurantHoldRequest:
+      allOf:
+        - {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}
+      description: Availability request used to create an idempotent hold.
+    HealthcareHoldRequest:
+      type: object
+      required: [slot_id, symptoms]
+      additionalProperties: false
+      properties:
+        slot_id: {type: integer, minimum: 1}
+        patient_id: {type: integer, minimum: 1}
+        symptoms: {type: string, minLength: 1, maxLength: 2000}
+    RidePrepareRequest:
+      type: object
+      required: [quote_id]
+      additionalProperties: false
+      properties:
+        quote_id: {type: string, minLength: 1, maxLength: 128}
     RideQuoteRequest:
       type: object
       required: [pickup_address, dropoff_address]

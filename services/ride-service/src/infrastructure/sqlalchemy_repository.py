@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from math import atan2, cos, radians, sin, sqrt
+from typing import Any
+from uuid import uuid4
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,12 +13,90 @@ from src.infrastructure.models import (
     ConfirmationConsumptionRow,
     IdempotencyRow,
     QuoteRow,
+    RideDriverRow,
+    RideTariffRow,
+    RideTrackingEventRow,
 )
 
 
 class SqlAlchemyRideRepository:
     def __init__(self, session: Session):
         self.session = session
+
+    def get_active_tariff(self, vehicle_type: str) -> dict[str, Any] | None:
+        row = self.session.scalar(
+            select(RideTariffRow)
+            .where(RideTariffRow.vehicle_type == vehicle_type, RideTariffRow.active.is_(True))
+            .order_by(RideTariffRow.created_at.desc())
+            .limit(1)
+        )
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "vehicle_type": row.vehicle_type,
+            "version": row.version,
+            "base_fee": row.base_fee,
+            "per_km": row.per_km,
+            "per_minute": row.per_minute,
+            "active": row.active,
+        }
+
+    def find_and_assign_driver(
+        self,
+        vehicle_type: str,
+        pickup_latitude: float | None,
+        pickup_longitude: float | None,
+    ) -> dict[str, Any] | None:
+        if pickup_latitude is None or pickup_longitude is None:
+            return None
+        candidates = self.session.scalars(
+            select(RideDriverRow)
+            .where(
+                RideDriverRow.vehicle_type == vehicle_type,
+                RideDriverRow.availability_status == "AVAILABLE",
+            )
+            .with_for_update()
+        ).all()
+        eligible = [
+            (row, _distance_km(pickup_latitude, pickup_longitude, float(row.latitude), float(row.longitude)))
+            for row in candidates
+            if _valid_coordinate(float(row.latitude), float(row.longitude))
+        ]
+        if not eligible:
+            return None
+        driver, distance_km = min(eligible, key=lambda item: (item[1], item[0].id))
+        driver.availability_status = "ASSIGNED"
+        driver.updated_at = utc_now()
+        eta_seconds = max(60, min(900, int(round(distance_km / 0.35 * 60))))
+        return {
+            "id": driver.id,
+            "display_name": driver.display_name,
+            "phone_masked": driver.phone_masked,
+            "rating": float(driver.rating),
+            "vehicle": driver.vehicle,
+            "location": {"latitude": float(driver.latitude), "longitude": float(driver.longitude)},
+            "eta_seconds": eta_seconds,
+            "distance_to_pickup_km": round(distance_km, 3),
+        }
+
+    def record_tracking_event(
+        self,
+        booking_id: str,
+        status: str,
+        progress: float,
+        current_location: dict[str, Any] | None,
+    ) -> None:
+        self.session.add(
+            RideTrackingEventRow(
+                id=f"track_{uuid4().hex[:24]}",
+                booking_id=booking_id,
+                status=status,
+                progress=progress,
+                current_location=current_location,
+                occurred_at=utc_now(),
+            )
+        )
 
     def get_quote(self, quote_id: str) -> Quote | None:
         row = self.session.get(QuoteRow, quote_id)
@@ -145,3 +227,14 @@ def _booking_from_row(row: BookingRow) -> Booking:
         driver_id=row.driver_id,
         tracking_started_at=row.tracking_started_at,
     )
+
+
+def _valid_coordinate(latitude: float, longitude: float) -> bool:
+    return -90 <= latitude <= 90 and -180 <= longitude <= 180
+
+
+def _distance_km(latitude_a: float, longitude_a: float, latitude_b: float, longitude_b: float) -> float:
+    d_lat = radians(latitude_b - latitude_a)
+    d_lon = radians(longitude_b - longitude_a)
+    value = sin(d_lat / 2) ** 2 + cos(radians(latitude_a)) * cos(radians(latitude_b)) * sin(d_lon / 2) ** 2
+    return 6371 * 2 * atan2(sqrt(value), sqrt(1 - value))

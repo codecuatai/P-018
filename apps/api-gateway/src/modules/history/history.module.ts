@@ -1,4 +1,6 @@
-import { BadRequestException, Controller, Get, Injectable, Module, Param, Req, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Injectable, Module, Param, Query, Req, ServiceUnavailableException, UseGuards } from '@nestjs/common';
+import { Type } from 'class-transformer';
+import { IsIn, IsISO8601, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -21,11 +23,43 @@ export interface HistoryItem {
   resource: JsonObject;
 }
 
+export class HistoryQueryDto {
+  @IsOptional()
+  @IsIn(['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'])
+  service?: HistoryType;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  status?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  from?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  to?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  page_size = 20;
+}
+
 @Injectable()
 export class HistoryService {
   constructor(private readonly food: FoodClient, private readonly ride: RideClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient, private readonly payments: PaymentService) {}
 
-  async list(actorId: string, correlationId: string): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
+  async list(actorId: string, correlationId: string, options: HistoryQueryDto = new HistoryQueryDto()): Promise<{ items: HistoryItem[]; total: number; page: number; page_size: number; has_more: boolean; partial: boolean; unavailable: string[] }> {
     const responses = await Promise.allSettled([
       this.food.listOrders(correlationId, actorId),
       this.ride.listBookings(actorId, { correlationId }),
@@ -45,7 +79,12 @@ export class HistoryService {
     });
     items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
     if (!items.length && unavailable.length === names.length) throw new ServiceUnavailableException({ code: 'HISTORY_UNAVAILABLE', detail: 'Lịch sử đang tạm thời chưa sẵn sàng.', retryable: true });
-    return { items, partial: unavailable.length > 0, unavailable };
+    const filtered = items.filter((item) => matchesHistory(item, options));
+    const page = options.page ?? 1;
+    const pageSize = options.page_size ?? 20;
+    const start = (page - 1) * pageSize;
+    const pageItems = filtered.slice(start, start + pageSize);
+    return { items: pageItems, total: filtered.length, page, page_size: pageSize, has_more: start + pageItems.length < filtered.length, partial: unavailable.length > 0, unavailable };
   }
 
   async get(type: HistoryType, id: string, actorId: string, correlationId: string): Promise<JsonObject> {
@@ -69,8 +108,8 @@ export class HistoryController {
   constructor(private readonly history: HistoryService) {}
 
   @Get()
-  list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return this.history.list(request.user.sub, request.correlationId ?? 'cor_unknown').then((data) => ({ data, meta: { request_id: request.correlationId } }));
+  list(@Query() query: HistoryQueryDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return this.history.list(request.user.sub, request.correlationId ?? 'cor_unknown', query).then((data) => ({ data, meta: { request_id: request.correlationId } }));
   }
 
   @Get(':type/:id')
@@ -104,6 +143,27 @@ function normalizeHistoryItem(type: HistoryType, resource: JsonObject): HistoryI
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function matchesHistory(item: HistoryItem, options: HistoryQueryDto): boolean {
+  if (options.service && item.type !== options.service) return false;
+  if (options.status && item.status.toLowerCase() !== options.status.trim().toLowerCase()) return false;
+  const timestamp = Date.parse(item.timestamp);
+  if (options.from) {
+    const from = Date.parse(options.from);
+    if (!Number.isFinite(timestamp) || !Number.isFinite(from) || timestamp < from) return false;
+  }
+  if (options.to) {
+    const to = dateFilterEnd(options.to);
+    if (!Number.isFinite(timestamp) || !Number.isFinite(to) || timestamp > to) return false;
+  }
+  return true;
+}
+
+function dateFilterEnd(value: string): number {
+  const parsed = Date.parse(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed)) return parsed;
+  return parsed + 24 * 60 * 60 * 1000 - 1;
 }
 
 @Module({ imports: [AuthModule, PaymentModule], controllers: [HistoryController], providers: [HistoryService] })

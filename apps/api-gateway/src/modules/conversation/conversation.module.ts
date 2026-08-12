@@ -30,8 +30,8 @@ export class ConversationService {
 
   async run(conversationId: string, user: AuthUser, message: string, correlationId: string, workflowContext?: JsonObject): Promise<JsonObject> {
     const current = await this.store.getConversation(conversationId, user.sub);
-    const messages = current?.messages ?? [];
-    return this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, messages, workflow_context: workflowContext ?? current?.state ?? {}, correlation_id: correlationId }, correlationId);
+    if (!current) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
+    return this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, messages: current.messages, workflow_context: workflowContext ?? current.state ?? {}, correlation_id: correlationId }, correlationId);
   }
 
   async send(conversationId: string, user: AuthUser, message: string, correlationId: string): Promise<JsonObject> {
@@ -85,7 +85,8 @@ export class FoodConversationController {
   @Get(':conversationId')
   async get(@Param('conversationId') conversationId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const conversation = await this.store.getConversation(conversationId, request.user.sub);
-    return { data: conversation ?? { conversation_id: conversationId, messages: [], state: {}, status: 'ACTIVE' }, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
+    if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
+    return { data: conversation, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
   }
 
   @Patch(':conversationId')

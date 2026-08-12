@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +16,7 @@ os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
 
 from src.config import get_settings
 from src.infrastructure.database import get_session
-from src.infrastructure.models import Base
+from src.infrastructure.models import Base, RideDriverRow, RideTariffRow
 from src.main import app
 
 
@@ -37,6 +38,19 @@ def client() -> Iterator[TestClient]:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    now = datetime.now(UTC)
+    with Session(engine) as seed_session:
+        seed_session.add_all(
+            [
+                RideTariffRow(id="tariff_test_bike_v1", vehicle_type="BIKE", version="TEST_2026_V1", base_fee=8_000, per_km=5_000, per_minute=700, active=True, created_at=now),
+                RideTariffRow(id="tariff_test_car4_v1", vehicle_type="CAR_4", version="TEST_2026_V1", base_fee=10_000, per_km=7_000, per_minute=1_000, active=True, created_at=now),
+                RideTariffRow(id="tariff_test_car7_v1", vehicle_type="CAR_7", version="TEST_2026_V1", base_fee=15_000, per_km=9_000, per_minute=1_300, active=True, created_at=now),
+                RideDriverRow(id="driver_simulated_bike_001", display_name="Quang Huy", vehicle_type="BIKE", vehicle_model="Wave RSX", vehicle_color="Den", license_plate="29K1-390.80", phone_masked="*** *** 3908", rating=4.9, latitude=21.0285, longitude=105.8048, vehicle={"type": "BIKE", "model": "Wave RSX"}, availability_status="AVAILABLE", created_at=now, updated_at=now),
+                RideDriverRow(id="driver_simulated_001", display_name="Minh Anh", vehicle_type="CAR_4", vehicle_model="Vios", vehicle_color="Trang", license_plate="30H-482.19", phone_masked="*** *** 4821", rating=4.9, latitude=21.0301, longitude=105.8122, vehicle={"type": "CAR_4", "model": "Vios"}, availability_status="AVAILABLE", created_at=now, updated_at=now),
+                RideDriverRow(id="driver_simulated_car7_001", display_name="Duc Long", vehicle_type="CAR_7", vehicle_model="Xpander", vehicle_color="Bac", license_plate="30G-552.07", phone_masked="*** *** 5520", rating=4.9, latitude=21.0186, longitude=105.8230, vehicle={"type": "CAR_7", "model": "Xpander"}, availability_status="AVAILABLE", created_at=now, updated_at=now),
+            ]
+        )
+        seed_session.commit()
 
     def override_session() -> Iterator[Session]:
         with Session(engine) as session:

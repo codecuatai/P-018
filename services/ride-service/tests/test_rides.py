@@ -19,16 +19,19 @@ def _headers(*, actor: str = ACTOR, key: str | None = None) -> dict[str, str]:
     return headers
 
 
-def _create_quote(client: TestClient, *, key: str = "quote-key") -> dict:
+def _create_quote(client: TestClient, *, key: str = "quote-key", with_coordinates: bool = True) -> dict:
+    payload = {
+        "pickup_address": "VinUni, Gia Lam",
+        "dropoff_address": "Ho Guom, Hoan Kiem",
+        "vehicle_type": "CAR_4",
+        "promo_code": "SAVE5000",
+    }
+    if with_coordinates:
+        payload.update({"pickup_latitude": 21.0285, "pickup_longitude": 105.8048, "dropoff_latitude": 21.0301, "dropoff_longitude": 105.8122})
     response = client.post(
         "/v1/quotes",
         headers=_headers(key=key),
-        json={
-            "pickup_address": "VinUni, Gia Lam",
-            "dropoff_address": "Ho Guom, Hoan Kiem",
-            "vehicle_type": "CAR_4",
-            "promo_code": "SAVE5000",
-        },
+        json=payload,
     )
     assert response.status_code == 201
     return response.json()["data"]
@@ -94,7 +97,7 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
     replay = _create_quote(client)
     assert replay == first
     assert first["currency"] == "VND"
-    assert first["tariff_version"] == "SIM_2026_08_V1"
+    assert first["tariff_version"] == "TEST_2026_V1"
 
     conflict = client.post(
         "/v1/quotes",
@@ -248,7 +251,7 @@ def test_v2_quote_keeps_coordinate_route_snapshot_and_tariff(client: TestClient)
 
 
 def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: TestClient) -> None:
-    quote = _create_quote(client, key="tracking-quote")
+    quote = _create_quote(client, key="tracking-quote", with_coordinates=False)
     booking = _prepare(client, quote)
     payment_reference = "payment_tracking"
     bound_payload = {
@@ -271,4 +274,5 @@ def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: Te
     second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
     assert first.status_code == 200
     assert first.json()["data"] == second.json()["data"]
+    assert first.json()["data"]["status"] == "NO_DRIVER"
     assert first.json()["data"]["driver_location"] is None
