@@ -16,6 +16,8 @@ import { PersonalModule } from './modules/personal/personal.module';
 import { HistoryModule } from './modules/history/history.module';
 import { ServicesModule } from './modules/services/services.module';
 import { ReliabilityModule } from './modules/workflow/reliability.module';
+import { ProductOpsModule } from './modules/product-ops/product-ops.controller';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -34,6 +36,8 @@ import { ReliabilityModule } from './modules/workflow/reliability.module';
     PaymentModule,
     ToolModule,
     AuditModule,
+    ProductOpsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

@@ -113,10 +113,15 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['UPSTREAM_TIMEOUT_MS', 'CONFIRMATION_TTL_SECONDS', 'GATEWAY_WORKFLOW_POLL_INTERVAL_MS']) {
     if (config[name] !== undefined && (!Number.isInteger(Number(config[name])) || Number(config[name]) < 1)) throw new Error(`${name} must be a positive integer.`);
   }
+  const localDeterministicLocationFallback = String(config.LOCAL_DETERMINISTIC_LOCATION_FALLBACK ?? 'false').toLowerCase();
+  if (!['true', 'false'].includes(localDeterministicLocationFallback)) throw new Error('LOCAL_DETERMINISTIC_LOCATION_FALLBACK must be true or false.');
+  if (String(config.APP_ENV) === 'production' && localDeterministicLocationFallback === 'true') {
+    throw new Error('LOCAL_DETERMINISTIC_LOCATION_FALLBACK must be disabled in production.');
+  }
   for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
     if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
   }
-  for (const name of ['LOCATION_PROVIDER_URL']) {
+  for (const name of ['LOCATION_PROVIDER_URL', 'GEOCODING_PROVIDER_URL', 'ROUTING_PROVIDER_URL']) {
     if (config[name] !== undefined && String(config[name]).trim() !== '') {
       try {
         const url = new URL(String(config[name]).trim());
@@ -167,6 +172,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     AUTH_AUDIENCE: String(config.AUTH_AUDIENCE).trim(),
     AUTH_REFRESH_COOKIE_NAME: String(config.AUTH_REFRESH_COOKIE_NAME).trim(),
     AUTH_DEV_RESET_TOKEN_CAPTURE: authDevResetTokenCapture === 'true',
+    LOCAL_DETERMINISTIC_LOCATION_FALLBACK: localDeterministicLocationFallback === 'true',
   };
 }
 

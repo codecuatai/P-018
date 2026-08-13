@@ -236,8 +236,10 @@ export class LocationService {
     const query = addressText.trim().replace(/\s+/g, ' ');
     if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Địa chỉ cần ít nhất 3 ký tự.', retryable: false });
 
-    const providerUrl = this.providerUrl();
+    const providerUrl = this.geocodingProviderUrl();
     if (!providerUrl) {
+      const localCandidate = this.localDeterministicCandidate(query);
+      if (localCandidate) return { provider: 'deterministic-local-demo', status: 'RESOLVED', query, candidates: [localCandidate] };
       return { provider: 'deterministic-manual', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }] };
     }
 
@@ -246,27 +248,27 @@ export class LocationService {
       url.searchParams.set('q', query);
       url.searchParams.set('format', 'jsonv2');
       url.searchParams.set('limit', '3');
-      const payload = await this.fetchJson(url);
+      const payload = await this.fetchJson(url, 'GEOCODING_PROVIDER_TOKEN');
       const candidates = Array.isArray(payload)
         ? payload.map((item) => this.parseGeocodeCandidate(item)).filter((item): item is GeocodeCandidate => item !== undefined)
         : [];
-      if (candidates.length) return { provider: 'configured-location-provider', status: 'RESOLVED', query, candidates };
-      return { provider: 'configured-location-provider', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }] };
+      if (candidates.length) return { provider: 'configured-geocoding-provider', status: 'RESOLVED', query, candidates };
+      return { provider: 'configured-geocoding-provider', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }] };
     } catch {
-      return { provider: 'configured-location-provider-unavailable', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }], retryable: true };
+      return { provider: 'configured-geocoding-provider-unavailable', status: 'NEEDS_CONFIRMATION', query, candidates: [{ address_text: query, latitude: null, longitude: null, confidence: 0 }], retryable: true };
     }
   }
 
   async route(origin: LocationCoordinate, destination: LocationCoordinate): Promise<RouteResult> {
     assertCoordinate(origin, 'origin');
     assertCoordinate(destination, 'destination');
-    const providerUrl = this.providerUrl();
+    const providerUrl = this.routingProviderUrl();
     if (providerUrl) {
       try {
         const url = new URL(`/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`, providerUrl);
         url.searchParams.set('overview', 'full');
         url.searchParams.set('geometries', 'polyline');
-        const payload = await this.fetchJson(url);
+        const payload = await this.fetchJson(url, 'ROUTING_PROVIDER_TOKEN');
         const route = isRecord(payload) && Array.isArray(payload.routes) && isRecord(payload.routes[0]) ? payload.routes[0] : undefined;
         const distanceMeters = numberValue(route?.distance);
         const durationSeconds = numberValue(route?.duration);
@@ -303,8 +305,20 @@ export class LocationService {
     };
   }
 
-  private providerUrl(): URL | undefined {
-    const configured = this.config.get<string>('LOCATION_PROVIDER_URL')?.trim();
+  private geocodingProviderUrl(): URL | undefined { return this.configuredProviderUrl('GEOCODING_PROVIDER_URL'); }
+  private routingProviderUrl(): URL | undefined { return this.configuredProviderUrl('ROUTING_PROVIDER_URL'); }
+
+  private localDeterministicCandidate(query: string): GeocodeCandidate | undefined {
+    if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
+    const normalized = query.toLowerCase();
+    const coordinates = normalized.includes('nguyễn huệ') || normalized.includes('nguyen hue') || normalized.includes('lê lợi') || normalized.includes('le loi') || normalized.includes('quận 1') || normalized.includes('quan 1')
+      ? { latitude: 10.7758, longitude: 106.7004 }
+      : { latitude: 21.0285, longitude: 105.8048 };
+    return { address_text: query, ...coordinates, confidence: 0.5 };
+  }
+
+  private configuredProviderUrl(name: 'GEOCODING_PROVIDER_URL' | 'ROUTING_PROVIDER_URL'): URL | undefined {
+    const configured = this.config.get<string>(name)?.trim() || this.config.get<string>('LOCATION_PROVIDER_URL')?.trim();
     if (!configured) return undefined;
     try {
       return new URL(configured.endsWith('/') ? configured : `${configured}/`);
@@ -313,11 +327,11 @@ export class LocationService {
     }
   }
 
-  private async fetchJson(url: URL): Promise<unknown> {
+  private async fetchJson(url: URL, tokenName: 'GEOCODING_PROVIDER_TOKEN' | 'ROUTING_PROVIDER_TOKEN'): Promise<unknown> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
-      const token = this.config.get<string>('LOCATION_PROVIDER_TOKEN')?.trim();
+      const token = this.config.get<string>(tokenName)?.trim() || this.config.get<string>('LOCATION_PROVIDER_TOKEN')?.trim();
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {

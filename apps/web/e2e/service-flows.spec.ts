@@ -13,7 +13,7 @@ test("Food browse → menu → cart → preview → explicit order → receipt/h
   await page.getByRole("checkbox", { name: /Xác nhận đặt món/ }).check();
   await page.getByRole("button", { name: "Xác nhận" }).last().click();
   await expect(page.getByText("Đơn đã được tiếp nhận")).toBeVisible();
-  await page.getByRole("link", { name: "Lịch sử" }).click();
+  await page.goto("/app/history");
   await expect(page.getByText("food order")).toBeVisible();
   expect(mock.id).toBe("address-a");
 });
@@ -29,7 +29,7 @@ test("Ride quote → two confirmations → persisted tracking lifecycle", async 
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await page.getByRole("checkbox", { name: /xác nhận thanh toán/i }).check();
   await page.getByRole("button", { name: "Xác nhận" }).click();
-  await expect(page.getByText("Đang tìm tài xế")).toBeVisible();
+  await expect(page.getByText("Booking đã ghi nhận")).toBeVisible();
   for (let index = 0; index < 5; index += 1) await page.getByRole("button", { name: "Cập nhật trạng thái chuyến xe" }).click();
   await expect(page.getByText("Đã hoàn tất")).toBeVisible();
   expect(gateway.calls.filter((call) => call.path.endsWith("/tracking")).length).toBeGreaterThanOrEqual(1);
@@ -43,7 +43,7 @@ test("Restaurant hold → confirmation → reservation history", async ({ contex
   await page.getByRole("button", { name: "Giữ bàn tạm thời" }).click();
   await page.getByRole("button", { name: "Xem xác nhận" }).click();
   await page.getByRole("checkbox", { name: /Xác nhận đặt bàn/ }).check();
-  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await page.getByRole("button", { name: "Xác nhận", exact: true }).click();
   await expect(page.getByText("Đặt bàn đã hoàn tất")).toBeVisible();
 });
 
@@ -93,9 +93,9 @@ test("cross-user resource access is denied by the Gateway boundary", async ({ br
   const otherGateway = await installAuthenticatedFixture(otherContext, { email: "other@example.test", foreignIds: ["address-a", "conversation-a", "food-order-1", "ride-booking-1", "reservation-1", "91"] });
   const otherPage = await otherContext.newPage();
   await otherPage.goto("/app/history/ride_booking/ride-booking-1");
-  await expect(otherPage.getByRole("alert")).toBeVisible();
+  await expect(otherPage.locator(".error-panel").first()).toBeVisible();
   await otherPage.goto("/app/conversations/conversation-a");
-  await expect(otherPage.getByRole("alert")).toBeVisible();
+  await expect(otherPage.locator(".error-panel").first()).toBeVisible();
   await otherPage.goto("/app/addresses");
   await expect(otherPage.getByText("Chưa có địa chỉ")).toBeVisible();
   expect(otherGateway.deniedRequests.length).toBeGreaterThan(0);

@@ -167,3 +167,17 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 `services/healthcare-sandbox/src/main.py` contains a standalone mock with `/api/v1/departments`, `/api/v1/doctors`, `/api/v1/slots/hold`, `/api/v1/appointments/{appointment_id}/confirm`, `/api/v1/appointments/{appointment_id}/cancel`, and `/api/v1/payment/webhook`. It is not wired into Compose or Gateway and is classified `DEPRECATED`; use `services/healthcare-service` through Gateway for any current flow. It must not be read as a second Healthcare owner.
 
 The legacy Food address route remains a private domain compatibility endpoint; the canonical saved-address API is the actor-scoped Gateway resource above. All new public browser callers must use Gateway routes and the `gateway-v1.yaml` contract.
+
+## Product/Ops and Admin Gateway routes (2026-08-13)
+
+| Owner | Method | Path | Caller | Auth boundary | Classification | Replacement / migration path |
+| --- | --- | --- | --- | --- | --- | --- |
+| Gateway | GET, POST | `/api/v1/notifications`, `/api/v1/notifications/unread-count` | Web/mobile | Bearer actor scope; event/reminder projection is idempotent | `PUBLIC_CANONICAL` | Durable Core notification center. |
+| Gateway | POST | `/api/v1/notifications/{id}/read`, `/api/v1/notifications/read-all` | Web/mobile | Bearer actor scope | `PUBLIC_CANONICAL` | Actor-owned read state only. |
+| Gateway | GET, POST, DELETE | `/api/v1/favorites`, `/api/v1/favorites/{id}` | Web/mobile | Bearer actor scope; owning-domain resource validation | `PUBLIC_CANONICAL` | Core stores references; the domain remains authoritative. |
+| Gateway | GET, POST | `/api/v1/feedback/mine`, `/api/v1/feedback` | Web/mobile | Bearer actor scope; completed-resource ownership validation | `PUBLIC_CANONICAL` | Product feedback, not Agent evaluation. |
+| Gateway | GET, POST | `/api/v1/support/tickets`, `/api/v1/support/tickets/{id}/messages` | Web/mobile | Bearer actor scope and linked-resource validation | `PUBLIC_CANONICAL` | Durable Core support timeline. |
+| Gateway | POST | `/api/v1/reorders/{food|ride|restaurant|healthcare}/{resourceId}` | Web/mobile | Bearer actor scope; fresh current-domain validation | `PUBLIC_CANONICAL` | Preparation only; never replays old price, hold or final action. |
+| Gateway | GET | `/api/v1/admin/summary`, `/users`, `/transactions`, `/payments`, `/workflows` | Admin Web | Server-side AdminGuard | `PUBLIC_CANONICAL` | Operational reads assembled through typed domain clients. |
+| Gateway | GET | `/api/v1/admin/datasets`, `/system-health`, `/support-tickets` | Admin Web | Server-side AdminGuard | `PUBLIC_CANONICAL` | Dataset freshness and dependency health are explicit. |
+| Gateway | PATCH | `/api/v1/admin/support-tickets/{id}` | Admin Web | Server-side AdminGuard plus required idempotency key | `PUBLIC_CANONICAL` | Same-payload replay returns the same ticket without a second audit side effect. |

@@ -2,7 +2,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient } from 'pg';
 
-import { AuthAccount, AuthSession, AuthUserStatus } from './auth.types';
+import { AdminUserSummary, AuthAccount, AuthSession, AuthUserStatus } from './auth.types';
 
 export class DuplicateAuthEmailError extends Error {
   constructor() {
@@ -25,6 +25,7 @@ export interface AuthRepository {
   createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount>;
   getUserByEmailNormalized(emailNormalized: string): Promise<AuthAccount | undefined>;
   getUserById(id: string): Promise<AuthAccount | undefined>;
+  listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }>;
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined>;
   createSession(session: AuthSession): Promise<AuthSession>;
   getSessionByRefreshHash(refreshTokenHash: string): Promise<AuthSession | undefined>;
@@ -77,6 +78,13 @@ export class InMemoryAuthRepository implements AuthRepository {
   async getUserById(id: string): Promise<AuthAccount | undefined> {
     const account = this.usersById.get(id);
     return account ? clone(account) : undefined;
+  }
+
+  async listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> {
+    const all = [...this.usersById.values()]
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    const start = (Math.max(page, 1) - 1) * pageSize;
+    return { total: all.length, items: all.slice(start, start + pageSize).map(adminUserFromAccount) };
   }
 
   async updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> {
@@ -261,6 +269,16 @@ export class PostgresAuthRepository implements AuthRepository {
   async getUserById(id: string): Promise<AuthAccount | undefined> {
     const result = await this.pool.query(this.accountSelect('u.id=$1'), [id]);
     return result.rows[0] ? this.accountFromRow(result.rows[0] as Record<string, unknown>) : undefined;
+  }
+
+  async listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> {
+    const safePage = Math.max(page, 1);
+    const safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    const [count, rows] = await Promise.all([
+      this.pool.query('SELECT count(*)::int AS count FROM users'),
+      this.pool.query('SELECT id,email,full_name,phone,role,status,onboarding_completed_at,created_at,updated_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2', [safePageSize, (safePage - 1) * safePageSize]),
+    ]);
+    return { total: Number(count.rows[0]?.count ?? 0), items: rows.rows.map((row) => adminUserFromRow(row as Record<string, unknown>)) };
   }
 
   async updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> {
@@ -490,6 +508,7 @@ export class AuthStore implements OnModuleDestroy {
   createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount> { return this.repository.createUserWithSession(account, session); }
   getUserByEmailNormalized(email: string): Promise<AuthAccount | undefined> { return this.repository.getUserByEmailNormalized(email); }
   getUserById(id: string): Promise<AuthAccount | undefined> { return this.repository.getUserById(id); }
+  listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> { return this.repository.listUsers(page, pageSize); }
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> { return this.repository.updateProfile(id, patch); }
   createSession(session: AuthSession): Promise<AuthSession> { return this.repository.createSession(session); }
   getSessionByRefreshHash(hash: string): Promise<AuthSession | undefined> { return this.repository.getSessionByRefreshHash(hash); }
@@ -503,4 +522,32 @@ export class AuthStore implements OnModuleDestroy {
   createPasswordResetToken(value: { id: string; userId: string; tokenHash: string; expiresAt: string; createdAt: string }): Promise<void> { return this.repository.createPasswordResetToken(value); }
   consumePasswordResetToken(hash: string, passwordHash: string, now: string): Promise<ResetConsumption> { return this.repository.consumePasswordResetToken(hash, passwordHash, now); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }
+}
+
+function adminUserFromAccount(account: AuthAccount): AdminUserSummary {
+  return {
+    id: account.id,
+    email: account.email,
+    full_name: account.fullName,
+    ...(account.phone ? { phone: account.phone } : {}),
+    role: account.role,
+    status: account.status,
+    ...(account.onboardingCompletedAt ? { onboarding_completed_at: account.onboardingCompletedAt } : {}),
+    created_at: account.createdAt,
+    updated_at: account.updatedAt,
+  };
+}
+
+function adminUserFromRow(row: Record<string, unknown>): AdminUserSummary {
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    full_name: String(row.full_name),
+    ...(row.phone ? { phone: String(row.phone) } : {}),
+    role: String(row.role) === 'admin' ? 'admin' : 'customer',
+    status: String(row.status) === 'disabled' ? 'disabled' : 'active',
+    ...(row.onboarding_completed_at ? { onboarding_completed_at: new Date(String(row.onboarding_completed_at)).toISOString() } : {}),
+    created_at: new Date(String(row.created_at)).toISOString(),
+    updated_at: new Date(String(row.updated_at)).toISOString(),
+  };
 }

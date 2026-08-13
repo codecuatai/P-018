@@ -35,6 +35,24 @@
   still required before a multi-instance production deployment; this phase
   deliberately does not add Redis or queue infrastructure.
 
+## Product/Ops and local acceptance hardening
+
+- Notifications, favorites, feedback and support endpoints are actor scoped;
+  resource-linked writes are checked through the owning domain client. Admin
+  routes use a server-side role guard, so a normal user cannot rely on a
+  frontend role check to reach operational data.
+- Product final actions retain the two explicit confirmations and domain-owned
+  idempotency. Admin support update replays are keyed by actor/operation/key
+  and request hash; a changed payload is rejected and a same-payload replay
+  does not repeat the audit effect.
+- The local deterministic geocode fallback is rejected in production, and the
+  Ride tracking time scale is constrained to `1.0` in production. Local
+  accelerated tracking and synthetic drivers are test/demo controls only.
+- Live browser listeners treated page errors, `console.error`, and failed
+  non-aborted requests as acceptance failures. The verified local transaction
+  flow produced no unexplained browser errors; no secret, raw prompt or token
+  was printed.
+
 ## Cookie-origin and CSRF policy
 
 Cookie-authenticated refresh/logout operations require an `Origin` in the

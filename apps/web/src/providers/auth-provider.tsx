@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, login as apiLogin, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
 import type { AuthUser } from "@/types";
 
-type AuthStatus = "loading" | "authenticated" | "unauthenticated";
+type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signed-out";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -29,11 +29,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("loading");
   const authGeneration = useRef(0);
 
-  const clear = useCallback(() => {
+  const clear = useCallback((nextStatus: AuthStatus = "unauthenticated") => {
     authGeneration.current += 1;
     clearAuthSession();
     setUser(null);
-    setStatus("unauthenticated");
+    setStatus(nextStatus);
   }, []);
 
   useEffect(() => {
@@ -74,23 +74,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clear, pathname]);
 
   const login = useCallback(async (email: string, password: string) => {
-    authGeneration.current += 1;
-    const authenticated = await apiLogin(email, password);
+    const generation = ++authGeneration.current;
+    const authenticated = await apiLogin(email, password, () => authGeneration.current === generation);
+    if (authGeneration.current !== generation) return authenticated;
     setUser(authenticated);
     setStatus("authenticated");
     return authenticated;
   }, []);
 
   const register = useCallback(async (fullName: string, email: string, password: string) => {
-    authGeneration.current += 1;
-    const authenticated = await apiRegister(fullName, email, password);
+    const generation = ++authGeneration.current;
+    const authenticated = await apiRegister(fullName, email, password, () => authGeneration.current === generation);
+    if (authGeneration.current !== generation) return authenticated;
     setUser(authenticated);
     setStatus("authenticated");
     return authenticated;
   }, []);
 
   const logout = useCallback(async () => {
-    try { await apiLogout(); } finally { clear(); }
+    clear("signed-out");
+    try { await apiLogout(); } finally { clear("signed-out"); }
   }, [clear]);
 
   const updateProfile = useCallback(async (patch: Parameters<typeof apiUpdateProfile>[0]) => {

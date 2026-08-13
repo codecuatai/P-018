@@ -328,6 +328,27 @@ paths:
         '401': {$ref: '#/components/responses/Error401'}
         '409': {$ref: '#/components/responses/Error409'}
         '422': {$ref: '#/components/responses/Error422'}
+  /internal/ops/summary:
+    get:
+      tags: [internal]
+      summary: Read Food operational counts
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Operational summary}, '401': {$ref: '#/components/responses/Error401'}}
+  /internal/ops/dataset-status:
+    get:
+      tags: [internal]
+      summary: Read Food dataset status
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Dataset status}, '401': {$ref: '#/components/responses/Error401'}}
+  /internal/ops/transactions:
+    get:
+      tags: [internal]
+      summary: Read paged Food transactions
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      responses: {'200': {description: Paged transactions}, '401': {$ref: '#/components/responses/Error401'}}
 components:
   parameters:
     CorrelationId: {name: X-Correlation-Id, in: header, required: false, schema: {type: string}}

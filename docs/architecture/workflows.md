@@ -216,3 +216,20 @@ Workflow plans and step idempotency evidence are persisted in Core migration
 `011_core_multi_service_workflows.sql`. Re-reading the plan after Gateway
 process recreation returns the same state; domain writes still use their own
 typed clients, confirmation evidence, and domain idempotency keys.
+
+## Product/Ops workflow
+
+Completed domain events are projected by the Gateway into Core-owned,
+actor-scoped notifications using deterministic `event_key` values. Opening the
+notification center also creates missing Healthcare reminder records inside
+the local reminder window; polling and retries are idempotent. Favorites and
+feedback first validate the authoritative resource through its owning service.
+Feedback is accepted only for an actor-owned completed transaction.
+
+History actions create a fresh reorder/rebook preparation: current menu,
+tariff, availability or Healthcare slots are re-read and no old final price,
+hold or confirmation is replayed. Support tickets store a Core timeline and
+are linked to a transaction only after Gateway ownership validation. Admin
+support changes require the server-side Admin guard and a durable idempotency
+key; a same-payload replay returns the existing ticket without repeating the
+audit side effect.

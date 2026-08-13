@@ -19,6 +19,21 @@ def test_service_config_fails_when_token_missing(monkeypatch: pytest.MonkeyPatch
         get_settings()
 
 
+def test_tracking_time_scale_is_allowed_for_local_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("TRACKING_TIME_SCALE", "60")
+    get_settings.cache_clear()
+    assert get_settings().tracking_time_scale == 60
+
+
+def test_tracking_time_scale_is_rejected_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("TRACKING_TIME_SCALE", "2")
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
 def test_postgresql_url_selects_declared_psycopg_driver() -> None:
     source = "postgresql://ride_user:password@postgres:5432/xone_ride"
     assert sqlalchemy_database_url(source) == (

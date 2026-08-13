@@ -31,3 +31,21 @@ Restaurant catalog provenance is extended by the owner-local Alembic revisions
 the Restaurant-owned `catalog_dataset_versions` table used by the importer to
 record the active dataset version and repeatable apply/audit evidence; it does
 not create a cross-domain catalog or shared database authority.
+
+## Product/Ops and local demo persistence
+
+Core migration `012_core_product_ops.sql` adds actor-scoped durable
+`notifications`, `user_favorites`, `service_feedback`, `support_tickets` and
+`support_ticket_events`. These tables store references such as
+`domain/resource_id`; they do not copy or become authoritative for Food, Ride,
+Restaurant or Healthcare transactions. Migration
+`013_core_admin_support_idempotency.sql` adds request-hash/idempotency evidence
+for Admin support updates so a replay returns the same ticket without a second
+audit side effect.
+
+The additive local seed adds only recognizable demo records: Healthcare
+department/doctor/slot rows and 36 synthetic Ride drivers with complete
+vehicle/license fields. `scripts/demo-reset.ps1` deletes mutable records only
+for explicitly matched actors and preserves catalogs and dataset versions by
+default. Local geocode fallback coordinates and accelerated Ride tracking are
+configuration flags, not production data or domain authority.

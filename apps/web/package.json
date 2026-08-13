@@ -12,7 +12,9 @@
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:live": "playwright test --config=playwright.live.config.ts",
+    "test:e2e:live:headed": "playwright test --config=playwright.live.config.ts --headed"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.1.1",

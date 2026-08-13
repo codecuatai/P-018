@@ -95,7 +95,7 @@ export function ForgotPasswordForm() {
     }
   }
 
-  return sent ? <div className="auth-success" role="status"><Mail size={20} /><h2>Yêu cầu đã được ghi nhận</h2><p>Nếu tài khoản và kênh gửi đã được cấu hình, hướng dẫn sẽ được gửi theo cách phù hợp. Bạn có thể quay lại trang chủ để đăng nhập.</p><Link className="button button-primary button-wide" href="/">Về trang chủ</Link></div> : <form onSubmit={submit}><Field label="Email" id="forgot-email" type="email" value={email} onChange={setEmail} autoComplete="email" required /><FormFeedback error={error} /><Button className="button-wide" disabled={pending} type="submit">{pending ? <LoaderCircle className="spinner" size={17} /> : <Mail size={17} />}{pending ? "Đang gửi yêu cầu…" : "Gửi yêu cầu"}</Button><p className="auth-switch"><Link href="/">Về trang chủ</Link></p></form>;
+  return sent ? <div className="auth-success" role="status"><Mail size={20} /><h2>Yêu cầu đã được ghi nhận</h2><p>Nếu tài khoản và kênh gửi đã được cấu hình, hướng dẫn sẽ được gửi theo cách phù hợp. Bạn có thể quay lại trang chủ để đăng nhập.</p><Link className="button button-primary button-wide" href="/?auth=login">Đăng nhập</Link></div> : <form onSubmit={submit}><Field label="Email" id="forgot-email" type="email" value={email} onChange={setEmail} autoComplete="email" required /><FormFeedback error={error} /><Button className="button-wide" disabled={pending} type="submit">{pending ? <LoaderCircle className="spinner" size={17} /> : <Mail size={17} />}{pending ? "Đang gửi yêu cầu…" : "Gửi yêu cầu"}</Button><p className="auth-switch"><Link href="/?auth=login">Đăng nhập</Link></p></form>;
 }
 
 export function ResetPasswordPage() {
@@ -119,7 +119,7 @@ export function ResetPasswordPage() {
     try {
       await resetPassword(token, password);
       setSuccess(true);
-      window.setTimeout(() => router.replace("/"), 900);
+      window.setTimeout(() => router.replace("/?auth=login"), 900);
     } catch (requestError) {
       setError(errorText(requestError));
     } finally {

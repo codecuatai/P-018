@@ -269,6 +269,10 @@ export class AgentClient extends InternalServiceClient {
     super(config, 'AGENT_SERVICE_URL');
   }
 
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
   async interpret(
     message: string,
     workflowId: string,
@@ -324,6 +328,10 @@ export class RideClient extends InternalServiceClient {
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
 
   async createQuote(
     actorId: string,
@@ -425,6 +433,10 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+
   async searchCatalog(filters: { location?: string; cuisineType?: string; budgetRange?: string; limit?: number }, correlationId: string): Promise<JsonObject> {
     const query = new URLSearchParams();
     if (filters.location) query.set('location', filters.location);
@@ -525,6 +537,10 @@ export class HealthcareClient extends InternalServiceClient {
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
 
   async listDepartmentsCatalog(correlationId: string): Promise<JsonObject[]> {
     return this.legacyRequest<JsonObject[]>('/api/v1/departments', { method: 'GET' }, correlationId);
@@ -659,6 +675,10 @@ export class FoodClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+
   get(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>(path, { method: 'GET' }, correlationId, actorId);
   }
@@ -699,8 +719,8 @@ export class FoodClient extends InternalServiceClient {
     return this.get(`/api/v1/carts/${encodeURIComponent(cartId)}`, correlationId, actorId);
   }
 
-  async addCartItem(actorId: string, correlationId: string, cartId: string, payload: JsonObject): Promise<JsonObject> {
-    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/items`, payload, correlationId, undefined, actorId);
+  async addCartItem(actorId: string, correlationId: string, cartId: string, payload: JsonObject, idempotencyKey?: string): Promise<JsonObject> {
+    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/items`, payload, correlationId, idempotencyKey, actorId);
   }
 
   async updateCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, payload: JsonObject): Promise<JsonObject> {

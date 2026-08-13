@@ -185,6 +185,7 @@ def test_expired_hold_rejects_payment_and_final_confirmation_and_releases_slot()
 
 def test_active_payment_confirmation_cancellation_and_scoped_replay() -> None:
     appointment = hold(client, key="same-client-key")
+    assert appointment["hold_expires_at"].endswith("Z")
     replay = hold(client, key="same-client-key")
     assert replay["appointment_id"] == appointment["appointment_id"]
 

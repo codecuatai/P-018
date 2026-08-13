@@ -1,17 +1,21 @@
 "use client";
 
-import { HeartPulse, History, LogOut, MapPinned, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Bell, Heart, HeartPulse, History, LifeBuoy, LogOut, MapPinned, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/providers/auth-provider";
+import { getUnreadNotificationCount } from "@/lib/api-client";
 
 const navigation = [
   { href: "/app", label: "Trợ lý", icon: MessageSquareText },
   { href: "/app/history", label: "Lịch sử", icon: History },
+  { href: "/app/notifications", label: "Thông báo", icon: Bell },
+  { href: "/app/favorites", label: "Đã lưu", icon: Heart },
+  { href: "/app/support", label: "Hỗ trợ", icon: LifeBuoy },
   { href: "/app/services", label: "Dịch vụ", icon: Store },
   { href: "/app/profile", label: "Hồ sơ", icon: UserRound },
   { href: "/app/addresses", label: "Địa chỉ", icon: MapPinned },
@@ -35,8 +39,21 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function Sidebar({ userEmail, onLogout, compact = false }: { userEmail: string; onLogout: () => Promise<void>; compact?: boolean }) {
-  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app">Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => compact ? <SheetClose asChild key={href}><Link className="app-nav-link" href={href}><Icon size={18} /><span>{label}</span></Link></SheetClose> : <Link className="app-nav-link" href={href} key={href}><Icon size={18} /><span>{label}</span></Link>)}</nav><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
+  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app">Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => compact ? <SheetClose asChild key={href}><Link className="app-nav-link" href={href}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link></SheetClose> : <Link className="app-nav-link" href={href} key={href}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>)}</nav><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
   return contents;
+}
+
+function NotificationCount() {
+  const { status } = useAuth();
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (status !== "authenticated") { setCount(0); return; }
+    let active = true;
+    const controller = new AbortController();
+    void getUnreadNotificationCount(controller.signal).then((result) => { if (active) setCount(result.unread_count); }).catch(() => undefined);
+    return () => { active = false; controller.abort(); };
+  }, [status]);
+  return count > 0 ? <span className="notification-count" aria-label={`${count} thông báo chưa đọc`}>{count > 99 ? "99+" : count}</span> : null;
 }
 
 function initials(email: string): string {

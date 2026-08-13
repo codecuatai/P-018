@@ -169,6 +169,146 @@ export interface HistoryResult {
   unavailable: string[];
 }
 
+export type ProductOpsDomain = "food" | "ride" | "restaurant" | "healthcare";
+export type FavoriteDomain = "food" | "restaurant" | "healthcare";
+export type FeedbackResourceType = "food_order" | "ride_booking" | "restaurant_reservation" | "healthcare_appointment";
+
+export interface NotificationItem {
+  id: string;
+  actor_id: string;
+  event_key: string;
+  type: string;
+  title: string;
+  body: string;
+  resource_type?: string;
+  resource_id?: string;
+  status: "UNREAD" | "READ";
+  created_at: string;
+  read_at?: string;
+}
+
+export interface FavoriteItem {
+  id: string;
+  actor_id: string;
+  domain: FavoriteDomain;
+  resource_id: string;
+  created_at: string;
+}
+
+export interface FeedbackItem {
+  id: string;
+  actor_id: string;
+  domain: ProductOpsDomain;
+  resource_type: FeedbackResourceType;
+  resource_id: string;
+  rating: number;
+  comment?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+export type SupportPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export interface AdminUserRecord {
+  id: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: string;
+  status: string;
+  onboarding_completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface AdminDomainStatus {
+  domain: ProductOpsDomain;
+  status: "healthy" | "degraded";
+  data?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface AdminHealthCheck {
+  service: string;
+  status: "healthy" | "unavailable";
+  latency_ms: number;
+  checked_at: string;
+  error?: string;
+}
+
+export interface AdminDatasetStatus extends AdminDomainStatus {}
+
+export interface AdminSummary {
+  counts: Record<string, unknown>;
+  domains: AdminDomainStatus[];
+  payments: { total: number };
+  refunds: { total: number };
+  workflows: { total: number; by_status: Record<string, number> };
+  support: { open: number };
+  health: { items: AdminHealthCheck[] };
+  datasets: AdminDomainStatus[];
+}
+
+export interface AdminTransactionRecord {
+  domain: ProductOpsDomain;
+  transaction: Record<string, unknown>;
+}
+
+export interface AdminPayments {
+  payments: AdminPage<Record<string, unknown>>;
+  refunds: AdminPage<Record<string, unknown>>;
+}
+
+export interface AdminWorkflowRecord {
+  orderId: string;
+  actorId: string;
+  paymentId: string;
+  refundId?: string;
+  status: string;
+  lastErrorCode?: string;
+  attemptCount: number;
+  nextAttemptAt?: string;
+  completedAt?: string;
+  claimedAt?: string;
+  claimOwner?: string;
+}
+
+export interface AdminSupportTicket extends SupportTicket {}
+
+export interface SupportTicketEvent {
+  id: string;
+  ticket_id: string;
+  actor_id?: string;
+  event_type: "CREATED" | "MESSAGE" | "STATUS_CHANGED";
+  message?: string;
+  idempotency_key?: string;
+  created_at: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  actor_id: string;
+  resource_type?: FeedbackResourceType;
+  resource_id?: string;
+  subject: string;
+  description: string;
+  status: SupportTicketStatus;
+  priority: SupportPriority;
+  idempotency_key?: string;
+  created_at: string;
+  updated_at: string;
+  closed_at?: string;
+  events?: SupportTicketEvent[];
+}
+
 export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;

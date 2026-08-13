@@ -258,6 +258,21 @@ class FoodApplicationService:
         orders = await self.repository.list_orders()
         return sorted((order for order in orders if order.get("user_id") == user_id), key=lambda order: str(order.get("created_at", "")), reverse=True)
 
+    async def ops_summary(self) -> dict:
+        orders = await self.repository.list_orders()
+        counts: dict[str, int] = {}
+        for order in orders:
+            status = str(order.get("status", "UNKNOWN"))
+            counts[status] = counts.get(status, 0) + 1
+        return {"domain": "food", "counts": {"orders": len(orders), "orders_by_status": counts}}
+
+    async def ops_transactions(self, limit: int, offset: int) -> dict:
+        orders = sorted(await self.repository.list_orders(), key=lambda value: str(value.get("created_at", "")), reverse=True)
+        return {"items": orders[offset:offset + limit], "total": len(orders), "limit": limit, "offset": offset}
+
+    async def ops_dataset_status(self) -> dict:
+        return await self.repository.dataset_status()
+
     async def reconcile_due_orders(self) -> int:
         now = datetime.now(UTC)
 

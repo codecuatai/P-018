@@ -61,6 +61,18 @@ export interface AuthSessionSummary {
   user_agent?: string;
 }
 
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  full_name: string;
+  phone?: string;
+  role: AuthRole;
+  status: AuthUserStatus;
+  onboarding_completed_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AccessTokenClaims {
   iss: string;
   aud: string;

@@ -6,6 +6,10 @@ const useExternalServer = Boolean(process.env.PLAYWRIGHT_BASE_URL || process.env
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // The local Next dev server is the system under test; serial workers keep
+  // the three responsive projects deterministic instead of masking route
+  // checks with dev-server resource contention.
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]],

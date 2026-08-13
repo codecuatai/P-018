@@ -236,6 +236,21 @@ def list_bookings(
     return {"data": {"items": [BookingOut.model_validate(value) for value in application(session).list_bookings(actor_id)]}, "meta": _meta(request).model_dump(mode="json")}
 
 
+@router.get("/internal/ops/summary", dependencies=[Depends(require_internal_service)])
+def ops_summary(session: Annotated[Session, Depends(get_session)]) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_summary()}
+
+
+@router.get("/internal/ops/dataset-status", dependencies=[Depends(require_internal_service)])
+def ops_dataset_status(session: Annotated[Session, Depends(get_session)]) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_dataset_status()}
+
+
+@router.get("/internal/ops/transactions", dependencies=[Depends(require_internal_service)])
+def ops_transactions(session: Annotated[Session, Depends(get_session)], limit: int = 20, offset: int = 0) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_transactions(min(max(limit, 1), 100), max(offset, 0))}
+
+
 def _confirmation(value: ConfirmationRequest) -> ConfirmationEvidence:
     return ConfirmationEvidence(**value.model_dump())
 

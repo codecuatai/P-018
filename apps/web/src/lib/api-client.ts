@@ -1,6 +1,6 @@
 "use client";
 
-import type { AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog } from "@/types";
+import type { AdminHealthCheck, AdminPayments, AdminSummary, AdminTransactionRecord, AdminUserRecord, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -36,6 +36,7 @@ interface RequestOptions {
   timeoutMs?: number;
   includeAuth?: boolean;
   retryAuth?: boolean;
+  suppressUnauthorized?: boolean;
   retried?: boolean;
 }
 
@@ -101,7 +102,7 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
         const refreshed = await refreshAccessToken();
         if (refreshed) return request<T>(path, init, { ...options, retried: true });
       }
-      if (response.status === 401) {
+      if (response.status === 401 && !options.suppressUnauthorized) {
         clearAuthSession();
         unauthorizedHandler?.();
       }
@@ -129,15 +130,15 @@ export async function refreshAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
-export async function login(email: string, password: string): Promise<AuthUser> {
+export async function login(email: string, password: string, shouldCommit?: () => boolean): Promise<AuthUser> {
   const result = await request<AuthResult>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }, { includeAuth: false, retryAuth: false });
-  setAccessToken(result.access_token);
+  if (!shouldCommit || shouldCommit()) setAccessToken(result.access_token);
   return result.user;
 }
 
-export async function register(fullName: string, email: string, password: string): Promise<AuthUser> {
+export async function register(fullName: string, email: string, password: string, shouldCommit?: () => boolean): Promise<AuthUser> {
   const result = await request<AuthResult>("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ full_name: fullName, email, password }) }, { includeAuth: false, retryAuth: false });
-  setAccessToken(result.access_token);
+  if (!shouldCommit || shouldCommit()) setAccessToken(result.access_token);
   return result.user;
 }
 
@@ -322,6 +323,120 @@ export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<
   return request(`/api/v1/history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
+export function listNotifications(status?: "UNREAD" | "READ"): Promise<{ items: NotificationItem[]; unread_count: number; partial: boolean; unavailable: string[] }> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request(`/api/v1/notifications${query}`, { method: "GET" });
+}
+
+export function getUnreadNotificationCount(signal?: AbortSignal): Promise<{ unread_count: number; partial: boolean; unavailable: string[] }> {
+  return request("/api/v1/notifications/unread-count", { method: "GET" }, { signal });
+}
+
+export function markNotificationRead(id: string): Promise<NotificationItem> {
+  return request(`/api/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST" });
+}
+
+export function markAllNotificationsRead(): Promise<{ updated: number }> {
+  return request("/api/v1/notifications/read-all", { method: "POST" });
+}
+
+export function listFavorites(): Promise<{ items: FavoriteItem[] }> {
+  return request("/api/v1/favorites", { method: "GET" });
+}
+
+export function createFavorite(domain: FavoriteDomain, resourceId: string): Promise<FavoriteItem> {
+  return request("/api/v1/favorites", { method: "POST", body: JSON.stringify({ domain, resource_id: resourceId }) }, { idempotencyKey: createIdempotencyKey("favorite") });
+}
+
+export function deleteFavorite(id: string): Promise<{ deleted: boolean }> {
+  return request(`/api/v1/favorites/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function listMyFeedback(): Promise<{ items: FeedbackItem[] }> {
+  return request("/api/v1/feedback/mine", { method: "GET" });
+}
+
+export function submitFeedback(value: { domain: "food" | "ride" | "restaurant" | "healthcare"; resource_type: FeedbackResourceType; resource_id: string; rating: number; comment?: string }): Promise<FeedbackItem> {
+  return request("/api/v1/feedback", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("feedback") });
+}
+
+export function listSupportTickets(options: { status?: SupportTicketStatus; page?: number; page_size?: number } = {}): Promise<{ items: SupportTicket[]; total: number }> {
+  const query = new URLSearchParams();
+  if (options.status) query.set("status", options.status);
+  if (options.page) query.set("page", String(options.page));
+  if (options.page_size) query.set("page_size", String(options.page_size));
+  const encoded = query.toString();
+  return request(`/api/v1/support/tickets${encoded ? `?${encoded}` : ""}`, { method: "GET" });
+}
+
+export function createSupportTicket(value: { subject: string; description: string; resource_type?: FeedbackResourceType; resource_id?: string; priority?: SupportPriority }): Promise<SupportTicket> {
+  return request("/api/v1/support/tickets", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("support-ticket") });
+}
+
+export function getSupportTicket(id: string): Promise<SupportTicket> {
+  return request(`/api/v1/support/tickets/${encodeURIComponent(id)}`, { method: "GET" });
+}
+
+export function addSupportMessage(id: string, message: string): Promise<SupportTicket> {
+  return request(`/api/v1/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify({ message }) }, { idempotencyKey: createIdempotencyKey("support-message") });
+}
+
+export function prepareFoodReorder(orderId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/reorders/food/${encodeURIComponent(orderId)}`, { method: "POST", body: JSON.stringify({}) }, { idempotencyKey: createIdempotencyKey("food-reorder") });
+}
+
+export function prepareRideRebook(bookingId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/reorders/ride/${encodeURIComponent(bookingId)}`, { method: "POST", body: JSON.stringify({}) }, { idempotencyKey: createIdempotencyKey("ride-rebook") });
+}
+
+export function prepareRestaurantRebook(reservationId: string, value?: { start_at?: string; party_size?: number }): Promise<Record<string, unknown>> {
+  return request(`/api/v1/reorders/restaurant/${encodeURIComponent(reservationId)}`, { method: "POST", body: JSON.stringify(value ?? {}) }, { idempotencyKey: createIdempotencyKey("restaurant-rebook") });
+}
+
+export function prepareHealthcareRebook(appointmentId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/reorders/healthcare/${encodeURIComponent(appointmentId)}`, { method: "POST", body: JSON.stringify({}) }, { idempotencyKey: createIdempotencyKey("healthcare-rebook") });
+}
+
+export function getAdminSummary(): Promise<AdminSummary> {
+  return request("/api/v1/admin/summary", { method: "GET" });
+}
+
+export function getAdminUsers(page = 1, pageSize = 20): Promise<{ items: AdminUserRecord[]; total: number; page: number; page_size: number }> {
+  return request(`/api/v1/admin/users?page=${page}&page_size=${pageSize}`, { method: "GET" });
+}
+
+export function getAdminTransactions(page = 1, pageSize = 20): Promise<{ items: AdminTransactionRecord[]; total?: number; page: number; page_size: number; partial: boolean; unavailable: string[] }> {
+  return request(`/api/v1/admin/transactions?page=${page}&page_size=${pageSize}`, { method: "GET" });
+}
+
+export function getAdminPayments(page = 1, pageSize = 20): Promise<AdminPayments> {
+  return request(`/api/v1/admin/payments?page=${page}&page_size=${pageSize}`, { method: "GET" });
+}
+
+export function getAdminWorkflows(page = 1, pageSize = 20): Promise<{ items: AdminWorkflowRecord[]; total: number; page: number; page_size: number }> {
+  return request(`/api/v1/admin/workflows?page=${page}&page_size=${pageSize}`, { method: "GET" });
+}
+
+export function getAdminDatasets(): Promise<{ items: AdminSummary["datasets"] }> {
+  return request("/api/v1/admin/datasets", { method: "GET" });
+}
+
+export function getAdminSystemHealth(): Promise<{ items: AdminHealthCheck[] }> {
+  return request("/api/v1/admin/system-health", { method: "GET" });
+}
+
+export function getAdminSupportTickets(options: { status?: SupportTicketStatus; page?: number; page_size?: number } = {}): Promise<{ items: SupportTicket[]; total: number }> {
+  const query = new URLSearchParams();
+  if (options.status) query.set("status", options.status);
+  query.set("page", String(options.page ?? 1));
+  query.set("page_size", String(options.page_size ?? 20));
+  return request(`/api/v1/admin/support-tickets?${query.toString()}`, { method: "GET" });
+}
+
+export function updateAdminSupportTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }): Promise<SupportTicket> {
+  return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("admin-support-update") });
+}
+
 export function listConversations(includeArchived = false): Promise<{ items: ConversationRecord[] }> {
   return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" });
 }
@@ -344,7 +459,7 @@ export function deleteConversation(id: string): Promise<{ deleted: boolean }> {
 
 export async function logout(): Promise<void> {
   try {
-    await request<{ logged_out: boolean }>("/api/v1/auth/logout", { method: "POST" }, { includeAuth: false, retryAuth: false });
+    await request<{ logged_out: boolean }>("/api/v1/auth/logout", { method: "POST" }, { includeAuth: false, retryAuth: false, suppressUnauthorized: true });
   } finally {
     clearAuthSession();
   }

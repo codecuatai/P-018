@@ -48,6 +48,7 @@ class FoodRepository(Protocol):
     async def get_order(self, order_id: str) -> dict | None: ...
     async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None: ...
     async def list_orders(self) -> list[dict]: ...
+    async def dataset_status(self) -> dict: ...
     async def list_due_orders(self, now: datetime) -> list[dict]: ...
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]: ...
     async def transition_order_atomic(
@@ -314,6 +315,9 @@ class InMemoryFoodRepository:
     async def get_order_events(self, order_id: str) -> list[dict]:
         return deepcopy(self.order_events.get(order_id, []))
 
+    async def dataset_status(self) -> dict:
+        return {"dataset_version": "demo-hanoi", "source_name": "local-seed", "imported_at": None, "last_verified_at": None, "active": True, "row_count": len(self.restaurants) + len(self.items), "quality_warnings": [], "rejected_count": 0}
+
 
 class PostgresFoodRepository:
     """PostgreSQL adapter; every multi-step mutation owns one transaction."""
@@ -519,6 +523,15 @@ class PostgresFoodRepository:
     async def list_orders(self) -> list[dict]:
         rows = await self._require_pool().fetch("SELECT * FROM food_orders ORDER BY created_at")
         return [self._order_from_row(row) for row in rows]
+
+    async def dataset_status(self) -> dict:
+        pool = self._require_pool()
+        version = await pool.fetchrow("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='food' ORDER BY imported_at DESC LIMIT 1")
+        row_count = await pool.fetchval("SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE")
+        if not version:
+            return {"dataset_version": None, "source_name": None, "imported_at": None, "last_verified_at": None, "active": bool(row_count), "row_count": int(row_count or 0), "quality_warnings": [], "rejected_count": 0}
+        manifest = _json_object(version["source_manifest"]) if version["source_manifest"] else {}
+        return {"dataset_version": version["dataset_version"], "source_name": manifest.get("source_name"), "imported_at": version["imported_at"].isoformat() if version["imported_at"] else None, "last_verified_at": manifest.get("last_verified_at"), "active": bool(version["is_active"]), "row_count": int(row_count or 0), "quality_warnings": manifest.get("quality_warnings", []), "rejected_count": manifest.get("rejected_count", 0)}
 
     async def list_due_orders(self, now: datetime) -> list[dict]:
         rows = await self._require_pool().fetch("SELECT * FROM food_orders WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 ORDER BY next_transition_at", now)

@@ -7,7 +7,7 @@ import { isEmail } from 'class-validator';
 import { CoreStore } from '../core/core.module';
 import { issueAccessToken, verifyAccessToken } from './auth.token';
 import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
-import { AccessTokenClaims, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
+import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
 const MIN_PASSWORD_LENGTH = 15;
@@ -195,6 +195,10 @@ export class AuthService {
     if (!claims) return undefined;
     const account = await this.store.getActiveUserForSession(claims.sub, claims.sid, claims.iat);
     return account ? this.toPublicUser(account, claims.sid) : undefined;
+  }
+
+  async listUsers(page = 1, pageSize = 50): Promise<{ items: AdminUserSummary[]; total: number }> {
+    return this.store.listUsers(page, pageSize);
   }
 
   async updateProfile(user: AuthUser, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthUser> {

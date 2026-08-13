@@ -8,6 +8,8 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
+from src.config import get_settings
+
 
 class VehicleType(StrEnum):
     BIKE = "BIKE"
@@ -466,12 +468,10 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
         }
     driver = booking.driver or {}
     eta_seconds = int(driver.get("eta_seconds", 0))
-    started = _as_utc(booking.tracking_started_at or booking.updated_at)
     # The simulator advances on a coarse, deterministic clock tick.  This keeps
     # two immediate polling requests stable while still moving the trip every
     # couple of seconds, which is the cadence used by the demo client.
-    elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
-    elapsed = float(int(elapsed // 2) * 2)
+    elapsed = tracking_elapsed(booking, now)
     travel_seconds = max(60, int(quote.route_duration_seconds or quote.duration_minutes * 60))
     status = tracking_status_for_elapsed(status, elapsed, eta_seconds, travel_seconds)
     progress = tracking_progress(status, elapsed, eta_seconds, travel_seconds)
@@ -567,7 +567,8 @@ def _interpolate(start: dict[str, Any], end: dict[str, Any], ratio: float) -> di
 def tracking_elapsed(booking: Booking, now: datetime) -> float:
     started = _as_utc(booking.tracking_started_at or booking.updated_at)
     elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
-    return float(int(elapsed // 2) * 2)
+    scaled = elapsed * get_settings().tracking_time_scale
+    return float(int(scaled // 2) * 2)
 
 
 def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> str:

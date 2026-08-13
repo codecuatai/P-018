@@ -138,6 +138,24 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
         '404': {description: Reservation not found}
         '409': {description: Conflict}
+  /v1/internal/ops/summary:
+    get:
+      summary: Read Restaurant operational counts
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Operational summary}, '401': {description: Internal authentication is missing}}
+  /v1/internal/ops/dataset-status:
+    get:
+      summary: Read Restaurant dataset status
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Dataset status}, '401': {description: Internal authentication is missing}}
+  /v1/internal/ops/transactions:
+    get:
+      summary: Read paged Restaurant reservations
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      responses: {'200': {description: Paged reservations}, '401': {description: Internal authentication is missing}}
 components:
   parameters:
     InternalToken:

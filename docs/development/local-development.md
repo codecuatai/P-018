@@ -69,6 +69,35 @@ explicitly:
 
 The helpers preserve PostgreSQL volumes and do not perform destructive resets.
 
+## Direct local-terminal workflow
+
+The release-candidate workflow runs the seven application processes directly
+and uses the existing PostgreSQL container only as database infrastructure:
+
+```powershell
+./scripts/local-dev.ps1 -EnvFile .env.example -WaitSeconds 90
+./scripts/local-health.ps1
+./scripts/seed-local.ps1 -EnvFile .env.example
+./scripts/local-acceptance.ps1 -EnvFile .env.example
+./scripts/local-stop.ps1
+```
+
+`local-dev.ps1` validates the environment, checks the PostgreSQL port, starts
+Gateway, Agent, Food, Ride, Restaurant, Healthcare and Web in separate
+PowerShell processes, records only those process IDs in ignored
+`.local-runtime/processes.json`, and waits for `localhost:3000` and
+`localhost:5173`. It never kills an unrelated process and `local-stop.ps1`
+leaves PostgreSQL running. Add `-Migrate` only when an explicit migration run
+is required. `seed-local.ps1` is additive and preserves imported catalogs,
+bookings and dataset metadata; `demo-reset.ps1` is dry-run by default and
+requires `-ConfirmReset` for an actor-scoped mutable-data reset.
+
+For local browser acceptance, `.env.example` enables the labeled deterministic
+geocode fallback and accelerates the Ride simulator with
+`RIDE_TRACKING_TIME_SCALE=60`. Both are rejected or constrained in production;
+the fallback is labeled `deterministic-local-demo` and is not booking
+authority.
+
 ## Package manager
 
 The root workspace, Gateway and Next.js Web use pnpm and the committed root

@@ -88,21 +88,24 @@ corepack pnpm --dir apps/web exec playwright test --list
 corepack pnpm --dir apps/web exec tsc --noEmit
 ```
 
-The list command reports `27 tests (9 scenarios x 3 viewports)`. Execution was
-attempted with:
+The list command reports `27 tests (9 scenarios x 3 viewports)`. The following
+execution note is historical (2026-08-12); current browser evidence is recorded
+in the 2026-08-13 section below.
+
+Historical execution was attempted with:
 
 ```powershell
 $env:PLAYWRIGHT_BASE_URL = 'http://localhost:5173'
 corepack pnpm --dir apps/web exec playwright test --project=chromium-375
 ```
 
-All 9 selected tests stopped before navigation because
+At that historical run, all 9 selected tests stopped before navigation because
 `C:\Users\ADMIN\AppData\Local\ms-playwright\chromium_headless_shell-1161\chrome-win\headless_shell.exe`
 does not exist. Therefore browser status is
 `BROWSER_ACCEPTANCE_PENDING` / `BLOCKED_BY_ENVIRONMENT`; no screenshot,
 responsive interaction, or browser-console result is counted.
 
-## Current final corrective-pass evidence — 2026-08-12
+## Historical final corrective-pass evidence - 2026-08-12
 
 - Environment/config: `101` root variables / `97` Compose variables;
   Compose config and migration parity (`22` paths) passed.
@@ -127,3 +130,29 @@ responsive interaction, or browser-console result is counted.
   partial-success, idempotency and cross-user cases.
 - Gemini smoke is `BLOCKED`: no key is configured. No key or secret was read,
   printed, copied or changed.
+
+## Current local completion evidence - 2026-08-13
+
+- Direct-process runtime: `local-dev.ps1`, `local-health.ps1`, additive
+  `seed-local.ps1` and scoped dry-run `demo-reset.ps1` were exercised against
+  the existing PostgreSQL container. All seven application health checks were
+  `PASS`.
+- Web fast browser suite: Playwright Chromium ran serially with 27/27 passed
+  at 375x812, 768x1024 and 1440x1000. The live Product suite was 2/2, Admin
+  was 1/1, and the real transaction suite was 1/1. Page errors, console
+  errors and non-aborted failed requests were treated as failures.
+- The optional `agent-browser` CLI is not installed; Playwright Chromium was
+  used for the actual browser evidence. No browser pass is claimed from a
+  test listing alone.
+- Real live transaction coverage exercised Food, Ride tracking, Restaurant,
+  Healthcare, history/reorder/feedback and notifications through the Gateway
+  and domain services without mocks.
+- A local performance smoke with 10 samples per read endpoint recorded p50,
+  p95 and max for Gateway health, Food/Restaurant/Healthcare search, history,
+  Admin dashboard and Ride tracking; auth login used 3 samples because the
+  local login limiter is intentionally bounded.
+- Gemini remains intentionally unverified because no key is configured. The
+  full legacy `tests/e2e` batch is not reported as a pass: it hit the expected
+  process-local login limiter when every test logged in from one IP and also
+  contains slower Assistant scenarios. The targeted live browser and HTTP
+  acceptance above are the current evidence.

@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
@@ -120,6 +121,13 @@ def _save_idempotency(
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _iso_utc(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _fold_department_name(value: str) -> str:
@@ -261,10 +269,10 @@ def _appointment_data(appointment: Appointment, db: Session | None = None) -> di
         "facility": _facility_data(db, doctor.facility_source_id if doctor else None),
         "slot": {
             "id": slot.id,
-            "start_time": slot.start_time.isoformat(),
-            "end_time": slot.end_time.isoformat(),
+            "start_time": _iso_utc(slot.start_time),
+            "end_time": _iso_utc(slot.end_time),
             "status": slot.status,
-            "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
+            "hold_expires_at": _iso_utc(slot.hold_expires_at),
         } if slot else None,
     }
 
@@ -488,11 +496,11 @@ def hold_slot(
             "doctor_description": slot.doctor.description,
             "department": slot.doctor.department.name if slot.doctor.department else None,
             "price": slot.doctor.price,
-            "start_time": slot.start_time.isoformat(),
-            "end_time": slot.end_time.isoformat(),
+            "start_time": _iso_utc(slot.start_time),
+            "end_time": _iso_utc(slot.end_time),
             "status": AppointmentStatus.DRAFT.value,
             "is_paid": False,
-            "hold_expires_at": slot.hold_expires_at.isoformat() if slot.hold_expires_at else None,
+            "hold_expires_at": _iso_utc(slot.hold_expires_at),
             "facility": _facility_data(db, slot.doctor.facility_source_id if slot.doctor else None),
         }
         _save_idempotency(db, key, actor_id, operation, request_hash, response)
@@ -538,6 +546,41 @@ def list_appointments(
     appointments = db.query(Appointment).filter(Appointment.actor_id == actor_id).order_by(Appointment.id.desc()).all()
     _commit_reconciliation(db, expired_appointment_ids)
     return {"data": {"items": [_appointment_data(appointment, db) for appointment in appointments]}}
+
+
+@router.get("/internal/ops/summary")
+def ops_summary(
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+) -> dict[str, Any]:
+    rows = db.query(Appointment.status, func.count(Appointment.id)).group_by(Appointment.status).all()
+    by_status = {str(status): int(count) for status, count in rows}
+    return {"data": {"domain": "healthcare", "counts": {"appointments": sum(by_status.values()), "appointments_by_status": by_status, "facilities": int(db.query(func.count(HealthcareFacility.source_id)).filter(HealthcareFacility.is_active.is_(True)).scalar() or 0), "doctors": int(db.query(func.count(Doctor.id)).filter(Doctor.is_active.is_(True)).scalar() or 0)}}}
+
+
+@router.get("/internal/ops/dataset-status")
+def ops_dataset_status(
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+) -> dict[str, Any]:
+    facilities = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True)).order_by(HealthcareFacility.last_verified_at.desc()).all()
+    latest = next((item for item in facilities if item.dataset_version), None)
+    return {"data": {"dataset_version": latest.dataset_version if latest else None, "source_name": latest.source_name if latest else None, "imported_at": latest.fetched_at.isoformat() if latest and latest.fetched_at else None, "last_verified_at": latest.last_verified_at.isoformat() if latest and latest.last_verified_at else None, "active": bool(facilities), "row_count": len(facilities), "quality_warnings": [], "rejected_count": 0}}
+
+
+@router.get("/internal/ops/transactions")
+def ops_transactions(
+    limit: int = 20,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+) -> dict[str, Any]:
+    safe_limit = min(max(limit, 1), 100)
+    safe_offset = max(offset, 0)
+    appointments = db.query(Appointment).order_by(Appointment.created_at.desc()).offset(safe_offset).limit(safe_limit).all()
+    total = int(db.query(func.count(Appointment.id)).scalar() or 0)
+    items = [{"appointment_id": item.id, "actor_id": item.actor_id, "status": item.status, "is_paid": item.is_paid, "doctor_id": item.doctor_id, "slot_id": item.slot_id, "created_at": item.created_at.isoformat() if item.created_at else None} for item in appointments]
+    return {"data": {"items": items, "total": total, "limit": safe_limit, "offset": safe_offset}}
 
 
 @router.post("/appointments/{appointment_id}/confirm")

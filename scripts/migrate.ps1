@@ -1,7 +1,12 @@
+param(
+    [string]$EnvFile,
+    [switch]$LocalProcesses
+)
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw 'Docker is required to run migrations.' }
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$requestedEnvFile = if ($args.Count -gt 0) { $args[0] } elseif (Test-Path -LiteralPath (Join-Path $repoRoot '.env') -PathType Leaf) { '.env' } else { '.env.example' }
+$requestedEnvFile = if ($EnvFile) { $EnvFile } elseif ($args.Count -gt 0) { $args[0] } elseif (Test-Path -LiteralPath (Join-Path $repoRoot '.env') -PathType Leaf) { '.env' } else { '.env.example' }
 
 function ConvertTo-ProcessArgument {
     param([Parameter(Mandatory = $true)][string]$Value)
@@ -72,14 +77,23 @@ function Invoke-AlembicMigration {
         [Parameter(Mandatory = $true)][string]$Service,
         [Parameter(Mandatory = $true)][string]$Domain,
         [Parameter(Mandatory = $true)][string]$MigrationPath,
+        [Parameter(Mandatory = $true)][string]$DatabaseKey,
         [Parameter(Mandatory = $true)][string]$EnvFile
     )
 
-    & docker compose --env-file $EnvFile exec -T $Service alembic upgrade head
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) {
-        throw "$Domain migration failed: $MigrationPath (alembic upgrade head; exit code $exitCode)."
+    if ($LocalProcesses) {
+        if ($Service -eq 'restaurant-service') { $serviceKind = 'restaurant'; $serviceRelativeRoot = 'services\restaurant-service' }
+        elseif ($Service -eq 'ride-service') { $serviceKind = 'ride'; $serviceRelativeRoot = 'services\ride-service' }
+        else { throw "No local process mapping exists for $Service." }
+        $serviceRoot = Join-Path $repoRoot $serviceRelativeRoot
+        $argumentsJson = ConvertTo-Json -InputObject @('-m', 'alembic', 'upgrade', 'head') -Compress
+        $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argumentsJson))
+        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\local-process.ps1') -EnvFile $EnvFile -WorkingDirectory $serviceRoot -FilePath 'python' -ServiceKind $serviceKind -LocalHostMode -DatabaseKey $DatabaseKey -CommandArgumentsBase64 $argumentsBase64
+    } else {
+        & docker compose --env-file $EnvFile exec -T $Service alembic upgrade head
     }
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) { throw "$Domain migration failed: $MigrationPath (alembic upgrade head; exit code $exitCode)." }
     Write-Host "$Domain migration applied: $MigrationPath"
 }
 
@@ -101,6 +115,8 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/009_core_auth.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/010_core_personal_context.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/011_core_multi_service_workflows.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/012_core_product_ops.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/013_core_admin_support_idempotency.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
@@ -110,7 +126,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Write-Host 'Core and Food migrations applied.'
 
-    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -EnvFile $envFile
+    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -DatabaseKey 'RESTAURANT_DATABASE_URL' -EnvFile $envFile
     Write-Host 'Restaurant Service migrations applied.'
 
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
@@ -120,7 +136,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
-    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260806_0001_ride_simulation.py' -EnvFile $envFile
+    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260813_0004_driver_snapshot.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
     Write-Host 'Ride Service migrations applied.'
 } finally {
     Pop-Location

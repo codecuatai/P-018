@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from math import atan2, cos, radians, sin, sqrt
+from random import SystemRandom
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.domain.ride import Booking, ConfirmationEvidence, IdempotencyRecord, Quote, normalize_booking_status, utc_now
@@ -20,8 +21,9 @@ from src.infrastructure.models import (
 
 
 class SqlAlchemyRideRepository:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, choose_candidate=None):
         self.session = session
+        self._choose_candidate = choose_candidate or SystemRandom().choice
 
     def get_active_tariff(self, vehicle_type: str) -> dict[str, Any] | None:
         row = self.session.scalar(
@@ -65,7 +67,8 @@ class SqlAlchemyRideRepository:
         ]
         if not eligible:
             return None
-        driver, distance_km = min(eligible, key=lambda item: (item[1], item[0].id))
+        eligible.sort(key=lambda item: (item[1], item[0].id))
+        driver, distance_km = self._choose_candidate(eligible[: min(5, len(eligible))])
         driver.availability_status = "ASSIGNED"
         driver.updated_at = utc_now()
         eta_seconds = max(60, min(900, int(round(distance_km / 0.35 * 60))))
@@ -130,13 +133,30 @@ class SqlAlchemyRideRepository:
         rows = self.session.scalars(select(BookingRow).where(BookingRow.actor_id == actor_id).order_by(BookingRow.created_at.desc())).all()
         return [_booking_from_row(row) for row in rows]
 
+    def ops_summary(self) -> dict[str, Any]:
+        statuses = self.session.query(BookingRow.status, func.count(BookingRow.id)).group_by(BookingRow.status).all()
+        by_status = {str(status): int(count) for status, count in statuses}
+        available = int(self.session.query(func.count(RideDriverRow.id)).filter(RideDriverRow.availability_status == "AVAILABLE").scalar() or 0)
+        drivers = int(self.session.query(func.count(RideDriverRow.id)).scalar() or 0)
+        return {"domain": "ride", "counts": {"bookings": sum(by_status.values()), "bookings_by_status": by_status, "drivers": drivers, "available_drivers": available}}
+
+    def ops_transactions(self, limit=20, offset=0) -> dict[str, Any]:
+        rows = self.session.scalars(select(BookingRow).order_by(BookingRow.created_at.desc()).offset(offset).limit(limit)).all()
+        total = int(self.session.query(func.count(BookingRow.id)).scalar() or 0)
+        return {"items": [_booking_from_row(row).snapshot() for row in rows], "total": total, "limit": limit, "offset": offset}
+
+    def ops_dataset_status(self) -> dict[str, Any]:
+        count = int(self.session.query(func.count(RideDriverRow.id)).scalar() or 0)
+        return {"dataset_version": "SIM_2026_08_V1", "source_name": "local-synthetic-driver-seed", "imported_at": None, "last_verified_at": None, "active": count > 0, "row_count": count, "quality_warnings": [], "rejected_count": 0}
+
     def save_booking(self, booking: Booking) -> None:
         row = self.session.get(BookingRow, booking.id)
         if row is None:
-            self.session.add(BookingRow(**booking.__dict__))
+            self.session.add(BookingRow(**booking.__dict__, driver_snapshot=booking.driver))
             return
         for name, value in booking.__dict__.items():
             setattr(row, name, value)
+        row.driver_snapshot = booking.driver
 
     def get_idempotency(self, actor_id: str, operation: str, key: str) -> IdempotencyRecord | None:
         row = self.session.scalar(
@@ -245,7 +265,7 @@ def _booking_from_row(row: BookingRow) -> Booking:
         status=normalize_booking_status(row.status),
         resource_version=row.resource_version,
         payment_reference=row.payment_reference,
-        driver=row.driver,
+        driver=row.driver_snapshot or row.driver,
         created_at=row.created_at,
         updated_at=row.updated_at,
         driver_id=row.driver_id,

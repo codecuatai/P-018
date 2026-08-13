@@ -215,6 +215,59 @@ paths:
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
+  /v1/internal/ops/summary:
+    get:
+      operationId: getRideOpsSummary
+      description: Internal operational counts. Requires the service token.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Ride operational summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/dataset-status:
+    get:
+      operationId: getRideOpsDatasetStatus
+      description: Internal synthetic-driver dataset status.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Dataset freshness and quality status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/transactions:
+    get:
+      operationId: listRideOpsTransactions
+      description: Internal paged booking snapshots for operations.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: offset
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Paged ride booking snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     InternalServiceToken:
@@ -564,6 +617,16 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/Tracking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    OpsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
         meta:
           $ref: "#/components/schemas/ResponseMeta"
     Problem:

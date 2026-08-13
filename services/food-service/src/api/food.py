@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from src.application.food_service import FoodApplicationService
 from src.config import get_settings
@@ -35,6 +35,21 @@ def require_actor(x_internal_service_token: str | None = Header(default=None), x
     if not x_actor_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail={"code": "UNAUTHORIZED", "detail": "Actor assertion required."})
     return x_actor_id
+
+
+@router.get("/internal/ops/summary", dependencies=[Depends(require_internal)])
+async def ops_summary(food: FoodApplicationService = Depends(service)):
+    return {"data": await food.ops_summary()}
+
+
+@router.get("/internal/ops/dataset-status", dependencies=[Depends(require_internal)])
+async def ops_dataset_status(food: FoodApplicationService = Depends(service)):
+    return {"data": await food.ops_dataset_status()}
+
+
+@router.get("/internal/ops/transactions", dependencies=[Depends(require_internal)])
+async def ops_transactions(limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0), food: FoodApplicationService = Depends(service)):
+    return {"data": await food.ops_transactions(limit, offset)}
 
 
 @router.get("/restaurants", dependencies=[Depends(require_internal)])

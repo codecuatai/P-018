@@ -6,17 +6,23 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import styles from "@/components/marketing/auth-dialog.module.css";
 import { LoginForm, RegisterForm } from "@/features/auth/auth-pages";
 import type { AuthDialogMode } from "@/components/marketing/marketing-auth";
+import type { AuthUser } from "@/types";
 
 interface AuthDialogProps {
   open: boolean;
   mode: AuthDialogMode;
+  nextPath?: string;
   onOpenChange: (open: boolean) => void;
   onModeChange: (mode: AuthDialogMode) => void;
 }
 
-export function AuthDialog({ open, mode, onOpenChange, onModeChange }: AuthDialogProps) {
+export function AuthDialog({ open, mode, nextPath, onOpenChange, onModeChange }: AuthDialogProps) {
   const router = useRouter();
   const isLogin = mode === "login";
+  const destination = (authenticatedUser: AuthUser) => {
+    if (!authenticatedUser.onboarding_completed_at && authenticatedUser.authentication_kind !== "demo") return "/app/onboarding";
+    return nextPath ?? "/app";
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -29,12 +35,12 @@ export function AuthDialog({ open, mode, onOpenChange, onModeChange }: AuthDialo
         <div className={styles.form}>
           {isLogin ? (
             <LoginForm
-              onSuccess={() => { onOpenChange(false); router.replace("/app"); }}
+              onSuccess={(authenticatedUser) => { onOpenChange(false); router.replace(destination(authenticatedUser)); }}
               onSwitch={() => onModeChange("register")}
             />
           ) : (
             <RegisterForm
-              onSuccess={() => { onOpenChange(false); router.replace("/app"); }}
+              onSuccess={(authenticatedUser) => { onOpenChange(false); router.replace(destination(authenticatedUser)); }}
               onSwitch={() => onModeChange("login")}
             />
           )}

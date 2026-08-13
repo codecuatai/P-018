@@ -242,6 +242,28 @@ class RestaurantRepository:
             row = db.scalar(select(RestaurantRow).where(RestaurantRow.id == restaurant_id, RestaurantRow.active.is_(True)))
             return self.restaurant_dict(row) if row else None
 
+    def ops_summary(self):
+        with self.factory() as db:
+            reservations = db.scalars(select(ReservationRow)).all()
+            statuses: dict[str, int] = {}
+            for row in reservations:
+                statuses[row.status] = statuses.get(row.status, 0) + 1
+            return {"domain": "restaurant", "counts": {"restaurants": int(db.scalar(select(func.count(RestaurantRow.id)).where(RestaurantRow.active.is_(True))) or 0), "reservations": len(reservations), "reservations_by_status": statuses}}
+
+    def ops_transactions(self, limit=20, offset=0):
+        with self.factory() as db:
+            stmt = select(ReservationRow, TableRow).join(TableRow, TableRow.id == ReservationRow.table_id).order_by(ReservationRow.updated_at.desc()).offset(offset).limit(limit)
+            rows = db.execute(stmt).all()
+            items = [self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id).name if db.get(RestaurantRow, row.restaurant_id) else None) for row, table in rows]
+            total = int(db.scalar(select(func.count(ReservationRow.id))) or 0)
+            return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def ops_dataset_status(self):
+        with self.factory() as db:
+            rows = db.scalars(select(RestaurantRow).where(RestaurantRow.active.is_(True))).all()
+            latest = next((row for row in rows if row.dataset_version), None)
+            return {"dataset_version": latest.dataset_version if latest else None, "source_name": latest.source_name if latest else None, "imported_at": latest.fetched_at.isoformat() if latest and latest.fetched_at else None, "last_verified_at": latest.last_verified_at.isoformat() if latest and latest.last_verified_at else None, "active": bool(rows), "row_count": len(rows), "quality_warnings": [], "rejected_count": 0}
+
     @staticmethod
     def restaurant_dict(row):
         return {"id": row.id, "name": row.name, "location": row.location, "cuisine_type": row.cuisine_type,

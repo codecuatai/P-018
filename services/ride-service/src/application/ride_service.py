@@ -301,6 +301,10 @@ class RideApplication:
             if target is None:
                 break
             transition_booking(booking, target)
+            if target == BookingStatus.COMPLETED.value and booking.driver_id:
+                # Keep the immutable booking snapshot while returning the live
+                # synthetic driver to the available pool.
+                self.repository.release_driver(booking.driver_id)
             self.repository.save_booking(booking)
             self.repository.record_tracking_event(booking.id, target, 0.0 if target != BookingStatus.COMPLETED.value else 1.0, None)
             changed = True

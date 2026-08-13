@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from src.domain.ride import normalized_hash
-from src.infrastructure.models import BookingRow, QuoteRow, RideTrackingEventRow
+from src.infrastructure.models import BookingRow, QuoteRow, RideDriverRow, RideTrackingEventRow
 
 ACTOR = "user_ride_test"
 
@@ -324,6 +324,12 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
 
     confirmed = _confirm(client, quote, booking, key="lifecycle-confirm")
     assert confirmed["status"] == "DRIVER_ASSIGNED"
+    assigned_driver_id = confirmed["driver"]["id"]
+    engine = getattr(client, "ride_engine")
+    with Session(engine) as session:
+        persisted = session.get(BookingRow, confirmed["id"])
+        assert persisted is not None
+        assert persisted.driver_snapshot["id"] == assigned_driver_id
     eta_seconds = confirmed["driver"]["eta_seconds"]
     route_seconds = quote["route_duration_seconds"]
 
@@ -340,7 +346,6 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         assert response.json()["data"]["status"] == expected_status
         assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == expected_status
 
-    engine = getattr(client, "ride_engine")
     with Session(engine) as session:
         events = session.query(RideTrackingEventRow).filter_by(booking_id=confirmed["id"]).order_by(RideTrackingEventRow.occurred_at, RideTrackingEventRow.id).all()
         assert [event.status for event in events] == [
@@ -352,6 +357,9 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
             "IN_PROGRESS",
             "COMPLETED",
         ]
+        driver = session.get(RideDriverRow, assigned_driver_id)
+        assert driver is not None
+        assert driver.availability_status == "AVAILABLE"
 
 
 def test_expired_quote_is_persisted_and_cannot_be_prepared(client: TestClient) -> None:

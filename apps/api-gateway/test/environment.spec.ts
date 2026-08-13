@@ -72,4 +72,9 @@ describe('environment validation', () => {
   it('requires the demo patient fallback outside production', () => {
     expect(() => validateEnvironment({ ...completeConfig, HEALTHCARE_DEFAULT_PATIENT_ID: '' })).toThrow('HEALTHCARE_DEFAULT_PATIENT_ID is required outside production');
   });
+
+  it('allows the deterministic location fallback only outside production', () => {
+    expect(validateEnvironment({ ...completeConfig, LOCAL_DETERMINISTIC_LOCATION_FALLBACK: 'true' }).LOCAL_DETERMINISTIC_LOCATION_FALLBACK).toBe(true);
+    expect(() => validateEnvironment({ ...completeConfig, APP_ENV: 'production', GATEWAY_CORS_ORIGINS: 'https://app.example.com', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: 'true' })).toThrow('must be disabled in production');
+  });
 });

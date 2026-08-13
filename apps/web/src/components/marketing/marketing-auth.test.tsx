@@ -51,7 +51,7 @@ describe("marketing authentication dialog", () => {
     expect(within(dialog).getByLabelText("Mật khẩu")).toBeInTheDocument();
   });
 
-  it("closes and routes to /app after a successful modal login", async () => {
+  it("closes and routes incomplete accounts to onboarding after a successful modal login", async () => {
     mockLogin.mockResolvedValueOnce({ sub: "usr-1", email: "an@example.test", role: "customer" });
     render(<MarketingHarness />);
     fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
@@ -61,7 +61,7 @@ describe("marketing authentication dialog", () => {
     fireEvent.change(within(dialog).getByLabelText("Mật khẩu"), { target: { value: "a reliable local passphrase" } });
     fireEvent.submit(within(dialog).getByRole("button", { name: "Đăng nhập" }).closest("form")!);
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/app"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/app/onboarding"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
