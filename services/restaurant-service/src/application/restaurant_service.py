@@ -26,8 +26,10 @@ class RestaurantApplicationService:
 
     @staticmethod
     def _parse_query_with_llm(query: str, api_key: str) -> dict[str, str | None]:
-        import httpx
         import json
+
+        import httpx
+
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
         prompt = f"""
