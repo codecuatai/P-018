@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -16,7 +16,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Let an in-flight staging deployment finish; newer runs may still cancel
+  # older CI runs on branches that never deploy from this workflow.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -66,44 +68,43 @@ jobs:
           base: ${{ github.ref }}
           filters: |
             agent:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'ruff.toml'
               - 'packages/**'
               - 'apps/agent-service/**'
             ride:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'ruff.toml'
               - 'packages/**'
               - 'services/ride-service/**'
             restaurant:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'ruff.toml'
               - 'packages/**'
               - 'services/restaurant-service/**'
             healthcare:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'ruff.toml'
               - 'packages/**'
               - 'services/healthcare-service/**'
             food:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'ruff.toml'
               - 'packages/**'
               - 'services/food-service/**'
             gateway:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'packages/**'
               - 'apps/api-gateway/**'
             web:
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-cd.yml'
               - 'packages/**'
               - 'apps/web/**'
             compose:
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/deploy.yml'
+              - '.github/workflows/ci-cd.yml'
               - '.env.example'
               - 'docker-compose.yml'
               - 'infra/**'
@@ -343,3 +344,52 @@ jobs:
         run: python scripts/check-migration-parity.py
       - name: Validate Docker Compose configuration
         run: docker compose --env-file .env.example config --quiet
+
+  deploy:
+    name: VPS Staging Deploy
+    needs:
+      - detect-changes
+      - agent-service
+      - ride-service
+      - restaurant-service
+      - healthcare-service
+      - food-service
+      - gateway
+      - food-postgres-integration
+      - gateway-postgres-integration
+      - web
+      - compose
+    if: >-
+      ${{
+        always() &&
+        !cancelled() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/staging' &&
+        needs.detect-changes.result == 'success' &&
+        !contains(needs.*.result, 'failure') &&
+        !contains(needs.*.result, 'cancelled')
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: staging
+    steps:
+      - name: SSH and deploy on VPS
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          command_timeout: 30m
+          script: |
+            set -eu
+            cd /opt/xone
+
+            # Deploy exactly the commit that passed every required CI job.
+            git fetch --prune origin staging
+            git reset --hard '${{ github.sha }}'
+
+            docker compose --env-file .env config --quiet
+            docker compose --env-file .env up -d --build --remove-orphans
+
+            docker image prune -f
+            echo "Staging deployment completed successfully."
