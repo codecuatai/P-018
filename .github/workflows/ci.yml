@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main, develop, staging]
+  pull_request:
+    branches: [main, develop, staging]
   schedule:
     # 01:00 Asia/Bangkok. Scheduled workflows use UTC.
     - cron: '0 18 * * *'
@@ -10,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -21,6 +24,9 @@ env:
 
 jobs:
   detect-changes:
+    # Keep PR validation for normal branches, but do not consume a runner for
+    # pull requests opened from feature/** branches.
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'feature/') }}
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 5
     outputs:
