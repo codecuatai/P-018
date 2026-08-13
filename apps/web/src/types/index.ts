@@ -42,6 +42,7 @@ export interface AssistantOption {
   start_time?: string;
   price?: number;
   rating?: number;
+  facility?: AssistantFacility;
 }
 
 export interface AssistantRestaurant {

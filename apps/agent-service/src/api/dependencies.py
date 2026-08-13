@@ -2,7 +2,7 @@ import hmac
 
 from fastapi import Header, HTTPException, status
 
-from src.config import get_settings
+from ..config import get_settings
 
 
 def require_internal_auth(x_internal_service_token: str | None = Header(default=None)) -> None:

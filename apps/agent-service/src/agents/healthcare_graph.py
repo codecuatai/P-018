@@ -7,12 +7,12 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-from src.agents.policies.healthcare_policy import validate_tool_request
-from src.agents.state import AgentState
-from src.agents.tool_ids import make_tool_call_id
-from src.config import get_settings
-from src.models.schemas import ToolRequest
-from src.services.llm import GeminiAdapter
+from ..config import get_settings
+from ..models.schemas import ToolRequest
+from ..services.llm import GeminiAdapter
+from .policies.healthcare_policy import validate_tool_request
+from .state import AgentState
+from .tool_ids import make_tool_call_id
 
 DEPARTMENT_ALIASES = {
     "than kinh": "Than kinh",

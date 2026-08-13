@@ -1,4 +1,4 @@
-from src.models.schemas import ToolRequest
+from ...models.schemas import ToolRequest
 
 READ_TOOLS = {"healthcare.list_departments", "healthcare.list_slots"}
 REVERSIBLE_TOOLS = {"healthcare.hold_slot", "healthcare.cancel_appointment"}

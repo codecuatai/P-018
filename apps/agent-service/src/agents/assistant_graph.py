@@ -246,12 +246,27 @@ def _number(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | None:
 
 
 def _location(text: str) -> str | None:
-    match = re.search(r"\b(?:ở|tại|tai|o|khu vuc)\b\s+([^,.!?;]+)", text, flags=re.IGNORECASE)
+    match = re.search(r"\b(?:ở|tại|tai|o|khu vuc|đến|den)\b\s+([^,.!?;]+)", text, flags=re.IGNORECASE)
     if not match:
         return None
     result = match.group(1).strip()
     result = re.split(r"\b(?:roi|sau do|va|rồi|sau đó|và)\b", result, maxsplit=1, flags=re.IGNORECASE)[0]
     return result.strip() or None
+
+
+def _looks_like_short_location_reply(text: str) -> bool:
+    """Conservatively recognize a standalone proper-name location reply.
+
+    This is used only to continue one existing task. It avoids maintaining a
+    list of campuses, hospitals, wards, or landmarks in the planner.
+    """
+    value = text.strip()
+    words = value.split()
+    if not 1 <= len(words) <= 8 or len(value) > 100:
+        return False
+    if not re.fullmatch(r"[\wÀ-ỹĐđ .,'-]+", value, flags=re.UNICODE):
+        return False
+    return any(character.isupper() for character in value)
 
 
 def _route(text: str) -> tuple[str | None, str | None]:
@@ -270,7 +285,8 @@ def _route(text: str) -> tuple[str | None, str | None]:
         dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", dropoff, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         return pickup or None, dropoff or None
 
-    # "từ VinUni đưa tôi tới đó" intentionally carries only a pickup.  The
+    # A route that names a pickup but refers only to "there" intentionally
+    # carries no destination. The
     # dependent domain must provide the destination; the planner must not
     # turn the reference "đó" into an invented address.
     return None, None
@@ -350,13 +366,33 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             start_at = _time_slot(text)
             if start_at:
                 slots["start_at"] = start_at
+    if domain == "restaurant":
+        cuisine_aliases = (
+            (("mon han", "do han", "nha hang han", "korean"), "korean"),
+            (("mon nhat", "do nhat", "nha hang nhat", "japanese"), "japanese"),
+            (("mon y", "do y", "nha hang y", "italian"), "italian"),
+            (("mon phap", "do phap", "nha hang phap", "french"), "french"),
+            (("mon thai", "do thai", "nha hang thai", "thai"), "thai"),
+            (("mon an", "do an", "nha hang an", "indian"), "indian"),
+            (("mon viet", "do viet", "nha hang viet", "vietnamese"), "vietnamese"),
+        )
+        for aliases, cuisine in cuisine_aliases:
+            if _has_any(lowered, aliases):
+                slots["cuisine_type"] = cuisine
+                break
+        if _has_any(lowered, ("gia re", "binh dan", "tiet kiem")):
+            slots["budget_range"] = "$"
+        elif _has_any(lowered, ("tam trung", "vua phai")):
+            slots["budget_range"] = "$$"
+        elif _has_any(lowered, ("cao cap", "sang trong")):
+            slots["budget_range"] = "$$$"
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
             slots["delivery_preference"] = "home"
-        dish_match = re.search(r"(?:pho|bún|bun|com|burger|pizza|do an|mon)\s+[^,.;!?]+", lowered)
+        dish_match = re.search(r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon)\s+[^,.;!?]+", lowered)
         if dish_match:
             dish_query = re.split(
-                r"\b(?:giao\s+(?:ve|toi)|ship|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b",
+                r"\b(?:giao\s+(?:ve|toi)|ship|den\s+|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b",
                 dish_match.group(0),
                 maxsplit=1,
             )[0].strip()
@@ -365,6 +401,8 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         location = _location(text)
         if location:
             slots["location"] = location
+        if "fast food" in lowered or "do an nhanh" in lowered:
+            slots["category"] = "fast food"
     if domain == "healthcare":
         for department in ("than kinh", "tieu hoa", "tim mach", "noi tiet", "da lieu", "nhi khoa"):
             if department in lowered:
@@ -394,7 +432,7 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
 def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: list[int] | None = None) -> PlannedTask:
     missing: list[str] = []
     if domain == "restaurant":
-        for key in ("location", "party_size", "start_at"):
+        for key in ("location",):
             if not slots.get(key):
                 missing.append(key)
     if domain == "ride":
@@ -433,14 +471,14 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
             continue
         if str(value.get("domain", "")) not in SUPPORTED_DOMAINS:
             continue
-        if str(value.get("phase", "")) == "COMPLETED":
+        if str(value.get("phase", "")) in {"COMPLETED", "FAILED", "BLOCKED"}:
             continue
         active.append((index, value))
     if not active:
         return []
 
     food_words = (
-        "chon quan", "chon mon", "pho", "bun", "com", "bat", "co lon",
+        "chon quan", "chon mon", "pho", "bun", "com", "bat", "co lon", "ga ran", "ga chien", "fast food", "do an nhanh", "goi y", "gan day",
         "khong cay", "giao ve", "giao toi", "ship", "dia chi", "ap ma",
         "tong tien", "xem tong", "dat luon",
     )
@@ -498,9 +536,10 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
         "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "bat",
         "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
+        "ga ran", "ga chien", "fast food", "do an nhanh", "goi y", "gan day",
     ))
     explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(lowered, ("giao ve", "ship", "dat mon"))
-    explicit_food = _has_any(lowered, ("giao ve", "giao toi", "ship", "dat mon", "pho", "bun", "com", "do an")) and not (explicit_restaurant and "giao" not in lowered)
+    explicit_food = _has_any(lowered, ("giao ve", "giao toi", "ship", "dat mon", "pho", "bun", "com", "do an", "ga ran", "ga chien", "fast food", "goi y", "gan day")) and not (explicit_restaurant and "giao" not in lowered)
     explicit_healthcare = _has_any(lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung"))
     explicit_ride = _has_any(lowered, ("dat xe", "goi xe", "di tu", "tu ")) and (_route(text)[0] is not None or "xe" in lowered)
 
@@ -526,7 +565,8 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         ]
         tasks.append(_task("ride", text, "Tìm chuyến xe phù hợp", ride_slots, dependencies))
 
-    if not tasks and follow_up and previous_tasks:
+    concise_location_reply = _looks_like_short_location_reply(text)
+    if not tasks and previous_tasks and (follow_up or concise_location_reply):
         targets = _follow_up_targets(text, previous_tasks)
         if len(targets) > 1:
             question = "Bạn muốn tiếp tục với yêu cầu nào: món ăn, đặt bàn hay lịch khám?"
@@ -538,6 +578,8 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
                 if domain in SUPPORTED_DOMAINS:
                     slots = dict(item.get("extracted_slots", {})) if isinstance(item.get("extracted_slots"), dict) else {}
                     slots.update(_semantic_slots(text, domain))
+                    if domain in {"food", "restaurant"} and concise_location_reply and not slots.get("location"):
+                        slots["location"] = text
                     if domain == "restaurant" and not slots.get("location") and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh")):
                         slots["location"] = text
                     if domain == "restaurant":
@@ -564,9 +606,9 @@ def _safe_slots(value: Any) -> dict[str, Any]:
         normalized = str(key).casefold()
         if normalized.endswith("_id") or normalized in FORBIDDEN_MODEL_FIELDS or normalized in {"price", "amount", "currency", "availability", "available", "status"}:
             continue
-        if isinstance(item, (str, int, float, bool)) or item is None:
+        if isinstance(item, str | int | float | bool) or item is None:
             safe[str(key)] = item
-        elif isinstance(item, list) and len(item) <= 8 and all(isinstance(entry, (str, int, float, bool)) for entry in item):
+        elif isinstance(item, list) and len(item) <= 8 and all(isinstance(entry, str | int | float | bool) for entry in item):
             safe[str(key)] = item
     return safe
 
@@ -639,7 +681,7 @@ def _safe_model_value(value: Any, depth: int = 0) -> Any:
         return result
     if isinstance(value, list):
         return [_safe_model_value(item, depth + 1) for item in value[:8]]
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str | int | float | bool) or value is None:
         return value
     return None
 
@@ -724,7 +766,8 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
             normalized["vehicle_type"] = vehicle
         text_slot("promo_code", 50)
     elif domain == "restaurant":
-        text_slot("location", 300)
+        for name, limit in (("location", 300), ("cuisine_type", 80), ("budget_range", 8)):
+            text_slot(name, limit)
         party_size = slots.get("party_size")
         if isinstance(party_size, int) and not isinstance(party_size, bool) and 1 <= party_size <= 20:
             normalized["party_size"] = party_size
@@ -749,8 +792,11 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         if selection in {"first", "second"}:
             normalized["selection"] = selection
     elif domain == "food":
-        for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("delivery_preference", 80)):
+        for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("district", 120), ("category", 120), ("delivery_preference", 80)):
             text_slot(name, limit)
+        max_price = slots.get("max_price")
+        if isinstance(max_price, int) and not isinstance(max_price, bool) and 0 <= max_price <= 10_000_000:
+            normalized["max_price"] = max_price
     return normalized
 
 

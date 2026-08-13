@@ -2,6 +2,8 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
+COPY seeds ./seeds
+COPY restaurants.csv menu_items.csv food_location_aliases.csv ./import-data/
 RUN pip install --no-cache-dir .
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser

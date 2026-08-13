@@ -6,15 +6,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from src.agents.assistant_graph import assistant_agent, model_diagnostics
-from src.agents.graph import agent as food_agent
-from src.agents.healthcare_graph import agent as healthcare_agent
-from src.agents.restaurant_graph import agent as restaurant_agent
-from src.agents.ride_graph import agent as ride_agent
-from src.api.dependencies import require_internal_auth
-from src.application.workflow_store import workflow_store
-from src.config import get_settings
-from src.models.schemas import (
+from ..agents.assistant_graph import assistant_agent, model_diagnostics
+from ..agents.graph import agent as food_agent
+from ..agents.healthcare_graph import agent as healthcare_agent
+from ..agents.restaurant_graph import agent as restaurant_agent
+from ..agents.ride_graph import agent as ride_agent
+from ..application.workflow_store import workflow_store
+from ..config import get_settings
+from ..models.schemas import (
     AgentResponse,
     AssistantChatRequest,
     ChatRequest,
@@ -24,6 +23,7 @@ from src.models.schemas import (
     RideChatRequest,
     RideChatResponse,
 )
+from .dependencies import require_internal_auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

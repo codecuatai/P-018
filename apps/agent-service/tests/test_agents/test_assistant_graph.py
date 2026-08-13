@@ -27,6 +27,31 @@ def test_deterministic_fallback_distinguishes_food_and_restaurant() -> None:
     assert domains(deterministic_plan("Đặt bàn ăn phở cho 2 người")) == ["restaurant"]
 
 
+def test_deterministic_food_fallback_understands_dish_and_general_destination() -> None:
+    plan = deterministic_plan("Đặt gà rán đến North Campus")
+    assert domains(plan) == ["food"]
+    assert plan.tasks[0].extracted_slots["dish_query"] == "ga ran"
+    assert plan.tasks[0].extracted_slots["location"] == "North Campus"
+
+
+def test_single_food_task_accepts_a_short_proper_name_location_reply() -> None:
+    first = deterministic_plan("Tìm phở giao về nhà")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+    follow_up = deterministic_plan("North Campus", state)
+    assert domains(follow_up) == ["food"]
+    assert follow_up.tasks[0].extracted_slots["location"] == "North Campus"
+
+
+def test_deterministic_restaurant_preferences_are_typed() -> None:
+    plan = deterministic_plan("T\u00ecm nh\u00e0 h\u00e0ng m\u00f3n H\u00e0n gi\u00e1 v\u1eeba ph\u1ea3i \u1edf VinUni")
+    assert domains(plan) == ["restaurant"]
+    assert plan.tasks[0].extracted_slots == {
+        "location": "VinUni",
+        "cuisine_type": "korean",
+        "budget_range": "$$",
+    }
+
+
 def test_deterministic_fallback_plans_independent_tasks() -> None:
     plan = deterministic_plan("Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai")
     assert domains(plan) == ["food", "healthcare"]

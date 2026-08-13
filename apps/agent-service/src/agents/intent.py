@@ -47,17 +47,20 @@ def classify(query: str) -> str:
         return "preview_order"
     if any(value in text for value in ("chon quan", "chon nha hang")):
         return "select_restaurant"
-    if any(value in text for value in ("tim", "an gi", "mon", "nha hang")):
+    if any(value in text for value in (
+        "tim", "an gi", "mon", "nha hang", "goi y", "gan day",
+        "fast food", "ga ran", "ga chien", "hamburger", "pizza", "dat ga",
+    )):
         return "search_food"
     return "general_food_support"
 
 
 def _dish_query(text: str) -> str | None:
-    cleaned = re.sub(r"\b(?:tim|lay|chon|mon|do an|nha hang|cho toi|toi muon|mua|them|bat|phan|to)\b", " ", text)
+    cleaned = re.sub(r"\b(?:tim|lay|chon|mon|do an|nha hang|cho toi|toi muon|mua|them|bat|phan|to|dat|goi y)\b", " ", text)
     cleaned = re.sub(r"\bap ma\b.*$", " ", cleaned)
     cleaned = re.sub(r"\b(?:mot|hai|ba|bon|nam|[1-9][0-9]?)\b", " ", cleaned)
     cleaned = re.sub(r"\b(?:co lon|size lon|size thuong|khong cay|it cay|cay|nha rieng|duoi \d+ nghin)\b", " ", cleaned)
-    cleaned = re.split(r"\b(?:giao\s+(?:ve|toi)|ship|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b", cleaned, maxsplit=1)[0]
+    cleaned = re.split(r"\b(?:giao\s+(?:ve|toi)|ship|den\s+|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b", cleaned, maxsplit=1)[0]
     cleaned = re.sub(r"\b(?:o|tai|khu vuc)\s+[a-z ]+[.!?,;:]*$", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,!?;:")
     return cleaned or None
@@ -101,10 +104,10 @@ def extract_slots(query: str) -> dict[str, object]:
     if max_price:
         value = int(max_price.group(1))
         slots["max_price"] = value * 1000 if value < 1000 else value
-    district = re.search(r"\b(?:o|tai|khu vuc)\b\s+([a-z ]+?)(?:\s+(?:duoi|tren|gia)|[.!?,;:]?$)", text)
+    district = re.search(r"\b(?:o|tai|khu vuc|den)\b\s+([a-z ]+?)(?:\s+(?:duoi|tren|gia)|[.!?,;:]?$)", text)
     if district:
         slots["district"] = district.group(1).strip()
-    if any(value in text for value in ("tim", "an gi", "mon", "lay", "chon", "cho toi", "toi muon", "mua", "them")):
+    if any(value in text for value in ("tim", "an gi", "mon", "lay", "chon", "cho toi", "toi muon", "mua", "them", "dat", "goi y", "ga ran", "ga chien", "fast food")):
         dish = _dish_query(text)
         if dish:
             slots["dish_query"] = dish

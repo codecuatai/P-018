@@ -2,8 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.config import get_settings
-from src.services.llm import build_chat_model, gemini_model_names, should_attempt_fallback_model
+from ..config import get_settings
+from ..services.llm import build_chat_model, gemini_model_names, should_attempt_fallback_model
 
 
 class GeminiExtraction(BaseModel):

@@ -30,6 +30,22 @@ def _matches_keyword(text: str, keyword: str) -> bool:
     return all(re.search(rf"\b{re.escape(token)}\b", text) for token in keyword.split())
 
 
+def _search_district(value: object, location_aliases: list[dict]) -> str:
+    """Resolve a catalog-managed landmark alias to an administrative area.
+
+    Place coverage is data-owned: operators add aliases to the Food catalog
+    seed rather than modifying the search implementation.
+    """
+    location = _fold_text(value)
+    for alias in location_aliases:
+        aliases = alias.get("aliases", [])
+        if not isinstance(aliases, list):
+            continue
+        if location in {_fold_text(candidate) for candidate in aliases}:
+            return _fold_text(alias.get("district", "")) or location
+    return location
+
+
 AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime | None]]
 
 
@@ -112,6 +128,7 @@ class InMemoryFoodRepository:
         }
         self.addresses = {"addr_demo": {"id": "addr_demo", "user_id": "usr_demo_001", "label": "Nhà riêng", "address": "25 Lê Đại Hành, Hai Bà Trưng, Hà Nội", "district": "Hai Bà Trưng", "latitude": 21.0125, "longitude": 105.8480}}
         self.drivers = {"drv_001": {"id": "drv_001", "name": "Nguyễn Văn Minh", "phone": "090***1234", "vehicle_type": "Xe máy", "license_plate": "29A-123.45", "available": True}}
+        self.location_aliases: list[dict] = []
         self.carts: dict[str, dict] = {}
         self.orders: dict[str, dict] = {}
         self.order_events: dict[str, list[dict]] = {}
@@ -122,7 +139,7 @@ class InMemoryFoodRepository:
 
     async def search(self, **filters) -> list[dict]:
         keyword = _fold_text(filters.get("keyword", ""))
-        district = _fold_text(filters.get("district", ""))
+        district = _search_district(filters.get("district", ""), self.location_aliases)
         category = _fold_text(filters.get("category", ""))
         result = []
         for item in self.items.values():
@@ -141,7 +158,8 @@ class InMemoryFoodRepository:
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
             result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant)})
-        return result
+        result.sort(key=lambda value: (str(value["restaurant"].get("name", "")), str(value["item"].get("name", ""))))
+        return result[:int(filters.get("limit", 20))]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         return deepcopy(self.restaurants.get(restaurant_id))
@@ -349,7 +367,7 @@ class PostgresFoodRepository:
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
         result = []
         keyword = _fold_text(filters.get("keyword", ""))
-        district = _fold_text(filters.get("district", ""))
+        district = _search_district(filters.get("district", ""), await self._records("location_alias"))
         category = _fold_text(filters.get("category", ""))
         for item in await self._records("menu_item"):
             restaurant = restaurants.get(item["restaurant_id"])
@@ -369,7 +387,8 @@ class PostgresFoodRepository:
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
             result.append({"item": item, "restaurant": restaurant})
-        return result
+        result.sort(key=lambda value: (str(value["restaurant"].get("name", "")), str(value["item"].get("name", ""))))
+        return result[:int(filters.get("limit", 20))]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1", restaurant_id)

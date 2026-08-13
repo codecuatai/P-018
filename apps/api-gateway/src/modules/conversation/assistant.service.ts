@@ -590,11 +590,11 @@ export class AssistantService {
   }
 
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
-    const active = current.filter((task) => task.phase !== 'COMPLETED');
+    const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED');
     if (!active.length) return { tasks: planned };
     const folded = plainText(message);
     const explicitDomains = new Set<Domain>();
-    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon'])) explicitDomains.add('food');
+    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day'])) explicitDomains.add('food');
     if (textHasAny(folded, ['dat ban', 'nha hang', 'an tai nha hang'])) explicitDomains.add('restaurant');
     if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
     if (textHasAny(folded, ['dat xe', 'goi xe', 'di tu', 'xe may', 'xe 4 cho', 'xe 7 cho'])) explicitDomains.add('ride');
@@ -672,7 +672,7 @@ export class AssistantService {
     if (textHasAny(folded, ['chon nha hang']) && available.has('restaurant') && hasCandidate('restaurant')) return ['restaurant'];
     if (textHasAny(folded, ['chon lich']) && available.has('healthcare') && hasCandidate('healthcare')) return ['healthcare'];
 
-    const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon']);
+    const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day']);
     if (foodSignal && available.has('food')) return ['food'];
     if (textHasAny(folded, ['lich kham', 'bac si', 'kham', 'than kinh']) && available.has('healthcare')) return ['healthcare'];
     if (textHasAny(folded, ['dat ban', 'nha hang', 'so nguoi']) && available.has('restaurant')) return ['restaurant'];
@@ -682,7 +682,7 @@ export class AssistantService {
       if (candidates.length) return candidates;
       return [...available];
     }
-    if (active.length === 1 && textHasAny(folded, ['nguoi', 'hoan kiem', 'ha noi', 'cau giay', 'tay ho', 'ba dinh', 'sang mai', 'toi nay', 'dong y', 'xac nhan'])) return [active[0].domain];
+    if (active.length === 1 && textHasAny(folded, ['nguoi', 'sang mai', 'toi nay', 'dong y', 'xac nhan'])) return [active[0].domain];
     return [];
   }
 
@@ -896,9 +896,39 @@ export class AssistantService {
         });
       }
       const status = assistantActionFailureStatus(error);
+      if (status === 'FAILED_FINAL') {
+        await this.persistFinalActionFailure(request.conversation_id, user, state, task, action);
+      }
       await this.completeAssistantActionExecution(user.sub, request.conversation_id, request.action_id, idempotencyKey, requestHash, status);
       throw error;
     }
+  }
+
+  private async persistFinalActionFailure(
+    conversationId: string,
+    user: AuthUser,
+    state: AssistantState,
+    task: StoredTask,
+    action: StoredAction,
+  ): Promise<void> {
+    // A final domain rejection (for example an unavailable ride booking) must
+    // consume its confirmation.  Otherwise a stale confirmation remains in
+    // the next chat turn and can be mistaken for a fresh request.
+    task.phase = 'FAILED';
+    task.public_item = {
+      kind: 'action_failed',
+      title: 'Yêu cầu chưa thể hoàn tất',
+      note: 'Xác nhận cũ đã được hủy. Bạn có thể gửi một yêu cầu mới với thông tin phù hợp hơn.',
+    };
+    state.actions = state.actions.filter((candidate) => candidate.task_id !== task.id);
+    this.propagateDependencyFailures(state.tasks);
+    await this.store.appendConversationTurn({
+      conversationId,
+      actorId: user.sub,
+      userMessage: { role: 'user', content: `__assistant_action_failed__:${action.kind}`, createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'Yêu cầu chưa thể hoàn tất; xác nhận cũ đã được hủy để không áp dụng cho các tin nhắn tiếp theo.', createdAt: new Date().toISOString() },
+      stateUpdates: state as unknown as Record<string, unknown>,
+    });
   }
 
   private async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> {
@@ -1001,14 +1031,14 @@ export class AssistantService {
       const domain = candidate.domain;
       if (domain !== 'ride' && domain !== 'food' && domain !== 'restaurant' && domain !== 'healthcare') continue;
       const request = stringValue(candidate.normalized_request) ?? '';
-      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (!request || task.normalized_request === request));
+      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && (!request || task.normalized_request === request));
       // A new destination or pickup is an update to the active journey, not a
       // second ride request. Other domains retain their request-based merge.
       const activeRide = domain === 'ride'
-        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED')
+        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
         : undefined;
       const match = sameRequest ?? activeRide ?? (planned.length === 1
-        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED')
+        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
         : undefined);
       const slots = sanitizedSlots(candidate.extracted_slots);
       if (match) {
@@ -1119,29 +1149,33 @@ export class AssistantService {
   private async processRestaurant(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
     const slots = task.extracted_slots;
     const location = stringValue(slots.location);
+    const cuisineType = stringValue(slots.cuisine_type);
+    const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
-    if (!location || !partySize || !startAt) {
-      const missing = [!location ? 'khu vực' : '', !partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
-      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm một chút thông tin', question: `Bạn cho mình biết ${missing.join(' và ')} nhé?` }] };
-    }
-    const startAtMilliseconds = Date.parse(startAt);
-    if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
+
+    if (!location && !cuisineType && !budgetRange) {
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{ kind: 'clarification', title: 'Thời gian này đã qua', question: 'Bạn hãy cho mình một thời gian muộn hơn để tiếp tục đặt bàn nhé?' }],
+        items: [{
+          kind: 'clarification',
+          title: 'Mình cần thêm một chút thông tin',
+          question: 'Bạn muốn tìm nhà hàng ở khu vực nào hoặc có yêu cầu gì không?'
+        }]
       };
     }
+
     const existing = task.authoritative;
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
     const selection = stringValue(slots.selection);
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
     if (!selected && selection) selected = candidates[selection === 'second' ? 1 : 0];
+
     if (!candidates.length) {
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
-        arguments: { location, limit: 5 },
+        arguments: { location, cuisine_type: cuisineType, budget_range: budgetRange, limit: 5 },
         workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
         tool_call_id: `call_${randomUUID()}`,
         schema_version: '1',
@@ -1158,6 +1192,7 @@ export class AssistantService {
         actions: selectionActions,
       };
     }
+
     if (!selected) {
       const publicItem = this.restaurantOptions(candidates);
       const cohortId = this.newCohort(task);
@@ -1169,6 +1204,28 @@ export class AssistantService {
         actions: candidates.slice(0, 5).map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId)),
       };
     }
+
+    // Một khi đã chọn xong nhà hàng (selected), mới kiểm tra partySize và startAt
+    if (!partySize || !startAt) {
+      const missing = [!partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
+      return {
+        phase: 'NEEDS_INFO' as TaskPhase,
+        items: [{
+          kind: 'clarification',
+          title: 'Mình cần thêm một chút thông tin',
+          question: `Bạn cho mình biết ${missing.join(' và ')} để mình kiểm tra bàn trống nhé?`
+        }]
+      };
+    }
+
+    const startAtMilliseconds = Date.parse(startAt);
+    if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
+      return {
+        phase: 'NEEDS_INFO' as TaskPhase,
+        items: [{ kind: 'clarification', title: 'Thời gian này đã qua', question: 'Bạn hãy cho mình một thời gian muộn hơn để tiếp tục đặt bàn nhé?' }],
+      };
+    }
+
     const restaurantId = stringValue(selected.id);
     if (!restaurantId) throw new BadRequestException({ code: 'RESTAURANT_SELECTION_INVALID', detail: 'A current restaurant selection is required.' });
     const availability = await this.restaurant.executeTool({
@@ -1395,9 +1452,21 @@ export class AssistantService {
       : isRecord(task.authoritative?.state_updates)
         ? task.authoritative.state_updates
         : {};
-    const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message: task.latest_message ?? task.normalized_request, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
+    const semanticContext: JsonObject = {};
+    for (const name of ['dish_query', 'district', 'category', 'delivery_preference'] as const) {
+      const value = stringValue(task.extracted_slots[name]);
+      if (value) semanticContext[name] = value;
+    }
+    const maxPrice = numberValue(task.extracted_slots.max_price);
+    if (maxPrice !== undefined) semanticContext.max_price = maxPrice;
+    // Food owns landmark resolution; Gateway only preserves the typed
+    // user-supplied location preference across turns.
+    const location = stringValue(task.extracted_slots.location);
+    if (location && !semanticContext.district) semanticContext.district = location;
+    const workflowContext = { ...previousContext, ...semanticContext };
+    const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message: task.latest_message ?? task.normalized_request, workflow_context: workflowContext, correlation_id: correlationId }, correlationId);
     const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
-    const nextContext = { ...previousContext, ...stateUpdates };
+    const nextContext = { ...workflowContext, ...stateUpdates };
     const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
     const data = isRecord(response.data) ? response.data : {};
     const foodData = isRecord(data) ? this.foodData(data) : {};
@@ -1603,6 +1672,14 @@ export class AssistantService {
   }
 
   private restaurantOptions(candidates: JsonObject[]): JsonObject {
+    if (!candidates.length) {
+      return {
+        kind: 'restaurant_unavailable',
+        title: 'No matching restaurants found',
+        options: [],
+        note: 'No catalog choices match the current filters. Try a different area, cuisine, or price range.',
+      };
+    }
     return { kind: 'restaurant_options', title: 'Nhà hàng phù hợp', options: candidates.slice(0, 5).map((candidate) => this.publicRestaurant(candidate)) };
   }
 
@@ -1627,6 +1704,7 @@ export class AssistantService {
       department: isRecord(doctor.department) ? doctor.department.name : doctor.department,
       start_time: isRecord(slot) ? slot.start_time : undefined,
       price: doctor.price,
+      facility: isRecord(doctor.facility) ? this.sanitizeFacility(doctor.facility) : undefined,
     })));
   }
 
@@ -1708,6 +1786,7 @@ export class AssistantService {
       const item = value[key];
       if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
+    if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
     return result;
   }
 

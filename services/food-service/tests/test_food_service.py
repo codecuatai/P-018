@@ -103,3 +103,15 @@ async def test_search_folds_accents_and_accepts_city_address_filter() -> None:
     results = await food.search(keyword="pho bo", district="ha noi")
     assert [result["item"]["name"] for result in results] == ["Phở bò tái"]
     assert [result["item"]["name"] for result in await food.search(keyword="pho ga")] == ["Phở gà"]
+
+
+@pytest.mark.asyncio
+async def test_search_resolves_catalog_managed_location_alias_and_bounds_results() -> None:
+    food = make_service()
+    food.repository.restaurants["res_pho_hanoi"]["district"] = "Gia Lâm"
+    food.repository.location_aliases = [{"aliases": ["North Campus", "Northern University"], "district": "Gia Lâm"}]
+    first = await food.search(keyword="pho", district="North Campus", limit=1)
+    second = await food.search(keyword="pho", district="Northern University", limit=1)
+    assert len(first) == 1
+    assert second == first
+    assert first[0]["restaurant"]["district"] == "Gia Lâm"

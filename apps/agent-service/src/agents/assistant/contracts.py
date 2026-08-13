@@ -51,6 +51,8 @@ class RideSemanticSlots(StrictModel):
 
 class RestaurantSemanticSlots(StrictModel):
     location: SemanticSlot | None = None
+    cuisine_type: SemanticSlot | None = None
+    budget_range: SemanticSlot | None = None
     party_size: SemanticSlot | None = None
     start_at: SemanticSlot | None = None
     duration_minutes: SemanticSlot | None = None

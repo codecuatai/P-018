@@ -12,6 +12,7 @@ class SearchQuery(BaseModel):
     min_price: int | None = Field(default=None, ge=0)
     max_price: int | None = Field(default=None, ge=0)
     open_only: bool = True
+    limit: int = Field(default=20, ge=1, le=50)
 
 
 class CreateCartRequest(BaseModel):

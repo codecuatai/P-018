@@ -180,21 +180,28 @@ class RestaurantRepository:
     def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
         with self.factory() as db:
             stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
+
+            # 1. Lọc theo địa điểm
             if location:
                 aliases = {
                     "hà nội": ("Hà Nội", "Hanoi"),
                     "ha noi": ("Hà Nội", "Hanoi"),
                     "hồ chí minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
                     "ho chi minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
+                    "vinuni": ("Gia Lâm", "Gia Lam", "Hà Nội", "Hanoi"),
                 }
                 candidates = aliases.get(location.strip().lower(), (location,))
                 stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))
+
             if cuisine_type:
                 stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{cuisine_type}%"))
+
             if budget_range:
                 stmt = stmt.where(RestaurantRow.budget_range == budget_range)
+
             rows = db.scalars(stmt.offset(offset).limit(limit)).all()
             return [self.restaurant_dict(row) for row in rows]
+
 
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:

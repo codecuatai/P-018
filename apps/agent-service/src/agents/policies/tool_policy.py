@@ -1,5 +1,5 @@
 
-from src.models.schemas import ToolRequest
+from ...models.schemas import ToolRequest
 
 READ_TOOLS = {
     "restaurant.search",

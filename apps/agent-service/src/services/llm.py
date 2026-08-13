@@ -5,7 +5,7 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel
 
-from src.config import get_settings
+from ..config import get_settings
 
 
 class LLMAdapter(Protocol):
@@ -99,7 +99,7 @@ def provider_error_category(error: BaseException) -> ProviderErrorCategory:
         )
     ):
         return "authentication_or_permission"
-    if status in {408, 504} or isinstance(error, (TimeoutError, ConnectionError, OSError)) or any(
+    if status in {408, 504} or isinstance(error, TimeoutError | ConnectionError | OSError) or any(
         marker in name or marker in text
         for marker in ("timeout", "timed out", "deadline exceeded", "connecterror", "connection error", "network", "socket")
     ):
@@ -134,7 +134,7 @@ def is_structured_schema_capability_error(error: BaseException) -> bool:
     category = provider_error_category(error)
     if category == "authentication_or_permission":
         return False
-    return isinstance(error, (NotImplementedError, TypeError, ValueError)) or category == "schema_or_capability"
+    return isinstance(error, NotImplementedError | TypeError | ValueError) or category == "schema_or_capability"
 
 
 def should_attempt_fallback_model(error: BaseException) -> bool:
