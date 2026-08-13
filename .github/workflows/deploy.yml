@@ -8,30 +8,37 @@ on:
     types:
       - completed
 
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 35
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-      # Thực thi lệnh trên VPS qua SSH để tự động kéo code và build
-      - name: SSH and Deploy on VPS
+      - name: SSH and deploy on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.STAGING_HOST }}
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
+          command_timeout: 30m
           script: |
-            # 1. Di chuyển vào thư mục dự án trên VPS
+            set -eu
             cd /opt/xone
-            
-            # 2. Đồng bộ code mới nhất từ GitHub
+
+            # Deploy exactly the commit that passed CI, not a newer staging commit.
             git fetch origin staging
-            git reset --hard origin/staging
-            
-            # 3. Build và khởi động lại các Container trực tiếp trên VPS
+            git reset --hard ${{ github.event.workflow_run.head_sha }}
+
+            docker compose --env-file .env.example config --quiet
             docker compose up -d --build --remove-orphans
-            
-            # 4. Dọn dẹp Docker images cũ để tránh đầy ổ cứng
+
             docker image prune -f
-            echo "DEPLOY HOÀN TẤT THÀNH CÔNG!"
+            echo "Staging deployment completed successfully."
