@@ -375,18 +375,33 @@ jobs:
     steps:
       - name: SSH and deploy on VPS
         uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_SERVER_URL: ${{ github.server_url }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.STAGING_HOST }}
           username: ${{ secrets.STAGING_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
           command_timeout: 30m
           script: |
             set -eu
             cd /opt/xone
 
-            # Deploy exactly the commit that passed every required CI job.
-            git fetch --prune origin staging
-            git reset --hard '${{ github.sha }}'
+            # Initialize only once. The VPS-owned .env remains untracked and
+            # is therefore preserved by the exact-commit reset below.
+            if [ ! -d .git ]; then
+              git init
+            fi
+
+            # GITHUB_TOKEN is job-scoped and is not saved as a VPS credential.
+            deploy_auth="$(printf 'x-access-token:%s' "$DEPLOY_GITHUB_TOKEN" | base64 -w 0)"
+            git -c http.extraheader="AUTHORIZATION: basic $deploy_auth" fetch \
+              --no-tags "$DEPLOY_SERVER_URL/$DEPLOY_REPOSITORY.git" "$DEPLOY_SHA"
+            unset DEPLOY_GITHUB_TOKEN deploy_auth
+            git reset --hard FETCH_HEAD
 
             docker compose --env-file .env config --quiet
             docker compose --env-file .env up -d --build --remove-orphans
