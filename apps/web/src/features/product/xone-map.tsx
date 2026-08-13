@@ -28,12 +28,13 @@ type XOneMapProps = {
   routeDurationSeconds?: number | null;
   providerUnavailable?: boolean;
   locationDenied?: boolean;
+  density?: "default" | "active";
   label?: string;
 };
 
 type MapState = "loading" | "ready" | "error";
 
-const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 export function XOneMap({
@@ -52,6 +53,7 @@ export function XOneMap({
   routeDurationSeconds,
   providerUnavailable = false,
   locationDenied = false,
+  density = "default",
   label = "Sơ đồ vị trí",
 }: XOneMapProps) {
   const mapNodeRef = useRef<HTMLDivElement>(null);
@@ -137,7 +139,8 @@ export function XOneMap({
 
         const bounds = L.latLngBounds(mapData.points.map(toLatLng));
         map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
-        window.setTimeout(() => map.invalidateSize(), 0);
+        window.requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+        window.setTimeout(() => map.invalidateSize({ animate: false }), 120);
         if (!disposed) setMapState("ready");
       } catch {
         if (!disposed) setMapState("error");
@@ -155,7 +158,7 @@ export function XOneMap({
   }, [mapData, providerUnavailable]);
 
   const canRenderMap = mapData.points.length > 0 && !providerUnavailable && mapState !== "error";
-  return <section className="xone-map" aria-label={label}>
+  return <section className={`xone-map xone-map-${density}`} aria-label={label}>
     <div className="xone-map-toolbar">
       <small>{routeProvider ? `Nguồn route: ${routeProvider}` : "Bản đồ nền OpenStreetMap"}</small>
       <span>
@@ -163,7 +166,7 @@ export function XOneMap({
         <button type="button" aria-label="Phóng to bản đồ" onClick={() => mapRef.current?.zoomIn()} disabled={!canRenderMap}><Plus size={13} /></button>
       </span>
     </div>
-    {canRenderMap ? <div ref={mapNodeRef} className="xone-map-leaflet" data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} />}
+    {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} />}
     {mapData.points.length ? <div className="xone-map-legend"><LegendDot color="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot color="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot color="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
     <small>{mapState === "loading" && canRenderMap ? "Đang tải bản đồ nền…" : mapData.markers.origin && mapData.markers.destination ? "Tuyến hiển thị từ route snapshot authoritative; tọa độ không hợp lệ không được vẽ." : "Chỉ hiển thị các tọa độ đã được xác minh từ nguồn authoritative."}</small>
   </section>;

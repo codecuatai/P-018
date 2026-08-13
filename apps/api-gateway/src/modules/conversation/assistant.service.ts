@@ -10,7 +10,7 @@ import {
 } from '../../clients/service.clients';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
-import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore } from '../core/core.module';
+import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
 import {
@@ -521,7 +521,7 @@ export class AssistantService {
         conversation_id: conversationId,
         user_id: user.sub,
         message,
-        messages: (current?.messages ?? []).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
+        messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
         conversation_state: this.plannerSafeState(state),
         correlation_id: correlationId,
       },
@@ -716,12 +716,13 @@ export class AssistantService {
       const turn = this.buildTurn(
         request.conversation_id,
         user,
-        `__assistant_action__:${action.kind}`,
+        action.kind,
         message,
         { ...state, tasks: state.tasks },
         remainingItems,
         state.actions,
         result.phase === 'COMPLETED' && result.publicItem ? [result.publicItem] : [],
+        'INTERNAL_ACTION',
       );
       try {
         await this.commitAssistantActionSuccess({
@@ -769,12 +770,13 @@ export class AssistantService {
         const failedTurn = this.buildTurn(
           request.conversation_id,
           user,
-          `__assistant_action__:${action.kind}`,
+          action.kind,
           'DÃ£ ghi nháº­n tháº¥t báº¡i cá»§a Ride vÃ  giá»¯ nguyÃªn cÃ¡c dá»‹ch vá»¥ Ä‘á»™c láº­p.',
           state,
           [publicItem],
           state.actions,
           [],
+          'INTERNAL_ACTION',
         );
         try {
           await this.commitAssistantActionSuccess({
@@ -1418,6 +1420,7 @@ export class AssistantService {
     items: JsonObject[] = [],
     actions: StoredAction[] = [],
     completed: JsonObject[] = [],
+    messageKind: ConversationMessageKind = 'USER',
   ): {
     response: AssistantResponse;
     userMessage: AssistantActionSuccessCommit['userMessage'];
@@ -1437,8 +1440,8 @@ export class AssistantService {
     };
     return {
       response,
-      userMessage: { role: 'user', content: userMessage, createdAt: now },
-      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: now, data: response as unknown as Record<string, unknown> },
+      userMessage: { role: 'user', content: messageKind === 'INTERNAL_ACTION' ? `action:${userMessage}` : userMessage, kind: messageKind, visibility: messageKind === 'INTERNAL_ACTION' ? 'INTERNAL' : 'USER_VISIBLE', createdAt: now },
+      assistantMessage: { role: 'assistant', content: safeMessage, kind: 'ASSISTANT', visibility: 'USER_VISIBLE', createdAt: now, data: response as unknown as Record<string, unknown> },
       stateUpdates: { ...state, actions, orchestration } as unknown as Record<string, unknown>,
     };
   }
@@ -1467,8 +1470,8 @@ export class AssistantService {
     await this.store.appendConversationTurn({
       conversationId,
       actorId: user.sub,
-      userMessage: { role: 'user', content: userMessage, createdAt: new Date().toISOString() },
-      assistantMessage: { role: 'assistant', content: safeMessage, createdAt: new Date().toISOString(), data: response as unknown as Record<string, unknown> },
+      userMessage: { role: 'user', content: userMessage, kind: 'USER', visibility: 'USER_VISIBLE', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: safeMessage, kind: 'ASSISTANT', visibility: 'USER_VISIBLE', createdAt: new Date().toISOString(), data: response as unknown as Record<string, unknown> },
       stateUpdates: finalState as unknown as Record<string, unknown>,
     });
     return response;

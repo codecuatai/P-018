@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorText, getRideTracking } from "@/lib/api-client";
 import type { RideTracking } from "@/types";
@@ -12,28 +12,61 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
   const [tracking, setTracking] = useState<RideTracking>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const trackingRef = useRef<RideTracking | undefined>(undefined);
+  const inFlightRef = useRef(false);
 
   const load = useCallback(async (background = false) => {
+    if (inFlightRef.current || (background && document.visibilityState === "hidden")) return;
+    inFlightRef.current = true;
     if (!background) setLoading(true);
     setError("");
     try {
-      setTracking(await getRideTracking(bookingId));
+      const next = await getRideTracking(bookingId);
+      trackingRef.current = next;
+      setTracking(next);
     } catch (reason) {
       setError(errorText(reason));
     } finally {
+      inFlightRef.current = false;
       if (!background) setLoading(false);
     }
   }, [bookingId]);
 
   useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(true), 3000);
-    return () => window.clearInterval(timer);
+    let active = true;
+    let timer: number | undefined;
+    const schedule = () => {
+      if (!active || document.visibilityState === "hidden" || isTerminalStatus(trackingRef.current?.status)) return;
+      timer = window.setTimeout(() => { void poll(); }, 3000);
+    };
+    const poll = async () => {
+      if (!active || document.visibilityState === "hidden" || isTerminalStatus(trackingRef.current?.status)) return;
+      await load(true);
+      schedule();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+        return;
+      }
+      void poll();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    void load().then(schedule);
+    return () => {
+      active = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [load]);
 
   const origin = pointFrom(tracking?.route?.origin);
   const destination = pointFrom(tracking?.route?.destination);
-  const current = tracking?.current_location ?? tracking?.driver_location ?? undefined;
+  const current = tracking?.current_location ?? undefined;
+  const driver = tracking?.driver_location ?? undefined;
+  const driverName = recordText(tracking?.driver, ["name", "full_name", "display_name"], "Tài xế X-One");
+  const driverVehicle = recordText(tracking?.driver, ["vehicle", "vehicle_type", "license_plate"], "Thông tin xe sẽ hiển thị khi được xác nhận");
 
   return <section className="ride-tracking" aria-labelledby="ride-tracking-title">
     <div className="tracking-heading">
@@ -51,8 +84,10 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
         <span>{tracking.eta_seconds > 0 ? `Còn khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Đã cập nhật"}</span>
         <span>{Math.round(tracking.progress * 100)}% hành trình</span>
       </div>
-      <XOneMap origin={origin} destination={destination} current={current} driver={current} routePolyline={tracking.route?.polyline} routeProvider={tracking.route_provider ?? tracking.route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.route?.distance_meters} routeDurationSeconds={tracking.route?.duration_seconds} label="Theo dõi chuyến xe" />
-      <p className="tracking-footnote">Snapshot mô phỏng được làm mới mỗi 3 giây. Tọa độ chỉ hiển thị khi Ride Service có dữ liệu hợp lệ.</p>
+      {tracking.driver ? <div className="tracking-driver-card"><span className="driver-avatar" aria-hidden="true">{driverName.slice(0, 1).toUpperCase()}</span><span><strong>{driverName}</strong><small>{driverVehicle}</small></span><span className="status-badge">Đã xác minh</span></div> : tracking.status === "SEARCHING_DRIVER" ? <div className="driver-search-card" role="status"><span className="driver-search-pulse" aria-hidden="true" /><span><strong>Đang tìm tài xế phù hợp</strong><small>Ride Service sẽ cập nhật khi có phân công authoritative.</small></span></div> : null}
+      <ol className="tracking-timeline" aria-label="Tiến trình chuyến xe">{trackingSteps.map((step, index) => <li className={index <= trackingStepIndex(tracking.status) ? "is-complete" : ""} key={step.status}><span aria-hidden="true">{index + 1}</span><small>{step.label}</small></li>)}</ol>
+      <XOneMap origin={origin} destination={destination} current={current} driver={driver} density="active" routePolyline={tracking.route?.polyline} routeProvider={tracking.route_provider ?? tracking.route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.route?.distance_meters} routeDurationSeconds={tracking.route?.duration_seconds} label="Theo dõi chuyến xe" />
+      <p className="tracking-footnote">Cập nhật nền mỗi 3 giây khi trang đang mở. Polling dừng ở trạng thái kết thúc và tạm dừng khi tab bị ẩn.</p>
     </> : <p className="inline-note">Chưa có dữ liệu tracking.</p>}
   </section>;
 }
@@ -65,4 +100,30 @@ function pointFrom(value: unknown): { latitude: number; longitude: number } | un
 
 function trackingLabel(status: string): string {
   return ({ AWAITING_CONFIRMATION: "Đang chờ xác nhận", SEARCHING_DRIVER: "Đang tìm tài xế", DRIVER_ASSIGNED: "Tài xế đã được gán", DRIVER_TO_PICKUP: "Tài xế đang đến điểm đón", DRIVER_ARRIVED: "Tài xế đã đến", IN_PROGRESS: "Đang di chuyển", COMPLETED: "Đã hoàn tất", NO_DRIVER: "Chưa tìm thấy tài xế", FAILED: "Chuyến thất bại", PAYMENT_FAILED: "Thanh toán thất bại", CANCELLED: "Đã hủy" } as Record<string, string>)[status] ?? status;
+}
+
+const trackingSteps = [
+  { status: "SEARCHING_DRIVER", label: "Tìm tài xế" },
+  { status: "DRIVER_TO_PICKUP", label: "Đang đến" },
+  { status: "DRIVER_ARRIVED", label: "Đã đến" },
+  { status: "IN_PROGRESS", label: "Đang đi" },
+  { status: "COMPLETED", label: "Hoàn tất" },
+] as const;
+
+function trackingStepIndex(status: string): number {
+  if (status === "AWAITING_CONFIRMATION" || status === "SEARCHING_DRIVER") return 0;
+  if (status === "DRIVER_ASSIGNED" || status === "DRIVER_TO_PICKUP") return 1;
+  if (status === "DRIVER_ARRIVED") return 2;
+  if (status === "IN_PROGRESS") return 3;
+  return status === "COMPLETED" ? 4 : -1;
+}
+
+function isTerminalStatus(status?: string): boolean {
+  return status === "COMPLETED" || status === "NO_DRIVER" || status === "FAILED" || status === "PAYMENT_FAILED" || status === "CANCELLED";
+}
+
+function recordText(value: Record<string, unknown> | null | undefined, keys: string[], fallback: string): string {
+  if (!value) return fallback;
+  for (const key of keys) if (typeof value[key] === "string" && value[key].trim()) return value[key] as string;
+  return fallback;
 }

@@ -219,11 +219,11 @@ export function getFoodCart(cartId: string): Promise<Record<string, unknown>> {
   return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}`, { method: "GET" });
 }
 
-export function addFoodCartItem(cartId: string, value: { menu_item_id: string; quantity: number; note?: string }): Promise<Record<string, unknown>> {
+export function addFoodCartItem(cartId: string, value: { menu_item_id: string; quantity: number; selected_options?: Array<{ group_id: string; option_id: string }>; note?: string }): Promise<Record<string, unknown>> {
   return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) });
 }
 
-export function updateFoodCartItem(cartId: string, itemId: string, value: { quantity: number; note?: string }): Promise<Record<string, unknown>> {
+export function updateFoodCartItem(cartId: string, itemId: string, value: { quantity: number; selected_options?: Array<{ group_id: string; option_id: string }> | null; note?: string }): Promise<Record<string, unknown>> {
   return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) });
 }
 

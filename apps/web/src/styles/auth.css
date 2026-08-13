@@ -68,7 +68,7 @@
 .password-input input { border: 0; box-shadow: none !important; }
 .password-input button { display: grid; width: 38px; height: 38px; place-items: center; flex: 0 0 auto; color: var(--color-muted); background: transparent; border: 0; border-radius: 7px; }
 .password-input button:hover { color: var(--color-primary-strong); background: #EDF6FB; }
-.form-row-end { display: flex; justify-content: flex-end; margin-top: 12px; }
+.form-row-end { display: flex; justify-content: flex-end; margin-top: 12px; margin-bottom: 12px;}
 .field-hint { margin: 8px 0 0; color: var(--color-muted); font-size: 0.69rem; line-height: 1.5; }
 .form-error,
 .form-success { padding: 10px 11px; margin: 15px 0 0; border-radius: 8px; font-size: 0.75rem; line-height: 1.45; }

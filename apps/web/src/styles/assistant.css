@@ -40,7 +40,21 @@
 .composer-box textarea::placeholder { color: #8394A5; }
 .send-button { display: grid; width: 36px; height: 36px; place-items: center; flex: 0 0 auto; color: var(--color-surface); background: var(--color-primary); border: 0; border-radius: 8px; transition: background-color 150ms ease; }
 .send-button:not(:disabled):hover { background: var(--color-primary-strong); }
-.assistant-context { display: grid; gap: 12px; }
+.context-rail { position: sticky; top: 24px; display: grid; gap: 12px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-tight); }
+.context-rail-heading { display: grid; gap: 5px; padding-bottom: 2px; }
+.context-rail-heading h2 { margin: 0; color: var(--color-navy); font-size: 0.96rem; letter-spacing: -0.03em; }
+.context-rail-heading p { margin: 0; color: var(--color-muted); font-size: 0.71rem; line-height: 1.5; }
+.context-rail-active { border-color: #BBD5FF; }
+.context-rail-recovery { border-color: #EDC5C0; }
+.context-rail-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 35px; padding: 7px 9px; color: var(--color-primary-strong); background: var(--surface-ice); border: 1px solid #C9D8FA; border-radius: 7px; font-size: 0.68rem; font-weight: 760; }
+.context-rail-action:hover { color: var(--color-navy); border-color: var(--color-primary); }
+.active-ride-rail-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 11px; background: #F4F8FF; border: 1px solid #D7E3FC; border-radius: 9px; }
+.active-ride-rail-icon { display: grid; width: 30px; height: 30px; place-items: center; color: var(--color-primary-strong); background: #E2EBFF; border-radius: 8px; }
+.active-ride-rail-card > div:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
+.active-ride-rail-card strong { color: var(--color-navy); font-size: 0.72rem; }
+.active-ride-rail-card span,
+.active-ride-rail-card small { color: var(--color-muted); font-size: 0.64rem; line-height: 1.4; }
+.active-ride-rail-card .text-link { grid-column: 1 / -1; font-size: 0.68rem; }
 .context-card { padding: 16px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; }
 .context-card-accent { background: #EEF7FB; border-color: #CCE1ED; }
 .context-card-title { display: flex; align-items: center; gap: 7px; color: var(--color-navy); font-size: 0.78rem; }
@@ -95,7 +109,9 @@
 
 @media (max-width: 1040px) {
   .assistant-layout { grid-template-columns: minmax(0, 1fr); }
-  .assistant-context { display: none; }
+  .context-rail { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .context-rail-heading { grid-column: 1 / -1; }
+  .context-rail-action { grid-column: 1 / -1; }
   .chat-column { min-height: calc(100vh - 145px); }
 }
 
@@ -116,6 +132,9 @@
   .assistant-card { padding: 12px; }
   .detail-list,
   .metric-row { grid-template-columns: 1fr; }
+  .context-rail { grid-template-columns: 1fr; }
+  .context-rail-heading,
+  .context-rail-action { grid-column: auto; }
   .route-line { grid-template-columns: 1fr; gap: 7px; }
   .route-arrow { display: none !important; }
 }

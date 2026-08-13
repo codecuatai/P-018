@@ -313,7 +313,17 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  kind?: "USER" | "ASSISTANT" | "INTERNAL_ACTION";
+  visibility?: "USER_VISIBLE" | "INTERNAL";
   data?: AssistantResponse;
+}
+
+export const LEGACY_INTERNAL_ACTION_PREFIX = "__assistant_action__:";
+
+export function isUserVisibleConversationMessage(message: ConversationMessage): boolean {
+  return message.kind !== "INTERNAL_ACTION"
+    && message.visibility !== "INTERNAL"
+    && !message.content.startsWith(LEGACY_INTERNAL_ACTION_PREFIX);
 }
 
 export interface ConversationRecord {

@@ -60,17 +60,18 @@ export class HistoryService {
   constructor(private readonly food: FoodClient, private readonly ride: RideClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient, private readonly payments: PaymentService) {}
 
   async list(actorId: string, correlationId: string, options: HistoryQueryDto = new HistoryQueryDto()): Promise<{ items: HistoryItem[]; total: number; page: number; page_size: number; has_more: boolean; partial: boolean; unavailable: string[] }> {
-    const responses = await Promise.allSettled([
-      this.food.listOrders(correlationId, actorId),
-      this.ride.listBookings(actorId, { correlationId }),
-      this.restaurant.listReservations(actorId, correlationId),
-      this.healthcare.listAppointments(actorId, correlationId),
-    ]);
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
+    const requested = options.service ? [options.service] : names;
+    const responses = await Promise.allSettled(requested.map((name) => {
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId });
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
+      return this.healthcare.listAppointments(actorId, correlationId);
+    }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
     responses.forEach((result, index) => {
-      const name = names[index];
+      const name = requested[index];
       if (result.status === 'rejected') {
         unavailable.push(name);
         return;
@@ -78,7 +79,7 @@ export class HistoryService {
       for (const value of extractItems(result.value)) items.push(normalizeHistoryItem(name, value));
     });
     items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
-    if (!items.length && unavailable.length === names.length) throw new ServiceUnavailableException({ code: 'HISTORY_UNAVAILABLE', detail: 'Lịch sử đang tạm thời chưa sẵn sàng.', retryable: true });
+    if (!items.length && unavailable.length === requested.length) throw new ServiceUnavailableException({ code: 'HISTORY_UNAVAILABLE', detail: 'Lịch sử đang tạm thời chưa sẵn sàng.', retryable: true });
     const filtered = items.filter((item) => matchesHistory(item, options));
     const page = options.page ?? 1;
     const pageSize = options.page_size ?? 20;

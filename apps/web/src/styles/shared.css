@@ -12,6 +12,8 @@
 
 .skip-link:focus { transform: translateY(0); }
 
+.brand-link { display: inline-flex; align-items: center; gap: 9px; color: var(--color-navy); font-size: 1.03rem; font-weight: 780; letter-spacing: -0.04em; white-space: nowrap; }
+
 .eyebrow {
   display: block;
   margin: 0;

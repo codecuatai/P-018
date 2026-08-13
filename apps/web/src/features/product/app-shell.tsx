@@ -1,8 +1,8 @@
 "use client";
 
-import { Bell, Heart, HeartPulse, History, LifeBuoy, LogOut, MapPinned, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Bell, Heart, History, LifeBuoy, LogOut, Menu, MessageSquareText, ShieldCheck, Store, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
@@ -17,29 +17,27 @@ const navigation = [
   { href: "/app/favorites", label: "Đã lưu", icon: Heart },
   { href: "/app/support", label: "Hỗ trợ", icon: LifeBuoy },
   { href: "/app/services", label: "Dịch vụ", icon: Store },
-  { href: "/app/profile", label: "Hồ sơ", icon: UserRound },
-  { href: "/app/addresses", label: "Địa chỉ", icon: MapPinned },
-  { href: "/app/patients", label: "Hồ sơ y tế", icon: HeartPulse },
-  { href: "/app/settings", label: "Cài đặt", icon: Settings },
+  { href: "/app/profile", label: "Hồ sơ & cài đặt", icon: UserRound },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   async function handleLogout() {
     try { await logout(); } finally { router.replace("/"); }
   }
 
   return <div className="app-shell"><a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
-    <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} onLogout={handleLogout} /></aside>
-    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link><Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} onLogout={handleLogout} compact /></SheetContent></Sheet></header>
+    <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} /></aside>
+    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link><Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact /></SheetContent></Sheet></header>
     <main className="app-content" id="app-content">{children}</main>
   </div>;
 }
 
-function Sidebar({ userEmail, onLogout, compact = false }: { userEmail: string; onLogout: () => Promise<void>; compact?: boolean }) {
-  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app">Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => compact ? <SheetClose asChild key={href}><Link className="app-nav-link" href={href}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link></SheetClose> : <Link className="app-nav-link" href={href} key={href}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>)}</nav><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
+function Sidebar({ userEmail, pathname, onLogout, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; compact?: boolean }) {
+  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app">Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => { const current = href === "/app" ? pathname === "/app" : pathname === href || pathname?.startsWith(`${href}/`); const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>; return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>; })}</nav><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
   return contents;
 }
 

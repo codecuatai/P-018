@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Archive, ArchiveRestore, ClipboardList, Edit3, MessageSquareText, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { deleteConversation, errorText, listConversations, listHistory, updateConversation } from "@/lib/api-client";
 import type { ConversationRecord, HistoryType, HistoryItem } from "@/types";
@@ -25,29 +25,49 @@ export default function HistoryPage() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [page, setPage] = useState(1);
+  const [loadSentinel, setLoadSentinel] = useState<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (nextPage = 1, append = false) => {
+    if (append && loadingMoreRef.current) return;
+    if (append) loadingMoreRef.current = true;
     setLoading(true);
     setError("");
     const [conversationResult, historyResult] = await Promise.allSettled([
       listConversations(true),
-      listHistory({ service: service || undefined, status: status || undefined, from: from || undefined, to: to || undefined, page, page_size: pageSize }),
+      listHistory({ service: service || undefined, status: status || undefined, from: from || undefined, to: to || undefined, page: nextPage, page_size: pageSize }),
     ]);
     const failures: string[] = [];
     if (conversationResult.status === "fulfilled") setConversations(conversationResult.value.items);
     else failures.push(errorText(conversationResult.reason));
     if (historyResult.status === "fulfilled") {
-      setResources(historyResult.value.items);
       setTotalResources(historyResult.value.total);
       setHasMore(historyResult.value.has_more);
       setUnavailable(historyResult.value.unavailable);
     } else failures.push(errorText(historyResult.reason));
     if (conversationResult.status === "rejected" && historyResult.status === "rejected") setError(failures[0] ?? "Không thể tải lịch sử.");
     else if (failures.length) setError("Một phần lịch sử chưa sẵn sàng. Bạn vẫn có thể xem dữ liệu còn lại.");
+    if (historyResult.status === "fulfilled") setResources((current) => append ? [...current, ...historyResult.value.items] : historyResult.value.items);
+    if (historyResult.status === "fulfilled") setPage(nextPage);
     setLoading(false);
-  }, [from, page, service, status, to]);
+    if (append) loadingMoreRef.current = false;
+  }, [from, service, status, to]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadMore = useCallback(() => {
+    if (loading || !hasMore || loadingMoreRef.current) return;
+    void load(page + 1, true);
+  }, [hasMore, load, loading, page]);
+
+  useEffect(() => {
+    if (!loadSentinel || !hasMore || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    }, { rootMargin: "320px" });
+    observer.observe(loadSentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore, loadSentinel]);
 
   function updateFilter<T>(setter: (value: T) => void, value: T): void {
     setPage(1);
@@ -106,7 +126,7 @@ export default function HistoryPage() {
     {error && !isEmpty && !loading ? <p className="partial-note" role="status">{error}</p> : null}
     {unavailable.length ? <p className="partial-note" role="status">Nguồn tạm thời chưa có: {unavailable.map(displayType).join(", ")}.</p> : null}
     {isEmpty ? <div className="empty-state"><MessageSquareText size={24} /><h2>Chưa có hoạt động nào</h2><p>Bắt đầu với trợ lý hoặc mở một dịch vụ để X-One lưu lại mạch công việc cho bạn.</p><Link className="button button-primary" href="/app">Mở trợ lý</Link></div> : null}
-    {resources.length ? <section className="history-section" aria-labelledby="resource-history-title"><div className="history-section-heading"><div><span className="eyebrow">GIAO DỊCH</span><h2 id="resource-history-title">Hoạt động dịch vụ</h2></div><span className="activity-count">{totalResources} mục · trang {page}</span></div><div className="history-list">{resources.map((item) => <Link className="history-resource-row" key={`${item.type}-${item.id}`} href={`/app/history/${item.type}/${encodeURIComponent(item.id)}`}><span className={`history-resource-mark ${item.type.split("_")[0]}`} aria-hidden="true"><ClipboardList size={17} /></span><span className="history-resource-copy"><strong>{item.title}</strong><span>{item.detail}</span><small>{formatStatus(item.status)} · {formatDate(item.timestamp)}</small></span><span className="history-resource-arrow" aria-hidden="true">→</span></Link>)}</div><div className="history-pagination"><button className="button button-secondary" type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}>← Mới hơn</button><button className="button button-secondary" type="button" disabled={!hasMore || loading} onClick={() => setPage((value) => value + 1)}>Cũ hơn →</button></div></section> : null}
+    {resources.length ? <section className="history-section" aria-labelledby="resource-history-title"><div className="history-section-heading"><div><span className="eyebrow">GIAO DỊCH</span><h2 id="resource-history-title">Hoạt động dịch vụ</h2></div><span className="activity-count">{totalResources} mục · đã tải {resources.length}</span></div><div className="history-list">{resources.map((item, index) => <Link className="history-resource-row" key={`${item.type}-${item.id}-${index}`} href={`/app/history/${item.type}/${encodeURIComponent(item.id)}`}><span className={`history-resource-mark ${item.type.split("_")[0]}`} aria-hidden="true"><ClipboardList size={17} /></span><span className="history-resource-copy"><strong>{item.title}</strong><span>{item.detail}</span><small>{formatStatus(item.status)} · {formatDate(item.timestamp)}</small></span><span className="history-resource-arrow" aria-hidden="true">→</span></Link>)}</div><div className="history-pagination"><button className="button button-secondary" type="button" disabled={!hasMore || loading} onClick={loadMore}>{loading && hasMore ? "Đang tải…" : hasMore ? "Tải thêm hoạt động" : "Đã tải hết"}</button><div ref={setLoadSentinel} className="history-load-sentinel" aria-hidden="true" /></div></section> : null}
     {activeConversations.length ? <ConversationSection title="Cuộc trò chuyện gần đây" items={activeConversations} editingId={editingId} editingTitle={editingTitle} deleteId={deleteId} onBeginRename={beginRename} onChangeTitle={setEditingTitle} onSaveRename={(id) => void saveRename(id)} onCancelRename={() => setEditingId("")} onArchive={(id) => void archive(id, "ARCHIVED")} onDelete={(id) => void remove(id)} /> : null}
     {archivedConversations.length ? <ConversationSection title="Đã lưu trữ" items={archivedConversations} editingId={editingId} editingTitle={editingTitle} deleteId={deleteId} onBeginRename={beginRename} onChangeTitle={setEditingTitle} onSaveRename={(id) => void saveRename(id)} onCancelRename={() => setEditingId("")} onArchive={(id) => void archive(id, "ACTIVE")} onDelete={(id) => void remove(id)} archived /> : null}
   </section>;

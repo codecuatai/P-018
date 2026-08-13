@@ -1,3 +1,3 @@
-import { SettingsPage } from "@/features/product/settings-page";
+import { redirect } from "next/navigation";
 
-export default function Page() { return <SettingsPage />; }
+export default function Page() { redirect("/app/profile?section=settings"); }

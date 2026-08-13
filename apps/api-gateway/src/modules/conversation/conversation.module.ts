@@ -36,8 +36,8 @@ export class ConversationService {
 
   async send(conversationId: string, user: AuthUser, message: string, correlationId: string): Promise<JsonObject> {
     const response = await this.run(conversationId, user, message, correlationId);
-    const userMessage = { role: 'user' as const, content: message, createdAt: new Date().toISOString() };
-    const assistantMessage = { role: 'assistant' as const, content: String(response.message ?? response.response ?? ''), createdAt: new Date().toISOString() };
+    const userMessage = { role: 'user' as const, kind: 'USER' as const, visibility: 'USER_VISIBLE' as const, content: message, createdAt: new Date().toISOString() };
+    const assistantMessage = { role: 'assistant' as const, kind: 'ASSISTANT' as const, visibility: 'USER_VISIBLE' as const, content: String(response.message ?? response.response ?? ''), createdAt: new Date().toISOString() };
     const updates = response.state_updates;
     const stateUpdates = typeof updates === 'object' && updates !== null ? updates as JsonObject : {};
     await this.store.appendConversationTurn({ conversationId, actorId: user.sub, userMessage, assistantMessage, stateUpdates });
