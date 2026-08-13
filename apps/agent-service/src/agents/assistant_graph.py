@@ -10,6 +10,17 @@ from zoneinfo import ZoneInfo
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src.agents.assistant.contracts import (
+    CapabilitySnapshot,
+    CoreAInput,
+    Domain,
+    PlannerContext,
+    PlannerTaskContext,
+    PlanningDecision,
+)
+from src.agents.assistant.planning import default_capability_snapshot
+from src.agents.assistant.planning.planner import CoreAPlanner
+from src.agents.assistant.understanding import semantic_turn_from_plan
 from src.config import get_settings
 from src.services.llm import GeminiAdapter, LLMAdapter, llm_diagnostics
 
@@ -101,9 +112,12 @@ class AssistantState(TypedDict, total=False):
     conversation_id: str
     messages: list[dict[str, str]]
     conversation_state: dict[str, Any]
+    capability_snapshot: dict[str, Any]
     authoritative_results: list[dict[str, Any]]
     mode: Literal["plan", "compose"]
     plan: dict[str, Any]
+    semantic_turn: dict[str, Any]
+    planning_decision: dict[str, Any]
     assistant_message: str
     decision_source: str
     model: str
@@ -116,6 +130,70 @@ MODEL_DIAGNOSTICS: dict[str, Any] = {
     "last_model_call_status": "not_called",
     "last_model_call_error": None,
 }
+
+_CORE_A_PLANNER = CoreAPlanner()
+
+
+def plan_core_a(input_: CoreAInput) -> PlanningDecision:
+    '''Typed Core A seam.
+
+    The compatibility understanding path currently projects `AssistantPlan`
+    into `SemanticTurn`. Keep this seam free of dispatch and domain side
+    effects while Core B extraction is completed.
+    '''
+    return _CORE_A_PLANNER.plan(input_)
+
+
+def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
+    semantic_turn = semantic_turn_from_plan(plan.tasks)
+    raw_context = state.get('conversation_state', {})
+    context_tasks: list[PlannerTaskContext] = []
+    raw_tasks = raw_context.get('tasks', []) if isinstance(raw_context, dict) else []
+    for index, raw in enumerate(raw_tasks):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            context_tasks.append(
+                PlannerTaskContext(
+                    task_ref=int(raw.get('task_ref', index)),
+                    domain=Domain(str(raw.get('domain'))),
+                    phase=str(raw.get('phase') or 'PLANNING'),
+                    revision=max(0, int(raw.get('revision', 0))),
+                    depends_on=[
+                        item for item in raw.get('depends_on', [])
+                        if isinstance(item, int)
+                    ],
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+    raw_snapshot = state.get('capability_snapshot')
+    snapshot = (
+        CapabilitySnapshot.model_validate(raw_snapshot)
+        if isinstance(raw_snapshot, dict)
+        else default_capability_snapshot()
+    )
+    return CoreAInput(
+        semantic_turn=semantic_turn,
+        planner_context=PlannerContext(tasks=context_tasks),
+        capability_snapshot=snapshot,
+    )
+
+
+def _typed_pipeline_result(
+    plan: AssistantPlan,
+    state: AssistantState,
+    source: str,
+) -> AssistantState:
+    input_ = _core_a_input(plan, state)
+    decision = plan_core_a(input_)
+    return {
+        'plan': plan.model_dump(),
+        'semantic_turn': input_.semantic_turn.model_dump(mode='json'),
+        'planning_decision': decision.model_dump(mode='json'),
+        'assistant_message': plan.assistant_message,
+        'decision_source': source,
+    }
 
 
 def model_diagnostics() -> dict[str, Any]:
@@ -827,7 +905,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
-            return {"plan": plan.model_dump(), "assistant_message": plan.assistant_message, "decision_source": "deterministic"}
+            return _typed_pipeline_result(plan, state, 'deterministic')
         try:
             plan = _enforce_reference_dependencies(
                 _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan)),
@@ -837,9 +915,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             runtime = llm_diagnostics(settings)
             logger.info("assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks))
             return {
-                "plan": plan.model_dump(),
-                "assistant_message": plan.assistant_message,
-                "decision_source": "model",
+                **_typed_pipeline_result(plan, state, 'model'),
                 "model": runtime["last_model_used"] or settings.gemini_model,
                 "fallback_model": settings.gemini_fallback_model,
             }
@@ -847,7 +923,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "failed", "last_model_call_error": type(error).__name__})
             logger.warning("Assistant planner unavailable; deterministic fallback: %s", type(error).__name__)
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
-            return {"plan": plan.model_dump(), "assistant_message": plan.assistant_message, "decision_source": "deterministic"}
+            return _typed_pipeline_result(plan, state, 'deterministic')
 
     graph = StateGraph(AssistantState)
     graph.add_node("decide", decide)

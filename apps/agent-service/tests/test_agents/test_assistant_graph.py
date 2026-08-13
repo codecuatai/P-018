@@ -137,6 +137,23 @@ async def test_model_path_uses_structured_planner_and_removes_resource_ids() -> 
     assert result["decision_source"] == "model"
     assert [task["domain"] for task in result["plan"]["tasks"]] == ["restaurant", "ride"]
     assert "restaurant_id" not in result["plan"]["tasks"][0]["extracted_slots"]
+    assert [intent["domain"] for intent in result["semantic_turn"]["intents"]] == ["restaurant", "ride"]
+    assert result["planning_decision"]["tasks"][1]["depends_on"] == [0]
+    assert result["planning_decision"]["tasks"][1]["semantic_slots"]["dropoff_address"] is None
+
+
+@pytest.mark.asyncio
+async def test_deterministic_graph_runs_the_same_typed_core_a_pipeline() -> None:
+    graph = build_assistant_graph()
+    result = await graph.ainvoke({
+        "query": "Đặt xe từ VinUni đến Hồ Gươm",
+        "conversation_state": {},
+    })
+    assert result["decision_source"] == "deterministic"
+    assert result["semantic_turn"]["intents"][0]["domain"] == "ride"
+    step = result["planning_decision"]["tasks"][0]["steps"][0]
+    assert step["capability"] == "ride.quote.create"
+    assert step["risk_ceiling"] == "READ"
 
 
 def test_model_prompt_contains_only_planner_safe_state() -> None:

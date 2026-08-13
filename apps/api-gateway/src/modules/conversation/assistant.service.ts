@@ -15,7 +15,8 @@ import { ServiceCallError } from '../../resilience/service-call-error';
 import { RideConversationService as RideWorkflowService, RideWorkflowHydration } from './ride-conversation.service';
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
-type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
+type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED';
+type WorkflowStatus = 'IN_PROGRESS' | 'COMPLETED' | 'PARTIAL_SUCCESS' | 'FAILED';
 type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'food_confirm';
 
 type StoredAction = {
@@ -43,6 +44,8 @@ type StoredTask = {
   authoritative?: JsonObject;
   public_item?: JsonObject;
   latest_message?: string;
+  blocking_task_id?: string;
+  block_reason?: 'DEPENDENCY_FAILED';
 };
 
 type AssistantState = {
@@ -77,6 +80,7 @@ export type AssistantResponse = {
   items: JsonObject[];
   actions: Array<{ id: string; kind: ActionKind; label: string }>;
   completed: JsonObject[];
+  workflow_status: WorkflowStatus;
 };
 
 type AgentPlanTask = {
@@ -85,6 +89,55 @@ type AgentPlanTask = {
   normalized_request?: unknown;
   extracted_slots?: unknown;
   depends_on?: unknown;
+  disposition?: unknown;
+  missing_information?: unknown;
+};
+
+type CapabilityDefinition = {
+  name: string;
+  domain: Domain;
+  schema_version: string;
+  risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  confirmation_gate: 'NONE' | 'SERVICE_DETAILS' | 'FINAL_COMMIT' | 'PAYMENT' | 'CANCELLATION';
+  status: 'implemented' | 'skeleton';
+  input_fields: string[];
+};
+
+const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
+  ['search_food', 'food', 'READ', 'NONE'], ['view_menu', 'food', 'READ', 'NONE'],
+  ['view_menu_item', 'food', 'READ', 'NONE'], ['list_food_delivery_addresses', 'food', 'READ', 'NONE'],
+  ['get_food_cart', 'food', 'READ', 'NONE'], ['create_cart', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['add_to_cart', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['update_food_cart_item', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['remove_food_cart_item', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['apply_voucher', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['remove_food_voucher', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['quote_delivery', 'food', 'READ', 'NONE'],
+  ['preview_order', 'food', 'READ', 'NONE'], ['get_food_order', 'food', 'READ', 'NONE'],
+  ['track_food_order', 'food', 'READ', 'NONE'], ['preview_food_order_cancellation', 'food', 'READ', 'NONE'],
+  ['restaurant.search', 'restaurant', 'READ', 'NONE'], ['restaurant.get', 'restaurant', 'READ', 'NONE'],
+  ['restaurant.check_availability', 'restaurant', 'READ', 'NONE'],
+  ['restaurant.create_hold', 'restaurant', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['restaurant.create_reservation', 'restaurant', 'FINANCIAL_OR_FINAL', 'FINAL_COMMIT'],
+  ['healthcare.list_departments', 'healthcare', 'READ', 'NONE'],
+  ['healthcare.list_slots', 'healthcare', 'READ', 'NONE'],
+  ['healthcare.hold_slot', 'healthcare', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['healthcare.confirm_appointment', 'healthcare', 'FINANCIAL_OR_FINAL', 'PAYMENT'],
+  ['healthcare.cancel_appointment', 'healthcare', 'REVERSIBLE_WRITE', 'CANCELLATION'],
+  ['ride.quote.create', 'ride', 'READ', 'NONE'],
+  ['ride.booking.prepare', 'ride', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['ride.booking.status.get', 'ride', 'READ', 'NONE'],
+  ['ride.booking.cancel.prepare', 'ride', 'REVERSIBLE_WRITE', 'CANCELLATION'],
+].map(([name, domain, risk_level, confirmation_gate]) => ({
+  name,
+  domain,
+  schema_version: '1',
+  risk_level,
+  confirmation_gate,
+  status: 'implemented',
+  input_fields: [],
+})) as CapabilityDefinition[];
+
+const CAPABILITY_SNAPSHOT = {
+  version: 'gateway-observed.v1',
+  capabilities: CAPABILITY_DEFINITIONS,
 };
 
 function isRecord(value: unknown): value is JsonObject {
@@ -255,7 +308,7 @@ function sanitizedSlots(value: unknown): Record<string, unknown> {
 }
 
 function taskPhaseFrom(value: unknown): TaskPhase {
-  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'PLANNING'
+  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'BLOCKED' || value === 'PLANNING'
     ? value
     : 'PLANNING';
 }
@@ -275,6 +328,8 @@ function storedState(value: unknown): AssistantState {
     ...(isRecord(task.authoritative) ? { authoritative: task.authoritative } : {}),
     ...(isRecord(task.public_item) ? { public_item: task.public_item } : {}),
     ...(stringValue(task.latest_message) ? { latest_message: task.latest_message as string } : {}),
+    ...(stringValue(task.blocking_task_id) ? { blocking_task_id: task.blocking_task_id as string } : {}),
+    ...(task.block_reason === 'DEPENDENCY_FAILED' ? { block_reason: 'DEPENDENCY_FAILED' as const } : {}),
   }));
   const actions: StoredAction[] = arrayValue(value.actions).filter(isRecord).map((action) => ({
     id: stringValue(action.id) ?? `action_${randomUUID().slice(0, 8)}`,
@@ -327,6 +382,155 @@ export class AssistantService {
     private readonly ride: RideWorkflowService,
     private readonly confirmations: ConfirmationService,
   ) {}
+
+  private validateCoreAHandoff(planner: JsonObject): void {
+    if (planner.planning_decision === undefined) return;
+    const decision = planner.planning_decision;
+    if (!isRecord(decision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const tasks = arrayValue(decision.tasks);
+    if (tasks.length > 4 || tasks.some((task) => !isRecord(task))) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const definitions = new Map(CAPABILITY_DEFINITIONS.map((definition) => [definition.name, definition]));
+    const refs = new Set<number>();
+    for (const [index, value] of tasks.entries()) {
+      const task = value as JsonObject;
+      const taskRef = numberValue(task.task_ref);
+      const domain = stringValue(task.domain);
+      if (taskRef !== index || refs.has(taskRef) || !['ride', 'food', 'restaurant', 'healthcare'].includes(domain ?? '')) {
+        throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task reference or domain is invalid.' });
+      }
+      refs.add(taskRef);
+      for (const rawStep of arrayValue(task.steps)) {
+        if (!isRecord(rawStep)) throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent step is invalid.' });
+        const capability = stringValue(rawStep.capability);
+        if (!capability) continue;
+        const definition = definitions.get(capability);
+        if (
+          !definition
+          || definition.domain !== domain
+          || definition.risk_level !== rawStep.risk_ceiling
+          || definition.confirmation_gate !== rawStep.confirmation_gate
+        ) {
+          throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent capability metadata does not match the Gateway snapshot.' });
+        }
+      }
+    }
+    for (const value of tasks) {
+      const task = value as JsonObject;
+      const taskRef = numberValue(task.task_ref) as number;
+      const dependencies = arrayValue(task.depends_on);
+      if (dependencies.some((dependency) => typeof dependency !== 'number' || !refs.has(dependency) || dependency === taskRef)) {
+        throw new ServiceUnavailableException({ code: 'AGENT_DEPENDENCY_REJECTED', detail: 'Agent dependency reference is invalid.' });
+      }
+    }
+    const dependenciesByRef = new Map(tasks.map((value) => {
+      const task = value as JsonObject;
+      return [numberValue(task.task_ref) as number, arrayValue(task.depends_on) as number[]];
+    }));
+    const visiting = new Set<number>();
+    const visited = new Set<number>();
+    const visit = (taskRef: number): void => {
+      if (visiting.has(taskRef)) {
+        throw new ServiceUnavailableException({ code: 'AGENT_DEPENDENCY_REJECTED', detail: 'Agent dependency graph contains a cycle.' });
+      }
+      if (visited.has(taskRef)) return;
+      visiting.add(taskRef);
+      for (const dependency of dependenciesByRef.get(taskRef) ?? []) visit(dependency);
+      visiting.delete(taskRef);
+      visited.add(taskRef);
+    };
+    for (const taskRef of refs) visit(taskRef);
+  }
+
+  private typedPlan(planner: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } | undefined {
+    if (planner.planning_decision === undefined) return undefined;
+    const decision = planner.planning_decision;
+    if (!isRecord(decision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const tasks = arrayValue(decision.tasks).filter(isRecord).map((task) => ({
+      domain: task.domain,
+      goal: task.goal,
+      normalized_request: task.normalized_request,
+      extracted_slots: this.semanticSlotValues(task.semantic_slots),
+      depends_on: arrayValue(task.depends_on),
+      disposition: task.disposition,
+      missing_information: arrayValue(task.missing_information),
+    }));
+    const compatibility = isRecord(planner.plan) ? planner.plan : {};
+    const clarification = isRecord(decision.clarification_need) ? decision.clarification_need : undefined;
+    const clarificationQuestion = clarification
+      ? stringValue(compatibility.clarification_question)
+        ?? this.typedClarification(arrayValue(clarification.missing_fields))
+      : undefined;
+    return { tasks, ...(clarificationQuestion ? { clarificationQuestion } : {}) };
+  }
+
+  private semanticSlotValues(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) return {};
+    const result: Record<string, unknown> = {};
+    for (const [field, raw] of Object.entries(value)) {
+      if (!isRecord(raw)) continue;
+      const slotValue = raw.value;
+      const source = stringValue(raw.source);
+      if (
+        ['USER_EXPLICIT', 'CONVERSATION_REFERENCE', 'INFERRED_PREFERENCE'].includes(source ?? '')
+        && (typeof slotValue === 'string' || typeof slotValue === 'number' || typeof slotValue === 'boolean')
+      ) {
+        result[field] = slotValue;
+      }
+    }
+    return sanitizedSlots(result);
+  }
+
+  private typedClarification(fields: unknown[]): string {
+    const labels: Record<string, string> = {
+      location: 'khu vực',
+      party_size: 'số người',
+      start_at: 'thời gian',
+      department: 'khoa khám',
+      pickup_address: 'điểm đón',
+      dropoff_address: 'điểm đến',
+      'query|dish_query': 'món bạn muốn tìm',
+    };
+    const values = fields
+      .filter((field): field is string => typeof field === 'string')
+      .map((field) => labels[field] ?? field)
+      .slice(0, 2);
+    return values.length
+      ? `Bạn cho mình biết thêm ${values.join(' và ')} nhé?`
+      : 'Bạn cho mình biết thêm một chút thông tin nhé?';
+  }
+
+  private propagateDependencyFailures(tasks: StoredTask[]): void {
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const task of tasks) {
+        if (task.phase === 'COMPLETED' || task.phase === 'FAILED' || task.phase === 'BLOCKED') continue;
+        const blocker = task.depends_on
+          .map((dependency) => tasks.find((candidate) => candidate.id === dependency))
+          .find((dependency) => dependency?.phase === 'FAILED' || dependency?.phase === 'BLOCKED');
+        if (!blocker) continue;
+        task.phase = 'BLOCKED';
+        task.blocking_task_id = blocker.id;
+        task.block_reason = 'DEPENDENCY_FAILED';
+        changed = true;
+      }
+    }
+  }
+
+  private workflowStatus(tasks: StoredTask[]): WorkflowStatus {
+    if (tasks.length > 0 && tasks.every((task) => task.phase === 'COMPLETED')) return 'COMPLETED';
+    const completed = tasks.some((task) => task.phase === 'COMPLETED');
+    const unsuccessful = tasks.some((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
+    if (completed && unsuccessful) return 'PARTIAL_SUCCESS';
+    if (!completed && tasks.length > 0 && tasks.every((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED')) return 'FAILED';
+    return 'IN_PROGRESS';
+  }
 
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
@@ -498,13 +702,16 @@ export class AssistantService {
         message,
         messages: (current?.messages ?? []).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
         conversation_state: this.plannerSafeState(state),
+        capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
       correlationId,
     );
+    this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
+    const typed = this.typedPlan(planner);
     const rawPlanTasks = arrayValue(rawPlan.tasks).filter(isRecord) as AgentPlanTask[];
-    const resolution = this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
+    const resolution = typed ?? this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
     const plan = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
     const planTasks = resolution.tasks;
     const merge = this.mergeTasks(state.tasks, planTasks, message);
@@ -522,6 +729,23 @@ export class AssistantService {
       // authoritative choice, and public action exactly as persisted.
       return this.persistTurn(conversationId, user, message, safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'), state, [], state.actions);
     }
+    if (stringValue(plan.clarification_question)) {
+      const clarificationState: AssistantState = {
+        ...state,
+        tasks: merged.slice(0, 8),
+        actions,
+        decision_source: stringValue(planner.decision_source) ?? 'deterministic',
+      };
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+        clarificationState,
+        [],
+        actions,
+      );
+    }
 
     for (const task of merged) {
       if (task.phase === 'COMPLETED' && task.public_item) {
@@ -532,6 +756,7 @@ export class AssistantService {
         if (task.public_item) items.push(task.public_item);
         continue;
       }
+      if (task.phase === 'NEEDS_INFO' || task.phase === 'BLOCKED' || task.phase === 'FAILED') continue;
       if (!this.dependenciesReady(task, merged)) continue;
       const result = await this.processTask(task, merged, user, conversationId, correlationId);
       task.phase = result.phase;
@@ -542,6 +767,7 @@ export class AssistantService {
       if (result.items) items.push(...result.items);
       if (result.publicItem) resultsForComposition.push(result.publicItem);
     }
+    this.propagateDependencyFailures(merged);
 
     const foodTask = merged.find((task) => task.domain === 'food');
     const foodContext = isRecord(foodTask?.authoritative?.food_context)
@@ -629,6 +855,7 @@ export class AssistantService {
           state.actions.push(...dependentResult.actions);
         }
       }
+      this.propagateDependencyFailures(state.tasks);
       const message = dependentActions.length
         ? `${result.message} Mình cũng đã chuẩn bị bước tiếp theo cho chuyến xe của bạn.`
         : result.message;
@@ -807,7 +1034,7 @@ export class AssistantService {
         normalized_request: request,
         extracted_slots: slots,
         depends_on: [],
-        phase: 'PLANNING',
+        phase: candidate.disposition === 'NEEDS_INFO' || candidate.disposition === 'WAITING' ? 'NEEDS_INFO' : 'PLANNING',
         revision: 0,
         latest_message: latestMessage,
       };
@@ -826,6 +1053,8 @@ export class AssistantService {
 
   private resetTaskForRevision(task: StoredTask, nextSlots: Record<string, unknown>): void {
     task.phase = 'PLANNING';
+    task.blocking_task_id = undefined;
+    task.block_reason = undefined;
     task.workflow_id = undefined;
     task.public_item = undefined;
     if (task.domain === 'food') {
@@ -1294,6 +1523,7 @@ export class AssistantService {
         items: items.map((item) => this.sanitizeConsumerItem(item)),
         actions: actions.map((action) => this.publicAction(action)),
         completed: completed.map((item) => this.sanitizeConsumerItem(item)),
+        workflow_status: this.workflowStatus(state.tasks),
       },
       userMessage: { role: 'user', content: userMessage, createdAt: now },
       assistantMessage: { role: 'assistant', content: safeMessage, createdAt: now },
@@ -1326,6 +1556,7 @@ export class AssistantService {
       items: items.map((item) => this.sanitizeConsumerItem(item)),
       actions: actions.map((action) => this.publicAction(action)),
       completed: completed.map((item) => this.sanitizeConsumerItem(item)),
+      workflow_status: this.workflowStatus(state.tasks),
     };
   }
 

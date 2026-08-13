@@ -17,8 +17,14 @@ The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`:
 
 `apps/agent-service/src/agents/assistant_graph.py` is the top-level X-One
 planner. It accepts one conversation turn and returns a Pydantic-validated
-`AssistantPlan` with at most four tasks for Ride, Food, Restaurant, and
-Healthcare. It can express a bounded dependency such as Restaurant selection
+compatibility `AssistantPlan` plus a typed `SemanticTurn` and
+`PlanningDecision`, each bounded to at most four tasks for Ride, Food,
+Restaurant, and Healthcare. The compatibility projection remains during the
+Gateway rollout; the typed path is executed for both Gemini output and the
+deterministic fallback. Core A is a deterministic kernel split across
+`assistant/contracts.py`, `assistant/understanding/`,
+`assistant/planning/`, and `assistant/policy/`; it proposes capabilities but
+never dispatches them. It can express a bounded dependency such as Restaurant selection
 before a Ride destination, or Healthcare hold before a Ride destination, while
 the Gateway—not the Agent—executes typed service calls and confirmation
 actions. A Healthcare-dependent Ride contains only the user-provided pickup;
@@ -35,7 +41,10 @@ the Gateway from domain results. The Gateway sends the top-level planner only a
 planner-safe projection of task references, domains, goals, phases, semantic
 slots, and bounded pending-choice summaries; confirmation/workflow/tool IDs,
 order/appointment/reservation IDs, provider references, raw authoritative
-payloads, and resource versions are excluded. A second composition call may
+payloads, and resource versions are excluded. The Gateway supplies the
+versioned capability snapshot separately and rejects a typed plan whose
+capability, domain, risk, confirmation gate, or dependency reference does not
+match that snapshot. A second composition call may
 explain sanitized results but cannot change their values.
 
 Slot normalization is domain-specific: Ride accepts only bounded addresses and

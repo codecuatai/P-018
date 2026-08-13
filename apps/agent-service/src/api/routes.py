@@ -51,6 +51,7 @@ async def assistant_chat(
                 "conversation_id": request.conversation_id,
                 "messages": request.messages,
                 "conversation_state": request.conversation_state,
+                "capability_snapshot": request.capability_snapshot,
                 "authoritative_results": request.authoritative_results,
                 "mode": request.mode,
             }
@@ -60,6 +61,8 @@ async def assistant_chat(
                 "conversation_id": request.conversation_id,
                 "assistant_message": result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này."),
                 "plan": result.get("plan", {}),
+                "semantic_turn": result.get("semantic_turn", {}),
+                "planning_decision": result.get("planning_decision", {}),
                 "decision_source": result.get("decision_source", "deterministic"),
                 "model": result.get("model", settings.gemini_model),
                 "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),

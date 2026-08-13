@@ -193,6 +193,7 @@ export interface AssistantResponse {
   items: AssistantItem[];
   actions: AssistantAction[];
   completed: AssistantItem[];
+  workflow_status: "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED";
 }
 
 export interface ChatMessage {

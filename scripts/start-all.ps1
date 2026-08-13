@@ -162,7 +162,17 @@ try {
         if (-not (Test-Path "node_modules")) {
             Invoke-CheckedCommand -FilePath "npm" -Arguments @("install") -FailureMessage "Web dependency installation failed."
         }
-        $webProcess = Start-Process -FilePath "npm.cmd" -WindowStyle Hidden -PassThru -WorkingDirectory $webDir -ArgumentList @("run", "dev", "--", "--host", "0.0.0.0")
+        $previousViteApiUrl = $env:VITE_API_URL
+        $env:VITE_API_URL = $gatewayUrl
+        try {
+            $webProcess = Start-Process -FilePath "npm.cmd" -WindowStyle Hidden -PassThru -WorkingDirectory $webDir -ArgumentList @("run", "dev", "--", "--host", "0.0.0.0")
+        } finally {
+            if ($null -eq $previousViteApiUrl) {
+                Remove-Item Env:VITE_API_URL -ErrorAction SilentlyContinue
+            } else {
+                $env:VITE_API_URL = $previousViteApiUrl
+            }
+        }
     } finally {
         Pop-Location
     }

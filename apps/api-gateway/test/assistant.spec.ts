@@ -369,6 +369,12 @@ describe('Unified assistant orchestration', () => {
       expect(serialized).not.toContain(forbidden);
     }
     expect((payload.conversation_state as { tasks: Array<Record<string, unknown>> }).tasks[0].task_ref).toBe(0);
+    expect(payload.capability_snapshot).toEqual(expect.objectContaining({
+      version: 'gateway-observed.v1',
+      capabilities: expect.arrayContaining([
+        expect.objectContaining({ name: 'ride.booking.prepare', risk_level: 'REVERSIBLE_WRITE', confirmation_gate: 'SERVICE_DETAILS' }),
+      ]),
+    }));
   });
 
   it('invalidates a pending action when the same task receives changed details', async () => {
@@ -502,5 +508,148 @@ describe('Unified assistant orchestration', () => {
     expect(response.items[0].kind).toBe('healthcare_options');
     expect((response.items[0].options as Array<{ start_time?: string }>)[0].start_time).toBe('2099-01-01T10:00:00+07:00');
     expect(response.actions.map((action) => action.kind)).toEqual(['select_healthcare_slot']);
+  });
+
+  it('rejects a typed Agent capability whose risk metadata differs from the Gateway snapshot', () => {
+    const service = new AssistantService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: {
+        tasks: [{
+          task_ref: 0,
+          domain: 'ride',
+          depends_on: [],
+          steps: [{
+            capability: 'ride.booking.prepare',
+            risk_ceiling: 'READ',
+            confirmation_gate: 'SERVICE_DETAILS',
+          }],
+        }],
+      },
+    })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_CAPABILITY_REJECTED' }) }));
+  });
+
+  it('rejects a cyclic typed Agent dependency graph', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: {
+        tasks: [
+          { task_ref: 0, domain: 'restaurant', depends_on: [1], steps: [] },
+          { task_ref: 1, domain: 'ride', depends_on: [0], steps: [] },
+        ],
+      },
+    })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_DEPENDENCY_REJECTED' }) }));
+  });
+
+  it('blocks only dependent tasks and computes partial success deterministically', () => {
+    const service = new AssistantService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = service as unknown as {
+      propagateDependencyFailures: (tasks: Array<Record<string, unknown>>) => void;
+      workflowStatus: (tasks: Array<Record<string, unknown>>) => string;
+    };
+    const tasks = [
+      { id: 'restaurant', domain: 'restaurant', phase: 'FAILED', depends_on: [] },
+      { id: 'ride', domain: 'ride', phase: 'PLANNING', depends_on: ['restaurant'] },
+      { id: 'food', domain: 'food', phase: 'COMPLETED', depends_on: [] },
+    ];
+    internal.propagateDependencyFailures(tasks);
+    expect(tasks[1]).toEqual(expect.objectContaining({
+      phase: 'BLOCKED',
+      blocking_task_id: 'restaurant',
+      block_reason: 'DEPENDENCY_FAILED',
+    }));
+    expect(tasks[2].phase).toBe('COMPLETED');
+    expect(internal.workflowStatus(tasks)).toBe('PARTIAL_SUCCESS');
+  });
+
+  it('uses typed PlanningDecision tasks instead of a conflicting legacy compatibility plan', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã tìm món phù hợp.' }
+        : {
+          decision_source: 'deterministic',
+          plan: {
+            tasks: [{
+              domain: 'ride',
+              goal: 'Legacy task must not run',
+              normalized_request: 'Đặt xe',
+              extracted_slots: { pickup_address: 'A', dropoff_address: 'B' },
+            }],
+          },
+          planning_decision: {
+            tasks: [{
+              task_ref: 0,
+              domain: 'food',
+              operation: 'DISCOVER',
+              goal: 'Tìm món',
+              normalized_request: 'Tìm phở',
+              semantic_slots: {
+                query: { value: 'phở', source: 'USER_EXPLICIT' },
+              },
+              depends_on: [],
+              missing_information: [],
+              missing_authority: [],
+              steps: [{
+                step_ref: 0,
+                purpose: 'Tìm món',
+                capability: 'search_food',
+                phase: 'DISCOVERY',
+                requires_semantic_fields: [],
+                requires_authority: [],
+                depends_on_steps: [],
+                risk_ceiling: 'READ',
+                confirmation_gate: 'NONE',
+              }],
+              disposition: 'READY',
+            }],
+            workflow_relation: 'SINGLE_TASK',
+            confirmation_invalidated: false,
+            blocked_task_refs: [],
+          },
+        }),
+      chat: jest.fn().mockResolvedValue({
+        response_type: 'text',
+        message: 'Đã tìm món.',
+        data: {},
+        state_updates: {},
+      }),
+    };
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tìm phở', undefined, 'cor-typed');
+
+    expect(agent.chat).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'Tìm phở',
+    }), 'cor-typed');
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(response.workflow_status).toBe('IN_PROGRESS');
   });
 });

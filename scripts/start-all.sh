@@ -134,7 +134,7 @@ if [[ -d apps/web ]]; then
     if [[ ! -d apps/web/node_modules ]]; then
         (cd apps/web && npm install)
     fi
-    (cd apps/web && npm run dev -- --host 0.0.0.0) >"$web_log" 2>&1 &
+    (cd apps/web && VITE_API_URL="$gateway_url" npm run dev -- --host 0.0.0.0) >"$web_log" 2>&1 &
     web_pid="$!"
     if ! wait_http "http://localhost:5173"; then
         kill "$web_pid" 2>/dev/null || true

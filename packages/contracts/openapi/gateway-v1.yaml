@@ -203,7 +203,7 @@ components:
           additionalProperties: true
     AssistantResponse:
       type: object
-      required: [conversation_id, message, items, actions, completed]
+      required: [conversation_id, message, items, actions, completed, workflow_status]
       additionalProperties: false
       properties:
         conversation_id: {type: string}
@@ -227,6 +227,8 @@ components:
           type: array
           maxItems: 8
           items: {$ref: '#/components/schemas/AssistantItem'}
+        workflow_status:
+          enum: [IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED]
 
     AssistantItem:
       oneOf:

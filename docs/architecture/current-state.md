@@ -41,6 +41,19 @@ Logical ownership is mandatory: each domain owns its schema/tables, migrations, 
 | Automated tests and CI | implemented (local integrated scope) | services/{food-service,restaurant-service,healthcare-service,ride-service}/tests/, apps/{api-gateway,agent-service}/test*/, apps/web/package.json, .github/workflows/ci.yml | Local service tests, Gateway lint/build/Jest, Agent pytest/Ruff, application Python Ruff, and Web production build pass; dedicated PostgreSQL tests remain environment-dependent, while the disposable live proof is recorded below. |
 | Deployment | planned | no deployment manifest outside local Compose | No production deployment or cloud pipeline is present. |
 
+The unified Agent route now returns a typed `SemanticTurn` and
+`PlanningDecision` in addition to the compatibility plan. Both Gemini output
+and deterministic fallback pass through the same Core A policy. Gateway owns a
+versioned capability snapshot and rejects mismatched capability domain, risk,
+confirmation gate, or dependency references before orchestration. Gateway also
+persists failed dependents as `BLOCKED` with their blocker and derives
+`IN_PROGRESS`, `COMPLETED`, `PARTIAL_SUCCESS`, or `FAILED` from canonical
+task state; the model does not choose aggregate workflow status.
+The legacy `AssistantPlan` understanding schema, deterministic keyword/slot
+fallback, and Gateway follow-up heuristics remain compatibility code. The
+repository therefore has a running typed seam, but the final extraction goal
+where `assistant_graph.py` contains wiring only is not yet implemented.
+
 ## Intended ownership and deployment reading
 
 The current contract inventory also includes `packages/contracts/openapi/healthcare-service-v1.yaml`; the domain and workflow contracts above are the checked-in source of truth for the local integrated slice.

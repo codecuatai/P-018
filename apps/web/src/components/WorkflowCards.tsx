@@ -5,9 +5,20 @@ import { isKnownAssistantItem, type AssistantAction, type AssistantHealthcareIte
 export function AssistantCards({ response, onAction, disabledActionId }: { response: AssistantResponse; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const secondaryActions = response.actions.filter((action) => action.kind !== "select_restaurant" && action.kind !== "select_healthcare_slot");
   return <div className="assistant-cards">
+    {response.workflow_status !== "IN_PROGRESS" ? <WorkflowStatus status={response.workflow_status} /> : null}
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
   </div>;
+}
+
+function WorkflowStatus({ status }: { status: AssistantResponse["workflow_status"] }) {
+  const labels = {
+    COMPLETED: "Tất cả yêu cầu đã hoàn tất",
+    PARTIAL_SUCCESS: "Một phần yêu cầu đã hoàn tất; phần còn lại cần xử lý thêm",
+    FAILED: "Các yêu cầu hiện tại chưa thể hoàn tất",
+  } as const;
+  if (status === "IN_PROGRESS") return null;
+  return <div className={`workflow-status workflow-status-${status.toLowerCase()}`} role="status">{labels[status]}</div>;
 }
 
 function AssistantCard({ item, actions, onAction, disabledActionId }: { item: AssistantItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {

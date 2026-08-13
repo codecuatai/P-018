@@ -7,6 +7,22 @@ info:
     validated typed tool request. It never calls a domain service, database,
     payment provider, or final side effect.
 paths:
+  /api/v1/assistant-chat:
+    post:
+      operationId: planUnifiedAssistantTurn
+      security: [{internalServiceToken: []}]
+      parameters: [{ $ref: '#/components/parameters/ActorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json: {schema: {$ref: '#/components/schemas/AssistantChatRequest'}}
+      responses:
+        '200':
+          description: Semantic interpretation, Core A planning decision, and compatibility plan.
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/AssistantPlanningEnvelope'}}
+        '401': {description: Internal service or actor authentication failed.}
+        '422': {description: Request or capability snapshot validation failed.}
   /api/v1/chat:
     post:
       operationId: interpretFoodChatTurn
@@ -83,6 +99,70 @@ components:
       required: false
       schema: {type: string, minLength: 1, maxLength: 128}
   schemas:
+    AssistantChatRequest:
+      type: object
+      required: [message, conversation_id, user_id]
+      additionalProperties: false
+      properties:
+        message: {type: string, minLength: 1, maxLength: 5000}
+        conversation_id: {type: string, minLength: 1, maxLength: 128}
+        user_id: {type: string, minLength: 1, maxLength: 128}
+        correlation_id: {type: [string, 'null'], maxLength: 128}
+        messages:
+          type: array
+          maxItems: 20
+          items: {type: object, additionalProperties: {type: string}}
+        conversation_state: {type: object, additionalProperties: true}
+        authoritative_results:
+          type: array
+          maxItems: 8
+          items: {type: object, additionalProperties: true}
+        capability_snapshot:
+          oneOf: [{$ref: '#/components/schemas/CapabilitySnapshot'}, {type: 'null'}]
+        mode: {enum: [plan, compose], default: plan}
+    CapabilitySnapshot:
+      type: object
+      required: [version, capabilities]
+      additionalProperties: false
+      properties:
+        version: {type: string, minLength: 1, maxLength: 80}
+        capabilities:
+          type: array
+          maxItems: 128
+          items: {$ref: '#/components/schemas/CapabilityDefinition'}
+    CapabilityDefinition:
+      type: object
+      required: [name, domain, schema_version, risk_level, confirmation_gate, status]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 160}
+        domain: {enum: [ride, food, restaurant, healthcare]}
+        schema_version: {type: string, minLength: 1, maxLength: 40}
+        risk_level: {enum: [READ, REVERSIBLE_WRITE, FINANCIAL_OR_FINAL]}
+        confirmation_gate: {enum: [NONE, SERVICE_DETAILS, FINAL_COMMIT, PAYMENT, CANCELLATION]}
+        status: {enum: [implemented, skeleton]}
+        input_fields:
+          type: array
+          items: {type: string}
+    AssistantPlanningEnvelope:
+      type: object
+      required: [data, meta]
+      additionalProperties: false
+      properties:
+        data:
+          type: object
+          required: [conversation_id, assistant_message, plan, semantic_turn, planning_decision, decision_source]
+          additionalProperties: false
+          properties:
+            conversation_id: {type: string}
+            assistant_message: {type: string}
+            plan: {type: object, additionalProperties: true}
+            semantic_turn: {type: object, additionalProperties: true}
+            planning_decision: {type: object, additionalProperties: true}
+            decision_source: {enum: [model, deterministic]}
+            model: {type: string}
+            fallback_model: {type: string}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
     ChatRequest:
       type: object
       required: [message, conversation_id, user_id]
