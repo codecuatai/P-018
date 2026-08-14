@@ -137,3 +137,10 @@ async def test_search_folds_accents_and_accepts_city_address_filter() -> None:
     results = await food.search(keyword="pho bo", district="ha noi")
     assert [result["item"]["name"] for result in results] == ["Phở bò tái"]
     assert [result["item"]["name"] for result in await food.search(keyword="pho ga")] == ["Phở gà"]
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_accented_dish_terms_distinct() -> None:
+    food = make_service()
+    results = await food.search(keyword="phở bò")
+    assert [result["item"]["name"] for result in results] == ["Phở bò tái"]

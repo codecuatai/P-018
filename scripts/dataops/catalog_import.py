@@ -21,7 +21,7 @@ import sys
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.parse import urlparse
@@ -672,11 +672,63 @@ async def apply_healthcare(connection: Any, records: list[NormalizedRecord]) -> 
         if payload.get("record_type") == "facility":
             await connection.execute("INSERT INTO healthcare_facilities (source_id,name,facility_type,address,ward,district,city,latitude,longitude,phone,website,description,emergency_available,opening_hours,image_url,source_name,source_url,fetched_at,last_verified_at,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,TRUE,$22::jsonb) ON CONFLICT (source_id) DO UPDATE SET name=EXCLUDED.name,address=EXCLUDED.address,latitude=EXCLUDED.latitude,longitude=EXCLUDED.longitude,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", payload.get("source_id"), payload.get("name"), payload.get("facility_type"), payload.get("address"), payload.get("ward"), payload.get("district"), payload.get("city"), payload.get("latitude"), payload.get("longitude"), payload.get("phone"), payload.get("website"), payload.get("description"), payload.get("emergency_available"), payload.get("opening_hours"), payload.get("image_url"), record.source_name, record.source_url, database_timestamp_without_timezone(record.fetched_at), database_timestamp_without_timezone(record.last_verified_at), record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
         elif payload.get("record_type") == "department":
-            await connection.execute("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,source_url,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", payload.get("catalog_name") or payload.get("name"), payload.get("description") or payload.get("specialty"), payload.get("source_id"), payload.get("facility_source_id"), record.source_name, record.source_url, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
+            await connection.execute("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,source_url,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9::jsonb) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,source_id=EXCLUDED.source_id,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", payload.get("catalog_name") or payload.get("name"), payload.get("description") or payload.get("specialty"), payload.get("source_id"), payload.get("facility_source_id"), record.source_name, record.source_url, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
         elif payload.get("record_type") == "doctor":
             department_source_id = str(payload.get("department_source_id") or hashlib.sha256(f"{payload.get('facility_source_id')}:{payload.get('department')}".encode("utf-8")).hexdigest()[:32])
-            department_id = await connection.fetchval("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json RETURNING id", payload.get("department_name") or payload.get("department"), payload.get("specialty"), department_source_id, payload.get("facility_source_id"), record.source_name, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
+            department_id = await connection.fetchval("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8::jsonb) ON CONFLICT (name) DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,source_id=EXCLUDED.source_id,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json RETURNING id", payload.get("department_name") or payload.get("department"), payload.get("specialty"), department_source_id, payload.get("facility_source_id"), record.source_name, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
             await connection.execute("INSERT INTO doctors (department_id,name,price,description,source_id,facility_source_id,title,specialty,source_name,source_url,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET department_id=EXCLUDED.department_id,name=EXCLUDED.name,price=EXCLUDED.price,description=EXCLUDED.description,facility_source_id=EXCLUDED.facility_source_id,title=EXCLUDED.title,specialty=EXCLUDED.specialty,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", department_id, payload.get("name"), payload.get("consultation_price"), payload.get("description"), payload.get("source_id"), payload.get("facility_source_id"), payload.get("title"), payload.get("specialty"), record.source_name, record.source_url, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
+
+
+    await ensure_healthcare_runtime_slots(connection, records[0].dataset_version if records else None)
+
+
+async def ensure_healthcare_runtime_slots(connection: Any, dataset_version: str | None) -> None:
+    """Create repeatable local slots for imported doctors with known prices.
+
+    The source catalog contains doctors and consultation prices, but no live
+    scheduling feed. These slots keep the local booking flow testable while
+    remaining attached to the imported Hanoi facilities and doctors. They are
+    deliberately not the separate HCM demo catalog and are only created when a
+    doctor has no slot on the next local calendar day.
+    """
+    if not dataset_version:
+        return
+
+    doctor_rows = await connection.fetch(
+        "SELECT id FROM doctors WHERE dataset_version=$1 AND is_active=TRUE AND price IS NOT NULL ORDER BY id",
+        dataset_version,
+    )
+    if not doctor_rows:
+        return
+
+    local_tomorrow = (datetime.now(timezone(timedelta(hours=7))) + timedelta(days=1)).replace(
+        hour=8,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    base_start = local_tomorrow.astimezone(UTC).replace(tzinfo=None)
+    next_day_start = base_start + timedelta(days=1)
+    for doctor_row in doctor_rows:
+        doctor_id = doctor_row["id"]
+        has_tomorrow_slot = await connection.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM time_slots WHERE doctor_id=$1 AND start_time>=$2 AND start_time<$3)",
+            doctor_id,
+            base_start,
+            next_day_start,
+        )
+        if has_tomorrow_slot:
+            continue
+        for offset in range(4):
+            start_time = base_start + timedelta(hours=offset)
+            await connection.execute(
+                "INSERT INTO time_slots (doctor_id,start_time,end_time,status) "
+                "SELECT $1,$2,$3,'AVAILABLE' "
+                "WHERE NOT EXISTS (SELECT 1 FROM time_slots WHERE doctor_id=$1 AND start_time=$2)",
+                doctor_id,
+                start_time,
+                start_time + timedelta(minutes=30),
+            )
 
 
 async def deactivate_version(domain: str, version: str, database_url: str) -> None:

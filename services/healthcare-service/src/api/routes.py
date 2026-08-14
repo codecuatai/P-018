@@ -455,8 +455,8 @@ def get_doctors_by_department(
                     "available_slots": [
                         {
                             "id": slot.id,
-                            "start_time": slot.start_time.isoformat(),
-                            "end_time": slot.end_time.isoformat(),
+                            "start_time": _iso_utc(slot.start_time),
+                            "end_time": _iso_utc(slot.end_time),
                         }
                         for slot in slots
                     ],

@@ -452,7 +452,7 @@ export class RideConversationService {
     const result = await this.locations.geocode(address);
     const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
     if (!candidate || candidate.latitude === null || candidate.longitude === null) throw new BadGatewayException({ code: 'LOCATION_UNRESOLVED', detail: 'Hiện mình chưa xác định được địa chỉ này. Bạn thử chọn gợi ý hoặc nhập rõ hơn nhé.', retryable: true });
-    return { address: candidate.address_text, coordinate: { latitude: candidate.latitude, longitude: candidate.longitude } };
+    return { address: address.trim(), coordinate: { latitude: candidate.latitude, longitude: candidate.longitude } };
   }
 
   private async reconcileConfirmation(

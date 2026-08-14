@@ -75,7 +75,7 @@ function Start-LocalService {
     $arguments = @("-NoExit", "-ExecutionPolicy", "Bypass", "-File", $runnerPath, "-EnvFile", $envPath, "-WorkingDirectory", $WorkingDirectory, "-FilePath", $FilePath, "-ServiceKind", $Kind, "-LocalHostMode")
     if ($DatabaseKey) { $arguments += @("-DatabaseKey", $DatabaseKey) }
     $arguments += @("-CommandArgumentsBase64", (Encode-CommandArguments -Arguments $CommandArguments))
-    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WorkingDirectory $repoRoot -PassThru
+    $process = Start-Process -FilePath "powershell.exe" -ArgumentList $arguments -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
     $record = [pscustomobject]@{ name = $Name; kind = $Kind; pid = $process.Id; port = $Port; started_at = (Get-Date).ToUniversalTime().ToString("o") }
     $script:started += $record
 }

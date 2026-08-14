@@ -56,7 +56,7 @@ const catalog = [
   { key: 'food', label: 'Đồ ăn', description: 'Tìm món, xem thực đơn và theo dõi đơn giao.', accent: 'food' },
   { key: 'ride', label: 'Chuyến xe', description: 'Tính lộ trình, xem giá và theo dõi tài xế.', accent: 'ride' },
   { key: 'restaurant', label: 'Nhà hàng', description: 'Tìm bàn trống và giữ chỗ theo thời gian.', accent: 'restaurant' },
-  { key: 'healthcare', label: 'Lịch khám', description: 'Xem cơ sở, chuyên khoa và khung giờ thật.', accent: 'healthcare' },
+  { key: 'healthcare', label: 'Lịch khám', description: 'Xem cơ sở, chuyên khoa và khung giờ phù hợp.', accent: 'healthcare' },
 ] as const;
 
 @Injectable()

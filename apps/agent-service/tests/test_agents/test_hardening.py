@@ -14,7 +14,7 @@ def test_fallback_extracts_semantics_without_seed_ids() -> None:
     slots = extract_slots("Tìm hamburger bò dưới 100 nghìn, áp mã SUMMER987")
     assert classify("Tìm hamburger bò") == "search_food"
     assert classify("Tìm phở giao về nhà") == "search_food"
-    assert slots["dish_query"] == "hamburger bo"
+    assert slots["dish_query"] == "hamburger bò"
     assert slots["voucher_code"] == "SUMMER987"
     assert "item_id" not in slots
     assert "restaurant_id" not in slots
@@ -22,13 +22,13 @@ def test_fallback_extracts_semantics_without_seed_ids() -> None:
 
 def test_fallback_extracts_city_filter_without_leaking_it_into_dish_query() -> None:
     slots = extract_slots("Tìm phở bò dưới 100 nghìn ở Hà Nội.")
-    assert slots["dish_query"] == "pho bo"
+    assert slots["dish_query"] == "phở bò"
     assert slots["district"] == "ha noi"
 
 
 def test_fallback_stops_food_query_before_delivery_and_another_domain() -> None:
     slots = extract_slots("Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai")
-    assert slots["dish_query"] == "pho"
+    assert slots["dish_query"] == "phở"
 
 
 def test_references_and_options_use_authoritative_opaque_values() -> None:

@@ -125,13 +125,14 @@ export class HistoryService {
     if (type === 'food_order') {
       const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(id)}`, correlationId, actorId);
       const payment = await this.payments.consumerSummaryForOrder(id, actorId);
-      return payment ? { ...order, payment } : order;
+      const publicOrder = publicHistoryResource(type, order);
+      return payment ? { ...publicOrder, payment } : publicOrder;
     }
-    if (type === 'ride_booking') return this.ride.getBooking(actorId, { correlationId }, id).then((value) => value as unknown as JsonObject);
-    if (type === 'restaurant_reservation') return this.restaurant.getReservation(id, actorId, correlationId);
+    if (type === 'ride_booking') return this.ride.getBooking(actorId, { correlationId }, id).then((value) => publicHistoryResource(type, value as unknown as JsonObject));
+    if (type === 'restaurant_reservation') return this.restaurant.getReservation(id, actorId, correlationId).then((value) => publicHistoryResource(type, value));
     const appointmentId = Number(id);
     if (!Number.isInteger(appointmentId) || appointmentId < 1) throw new BadRequestException({ code: 'HISTORY_ID_INVALID', detail: 'Mã lịch khám không hợp lệ.', retryable: false });
-    return this.healthcare.getAppointment(appointmentId, actorId, correlationId);
+    return this.healthcare.getAppointment(appointmentId, actorId, correlationId).then((value) => publicHistoryResource(type, value));
   }
 }
 
@@ -203,13 +204,144 @@ function normalizeHistoryItem(type: HistoryType, resource: JsonObject): HistoryI
       : type === 'restaurant_reservation'
         ? `${restaurantName || 'Nhà hàng đang được cập nhật'}${resource.booking_time ? ` • ${String(resource.booking_time)}` : ''}${resource.party_size !== undefined ? ` • ${String(resource.party_size)} người` : ''}`
         : `${facilityName || 'Cơ sở đang được cập nhật'}${doctorName ? ` • ${doctorName}` : ''}${departmentName ? ` • ${departmentName}` : ''}${appointmentTime ? ` • ${appointmentTime}` : ''}`;
-  return { id, type, title, status, detail, timestamp, source: type, resource };
+  return { id, type, title, status, detail, timestamp, source: type, resource: publicHistoryResource(type, resource) };
 }
 
 function moneyText(value: unknown): string {
-  if (typeof value === 'number' && Number.isFinite(value)) return `${value} VND`;
-  if (isObject(value) && typeof value.amount === 'number' && Number.isFinite(value.amount)) return `${value.amount} ${typeof value.currency === 'string' ? value.currency : 'VND'}`;
+  if (typeof value === 'number' && Number.isFinite(value)) return `${formatAmount(value)} VND`;
+  if (isObject(value) && typeof value.amount === 'number' && Number.isFinite(value.amount)) return `${formatAmount(value.amount)} ${typeof value.currency === 'string' ? value.currency : 'VND'}`;
   return '';
+}
+
+function formatAmount(value: number): string {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+
+function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObject {
+  const result = pickFields(resource, type === 'ride_booking'
+    ? ['status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
+    : type === 'food_order'
+      ? ['status', 'restaurant_name', 'delivery_address', 'address', 'image_url', 'total', 'amount', 'currency']
+      : type === 'restaurant_reservation'
+        ? ['status', 'name', 'restaurant_name', 'address', 'location', 'reservation_time', 'start_at', 'booking_time', 'party_size', 'image_url']
+        : ['status', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
+
+  if (type === 'ride_booking') {
+    const driver = publicDriver(resource.driver);
+    if (driver) result.driver = driver;
+    const driverLocation = publicPoint(resource.driver_location) ?? publicPointFromFields(resource.driver_latitude, resource.driver_longitude);
+    const currentLocation = publicPoint(resource.current_location) ?? publicPointFromFields(resource.current_latitude, resource.current_longitude);
+    if (driverLocation) result.driver_location = driverLocation;
+    if (currentLocation) result.current_location = currentLocation;
+    const route = publicRoute(resource.route);
+    const geometry = publicGeometry(resource.route_geometry);
+    if (route) result.route = route;
+    else if (geometry.length > 1) {
+      const origin = publicPointFromFields(resource.pickup_latitude, resource.pickup_longitude);
+      const destination = publicPointFromFields(resource.dropoff_latitude, resource.dropoff_longitude);
+      result.route = {
+        ...(origin ? { origin } : {}),
+        ...(destination ? { destination } : {}),
+        ...(typeof resource.route_distance_meters === 'number' ? { distance_meters: resource.route_distance_meters } : {}),
+        ...(typeof resource.route_duration_seconds === 'number' ? { duration_seconds: resource.route_duration_seconds } : {}),
+        geometry,
+      };
+    }
+  } else if (type === 'food_order') {
+    const restaurant = publicPlace(resource.restaurant);
+    if (restaurant) result.restaurant = restaurant;
+    if (Array.isArray(resource.items)) result.items = resource.items.filter(isObject).map(publicFoodItem);
+  } else if (type === 'restaurant_reservation') {
+    const restaurant = publicPlace(resource.restaurant);
+    if (restaurant) result.restaurant = restaurant;
+    const point = publicPoint(resource.location) ?? publicPointFromFields(resource.latitude, resource.longitude);
+    if (point) result.location = point;
+  } else {
+    const facilitySource = isObject(resource.facility) ? resource.facility : isObject(resource.doctor) && isObject(resource.doctor.facility) ? resource.doctor.facility : undefined;
+    const facility = publicPlace(facilitySource);
+    if (facility) result.facility = facility;
+    const doctor = publicPerson(resource.doctor);
+    if (doctor) result.doctor = doctor;
+    const department = publicPerson(resource.department);
+    if (department) result.department = department;
+    const point = publicPoint(resource.location) ?? publicPointFromFields(resource.latitude, resource.longitude);
+    if (point) result.location = point;
+  }
+  return result;
+}
+
+function pickFields(resource: JsonObject, fields: string[]): JsonObject {
+  const result: JsonObject = {};
+  for (const field of fields) {
+    const value = resource[field];
+    if (value !== undefined && value !== null) result[field] = value;
+  }
+  return result;
+}
+
+function publicPlace(value: unknown): JsonObject | undefined {
+  if (!isObject(value)) return undefined;
+  const result = pickFields(value, ['name', 'title', 'address', 'city', 'district', 'ward', 'cuisine', 'description', 'rating', 'review_count', 'price_level', 'image_url', 'opening_hours']);
+  const point = value.coordinate_status === 'suspicious_default' ? undefined : publicPoint(value.location) ?? publicPointFromFields(value.latitude, value.longitude);
+  if (point) result.location = point;
+  return Object.keys(result).length ? result : undefined;
+}
+
+function publicFoodItem(value: JsonObject): JsonObject {
+  return pickFields(value, ['name', 'title', 'description', 'price', 'currency', 'quantity', 'image_url']);
+}
+
+function publicPerson(value: unknown): JsonObject | undefined {
+  if (typeof value === 'string' && value.trim()) return { name: value.trim() };
+  if (!isObject(value)) return undefined;
+  const result = pickFields(value, ['name', 'full_name', 'display_name', 'title', 'specialty', 'description', 'price']);
+  return Object.keys(result).length ? result : undefined;
+}
+
+function publicDriver(value: unknown): JsonObject | undefined {
+  if (!isObject(value)) return undefined;
+  const result = pickFields(value, ['name', 'full_name', 'display_name', 'rating', 'rating_average', 'phone_masked', 'vehicle_type', 'vehicle_model', 'vehicle_color', 'license_plate', 'vehicle', 'eta_seconds']);
+  const phone = typeof value.phone === 'string' ? maskPhone(value.phone) : undefined;
+  if (!result.phone_masked && phone) result.phone_masked = phone;
+  return Object.keys(result).length ? result : undefined;
+}
+
+function publicRoute(value: unknown): JsonObject | undefined {
+  if (!isObject(value)) return undefined;
+  const geometry = publicGeometry(value.geometry);
+  const origin = publicPoint(value.origin);
+  const destination = publicPoint(value.destination);
+  const result: JsonObject = {
+    ...(origin ? { origin } : {}),
+    ...(destination ? { destination } : {}),
+    ...(typeof value.distance_meters === 'number' ? { distance_meters: value.distance_meters } : {}),
+    ...(typeof value.duration_seconds === 'number' ? { duration_seconds: value.duration_seconds } : {}),
+    ...(typeof value.polyline === 'string' ? { polyline: value.polyline } : {}),
+    ...(geometry.length > 1 ? { geometry } : {}),
+  };
+  return Object.keys(result).length ? result : undefined;
+}
+
+function publicGeometry(value: unknown): Array<{ latitude: number; longitude: number }> {
+  if (!Array.isArray(value)) return [];
+  return value.map(publicPoint).filter((point): point is { latitude: number; longitude: number } => Boolean(point));
+}
+
+function publicPoint(value: unknown): { latitude: number; longitude: number } | undefined {
+  if (!isObject(value)) return undefined;
+  return publicPointFromFields(value.latitude, value.longitude);
+}
+
+function publicPointFromFields(latitude: unknown, longitude: unknown): { latitude: number; longitude: number } | undefined {
+  if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined;
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return undefined;
+  return { latitude, longitude };
+}
+
+function maskPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 4) return '';
+  return `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
 }
 
 function isObject(value: unknown): value is JsonObject {

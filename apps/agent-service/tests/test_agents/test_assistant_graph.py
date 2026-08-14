@@ -108,7 +108,7 @@ def test_ride_destination_change_is_a_follow_up_with_only_the_route_slot_changed
     follow_up = deterministic_plan("đổi điểm đến qua trường đại học công nghệ UET giúp tôi", state)
 
     assert domains(follow_up) == ["ride"]
-    assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "truong dai hoc cong nghe uet"
+    assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "trường đại học công nghệ UET"
     assert follow_up.tasks[0].extracted_slots["pickup_address"] == "VinUni"
     assert follow_up.tasks[0].extracted_slots["vehicle_type"] == "CAR_4"
 
@@ -156,6 +156,22 @@ class FakePlanner:
         )
 
 
+class PartialRidePlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình sẽ giúp bạn.",
+            tasks=[
+                PlannedTask(
+                    domain="ride",
+                    goal="Tìm chuyến xe",
+                    normalized_request="Đặt xe",
+                    extracted_slots={"pickup_address": "VinUni", "dropoff_address": "Hồ Gươm"},
+                ),
+            ],
+        )
+
+
 @pytest.mark.asyncio
 async def test_model_path_uses_structured_planner_and_removes_resource_ids() -> None:
     graph = build_assistant_graph(llm=FakePlanner())
@@ -163,6 +179,16 @@ async def test_model_path_uses_structured_planner_and_removes_resource_ids() -> 
     assert result["decision_source"] == "model"
     assert [task["domain"] for task in result["plan"]["tasks"]] == ["restaurant", "ride"]
     assert "restaurant_id" not in result["plan"]["tasks"][0]["extracted_slots"]
+
+
+@pytest.mark.asyncio
+async def test_model_path_restores_explicit_route_and_vehicle_slots() -> None:
+    graph = build_assistant_graph(llm=PartialRidePlanner())
+    result = await graph.ainvoke({"query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ", "conversation_state": {}})
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    assert slots["pickup_address"] == "VinUni"
+    assert slots["dropoff_address"] == "Hồ Gươm"
+    assert slots["vehicle_type"] == "CAR_4"
 
 
 def test_model_prompt_contains_only_planner_safe_state() -> None:

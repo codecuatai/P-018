@@ -70,4 +70,37 @@ describe('Geoapify provider boundary', () => {
     expect(result.candidates).toEqual([]);
     expect(geoapify.geocode).toHaveBeenCalledWith('an address with no result');
   });
+
+  it('uses semantic autocomplete when a full-text result misses an uppercase location code', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        results: [{ lat: 21.0, lon: 105.8, formatted: 'Truong Dai hoc Cong nghe Dong A, Hanoi', rank: 1 }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        features: [{
+          properties: { lat: 21.0382738, lon: 105.7824572, formatted: 'Dai hoc Cong nghe, 144, Hanoi', rank: 1 },
+          geometry: { coordinates: [105.7824572, 21.0382738] },
+        }],
+      }), { status: 200 }));
+    const provider = new GeoapifyProvider(config({
+      GEOAPIFY_REAL_MODE: true,
+      GEOAPIFY_SERVER_API_KEY: 'test-key',
+      GEOAPIFY_API_BASE_URL: 'https://api.geoapify.com/v1',
+      GEOAPIFY_LANGUAGE: 'vi',
+      GEOAPIFY_COUNTRY_FILTER: 'vn',
+      UPSTREAM_TIMEOUT_MS: 1000,
+    }));
+
+    const result = await provider.geocode('Trường Đại học Công nghệ UET');
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.provider).toBe('geoapify');
+    expect(result[0]?.latitude).toBe(21.0382738);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    const secondUrl = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(firstUrl.searchParams.get('text')).toBe('Trường Đại học Công nghệ UET');
+    expect(secondUrl.pathname).toBe('/v1/geocode/autocomplete');
+    expect(secondUrl.searchParams.get('text')).toBe('Đại học Công nghệ');
+  });
 });

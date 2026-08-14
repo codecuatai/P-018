@@ -9,6 +9,20 @@ def plain(text: str) -> str:
     return "".join("d" if char == "đ" else char for char in normalized if unicodedata.category(char) != "Mn")
 
 
+def _restore_query_spelling(original: str, normalized_query: str) -> str:
+    """Preserve user spelling while using folded text for intent matching."""
+    wanted = plain(normalized_query).split()
+    if not wanted:
+        return normalized_query
+    tokens = re.findall(r"[^\W_]+", original, flags=re.UNICODE)
+    folded_tokens = [plain(token) for token in tokens]
+    width = len(wanted)
+    for index in range(len(folded_tokens) - width + 1):
+        if folded_tokens[index:index + width] == wanted:
+            return " ".join(tokens[index:index + width])
+    return normalized_query
+
+
 def classify(query: str) -> str:
     text = plain(query)
     if any(value in text for value in ("bo qua xac nhan", "goi execute", "khiếu nại", "chuyen bay", "dat ban")):
@@ -111,5 +125,5 @@ def extract_slots(query: str) -> dict[str, object]:
     if any(value in text for value in ("tim", "an gi", "mon", "lay", "chon", "cho toi", "toi muon", "mua", "them")):
         dish = _dish_query(text)
         if dish:
-            slots["dish_query"] = dish
+            slots["dish_query"] = _restore_query_spelling(query, dish)
     return slots

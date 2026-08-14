@@ -47,13 +47,22 @@ export class GeoapifyProvider {
     const cached = this.cached<GeoapifyGeocodeCandidate[]>(cacheKey);
     if (cached) return cached;
 
-    const payload = await this.request('/geocode/search', {
+    let payload = await this.request('/geocode/search', {
       text: normalized,
       format: 'json',
       limit: '5',
     });
-    const results = isRecord(payload) && Array.isArray(payload.results) ? payload.results : [];
-    const candidates = results.map((item) => parseGeocode(item)).filter((item): item is GeoapifyGeocodeCandidate => item !== undefined);
+    let results = isRecord(payload) && Array.isArray(payload.results) ? payload.results : [];
+    let candidates = results.map((item) => parseGeocode(item)).filter((item): item is GeoapifyGeocodeCandidate => item !== undefined);
+    const shortCode = shortCodeFromQuery(normalized);
+    if (shortCode && (!candidates.length || !candidates.some((candidate) => candidateContainsCode(candidate, shortCode)))) {
+      const semanticQuery = removeLeadingPlaceWord(removeShortCode(normalized));
+      if (semanticQuery) {
+        const suggestions = await this.autocomplete(semanticQuery);
+        const semanticCandidate = selectSemanticCandidate(suggestions, semanticQuery);
+        if (semanticCandidate) candidates = [semanticCandidate];
+      }
+    }
     if (!candidates.length) return [];
     this.cache.set(cacheKey, { expiresAt: Date.now() + this.cacheTtlMs, value: candidates });
     return candidates;
@@ -67,7 +76,7 @@ export class GeoapifyProvider {
 
     let payload = await this.request('/geocode/autocomplete', {
       text: normalized,
-      limit: '5',
+      limit: '10',
     });
     let features = isRecord(payload) && Array.isArray(payload.features) ? payload.features : [];
     let suggestions = features.map((item) => parseFeatureSuggestion(item)).filter((item): item is GeoapifySuggestion => item !== undefined);
@@ -75,7 +84,7 @@ export class GeoapifyProvider {
     if (!suggestions.length && transliterated !== normalized) {
       payload = await this.request('/geocode/autocomplete', {
         text: transliterated,
-        limit: '5',
+        limit: '10',
       });
       features = isRecord(payload) && Array.isArray(payload.features) ? payload.features : [];
       suggestions = features.map((item) => parseFeatureSuggestion(item)).filter((item): item is GeoapifySuggestion => item !== undefined);
@@ -165,6 +174,41 @@ export class GeoapifyProvider {
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
+}
+
+function shortCodeFromQuery(value: string): string | undefined {
+  const token = value.split(/\s+/).at(-1)?.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}-]+$/u, '');
+  if (!token || !/^[A-Z][A-Z0-9-]{1,7}$/.test(token)) return undefined;
+  return token;
+}
+
+function candidateContainsCode(candidate: GeoapifyGeocodeCandidate, code: string): boolean {
+  return candidate.address_text.toUpperCase().split(/[^A-Z0-9-]+/).includes(code);
+}
+
+function removeShortCode(value: string): string {
+  const tokens = value.split(/\s+/);
+  return tokens.slice(0, -1).join(' ').trim();
+}
+
+function removeLeadingPlaceWord(value: string): string {
+  return value.replace(/^(?:trường|truong|school)\s+/iu, '').trim();
+}
+
+function selectSemanticCandidate(suggestions: GeoapifySuggestion[], query: string): GeoapifySuggestion | undefined {
+  const semanticPhrase = foldForMatching(query);
+  if (!semanticPhrase) return undefined;
+  const exact = suggestions.find((suggestion) => {
+    const label = foldForMatching(suggestion.address_text.split(',')[0] ?? '')
+      .replace(/^(?:truong|school)\s+/, '')
+      .trim();
+    return label === semanticPhrase;
+  });
+  return exact ?? suggestions.find((suggestion) => foldForMatching(suggestion.address_text).includes(semanticPhrase));
+}
+
+function foldForMatching(value: string): string {
+  return removeVietnameseMarks(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function removeVietnameseMarks(value: string): string {

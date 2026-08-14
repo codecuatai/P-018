@@ -971,6 +971,25 @@ export class AssistantService {
     }
   }
 
+  private async resolveHealthcarePatientId(user: AuthUser, correlationId: string): Promise<number> {
+    const patientClient = this.healthcare as HealthcareClient & {
+      listPatients?: (actorId: string, requestCorrelationId: string) => Promise<JsonObject>;
+    };
+    if (typeof patientClient.listPatients !== 'function') return this.healthcare.defaultPatientId;
+    const response = await patientClient.listPatients(user.sub, correlationId);
+    const patients = isRecord(response) ? arrayValue(response.items).filter(isRecord) : [];
+    const selected = patients.find((patient) => patient.is_default === true) ?? patients[0];
+    const patientId = numberValue(selected?.id);
+    if (patientId === undefined) {
+      throw new ServiceUnavailableException({
+        code: 'PATIENT_LINK_REQUIRED',
+        detail: 'Bạn cần liên kết hồ sơ người bệnh trước khi đặt lịch khám.',
+        retryable: false,
+      });
+    }
+    return patientId;
+  }
+
   private async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> {
     const store = this.store as unknown as { getAssistantActionExecution?: CoreStore['getAssistantActionExecution'] };
     return typeof store.getAssistantActionExecution === 'function'
@@ -1213,21 +1232,37 @@ export class AssistantService {
     if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
     if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
     if (!candidates.length) {
+      const cuisineQuery = stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
         arguments: {
           location,
           limit: 20,
-          ...(stringValue(slots.cuisine_query) ? { cuisine_type: stringValue(slots.cuisine_query) } : {}),
-          ...(stringValue(slots.cuisine) ? { cuisine_type: stringValue(slots.cuisine) } : {}),
+          ...(cuisineQuery ? { cuisine_type: cuisineQuery } : {}),
         },
         workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
         tool_call_id: `call_${randomUUID()}`,
         schema_version: '1',
       }, user.sub, correlationId);
-      const list = this.resultItems(result);
+      let list = this.resultItems(result);
+      let cuisineFallback = false;
+      if (!list.length && cuisineQuery) {
+        const fallback = await this.restaurant.executeTool({
+          tool_name: 'restaurant.search',
+          risk_level: 'READ',
+          arguments: { location, limit: 20 },
+          workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
+          tool_call_id: `call_${randomUUID()}`,
+          schema_version: '1',
+        }, user.sub, correlationId);
+        list = this.resultItems(fallback);
+        cuisineFallback = list.length > 0;
+      }
       const publicItem = this.restaurantOptions(list);
+      if (cuisineFallback) {
+        publicItem.note = 'Mình chưa tìm thấy kết quả khớp hoàn toàn với ưu tiên món ăn này; dưới đây là các nhà hàng phù hợp trong khu vực để bạn chọn.';
+      }
       const cohortId = this.newCohort(task);
       const selectionActions = list.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId));
       return {
@@ -1350,7 +1385,9 @@ export class AssistantService {
       stringValue(previousQuote.pickup_address) !== pickup
       || stringValue(previousQuote.dropoff_address) !== dropoff
     ));
-    const workflowId = routeChanged ? undefined : task.workflow_id ?? `gw_${conversationId}_${task.id}`;
+    const workflowId = routeChanged
+      ? undefined
+      : task.workflow_id ?? `gw_${conversationId}_${task.id}_${task.revision}`;
     const hydrate = (this.ride as unknown as {
       hydrateWorkflow?: RideWorkflowService['hydrateWorkflow'];
     }).hydrateWorkflow;
@@ -1453,6 +1490,9 @@ export class AssistantService {
             : 'Mình chưa thấy lịch đúng buổi bạn muốn. Dưới đây là các giờ thật còn trống để bạn chọn.',
           options: this.healthcareOptionRows(doctorsForSelection),
         };
+      if (publicItem.kind === 'healthcare_no_availability') {
+        publicItem.note = 'Khung giờ hiển thị là lịch mô phỏng để bạn thử luồng đặt lịch; hãy xác nhận lại với cơ sở trước khi đến.';
+      }
       const selectionActions = this.healthcareSelectionActions(doctorsForSelection, task);
       return {
         phase: doctorsForSelection.length ? 'NEEDS_INFO' as TaskPhase : 'FAILED' as TaskPhase,
@@ -1471,10 +1511,11 @@ export class AssistantService {
     if (!selectedSlot || numberValue(selectedSlot.id) === undefined) {
       return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: existing, publicItem: this.healthcareOptions(doctors, task.id), items: [this.healthcareOptions(doctors, task.id)], actions: this.healthcareSelectionActions(doctors, task), workflowId };
     }
+    const patientId = await this.resolveHealthcarePatientId(user, correlationId);
     const appointment = await this.healthcare.executeTool({
       tool_name: 'healthcare.hold_slot',
       risk_level: 'REVERSIBLE_WRITE',
-      arguments: { slot_id: selectedSlot.id, patient_id: this.healthcare.defaultPatientId, symptoms: stringValue(slots.symptoms) ?? 'Nhu cầu đặt lịch khám' },
+      arguments: { slot_id: selectedSlot.id, patient_id: patientId, symptoms: stringValue(slots.symptoms) ?? 'Nhu cầu đặt lịch khám' },
       workflow_id: workflowId,
       tool_call_id: `call_${randomUUID()}`,
       schema_version: '1',
@@ -1507,7 +1548,7 @@ export class AssistantService {
           restaurant_id: selectedCandidate?.restaurant_id ?? storedContext.restaurant_id,
         };
       })();
-    const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm món đã chọn vào giỏ';
+    const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm 1 món đã chọn vào giỏ';
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
     const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
     const nextContext = {
@@ -1521,6 +1562,7 @@ export class AssistantService {
     const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
     const data = isRecord(response.data) ? response.data : {};
     let foodData = isRecord(data) ? this.foodData(data) : {};
+    const cartUpdated = selectedCandidate !== undefined && Boolean(stateUpdates.cart_id) && arrayValue(data.items).length > 0;
     if (!arrayValue(foodData.options).length && selectedCandidate) {
       const selectedRestaurant = arrayValue(storedContext.restaurant_candidates).find(
         (candidate): candidate is JsonObject => isRecord(candidate) && candidate.id === selectedCandidate.restaurant_id,
@@ -1535,12 +1577,13 @@ export class AssistantService {
     }
     const publicItem: JsonObject = {
       kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
-      title: pending ? 'Đơn hàng đã sẵn sàng' : arrayValue(foodData.options).length ? 'Món ăn phù hợp' : 'Chưa tìm thấy món phù hợp',
+      title: pending ? 'Đơn hàng đã sẵn sàng' : cartUpdated ? 'Món đã thêm vào giỏ' : arrayValue(foodData.options).length ? 'Món ăn phù hợp' : 'Chưa tìm thấy món phù hợp',
       ...foodData,
-      ...(!pending && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
+      ...(cartUpdated ? { note: 'Món đã được thêm vào giỏ. Bạn có thể tiếp tục thêm món hoặc mở giỏ để xem bước tiếp theo.' } : {}),
+      ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
     };
     const optionActions = !pending
-      ? arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, this.newCohort(task)))
+      ? cartUpdated ? [] : arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, this.newCohort(task)))
       : [];
     if (pending?.id) {
       const action = this.actionFor(task, 'food_confirm', { confirmation_id: String(pending.id) });
@@ -1583,7 +1626,11 @@ export class AssistantService {
       const result = await this.ride.confirmService(user.sub, action.workflow_id ?? task.workflow_id ?? '', correlationId);
       const publicItem = this.rideItem(result, task);
       const next = result.stage === 'PAYMENT_CONFIRMATION' ? this.actionFor(task, 'ride_payment', { workflow_id: result.workflow_id }) : undefined;
-      return { phase: next ? 'AWAITING_CONFIRMATION' : 'COMPLETED', message: next ? 'Thông tin chuyến đã được xác nhận. Bạn xác nhận thanh toán để hoàn tất nhé.' : 'Chuyến xe đã được cập nhật.', publicItem, authoritative: rideAuthority(result), nextAction: next };
+      const bookingStatus = stringValue(result.booking?.status);
+      const phase = next
+        ? 'AWAITING_CONFIRMATION'
+        : isTerminalRideBookingStatus(bookingStatus) ? 'COMPLETED' : 'IN_PROGRESS';
+      return { phase, message: next ? 'Thông tin chuyến đã được xác nhận. Bạn xác nhận thanh toán để hoàn tất nhé.' : 'Chuyến xe đã được cập nhật.', publicItem, authoritative: rideAuthority(result), nextAction: next };
     }
     if (action.kind === 'ride_payment') {
       const result = await this.ride.confirmPayment(user.sub, action.workflow_id ?? task.workflow_id ?? '', correlationId);
@@ -1593,7 +1640,7 @@ export class AssistantService {
         : status === 'COMPLETED'
           ? 'Chuyến xe đã hoàn tất và thanh toán đã được ghi nhận.'
           : 'Thanh toán đã được ghi nhận và chuyến xe đã được cập nhật.';
-      return { phase: 'COMPLETED', message, publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
+      return { phase: isTerminalRideBookingStatus(status) ? 'COMPLETED' : 'IN_PROGRESS', message, publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
     }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
@@ -1643,7 +1690,7 @@ export class AssistantService {
       const selected = candidates[action.selection_index ?? 0];
       if (!selected || typeof selected.id !== 'string') throw new ConflictException({ code: 'STALE_ACTION', detail: 'Món này không còn trong danh sách hiện tại. Bạn chọn lại nhé.', retryable: false });
       task.authoritative = { ...task.authoritative, food_context: { ...context, menu_item_id: selected.id, restaurant_id: selected.restaurant_id ?? context.restaurant_id } };
-      task.latest_message = 'Thêm món đã chọn vào giỏ';
+      task.latest_message = 'Thêm 1 món đã chọn vào giỏ';
       const result = await this.processFood(task, user, conversationId, correlationId);
       return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã chuẩn bị đơn món đã chọn. Bạn kiểm tra rồi xác nhận nhé.' : 'Mình đã chọn món và cập nhật giỏ hàng.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
@@ -1777,18 +1824,34 @@ export class AssistantService {
   }
 
   private publicRestaurant(candidate: JsonObject): JsonObject {
+    const address = stringValue(candidate.address) ?? stringValue(candidate.location);
+    const hasTrustworthyCoordinate = candidate.coordinate_status !== 'suspicious_default'
+      && typeof candidate.latitude === 'number'
+      && typeof candidate.longitude === 'number';
     return {
       name: stringValue(candidate.name) ?? 'Nhà hàng',
-      location: stringValue(candidate.location) ?? stringValue(candidate.address) ?? 'Thông tin địa điểm đang được cập nhật',
-      cuisine: stringValue(candidate.cuisine_type),
-      rating: candidate.rating,
-      ...(typeof candidate.latitude === 'number' ? { latitude: candidate.latitude } : {}),
-      ...(typeof candidate.longitude === 'number' ? { longitude: candidate.longitude } : {}),
+      location: address ?? 'Thông tin địa điểm đang được cập nhật',
+      ...(address ? { address } : {}),
+      ...(stringValue(candidate.city) ? { city: stringValue(candidate.city) } : {}),
+      ...(stringValue(candidate.district) ? { district: stringValue(candidate.district) } : {}),
+      ...(stringValue(candidate.cuisine_type) || stringValue(candidate.cuisine) ? { cuisine: stringValue(candidate.cuisine_type) ?? stringValue(candidate.cuisine) } : {}),
+      ...(stringValue(candidate.description) ? { description: stringValue(candidate.description) } : {}),
+      ...(typeof candidate.rating === 'number' ? { rating: candidate.rating } : {}),
+      ...(typeof candidate.review_count === 'number' ? { review_count: candidate.review_count } : {}),
+      ...(stringValue(candidate.price_level) ? { price_level: stringValue(candidate.price_level) } : {}),
+      ...(stringValue(candidate.image_url) ? { image_url: stringValue(candidate.image_url) } : {}),
+      ...(stringValue(candidate.opening_hours) || Array.isArray(candidate.opening_hours) ? { opening_hours: candidate.opening_hours } : {}),
+      ...(hasTrustworthyCoordinate ? { latitude: candidate.latitude, longitude: candidate.longitude } : {}),
     };
   }
 
   private healthcareOptions(doctors: JsonObject[], _taskId: string): JsonObject {
-    return { kind: 'healthcare_options', title: 'Bác sĩ và lịch còn trống', options: this.healthcareOptionRows(doctors) };
+    return {
+      kind: 'healthcare_options',
+      title: 'Bác sĩ và lịch còn trống',
+      note: 'Khung giờ hiển thị là lịch mô phỏng để bạn thử luồng đặt lịch; hãy xác nhận lại với cơ sở trước khi đến.',
+      options: this.healthcareOptionRows(doctors),
+    };
   }
 
   private healthcareOptionRows(doctors: JsonObject[]): JsonObject[] {
@@ -1864,10 +1927,15 @@ export class AssistantService {
       return {
         name: item.name ?? item.title,
         price: item.price,
+        ...(stringValue(item.currency) ? { currency: stringValue(item.currency) } : {}),
+        ...(stringValue(item.category) ? { category: stringValue(item.category) } : {}),
+        ...(stringValue(item.image_url) ? { image_url: stringValue(item.image_url) } : {}),
+        ...(Array.isArray(item.option_groups) ? { option_groups: item.option_groups } : {}),
         restaurant: restaurant ? {
           name: restaurant.name,
           address: restaurant.address,
           rating: restaurant.rating,
+          image_url: restaurant.image_url,
           latitude: restaurant.latitude,
           longitude: restaurant.longitude,
         } : entry.restaurant_name,
@@ -1921,10 +1989,12 @@ export class AssistantService {
 
   private sanitizeOption(value: JsonObject): JsonObject {
     const result: JsonObject = {};
-    for (const key of ['name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'rating', 'address', 'latitude', 'longitude']) {
+    for (const key of ['name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'currency', 'category', 'rating', 'review_count', 'price_level', 'image_url', 'address', 'city', 'district', 'latitude', 'longitude']) {
       const item = value[key];
       if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
+    if (typeof value.opening_hours === 'string' || Array.isArray(value.opening_hours) && value.opening_hours.every((item) => typeof item === 'string')) result.opening_hours = value.opening_hours;
+    if (Array.isArray(value.option_groups)) result.option_groups = this.sanitizeFoodOptionGroups(value.option_groups);
     if (isRecord(value.restaurant)) result.restaurant = this.sanitizeRestaurant(value.restaurant);
     else if (typeof value.restaurant === 'string') result.restaurant = value.restaurant;
     if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
@@ -1939,9 +2009,26 @@ export class AssistantService {
       ...(stringValue(value.address) ? { address: stringValue(value.address) } : {}),
       ...(stringValue(value.cuisine) ? { cuisine: stringValue(value.cuisine) } : {}),
       ...(typeof value.rating === 'number' ? { rating: value.rating } : {}),
+      ...(stringValue(value.image_url) ? { image_url: stringValue(value.image_url) } : {}),
       ...(typeof value.latitude === 'number' ? { latitude: value.latitude } : {}),
       ...(typeof value.longitude === 'number' ? { longitude: value.longitude } : {}),
     };
+  }
+
+  private sanitizeFoodOptionGroups(value: unknown): JsonObject[] {
+    return arrayValue(value).filter(isRecord).map((group) => {
+      const options = arrayValue(group.options).filter(isRecord).map((option) => ({
+        ...(stringValue(option.name) ? { name: stringValue(option.name) } : {}),
+        ...(typeof option.price === 'number' ? { price: option.price } : {}),
+      })).filter((option) => Object.keys(option).length > 0);
+      return {
+        ...(stringValue(group.name) ? { name: stringValue(group.name) } : {}),
+        ...(typeof group.required === 'boolean' ? { required: group.required } : {}),
+        ...(typeof group.min_select === 'number' ? { min_select: group.min_select } : {}),
+        ...(typeof group.max_select === 'number' ? { max_select: group.max_select } : {}),
+        ...(options.length ? { options } : {}),
+      };
+    }).filter((group) => Object.keys(group).length > 0);
   }
 
   private sanitizeAppointment(value: unknown): JsonObject {
@@ -2034,4 +2121,8 @@ export class AssistantService {
   private modelSafeItem(item: JsonObject): JsonObject {
     return this.modelSafeValue(this.sanitizeConsumerItem(item)) as JsonObject;
   }
+}
+
+function isTerminalRideBookingStatus(status: string | undefined): boolean {
+  return status !== undefined && ['COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(status.toUpperCase());
 }

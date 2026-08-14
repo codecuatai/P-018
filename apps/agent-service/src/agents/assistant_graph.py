@@ -190,6 +190,7 @@ def _route(text: str) -> tuple[str | None, str | None]:
         pickup = match.group(1).strip()
         dropoff = match.group(2).strip()
         dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", dropoff, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        dropoff = _strip_vehicle_suffix(dropoff)
         return pickup or None, dropoff or None
 
     # "từ VinUni đưa tôi tới đó" intentionally carries only a pickup.  The
@@ -198,19 +199,36 @@ def _route(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _strip_vehicle_suffix(value: str) -> str:
+    return re.sub(
+        r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
 def _changed_route_slot(text: str, slot: str) -> str | None:
     """Extract an explicit route edit without discarding the other endpoint."""
-    lowered = _plain(text)
     if slot == "dropoff_address":
-        pattern = r"(?:doi|thay|chuyen)\s+(?:diem den|den|destination)\s+(?:qua|sang|thanh|la|toi)?\s*(.+?)(?:[,.!?]|$)"
+        patterns = (
+            r"(?:đổi|doi|thay|chuyển|chuyen)\s+(?:điểm đến|diem den|đến|den|destination)\s+(?:qua|sang|thành|thanh|là|la|tới|toi)?\s*(.+?)(?:[,.!?]|$)",
+        )
     else:
-        pattern = r"(?:doi|thay|chuyen)\s+(?:diem don|don|pickup|diem xuat phat)\s+(?:qua|sang|thanh|la|toi)?\s*(.+?)(?:[,.!?]|$)"
-    match = re.search(pattern, lowered, flags=re.IGNORECASE)
-    if not match:
-        return None
-    value = match.group(1).strip()
-    value = re.sub(r"\s+(?:giup toi|nhe|nha)$", "", value).strip()
-    return value or None
+        patterns = (
+            r"(?:đổi|doi|thay|chuyển|chuyen)\s+(?:điểm đón|diem don|đón|don|pickup|điểm xuất phát|diem xuat phat)\s+(?:qua|sang|thành|thanh|là|la|tới|toi)?\s*(.+?)(?:[,.!?]|$)",
+        )
+
+    candidates = (text, _plain(text))
+    for candidate in candidates:
+        match = re.search(patterns[0], candidate, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        value = re.sub(r"\s+(?:giúp tôi|giup toi|nhé|nhe|nhà|nha)$", "", value, flags=re.IGNORECASE).strip()
+        if value:
+            return value
+    return None
 
 
 def _has_explicit_clock(text: str) -> bool:
@@ -732,6 +750,25 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
     return plan.model_copy(update={"tasks": tasks, "clarification_question": clarification})
 
 
+def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPlan:
+    """Keep explicit user slots when a model response omits them.
+
+    The model chooses the task shape, but the bounded deterministic extractor
+    is the safer source for direct route, vehicle, selection, and preference
+    phrases.  Merge only those semantic slots; identifiers and authoritative
+    values still come from the Gateway/domain workflow.
+    """
+    tasks: list[PlannedTask] = []
+    for task in plan.tasks:
+        explicit = _semantic_slots(message, task.domain)
+        if not explicit:
+            tasks.append(task)
+            continue
+        slots = {**task.extracted_slots, **explicit}
+        tasks.append(task.model_copy(update={"extracted_slots": slots}))
+    return plan.model_copy(update={"tasks": tasks})
+
+
 def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> AssistantPlan:
     """Make the high-risk semantic reference boundary deterministic.
 
@@ -873,10 +910,10 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
             return {"plan": plan.model_dump(), "assistant_message": plan.assistant_message, "decision_source": "deterministic"}
         try:
-            plan = _enforce_reference_dependencies(
-                _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan)),
-                str(state.get("query", "")),
-            )
+            message = str(state.get("query", ""))
+            plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
+            plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
+            plan = _enforce_reference_dependencies(plan, message)
             MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "succeeded", "last_model_call_error": None})
             runtime = llm_diagnostics(settings)
             logger.info("assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks))

@@ -136,17 +136,41 @@ class InMemoryFoodRepository:
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
-        keyword = _fold_text(filters.get("keyword", ""))
+        raw_keyword = str(filters.get("keyword", "")).strip().casefold()
+        keyword = _fold_text(raw_keyword)
+        preserve_diacritics = any(ord(char) > 127 for char in raw_keyword)
         district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
         restaurant_id = str(filters.get("restaurant_id", ""))
         result = []
+        item_keyword_match = False
+        primary_item_keyword_match = False
         for item in self.items.values():
             if restaurant_id and item["restaurant_id"] != restaurant_id:
                 continue
             restaurant = self.restaurants[item["restaurant_id"]]
-            text = _fold_text(f"{item['name']} {item['description']} {item['category']} {restaurant['name']}")
-            if keyword and not _matches_keyword(text, keyword):
+            primary_item_text = _fold_text(f"{item['name']} {item['category']}")
+            item_text = _fold_text(f"{primary_item_text} {item['description']}")
+            restaurant_text = _fold_text(restaurant["name"])
+            raw_primary_item_text = f"{item['name']} {item['category']}".casefold()
+            raw_item_text = f"{raw_primary_item_text} {item['description']}".casefold()
+            raw_restaurant_text = str(restaurant["name"]).casefold()
+            matches_primary_item = not keyword or (
+                _matches_keyword(raw_primary_item_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(primary_item_text, keyword)
+            )
+            matches_item = matches_primary_item or (bool(keyword) and (
+                _matches_keyword(raw_item_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(item_text, keyword)
+            ))
+            matches_restaurant = not keyword or (
+                _matches_keyword(raw_restaurant_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(restaurant_text, keyword)
+            )
+            if keyword and not matches_item and not matches_restaurant:
                 continue
             if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
@@ -158,10 +182,16 @@ class InMemoryFoodRepository:
                 continue
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
-            result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant)})
+            item_keyword_match = item_keyword_match or matches_item
+            primary_item_keyword_match = primary_item_keyword_match or matches_primary_item
+            result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant), "_item_keyword_match": matches_item, "_primary_item_keyword_match": matches_primary_item})
+        if keyword and primary_item_keyword_match:
+            result = [entry for entry in result if entry["_primary_item_keyword_match"]]
+        elif keyword and item_keyword_match:
+            result = [entry for entry in result if entry["_item_keyword_match"]]
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
-        return result[start:start + limit]
+        return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start:start + limit]]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         return deepcopy(self.restaurants.get(restaurant_id))
@@ -377,18 +407,42 @@ class PostgresFoodRepository:
     async def search(self, **filters) -> list[dict]:
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
         result = []
-        keyword = _fold_text(filters.get("keyword", ""))
+        raw_keyword = str(filters.get("keyword", "")).strip().casefold()
+        keyword = _fold_text(raw_keyword)
+        preserve_diacritics = any(ord(char) > 127 for char in raw_keyword)
         district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
         restaurant_id = str(filters.get("restaurant_id", ""))
+        item_keyword_match = False
+        primary_item_keyword_match = False
         for item in await self._records("menu_item"):
             if restaurant_id and item["restaurant_id"] != restaurant_id:
                 continue
             restaurant = restaurants.get(item["restaurant_id"])
             if restaurant is None:
                 continue
-            haystack = _fold_text(f"{item['name']} {item.get('description', '')} {item.get('category', '')} {restaurant['name']}")
-            if keyword and not _matches_keyword(haystack, keyword):
+            primary_item_haystack = _fold_text(f"{item['name']} {item.get('category', '')}")
+            item_haystack = _fold_text(f"{primary_item_haystack} {item.get('description', '')}")
+            restaurant_haystack = _fold_text(restaurant["name"])
+            raw_primary_item_haystack = f"{item['name']} {item.get('category', '')}".casefold()
+            raw_item_haystack = f"{raw_primary_item_haystack} {item.get('description', '')}".casefold()
+            raw_restaurant_haystack = str(restaurant["name"]).casefold()
+            matches_primary_item = not keyword or (
+                _matches_keyword(raw_primary_item_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(primary_item_haystack, keyword)
+            )
+            matches_item = matches_primary_item or (bool(keyword) and (
+                _matches_keyword(raw_item_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(item_haystack, keyword)
+            ))
+            matches_restaurant = not keyword or (
+                _matches_keyword(raw_restaurant_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(restaurant_haystack, keyword)
+            )
+            if keyword and not matches_item and not matches_restaurant:
                 continue
             if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
@@ -400,11 +454,17 @@ class PostgresFoodRepository:
                 continue
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
-            result.append({"item": item, "restaurant": restaurant})
+            item_keyword_match = item_keyword_match or matches_item
+            primary_item_keyword_match = primary_item_keyword_match or matches_primary_item
+            result.append({"item": item, "restaurant": restaurant, "_item_keyword_match": matches_item, "_primary_item_keyword_match": matches_primary_item})
+        if keyword and primary_item_keyword_match:
+            result = [entry for entry in result if entry["_primary_item_keyword_match"]]
+        elif keyword and item_keyword_match:
+            result = [entry for entry in result if entry["_item_keyword_match"]]
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
         result.sort(key=lambda value: (-(value["restaurant"].get("rating") or 0), -(value["restaurant"].get("review_count") or 0), str(value["item"].get("name", "")).casefold(), str(value["item"].get("id", ""))))
-        return result[start:start + limit]
+        return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start:start + limit]]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         pool = self._require_pool()

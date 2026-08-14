@@ -424,9 +424,44 @@ describe('Unified assistant orchestration', () => {
     const second = await service.chat(user, 'Đổi điểm đến qua trường Đại học Công nghệ UET.', first.conversation_id, 'cor-ride-2');
 
     expect(ride.chat).toHaveBeenCalledTimes(2);
+    expect(ride.chat.mock.calls[1][2]).not.toBe(ride.chat.mock.calls[0][2]);
     expect(ride.chat.mock.calls[1][1]).toContain('Trường Đại học Công nghệ UET');
     expect(second.actions[0].id).not.toBe(oldAction.id);
     await expect(service.act(user, { conversation_id: first.conversation_id, action_id: oldAction.id }, 'cor-ride-3', 'old-route-key')).rejects.toMatchObject({ response: { code: 'ACTION_NOT_AVAILABLE' } });
+  });
+
+  it('keeps the Assistant ride task active after payment while Ride is non-terminal', async () => {
+    const store = new InMemoryCoreRepository();
+    const quote = { id: 'quote-1', pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4', amount: 50000, currency: 'VND', expires_at: '2099-01-01T18:00:00+07:00' };
+    const booking = { id: 'booking-1', quote_id: 'quote-1', amount: 50000, currency: 'VND', pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm' };
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã cập nhật chuyến xe.' }
+        : { plan: { tasks: [{ domain: 'ride', goal: 'Đặt xe', normalized_request: 'Đặt xe từ VinUni đến Hồ Gươm', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4' } }] } }),
+    };
+    const ride = {
+      chat: jest.fn().mockResolvedValue({ workflow_id: 'ride-flow', stage: 'SERVICE_CONFIRMATION', quote }),
+      confirmService: jest.fn().mockResolvedValue({ workflow_id: 'ride-flow', stage: 'PAYMENT_CONFIRMATION', quote, booking: { ...booking, status: 'AWAITING_CONFIRMATION' } }),
+      confirmPayment: jest.fn().mockResolvedValue({ workflow_id: 'ride-flow', stage: 'TRACKING', quote, booking: { ...booking, status: 'SEARCHING_DRIVER' } }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const first = await service.chat(user, 'Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ.', undefined, 'cor-ride-active-1');
+    const prepared = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-ride-active-2', 'ride-service-key');
+    const paid = await service.act(user, { conversation_id: first.conversation_id, action_id: prepared.actions[0].id }, 'cor-ride-active-3', 'ride-payment-key');
+    const saved = await store.getConversation(first.conversation_id, user.sub);
+    const task = (saved?.state.tasks as Array<Record<string, unknown>>).find((item) => item.domain === 'ride');
+
+    expect(paid.items[0].kind).toBe('ride_booking');
+    expect(task?.phase).toBe('IN_PROGRESS');
+    expect((task?.authoritative as Record<string, unknown>)?.booking).toEqual(expect.objectContaining({ status: 'SEARCHING_DRIVER' }));
   });
 
   it('keeps Restaurant party size while a follow-up changes cuisine and time', async () => {
@@ -504,10 +539,34 @@ describe('Unified assistant orchestration', () => {
     expect(healthcare.executeTool).toHaveBeenCalledTimes(3);
   });
 
+  it('uses the signed-in actor Healthcare patient instead of the configured fallback', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Healthcare flow ready.' }
+        : { plan: { tasks: [{ domain: 'healthcare', goal: 'Find a medical appointment', normalized_request: 'Neurology appointment', extracted_slots: { department: 'than kinh' } }] } }),
+    };
+    const healthcare = {
+      listPatients: jest.fn().mockResolvedValue({ items: [{ id: 77, is_default: true }] }),
+      executeTool: jest.fn()
+        .mockResolvedValueOnce({ doctors: [{ name: 'Doctor A', department: { name: 'than kinh' }, available_slots: [{ id: 10, start_time: '2099-01-02T09:00:00Z' }] }] })
+        .mockResolvedValueOnce({ appointment_id: 51, doctor_name: 'Doctor A', department: 'than kinh', start_time: '2099-01-02T09:00:00Z', status: 'DRAFT' }),
+      acknowledgePayment: jest.fn(),
+      defaultPatientId: 1,
+    };
+    const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, healthcare as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never);
+
+    const first = await service.chat(user, 'Find a neurology appointment.', undefined, 'cor-health-patient-1');
+    await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-health-patient-2', 'health-patient-key');
+
+    expect(healthcare.listPatients).toHaveBeenCalledWith(user.sub, 'cor-health-patient-2');
+    expect(healthcare.executeTool.mock.calls[1][0].arguments).toEqual(expect.objectContaining({ patient_id: 77 }));
+  });
+
   it('recovers a Healthcare payment retry with the original idempotency key', async () => {
     const store = new InMemoryCoreRepository();
     const agent = { assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã chuẩn bị.' } : { plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh', extracted_slots: { department: 'Thần kinh' } }] } }) };
-    const transient = new ServiceCallError({ service: 'healthcare-service', operation: 'healthcare.acknowledge_payment', contractVersion: 'v1', httpStatus: 503, code: 'UPSTREAM_UNAVAILABLE', detail: 'Temporary outage', category: 'TRANSIENT', retryable: true, retryAfterMs: null, outcome: 'UNKNOWN' });
+    const transient = new ServiceCallError({ service: 'healthcare-service', operation: 'healthcare.acknowledge_payment', contractVersion: 'v1', httpStatus: 503, code: 'UPSTREAM_UNAVAILABLE', detail: 'Temporary outage', category: 'TRANSIENT', retryable: true, retryAfterMs: null, outcome: 'RESPONSE_RECEIVED' });
     const healthcare = {
       executeTool: jest.fn()
         .mockResolvedValueOnce({ doctors: [{ name: 'Bác sĩ A', department: { name: 'Thần kinh' }, available_slots: [{ id: 10, start_time: '2099-01-02T09:00:00+07:00' }] }] })
