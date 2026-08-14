@@ -675,6 +675,41 @@
 .rating-picker button.is-selected { color: #D99024; background: #FFF8E8; border-color: #F2D9A8; }
 
 .service-detail-dialog { width: min(720px, calc(100vw - 28px)); max-height: min(88vh, 760px); overflow: hidden; }
+.service-detail-dialog { width: min(80vw, 1120px); height: min(80vh, 860px); max-height: 80vh; }
+.service-detail-dialog-ride { width: min(80vw, 1180px); }
+.detail-meta-dropdown { position: absolute; z-index: 1; top: 24px; right: 58px; color: var(--color-muted); font-size: 0.68rem; }
+.detail-meta-dropdown summary { padding: 6px 8px; color: var(--color-primary-strong); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 7px; cursor: pointer; font-weight: 720; list-style: none; }
+.detail-meta-dropdown summary::-webkit-details-marker { display: none; }
+.detail-meta-dropdown summary::after { content: "⌄"; padding-left: 6px; }
+.detail-meta-dropdown[open] summary::after { content: "⌃"; }
+.detail-meta-dropdown > div { display: grid; gap: 3px; min-width: 190px; padding: 9px; margin-top: 5px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: var(--shadow-tight); }
+.detail-meta-dropdown span { color: var(--color-muted-soft); font-size: 0.6rem; }
+.detail-meta-dropdown strong { color: var(--color-ink); font-size: 0.7rem; }
+.healthcare-doctor-groups { display: grid; gap: 9px; margin-top: 12px; }
+.healthcare-doctor-group { display: grid; gap: 9px; padding: 11px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.healthcare-doctor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.healthcare-doctor-heading > div { display: grid; gap: 4px; min-width: 0; }
+.healthcare-doctor-heading strong { color: var(--color-ink); font-size: 0.76rem; }
+.healthcare-doctor-heading span,
+.healthcare-doctor-heading small { color: var(--color-muted); font-size: 0.63rem; line-height: 1.4; }
+.healthcare-slot-select { display: grid; gap: 5px; color: var(--color-navy); font-size: 0.65rem; font-weight: 720; }
+.healthcare-slot-select select { width: 100%; min-height: 36px; padding: 7px 8px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 7px; font-size: 0.7rem; }
+.healthcare-slot-detail { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--color-muted); font-size: 0.66rem; }
+.healthcare-slot-detail .option-actions { justify-content: flex-end; }
+.food-option-list { display: grid; gap: 8px; margin-top: 12px; }
+.food-option-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; align-items: start; padding: 9px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.food-option-row > div:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
+.food-option-row strong { color: var(--color-ink); font-size: 0.75rem; }
+.food-option-row span { display: flex; align-items: center; gap: 4px; color: var(--color-muted); font-size: 0.65rem; }
+.food-option-row small { color: var(--color-muted-soft); font-size: 0.62rem; line-height: 1.35; }
+.food-option-actions { display: grid; justify-items: end; gap: 6px; }
+.food-option-actions b { color: var(--color-navy); font-size: 0.72rem; }
+.quantity-control { display: inline-flex; align-items: center; gap: 5px; color: var(--color-ink); font-size: 0.68rem; }
+.quantity-control button { display: grid; width: 23px; height: 23px; place-items: center; color: var(--color-primary-strong); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 5px; font-weight: 800; }
+.quantity-control span { min-width: 14px; text-align: center; }
+.ride-live-status { display: flex; flex-wrap: wrap; gap: 7px 12px; padding: 9px; margin-top: 10px; color: var(--color-muted); background: var(--surface-mist); border: 1px solid #D3E5E1; border-radius: 8px; font-size: 0.68rem; }
+.ride-live-status strong { color: var(--color-success-ink); }
+.food-checkout-action { width: 100%; margin-top: 11px; }
 .service-detail-dialog-body { display: grid; gap: 15px; max-height: calc(88vh - 94px); overflow-y: auto; padding-right: 3px; }
 .detail-hero-copy { display: grid; gap: 5px; }
 .detail-hero-copy h3 { margin: 0; color: var(--color-navy); font-size: 1.1rem; }
@@ -698,6 +733,11 @@
 @media (max-width: 560px) {
   .consumer-detail-grid { grid-template-columns: 1fr; }
   .service-detail-dialog { width: calc(100vw - 20px); }
+  .service-detail-dialog { height: calc(100vh - 20px); max-height: calc(100vh - 20px); }
+  .detail-meta-dropdown { top: 18px; right: 48px; }
+  .food-option-row { grid-template-columns: auto minmax(0, 1fr); }
+  .food-option-actions { grid-column: 2; justify-items: start; }
+  .healthcare-slot-detail { align-items: flex-start; flex-direction: column; }
   .detail-image,
   .history-detail-image { height: 150px; }
 }

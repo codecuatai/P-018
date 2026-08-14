@@ -3,23 +3,25 @@
 import { useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { XOneMap, type XOnePoint } from "@/features/product/xone-map";
 import { resolveAddress } from "@/lib/api-client";
 import { formatDateTime, formatMoney, isRecord, optionalText } from "@/lib/presentation";
-import { XOneMap, type XOnePoint } from "@/features/product/xone-map";
 import type { AssistantOption, AssistantRideItem } from "@/types";
+
+import { RideTrackingPanel } from "../features/product/ride-tracking";
 
 type DetailKind = "food" | "restaurant" | "healthcare" | "ride";
 
 export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride }: { open: boolean; onOpenChange: (open: boolean) => void; kind: DetailKind; option: AssistantOption | null; ride?: AssistantRideItem }) {
   const [resolvedPoint, setResolvedPoint] = useState<XOnePoint>();
   const [resolving, setResolving] = useState(false);
-  const nestedRestaurant = isRecord(option?.restaurant) ? option?.restaurant : undefined;
-  const nestedFacility = isRecord(option?.facility) ? option?.facility : undefined;
+  const nestedRestaurant = isRecord(option?.restaurant) ? option.restaurant : undefined;
+  const nestedFacility = isRecord(option?.facility) ? option.facility : undefined;
   const address = optionalText(nestedFacility?.address ?? nestedRestaurant?.address ?? option?.address ?? option?.location);
   const directPoint = kind === "ride" ? pointFromRide(ride) : pointFrom(nestedFacility ?? nestedRestaurant ?? option);
+  const bookingId = ride?.booking_id ?? ride?.resource_id;
 
   useEffect(() => { setResolvedPoint(directPoint); }, [directPoint?.latitude, directPoint?.longitude, open]);
-
   useEffect(() => {
     if (!open || directPoint || !address || kind === "ride") return;
     let active = true;
@@ -39,15 +41,16 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride }: 
   const route = ride?.route_geometry && ride.route_geometry.length > 1 ? ride.route_geometry : undefined;
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="service-detail-dialog">
+    <DialogContent className={`service-detail-dialog service-detail-dialog-${kind}`}>
       <DialogTitle>{title}</DialogTitle>
       <DialogDescription>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
+      <details className="detail-meta-dropdown"><summary>Thông tin lựa chọn</summary><div><span>{kind === "ride" ? "Hành trình" : kind === "food" ? "Món ăn" : kind === "restaurant" ? "Nhà hàng" : "Lịch khám"}</span><strong>{title}</strong></div></details>
       <div className="service-detail-dialog-body">
         {kind !== "ride" && option?.image_url ? <ImageWithFallback source={option.image_url} alt={title} /> : null}
         {kind === "ride" ? <>
           <div className="detail-hero-copy"><span className="eyebrow">HÀNH TRÌNH</span><p>{optionalText(ride?.pickup)} → {optionalText(ride?.dropoff)}</p></div>
+          {bookingId ? <RideTrackingPanel bookingId={bookingId} /> : <XOneMap origin={pointFromRide(ride, "pickup")} destination={pointFromRide(ride, "dropoff")} routeGeometry={route} routePolyline={ride?.route_polyline} label="Bản đồ hành trình" />}
           <div className="consumer-detail-grid"><Detail label="Điểm đón" value={optionalText(ride?.pickup)} /><Detail label="Điểm đến" value={optionalText(ride?.dropoff)} /><Detail label="Loại xe" value={optionalText(ride?.vehicle)} /><Detail label="Khoảng cách" value={ride?.distance_km !== undefined ? `${ride.distance_km} km` : ride?.route_distance_meters ? `${(ride.route_distance_meters / 1000).toFixed(1)} km` : "Đang cập nhật"} /><Detail label="Thời gian dự kiến" value={ride?.duration_minutes ? `${ride.duration_minutes} phút` : ride?.route_duration_seconds ? `${Math.ceil(ride.route_duration_seconds / 60)} phút` : "Đang cập nhật"} /><Detail label="Giá dự kiến" value={formatMoney(ride?.amount, optionalText(ride?.currency, "VND"))} /></div>
-          <XOneMap origin={pointFromRide(ride, "pickup")} destination={pointFromRide(ride, "dropoff")} routeGeometry={route} routePolyline={ride?.route_polyline} label="Bản đồ hành trình" />
         </> : kind === "food" ? <>
           <div className="detail-hero-copy"><span className="eyebrow">MÓN ĂN</span><h3>{title}</h3><p>{restaurantName}</p></div>
           <div className="consumer-detail-grid"><Detail label="Giá" value={formatMoney(option?.price, "VND")} /><Detail label="Nhà hàng" value={restaurantName} /><Detail label="Mô tả" value={optionalText(option?.description)} /><Detail label="Danh mục" value={optionalText(option?.category)} /><Detail label="Đánh giá nhà hàng" value={option?.rating !== undefined ? `${option.rating} ★${option.review_count ? ` · ${option.review_count} đánh giá` : ""}` : "Đang cập nhật"} /><Detail label="Địa chỉ" value={address} /></div>
@@ -80,8 +83,7 @@ function ImageWithFallback({ source, alt }: { source: string; alt: string }) {
 }
 
 function pointFrom(value: unknown): XOnePoint | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value.suspicious === true) return undefined;
+  if (!isRecord(value) || value.suspicious === true) return undefined;
   const latitude = value.latitude;
   const longitude = value.longitude;
   return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined;
@@ -94,6 +96,4 @@ function pointFromRide(ride?: AssistantRideItem, kind?: "pickup" | "dropoff"): X
   return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined;
 }
 
-function hoursText(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? value.join(" · ") : optionalText(value);
-}
+function hoursText(value: string | string[] | undefined): string { return Array.isArray(value) ? value.join(" · ") : optionalText(value); }

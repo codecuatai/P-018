@@ -4,12 +4,13 @@ import { ArrowUp, Bot, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards } from "@/components/WorkflowCards";
-import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, listConversations, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
 
-export function ChatDashboard({ user }: { user: AuthUser }) {
+export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [composer, setComposer] = useState("");
@@ -20,13 +21,26 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
   const [activeRefreshNonce, setActiveRefreshNonce] = useState(0);
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const actionKeys = useRef<Record<string, string>>({});
+  const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let active = true;
     setLoadingHistory(true);
-    const entryContext = readEntryContext();
+    actionKeys.current = {};
+    consumedActionIds.current = new Set();
+    setConversationId(initialConversationId);
+    setMessages([]);
+    const entryContext = initialConversationId ? undefined : readEntryContext();
+    if (initialConversationId) {
+      void getConversation(initialConversationId).then((detail) => {
+        if (!active) return;
+        setConversationId(detail.conversationId);
+        setMessages(toChatMessages(detail, consumedActionIds.current));
+      }).catch(() => undefined).finally(() => { if (active) setLoadingHistory(false); });
+      return () => { active = false; };
+    }
     if (entryContext) {
       void createConversation(`Tiếp tục ${entryContext.label}`, entryContext.service).then((detail) => {
         if (!active) return;
@@ -36,15 +50,11 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
       }).catch(() => undefined).finally(() => { if (active) setLoadingHistory(false); });
       return () => { active = false; };
     }
-    void listConversations().then(async ({ items }) => {
-      if (!active || !items.length) return;
-      const detail = await getConversation(items[0].conversationId);
-      if (!active) return;
-      setConversationId(detail.conversationId);
-      setMessages(toChatMessages(detail));
-    }).catch(() => undefined).finally(() => { if (active) setLoadingHistory(false); });
+    setConversationId(undefined);
+    setMessages([]);
+    setLoadingHistory(false);
     return () => { active = false; };
-  }, [user.sub]);
+  }, [initialConversationId, user.sub]);
 
   useEffect(() => {
     let active = true;
@@ -83,8 +93,14 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
 
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
 
+  useEffect(() => {
+    const handleNewConversation = () => newConversation();
+    window.addEventListener(NEW_CONVERSATION_EVENT, handleNewConversation);
+    return () => window.removeEventListener(NEW_CONVERSATION_EVENT, handleNewConversation);
+  }, []);
+
   async function syncConversation(id: string): Promise<void> {
-    try { setMessages(toChatMessages(await getConversation(id))); } catch { /* The received response remains visible. */ }
+    try { setMessages(toChatMessages(await getConversation(id), consumedActionIds.current)); } catch { /* The received response remains visible. */ }
   }
 
   async function send(textOverride?: string): Promise<void> {
@@ -99,6 +115,7 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
       setConversationId(response.conversation_id);
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: response.message, response, requestStatus: "sent" } : item));
       void syncConversation(response.conversation_id);
+      emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: errorText(error), requestStatus: "error", retryText: text } : item));
@@ -107,7 +124,7 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
   }
 
   async function handleAction(action: AssistantAction): Promise<void> {
-    if (!conversationId || sending || activeActionId) return;
+    if (!conversationId || sending || activeActionId || consumedActionIds.current.has(action.id)) return;
     const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey(`assistant-${action.kind}`);
     actionKeys.current[action.id] = idempotencyKey;
     const pendingId = makeId("action");
@@ -116,12 +133,15 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
     setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
     try {
       const response = await runAssistantAction(conversationId, action.id, idempotencyKey);
+      consumedActionIds.current.add(action.id);
       delete actionKeys.current[action.id];
       setMessages((current) => current.filter((message) => message.id !== pendingId).map((message) => message.response?.actions.some((candidate) => candidate.id === action.id) ? { ...message, response: { ...message.response, actions: message.response.actions.filter((candidate) => candidate.id !== action.id) } } : message).concat({ id: pendingId, role: "assistant", text: response.message, response, timestamp: new Date().toISOString(), requestStatus: "sent" }));
       void syncConversation(response.conversation_id);
+      emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
       const retryable = isRetryableError(error);
+      if (!retryable) consumedActionIds.current.add(action.id);
       setMessages((current) => current.map((message) => {
         if (!message.response?.actions.some((candidate) => candidate.id === action.id) || retryable) return message.id === pendingId ? { ...message, text: errorText(error), requestStatus: "error", ...(retryable ? { retryAction: action } : {}) } : message;
         return { ...message, response: { ...message.response, actions: message.response.actions.filter((candidate) => candidate.id !== action.id) } };
@@ -129,10 +149,11 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
     } finally { setSending(false); setActiveActionId(undefined); }
   }
 
-  function newConversation(): void { actionKeys.current = {}; setConversationId(undefined); setMessages([]); setComposer(""); inputRef.current?.focus(); }
+  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); inputRef.current?.focus(); }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
 
   return <section className="assistant-page" aria-labelledby="assistant-title">
+    <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
     <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{messages.length === 0 && !loadingHistory ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div><div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards />}</ContextRail></div>
     <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
@@ -149,7 +170,7 @@ function MessageBubble({ message, onAction, onRetry, activeActionId }: { message
   return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className="message-avatar">{assistant ? <Bot size={17} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-meta"><strong>{assistant ? "X-One" : "Bạn"}</strong><time>{formatTime(message.timestamp)}</time></div><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
 }
 
-function toChatMessages(record: ConversationRecord): ChatMessage[] { return record.messages.filter(isUserVisibleConversationMessage).map((message, index) => ({ id: `${record.conversationId}-${index}`, role: message.role, text: message.content, timestamp: message.createdAt, ...(message.role === "assistant" && message.data ? { response: message.data } : {}), requestStatus: "sent" })); }
+function toChatMessages(record: ConversationRecord, consumedActionIds: Set<string> = new Set()): ChatMessage[] { return record.messages.filter(isUserVisibleConversationMessage).map((message, index) => ({ id: `${record.conversationId}-${index}`, role: message.role, text: message.content, timestamp: message.createdAt, ...(message.role === "assistant" && message.data ? { response: { ...message.data, actions: message.data.actions.filter((action) => !consumedActionIds.has(action.id)) } } : {}), requestStatus: "sent" })); }
 function makeId(prefix: string): string { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date); }
 

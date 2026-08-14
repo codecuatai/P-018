@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { HistoryItem } from "@/types";
+import { parseRideDriver } from "./ride-tracking";
+import { useRideTracking } from "./ride-tracking-cache";
 
 import { RideTrackingPanel } from "./ride-tracking";
 import { XOneMap, type XOnePoint } from "./xone-map";
@@ -23,11 +25,15 @@ export function ActiveRideRailCard({ ride, onDetails }: { ride: HistoryItem; onD
 }
 
 export function ActiveWorkRailCard({ item, onDetails }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void }) {
-  const status = item.status || String(item.resource.status ?? "");
+  const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
+  const { data: tracking } = useRideTracking(bookingId);
+  const driver = parseRideDriver(tracking?.driver);
+  const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
+  const detail = tracking?.driver ? driver.name + (driver.vehicle ? " · " + driver.vehicle : "") : item.detail || summaryFor(item);
   return <article className="active-ride-rail-card">
     <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={18} /></div>
-    <div><strong>{item.title || titleFor(item.type)}</strong><span>{item.detail || summaryFor(item)}</span><small>{statusLabel(status)}</small></div>
+    <div><strong>{item.title || titleFor(item.type)}</strong><span>{detail}</span><small>{statusLabel(status)}</small></div>
     <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={14} /></button>
   </article>;
 }

@@ -5,7 +5,8 @@ import { Archive, ArchiveRestore, CalendarDays, CarFront, Edit3, MessageSquareTe
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { deleteConversation, errorText, listConversations, listHistory, updateConversation } from "@/lib/api-client";
-import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
+import { emitConversationsChanged } from "@/lib/conversation-events";
+import { conversationTitle, formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { ConversationRecord, HistoryType, HistoryItem } from "@/types";
 
 const pageSize = 20;
@@ -87,6 +88,7 @@ export default function HistoryPage() {
     try {
       const updated = await updateConversation(id, { status: nextStatus });
       setConversations((current) => current.map((item) => item.conversationId === id ? updated : item));
+      emitConversationsChanged();
     } catch (reason) { setError(errorText(reason)); }
   }
 
@@ -102,6 +104,7 @@ export default function HistoryPage() {
     try {
       const updated = await updateConversation(id, { title });
       setConversations((current) => current.map((item) => item.conversationId === id ? updated : item));
+      emitConversationsChanged();
       setEditingId("");
       setEditingTitle("");
     } catch (reason) { setError(errorText(reason)); }
@@ -113,6 +116,7 @@ export default function HistoryPage() {
       await deleteConversation(id);
       setConversations((current) => current.filter((item) => item.conversationId !== id));
       setDeleteId("");
+      emitConversationsChanged();
     } catch (reason) { setError(errorText(reason)); }
   }
 

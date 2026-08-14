@@ -449,8 +449,8 @@ export function updateAdminSupportTicket(id: string, patch: { status?: SupportTi
   return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("admin-support-update") });
 }
 
-export function listConversations(includeArchived = false): Promise<{ items: ConversationRecord[] }> {
-  return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" });
+export function listConversations(includeArchived = false, signal?: AbortSignal): Promise<{ items: ConversationRecord[] }> {
+  return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" }, { signal });
 }
 
 export function getConversation(id: string): Promise<ConversationRecord> {

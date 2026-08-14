@@ -1,7 +1,7 @@
 "use client";
 
 import { Minus, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { statusLabel } from "@/lib/presentation";
 
@@ -66,6 +66,7 @@ export function XOneMap({
   const leafletRef = useRef<LeafletApi | undefined>(undefined);
   const tileLayerRef = useRef<import("leaflet").TileLayer | undefined>(undefined);
   const markerRefs = useRef<Partial<Record<MarkerKey, LeafletMarker>>>({});
+  const markerAnimationRefs = useRef<Partial<Record<MarkerKey, number>>>({});
   const polylineRef = useRef<import("leaflet").Polyline | undefined>(undefined);
   const fitKeyRef = useRef("");
   const [mapState, setMapState] = useState<MapState>("loading");
@@ -137,6 +138,8 @@ export function XOneMap({
       if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame);
       if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
       tileLayerRef.current?.off();
+      Object.values(markerAnimationRefs.current).forEach((frame) => { if (frame !== undefined) window.cancelAnimationFrame(frame); });
+      markerAnimationRefs.current = {};
       Object.values(markerRefs.current).forEach((marker) => marker?.remove());
       polylineRef.current?.remove();
       mapRef.current?.remove();
@@ -180,11 +183,14 @@ export function XOneMap({
       const existing = markerRefs.current[key];
       if (!point) {
         existing?.remove();
+        const frame = markerAnimationRefs.current[key];
+        if (frame !== undefined) window.cancelAnimationFrame(frame);
+        delete markerAnimationRefs.current[key];
         delete markerRefs.current[key];
         continue;
       }
       const marker = existing ?? L.circleMarker(toLatLng(point), { radius: key === "current" || key === "driver" ? 8 : 7, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
-      marker.setLatLng(toLatLng(point));
+      animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion());
       marker.unbindTooltip();
       marker.bindTooltip(point.label ?? markerLabel, { direction: "top", offset: [0, -6] });
       markerRefs.current[key] = marker;
@@ -258,4 +264,30 @@ function isPoint(value: XOnePoint | undefined): value is XOnePoint {
 
 function toLatLng(point: XOnePoint): [number, number] {
   return [point.latitude, point.longitude];
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+function animateMarker(marker: LeafletMarker, key: MarkerKey, target: [number, number], frames: MutableRefObject<Partial<Record<MarkerKey, number>>>, reduceMotion: boolean): void {
+  const current = marker.getLatLng();
+  const from: [number, number] = [current.lat, current.lng];
+  const distance = Math.abs(from[0] - target[0]) + Math.abs(from[1] - target[1]);
+  const previousFrame = frames.current[key];
+  if (previousFrame !== undefined) window.cancelAnimationFrame(previousFrame);
+  if (reduceMotion || distance < 0.000001) {
+    marker.setLatLng(target);
+    delete frames.current[key];
+    return;
+  }
+  const startedAt = performance.now();
+  const tick = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / 450);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    marker.setLatLng([from[0] + (target[0] - from[0]) * eased, from[1] + (target[1] - from[1]) * eased]);
+    if (progress < 1) frames.current[key] = window.requestAnimationFrame(tick);
+    else delete frames.current[key];
+  };
+  frames.current[key] = window.requestAnimationFrame(tick);
 }
