@@ -690,7 +690,12 @@ export class AssistantService {
     let executionIdempotencyKey = idempotencyKey;
     if (previousExecution) {
       if (previousExecution.requestHash !== requestHash) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Mã yêu cầu đã được dùng cho một lựa chọn khác.' });
-      if (previousExecution.status === 'SUCCEEDED' && previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
+      if (previousExecution.status === 'SUCCEEDED') {
+        if (previousExecution.idempotencyKey !== idempotencyKey) {
+          throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lá»±a chá»n nÃ y khÃ´ng cÃ²n hiá»‡u lá»±c.' });
+        }
+        if (previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
+      }
       if (previousExecution.status === 'FAILED_FINAL') {
         if (previousExecution.idempotencyKey !== idempotencyKey) throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
         if (previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
@@ -791,7 +796,7 @@ export class AssistantService {
         { ...state, tasks: state.tasks },
         remainingItems,
         state.actions,
-        result.phase === 'COMPLETED' && result.publicItem ? [result.publicItem] : [],
+        result.publicItem && (result.phase === 'COMPLETED' || action.kind === 'ride_payment') ? [result.publicItem] : [],
         'INTERNAL_ACTION',
       );
       try {

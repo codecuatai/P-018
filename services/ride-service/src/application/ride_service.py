@@ -16,6 +16,7 @@ from src.domain.ride import (
     QuoteCommand,
     QuoteStatus,
     RideError,
+    _as_utc,
     cancel_confirmation_payload,
     confirm_confirmation_payload,
     confirmation_request_payload,
@@ -29,7 +30,6 @@ from src.domain.ride import (
     transition_booking,
     transition_quote,
     utc_now,
-    _as_utc,
 )
 from src.repositories.ride import RideRepository
 

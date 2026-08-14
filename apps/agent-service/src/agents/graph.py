@@ -322,7 +322,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
-            slots = {**state.get("extracted_slots", {}), **model_slots, **deterministic}
+            # The structured model output is accepted only after schema and
+            # semantic-slot validation; let those validated semantic values
+            # refine deterministic extraction (while resource IDs remain
+            # excluded by _safe_model_slots).
+            slots = {**state.get("extracted_slots", {}), **deterministic, **model_slots}
             return {
                 "intent": reconcile_intent(deterministic_intent, decision.intent, state.get("extracted_slots", {})),
                 "confidence": decision.confidence,
