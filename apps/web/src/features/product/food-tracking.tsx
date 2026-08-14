@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { errorText, getFoodTracking } from "@/lib/api-client";
+import { statusLabel } from "@/lib/presentation";
 import type { FoodTracking } from "@/types";
 
 import { XOneMap } from "./xone-map";
@@ -14,35 +15,55 @@ export function FoodTrackingPanel({ orderId }: { orderId: string }) {
   const [error, setError] = useState("");
   const [deliveredAt, setDeliveredAt] = useState<number>();
   const inFlight = useRef(false);
+  const requestRef = useRef<AbortController | undefined>(undefined);
+  const requestVersion = useRef(0);
 
   const load = useCallback(async (background = false): Promise<void> => {
     if (inFlight.current) return;
     inFlight.current = true;
     if (!background) setLoading(true);
     setError("");
+    const version = ++requestVersion.current;
+    const controller = new AbortController();
+    requestRef.current = controller;
     try {
-      const next = await getFoodTracking(orderId);
+      const next = await getFoodTracking(orderId, controller.signal);
+      if (version !== requestVersion.current) return;
       setTracking(next);
       if (next.status === "DELIVERED") setDeliveredAt((value) => value ?? Date.now());
     } catch (reason) {
-      setError(errorText(reason));
+      if (version === requestVersion.current && !controller.signal.aborted) setError(errorText(reason));
     } finally {
+      if (requestRef.current === controller) requestRef.current = undefined;
       inFlight.current = false;
-      if (!background) setLoading(false);
+      if (!background && version === requestVersion.current) setLoading(false);
     }
   }, [orderId]);
 
   useEffect(() => {
     let active = true;
     let timer: number | undefined;
+    const schedule = (): void => {
+      if (!active || document.visibilityState === "hidden" || tracking?.status === "DELIVERED") return;
+      timer = window.setTimeout(() => { void poll(); }, 3000);
+    };
     const poll = async (): Promise<void> => {
       if (!active || document.visibilityState === "hidden") return;
       await load(true);
-      if (active && (!deliveredAt || Date.now() - deliveredAt < 10_000)) timer = window.setTimeout(() => { void poll(); }, 2000);
+      if (active && (!deliveredAt || Date.now() - deliveredAt < 10_000)) schedule();
     };
-    void load().then(() => { if (active) timer = window.setTimeout(() => { void poll(); }, 2000); });
-    return () => { active = false; if (timer !== undefined) window.clearTimeout(timer); };
-  }, [deliveredAt, load]);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (timer !== undefined) window.clearTimeout(timer);
+        timer = undefined;
+      } else {
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    void load().then(() => { if (active) schedule(); });
+    return () => { active = false; if (timer !== undefined) window.clearTimeout(timer); requestVersion.current += 1; requestRef.current?.abort(); document.removeEventListener("visibilitychange", handleVisibilityChange); };
+  }, [deliveredAt, load, tracking?.status]);
 
   const origin = point(tracking?.delivery_route?.origin ?? tracking?.restaurant);
   const destination = point(tracking?.delivery_route?.destination ?? tracking?.address);
@@ -67,6 +88,4 @@ function text(value: Record<string, unknown> | null | undefined, fallback: strin
   return fallback;
 }
 
-function foodStatus(status?: string): string {
-  return ({ PAYMENT_PENDING: "Đã nhận đơn", PAID: "Đã nhận đơn", RESTAURANT_CONFIRMING: "Nhà hàng đang xác nhận", RESTAURANT_ACCEPTED: "Nhà hàng đã nhận", PREPARING: "Đang chuẩn bị món", READY_FOR_PICKUP: "Chờ lấy món", DRIVER_ASSIGNED: "Đã có người giao", PICKED_UP: "Đang lấy món", DELIVERING: "Đang giao", DELIVERED: "Đã giao · cảm ơn bạn" } as Record<string, string>)[status ?? ""] ?? "Đang cập nhật đơn";
-}
+function foodStatus(status?: string): string { return status ? statusLabel(status) : "Đang cập nhật"; }

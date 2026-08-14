@@ -138,3 +138,14 @@
   .route-line { grid-template-columns: 1fr; gap: 7px; }
   .route-arrow { display: none !important; }
 }
+
+.context-empty-state { padding: 10px 0 4px; margin: 0; color: var(--color-muted); font-size: 0.74rem; line-height: 1.5; }
+.active-work-list { display: grid; gap: 9px; }
+.active-ride-rail-card .text-link { justify-self: start; border: 0; background: transparent; }
+.option-row { align-items: flex-start; }
+.option-row > div:nth-child(2) { flex: 1; }
+.option-row small { color: var(--color-muted-soft); font-size: 0.62rem; line-height: 1.35; }
+.option-image { width: 66px; height: 54px; flex: 0 0 auto; object-fit: cover; border-radius: 7px; background: #EEF3F6; }
+.option-image.compact { width: 52px; height: 44px; }
+.service-image-fallback { display: grid; place-items: center; color: var(--color-muted-soft); font-size: 0.61rem; text-align: center; }
+.ride-detail-action { margin-top: 12px; }

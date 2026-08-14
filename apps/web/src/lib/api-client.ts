@@ -1,6 +1,6 @@
 "use client";
 
-import type { AdminHealthCheck, AdminPayments, AdminSummary, AdminTransactionRecord, AdminUserRecord, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
+import type { ActiveHistoryResult, AdminHealthCheck, AdminPayments, AdminSummary, AdminTransactionRecord, AdminUserRecord, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -198,12 +198,12 @@ export function listServiceCatalog(): Promise<ServiceCatalog> {
   return request("/api/v1/services/catalog", { method: "GET" });
 }
 
-export function getRideTracking(bookingId: string): Promise<RideTracking> {
-  return request(`/api/v1/rides/${encodeURIComponent(bookingId)}/tracking`, { method: "GET" });
+export function getRideTracking(bookingId: string, signal?: AbortSignal): Promise<RideTracking> {
+  return request(`/api/v1/rides/${encodeURIComponent(bookingId)}/tracking`, { method: "GET", signal });
 }
 
-export function getFoodTracking(orderId: string): Promise<import("@/types").FoodTracking> {
-  return request(`/api/v1/food/orders/${encodeURIComponent(orderId)}/tracking`, { method: "GET" });
+export function getFoodTracking(orderId: string, signal?: AbortSignal): Promise<import("@/types").FoodTracking> {
+  return request(`/api/v1/food/orders/${encodeURIComponent(orderId)}/tracking`, { method: "GET", signal });
 }
 
 export function browseService(service: "food" | "ride" | "restaurant" | "healthcare", keyword?: string): Promise<{ items: Record<string, unknown>[]; source: string; partial: boolean }> {
@@ -325,6 +325,10 @@ export function listHistory(filters: HistoryFilters = {}): Promise<HistoryResult
   if (filters.page_size) params.set("page_size", String(filters.page_size));
   const query = params.toString();
   return request(`/api/v1/history${query ? `?${query}` : ""}`, { method: "GET" });
+}
+
+export function getActiveHistory(signal?: AbortSignal): Promise<ActiveHistoryResult> {
+  return request("/api/v1/history/active", { method: "GET", signal });
 }
 
 export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<string, unknown>> {
@@ -520,6 +524,10 @@ export function errorText(error: unknown): string {
   return "Không thể hoàn tất yêu cầu. Bạn thử lại nhé.";
 }
 
+export function isRetryableError(error: unknown): boolean {
+  return error instanceof ApiError && error.retryable;
+}
+
 function shouldRefresh(path: string, problem: ApiProblem, options: RequestOptions): boolean {
   if (options.retried || options.retryAuth === false || path.startsWith("/api/v1/auth/")) return false;
   return problem.code === "AUTHENTICATION_FAILED" || problem.code === "AUTHENTICATION_REQUIRED";
@@ -563,11 +571,12 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("RESET_TOKEN")) return "Liên kết đặt lại mật khẩu không còn hợp lệ. Bạn hãy yêu cầu liên kết mới.";
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
-  if (source.includes("GEOAPIFY") || source.includes("LOCATION_UNRESOLVED") || source.includes("REAL_ROUTE_REQUIRED")) return "Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.";
+  if (source.includes("GEOAPIFY") || source.includes("LOCATION_UNRESOLVED") || source.includes("REAL_ROUTE_REQUIRED")) return "Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.";
   if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("IDEMPOTENCY") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
-    return "Lựa chọn này đã được làm mới. Bạn hãy gửi lại yêu cầu để mình cập nhật thông tin mới nhé.";
+    return "Lựa chọn này vừa được cập nhật. Hãy chọn lại từ danh sách mới.";
   }
-  if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Lựa chọn này vừa hết chỗ. Mình sẽ tìm phương án khác cho bạn.";
+  if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
+  if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";
   return "Mình chưa thể hoàn tất bước này. Bạn hãy gửi lại yêu cầu để mình làm mới thông tin nhé.";
 }
 

@@ -674,6 +674,34 @@
 .rating-picker button:hover,
 .rating-picker button.is-selected { color: #D99024; background: #FFF8E8; border-color: #F2D9A8; }
 
+.service-detail-dialog { width: min(720px, calc(100vw - 28px)); max-height: min(88vh, 760px); overflow: hidden; }
+.service-detail-dialog-body { display: grid; gap: 15px; max-height: calc(88vh - 94px); overflow-y: auto; padding-right: 3px; }
+.detail-hero-copy { display: grid; gap: 5px; }
+.detail-hero-copy h3 { margin: 0; color: var(--color-navy); font-size: 1.1rem; }
+.detail-hero-copy p { margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.5; }
+.consumer-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; overflow: hidden; background: #E3EBF0; border: 1px solid #E3EBF0; border-radius: 9px; }
+.consumer-detail-fact { display: grid; gap: 5px; min-width: 0; padding: 11px; background: var(--color-surface); }
+.consumer-detail-fact span { color: var(--color-muted-soft); font-size: 0.65rem; }
+.consumer-detail-fact strong { overflow-wrap: anywhere; color: var(--color-ink); font-size: 0.76rem; line-height: 1.4; }
+.detail-image,
+.history-detail-image { width: 100%; height: 190px; object-fit: cover; border-radius: 10px; background: #EEF3F6; }
+.detail-option-groups { display: grid; gap: 8px; padding: 12px; background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 9px; }
+.detail-option-groups h4 { margin: 0; color: var(--color-navy); font-size: 0.8rem; }
+.detail-option-groups div { display: grid; gap: 3px; }
+.detail-option-groups strong { color: var(--color-ink); font-size: 0.7rem; }
+.detail-option-groups span { color: var(--color-muted); font-size: 0.68rem; line-height: 1.45; }
+.history-purpose-detail { display: grid; gap: 16px; margin-top: 18px; }
+.history-detail-section { display: grid; gap: 10px; }
+.history-detail-section h2 { margin: 0; color: var(--color-navy); font-size: 1rem; }
+.history-detail-page .history-actions { margin-top: 22px; }
+
+@media (max-width: 560px) {
+  .consumer-detail-grid { grid-template-columns: 1fr; }
+  .service-detail-dialog { width: calc(100vw - 20px); }
+  .detail-image,
+  .history-detail-image { height: 150px; }
+}
+
 /* Admin surface: dense, evidence-first operations without hiding degraded domains. */
 .admin-page { width: min(1240px, 100%); margin: 0 auto; }
 .admin-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }

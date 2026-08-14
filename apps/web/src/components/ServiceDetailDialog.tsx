@@ -4,26 +4,24 @@ import { useEffect, useState } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { resolveAddress } from "@/lib/api-client";
+import { formatDateTime, formatMoney, isRecord, optionalText } from "@/lib/presentation";
 import { XOneMap, type XOnePoint } from "@/features/product/xone-map";
-import type { AssistantOption } from "@/types";
+import type { AssistantOption, AssistantRideItem } from "@/types";
 
-type DetailKind = "food" | "restaurant" | "healthcare";
+type DetailKind = "food" | "restaurant" | "healthcare" | "ride";
 
-export function ServiceDetailDialog({ open, onOpenChange, kind, option }: { open: boolean; onOpenChange: (open: boolean) => void; kind: DetailKind; option: AssistantOption | null }) {
+export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride }: { open: boolean; onOpenChange: (open: boolean) => void; kind: DetailKind; option: AssistantOption | null; ride?: AssistantRideItem }) {
   const [resolvedPoint, setResolvedPoint] = useState<XOnePoint>();
   const [resolving, setResolving] = useState(false);
-
   const nestedRestaurant = isRecord(option?.restaurant) ? option?.restaurant : undefined;
   const nestedFacility = isRecord(option?.facility) ? option?.facility : undefined;
-  const address = stringValue(nestedFacility?.address) || stringValue(nestedRestaurant?.address) || stringValue(option?.address) || stringValue(option?.location);
-  const directPoint = pointFrom(nestedFacility ?? nestedRestaurant ?? option);
+  const address = optionalText(nestedFacility?.address ?? nestedRestaurant?.address ?? option?.address ?? option?.location);
+  const directPoint = kind === "ride" ? pointFromRide(ride) : pointFrom(nestedFacility ?? nestedRestaurant ?? option);
+
+  useEffect(() => { setResolvedPoint(directPoint); }, [directPoint?.latitude, directPoint?.longitude, open]);
 
   useEffect(() => {
-    setResolvedPoint(directPoint);
-  }, [directPoint?.latitude, directPoint?.longitude, open]);
-
-  useEffect(() => {
-    if (!open || directPoint || !address) return;
+    if (!open || directPoint || !address || kind === "ride") return;
     let active = true;
     setResolving(true);
     void resolveAddress(address).then((result) => {
@@ -32,70 +30,70 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option }: { open
       if (candidate && typeof candidate.latitude === "number" && typeof candidate.longitude === "number") setResolvedPoint({ latitude: candidate.latitude, longitude: candidate.longitude });
     }).catch(() => undefined).finally(() => { if (active) setResolving(false); });
     return () => { active = false; };
-  }, [address, directPoint?.latitude, directPoint?.longitude, open]);
+  }, [address, directPoint?.latitude, directPoint?.longitude, kind, open]);
 
-  if (!option) return null;
-  const title = stringValue(option.name) || stringValue(option.doctor) || stringValue(option.title) || "Chi tiết lựa chọn";
-  const restaurantName = stringValue(nestedRestaurant?.name) || (typeof option.restaurant === "string" ? option.restaurant : undefined);
-  const facilityName = stringValue(nestedFacility?.name);
+  if (!option && !ride) return null;
+  const title = kind === "ride" ? optionalText(ride?.title, "Chuyến xe") : optionalText(option?.name ?? option?.doctor ?? option?.title, "Chi tiết lựa chọn");
+  const restaurantName = optionalText(nestedRestaurant?.name ?? (typeof option?.restaurant === "string" ? option.restaurant : undefined));
+  const facilityName = optionalText(nestedFacility?.name);
+  const route = ride?.route_geometry && ride.route_geometry.length > 1 ? ride.route_geometry : undefined;
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="service-detail-dialog">
       <DialogTitle>{title}</DialogTitle>
-      <DialogDescription>Thông tin được lấy từ dịch vụ đang xử lý.</DialogDescription>
+      <DialogDescription>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
       <div className="service-detail-dialog-body">
-        <dl className="detail-list">
-          {kind === "food" ? <>
-            <Detail label="Mô tả" value={stringValue(option.description) || "Đang cập nhật"} />
-            <Detail label="Giá" value={option.price !== undefined ? formatMoney(option.price) : "Đang cập nhật"} />
-            <Detail label="Quán" value={restaurantName || "Đang cập nhật"} />
-            <Detail label="Địa chỉ quán" value={address || "Đang cập nhật"} />
-            {option.rating !== undefined ? <Detail label="Đánh giá" value={`${option.rating} ★`} /> : null}
-          </> : kind === "restaurant" ? <>
-            <Detail label="Địa chỉ" value={address || "Đang cập nhật"} />
-            <Detail label="Ẩm thực" value={stringValue(option.cuisine) || "Đang cập nhật"} />
-            {option.rating !== undefined ? <Detail label="Đánh giá" value={`${option.rating} ★`} /> : null}
-          </> : <>
-            <Detail label="Cơ sở" value={facilityName || "Đang cập nhật"} />
-            <Detail label="Địa chỉ" value={address || "Đang cập nhật"} />
-            <Detail label="Chuyên khoa" value={stringValue(option.department) || "Đang cập nhật"} />
-            <Detail label="Bác sĩ" value={stringValue(option.doctor) || "Đang cập nhật"} />
-            <Detail label="Ngày giờ" value={dateText(option.start_time)} />
-            {option.price !== undefined ? <Detail label="Giá" value={formatMoney(option.price)} /> : null}
-          </>}
-        </dl>
-        {resolvedPoint ? <XOneMap destination={resolvedPoint} label={`Vị trí ${title}`} /> : resolving ? <p className="inline-note">Đang xác định vị trí thật…</p> : <p className="inline-note">Chưa có tọa độ hợp lệ cho địa chỉ này.</p>}
+        {kind !== "ride" && option?.image_url ? <ImageWithFallback source={option.image_url} alt={title} /> : null}
+        {kind === "ride" ? <>
+          <div className="detail-hero-copy"><span className="eyebrow">HÀNH TRÌNH</span><p>{optionalText(ride?.pickup)} → {optionalText(ride?.dropoff)}</p></div>
+          <div className="consumer-detail-grid"><Detail label="Điểm đón" value={optionalText(ride?.pickup)} /><Detail label="Điểm đến" value={optionalText(ride?.dropoff)} /><Detail label="Loại xe" value={optionalText(ride?.vehicle)} /><Detail label="Khoảng cách" value={ride?.distance_km !== undefined ? `${ride.distance_km} km` : ride?.route_distance_meters ? `${(ride.route_distance_meters / 1000).toFixed(1)} km` : "Đang cập nhật"} /><Detail label="Thời gian dự kiến" value={ride?.duration_minutes ? `${ride.duration_minutes} phút` : ride?.route_duration_seconds ? `${Math.ceil(ride.route_duration_seconds / 60)} phút` : "Đang cập nhật"} /><Detail label="Giá dự kiến" value={formatMoney(ride?.amount, optionalText(ride?.currency, "VND"))} /></div>
+          <XOneMap origin={pointFromRide(ride, "pickup")} destination={pointFromRide(ride, "dropoff")} routeGeometry={route} routePolyline={ride?.route_polyline} label="Bản đồ hành trình" />
+        </> : kind === "food" ? <>
+          <div className="detail-hero-copy"><span className="eyebrow">MÓN ĂN</span><h3>{title}</h3><p>{restaurantName}</p></div>
+          <div className="consumer-detail-grid"><Detail label="Giá" value={formatMoney(option?.price, "VND")} /><Detail label="Nhà hàng" value={restaurantName} /><Detail label="Mô tả" value={optionalText(option?.description)} /><Detail label="Danh mục" value={optionalText(option?.category)} /><Detail label="Đánh giá nhà hàng" value={option?.rating !== undefined ? `${option.rating} ★${option.review_count ? ` · ${option.review_count} đánh giá` : ""}` : "Đang cập nhật"} /><Detail label="Địa chỉ" value={address} /></div>
+          <OptionGroups groups={option?.options ?? option?.option_groups} />
+          {resolvedPoint ? <XOneMap restaurant={resolvedPoint} label={`Vị trí ${restaurantName || "nhà hàng"}`} /> : resolving ? <p className="inline-note">Đang xác định vị trí…</p> : null}
+        </> : kind === "restaurant" ? <>
+          <div className="detail-hero-copy"><span className="eyebrow">NHÀ HÀNG</span><h3>{title}</h3><p>{optionalText(option?.description)}</p></div>
+          <div className="consumer-detail-grid"><Detail label="Địa chỉ" value={address} /><Detail label="Ẩm thực" value={optionalText(option?.cuisine)} /><Detail label="Đánh giá" value={option?.rating !== undefined ? `${option.rating} ★` : "Đang cập nhật"} /><Detail label="Số lượt đánh giá" value={option?.review_count ? String(option.review_count) : "Đang cập nhật"} /><Detail label="Mức giá" value={optionalText(option?.price_level)} /><Detail label="Giờ mở cửa" value={hoursText(option?.opening_hours)} /></div>
+          {resolvedPoint ? <XOneMap restaurant={resolvedPoint} label={`Vị trí ${title}`} /> : resolving ? <p className="inline-note">Đang xác định vị trí…</p> : null}
+        </> : <>
+          <div className="detail-hero-copy"><span className="eyebrow">LỊCH KHÁM</span><h3>{title}</h3><p>{facilityName}</p></div>
+          <div className="consumer-detail-grid"><Detail label="Cơ sở" value={facilityName} /><Detail label="Địa chỉ" value={address} /><Detail label="Chuyên khoa" value={optionalText(option?.department)} /><Detail label="Bác sĩ" value={optionalText(option?.doctor)} /><Detail label="Chức danh" value={optionalText(option?.doctor_title)} /><Detail label="Ngày giờ" value={formatDateTime(option?.start_time)} /><Detail label="Giá" value={formatMoney(option?.price, "VND")} /></div>
+          {resolvedPoint ? <XOneMap healthcare={resolvedPoint} label={`Vị trí ${facilityName || "cơ sở"}`} /> : resolving ? <p className="inline-note">Đang xác định vị trí…</p> : null}
+        </>}
       </div>
     </DialogContent>
   </Dialog>;
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
+function Detail({ label, value }: { label: string; value: string }) { return <div className="consumer-detail-fact"><span>{label}</span><strong>{value}</strong></div>; }
+
+function OptionGroups({ groups }: { groups?: Array<Record<string, unknown>> }) {
+  if (!groups?.length) return null;
+  return <section className="detail-option-groups" aria-label="Tùy chọn món"><h4>Tùy chọn đi kèm</h4>{groups.map((group, index) => <div key={`${String(group.id ?? group.name)}-${index}`}><strong>{optionalText(group.name ?? group.label, "Tùy chọn")}</strong><span>{Array.isArray(group.options) ? group.options.map((value) => isRecord(value) ? optionalText(value.name ?? value.label) : optionalText(value)).join(", ") : "Đang cập nhật"}</span></div>)}</section>;
+}
+
+function ImageWithFallback({ source, alt }: { source: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  return failed ? <div className="detail-image service-image-fallback" role="img" aria-label={`${alt}: ảnh không khả dụng`}>Ảnh không khả dụng</div> : <img className="detail-image" src={source} alt={alt} onError={() => setFailed(true)} />;
 }
 
 function pointFrom(value: unknown): XOnePoint | undefined {
   if (!isRecord(value)) return undefined;
+  if (value.suspicious === true) return undefined;
   const latitude = value.latitude;
   const longitude = value.longitude;
   return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function pointFromRide(ride?: AssistantRideItem, kind?: "pickup" | "dropoff"): XOnePoint | undefined {
+  if (!ride) return undefined;
+  const latitude = kind === "pickup" ? ride.pickup_latitude : kind === "dropoff" ? ride.dropoff_latitude : undefined;
+  const longitude = kind === "pickup" ? ride.pickup_longitude : kind === "dropoff" ? ride.dropoff_longitude : undefined;
+  return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined;
 }
 
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function dateText(value: unknown): string {
-  const raw = stringValue(value);
-  if (!raw) return "Đang cập nhật";
-  const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? raw : new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(date);
-}
-
-function formatMoney(value: number, currency = "VND"): string {
-  try { return new Intl.NumberFormat("vi-VN", { style: "currency", currency, maximumFractionDigits: 0 }).format(value); } catch { return `${value.toLocaleString("vi-VN")} ${currency}`; }
+function hoursText(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value.join(" · ") : optionalText(value);
 }

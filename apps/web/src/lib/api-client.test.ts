@@ -1,4 +1,4 @@
-import { configureApiClient, getAccessToken, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
+import { ApiError, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -76,5 +76,24 @@ describe("browser API client", () => {
 
     await expect(staleRefresh).resolves.toBe("login-access-token");
     expect(getAccessToken()).toBe("login-access-token");
+  });
+
+  it("reads active work from the dedicated active-history endpoint", async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/api/v1/history/active");
+      expect(String(input)).not.toContain("/api/v1/history?");
+      return jsonResponse(200, { data: { items: [] } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(getActiveHistory()).resolves.toEqual({ items: [] });
+  });
+
+  it("translates stale, unavailable, location, and driver errors for consumers", () => {
+    const makeError = (code: string): ApiError => new ApiError({ code, detail: code, status: 409, retryable: false });
+    expect(errorText(makeError("STALE_ACTION"))).toBe("Lựa chọn này vừa được cập nhật. Hãy chọn lại từ danh sách mới.");
+    expect(errorText(makeError("SLOT_UNAVAILABLE"))).toBe("Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.");
+    expect(errorText(makeError("LOCATION_UNRESOLVED"))).toBe("Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.");
+    expect(errorText(makeError("NO_DRIVER"))).toBe("Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.");
   });
 });

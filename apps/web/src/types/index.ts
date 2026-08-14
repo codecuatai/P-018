@@ -199,6 +199,12 @@ export interface HistoryResult {
   unavailable: string[];
 }
 
+export interface ActiveHistoryResult {
+  items: HistoryItem[];
+  partial?: boolean;
+  unavailable?: string[];
+}
+
 export type ProductOpsDomain = "food" | "ride" | "restaurant" | "healthcare";
 export type FavoriteDomain = "food" | "restaurant" | "healthcare";
 export type FeedbackResourceType = "food_order" | "ride_booking" | "restaurant_reservation" | "healthcare_appointment";
@@ -415,6 +421,14 @@ export interface AssistantOption {
   cuisine?: string;
   restaurant?: string | AssistantRestaurant;
   description?: string;
+  image_url?: string;
+  category?: string;
+  review_count?: number;
+  price_level?: string;
+  opening_hours?: string | string[];
+  doctor_title?: string;
+  options?: Array<Record<string, unknown>>;
+  option_groups?: Array<Record<string, unknown>>;
   doctor?: string;
   department?: string;
   start_time?: string;
@@ -484,9 +498,13 @@ export interface AssistantRestaurantConfirmationItem extends AssistantItemBase<"
 }
 
 export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "ride_booking"> {
+  status?: string;
+  booking_id?: string;
+  resource_id?: string;
   pickup?: string;
   dropoff?: string;
   vehicle?: string;
+  distance_km?: number;
   amount?: number;
   currency?: string;
   duration_minutes?: number;
@@ -501,6 +519,7 @@ export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "rid
   route_distance_meters?: number;
   route_duration_seconds?: number;
   route_geometry?: Array<{ latitude: number; longitude: number }>;
+  route_polyline?: string;
   pickup_latitude?: number;
   pickup_longitude?: number;
   dropoff_latitude?: number;
@@ -524,6 +543,7 @@ export interface AssistantHealthcareItem extends AssistantItemBase<"appointment"
   start_time?: string;
   price?: number;
   payment_note?: string;
+  status?: string;
   appointment_id?: number;
   facility?: AssistantFacility;
   appointment?: AssistantAppointment;
