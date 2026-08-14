@@ -136,7 +136,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
-    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260813_0004_driver_snapshot.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
+    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260814_0005_route_geometry.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
     Write-Host 'Ride Service migrations applied.'
 } finally {
     Pop-Location

@@ -63,6 +63,7 @@ export interface RouteResult {
   route_distance_meters?: number;
   route_duration_seconds?: number;
   route_polyline?: string | null;
+  route_geometry?: Array<{ latitude: number; longitude: number }> | null;
   route_snapshot_hash?: string;
   retryable?: boolean;
 }
@@ -78,7 +79,7 @@ export interface ServiceCatalogItem {
 
 export interface RideTracking {
   booking_id: string;
-  status: "AWAITING_CONFIRMATION" | "SEARCHING_DRIVER" | "DRIVER_ASSIGNED" | "DRIVER_TO_PICKUP" | "DRIVER_ARRIVED" | "IN_PROGRESS" | "COMPLETED" | "NO_DRIVER" | "FAILED" | "PAYMENT_FAILED" | "CANCELLED" | string;
+  status: "AWAITING_CONFIRMATION" | "SEARCHING_DRIVER" | "DRIVER_ASSIGNED" | "DRIVER_TO_PICKUP" | "DRIVER_ARRIVED" | "IN_PROGRESS" | "ARRIVED_DESTINATION" | "COMPLETED" | "NO_DRIVER" | "FAILED" | "PAYMENT_FAILED" | "CANCELLED" | string;
   progress: number;
   eta_seconds: number;
   driver?: Record<string, unknown> | null;
@@ -89,10 +90,19 @@ export interface RideTracking {
     distance_meters?: number | null;
     duration_seconds?: number | null;
     polyline?: string | null;
+    geometry?: Array<{ latitude: number; longitude: number }> | null;
     origin?: { latitude: number; longitude: number } | null;
     destination?: { latitude: number; longitude: number } | null;
     [key: string]: unknown;
   };
+  driver_route?: {
+    provider?: string;
+    distance_meters?: number;
+    duration_seconds?: number;
+    geometry?: Array<{ latitude: number; longitude: number }>;
+    origin?: { latitude: number; longitude: number };
+    destination?: { latitude: number; longitude: number };
+  } | null;
   route_provider?: string;
   route_snapshot_hash?: string | null;
   updated_at?: string;
@@ -119,6 +129,26 @@ export interface RideQuote {
   route_distance_meters?: number | null;
   route_duration_seconds?: number | null;
   route_polyline?: string | null;
+  route_geometry?: Array<{ latitude: number; longitude: number }> | null;
+}
+
+export interface FoodTracking {
+  order_id: string;
+  status: string;
+  driver?: Record<string, unknown> | null;
+  eta_minutes?: number | null;
+  restaurant?: Record<string, unknown> | null;
+  address?: Record<string, unknown> | null;
+  delivery_route?: {
+    provider?: string;
+    distance_meters?: number;
+    duration_seconds?: number;
+    geometry?: Array<{ latitude: number; longitude: number }>;
+    origin?: { latitude: number; longitude: number };
+    destination?: { latitude: number; longitude: number };
+  } | null;
+  courier_location?: { latitude: number; longitude: number } | null;
+  timeline?: Array<Record<string, unknown>>;
 }
 
 export interface ServiceCatalogEntry {
@@ -358,6 +388,7 @@ export type AssistantActionKind =
   | "select_healthcare_slot"
   | "healthcare_payment"
   | "healthcare_confirm"
+  | "select_food_item"
   | "food_confirm";
 
 type AssistantActionOf<K extends AssistantActionKind> = {
@@ -374,6 +405,7 @@ export type AssistantAction =
   | AssistantActionOf<"select_healthcare_slot">
   | AssistantActionOf<"healthcare_payment">
   | AssistantActionOf<"healthcare_confirm">
+  | AssistantActionOf<"select_food_item">
   | AssistantActionOf<"food_confirm">;
 
 export interface AssistantOption {
@@ -381,23 +413,34 @@ export interface AssistantOption {
   title?: string;
   location?: string;
   cuisine?: string;
-  restaurant?: string;
+  restaurant?: string | AssistantRestaurant;
   description?: string;
   doctor?: string;
   department?: string;
   start_time?: string;
   price?: number;
   rating?: number;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  facility?: AssistantFacility;
 }
 
 export interface AssistantRestaurant {
   name: string;
   location?: string;
+  address?: string;
+  cuisine?: string;
+  rating?: number;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface AssistantFacility {
   name?: string;
   address?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface AssistantAppointment {
@@ -454,6 +497,14 @@ export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "rid
   departure_buffer_minutes?: number;
   scheduled_pickup?: boolean;
   schedule_note?: string;
+  route_provider?: string;
+  route_distance_meters?: number;
+  route_duration_seconds?: number;
+  route_geometry?: Array<{ latitude: number; longitude: number }>;
+  pickup_latitude?: number;
+  pickup_longitude?: number;
+  dropoff_latitude?: number;
+  dropoff_longitude?: number;
 }
 
 export interface AssistantRideTimingConflictItem extends AssistantItemBase<"ride_timing_conflict"> {

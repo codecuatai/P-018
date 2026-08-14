@@ -243,7 +243,8 @@ class FoodApplicationService:
             preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"], payload.get("address_snapshot"))
             payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}
         expected = {"snapshot_hash": payload["expected_snapshot_hash"], "cart_version": payload["expected_cart_version"], "amount": payload["expected_amount"], "currency": payload["expected_currency"], "quote_version": payload["expected_quote_version"]}
-        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": datetime.now(UTC).isoformat(), "reason": "Order created", "actor_type": "gateway"}]}
+        created_at = datetime.now(UTC).isoformat()
+        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "created_at": created_at, "updated_at": created_at, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": created_at, "reason": "Order created", "actor_type": "gateway"}]}
         return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"], payload.get("address_snapshot"))
 
     async def get_order(self, order_id: str, user_id: str | None = None) -> dict:
@@ -304,7 +305,16 @@ class FoodApplicationService:
     async def tracking(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.get_order(order_id, user_id)
         events = await self.repository.get_order_events(order_id)
-        return {"order_id": order["id"], "status": order["status"], "driver": order.get("driver"), "eta_minutes": order["delivery"].get("eta_minutes"), "timeline": events or order.get("timeline", [])}
+        return {
+            "order_id": order["id"],
+            "status": order["status"],
+            "driver": order.get("driver"),
+            "eta_minutes": order["delivery"].get("eta_minutes"),
+            "restaurant": order.get("restaurant"),
+            "address": order.get("address"),
+            "delivery": order.get("delivery"),
+            "timeline": events or order.get("timeline", []),
+        }
 
     async def cancel_preview(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.get_order(order_id, user_id)

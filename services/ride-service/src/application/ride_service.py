@@ -29,6 +29,7 @@ from src.domain.ride import (
     transition_booking,
     transition_quote,
     utc_now,
+    _as_utc,
 )
 from src.repositories.ride import RideRepository
 
@@ -149,18 +150,7 @@ class RideApplication:
                     "IDEMPOTENCY_CONFLICT",
                     "The idempotency key was already used with a different payload.",
                 )
-            if existing.response_payload.get("status") != BookingStatus.SEARCHING_DRIVER.value:
-                return existing.response_payload
-            booking = self._owned_booking(command.booking_id, command.actor_id)
-            quote = self._owned_quote(booking.quote_id, command.actor_id)
-            return self._complete_driver_search(
-                booking,
-                quote,
-                command.actor_id,
-                operation,
-                idempotency_key,
-                request_hash,
-            )
+            return existing.response_payload
         booking = self._owned_booking(command.booking_id, command.actor_id)
         if booking.status != BookingStatus.AWAITING_CONFIRMATION.value:
             raise RideError(409, "INVALID_BOOKING_STATE", f"Cannot confirm booking in state {booking.status}.")
@@ -200,14 +190,7 @@ class RideApplication:
         except Exception:
             self.repository.rollback()
             raise
-        return self._complete_driver_search(
-            booking,
-            quote,
-            command.actor_id,
-            operation,
-            idempotency_key,
-            request_hash,
-        )
+        return booking.snapshot()
 
     def _complete_driver_search(
         self,
@@ -290,6 +273,12 @@ class RideApplication:
     def get_tracking(self, booking_id: str, actor_id: str) -> dict:
         booking = self._owned_booking(booking_id, actor_id)
         quote = self._owned_quote(booking.quote_id, actor_id)
+        if booking.status == BookingStatus.SEARCHING_DRIVER.value:
+            dispatch_operation = "ride.booking.dispatch"
+            dispatch_key = f"dispatch:{booking.id}"
+            dispatch_hash = normalized_hash({"actor_id": actor_id, "booking_id": booking.id, "quote_id": quote.id})
+            self._complete_driver_search(booking, quote, actor_id, dispatch_operation, dispatch_key, dispatch_hash)
+            return tracking_snapshot(booking, quote, now=utc_now())
         now = utc_now()
         driver = booking.driver or {}
         eta_seconds = int(driver.get("eta_seconds", 0))
@@ -298,6 +287,12 @@ class RideApplication:
         changed = False
         for _ in range(4):
             target = next_tracking_status(booking.status, elapsed, eta_seconds, travel_seconds)
+            if (
+                target is None
+                and booking.status == BookingStatus.ARRIVED_DESTINATION.value
+                and (_as_utc(now) - _as_utc(booking.updated_at)).total_seconds() >= 10
+            ):
+                target = BookingStatus.COMPLETED.value
             if target is None:
                 break
             transition_booking(booking, target)

@@ -118,6 +118,19 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   if (String(config.APP_ENV) === 'production' && localDeterministicLocationFallback === 'true') {
     throw new Error('LOCAL_DETERMINISTIC_LOCATION_FALLBACK must be disabled in production.');
   }
+  const geoapifyRealMode = String(config.GEOAPIFY_REAL_MODE ?? 'false').toLowerCase();
+  if (!['true', 'false'].includes(geoapifyRealMode)) throw new Error('GEOAPIFY_REAL_MODE must be true or false.');
+  if (geoapifyRealMode === 'true') {
+    const serverKey = normalizeConfiguredSecret(config.GEOAPIFY_SERVER_API_KEY);
+    if (!serverKey || serverKey.includes('__PASTE_') || serverKey.toLowerCase().includes('replace_me')) throw new Error('GEOAPIFY_SERVER_API_KEY is required when GEOAPIFY_REAL_MODE is enabled.');
+    const baseUrl = String(config.GEOAPIFY_API_BASE_URL ?? 'https://api.geoapify.com/v1').trim();
+    try {
+      const parsed = new URL(baseUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('invalid');
+    } catch {
+      throw new Error('GEOAPIFY_API_BASE_URL must be a valid HTTP(S) URL.');
+    }
+  }
   for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
     if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
   }
@@ -173,7 +186,15 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     AUTH_REFRESH_COOKIE_NAME: String(config.AUTH_REFRESH_COOKIE_NAME).trim(),
     AUTH_DEV_RESET_TOKEN_CAPTURE: authDevResetTokenCapture === 'true',
     LOCAL_DETERMINISTIC_LOCATION_FALLBACK: localDeterministicLocationFallback === 'true',
+    GEOAPIFY_REAL_MODE: geoapifyRealMode === 'true',
+    ...(config.GEOAPIFY_SERVER_API_KEY !== undefined ? { GEOAPIFY_SERVER_API_KEY: normalizeConfiguredSecret(config.GEOAPIFY_SERVER_API_KEY) } : {}),
   };
+}
+
+function normalizeConfiguredSecret(value: unknown): string {
+  const trimmed = String(value ?? '').trim();
+  if (trimmed.length >= 2 && ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))) return trimmed.slice(1, -1).trim();
+  return trimmed;
 }
 
 export function getGatewaySecurityConfig(config: Record<string, unknown> = process.env): GatewaySecurityConfig {

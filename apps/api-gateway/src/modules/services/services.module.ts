@@ -4,11 +4,13 @@ import { IsIn, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthModule } from '../auth/auth.module';
+import { PersonalModule } from '../personal/personal.module';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { rankByDistance } from './location-ranking';
 import { ServiceActionsController } from './service-actions.controller';
 import { RideActionsController } from './ride-actions.controller';
+import { LocationService } from '../personal/personal.module';
 
 export type ServiceKey = 'food' | 'ride' | 'restaurant' | 'healthcare';
 
@@ -59,7 +61,7 @@ const catalog = [
 
 @Injectable()
 export class ServiceHubService {
-  constructor(private readonly food: FoodClient, private readonly ride: RideClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient) {}
+  constructor(private readonly food: FoodClient, private readonly ride: RideClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient, private readonly locations: LocationService) {}
 
   list(): object { return { items: catalog }; }
 
@@ -101,16 +103,33 @@ export class ServiceHubService {
     return { items: rankByDistance(arrayValue(value), origin), source: 'ride-service', partial: false };
   }
 
-  quoteRide(actorId: string, idempotencyKey: string, correlationId: string, body: RideQuoteDto): Promise<unknown> {
+  async quoteRide(actorId: string, idempotencyKey: string, correlationId: string, body: RideQuoteDto): Promise<unknown> {
+    const pickup = await this.resolveAddress(body.pickup_address, body.pickup_latitude, body.pickup_longitude);
+    const dropoff = await this.resolveAddress(body.dropoff_address, body.dropoff_latitude, body.dropoff_longitude);
+    const route = await this.locations.route(pickup.coordinate, dropoff.coordinate);
+    if (route.status !== 'RESOLVED' || route.provider !== 'geoapify' || !route.route_geometry?.length) throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
     return this.ride.createQuote(actorId, idempotencyKey, { correlationId, workflowId: `web-ride-${idempotencyKey}` }, {
-      pickup_address: body.pickup_address.trim(),
-      dropoff_address: body.dropoff_address.trim(),
+      pickup_address: pickup.address,
+      dropoff_address: dropoff.address,
       vehicle_type: body.vehicle_type ?? 'CAR_4',
-      ...(body.pickup_latitude !== undefined ? { pickup_latitude: body.pickup_latitude } : {}),
-      ...(body.pickup_longitude !== undefined ? { pickup_longitude: body.pickup_longitude } : {}),
-      ...(body.dropoff_latitude !== undefined ? { dropoff_latitude: body.dropoff_latitude } : {}),
-      ...(body.dropoff_longitude !== undefined ? { dropoff_longitude: body.dropoff_longitude } : {}),
+      pickup_latitude: pickup.coordinate.latitude,
+      pickup_longitude: pickup.coordinate.longitude,
+      dropoff_latitude: dropoff.coordinate.latitude,
+      dropoff_longitude: dropoff.coordinate.longitude,
+      route_provider: route.provider,
+      route_distance_meters: route.route_distance_meters,
+      route_duration_seconds: route.route_duration_seconds,
+      route_geometry: route.route_geometry,
+      route_snapshot_hash: route.route_snapshot_hash,
     });
+  }
+
+  private async resolveAddress(address: string, latitude?: number, longitude?: number): Promise<{ address: string; coordinate: { latitude: number; longitude: number } }> {
+    if (latitude !== undefined && longitude !== undefined) return { address: address.trim(), coordinate: { latitude, longitude } };
+    const result = await this.locations.geocode(address);
+    const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+    if (!candidate || candidate.latitude === null || candidate.longitude === null) throw new BadRequestException({ code: 'LOCATION_UNRESOLVED', detail: 'Hiện mình chưa xác định được địa chỉ này. Bạn thử chọn gợi ý hoặc nhập rõ hơn nhé.', retryable: true });
+    return { address: candidate.address_text, coordinate: { latitude: candidate.latitude, longitude: candidate.longitude } };
   }
 }
 
@@ -149,14 +168,101 @@ export class ServiceHubController {
 @Controller('api/v1/rides')
 @UseGuards(AuthGuard)
 export class RideTrackingController {
-  constructor(private readonly ride: RideClient) {}
+  private readonly driverRoutes = new Map<string, DriverRouteSnapshot>();
+
+  constructor(private readonly ride: RideClient, private readonly locations: LocationService) {}
 
   @Get(':bookingId/tracking')
   async tracking(@Param('bookingId') bookingId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     if (!bookingId.trim()) throw new BadRequestException({ code: 'BOOKING_ID_REQUIRED', detail: 'Mã chuyến xe là bắt buộc.', retryable: false });
     const data = await this.ride.getTracking(request.user.sub, { correlationId: request.correlationId ?? 'cor_unknown' }, bookingId);
-    return { data, meta: { request_id: request.correlationId } };
+    const enriched = await this.withDriverRoute(bookingId, data);
+    return { data: enriched, meta: { request_id: request.correlationId } };
   }
+
+  private async withDriverRoute(bookingId: string, data: JsonObject): Promise<JsonObject> {
+    const status = typeof data.status === 'string' ? data.status : '';
+    if (!['DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP'].includes(status)) {
+      if (['COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(status)) this.driverRoutes.delete(bookingId);
+      return data;
+    }
+    const route = isObject(data.route) ? data.route : {};
+    const pickup = coordinateValue(route.origin);
+    const driverLocation = coordinateValue(data.driver_location);
+    if (!pickup || !driverLocation) return data;
+    let snapshot = this.driverRoutes.get(bookingId);
+    if (!snapshot) {
+      const resolved = await this.locations.route(driverLocation, pickup);
+      const geometry = resolved.route_geometry;
+      if (resolved.provider !== 'geoapify' || resolved.status !== 'RESOLVED' || !geometry || geometry.length < 2 || resolved.route_distance_meters === undefined || resolved.route_duration_seconds === undefined || !resolved.route_snapshot_hash) {
+        throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+      }
+      snapshot = {
+        provider: resolved.provider,
+        origin: resolved.origin,
+        destination: resolved.destination,
+        distance_meters: resolved.route_distance_meters,
+        duration_seconds: resolved.route_duration_seconds,
+        geometry,
+        snapshot_hash: resolved.route_snapshot_hash,
+      };
+      this.driverRoutes.set(bookingId, snapshot);
+    }
+    if (!snapshot) return data;
+    const progress = typeof data.progress === 'number' && Number.isFinite(data.progress) ? data.progress : 0;
+    const routeProgress = status === 'DRIVER_ASSIGNED' ? 0 : Math.min(1, Math.max(0, progress / 0.25));
+    const current = pointAlongRoute(snapshot.geometry, routeProgress);
+    return {
+      ...data,
+      current_location: current,
+      driver_location: current,
+      driver_route: snapshot,
+    };
+  }
+}
+
+type DriverRouteSnapshot = {
+  provider: string;
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  distance_meters: number;
+  duration_seconds: number;
+  geometry: Array<{ latitude: number; longitude: number }>;
+  snapshot_hash: string;
+};
+
+function coordinateValue(value: unknown): { latitude: number; longitude: number } | undefined {
+  if (!isObject(value) || typeof value.latitude !== 'number' || typeof value.longitude !== 'number') return undefined;
+  if (!Number.isFinite(value.latitude) || !Number.isFinite(value.longitude)) return undefined;
+  return { latitude: value.latitude, longitude: value.longitude };
+}
+
+function pointAlongRoute(geometry: Array<{ latitude: number; longitude: number }>, ratio: number): { latitude: number; longitude: number } {
+  if (geometry.length < 2) return geometry[0] ?? { latitude: 0, longitude: 0 };
+  const lengths = geometry.slice(1).map((point, index) => distanceBetween(geometry[index], point));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return geometry[0];
+  let remaining = total * Math.min(1, Math.max(0, ratio));
+  for (let index = 0; index < lengths.length; index += 1) {
+    const segment = lengths[index];
+    if (remaining <= segment) {
+      const start = geometry[index];
+      const end = geometry[index + 1];
+      const segmentRatio = segment > 0 ? remaining / segment : 0;
+      return {
+        latitude: start.latitude + (end.latitude - start.latitude) * segmentRatio,
+        longitude: start.longitude + (end.longitude - start.longitude) * segmentRatio,
+      };
+    }
+    remaining -= segment;
+  }
+  return geometry[geometry.length - 1];
+}
+
+function distanceBetween(left: { latitude: number; longitude: number }, right: { latitude: number; longitude: number }): number {
+  const latitude = (right.latitude - left.latitude) * 111_000;
+  const longitude = (right.longitude - left.longitude) * 111_000 * Math.cos((left.latitude * Math.PI) / 180);
+  return Math.sqrt(latitude ** 2 + longitude ** 2);
 }
 
 function isServiceKey(value: string): value is ServiceKey { return catalog.some((item) => item.key === value); }
@@ -171,5 +277,5 @@ function parseCoordinate(value: string | undefined, minimum: number, maximum: nu
   return Number.isFinite(number) && number >= minimum && number <= maximum ? number : undefined;
 }
 
-@Module({ imports: [AuthModule], controllers: [ServiceHubController, RideTrackingController, ServiceActionsController, RideActionsController], providers: [ServiceHubService, FoodClient, RideClient, RestaurantClient, HealthcareClient], exports: [ServiceHubService] })
+@Module({ imports: [AuthModule, PersonalModule], controllers: [ServiceHubController, RideTrackingController, ServiceActionsController, RideActionsController], providers: [ServiceHubService, FoodClient, RideClient, RestaurantClient, HealthcareClient], exports: [ServiceHubService] })
 export class ServicesModule {}

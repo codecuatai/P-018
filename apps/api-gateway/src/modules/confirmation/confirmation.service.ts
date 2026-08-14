@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 
@@ -7,6 +7,7 @@ import { ServiceCallError } from '../../resilience/service-call-error';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationClaim, ConfirmationRecord, CoreStore, PaymentRecord } from '../core/core.module';
 import { PaymentService } from '../payment/payment.service';
+import { LocationService } from '../personal/personal.module';
 
 function stableHash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function errorCode(error: unknown): string {
@@ -54,12 +55,27 @@ export class ConfirmationService {
     private readonly config: ConfigService,
     private readonly restaurant: RestaurantClient,
     private readonly healthcare: HealthcareClient,
+    @Optional() private readonly locations?: LocationService,
   ) {}
 
   private async coreAddressSnapshot(actorId: string, addressId: unknown): Promise<JsonObject | undefined> {
     if (typeof addressId !== 'string' || !addressId) return undefined;
     const address = await this.store.getSavedAddress(addressId, actorId);
     if (!address) return undefined;
+    let latitude = address.latitude;
+    let longitude = address.longitude;
+    let provider = address.provider;
+    let source = address.source;
+    if ((latitude === undefined || longitude === undefined) && this.locations) {
+      const resolved = await this.locations.geocode(address.addressText);
+      const candidate = resolved.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+      if (candidate && candidate.latitude !== null && candidate.longitude !== null) {
+        latitude = candidate.latitude;
+        longitude = candidate.longitude;
+        provider = resolved.provider;
+        source = 'geocoded';
+      }
+    }
     return {
       user_id: actorId,
       address_text: address.addressText,
@@ -67,10 +83,10 @@ export class ConfirmationService {
       ...(address.city ? { city: address.city } : {}),
       ...(address.district ? { district: address.district } : {}),
       ...(address.ward ? { ward: address.ward } : {}),
-      ...(address.latitude !== undefined ? { latitude: address.latitude } : {}),
-      ...(address.longitude !== undefined ? { longitude: address.longitude } : {}),
-      ...(address.provider ? { provider: address.provider } : {}),
-      source: address.source,
+      ...(latitude !== undefined ? { latitude } : {}),
+      ...(longitude !== undefined ? { longitude } : {}),
+      ...(provider ? { provider } : {}),
+      source,
     };
   }
 

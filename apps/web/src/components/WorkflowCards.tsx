@@ -1,9 +1,13 @@
+"use client";
+
 import { CalendarDays, CarFront, Check, CircleDollarSign, MapPin, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
 import type { ReactNode } from "react";
-import { isKnownAssistantItem, type AssistantAction, type AssistantHealthcareItem, type AssistantHealthcareOptionsItem, type AssistantItem, type AssistantRestaurantConfirmationItem, type AssistantRestaurantOptionsItem, type AssistantResponse, type AssistantRideItem, type AssistantRideTimingConflictItem, type AssistantFoodItem } from "../types";
+import { useState } from "react";
+import { ServiceDetailDialog } from "./ServiceDetailDialog";
+import { isKnownAssistantItem, type AssistantAction, type AssistantHealthcareItem, type AssistantHealthcareOptionsItem, type AssistantItem, type AssistantRestaurantConfirmationItem, type AssistantRestaurantOptionsItem, type AssistantResponse, type AssistantRideItem, type AssistantRideTimingConflictItem, type AssistantFoodItem, type AssistantOption } from "../types";
 
 export function AssistantCards({ response, onAction, disabledActionId }: { response: AssistantResponse; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
-  const secondaryActions = response.actions.filter((action) => action.kind !== "select_restaurant" && action.kind !== "select_healthcare_slot");
+  const secondaryActions = response.actions.filter((action) => action.kind !== "select_restaurant" && action.kind !== "select_healthcare_slot" && action.kind !== "select_food_item");
   return <div className="assistant-cards">
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
@@ -35,7 +39,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId }: { item: As
     case "food_confirmation":
     case "food_order":
     case "food_empty":
-      return <FoodCard item={item} />;
+      return <FoodCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "progress":
     case "clarification":
       return <SimpleCard item={item} />;
@@ -46,10 +50,11 @@ function AssistantCard({ item, actions, onAction, disabledActionId }: { item: As
 
 function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: AssistantRestaurantOptionsItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const selectionActions = actions.filter((action) => action.kind === "select_restaurant");
-  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Nhà hàng" title={item.title} />
-    {item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Nhà hàng")}</strong><span><MapPin size={13} /> {text(option.location, "Địa điểm đang được cập nhật")}</span></div>{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn quán</button> : option.rating !== undefined ? <b>{String(option.rating)} ★</b> : null}</div>)}</div> : <p className="card-note">Mình đang cập nhật thêm lựa chọn cho bạn.</p>}
+  const [detail, setDetail] = useState<AssistantOption | null>(null);
+  return <><article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Nhà hàng" title={item.title} />
+    {item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Nhà hàng")}</strong><span><MapPin size={13} /> {text(option.location, "Địa điểm đang được cập nhật")}</span></div><div className="option-actions">{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn quán</button> : null}<button className="small-action" type="button" onClick={() => setDetail(option)}>Xem chi tiết</button></div></div>)}</div> : <p className="card-note">Mình đang cập nhật thêm lựa chọn cho bạn.</p>}
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
-  </article>;
+  </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="restaurant" option={detail} /></>;
 }
 
 function RestaurantConfirmation({ item }: { item: AssistantRestaurantConfirmationItem }) {
@@ -66,10 +71,11 @@ function RideTimingConflictCard({ item }: { item: AssistantRideTimingConflictIte
 
 function HealthcareCard({ item, actions, onAction, disabledActionId }: { item: AssistantHealthcareOptionsItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const selectionActions = actions.filter((action) => action.kind === "select_healthcare_slot");
-  return <article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} />
-    {item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.doctor)}-${index}`}><div><strong>{text(option.doctor, "Bác sĩ")}</strong><span>{text(option.department, "Khoa khám")} · {dateText(option.start_time)}</span></div>{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn lịch</button> : null}</div>)}</div> : item.departments?.length ? <div className="option-list">{item.departments.slice(0, 6).map((department, index) => <div className="option-row" key={`${String(department.name)}-${index}`}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhắn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
+  const [detail, setDetail] = useState<AssistantOption | null>(null);
+  return <><article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} />
+    {item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.doctor)}-${index}`}><div><strong>{text(option.doctor, "Bác sĩ")}</strong><span>{text(option.facility?.name, "Cơ sở đang cập nhật")} · {text(option.facility?.address, "Địa chỉ đang cập nhật")}</span><small>{text(option.department, "Khoa khám")} · {dateText(option.start_time)}{option.price !== undefined ? ` · ${formatMoney(option.price, "VND")}` : ""}</small></div><div className="option-actions">{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn lịch</button> : null}<button className="small-action" type="button" onClick={() => setDetail(option)}>Xem chi tiết</button></div></div>)}</div> : item.departments?.length ? <div className="option-list">{item.departments.slice(0, 6).map((department, index) => <div className="option-row" key={`${String(department.name)}-${index}`}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhắn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
-  </article>;
+  </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="healthcare" option={detail} /></>;
 }
 
 function HealthcareAppointment({ item }: { item: AssistantHealthcareItem }) {
@@ -78,9 +84,11 @@ function HealthcareAppointment({ item }: { item: AssistantHealthcareItem }) {
   return <article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} /><div className="detail-list"><Detail label="Bác sĩ" value={text(item.doctor ?? appointment?.doctor_name, "Theo lựa chọn")} /><Detail label="Khoa" value={text(item.department ?? appointment?.department, "Đang cập nhật")} /><Detail label="Thời gian" value={dateText(item.start_time ?? appointment?.start_time)} /><Detail label="Cơ sở" value={text(facility?.name, "Đang cập nhật")} /><Detail label="Địa chỉ" value={text(facility?.address, "Đang cập nhật")} /><Detail label="Chi phí" value={formatMoney(item.price ?? appointment?.price, "VND")} /></div>{item.note || item.payment_note ? <p className="card-note">{text(item.note ?? item.payment_note)}</p> : null}</article>;
 }
 
-function FoodCard({ item }: { item: AssistantFoodItem }) {
+function FoodCard({ item, actions, onAction, disabledActionId }: { item: AssistantFoodItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const order = item.order;
-  return <article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Món ăn")}</strong><span><Soup size={13} /> {text(option.restaurant, text(option.description, "Gợi ý giao hàng tận nơi"))}</span></div><b>{formatMoney(option.price, "VND")}</b></div>)}</div> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{order ? <div className="metric-row"><Metric label="Đơn hàng" value={text(order.id, "Đã tiếp nhận")} /><Metric label="Trạng thái" value={text(order.status, "Đã nhận")} /></div> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận từ Food Service." : "")}</p> : null}</article>;
+  const selectionActions = actions.filter((action) => action.kind === "select_food_item");
+  const [detail, setDetail] = useState<AssistantOption | null>(null);
+  return <><article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{item.options?.length ? <div className="option-list">{item.options.map((option, index) => <div className="option-row" key={`${String(option.name)}-${index}`}><div><strong>{text(option.name, "Món ăn")}</strong><span><Soup size={13} /> {text(option.restaurant, text(option.description, "Gợi ý giao hàng tận nơi"))}</span></div><div className="option-actions"><b>{formatMoney(option.price, "VND")}</b>{selectionActions[index] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[index])} disabled={Boolean(disabledActionId)}>Chọn món</button> : null}<button className="small-action" type="button" onClick={() => setDetail(option)}>Xem chi tiết</button></div></div>)}</div> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{order ? <div className="metric-row"><Metric label="Đơn hàng" value={text(order.id, "Đã tiếp nhận")} /><Metric label="Trạng thái" value={text(order.status, "Đã nhận")} /></div> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận từ Food Service." : "")}</p> : null}</article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="food" option={detail} /></>;
 }
 
 function SimpleCard({ item }: { item: { title: string; question?: string; note?: string } }) {

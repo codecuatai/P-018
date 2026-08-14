@@ -68,7 +68,9 @@ class SqlAlchemyRideRepository:
         if not eligible:
             return None
         eligible.sort(key=lambda item: (item[1], item[0].id))
-        driver, distance_km = self._choose_candidate(eligible[: min(5, len(eligible))])
+        # Deterministic closest-driver matching keeps the local happy path
+        # reproducible and makes a real NO_DRIVER result meaningful.
+        driver, distance_km = eligible[0]
         driver.availability_status = "ASSIGNED"
         driver.updated_at = utc_now()
         eta_seconds = max(60, min(900, int(round(distance_km / 0.35 * 60))))
@@ -249,6 +251,7 @@ def _quote_from_row(row: QuoteRow) -> Quote:
         route_distance_meters=row.route_distance_meters,
         route_duration_seconds=row.route_duration_seconds,
         route_polyline=row.route_polyline,
+        route_geometry=row.route_geometry,
         route_snapshot_hash=row.route_snapshot_hash,
         tariff_snapshot=row.tariff_snapshot,
     )

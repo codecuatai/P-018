@@ -27,3 +27,7 @@ process.env.AUTH_ISSUER = 'x-one';
 process.env.AUTH_AUDIENCE = 'x-one-web';
 process.env.AUTH_REFRESH_COOKIE_NAME = 'xone_refresh';
 process.env.AUTH_DEV_RESET_TOKEN_CAPTURE = 'true';
+// Unit tests keep the offline deterministic location boundary. Live demo
+// verification runs through the host runtime with GEOAPIFY_REAL_MODE=true.
+process.env.GEOAPIFY_REAL_MODE = 'false';
+process.env.LOCAL_DETERMINISTIC_LOCATION_FALLBACK = 'true';

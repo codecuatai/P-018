@@ -25,6 +25,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../auth/auth.types';
 import { CoreModule, CoreStore, SavedAddressRecord } from '../core/core.module';
 import { AuthModule } from '../auth/auth.module';
+import { GeoapifyProvider } from './geoapify.provider';
 
 class ProfilePatchDto {
   @IsOptional()
@@ -224,16 +225,37 @@ type RouteResult = {
   route_distance_meters?: number;
   route_duration_seconds?: number;
   route_polyline?: string | null;
+  route_geometry?: LocationCoordinate[];
   route_snapshot_hash?: string;
+  retryable?: boolean;
+};
+
+type AutocompleteResult = {
+  provider: string;
+  query: string;
+  suggestions: Array<GeocodeCandidate & { rank?: number }>;
   retryable?: boolean;
 };
 
 @Injectable()
 export class LocationService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService, private readonly geoapify: GeoapifyProvider) {}
+
+  get realMode(): boolean {
+    return this.geoapify.enabled;
+  }
 
   async geocode(addressText: string): Promise<GeocodeResult> {
     const query = addressText.trim().replace(/\s+/g, ' ');
+    if (this.geoapify.enabled) {
+      const candidates = await this.geoapify.geocode(query);
+      return {
+        provider: 'geoapify',
+        status: candidates.length ? 'RESOLVED' : 'NEEDS_CONFIRMATION',
+        query,
+        candidates: candidates.map((candidate) => ({ address_text: candidate.address_text, latitude: candidate.latitude, longitude: candidate.longitude, confidence: candidate.confidence })),
+      };
+    }
     if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Địa chỉ cần ít nhất 3 ký tự.', retryable: false });
 
     const providerUrl = this.geocodingProviderUrl();
@@ -262,6 +284,7 @@ export class LocationService {
   async route(origin: LocationCoordinate, destination: LocationCoordinate): Promise<RouteResult> {
     assertCoordinate(origin, 'origin');
     assertCoordinate(destination, 'destination');
+    if (this.geoapify.enabled) return this.geoapify.route(origin, destination);
     const providerUrl = this.routingProviderUrl();
     if (providerUrl) {
       try {
@@ -303,6 +326,14 @@ export class LocationService {
       route_snapshot_hash: stableHash({ origin, destination, distance_km: Number(distance.toFixed(2)), mode: 'straight-line' }),
       ...(providerUrl ? { retryable: true } : {}),
     };
+  }
+
+  async autocomplete(addressText: string): Promise<AutocompleteResult> {
+    const query = addressText.trim().replace(/\s+/g, ' ');
+    if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Address query is too short.', retryable: false });
+    if (!this.geoapify.enabled) return { provider: 'disabled', query, suggestions: [] };
+    const suggestions = await this.geoapify.autocomplete(query);
+    return { provider: 'geoapify', query, suggestions };
   }
 
   private geocodingProviderUrl(): URL | undefined { return this.configuredProviderUrl('GEOCODING_PROVIDER_URL'); }
@@ -441,6 +472,11 @@ export class LocationController {
     if (!body.origin || !body.destination) throw new BadRequestException({ code: 'COORDINATES_REQUIRED', detail: 'Cần có điểm đi và điểm đến.', retryable: false });
     return { data: await this.locations.route(body.origin, body.destination) };
   }
+
+  @Post('autocomplete')
+  async autocomplete(@Body() body: { address_text?: string }): Promise<object> {
+    return { data: await this.locations.autocomplete(typeof body.address_text === 'string' ? body.address_text : '') };
+  }
 }
 
 @Controller('api/v1/healthcare/patients')
@@ -524,5 +560,5 @@ function stableHash(value: unknown): string {
   return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
-@Module({ imports: [AuthModule, CoreModule], controllers: [PersonalProfileController, SavedAddressController, LocationController, HealthcarePatientController], providers: [LocationService], exports: [LocationService] })
+@Module({ imports: [AuthModule, CoreModule], controllers: [PersonalProfileController, SavedAddressController, LocationController, HealthcarePatientController], providers: [GeoapifyProvider, LocationService], exports: [LocationService] })
 export class PersonalModule {}

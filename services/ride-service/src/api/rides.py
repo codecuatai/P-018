@@ -89,6 +89,11 @@ def create_quote(
             pickup_longitude=payload.pickup_longitude,
             dropoff_latitude=payload.dropoff_latitude,
             dropoff_longitude=payload.dropoff_longitude,
+            route_provider=payload.route_provider,
+            route_distance_meters=payload.route_distance_meters,
+            route_duration_seconds=payload.route_duration_seconds,
+            route_geometry=payload.route_geometry,
+            route_snapshot_hash=payload.route_snapshot_hash,
         ),
         idempotency_key,
     )

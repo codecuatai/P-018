@@ -20,6 +20,11 @@ class QuoteCreate(StrictModel):
     pickup_longitude: float | None = Field(default=None, ge=-180, le=180)
     dropoff_latitude: float | None = Field(default=None, ge=-90, le=90)
     dropoff_longitude: float | None = Field(default=None, ge=-180, le=180)
+    route_provider: str | None = Field(default=None, min_length=1, max_length=80)
+    route_distance_meters: int | None = Field(default=None, gt=0)
+    route_duration_seconds: int | None = Field(default=None, gt=0)
+    route_geometry: list[dict[str, float]] | None = None
+    route_snapshot_hash: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class ConfirmationRequest(StrictModel):
@@ -76,6 +81,7 @@ class QuoteOut(StrictModel):
     route_distance_meters: int | None = None
     route_duration_seconds: int | None = None
     route_polyline: str | None = None
+    route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
     tariff_snapshot: dict[str, Any] | None = None
 

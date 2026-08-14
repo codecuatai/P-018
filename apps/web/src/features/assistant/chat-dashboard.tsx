@@ -1,14 +1,13 @@
 "use client";
 
-import { ArrowRight, ArrowUp, Bot, CarFront, Loader2, Plus, RefreshCw } from "lucide-react";
-import Link from "next/link";
+import { ArrowUp, Bot, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getConversation, listConversations, listHistory, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { isUserVisibleConversationMessage, type AssistantAction, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
-import { ActiveRideRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
+import { ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
 
 export function ChatDashboard({ user }: { user: AuthUser }) {
   const [conversationId, setConversationId] = useState<string>();
@@ -17,7 +16,8 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [activeActionId, setActiveActionId] = useState<string>();
-  const [activeRide, setActiveRide] = useState<HistoryItem>();
+  const [activeItems, setActiveItems] = useState<HistoryItem[]>([]);
+  const [activeRefreshNonce, setActiveRefreshNonce] = useState(0);
   const actionKeys = useRef<Record<string, string>>({});
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -47,11 +47,19 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
 
   useEffect(() => {
     let active = true;
-    void listHistory({ service: "ride_booking", page: 1, page_size: 10 }).then(({ items }) => {
-      if (active) setActiveRide(items.find(isActiveRide));
-    }).catch(() => { if (active) setActiveRide(undefined); });
-    return () => { active = false; };
-  }, [user.sub]);
+    let timer: number | undefined;
+    const refresh = async (): Promise<void> => {
+      try {
+        const result = await listHistory({ page: 1, page_size: 50 });
+        if (active) setActiveItems(result.items.filter(isActiveWork));
+      } catch {
+        if (active) setActiveItems([]);
+      }
+    };
+    void refresh();
+    timer = window.setInterval(() => { void refresh(); }, 2000);
+    return () => { active = false; if (timer !== undefined) window.clearInterval(timer); };
+  }, [activeRefreshNonce, user.sub]);
 
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
 
@@ -71,6 +79,7 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
       setConversationId(response.conversation_id);
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: response.message, response, requestStatus: "sent" } : item));
       void syncConversation(response.conversation_id);
+      setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: errorText(error), requestStatus: "error", retryText: text } : item));
       setComposer(text);
@@ -90,6 +99,7 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
       delete actionKeys.current[action.id];
       setMessages((current) => current.filter((message) => message.id !== pendingId).map((message) => message.response?.actions.some((candidate) => candidate.id === action.id) ? { ...message, response: { ...message.response, actions: message.response.actions.filter((candidate) => candidate.id !== action.id) } } : message).concat({ id: pendingId, role: "assistant", text: response.message, response, timestamp: new Date().toISOString(), requestStatus: "sent" }));
       void syncConversation(response.conversation_id);
+      setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
       setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: errorText(error), requestStatus: "error", retryAction: action } : message));
     } finally { setSending(false); setActiveActionId(undefined); }
@@ -100,7 +110,7 @@ export function ChatDashboard({ user }: { user: AuthUser }) {
 
   return <section className="assistant-page" aria-labelledby="assistant-title">
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{messages.length === 0 && !loadingHistory ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div><div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeRide ? "active" : "idle"} title={activeRide ? "Chuyến xe đang hoạt động" : "Một cuộc trò chuyện"} description={activeRide ? "Trạng thái hiện tại được đọc từ Ride Service qua Gateway." : "Một không gian để xử lý từng việc rõ ràng."}>{activeRide ? <><ActiveRideRailCard ride={activeRide} /><Link className="context-rail-action" href="/app/services/ride"><CarFront size={15} /> Mở luồng đặt xe <ArrowRight size={13} /></Link></> : <ConversationContextCards />}</ContextRail></div>
+    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{messages.length === 0 && !loadingHistory ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div><div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Một cuộc trò chuyện"} description={activeItems.length ? "Mọi việc đang diễn ra đều được cập nhật tự động." : "Một không gian để xử lý từng việc rõ ràng."}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} />)}</div> : <ConversationContextCards />}</ContextRail></div>
   </section>;
 }
 
@@ -120,9 +130,13 @@ function formatTime(value: string): string { const date = new Date(value); retur
 
 type EntryContext = { service: "food" | "ride" | "restaurant" | "healthcare"; label: string; prompt: string };
 
-function isActiveRide(item: HistoryItem): boolean {
+function isActiveWork(item: HistoryItem): boolean {
   const status = String(item.resource.status ?? item.status).toUpperCase();
-  return ["AWAITING_CONFIRMATION", "AWAITING_PAYMENT_CONFIRMATION", "SEARCHING_DRIVER", "DRIVER_ASSIGNED", "DRIVER_TO_PICKUP", "DRIVER_ARRIVED", "IN_PROGRESS", "BOOKED", "CONFIRMED"].includes(status);
+  if (status === "DELIVERED") {
+    const updatedAt = Date.parse(String(item.resource.updated_at ?? item.timestamp));
+    return Number.isFinite(updatedAt) && Date.now() - updatedAt < 10_000;
+  }
+  return !["COMPLETED", "CANCELLED", "FAILED", "NO_DRIVER", "PAYMENT_FAILED", "REFUNDED", "REJECTED", "EXPIRED"].includes(status);
 }
 
 function readEntryContext(): EntryContext | undefined {

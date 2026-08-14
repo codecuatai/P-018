@@ -76,6 +76,7 @@ export type RideQuote = {
   route_distance_meters?: number | null;
   route_duration_seconds?: number | null;
   route_polyline?: string | null;
+  route_geometry?: Array<{ latitude: number; longitude: number }> | null;
   route_snapshot_hash?: string | null;
   tariff_snapshot?: Record<string, unknown> | null;
 };
@@ -86,7 +87,7 @@ export type RideBooking = {
   quote_version: string;
   amount: number;
   currency: string;
-  status: 'AWAITING_CONFIRMATION' | 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
+  status: 'AWAITING_CONFIRMATION' | 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'ARRIVED_DESTINATION' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
   resource_version: number;
   payment_reference: string | null;
   driver: Record<string, unknown> | null;
@@ -872,6 +873,9 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
   ) {
     throw new Error('Ride returned an invalid quote contract.');
   }
+  const routeGeometry = Array.isArray(data.route_geometry)
+    ? data.route_geometry.filter(isRecord).filter((point) => typeof point.latitude === 'number' && typeof point.longitude === 'number').map((point) => ({ latitude: point.latitude as number, longitude: point.longitude as number }))
+    : undefined;
   return {
     id: data.id,
     status: data.status as RideQuote['status'],
@@ -893,6 +897,7 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     ...(typeof data.route_distance_meters === 'number' ? { route_distance_meters: data.route_distance_meters } : {}),
     ...(typeof data.route_duration_seconds === 'number' ? { route_duration_seconds: data.route_duration_seconds } : {}),
     ...(typeof data.route_polyline === 'string' || data.route_polyline === null ? { route_polyline: data.route_polyline as string | null } : {}),
+    ...(routeGeometry ? { route_geometry: routeGeometry, route_polyline: typeof data.route_polyline === 'string' ? data.route_polyline : JSON.stringify(routeGeometry) } : {}),
     ...(typeof data.route_snapshot_hash === 'string' || data.route_snapshot_hash === null ? { route_snapshot_hash: data.route_snapshot_hash as string | null } : {}),
     ...(isRecord(data.tariff_snapshot) || data.tariff_snapshot === null ? { tariff_snapshot: data.tariff_snapshot as Record<string, unknown> | null } : {}),
   };
@@ -905,7 +910,7 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     || typeof data.quote_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
-    || !['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
+    || !['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'ARRIVED_DESTINATION', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
       String(data.status),
     )
     || typeof data.resource_version !== 'number'

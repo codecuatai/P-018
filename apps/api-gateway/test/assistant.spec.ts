@@ -98,7 +98,7 @@ describe('Unified assistant orchestration', () => {
     expect(restaurant.executeTool).toHaveBeenCalledTimes(1);
     expect(agent.chat).toHaveBeenCalledTimes(1);
     expect(second.items.map((item) => item.kind)).toEqual(expect.arrayContaining(['restaurant_options', 'food_options']));
-    expect(second.actions.map((action) => action.kind)).toEqual(['select_restaurant']);
+    expect(second.actions.map((action) => action.kind)).toEqual(['select_restaurant', 'select_food_item']);
     const foodItem = second.items.find((item) => item.kind === 'food_options') as Record<string, unknown>;
     expect(foodItem).not.toHaveProperty('workflow_id');
     expect(foodItem).not.toHaveProperty('confirmation_id');
@@ -195,7 +195,7 @@ describe('Unified assistant orchestration', () => {
     expect(agent.chat).toHaveBeenCalledTimes(2);
     expect(healthcare.executeTool).toHaveBeenCalledTimes(1);
     expect(afterHealthcare).toEqual(beforeHealthcare);
-    expect(foodSelected.actions).toEqual(combined.actions);
+    expect(foodSelected.actions.map((action) => action.kind)).toEqual(['select_food_item', 'select_healthcare_slot']);
   });
 
   it('derives generic and specific follow-up domains from actions plus authoritative choice metadata', () => {

@@ -34,8 +34,8 @@ type XOneMapProps = {
 
 type MapState = "loading" | "ready" | "error";
 
-const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const TILE_BASE_URL = "https://maps.geoapify.com/v1/tile";
+const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · <a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a>';
 
 export function XOneMap({
   origin,
@@ -59,6 +59,7 @@ export function XOneMap({
   const mapNodeRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const [mapState, setMapState] = useState<MapState>("loading");
+  const [retryVersion, setRetryVersion] = useState(0);
   const mapData = useMemo(() => {
     const parsedRoute = (routeGeometry ?? parseRoute(routePolyline)).map(sanitizePoint).filter(isPoint);
     const markers = {
@@ -82,6 +83,17 @@ export function XOneMap({
 
     let disposed = false;
     let tileLayer: import("leaflet").TileLayer | undefined;
+    let resizeFrame: number | undefined;
+    let resizeTimer: number | undefined;
+
+    const invalidateMapSize = (map: LeafletMap): void => {
+      if (disposed || mapRef.current !== map || !mapNodeRef.current?.isConnected) return;
+      try {
+        map.invalidateSize({ animate: false });
+      } catch {
+        // Leaflet can be unmounted between the DOM check and invalidateSize.
+      }
+    };
 
     async function createMap(): Promise<void> {
       try {
@@ -94,17 +106,17 @@ export function XOneMap({
           preferCanvas: true,
         });
         mapRef.current = map;
-        tileLayer = L.tileLayer(TILE_URL, { attribution: TILE_ATTRIBUTION, maxZoom: 19 });
+        const browserKey = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY?.trim();
+        const style = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim() || "osm-bright";
+        if (!browserKey || browserKey.includes("__PASTE_")) throw new Error("map-key-unavailable");
+        const tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
+        tileLayer = L.tileLayer(tileUrl, { attribution: TILE_ATTRIBUTION, maxZoom: 19 });
         tileLayer.on("tileerror", () => {
           if (!disposed) setMapState("error");
         });
         tileLayer.addTo(map);
 
-        const route = mapData.route.length > 1
-          ? mapData.route
-          : mapData.markers.origin && mapData.markers.destination
-            ? [mapData.markers.origin, mapData.markers.destination]
-            : [];
+        const route = mapData.route.length > 1 ? mapData.route : [];
         if (route.length > 1) {
           L.polyline(route.map(toLatLng), {
             color: "#315EF5",
@@ -139,8 +151,8 @@ export function XOneMap({
 
         const bounds = L.latLngBounds(mapData.points.map(toLatLng));
         map.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
-        window.requestAnimationFrame(() => map.invalidateSize({ animate: false }));
-        window.setTimeout(() => map.invalidateSize({ animate: false }), 120);
+        resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
+        resizeTimer = window.setTimeout(() => invalidateMapSize(map), 120);
         if (!disposed) setMapState("ready");
       } catch {
         if (!disposed) setMapState("error");
@@ -151,39 +163,42 @@ export function XOneMap({
     void createMap();
     return () => {
       disposed = true;
+      if (resizeFrame !== undefined) window.cancelAnimationFrame(resizeFrame);
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
       tileLayer?.off();
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [mapData, providerUnavailable]);
+  }, [mapData, providerUnavailable, retryVersion]);
 
   const canRenderMap = mapData.points.length > 0 && !providerUnavailable && mapState !== "error";
   return <section className={`xone-map xone-map-${density}`} aria-label={label}>
     <div className="xone-map-toolbar">
-      <small>{routeProvider ? `Nguồn route: ${routeProvider}` : "Bản đồ nền OpenStreetMap"}</small>
+      <small>{routeProvider ? `Lộ trình: ${routeProvider === "geoapify" ? "Geoapify" : "đã xác minh"}` : "Bản đồ nền OpenStreetMap"}</small>
       <span>
         <button type="button" aria-label="Thu nhỏ bản đồ" onClick={() => mapRef.current?.zoomOut()} disabled={!canRenderMap}><Minus size={13} /></button>
         <button type="button" aria-label="Phóng to bản đồ" onClick={() => mapRef.current?.zoomIn()} disabled={!canRenderMap}><Plus size={13} /></button>
       </span>
     </div>
-    {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} />}
+    {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
     {mapData.points.length ? <div className="xone-map-legend"><LegendDot color="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot color="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot color="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
-    <small>{mapState === "loading" && canRenderMap ? "Đang tải bản đồ nền…" : mapData.markers.origin && mapData.markers.destination ? "Tuyến hiển thị từ route snapshot authoritative; tọa độ không hợp lệ không được vẽ." : "Chỉ hiển thị các tọa độ đã được xác minh từ nguồn authoritative."}</small>
+    <small>{mapState === "loading" && canRenderMap ? "Đang tải bản đồ nền…" : mapData.markers.origin && mapData.markers.destination ? "Tuyến hiển thị theo lộ trình đã xác minh; tọa độ không hợp lệ không được vẽ." : "Chỉ hiển thị các tọa độ đã được xác minh."}</small>
   </section>;
 }
 
-function MapFallback({ label, points, providerUnavailable, locationDenied, routeProvider, routeStatus, routeDistanceMeters, routeDurationSeconds }: { label: string; points: XOnePoint[]; providerUnavailable: boolean; locationDenied: boolean; routeProvider?: string; routeStatus?: string; routeDistanceMeters?: number | null; routeDurationSeconds?: number | null }) {
+function MapFallback({ label, points, providerUnavailable, locationDenied, routeProvider, routeStatus, routeDistanceMeters, routeDurationSeconds, onRetry }: { label: string; points: XOnePoint[]; providerUnavailable: boolean; locationDenied: boolean; routeProvider?: string; routeStatus?: string; routeDistanceMeters?: number | null; routeDurationSeconds?: number | null; onRetry: () => void }) {
   const reason = providerUnavailable
-    ? "Nhà cung cấp bản đồ/route hiện không khả dụng."
+    ? "Dịch vụ bản đồ/đường đi hiện không khả dụng."
     : locationDenied
       ? "Quyền vị trí chưa được cấp; không tự đoán tọa độ."
       : points.length
         ? "Bản đồ nền chưa tải được trong môi trường hiện tại."
         : "Chưa có tọa độ đã xác minh.";
   return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`}>
-    <strong>{reason}</strong>
-    <span>{points.length ? `${points.length} điểm authoritative sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
-    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl><div><dt>Route</dt><dd>{routeStatus ?? routeProvider ?? "Chưa có"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
+    <strong>{providerUnavailable || points.length ? "Hiện chưa tải được bản đồ." : reason}</strong>
+    {providerUnavailable || points.length ? <button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button> : null}
+    <span>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
+    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl><div><dt>Lộ trình</dt><dd>{routeStatus ?? (routeProvider === "geoapify" ? "Geoapify" : "Đã xác minh")}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
   </div>;
 }
 

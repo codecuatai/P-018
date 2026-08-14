@@ -36,7 +36,7 @@ describe("XOneMap", () => {
       />,
     );
 
-    expect(screen.getByText("Nhà cung cấp bản đồ/route hiện không khả dụng.")).toBeInTheDocument();
+    expect(screen.getByText("Hiện chưa tải được bản đồ.")).toBeInTheDocument();
     expect(screen.getByText("1.2 km")).toBeInTheDocument();
     expect(screen.getByText("8 phút")).toBeInTheDocument();
   });

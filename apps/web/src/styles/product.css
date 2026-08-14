@@ -513,6 +513,11 @@
 .address-shortcuts { display: grid; gap: 8px; padding: 11px; margin: 2px 0 3px; background: #F7FAFC; border: 1px solid var(--color-border); border-radius: 8px; }
 .address-shortcuts label { display: grid; gap: 5px; color: var(--color-muted); font-size: 0.65rem; font-weight: 700; }
 .address-shortcuts select { min-height: 34px; padding: 7px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 6px; font-size: 0.69rem; }
+.address-autocomplete { position: relative; display: grid; gap: 5px; }
+.address-suggestions { position: absolute; z-index: 20; top: calc(100% + 3px); right: 0; left: 0; display: grid; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px; box-shadow: 0 12px 26px rgb(26 45 61 / 14%); }
+.address-suggestion { padding: 9px 11px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.73rem; line-height: 1.35; cursor: pointer; }
+.address-suggestion:last-child { border-bottom: 0; }
+.address-suggestion:hover, .address-suggestion:focus-visible { background: #F1F7F8; outline: 0; }
 .ride-result { display: grid; gap: 7px; }
 .xone-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .xone-map-toolbar small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

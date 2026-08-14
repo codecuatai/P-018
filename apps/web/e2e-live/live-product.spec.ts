@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const defaultPassword = "XOne-local-E2E-pass";
+let expectedSignedOutAuthCleanup = false;
 
 async function completeOnboarding(page: Page, name: string): Promise<void> {
   if (!page.url().includes("/app/onboarding")) return;
@@ -38,9 +39,10 @@ async function loginThroughDialog(page: Page, email: string, password: string): 
 
 test.describe("live local product", () => {
   test.beforeEach(async ({ page }) => {
+    expectedSignedOutAuthCleanup = false;
     page.on("pageerror", (error) => { throw error; });
     page.on("console", (message) => {
-      if (message.type() === "error") throw new Error(`Browser console.error: ${message.text()}`);
+      if (message.type() === "error" && !(expectedSignedOutAuthCleanup && message.text().includes("status of 401"))) throw new Error(`Browser console.error: ${message.text()}`);
     });
     page.on("response", (response) => {
       if (response.status() >= 400) console.log(`LIVE_HTTP_${response.status()} ${response.url()}`);
@@ -56,11 +58,11 @@ test.describe("live local product", () => {
     const runId = process.env.LIVE_E2E_RUN_ID ?? `${Date.now()}-${test.info().workerIndex}`;
     const email = process.env.LIVE_E2E_EMAIL ?? `e2e+${runId}@xone.local`;
     const password = process.env.LIVE_E2E_PASSWORD ?? defaultPassword;
-
     await registerThroughLanding(page, email, password);
     await page.reload();
     await expect(page).toHaveURL(/\/app(?:\?|$)/, { timeout: 30_000 });
     await expect(page.getByRole("button", { name: /Đăng xuất/i })).toBeVisible();
+    expectedSignedOutAuthCleanup = true;
     await page.getByRole("button", { name: /Đăng xuất/i }).click();
     await expect(page).toHaveURL(/\/$/);
   });

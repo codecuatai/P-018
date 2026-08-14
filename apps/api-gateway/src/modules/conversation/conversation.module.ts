@@ -12,6 +12,7 @@ import { ConfirmationModule } from '../confirmation/confirmation.module';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { ToolModule } from '../tools/tool.module';
 import { HealthcareClient, RestaurantClient } from '../../clients/service.clients';
+import { PersonalModule } from '../personal/personal.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { ConversationController as RideConversationController } from './conversation.controller';
@@ -110,7 +111,7 @@ export class FoodConversationController {
 }
 
 @Module({
-  imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule],
+  imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule, PersonalModule],
   controllers: [FoodConversationController, RideConversationController, AssistantController],
   providers: [ConversationService, AgentClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
   exports: [ConversationService, RideConversationService, AssistantService],

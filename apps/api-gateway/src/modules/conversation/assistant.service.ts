@@ -22,7 +22,7 @@ import {
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
 type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
-type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'food_confirm';
+type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'select_food_item' | 'food_confirm';
 
 type StoredAction = {
   id: string;
@@ -142,6 +142,39 @@ function plainText(value: string): string {
 
 function textHasAny(value: string, candidates: string[]): boolean {
   return candidates.some((candidate) => value.includes(candidate));
+}
+
+function selectionName(index: number): string {
+  return ['first', 'second', 'third', 'fourth', 'fifth'][index] ?? 'first';
+}
+
+function selectionIndex(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const normalized = plainText(value);
+  const names = ['first', 'second', 'third', 'fourth', 'fifth'];
+  const index = names.indexOf(normalized);
+  return index >= 0 ? index : undefined;
+}
+
+function selectionIndexFromText(message: string | undefined, candidates: JsonObject[]): number | undefined {
+  if (!message || !candidates.length) return undefined;
+  const normalized = plainText(message);
+  const numberMatch = normalized.match(/\b(?:so|thu)\s*([1-9][0-9]?)\b/);
+  if (numberMatch) {
+    const index = Number(numberMatch[1]) - 1;
+    return index >= 0 && index < candidates.length ? index : undefined;
+  }
+  if (textHasAny(normalized, ['dau tien', 'first'])) return 0;
+  if (textHasAny(normalized, ['thu hai', 'second'])) return candidates.length > 1 ? 1 : undefined;
+  if (textHasAny(normalized, ['thu ba', 'third'])) return candidates.length > 2 ? 2 : undefined;
+  if (textHasAny(normalized, ['thu tu', 'fourth'])) return candidates.length > 3 ? 3 : undefined;
+  if (textHasAny(normalized, ['thu nam', 'fifth'])) return candidates.length > 4 ? 4 : undefined;
+  const exactMatches = candidates.map((candidate) => plainText(String(candidate.name ?? candidate.doctor ?? candidate.title ?? ''))).map((name, index) => ({ name, index })).filter((value) => value.name && normalized.includes(value.name));
+  return exactMatches.length === 1 ? exactMatches[0].index : undefined;
+}
+
+function foodSelectionIndex(message: string, candidates: JsonObject[]): number | undefined {
+  return selectionIndexFromText(message, candidates);
 }
 
 function assistantActionFailureStatus(error: unknown): 'FAILED_RETRYABLE' | 'FAILED_FINAL' {
@@ -310,7 +343,7 @@ function storedState(value: unknown): AssistantState {
     ...(stringValue(action.workflow_id) ? { workflow_id: action.workflow_id as string } : {}),
     ...(numberValue(action.appointment_id) ? { appointment_id: numberValue(action.appointment_id) } : {}),
     ...(numberValue(action.selection_index) !== undefined ? { selection_index: numberValue(action.selection_index) } : {}),
-  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'food_confirm'].includes(action.kind)) as StoredAction[];
+  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'select_food_item', 'food_confirm'].includes(action.kind)) as StoredAction[];
   const decisionSource = stringValue(value.decision_source);
   return {
     tasks,
@@ -503,7 +536,7 @@ export class AssistantService {
       if (candidates.length) return candidates;
       return [...available];
     }
-    if (active.length === 1 && textHasAny(folded, ['nguoi', 'hoan kiem', 'ha noi', 'cau giay', 'tay ho', 'ba dinh', 'sang mai', 'toi nay', 'dong y', 'xac nhan'])) return [active[0].domain];
+    if (active.length === 1 && (textHasAny(folded, ['nguoi', 'hoan kiem', 'ha noi', 'cau giay', 'tay ho', 'ba dinh', 'sang mai', 'toi nay', 'ngay mai', 'dong y', 'xac nhan']) || /\b\d{1,2}\s*(gio|h)\b/.test(folded))) return [active[0].domain];
     return [];
   }
 
@@ -598,6 +631,12 @@ export class AssistantService {
         resultsForComposition.push(publicItem);
       }
     }
+
+    actions.sort((left, right) => {
+      const leftIndex = merged.findIndex((task) => task.id === left.task_id);
+      const rightIndex = merged.findIndex((task) => task.id === right.task_id);
+      return leftIndex - rightIndex;
+    });
 
     const foodTask = merged.find((task) => task.domain === 'food');
     const foodContext = isRecord(foodTask?.authoritative?.food_context)
@@ -1021,7 +1060,10 @@ export class AssistantService {
     const startAt = stringValue(slots.start_at);
     if (!location || !partySize || !startAt) {
       const missing = [!location ? 'khu vực' : '', !partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
-      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm một chút thông tin', question: `Bạn cho mình biết ${missing.join(' và ')} nhé?` }] };
+      const question = missing.length === 1 && missing[0] === 'thời gian'
+        ? 'Bạn muốn đặt bàn lúc mấy giờ?'
+        : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
+      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm thông tin để đặt bàn', question }] };
     }
     const startAtMilliseconds = Date.parse(startAt);
     if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
@@ -1034,7 +1076,9 @@ export class AssistantService {
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
     const selection = stringValue(slots.selection);
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
-    if (!selected && selection) selected = candidates[selection === 'second' ? 1 : 0];
+    const requestedIndex = selectionIndexFromText(task.latest_message, candidates);
+    if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
+    if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
     if (!candidates.length) {
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
@@ -1213,7 +1257,7 @@ export class AssistantService {
         scheduled_pickup: false,
         schedule_note: 'Đây là giờ khởi hành đề xuất; X-One chưa đặt lịch đón tự động.',
       };
-      const publicItem = { kind: 'ride_quote', title: 'Chuyến xe phù hợp', pickup: quote.pickup_address, dropoff: quote.dropoff_address, vehicle: this.vehicleLabel(quote.vehicle_type), amount: quote.amount, currency: quote.currency, duration_minutes: durationMinutes, expires_at: quote.expires_at, ...timing };
+      const publicItem = { ...this.rideItem({ quote }, task), duration_minutes: durationMinutes, ...timing };
       if (result.stage === 'SERVICE_CONFIRMATION') {
         if (!this.dependenciesCompleted(task, allTasks)) {
           return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
@@ -1223,7 +1267,7 @@ export class AssistantService {
       }
       return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
     }
-    const publicItem = quote ? { kind: 'ride_quote', title: 'Chuyến xe phù hợp', pickup: quote.pickup_address, dropoff: quote.dropoff_address, vehicle: this.vehicleLabel(quote.vehicle_type), amount: quote.amount, currency: quote.currency, duration_minutes: quote.duration_minutes, expires_at: quote.expires_at } : { kind: 'progress', title: safeText(result.response, 'Mình đang tìm chuyến xe phù hợp.') };
+    const publicItem = quote ? this.rideItem({ quote }, task) : { kind: 'progress', title: safeText(result.response, 'Mình đang tìm chuyến xe phù hợp.') };
     if (result.stage === 'SERVICE_CONFIRMATION' && quote) {
       if (task.depends_on.length > 0 && !this.dependenciesCompleted(task, allTasks)) {
         return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
@@ -1274,7 +1318,7 @@ export class AssistantService {
       };
     }
     const selection = stringValue(slots.selection);
-    const index = selection === 'second' ? 1 : 0;
+    const index = selectionIndex(selection) ?? selectionIndexFromText(task.latest_message, doctors) ?? 0;
     const candidate = doctors[index];
     const slot = isRecord(candidate?.available_slots) ? candidate.available_slots : arrayValue(candidate?.available_slots)[0];
     const selectedSlot = isRecord(slot) ? slot : arrayValue(candidate?.available_slots).filter(isRecord)[0];
@@ -1298,12 +1342,21 @@ export class AssistantService {
   }
 
   private async processFood(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
-    const previousContext = isRecord(task.authoritative?.food_context)
+    const storedContext = isRecord(task.authoritative?.food_context)
       ? task.authoritative.food_context
       : isRecord(task.authoritative?.state_updates)
         ? task.authoritative.state_updates
         : {};
-    const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message: task.latest_message ?? task.normalized_request, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
+    const selectedIndex = foodSelectionIndex(task.latest_message ?? '', arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord));
+    const previousContext = selectedIndex === undefined
+      ? storedContext
+      : (() => {
+        const candidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
+        const selected = candidates[selectedIndex];
+        return { ...storedContext, menu_item_id: selected?.id, restaurant_id: selected?.restaurant_id ?? storedContext.restaurant_id };
+      })();
+    const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm món đã chọn vào giỏ';
+    const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
     const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
     const nextContext = { ...previousContext, ...stateUpdates };
     const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
@@ -1315,11 +1368,14 @@ export class AssistantService {
       ...foodData,
       ...(!pending && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có lựa chọn món phù hợp từ Food Service.') } : {}),
     };
+    const optionActions = !pending
+      ? arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, this.newCohort(task)))
+      : [];
     if (pending?.id) {
       const action = this.actionFor(task, 'food_confirm', { confirmation_id: String(pending.id) });
       return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext, pending }, publicItem, items: [publicItem], actions: [action] };
     }
-    return { phase: response.response_type === 'error' ? 'FAILED' as TaskPhase : 'IN_PROGRESS' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext }, publicItem, items: [publicItem] };
+    return { phase: response.response_type === 'error' ? 'FAILED' as TaskPhase : 'IN_PROGRESS' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext }, publicItem, items: [publicItem], actions: optionActions };
   }
 
   private async executeAction(action: StoredAction, task: StoredTask, user: AuthUser, conversationId: string, correlationId: string, idempotencyKey: string): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; authoritative?: JsonObject; nextAction?: StoredAction }> {
@@ -1327,7 +1383,7 @@ export class AssistantService {
       const candidates = arrayValue(task.authoritative?.candidates).filter(isRecord);
       const selected = candidates[action.selection_index ?? 0];
       if (!selected) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'The restaurant choices have changed. Please search again.' });
-      task.extracted_slots.selection = (action.selection_index ?? 0) === 1 ? 'second' : 'first';
+      task.extracted_slots.selection = selectionName(action.selection_index ?? 0);
       task.authoritative = { ...task.authoritative, selected };
       task.phase = 'IN_PROGRESS';
       const result = await this.processRestaurant(task, user, conversationId, correlationId);
@@ -1369,7 +1425,7 @@ export class AssistantService {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
       const candidate = doctors[action.selection_index ?? 0];
       if (!candidate) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'The healthcare choices have changed. Please search again.' });
-      task.extracted_slots.selection = (action.selection_index ?? 0) === 1 ? 'second' : 'first';
+      task.extracted_slots.selection = selectionName(action.selection_index ?? 0);
       const result = await this.processHealthcare(task, user, conversationId, correlationId);
       return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ khung giờ. Bạn xác nhận thanh toán demo để tiếp tục nhé.' : 'Mình đã cập nhật lịch khám.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
@@ -1402,6 +1458,20 @@ export class AssistantService {
       const status = stringValue(appointment?.status);
       if (!appointment || !status) throw new ConflictException({ code: 'HEALTHCARE_RESULT_INVALID', detail: 'The healthcare confirmation did not return an authoritative appointment.' });
       return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', title: 'Lịch khám đã hoàn tất', status, appointment } as JsonObject, authoritative: { ...task.authoritative, result } };
+    }
+    if (action.kind === 'select_food_item') {
+      const context = isRecord(task.authoritative?.food_context)
+        ? task.authoritative.food_context
+        : isRecord(task.authoritative?.state_updates)
+          ? task.authoritative.state_updates
+          : {};
+      const candidates = arrayValue(context.menu_item_candidates ?? context.item_candidates).filter(isRecord);
+      const selected = candidates[action.selection_index ?? 0];
+      if (!selected || typeof selected.id !== 'string') throw new ConflictException({ code: 'STALE_ACTION', detail: 'The food choices have changed. Please refresh the current list.', retryable: true });
+      task.authoritative = { ...task.authoritative, food_context: { ...context, menu_item_id: selected.id, restaurant_id: selected.restaurant_id ?? context.restaurant_id } };
+      task.latest_message = 'Thêm món đã chọn vào giỏ';
+      const result = await this.processFood(task, user, conversationId, correlationId);
+      return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã chuẩn bị đơn món đã chọn. Bạn kiểm tra rồi xác nhận nhé.' : 'Mình đã chọn món và cập nhật giỏ hàng.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
     if (action.kind === 'food_confirm') {
       const result = await this.confirmations.execute(action.confirmation_id ?? '', user, { payment_method: 'card', conversation_id: conversationId }, correlationId, idempotencyKey);
@@ -1514,6 +1584,7 @@ export class AssistantService {
       select_healthcare_slot: 'Chọn lịch này',
       healthcare_payment: 'Xác nhận thanh toán demo',
       healthcare_confirm: 'Xác nhận lịch khám',
+      select_food_item: 'Chọn món này',
       food_confirm: 'Xác nhận đặt món',
     };
     return { id: action.id, kind: action.kind, label: labels[action.kind] };
@@ -1531,7 +1602,14 @@ export class AssistantService {
   }
 
   private publicRestaurant(candidate: JsonObject): JsonObject {
-    return { name: stringValue(candidate.name) ?? 'Nhà hàng', location: stringValue(candidate.location) ?? 'Thông tin địa điểm đang được cập nhật', cuisine: stringValue(candidate.cuisine_type), rating: candidate.rating };
+    return {
+      name: stringValue(candidate.name) ?? 'Nhà hàng',
+      location: stringValue(candidate.location) ?? stringValue(candidate.address) ?? 'Thông tin địa điểm đang được cập nhật',
+      cuisine: stringValue(candidate.cuisine_type),
+      rating: candidate.rating,
+      ...(typeof candidate.latitude === 'number' ? { latitude: candidate.latitude } : {}),
+      ...(typeof candidate.longitude === 'number' ? { longitude: candidate.longitude } : {}),
+    };
   }
 
   private healthcareOptions(doctors: JsonObject[], _taskId: string): JsonObject {
@@ -1539,7 +1617,8 @@ export class AssistantService {
   }
 
   private healthcareOptionRows(doctors: JsonObject[]): JsonObject[] {
-    return doctors.slice(0, 4).flatMap((doctor) => arrayValue(doctor.available_slots).slice(0, 1).map((slot) => ({
+    return doctors.slice(0, 5).flatMap((doctor) => arrayValue(doctor.available_slots).slice(0, 1).map((slot) => ({
+      facility: isRecord(doctor.facility) ? doctor.facility : undefined,
       doctor: doctor.name,
       department: isRecord(doctor.department) ? doctor.department.name : doctor.department,
       start_time: isRecord(slot) ? slot.start_time : undefined,
@@ -1549,7 +1628,7 @@ export class AssistantService {
 
   private healthcareSelectionActions(doctors: JsonObject[], task: StoredTask): StoredAction[] {
     const cohortId = this.newCohort(task);
-    return doctors.slice(0, 2).map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
+    return doctors.slice(0, 5).map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
   }
 
   private rideItem(result: JsonObject, task?: StoredTask): JsonObject {
@@ -1562,7 +1641,26 @@ export class AssistantService {
       ...(typeof task.authoritative.scheduled_pickup === 'boolean' ? { scheduled_pickup: task.authoritative.scheduled_pickup } : {}),
       ...(stringValue(task.authoritative.schedule_note) ? { schedule_note: task.authoritative.schedule_note } : {}),
     };
-    return quote ? { kind: booking ? 'ride_booking' : 'ride_quote', title: booking ? 'Chuyến xe đã cập nhật' : 'Chuyến xe phù hợp', pickup: quote.pickup_address, dropoff: quote.dropoff_address, vehicle: this.vehicleLabel(quote.vehicle_type), amount: quote.amount, currency: quote.currency, ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}), ...timing, ...(booking ? { status: booking.status, driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}) } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
+    return quote ? {
+      kind: booking ? 'ride_booking' : 'ride_quote',
+      title: booking ? 'Chuyến xe đã cập nhật' : 'Chuyến xe phù hợp',
+      pickup: quote.pickup_address,
+      dropoff: quote.dropoff_address,
+      vehicle: this.vehicleLabel(quote.vehicle_type),
+      amount: quote.amount,
+      currency: quote.currency,
+      ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}),
+      ...(typeof quote.route_provider === 'string' ? { route_provider: quote.route_provider } : {}),
+      ...(typeof quote.route_distance_meters === 'number' ? { route_distance_meters: quote.route_distance_meters } : {}),
+      ...(typeof quote.route_duration_seconds === 'number' ? { route_duration_seconds: quote.route_duration_seconds } : {}),
+      ...(Array.isArray(quote.route_geometry) ? { route_geometry: quote.route_geometry } : {}),
+      ...(typeof quote.pickup_latitude === 'number' ? { pickup_latitude: quote.pickup_latitude } : {}),
+      ...(typeof quote.pickup_longitude === 'number' ? { pickup_longitude: quote.pickup_longitude } : {}),
+      ...(typeof quote.dropoff_latitude === 'number' ? { dropoff_latitude: quote.dropoff_latitude } : {}),
+      ...(typeof quote.dropoff_longitude === 'number' ? { dropoff_longitude: quote.dropoff_longitude } : {}),
+      ...timing,
+      ...(booking ? { status: booking.status, driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}),
+    } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
   }
 
   private vehicleLabel(value: unknown): string {
@@ -1591,7 +1689,13 @@ export class AssistantService {
       return {
         name: item.name ?? item.title,
         price: item.price,
-        restaurant: restaurant?.name ?? entry.restaurant_name,
+        restaurant: restaurant ? {
+          name: restaurant.name,
+          address: restaurant.address,
+          rating: restaurant.rating,
+          latitude: restaurant.latitude,
+          longitude: restaurant.longitude,
+        } : entry.restaurant_name,
         description: item.description ?? entry.description,
       };
     }).filter((item) => stringValue(item.name));
@@ -1603,6 +1707,8 @@ export class AssistantService {
       'kind', 'title', 'note', 'question', 'options', 'departments', 'restaurant',
       'reservation_code', 'party_size', 'start_at', 'status', 'expires_at',
       'pickup', 'dropoff', 'vehicle', 'amount', 'currency', 'duration_minutes',
+      'route_provider', 'route_distance_meters', 'route_duration_seconds', 'route_geometry',
+      'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude',
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',
       'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note',
       'appointment_id', 'appointment', 'facility', 'order', 'payment', 'preview',
@@ -1625,6 +1731,11 @@ export class AssistantService {
         result[key] = this.sanitizePayment(value);
       } else if (key === 'preview') {
         result[key] = this.sanitizePreview(value);
+      } else if (key === 'route_geometry') {
+        result[key] = arrayValue(value).filter(isRecord).map((point) => ({
+          ...(typeof point.latitude === 'number' ? { latitude: point.latitude } : {}),
+          ...(typeof point.longitude === 'number' ? { longitude: point.longitude } : {}),
+        })).filter((point) => typeof point.latitude === 'number' && typeof point.longitude === 'number');
       } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
         result[key] = value;
       }
@@ -1634,10 +1745,13 @@ export class AssistantService {
 
   private sanitizeOption(value: JsonObject): JsonObject {
     const result: JsonObject = {};
-    for (const key of ['name', 'title', 'location', 'cuisine', 'restaurant', 'description', 'doctor', 'department', 'start_time', 'price', 'rating']) {
+    for (const key of ['name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'rating', 'address', 'latitude', 'longitude']) {
       const item = value[key];
       if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
+    if (isRecord(value.restaurant)) result.restaurant = this.sanitizeRestaurant(value.restaurant);
+    else if (typeof value.restaurant === 'string') result.restaurant = value.restaurant;
+    if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
     return result;
   }
 
@@ -1646,6 +1760,11 @@ export class AssistantService {
     return {
       ...(stringValue(value.name) ? { name: stringValue(value.name) } : {}),
       ...(stringValue(value.location) ? { location: stringValue(value.location) } : {}),
+      ...(stringValue(value.address) ? { address: stringValue(value.address) } : {}),
+      ...(stringValue(value.cuisine) ? { cuisine: stringValue(value.cuisine) } : {}),
+      ...(typeof value.rating === 'number' ? { rating: value.rating } : {}),
+      ...(typeof value.latitude === 'number' ? { latitude: value.latitude } : {}),
+      ...(typeof value.longitude === 'number' ? { longitude: value.longitude } : {}),
     };
   }
 
@@ -1671,6 +1790,8 @@ export class AssistantService {
     return {
       ...(stringValue(value.name) ? { name: stringValue(value.name) } : {}),
       ...(stringValue(value.address) ? { address: stringValue(value.address) } : {}),
+      ...(typeof value.latitude === 'number' ? { latitude: value.latitude } : {}),
+      ...(typeof value.longitude === 'number' ? { longitude: value.longitude } : {}),
     };
   }
 

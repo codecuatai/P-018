@@ -271,6 +271,7 @@ class InMemoryFoodRepository:
         order.setdefault("timeline", []).append(event)
         self.order_events.setdefault(order["id"], []).append(deepcopy(event))
         order["version"] = int(order.get("version", 0)) + 1
+        order["updated_at"] = event["occurred_at"]
         return deepcopy(order)
 
     async def transition_order_atomic(self, order_id: str, target: FoodOrderStatus, reason: str, actor_type: str = "system", next_transition_at: datetime | None = None, expected_version: int | None = None, operation_key: str | None = None) -> dict:
@@ -344,7 +345,7 @@ class PostgresFoodRepository:
     def _order_from_row(row: object) -> dict:
         record = dict(row)
         order = _json_object(record["data"])
-        order.update({"status": record["status"], "version": record["version"], "next_transition_at": record["next_transition_at"].isoformat() if record["next_transition_at"] else None, "restaurant_decision": record["restaurant_decision"], "driver_id": record["driver_id"]})
+        order.update({"status": record["status"], "version": record["version"], "next_transition_at": record["next_transition_at"].isoformat() if record["next_transition_at"] else None, "restaurant_decision": record["restaurant_decision"], "driver_id": record["driver_id"], "created_at": record["created_at"].isoformat() if record["created_at"] else None, "updated_at": record["updated_at"].isoformat() if record["updated_at"] else None})
         return order
 
     async def _records(self, record_type: str) -> list[dict]:

@@ -1,4 +1,4 @@
-import { Controller, Get, Logger, OnModuleDestroy, OnModuleInit, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Logger, OnModuleDestroy, OnModuleInit, Optional, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Injectable, Module } from '@nestjs/common';
 
@@ -15,6 +15,8 @@ import { CoreModule } from '../core/core.module';
 import { PaymentModule } from '../payment/payment.module';
 import { RestaurantWorkflowController } from './restaurant-workflow.controller';
 import { HealthcareWorkflowController } from './healthcare-workflow.controller';
+import { LocationService } from '../personal/personal.module';
+import { PersonalModule } from '../personal/personal.module';
 
 @Injectable()
 export class WorkflowService implements OnModuleInit, OnModuleDestroy {
@@ -23,7 +25,8 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
   private workerHealthy = true;
   private inFlight?: Promise<void>;
   private lastDiscoveryAt = 0;
-  constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore, private readonly payments: PaymentService, private readonly config: ConfigService) {}
+  private readonly deliveryRoutes = new Map<string, FoodDeliveryRouteSnapshot>();
+  constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore, private readonly payments: PaymentService, private readonly config: ConfigService, @Optional() private readonly locations?: LocationService) {}
 
   async onModuleInit(): Promise<void> {
     const enabled = process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID && String(this.config.get('GATEWAY_WORKFLOW_WORKER_ENABLED', 'true')).toLowerCase() === 'true';
@@ -119,12 +122,107 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
     return this.food.get(`/api/v1/orders/${orderId}?user_id=${encodeURIComponent(actorId)}`, correlationId, actorId);
   }
 
-  getTracking(orderId: string, actorId: string, correlationId: string): Promise<JsonObject> {
-    return this.food.get(`/api/v1/orders/${orderId}/tracking?user_id=${encodeURIComponent(actorId)}`, correlationId, actorId);
+  async getTracking(orderId: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    const data = await this.food.get(`/api/v1/orders/${orderId}/tracking?user_id=${encodeURIComponent(actorId)}`, correlationId, actorId);
+    return this.withDeliveryRoute(orderId, data);
+  }
+
+  private async withDeliveryRoute(orderId: string, data: JsonObject): Promise<JsonObject> {
+    if (!this.locations) return data;
+    const restaurant = coordinateValue(data.restaurant);
+    const address = coordinateValue(data.address);
+    const restaurantPoint = restaurant ?? await this.resolveCoordinate(data.restaurant, 'restaurant');
+    const addressPoint = address ?? await this.resolveCoordinate(data.address, 'address');
+    if (!restaurantPoint || !addressPoint) return data;
+    let route = this.deliveryRoutes.get(orderId);
+    if (!route) {
+      const resolved = await this.locations.route(restaurantPoint, addressPoint);
+      const geometry = resolved.route_geometry;
+      if (resolved.provider !== 'geoapify' || resolved.status !== 'RESOLVED' || !geometry || geometry.length < 2 || resolved.route_distance_meters === undefined || resolved.route_duration_seconds === undefined || !resolved.route_snapshot_hash) {
+        throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+      }
+      route = {
+        provider: resolved.provider,
+        origin: resolved.origin,
+        destination: resolved.destination,
+        distance_meters: resolved.route_distance_meters,
+        duration_seconds: resolved.route_duration_seconds,
+        geometry,
+        snapshot_hash: resolved.route_snapshot_hash,
+      };
+      this.deliveryRoutes.set(orderId, route);
+    }
+    if (!route) return data;
+    const status = typeof data.status === 'string' ? data.status : '';
+    const timeline = Array.isArray(data.timeline) ? data.timeline.filter(isObject) : [];
+    const delivering = [...timeline].reverse().find((event) => event.to_status === 'DELIVERING');
+    const deliveringAt = typeof delivering?.occurred_at === 'string' ? Date.parse(delivering.occurred_at) : NaN;
+    const progress = status === 'DELIVERED' ? 1 : status === 'DELIVERING' && Number.isFinite(deliveringAt) ? Math.min(1, Math.max(0, (Date.now() - deliveringAt) / 5_000)) : status === 'PICKED_UP' ? 0.2 : 0;
+    const courierLocation = ['DRIVER_ASSIGNED', 'PICKED_UP', 'DELIVERING', 'DELIVERED'].includes(status) ? pointAlongRoute(route.geometry, progress) : undefined;
+    if (['CANCELLED', 'REFUNDED'].includes(status)) this.deliveryRoutes.delete(orderId);
+    return {
+      ...data,
+      delivery_route: route,
+      ...(courierLocation ? { courier_location: courierLocation } : {}),
+    };
+  }
+
+  private async resolveCoordinate(value: unknown, kind: 'restaurant' | 'address'): Promise<{ latitude: number; longitude: number } | undefined> {
+    if (!this.locations) return undefined;
+    if (!isObject(value)) return undefined;
+    const text = kind === 'restaurant' ? value.address : value.address_text ?? value.address;
+    if (typeof text !== 'string' || text.trim().length < 3) return undefined;
+    const result = await this.locations.geocode(text);
+    const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+    return candidate && candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined;
   }
 
   cancelPreview(orderId: string, actorId: string, correlationId: string): Promise<JsonObject> { return this.food.post(`/api/v1/orders/${orderId}/cancel-preview?user_id=${encodeURIComponent(actorId)}`, {}, correlationId, undefined, actorId); }
   cancelConfirmation(orderId: string, user: AuthUser, correlationId: string): Promise<JsonObject> { return this.confirmations.prepareCancellation(user, orderId, correlationId); }
+}
+
+type FoodDeliveryRouteSnapshot = {
+  provider: string;
+  origin: { latitude: number; longitude: number };
+  destination: { latitude: number; longitude: number };
+  distance_meters: number;
+  duration_seconds: number;
+  geometry: Array<{ latitude: number; longitude: number }>;
+  snapshot_hash: string;
+};
+
+function coordinateValue(value: unknown): { latitude: number; longitude: number } | undefined {
+  if (!isObject(value) || typeof value.latitude !== 'number' || typeof value.longitude !== 'number') return undefined;
+  return Number.isFinite(value.latitude) && Number.isFinite(value.longitude) ? { latitude: value.latitude, longitude: value.longitude } : undefined;
+}
+
+function pointAlongRoute(geometry: Array<{ latitude: number; longitude: number }>, ratio: number): { latitude: number; longitude: number } {
+  if (geometry.length < 2) return geometry[0] ?? { latitude: 0, longitude: 0 };
+  const lengths = geometry.slice(1).map((point, index) => distanceBetween(geometry[index], point));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return geometry[0];
+  let remaining = total * Math.min(1, Math.max(0, ratio));
+  for (let index = 0; index < lengths.length; index += 1) {
+    const segment = lengths[index];
+    if (remaining <= segment) {
+      const start = geometry[index];
+      const end = geometry[index + 1];
+      const segmentRatio = segment > 0 ? remaining / segment : 0;
+      return { latitude: start.latitude + (end.latitude - start.latitude) * segmentRatio, longitude: start.longitude + (end.longitude - start.longitude) * segmentRatio };
+    }
+    remaining -= segment;
+  }
+  return geometry[geometry.length - 1];
+}
+
+function distanceBetween(left: { latitude: number; longitude: number }, right: { latitude: number; longitude: number }): number {
+  const latitude = (right.latitude - left.latitude) * 111_000;
+  const longitude = (right.longitude - left.longitude) * 111_000 * Math.cos((left.latitude * Math.PI) / 180);
+  return Math.sqrt(latitude ** 2 + longitude ** 2);
+}
+
+function isObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 @Controller('api/v1/food/orders')
@@ -154,7 +252,7 @@ export class WorkflowController {
 }
 
 @Module({
-  imports: [AuthModule, ConfirmationModule, CoreModule, PaymentModule],
+  imports: [AuthModule, ConfirmationModule, CoreModule, PaymentModule, PersonalModule],
   controllers: [WorkflowController, RestaurantWorkflowController, HealthcareWorkflowController],
   providers: [WorkflowService, FoodClient, AgentClient, RestaurantClient, HealthcareClient],
   exports: [WorkflowService],

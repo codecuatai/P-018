@@ -41,6 +41,7 @@ class QuoteRow(Base):
     route_distance_meters: Mapped[int | None] = mapped_column(Integer, nullable=True)
     route_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     route_polyline: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_geometry: Mapped[list[dict[str, float]] | None] = mapped_column(JSON, nullable=True)
     route_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tariff_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 

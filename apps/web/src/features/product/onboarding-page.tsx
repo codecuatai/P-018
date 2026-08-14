@@ -13,6 +13,10 @@ import type { GeocodeCandidate } from "@/types";
 
 type Coordinates = { latitude: number; longitude: number };
 
+function normalizeCoordinates(value: Coordinates): Coordinates {
+  return { latitude: Number(value.latitude.toFixed(6)), longitude: Number(value.longitude.toFixed(6)) };
+}
+
 const STEPS = ["Chào mừng", "Danh tính", "Liên hệ", "Vị trí", "Địa chỉ"];
 
 export function OnboardingPage() {
@@ -60,7 +64,7 @@ export function OnboardingPage() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setCoordinates(normalizeCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude }));
         setProvider("browser-geolocation");
         setLocationNote("Đã nhận vị trí. Bạn có thể dùng nó để gợi ý địa chỉ Nhà.");
         setStep(4);
@@ -92,7 +96,7 @@ export function OnboardingPage() {
 
   function chooseCandidate(candidate: GeocodeCandidate): void {
     setAddressText(candidate.address_text);
-    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude });
+    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates(normalizeCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude }));
     setLocationNote("Đã chọn địa chỉ. Tọa độ này sẽ được lưu cùng snapshot địa chỉ của bạn.");
   }
 

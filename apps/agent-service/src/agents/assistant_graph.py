@@ -306,10 +306,16 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["time_preference"] = "evening"
         if _has_any(lowered, ("dau", "met", "trieu chung", "symptom")):
             slots["symptoms"] = text[:500]
-    if "chon cai dau tien" in lowered or "chon quan dau tien" in lowered or "chon nha hang dau tien" in lowered:
+    if "chon cai dau tien" in lowered or "chon quan dau tien" in lowered or "chon nha hang dau tien" in lowered or "mon so mot" in lowered:
         slots["selection"] = "first"
-    elif "chon cai thu hai" in lowered or "chon quan thu hai" in lowered:
+    elif "chon cai thu hai" in lowered or "chon quan thu hai" in lowered or "mon so hai" in lowered:
         slots["selection"] = "second"
+    elif "chon cai thu ba" in lowered or "chon quan thu ba" in lowered or "mon so ba" in lowered:
+        slots["selection"] = "third"
+    elif "chon cai thu tu" in lowered or "chon quan thu tu" in lowered or "mon so bon" in lowered:
+        slots["selection"] = "fourth"
+    elif "chon cai thu nam" in lowered or "chon quan thu nam" in lowered or "mon so nam" in lowered:
+        slots["selection"] = "fifth"
     return slots
 
 
@@ -418,7 +424,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
 
     follow_up = _has_any(lowered, (
         "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
-        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "bat",
+        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "gio",
         "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
     ))
     explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(lowered, ("giao ve", "ship", "dat mon"))
@@ -530,7 +536,7 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
         if isinstance(pending_actions, list):
             safe_actions = [str(item) for item in pending_actions if str(item) in {
                 "select_restaurant", "restaurant_confirm", "ride_service", "ride_payment",
-                "select_healthcare_slot", "healthcare_payment", "healthcare_confirm", "food_confirm",
+                "select_healthcare_slot", "healthcare_payment", "healthcare_confirm", "select_food_item", "food_confirm",
             }]
             if safe_actions:
                 safe_task["pending_actions"] = safe_actions
@@ -654,7 +660,7 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         if start_at:
             normalized["start_at"] = start_at
         selection = slots.get("selection")
-        if selection in {"first", "second"}:
+        if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
     elif domain == "healthcare":
         for name, limit in (("department", 200), ("symptoms", 500)):
@@ -668,7 +674,7 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         }:
             normalized["time_preference"] = preference
         selection = slots.get("selection")
-        if selection in {"first", "second"}:
+        if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
     elif domain == "food":
         for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("delivery_preference", 80)):

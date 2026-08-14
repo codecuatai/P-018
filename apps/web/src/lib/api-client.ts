@@ -186,6 +186,10 @@ export function resolveAddress(addressText: string): Promise<GeocodeResult> {
   return request("/api/v1/location/geocode", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
 }
 
+export function autocompleteAddress(addressText: string): Promise<{ provider: string; query: string; suggestions: GeocodeResult["candidates"] }> {
+  return request("/api/v1/location/autocomplete", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
+}
+
 export function routeLocation(origin: RouteResult["origin"], destination: RouteResult["destination"]): Promise<RouteResult> {
   return request("/api/v1/location/route", { method: "POST", body: JSON.stringify({ origin, destination }) });
 }
@@ -196,6 +200,10 @@ export function listServiceCatalog(): Promise<ServiceCatalog> {
 
 export function getRideTracking(bookingId: string): Promise<RideTracking> {
   return request(`/api/v1/rides/${encodeURIComponent(bookingId)}/tracking`, { method: "GET" });
+}
+
+export function getFoodTracking(orderId: string): Promise<import("@/types").FoodTracking> {
+  return request(`/api/v1/food/orders/${encodeURIComponent(orderId)}/tracking`, { method: "GET" });
 }
 
 export function browseService(service: "food" | "ride" | "restaurant" | "healthcare", keyword?: string): Promise<{ items: Record<string, unknown>[]; source: string; partial: boolean }> {
@@ -555,7 +563,8 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("RESET_TOKEN")) return "Liên kết đặt lại mật khẩu không còn hợp lệ. Bạn hãy yêu cầu liên kết mới.";
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
-  if (source.includes("IDEMPOTENCY") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
+  if (source.includes("GEOAPIFY") || source.includes("LOCATION_UNRESOLVED") || source.includes("REAL_ROUTE_REQUIRED")) return "Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.";
+  if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("IDEMPOTENCY") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
     return "Lựa chọn này đã được làm mới. Bạn hãy gửi lại yêu cầu để mình cập nhật thông tin mới nhé.";
   }
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Lựa chọn này vừa hết chỗ. Mình sẽ tìm phương án khác cho bạn.";

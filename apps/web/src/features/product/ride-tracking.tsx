@@ -37,7 +37,7 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
     let timer: number | undefined;
     const schedule = () => {
       if (!active || document.visibilityState === "hidden" || isTerminalStatus(trackingRef.current?.status)) return;
-      timer = window.setTimeout(() => { void poll(); }, 3000);
+      timer = window.setTimeout(() => { void poll(); }, 2000);
     };
     const poll = async () => {
       if (!active || document.visibilityState === "hidden" || isTerminalStatus(trackingRef.current?.status)) return;
@@ -65,6 +65,8 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
   const destination = pointFrom(tracking?.route?.destination);
   const current = tracking?.current_location ?? undefined;
   const driver = tracking?.driver_location ?? undefined;
+  const driverPhase = tracking?.status === "DRIVER_ASSIGNED" || tracking?.status === "DRIVER_TO_PICKUP";
+  const activeRoute = driverPhase ? tracking?.driver_route : tracking?.route;
   const driverName = recordText(tracking?.driver, ["name", "full_name", "display_name"], "Tài xế X-One");
   const driverVehicle = recordText(tracking?.driver, ["vehicle", "vehicle_type", "license_plate"], "Thông tin xe sẽ hiển thị khi được xác nhận");
 
@@ -84,9 +86,9 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
         <span>{tracking.eta_seconds > 0 ? `Còn khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Đã cập nhật"}</span>
         <span>{Math.round(tracking.progress * 100)}% hành trình</span>
       </div>
-      {tracking.driver ? <div className="tracking-driver-card"><span className="driver-avatar" aria-hidden="true">{driverName.slice(0, 1).toUpperCase()}</span><span><strong>{driverName}</strong><small>{driverVehicle}</small></span><span className="status-badge">Đã xác minh</span></div> : tracking.status === "SEARCHING_DRIVER" ? <div className="driver-search-card" role="status"><span className="driver-search-pulse" aria-hidden="true" /><span><strong>Đang tìm tài xế phù hợp</strong><small>Ride Service sẽ cập nhật khi có phân công authoritative.</small></span></div> : null}
+      {tracking.driver ? <div className="tracking-driver-card"><span className="driver-avatar" aria-hidden="true">{driverName.slice(0, 1).toUpperCase()}</span><span><strong>{driverName}</strong><small>{driverVehicle}</small></span><span className="status-badge">Đã xác minh</span></div> : tracking.status === "SEARCHING_DRIVER" ? <div className="driver-search-card" role="status"><span className="driver-search-pulse" aria-hidden="true" /><span><strong>Đang tìm tài xế phù hợp</strong><small>Ride Service sẽ cập nhật khi có phân công.</small></span></div> : null}
       <ol className="tracking-timeline" aria-label="Tiến trình chuyến xe">{trackingSteps.map((step, index) => <li className={index <= trackingStepIndex(tracking.status) ? "is-complete" : ""} key={step.status}><span aria-hidden="true">{index + 1}</span><small>{step.label}</small></li>)}</ol>
-      <XOneMap origin={origin} destination={destination} current={current} driver={driver} density="active" routePolyline={tracking.route?.polyline} routeProvider={tracking.route_provider ?? tracking.route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.route?.distance_meters} routeDurationSeconds={tracking.route?.duration_seconds} label="Theo dõi chuyến xe" />
+      <XOneMap origin={origin} destination={destination} current={current} driver={driver} density="active" routeGeometry={activeRoute?.geometry} routePolyline={driverPhase ? undefined : tracking.route?.polyline} routeProvider={activeRoute?.provider ?? tracking.route_provider} routeStatus={tracking.status} routeDistanceMeters={activeRoute?.distance_meters} routeDurationSeconds={activeRoute?.duration_seconds} label="Theo dõi chuyến xe" />
       <p className="tracking-footnote">Cập nhật nền mỗi 3 giây khi trang đang mở. Polling dừng ở trạng thái kết thúc và tạm dừng khi tab bị ẩn.</p>
     </> : <p className="inline-note">Chưa có dữ liệu tracking.</p>}
   </section>;
@@ -99,7 +101,7 @@ function pointFrom(value: unknown): { latitude: number; longitude: number } | un
 }
 
 function trackingLabel(status: string): string {
-  return ({ AWAITING_CONFIRMATION: "Đang chờ xác nhận", SEARCHING_DRIVER: "Đang tìm tài xế", DRIVER_ASSIGNED: "Tài xế đã được gán", DRIVER_TO_PICKUP: "Tài xế đang đến điểm đón", DRIVER_ARRIVED: "Tài xế đã đến", IN_PROGRESS: "Đang di chuyển", COMPLETED: "Đã hoàn tất", NO_DRIVER: "Chưa tìm thấy tài xế", FAILED: "Chuyến thất bại", PAYMENT_FAILED: "Thanh toán thất bại", CANCELLED: "Đã hủy" } as Record<string, string>)[status] ?? status;
+  return ({ AWAITING_CONFIRMATION: "Đang chờ xác nhận", SEARCHING_DRIVER: "Đang tìm tài xế", DRIVER_ASSIGNED: "Tài xế đã được gán", DRIVER_TO_PICKUP: "Tài xế đang đến điểm đón", DRIVER_ARRIVED: "Tài xế đã đến", IN_PROGRESS: "Đang di chuyển", ARRIVED_DESTINATION: "Đã đến nơi · đang hoàn tất", COMPLETED: "Đã hoàn tất", NO_DRIVER: "Chưa tìm thấy tài xế", FAILED: "Chuyến thất bại", PAYMENT_FAILED: "Thanh toán thất bại", CANCELLED: "Đã hủy" } as Record<string, string>)[status] ?? status;
 }
 
 const trackingSteps = [
@@ -107,6 +109,7 @@ const trackingSteps = [
   { status: "DRIVER_TO_PICKUP", label: "Đang đến" },
   { status: "DRIVER_ARRIVED", label: "Đã đến" },
   { status: "IN_PROGRESS", label: "Đang đi" },
+  { status: "ARRIVED_DESTINATION", label: "Đã đến nơi" },
   { status: "COMPLETED", label: "Hoàn tất" },
 ] as const;
 
@@ -115,7 +118,8 @@ function trackingStepIndex(status: string): number {
   if (status === "DRIVER_ASSIGNED" || status === "DRIVER_TO_PICKUP") return 1;
   if (status === "DRIVER_ARRIVED") return 2;
   if (status === "IN_PROGRESS") return 3;
-  return status === "COMPLETED" ? 4 : -1;
+  if (status === "ARRIVED_DESTINATION") return 4;
+  return status === "COMPLETED" ? 5 : -1;
 }
 
 function isTerminalStatus(status?: string): boolean {

@@ -109,6 +109,16 @@ def _set_tracking_start(client: TestClient, booking_id: str, *, seconds_ago: int
         session.commit()
 
 
+def _set_booking_updated_at(client: TestClient, booking_id: str, *, seconds_ago: int) -> None:
+    engine = getattr(client, "ride_engine")
+    updated_at = datetime.now(UTC) - timedelta(seconds=seconds_ago)
+    with Session(engine) as session:
+        booking = session.get(BookingRow, booking_id)
+        assert booking is not None
+        booking.updated_at = updated_at
+        session.commit()
+
+
 def test_internal_auth_and_idempotency_headers_are_required(client: TestClient) -> None:
     missing_auth = client.post("/v1/quotes", json={})
     assert missing_auth.status_code == 401
@@ -178,10 +188,16 @@ def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> Non
     )
     assert confirmed.status_code == 200
     result = confirmed.json()["data"]
-    assert result["status"] == "DRIVER_ASSIGNED"
-    assert result["resource_version"] == 3
+    assert result["status"] == "SEARCHING_DRIVER"
+    assert result["resource_version"] == 2
     assert result["payment_reference"] == payment_reference
-    assert result["driver"]["id"].startswith("driver_simulated")
+    assert result["driver"] is None
+    assigned_tracking = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    assert assigned_tracking.status_code == 200
+    assert assigned_tracking.json()["data"]["status"] == "DRIVER_ASSIGNED"
+    assigned = client.get(f"/v1/bookings/{booking['id']}", headers=_headers()).json()["data"]
+    assert assigned["resource_version"] == 3
+    assert assigned["driver"]["id"].startswith("driver_simulated")
     assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "CONSUMED"
 
     replay = client.post(
@@ -323,7 +339,11 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
     assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "AWAITING_CONFIRMATION"
 
     confirmed = _confirm(client, quote, booking, key="lifecycle-confirm")
-    assert confirmed["status"] == "DRIVER_ASSIGNED"
+    assert confirmed["status"] == "SEARCHING_DRIVER"
+    assigned_tracking = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    assert assigned_tracking.status_code == 200
+    assert assigned_tracking.json()["data"]["status"] == "DRIVER_ASSIGNED"
+    confirmed = client.get(f"/v1/bookings/{booking['id']}", headers=_headers()).json()["data"]
     assigned_driver_id = confirmed["driver"]["id"]
     engine = getattr(client, "ride_engine")
     with Session(engine) as session:
@@ -337,7 +357,7 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         (2, "DRIVER_TO_PICKUP"),
         (eta_seconds + 2, "DRIVER_ARRIVED"),
         (eta_seconds + 62, "IN_PROGRESS"),
-        (eta_seconds + 62 + route_seconds + 2, "COMPLETED"),
+        (eta_seconds + 62 + route_seconds + 2, "ARRIVED_DESTINATION"),
     ]
     for seconds_ago, expected_status in expected_states:
         _set_tracking_start(client, confirmed["id"], seconds_ago=seconds_ago)
@@ -345,6 +365,12 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         assert response.status_code == 200
         assert response.json()["data"]["status"] == expected_status
         assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == expected_status
+
+    _set_booking_updated_at(client, confirmed["id"], seconds_ago=11)
+    response = client.get(f"/v1/bookings/{confirmed['id']}/tracking", headers=_headers())
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == "COMPLETED"
+    assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == "COMPLETED"
 
     with Session(engine) as session:
         events = session.query(RideTrackingEventRow).filter_by(booking_id=confirmed["id"]).order_by(RideTrackingEventRow.occurred_at, RideTrackingEventRow.id).all()
@@ -355,6 +381,7 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
             "DRIVER_TO_PICKUP",
             "DRIVER_ARRIVED",
             "IN_PROGRESS",
+            "ARRIVED_DESTINATION",
             "COMPLETED",
         ]
         driver = session.get(RideDriverRow, assigned_driver_id)

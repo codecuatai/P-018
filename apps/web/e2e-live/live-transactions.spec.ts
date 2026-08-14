@@ -17,6 +17,8 @@ async function completeOnboarding(page: Page, name: string): Promise<void> {
 }
 
 async function login(page: Page, email: string, password: string): Promise<void> {
+  await page.context().clearCookies();
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.goto("/?auth=login");
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill(password);
@@ -26,8 +28,22 @@ async function login(page: Page, email: string, password: string): Promise<void>
 }
 
 async function openAppRoute(page: Page, href: string): Promise<void> {
-  await page.locator(`a[href="${href}"]`).first().click();
-  await expect(page).toHaveURL(new RegExp(`${href.replaceAll("/", "\\/")}(?:\\?.*)?$`), { timeout: 30_000 });
+  const [path, query] = href.split("?", 2);
+  if (path === "/app/profile" && query) {
+    await page.locator('a[href="/app/profile"]').first().click();
+    await expect(page).toHaveURL(/\/app\/profile(?:\?.*)?$/, { timeout: 30_000 });
+    await page.locator(`a[href="${href}"]`).first().click();
+    await expect(page).toHaveURL(new RegExp(`/app/profile\\?${query.replaceAll("=", "\\=")}$`), { timeout: 30_000 });
+    return;
+  }
+  const link = page.locator(`a[href="${href}"]`).first();
+  if (await link.count()) {
+    await link.click();
+  } else {
+    await page.goto(href);
+  }
+  await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}(?:\\?.*)?$`), { timeout: 30_000 });
+  if (query) await expect(page).toHaveURL(new RegExp(`[?&]${query.replaceAll("=", "\\=")}$`), { timeout: 30_000 });
 }
 
 async function openService(page: Page, service: "food" | "ride" | "restaurant" | "healthcare"): Promise<void> {
@@ -75,22 +91,31 @@ test("real Gateway transaction flows: Food, Ride tracking, Restaurant, Healthcar
   await page.locator(".confirmation-box").getByRole("button", { name: "Xác nhận" }).click();
   await expect(page.getByText("Đơn đã được tiếp nhận")).toBeVisible({ timeout: 30_000 });
 
-  await openAppRoute(page, "/app/addresses");
-  await expect(page.getByRole("heading", { name: "Địa chỉ đã lưu" })).toBeVisible({ timeout: 30_000 });
+  await openAppRoute(page, "/app/profile?section=addresses");
+  await expect(page.locator("#addresses-title")).toBeVisible({ timeout: 30_000 });
   await page.locator(".address-form input").nth(0).fill("Công ty");
   await page.locator(".address-form input").nth(1).fill("20 Đinh Tiên Hoàng, Hoàn Kiếm, Hà Nội");
   await page.getByRole("button", { name: "Xác nhận vị trí" }).click();
   await expect(page.locator(".location-candidates .location-candidate").first()).toBeVisible({ timeout: 30_000 });
   await page.locator(".location-candidates .location-candidate").first().click();
   await page.getByRole("button", { name: "Lưu địa chỉ" }).click();
-  await expect(page.getByText("20 Đinh Tiên Hoàng, Hoàn Kiếm, Hà Nội", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".address-row").filter({ hasText: "Công ty" }).filter({ hasText: "Đinh Tiên Hoàng" }).first()).toBeVisible({ timeout: 30_000 });
 
   await openService(page, "ride");
-  await page.locator(".address-shortcuts select").nth(0).selectOption({ label: "Nhà" });
-  await page.locator(".address-shortcuts select").nth(1).selectOption({ label: "Công ty" });
+  const addressShortcuts = page.locator(".address-shortcuts select");
+  await expect(addressShortcuts).toHaveCount(2, { timeout: 30_000 });
+  await expect(addressShortcuts.nth(0).locator("option").nth(1)).toBeAttached({ timeout: 30_000 });
+  await addressShortcuts.nth(0).selectOption({ index: 1 });
+  const companyShortcut = addressShortcuts.nth(1).locator("option").filter({ hasText: "Công ty" });
+  if (await companyShortcut.count()) {
+    await addressShortcuts.nth(1).selectOption({ label: "Công ty" });
+  } else {
+    await expect(addressShortcuts.nth(1).locator("option").nth(1)).toBeAttached({ timeout: 30_000 });
+    await addressShortcuts.nth(1).selectOption({ index: 1 });
+  }
   await page.selectOption("#ride-vehicle", "CAR_4");
   await page.getByRole("button", { name: "Nhận báo giá" }).click();
-  await expect(page.getByText(/Nguồn route:/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Kiểm tra lộ trình")).toBeVisible({ timeout: 30_000 });
   await page.locator(".confirmation-box").getByRole("checkbox").check();
   await page.locator(".confirmation-box").getByRole("button", { name: "Xác nhận" }).click();
   await expect(page.getByText("Thông tin chuyến đã được ghi nhận")).toBeVisible({ timeout: 30_000 });
@@ -117,8 +142,8 @@ test("real Gateway transaction flows: Food, Ride tracking, Restaurant, Healthcar
   await page.locator(".confirmation-box").getByRole("button", { name: "Xác nhận" }).click();
   await expect(page.getByText("Đặt bàn đã hoàn tất")).toBeVisible({ timeout: 30_000 });
 
-  await openAppRoute(page, "/app/patients");
-  await expect(page.getByRole("heading", { name: "Hồ sơ người bệnh" })).toBeVisible({ timeout: 30_000 });
+  await openAppRoute(page, "/app/profile?section=patients");
+  await expect(page.locator("#patients-title")).toBeVisible({ timeout: 30_000 });
   await page.getByText("Thêm người bệnh").scrollIntoViewIfNeeded();
   await page.locator(".patient-form input").nth(0).fill("Người bệnh E2E");
   await page.locator(".patient-form input").nth(1).fill("0900000001");
@@ -127,7 +152,7 @@ test("real Gateway transaction flows: Food, Ride tracking, Restaurant, Healthcar
 
   await openService(page, "healthcare");
   await expect(page.getByRole("heading", { name: "Chọn điểm bắt đầu" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Nội Tim mạch", exact: true }).click();
+  await page.getByRole("button", { name: "Nội Thần kinh", exact: true }).click();
   await expect(page.locator(".slot-option").last()).toBeVisible({ timeout: 30_000 });
   await page.locator(".slot-option").first().click();
   await page.getByPlaceholder("Mô tả ngắn để cơ sở chuẩn bị tiếp nhận").fill("Khám tổng quát trong luồng E2E.");

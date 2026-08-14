@@ -10,6 +10,10 @@ import { XOneMap } from "./xone-map";
 
 type Coordinates = { latitude: number; longitude: number };
 
+function normalizeCoordinates(value: Coordinates): Coordinates {
+  return { latitude: Number(value.latitude.toFixed(6)), longitude: Number(value.longitude.toFixed(6)) };
+}
+
 export function AddressPage() {
   const [items, setItems] = useState<SavedAddress[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -82,7 +86,7 @@ export function AddressPage() {
 
   function selectCandidate(candidate: GeocodeCandidate): void {
     setAddressText(candidate.address_text);
-    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude });
+    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates(normalizeCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude }));
     setLocationNote("Đã chọn tọa độ từ kết quả định vị. Kiểm tra lại địa chỉ trước khi lưu.");
   }
 
@@ -95,7 +99,7 @@ export function AddressPage() {
     setError("");
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setCoordinates(normalizeCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude }));
         setProvider("browser-geolocation");
         setLocationNote("Đã nhận vị trí hiện tại từ trình duyệt. Hãy nhập địa chỉ để lưu nhãn dễ nhớ.");
         setLocating(false);

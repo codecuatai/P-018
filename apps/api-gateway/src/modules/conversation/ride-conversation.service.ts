@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 
@@ -18,6 +19,7 @@ import {
 } from '../../clients/service.clients';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolRegistry } from '../tools/tool-registry';
+import { LocationService, LocationCoordinate } from '../personal/personal.module';
 
 type WorkflowStage =
   | 'COLLECTING_DETAILS'
@@ -81,6 +83,7 @@ export class RideConversationService {
     private readonly agent: AgentClient,
     private readonly ride: RideClient,
     private readonly tools: ToolRegistry,
+    @Optional() private readonly locations?: LocationService,
   ) {}
 
   /**
@@ -180,16 +183,32 @@ export class RideConversationService {
         const dropoffAddress = requiredString(arguments_, 'dropoff_address');
         const vehicleType = requiredVehicle(arguments_.vehicle_type);
         const promoCode = optionalString(arguments_.promo_code);
+        const pickup = await this.resolveAddress(pickupAddress, routeContext?.pickup_latitude, routeContext?.pickup_longitude);
+        const dropoff = await this.resolveAddress(dropoffAddress, routeContext?.dropoff_latitude, routeContext?.dropoff_longitude);
+        const route = this.locations?.realMode ? await this.locations.route(pickup.coordinate, dropoff.coordinate) : undefined;
+        if (this.locations?.realMode && (route?.provider !== 'geoapify' || route.status !== 'RESOLVED' || !route.route_geometry?.length)) {
+          throw new BadGatewayException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+        }
         const quote = await this.ride.createQuote(
           actorId,
           idempotencyKey(workflow.id, 'quote', String(workflow.context.ride.revision)),
           this.callContext(correlationId, workflow, 'quote_' + workflow.context.ride.revision),
           {
-            pickup_address: pickupAddress,
-            dropoff_address: dropoffAddress,
+            pickup_address: pickup.address,
+            dropoff_address: dropoff.address,
             vehicle_type: vehicleType,
             ...(promoCode ? { promo_code: promoCode } : {}),
-            ...validatedRouteContext(routeContext),
+            pickup_latitude: pickup.coordinate.latitude,
+            pickup_longitude: pickup.coordinate.longitude,
+            dropoff_latitude: dropoff.coordinate.latitude,
+            dropoff_longitude: dropoff.coordinate.longitude,
+            ...(route ? {
+              route_provider: route.provider,
+              route_distance_meters: route.route_distance_meters,
+              route_duration_seconds: route.route_duration_seconds,
+              route_geometry: route.route_geometry,
+              route_snapshot_hash: route.route_snapshot_hash,
+            } : {}),
           },
         );
         workflow.quote = quote;
@@ -403,6 +422,15 @@ export class RideConversationService {
     return snapshot;
   }
 
+  private async resolveAddress(address: string, latitude?: number, longitude?: number): Promise<{ address: string; coordinate: LocationCoordinate }> {
+    if (latitude !== undefined && longitude !== undefined) return { address: address.trim(), coordinate: { latitude, longitude } };
+    if (!this.locations) return { address: address.trim(), coordinate: { latitude: 0, longitude: 0 } };
+    const result = await this.locations.geocode(address);
+    const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+    if (!candidate || candidate.latitude === null || candidate.longitude === null) throw new BadGatewayException({ code: 'LOCATION_UNRESOLVED', detail: 'Hiện mình chưa xác định được địa chỉ này. Bạn thử chọn gợi ý hoặc nhập rõ hơn nhé.', retryable: true });
+    return { address: candidate.address_text, coordinate: { latitude: candidate.latitude, longitude: candidate.longitude } };
+  }
+
   private async reconcileConfirmation(
     workflow: Workflow,
     actorId: string,
@@ -537,6 +565,7 @@ function isRideAfterPayment(status: RideBooking['status']): boolean {
     'DRIVER_TO_PICKUP',
     'DRIVER_ARRIVED',
     'IN_PROGRESS',
+    'ARRIVED_DESTINATION',
     'COMPLETED',
     'NO_DRIVER',
     'FAILED',

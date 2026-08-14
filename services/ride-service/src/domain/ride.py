@@ -34,6 +34,7 @@ class BookingStatus(StrEnum):
     DRIVER_TO_PICKUP = "DRIVER_TO_PICKUP"
     DRIVER_ARRIVED = "DRIVER_ARRIVED"
     IN_PROGRESS = "IN_PROGRESS"
+    ARRIVED_DESTINATION = "ARRIVED_DESTINATION"
     COMPLETED = "COMPLETED"
     NO_DRIVER = "NO_DRIVER"
     FAILED = "FAILED"
@@ -53,6 +54,11 @@ class QuoteCommand:
     pickup_longitude: float | None = None
     dropoff_latitude: float | None = None
     dropoff_longitude: float | None = None
+    route_provider: str | None = None
+    route_distance_meters: int | None = None
+    route_duration_seconds: int | None = None
+    route_geometry: list[dict[str, float]] | None = None
+    route_snapshot_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +125,7 @@ class Quote:
     route_distance_meters: int | None = None
     route_duration_seconds: int | None = None
     route_polyline: str | None = None
+    route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
     tariff_snapshot: dict[str, Any] | None = None
 
@@ -203,10 +210,11 @@ BOOKING_TRANSITIONS: dict[str, frozenset[str]] = {
     ),
     BookingStatus.IN_PROGRESS.value: frozenset(
         {
-            BookingStatus.COMPLETED.value,
+            BookingStatus.ARRIVED_DESTINATION.value,
             BookingStatus.FAILED.value,
         }
     ),
+    BookingStatus.ARRIVED_DESTINATION.value: frozenset({BookingStatus.COMPLETED.value}),
     BookingStatus.COMPLETED.value: frozenset(),
     BookingStatus.NO_DRIVER.value: frozenset(),
     BookingStatus.FAILED.value: frozenset(),
@@ -344,7 +352,17 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         f"{command.pickup_address.strip().casefold()}|{command.dropoff_address.strip().casefold()}".encode()
     ).hexdigest()
     coordinates_available = all(value is not None for value in (command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude))
-    if coordinates_available:
+    real_route_available = (
+        coordinates_available
+        and command.route_provider == "geoapify"
+        and command.route_distance_meters is not None
+        and command.route_duration_seconds is not None
+        and len(command.route_geometry or []) >= 2
+    )
+    if real_route_available:
+        distance_km = max(1, round((command.route_distance_meters or 0) / 1000))
+        duration_minutes = max(1, round((command.route_duration_seconds or 0) / 60))
+    elif coordinates_available:
         distance_km = max(1, round(_haversine_km(command.pickup_latitude or 0, command.pickup_longitude or 0, command.dropoff_latitude or 0, command.dropoff_longitude or 0)))
         duration_minutes = max(3, round(distance_km * 3.2))
     else:
@@ -358,10 +376,11 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
     time_fee = duration_minutes * int(tariff["per_minute"])
     amount = max(0, base_fee + distance_fee + time_fee + peak_surcharge - discount)
     quote_id = f"quote_{uuid4().hex[:20]}"
-    route_provider = "deterministic-haversine" if coordinates_available else "deterministic-address-hash"
-    route_distance_meters = distance_km * 1000
-    route_duration_seconds = duration_minutes * 60
-    route_polyline = _route_polyline(command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude)
+    route_provider = command.route_provider if real_route_available else ("deterministic-haversine" if coordinates_available else "deterministic-address-hash")
+    route_distance_meters = command.route_distance_meters if real_route_available else distance_km * 1000
+    route_duration_seconds = command.route_duration_seconds if real_route_available else duration_minutes * 60
+    route_geometry = command.route_geometry if real_route_available else None
+    route_polyline = None if real_route_available else _route_polyline(command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude)
     route_snapshot = {
         "provider": route_provider,
         "origin": {"latitude": command.pickup_latitude, "longitude": command.pickup_longitude},
@@ -369,6 +388,7 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         "distance_meters": route_distance_meters,
         "duration_seconds": route_duration_seconds,
         "polyline": route_polyline,
+        "geometry": route_geometry,
     }
     return Quote(
         id=quote_id,
@@ -398,7 +418,8 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         route_distance_meters=route_distance_meters,
         route_duration_seconds=route_duration_seconds,
         route_polyline=route_polyline,
-        route_snapshot_hash=normalized_hash(route_snapshot),
+        route_geometry=route_geometry,
+        route_snapshot_hash=command.route_snapshot_hash or normalized_hash(route_snapshot),
         tariff_snapshot={"version": tariff_version, **tariff},
     )
 
@@ -414,6 +435,7 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
         "distance_meters": quote.route_distance_meters,
         "duration_seconds": quote.route_duration_seconds,
         "polyline": quote.route_polyline,
+        "geometry": quote.route_geometry,
         "origin": _point(quote.pickup_latitude, quote.pickup_longitude),
         "destination": _point(quote.dropoff_latitude, quote.dropoff_longitude),
     }
@@ -452,10 +474,10 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
             "route_snapshot_hash": quote.route_snapshot_hash,
             "updated_at": snapshot_at.isoformat(),
         }
-    if status == BookingStatus.COMPLETED.value:
+    if status in {BookingStatus.ARRIVED_DESTINATION.value, BookingStatus.COMPLETED.value}:
         return {
             "booking_id": booking.id,
-            "status": BookingStatus.COMPLETED.value,
+            "status": status,
             "progress": 1.0,
             "eta_seconds": 0,
             "driver": booking.driver,
@@ -550,8 +572,8 @@ def _simulated_driver_location(
         return _interpolate(start, pickup, elapsed / max(1, eta_seconds))
     if status == BookingStatus.DRIVER_ARRIVED.value:
         return pickup
-    if status in {BookingStatus.IN_PROGRESS.value, BookingStatus.COMPLETED.value}:
-        ratio = 1.0 if status == BookingStatus.COMPLETED.value else (elapsed - eta_seconds - 60) / max(1, travel_seconds)
+    if status in {BookingStatus.IN_PROGRESS.value, BookingStatus.ARRIVED_DESTINATION.value, BookingStatus.COMPLETED.value}:
+        ratio = 1.0 if status in {BookingStatus.ARRIVED_DESTINATION.value, BookingStatus.COMPLETED.value} else (elapsed - eta_seconds - 60) / max(1, travel_seconds)
         return _interpolate(pickup, destination, ratio)
     return start
 
@@ -582,7 +604,7 @@ def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, t
             return BookingStatus.DRIVER_ARRIVED.value
         if elapsed < eta_seconds + 60 + travel_seconds:
             return BookingStatus.IN_PROGRESS.value
-        return BookingStatus.COMPLETED.value
+        return BookingStatus.ARRIVED_DESTINATION.value
     if normalized == BookingStatus.DRIVER_TO_PICKUP.value:
         if elapsed < eta_seconds:
             return normalized
@@ -590,15 +612,17 @@ def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, t
             return BookingStatus.DRIVER_ARRIVED.value
         if elapsed < eta_seconds + 60 + travel_seconds:
             return BookingStatus.IN_PROGRESS.value
-        return BookingStatus.COMPLETED.value
+        return BookingStatus.ARRIVED_DESTINATION.value
     if normalized == BookingStatus.DRIVER_ARRIVED.value:
         if elapsed < eta_seconds + 60:
             return normalized
         if elapsed < eta_seconds + 60 + travel_seconds:
             return BookingStatus.IN_PROGRESS.value
-        return BookingStatus.COMPLETED.value
+        return BookingStatus.ARRIVED_DESTINATION.value
     if normalized == BookingStatus.IN_PROGRESS.value:
-        return BookingStatus.IN_PROGRESS.value if elapsed < eta_seconds + 60 + travel_seconds else BookingStatus.COMPLETED.value
+        return BookingStatus.IN_PROGRESS.value if elapsed < eta_seconds + 60 + travel_seconds else BookingStatus.ARRIVED_DESTINATION.value
+    if normalized == BookingStatus.ARRIVED_DESTINATION.value:
+        return normalized
     return normalized
 
 
@@ -611,7 +635,7 @@ def next_tracking_status(status: str, elapsed: float, eta_seconds: int, travel_s
     if normalized == BookingStatus.DRIVER_ARRIVED.value and elapsed >= eta_seconds + 60:
         return BookingStatus.IN_PROGRESS.value
     if normalized == BookingStatus.IN_PROGRESS.value and elapsed >= eta_seconds + 60 + travel_seconds:
-        return BookingStatus.COMPLETED.value
+        return BookingStatus.ARRIVED_DESTINATION.value
     return None
 
 
@@ -625,6 +649,8 @@ def tracking_progress(status: str, elapsed: float, eta_seconds: int, travel_seco
         return 0.25
     if normalized == BookingStatus.IN_PROGRESS.value:
         return min(1.0, 0.25 + max(0.0, elapsed - eta_seconds - 60) / max(1, travel_seconds) * 0.75)
+    if normalized == BookingStatus.ARRIVED_DESTINATION.value:
+        return 1.0
     if normalized == BookingStatus.COMPLETED.value:
         return 1.0
     return 0.0
