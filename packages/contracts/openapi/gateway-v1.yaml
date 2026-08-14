@@ -233,7 +233,8 @@ components:
     AssistantItem:
       oneOf:
         - {$ref: '#/components/schemas/RestaurantOptionsItem'}
-        - {$ref: '#/components/schemas/RestaurantConfirmationItem'}
+        - {$ref: '#/components/schemas/RestaurantHoldItem'}
+        - {$ref: '#/components/schemas/RestaurantReservationItem'}
         - {$ref: '#/components/schemas/RideItem'}
         - {$ref: '#/components/schemas/RideTimingConflictItem'}
         - {$ref: '#/components/schemas/FoodItem'}
@@ -259,19 +260,30 @@ components:
         location: {type: string}
         cuisine: {type: string}
         rating: {type: number}
-    RestaurantConfirmationItem:
+    RestaurantHoldItem:
       type: object
-      required: [kind, title, restaurant, reservation_code, party_size, start_at]
+      required: [kind, title, restaurant, party_size, start_at, expires_at]
       additionalProperties: false
       properties:
-        kind: {type: string, enum: [restaurant_confirmation, reservation]}
+        kind: {type: string, enum: [restaurant_confirmation]}
+        title: {type: string}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        party_size: {type: integer}
+        start_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        note: {type: string}
+    RestaurantReservationItem:
+      type: object
+      required: [kind, title, restaurant, reservation_code, party_size, start_at, status]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [reservation]}
         title: {type: string}
         restaurant: {$ref: '#/components/schemas/RestaurantReference'}
         reservation_code: {type: string}
         party_size: {type: integer}
         start_at: {type: string, format: date-time}
-        status: {type: string}
-        note: {type: string}
+        status: {type: string, enum: [CONFIRMED]}
     RestaurantReference:
       type: object
       required: [name]

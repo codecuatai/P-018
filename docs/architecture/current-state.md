@@ -83,7 +83,7 @@ The checked repository has separate runtime entrypoints for the listed component
 
 ## Local development facts
 
-Root .env.example is the Compose source of truth. Compose uses explicit mappings, not env_file: PostgreSQL receives bootstrap credentials; gateway receives Core DB/internal URLs/token; agent receives its DB, CORS, Gemini configuration, and token; each domain receives only its own database URL, port, and token. Internal URLs use Docker service names (agent-service, ride-service, restaurant-service, healthcare-service, food-service), not localhost.
+Root .env.example is the Compose source of truth. Compose uses explicit mappings, not env_file: PostgreSQL receives bootstrap credentials; gateway receives Core DB/internal URLs/token and an explicit credentialed-CORS origin allowlist; agent receives its DB, CORS, Gemini configuration, and token; each domain receives only its own database URL, port, and token. Internal URLs use Docker service names (agent-service, ride-service, restaurant-service, healthcare-service, food-service), not localhost.
 
 | Service | Compose name | Host/container port in the checked example | Health endpoints |
 | --- | --- | --- | --- |

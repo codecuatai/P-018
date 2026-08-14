@@ -13,3 +13,4 @@ process.env.DEMO_AUTH_ENABLED = 'true';
 process.env.DEMO_AUTH_EMAIL = 'demo@xone.vn';
 process.env.DEMO_AUTH_PASSWORD = 'Xone@123';
 process.env.DEMO_AUTH_USER_ID = 'usr_demo_001';
+process.env.GATEWAY_CORS_ORIGINS = 'http://localhost:3000';

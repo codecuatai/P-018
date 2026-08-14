@@ -188,6 +188,23 @@ function textHasAny(value: string, candidates: string[]): boolean {
   return candidates.some((candidate) => value.includes(candidate));
 }
 
+const FINAL_SUCCESS_PATTERNS: Record<Domain, RegExp[]> = {
+  ride: [/(?:chuyen xe|cuoc xe|ride).*(?:da (?:duoc )?dat thanh cong|booked successfully|has been booked)/],
+  restaurant: [/(?:dat ban|reservation).*(?:thanh cong|confirmed)/],
+  healthcare: [/(?:lich kham|lich hen|appointment).*(?:da (?:duoc )?(?:xac nhan|tao thanh cong)|confirmed)/],
+  food: [/(?:don hang|don do an|food order).*(?:da (?:duoc )?(?:dat|tiep nhan) thanh cong|confirmed|succeeded)/],
+};
+
+function hasUnsupportedFinalSuccessClaim(message: string, tasks: StoredTask[]): boolean {
+  const folded = plainText(message);
+  const incompleteDomains = new Set(
+    tasks.filter((task) => task.phase !== 'COMPLETED').map((task) => task.domain),
+  );
+  return [...incompleteDomains].some((domain) => (
+    FINAL_SUCCESS_PATTERNS[domain].some((pattern) => pattern.test(folded))
+  ));
+}
+
 function assistantActionFailureStatus(error: unknown): 'FAILED_RETRYABLE' | 'FAILED_FINAL' {
   if (error instanceof ServiceCallError) {
     return error.retryable && !['BUSINESS', 'CLIENT', 'CONTRACT'].includes(error.category) ? 'FAILED_RETRYABLE' : 'FAILED_FINAL';
@@ -217,6 +234,13 @@ function parseAuthoritativeDate(value: unknown): Date | undefined {
   const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}+07:00`;
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function publicDateTime(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  if (!raw) return undefined;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return parseAuthoritativeDate(raw) ? raw : undefined;
+  return parseAuthoritativeDate(raw)?.toISOString();
 }
 
 function healthcareDateKey(value: Date): string {
@@ -403,10 +427,32 @@ export class AssistantService {
         throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task reference or domain is invalid.' });
       }
       refs.add(taskRef);
-      for (const rawStep of arrayValue(task.steps)) {
+      const steps = arrayValue(task.steps);
+      if (steps.length > 16) {
+        throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task has too many steps.' });
+      }
+      for (const rawStep of steps) {
         if (!isRecord(rawStep)) throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent step is invalid.' });
+        const stepKind = stringValue(rawStep.step_kind);
         const capability = stringValue(rawStep.capability);
-        if (!capability) continue;
+        if (stepKind === 'WAIT_FOR_CONFIRMATION') {
+          const expectedGates: Record<string, string> = {
+            SERVICE_CONFIRMATION: 'SERVICE_DETAILS',
+            PAYMENT_CONFIRMATION: 'PAYMENT',
+            CANCELLATION_CONFIRMATION: 'CANCELLATION',
+          };
+          if (
+            capability
+            || rawStep.risk_ceiling !== 'FINANCIAL_OR_FINAL'
+            || expectedGates[stringValue(rawStep.phase) ?? ''] !== rawStep.confirmation_gate
+          ) {
+            throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent confirmation waiting step is invalid.' });
+          }
+          continue;
+        }
+        if (stepKind !== 'CAPABILITY' || !capability) {
+          throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent step must name a supported capability.' });
+        }
         const definition = definitions.get(capability);
         if (
           !definition
@@ -506,19 +552,31 @@ export class AssistantService {
   }
 
   private propagateDependencyFailures(tasks: StoredTask[]): void {
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const task of tasks) {
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    if (byId.size !== tasks.length) {
+      throw new ServiceUnavailableException({ code: 'CONVERSATION_STATE_INVALID', detail: 'Conversation task state contains duplicate task identifiers.' });
+    }
+    const dependents = new Map<string, StoredTask[]>();
+    for (const task of tasks) {
+      for (const dependencyId of task.depends_on) {
+        if (dependencyId === task.id || !byId.has(dependencyId)) {
+          throw new ServiceUnavailableException({ code: 'CONVERSATION_STATE_INVALID', detail: 'Conversation task dependency is invalid.' });
+        }
+        const children = dependents.get(dependencyId) ?? [];
+        children.push(task);
+        dependents.set(dependencyId, children);
+      }
+    }
+
+    const queue = tasks.filter((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
+    for (let index = 0; index < queue.length; index += 1) {
+      const blocker = queue[index];
+      for (const task of dependents.get(blocker.id) ?? []) {
         if (task.phase === 'COMPLETED' || task.phase === 'FAILED' || task.phase === 'BLOCKED') continue;
-        const blocker = task.depends_on
-          .map((dependency) => tasks.find((candidate) => candidate.id === dependency))
-          .find((dependency) => dependency?.phase === 'FAILED' || dependency?.phase === 'BLOCKED');
-        if (!blocker) continue;
         task.phase = 'BLOCKED';
         task.blocking_task_id = blocker.id;
         task.block_reason = 'DEPENDENCY_FAILED';
-        changed = true;
+        queue.push(task);
       }
     }
   }
@@ -1017,7 +1075,10 @@ export class AssistantService {
         },
         correlationId,
       );
-      return safeText(response.assistant_message, fallback);
+      const candidate = safeText(response.assistant_message, fallback);
+      return hasUnsupportedFinalSuccessClaim(candidate, tasks)
+        ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')
+        : candidate;
     } catch {
       return safeText(fallback, 'Mình đã cập nhật thông tin cho bạn.');
     }
@@ -1250,6 +1311,9 @@ export class AssistantService {
       idempotency_key: `assistant:restaurant:hold:${conversationId}:${task.id}:${restaurantId}:${startAt}:${partySize}`,
     }, user.sub, correlationId);
     if (!isRecord(hold) || !stringValue(hold.id)) throw new ConflictException({ code: 'HOLD_NOT_CREATED', detail: 'The restaurant could not be held.' });
+    const holdExpiresAt = publicDateTime(hold.expires_at);
+    const publicStartAt = publicDateTime(startAt);
+    if (!holdExpiresAt || !publicStartAt) throw new ConflictException({ code: 'HOLD_RESULT_INVALID', detail: 'The restaurant hold did not include valid timestamps.' });
     const tool: RestaurantTool = {
       tool_name: 'restaurant.create_reservation',
       risk_level: 'FINANCIAL_OR_FINAL',
@@ -1260,7 +1324,7 @@ export class AssistantService {
       idempotency_key: `assistant:restaurant:reservation:${conversationId}:${task.id}`,
     };
     const pending = await this.confirmations.prepareDomainConfirmation(user, tool, hold, correlationId);
-    const publicItem = { kind: 'restaurant_confirmation', title: 'Mình đã tạm giữ bàn', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: startAt, expires_at: hold.expires_at, note: 'Bạn kiểm tra lại rồi xác nhận để hoàn tất đặt bàn.' };
+    const publicItem = { kind: 'restaurant_confirmation', title: 'Mình đã tạm giữ bàn', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: publicStartAt, expires_at: holdExpiresAt, note: 'Bạn kiểm tra lại rồi xác nhận để hoàn tất đặt bàn.' };
     const action = this.actionFor(task, 'restaurant_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id });
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { ...existing, selected, availability, hold, pending }, publicItem, items: [publicItem], actions: [action], workflowId: tool.workflow_id };
   }
@@ -1423,7 +1487,7 @@ export class AssistantService {
       };
     }
     const selection = stringValue(slots.selection);
-    const index = selection === 'second' ? 1 : 0;
+    const index = integerValue(existing?.selection_index, selection === 'second' ? 1 : 0);
     const candidate = doctors[index];
     const slot = isRecord(candidate?.available_slots) ? candidate.available_slots : arrayValue(candidate?.available_slots)[0];
     const selectedSlot = isRecord(slot) ? slot : arrayValue(candidate?.available_slots).filter(isRecord)[0];
@@ -1441,7 +1505,7 @@ export class AssistantService {
     }, user.sub, correlationId);
     const appointmentId = numberValue(isRecord(appointment) ? appointment.appointment_id : undefined);
     if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_CREATED', detail: 'The appointment could not be held.' });
-    const publicItem = { kind: 'appointment', title: 'Mình đã tạm giữ khung giờ', doctor: isRecord(appointment) ? appointment.doctor_name : undefined, department: isRecord(appointment) ? appointment.department : department, start_time: isRecord(appointment) ? appointment.start_time : undefined, price: isRecord(appointment) ? appointment.price : undefined, facility: isRecord(appointment) && isRecord(appointment.facility) ? appointment.facility : undefined, note: 'Bạn xác nhận thanh toán demo trước khi hoàn tất lịch khám.' };
+    const publicItem = { kind: 'appointment', title: 'Mình đã tạm giữ khung giờ', doctor: isRecord(appointment) ? appointment.doctor_name : undefined, department: isRecord(appointment) ? appointment.department : department, start_time: isRecord(appointment) ? publicDateTime(appointment.start_time) : undefined, price: isRecord(appointment) ? appointment.price : undefined, facility: isRecord(appointment) && isRecord(appointment.facility) ? appointment.facility : undefined, note: 'Bạn xác nhận thanh toán demo trước khi hoàn tất lịch khám.' };
     const action = this.actionFor(task, 'healthcare_payment', { appointment_id: appointmentId, workflow_id: workflowId });
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { department, doctors, selectedSlot, appointment }, publicItem, items: [publicItem], actions: [action], workflowId };
   }
@@ -1501,13 +1565,19 @@ export class AssistantService {
       const restaurantName = stringValue(reservation.restaurant_name) ?? stringValue(selected?.name);
       if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'The reservation response did not include the restaurant name.' });
       const restaurantLocation = stringValue(reservation.restaurant_location) ?? stringValue(selected?.location);
+      const reservationCode = stringValue(reservation.reservation_code);
+      const reservationStartAt = publicDateTime(reservation.start_at);
+      const reservationPartySize = numberValue(reservation.party_size);
+      if (!reservationCode || !reservationStartAt || typeof reservationPartySize !== 'number' || !Number.isInteger(reservationPartySize) || reservationPartySize < 1) {
+        throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'The reservation response did not include valid confirmation details.' });
+      }
       const publicItem = {
         kind: 'reservation',
         title: 'Đặt bàn đã hoàn tất',
         restaurant: { name: restaurantName, ...(restaurantLocation ? { location: restaurantLocation } : {}) },
-        reservation_code: stringValue(reservation.reservation_code),
-        start_at: reservation.start_at,
-        party_size: reservation.party_size,
+        reservation_code: reservationCode,
+        start_at: reservationStartAt,
+        party_size: reservationPartySize,
         status: 'CONFIRMED',
       };
       return { phase: 'COMPLETED', message: 'Đã đặt bàn thành công. Mình sẽ giữ thông tin này trong cuộc trò chuyện.', publicItem, authoritative: { ...task.authoritative, reservation: result } };
@@ -1524,9 +1594,12 @@ export class AssistantService {
     }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
-      const candidate = doctors[action.selection_index ?? 0];
+      const selectionIndex = action.selection_index ?? 0;
+      const candidate = doctors[selectionIndex];
       if (!candidate) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'The healthcare choices have changed. Please search again.' });
-      task.extracted_slots.selection = (action.selection_index ?? 0) === 1 ? 'second' : 'first';
+      task.authoritative = { ...task.authoritative, selection_index: selectionIndex };
+      if (selectionIndex <= 1) task.extracted_slots.selection = selectionIndex === 1 ? 'second' : 'first';
+      else delete task.extracted_slots.selection;
       const result = await this.processHealthcare(task, user, conversationId, correlationId);
       return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ khung giờ. Bạn xác nhận thanh toán demo để tiếp tục nhé.' : 'Mình đã cập nhật lịch khám.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
@@ -1702,7 +1775,7 @@ export class AssistantService {
     return doctors.slice(0, 4).flatMap((doctor) => arrayValue(doctor.available_slots).slice(0, 1).map((slot) => ({
       doctor: doctor.name,
       department: isRecord(doctor.department) ? doctor.department.name : doctor.department,
-      start_time: isRecord(slot) ? slot.start_time : undefined,
+      start_time: isRecord(slot) ? publicDateTime(slot.start_time) : undefined,
       price: doctor.price,
       facility: isRecord(doctor.facility) ? this.sanitizeFacility(doctor.facility) : undefined,
     })));
@@ -1710,7 +1783,7 @@ export class AssistantService {
 
   private healthcareSelectionActions(doctors: JsonObject[], task: StoredTask): StoredAction[] {
     const cohortId = this.newCohort(task);
-    return doctors.slice(0, 2).map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
+    return doctors.slice(0, 4).map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
   }
 
   private rideItem(result: JsonObject, task?: StoredTask): JsonObject {
@@ -1784,7 +1857,10 @@ export class AssistantService {
     const result: JsonObject = {};
     for (const key of ['name', 'title', 'location', 'cuisine', 'restaurant', 'description', 'doctor', 'department', 'start_time', 'price', 'rating']) {
       const item = value[key];
-      if (typeof item === 'string' || typeof item === 'number') result[key] = item;
+      if (key === 'start_time') {
+        const normalized = publicDateTime(item);
+        if (normalized) result[key] = normalized;
+      } else if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
     if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
     return result;
@@ -1803,14 +1879,17 @@ export class AssistantService {
     const result: JsonObject = {};
     for (const key of ['appointment_id', 'doctor_name', 'department', 'start_time', 'price', 'status']) {
       const item = value[key];
-      if (typeof item === 'string' || typeof item === 'number') result[key] = item;
+      if (key === 'start_time') {
+        const normalized = publicDateTime(item);
+        if (normalized) result[key] = normalized;
+      } else if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
     if (isRecord(value.doctor)) {
       if (stringValue(value.doctor.name)) result.doctor_name = stringValue(value.doctor.name);
       if (typeof value.doctor.price === 'number') result.price = value.doctor.price;
     }
     if (isRecord(value.department) && stringValue(value.department.name)) result.department = stringValue(value.department.name);
-    if (isRecord(value.slot) && stringValue(value.slot.start_time)) result.start_time = stringValue(value.slot.start_time);
+    if (isRecord(value.slot) && publicDateTime(value.slot.start_time)) result.start_time = publicDateTime(value.slot.start_time);
     if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
     return result;
   }

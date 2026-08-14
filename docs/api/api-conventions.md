@@ -26,7 +26,11 @@ such as `workflow_id`, `confirmation_id`, `tool_request`, and `resource_version`
 The `ride_timing_conflict` card is a truthful no-booking result when a
 Healthcare-dependent departure is impossible. Healthcare appointment cards may
 carry the domain-owned facility name/address; the Gateway does not invent or
-persist that authority.
+persist that authority. Restaurant hold and completed-reservation cards have
+separate schemas so a hold never pretends to have a final reservation code.
+The Gateway validates required reservation confirmation fields and normalizes
+legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
+domain timezone before exposing an ISO 8601 value.
 
 Successful responses use:
 

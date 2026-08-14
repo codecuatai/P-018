@@ -10,6 +10,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     'INTERNAL_SERVICE_TOKEN',
     'JWT_SECRET',
     'DEMO_AUTH_ENABLED',
+    'GATEWAY_CORS_ORIGINS',
   ];
   for (const name of requiredStrings) {
     if (typeof config[name] !== 'string' || config[name].trim() === '') {
@@ -35,6 +36,24 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   if (String(config.JWT_SECRET).length < 16) {
     throw new Error('JWT_SECRET must be at least 16 characters.');
   }
+  const corsOrigins = String(config.GATEWAY_CORS_ORIGINS)
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (corsOrigins.length === 0 || corsOrigins.includes('*')) {
+    throw new Error('GATEWAY_CORS_ORIGINS must contain explicit HTTP(S) origins and cannot contain wildcard origins.');
+  }
+  for (const origin of corsOrigins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(`GATEWAY_CORS_ORIGINS contains an invalid origin: ${origin}.`);
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.origin !== origin || parsed.username || parsed.password) {
+      throw new Error(`GATEWAY_CORS_ORIGINS contains an invalid origin: ${origin}.`);
+    }
+  }
   const demoAuthEnabled = String(config.DEMO_AUTH_ENABLED).toLowerCase();
   if (!['true', 'false'].includes(demoAuthEnabled)) throw new Error('DEMO_AUTH_ENABLED must be true or false.');
   if (String(config.APP_ENV) === 'production' && demoAuthEnabled === 'true') throw new Error('Demo auth must be disabled in production.');
@@ -49,5 +68,5 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   if (config.HEALTHCARE_DEFAULT_PATIENT_ID !== undefined && (!Number.isInteger(Number(config.HEALTHCARE_DEFAULT_PATIENT_ID)) || Number(config.HEALTHCARE_DEFAULT_PATIENT_ID) < 1)) {
     throw new Error('HEALTHCARE_DEFAULT_PATIENT_ID must be a positive integer.');
   }
-  return { ...config, PORT: port };
+  return { ...config, PORT: port, GATEWAY_CORS_ORIGINS: corsOrigins.join(',') };
 }

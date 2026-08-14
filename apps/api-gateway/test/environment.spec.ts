@@ -13,6 +13,7 @@ describe('environment validation', () => {
     INTERNAL_SERVICE_TOKEN: 'test-token',
     JWT_SECRET: 'test-jwt-secret-12345',
     DEMO_AUTH_ENABLED: 'false',
+    GATEWAY_CORS_ORIGINS: 'http://localhost:3000,https://staging.assistant-018.tech',
   };
 
   it('accepts complete process configuration', () => {
@@ -26,5 +27,13 @@ describe('environment validation', () => {
   it('fails fast for a missing required value', () => {
     const { INTERNAL_SERVICE_TOKEN: _token, ...withoutToken } = completeConfig;
     expect(() => validateEnvironment(withoutToken)).toThrow('INTERNAL_SERVICE_TOKEN is required');
+  });
+
+  it('rejects wildcard CORS when credentials are enabled', () => {
+    expect(() => validateEnvironment({ ...completeConfig, GATEWAY_CORS_ORIGINS: '*' })).toThrow('cannot contain wildcard origins');
+  });
+
+  it('rejects CORS entries that are URLs rather than origins', () => {
+    expect(() => validateEnvironment({ ...completeConfig, GATEWAY_CORS_ORIGINS: 'https://example.com/path' })).toThrow('contains an invalid origin');
   });
 });
