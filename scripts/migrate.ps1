@@ -111,6 +111,7 @@ try {
 
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003_healthcare_provider_catalog.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
     Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260806_0001_ride_simulation.py' -EnvFile $envFile
