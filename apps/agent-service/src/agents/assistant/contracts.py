@@ -257,9 +257,15 @@ class TaskDisposition(str, Enum):
     COMPLETED = 'COMPLETED'
 
 
+class StepKind(str, Enum):
+    CAPABILITY = 'CAPABILITY'
+    WAIT_FOR_CONFIRMATION = 'WAIT_FOR_CONFIRMATION'
+
+
 class PlannedStep(StrictModel):
     step_ref: int = Field(ge=0)
     purpose: str = Field(min_length=1, max_length=500)
+    step_kind: StepKind
     capability: str | None = Field(default=None, max_length=160)
     phase: PlanningPhase
     requires_semantic_fields: list[str] = Field(default_factory=list, max_length=16)
@@ -267,6 +273,24 @@ class PlannedStep(StrictModel):
     depends_on_steps: list[int] = Field(default_factory=list, max_length=16)
     risk_ceiling: RiskLevel
     confirmation_gate: ConfirmationGate
+
+    @model_validator(mode='after')
+    def step_kind_has_unambiguous_policy(self) -> PlannedStep:
+        if self.step_kind == StepKind.CAPABILITY:
+            if self.capability is None:
+                raise ValueError('capability step must name a capability')
+            return self
+        if self.capability is not None:
+            raise ValueError('confirmation waiting step must not name a capability')
+        expected_gates = {
+            PlanningPhase.SERVICE_CONFIRMATION: ConfirmationGate.SERVICE_DETAILS,
+            PlanningPhase.PAYMENT_CONFIRMATION: ConfirmationGate.PAYMENT,
+            PlanningPhase.CANCELLATION_CONFIRMATION: ConfirmationGate.CANCELLATION,
+        }
+        expected_gate = expected_gates.get(self.phase)
+        if expected_gate is None or self.confirmation_gate != expected_gate:
+            raise ValueError('confirmation waiting step has an invalid phase or confirmation gate')
+        return self
 
 
 class CoreAPlannedTask(StrictModel):

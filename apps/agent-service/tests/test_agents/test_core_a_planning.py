@@ -29,6 +29,7 @@ from src.agents.assistant.contracts import (
     SlotSource,
     StepOutcome,
     StepOutcomeKind,
+    StepKind,
     TaskDisposition,
 )
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot
@@ -102,6 +103,7 @@ def test_food_discovery_selects_observed_read_capability() -> None:
     decision = CoreAPlanner().plan(input_for(intent))
     step = decision.tasks[0].steps[0]
     assert step.capability == 'search_food'
+    assert step.step_kind == StepKind.CAPABILITY
     assert step.risk_ceiling == RiskLevel.READ
     assert step.confirmation_gate == ConfirmationGate.NONE
 
@@ -177,6 +179,33 @@ def test_restaurant_final_commit_requires_fresh_authoritative_hold() -> None:
     assert step.capability == 'restaurant.create_reservation'
     assert step.risk_ceiling == RiskLevel.FINANCIAL_OR_FINAL
     assert step.confirmation_gate == ConfirmationGate.FINAL_COMMIT
+
+
+def test_confirmation_waiting_step_has_no_dispatchable_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.CREATE,
+        goal='Đặt phở',
+        normalized_request='Đặt phở',
+        slots=FoodSemanticSlots(query=slot('phở')),
+    )
+    context = PlannerContext(tasks=[PlannerTaskContext(
+        task_ref=0,
+        domain=Domain.FOOD,
+        phase='AWAITING_CONFIRMATION',
+        facts=[
+            fact('restaurant_id', 'res-1'),
+            fact('menu_item_id', 'item-1'),
+            fact('cart_id', 'cart-1', version=1),
+            fact('address_id', 'address-1'),
+            fact('preview_id', 'preview-1', version=1, fresh=True),
+        ],
+    )])
+    step = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0].steps[0]
+    assert step.step_kind == StepKind.WAIT_FOR_CONFIRMATION
+    assert step.capability is None
+    assert step.confirmation_gate == ConfirmationGate.SERVICE_DETAILS
 
 
 def test_healthcare_to_ride_uses_dependency_not_model_destination() -> None:

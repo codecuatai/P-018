@@ -15,6 +15,7 @@ from ..contracts import (
     PlannerContext,
     PlanningPhase,
     RiskLevel,
+    StepKind,
     TaskDisposition,
 )
 from .requirements import task_facts, usable_fact
@@ -248,6 +249,7 @@ def select_step(
         step = PlannedStep(
             step_ref=0,
             purpose=choice.purpose,
+            step_kind=StepKind.WAIT_FOR_CONFIRMATION,
             capability=None,
             phase=choice.phase,
             risk_ceiling=RiskLevel.FINANCIAL_OR_FINAL,
@@ -279,6 +281,7 @@ def select_step(
     step = PlannedStep(
         step_ref=0,
         purpose=choice.purpose,
+        step_kind=StepKind.CAPABILITY,
         capability=definition.name,
         phase=choice.phase,
         requires_authority=list(choice.authority),

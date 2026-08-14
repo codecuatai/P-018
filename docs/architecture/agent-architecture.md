@@ -47,6 +47,19 @@ capability, domain, risk, confirmation gate, or dependency reference does not
 match that snapshot. A second composition call may
 explain sanitized results but cannot change their values.
 
+Every typed Core A step is explicitly either `CAPABILITY` or
+`WAIT_FOR_CONFIRMATION`. A capability step must name an implemented Gateway
+snapshot capability and match its domain, risk ceiling, and confirmation gate.
+A waiting step names no capability and is valid only for the matching explicit
+service-details, payment, or cancellation confirmation phase. It is never a
+dispatch instruction. Gateway validates this shape again because Agent output,
+including deterministic and model-derived output, is untrusted.
+
+Gateway treats its persisted task graph as untrusted runtime state too. It
+rejects duplicate, self-referential, and dangling task dependencies before
+propagating a failure through a bounded worklist of dependents. This preserves
+the one-way `BLOCKED` transition without relying on an open-ended retry loop.
+
 Slot normalization is domain-specific: Ride accepts only bounded addresses and
 `BIKE`/`CAR_4`/`CAR_7`; Restaurant and Healthcare require timezone-aware
 `start_at` values and bounded party/symptom fields; Healthcare dayparts are
@@ -54,6 +67,19 @@ bounded semantic preferences and explicit clock times remain exact; Food
 accepts bounded query, location, and delivery preference fields. The adapter records the configured
 primary/fallback, actual last model, fallback usage, call time, and safe status
 for `/api/v1/status`; it never reports keys or raw prompts.
+
+Unambiguous constraints parsed directly from the current user turn remain
+authoritative over model guesses: an explicit Ride vehicle type cannot be
+changed by the model, and an explicit Healthcare relative daypart such as
+`tomorrow_morning` cannot be dropped. Response composition receives only the
+planner-safe task projection and sanitized authoritative results, not the raw
+user message. Gateway additionally rejects a composed final-success claim for
+any domain whose task has not reached `COMPLETED`.
+
+Heuristic location parsing is bounded independently of the API message limit:
+it examines at most 512 input characters and emits at most 160 location
+characters. These heuristics only propose semantic slots; authoritative place
+resolution remains a Gateway/domain responsibility.
 
 `xone_agent` may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The LLM never determines price, availability, payment, or booking/order success.
 

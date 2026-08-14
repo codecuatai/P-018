@@ -6,6 +6,7 @@ from ..contracts import (
     ConfirmationGate,
     PlanningDecision,
     PlanningPhase,
+    StepKind,
 )
 from ..planning.dependencies import validate_dag
 
@@ -25,10 +26,17 @@ def validate_plan(
     definitions = {item.name: item for item in snapshot.capabilities}
     for task in decision.tasks:
         for step in task.steps:
-            if step.capability is None:
-                if step.confirmation_gate == ConfirmationGate.NONE:
-                    raise PlanPolicyError('waiting step must name a confirmation gate')
+            if step.step_kind == StepKind.WAIT_FOR_CONFIRMATION:
+                expected_gates = {
+                    PlanningPhase.SERVICE_CONFIRMATION: ConfirmationGate.SERVICE_DETAILS,
+                    PlanningPhase.PAYMENT_CONFIRMATION: ConfirmationGate.PAYMENT,
+                    PlanningPhase.CANCELLATION_CONFIRMATION: ConfirmationGate.CANCELLATION,
+                }
+                if step.capability is not None or expected_gates.get(step.phase) != step.confirmation_gate:
+                    raise PlanPolicyError('waiting step policy is invalid')
                 continue
+            if step.step_kind != StepKind.CAPABILITY or step.capability is None:
+                raise PlanPolicyError('step kind is invalid')
             definition = definitions.get(step.capability)
             if definition is None or definition.status != CapabilityStatus.IMPLEMENTED:
                 raise PlanPolicyError('plan selected an unavailable capability')

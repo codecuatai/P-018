@@ -158,7 +158,14 @@ components:
             assistant_message: {type: string}
             plan: {type: object, additionalProperties: true}
             semantic_turn: {type: object, additionalProperties: true}
-            planning_decision: {type: object, additionalProperties: true}
+            planning_decision:
+              type: object
+              description: >-
+                Typed Core A plan. Every step declares step_kind: CAPABILITY or
+                WAIT_FOR_CONFIRMATION. CAPABILITY steps name one Gateway
+                snapshot capability; waiting steps never name a capability and
+                only represent an explicit user-confirmation gate.
+              additionalProperties: true
             decision_source: {enum: [model, deterministic]}
             model: {type: string}
             fallback_model: {type: string}

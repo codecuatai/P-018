@@ -53,6 +53,11 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
     assert data["decision_source"] == "deterministic"
     assert [task["domain"] for task in data["plan"]["tasks"]] == ["food", "healthcare"]
     assert all("price" not in task.get("extracted_slots", {}) for task in data["plan"]["tasks"])
+    assert all(
+        step["step_kind"] == "CAPABILITY"
+        for task in data["planning_decision"]["tasks"]
+        for step in task["steps"]
+    )
 
 
 @pytest.mark.asyncio
