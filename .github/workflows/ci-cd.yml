@@ -251,7 +251,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: xone_food
-        ports: ['55432:5432']
+        ports: ['5432/tcp']
         options: >-
           --health-cmd "pg_isready -U postgres -d xone_food"
           --health-interval 5s
@@ -269,7 +269,7 @@ jobs:
       - name: Run Food PostgreSQL integration
         working-directory: services/food-service
         env:
-          FOOD_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:55432/xone_food
+          FOOD_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_food
         run: ../../.ci-venv/bin/python -m pytest tests/test_postgres_integration.py -q
 
   gateway-postgres-integration:
@@ -289,7 +289,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: xone_core
-        ports: ['55433:5432']
+        ports: ['5432/tcp']
         options: >-
           --health-cmd "pg_isready -U postgres -d xone_core"
           --health-interval 5s
@@ -308,7 +308,7 @@ jobs:
         run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
       - name: Run Gateway PostgreSQL integration
         env:
-          CORE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:55433/xone_core
+          CORE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_core
         run: pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
 
   web:
