@@ -80,7 +80,7 @@ class FoodApplicationService:
 
     async def menu(self, restaurant_id: str) -> dict:
         restaurant = await self.restaurant(restaurant_id)
-        items = [result["item"] for result in await self.repository.search() if result["item"]["restaurant_id"] == restaurant_id]
+        items = [result["item"] for result in await self.repository.search(restaurant_id=restaurant_id, limit=100)]
         return {"restaurant": restaurant, "items": items}
 
     async def menu_item(self, item_id: str) -> dict:

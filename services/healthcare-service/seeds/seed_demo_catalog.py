@@ -47,9 +47,6 @@ def _facility(db):
     facility = db.query(HealthcareFacility).filter(HealthcareFacility.source_id == FACILITY_SOURCE_ID).first()
     if facility:
         return facility
-    facility = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True)).order_by(HealthcareFacility.source_id).first()
-    if facility:
-        return facility
     facility = HealthcareFacility(
         source_id=FACILITY_SOURCE_ID,
         name="X-One Healthcare Demo",

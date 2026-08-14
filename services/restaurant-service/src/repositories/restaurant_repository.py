@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,10 +33,27 @@ class RestaurantRepository:
     def __init__(self, database_url: str):
         self.factory = make_session_factory(database_url)
 
+    @staticmethod
+    def _active_dataset_version(db: Session) -> str | None:
+        try:
+            return db.execute(
+                text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='restaurant' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+            ).scalar_one_or_none()
+        except Exception:
+            # Older unit-test schemas do not include the optional provenance registry.
+            db.rollback()
+            return None
+
+    @classmethod
+    def _active_restaurant_statement(cls, db: Session):
+        version = cls._active_dataset_version(db)
+        stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True))
+        return stmt.where(RestaurantRow.dataset_version == version) if version else stmt
+
     def seed(self) -> None:
         with self.factory() as db:
             restaurants = list(
-                db.scalars(select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id))
+                db.scalars(self._active_restaurant_statement(db).order_by(RestaurantRow.id))
             )
             if not restaurants:
                 for rid, name, location, cuisine, budget, rating in RESTAURANT_SEEDS:
@@ -220,7 +237,7 @@ class RestaurantRepository:
 
     def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
         with self.factory() as db:
-            stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
+            stmt = self._active_restaurant_statement(db).order_by(RestaurantRow.id)
             if location:
                 aliases = {
                     "hà nội": ("Hà Nội", "Hanoi"),
@@ -239,7 +256,7 @@ class RestaurantRepository:
 
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:
-            row = db.scalar(select(RestaurantRow).where(RestaurantRow.id == restaurant_id, RestaurantRow.active.is_(True)))
+            row = db.scalar(self._active_restaurant_statement(db).where(RestaurantRow.id == restaurant_id))
             return self.restaurant_dict(row) if row else None
 
     def ops_summary(self):
@@ -248,7 +265,7 @@ class RestaurantRepository:
             statuses: dict[str, int] = {}
             for row in reservations:
                 statuses[row.status] = statuses.get(row.status, 0) + 1
-            return {"domain": "restaurant", "counts": {"restaurants": int(db.scalar(select(func.count(RestaurantRow.id)).where(RestaurantRow.active.is_(True))) or 0), "reservations": len(reservations), "reservations_by_status": statuses}}
+            return {"domain": "restaurant", "counts": {"restaurants": int(db.scalar(select(func.count()).select_from(self._active_restaurant_statement(db).subquery())) or 0), "reservations": len(reservations), "reservations_by_status": statuses}}
 
     def ops_transactions(self, limit=20, offset=0):
         with self.factory() as db:
@@ -260,20 +277,31 @@ class RestaurantRepository:
 
     def ops_dataset_status(self):
         with self.factory() as db:
-            rows = db.scalars(select(RestaurantRow).where(RestaurantRow.active.is_(True))).all()
-            latest = next((row for row in rows if row.dataset_version), None)
-            return {"dataset_version": latest.dataset_version if latest else None, "source_name": latest.source_name if latest else None, "imported_at": latest.fetched_at.isoformat() if latest and latest.fetched_at else None, "last_verified_at": latest.last_verified_at.isoformat() if latest and latest.last_verified_at else None, "active": bool(rows), "row_count": len(rows), "quality_warnings": [], "rejected_count": 0}
+            try:
+                version = db.execute(text("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='restaurant' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")).mappings().first()
+            except Exception:
+                db.rollback()
+                version = None
+            rows = db.scalars(self._active_restaurant_statement(db)).all()
+            manifest = version["source_manifest"] if version else {}
+            return {"dataset_version": version["dataset_version"] if version else None, "source_name": manifest.get("source_name") if isinstance(manifest, dict) else None, "imported_at": version["imported_at"].isoformat() if version and version["imported_at"] else None, "last_verified_at": manifest.get("last_verified_at") if isinstance(manifest, dict) else None, "active": bool(rows), "row_count": len(rows), "quality_warnings": manifest.get("quality_warnings", []) if isinstance(manifest, dict) else [], "rejected_count": manifest.get("rejected_count", 0) if isinstance(manifest, dict) else 0}
 
     @staticmethod
     def restaurant_dict(row):
+        provenance = {}
+        if row.provenance_json:
+            try:
+                provenance = row.provenance_json if isinstance(row.provenance_json, dict) else json.loads(row.provenance_json)
+            except (TypeError, json.JSONDecodeError):
+                provenance = {}
+        catalog = provenance.get("catalog", provenance) if isinstance(provenance, dict) else {}
         return {"id": row.id, "name": row.name, "location": row.location, "cuisine_type": row.cuisine_type,
-                "budget_range": row.budget_range, "rating": row.rating, "timezone": row.timezone,
-                "description": row.description, "image_url": row.image_url,
+                "cuisine_tags": catalog.get("cuisine_tags", []), "budget_range": row.budget_range, "price_level": catalog.get("price_level") or row.budget_range, "rating": row.rating, "review_count": catalog.get("review_count"), "timezone": row.timezone,
+                "description": row.description, "phone": catalog.get("phone"), "website": catalog.get("website"), "opening_hours": catalog.get("opening_hours"), "image_url": row.image_url,
                 **({"address": row.address} if row.address else {}), **({"ward": row.ward} if row.ward else {}),
                 **({"district": row.district} if row.district else {}), **({"city": row.city} if row.city else {}),
                 **({"latitude": row.latitude, "longitude": row.longitude} if row.latitude is not None and row.longitude is not None else {}),
-                **({"coordinate_status": row.coordinate_status} if row.coordinate_status else {}),
-                **({"source": {"name": row.source_name, "record_id": row.source_record_id, "url": row.source_url, "dataset_version": row.dataset_version}} if row.source_record_id else {})}
+                **({"coordinate_status": row.coordinate_status} if row.coordinate_status else {})}
 
     def _available_table(self, db: Session, restaurant_id, party_size, start_at, end_at, seating_type=None, exclude_id=None):
         stmt = select(TableRow).where(TableRow.restaurant_id == restaurant_id, TableRow.active.is_(True), TableRow.capacity >= party_size).order_by(TableRow.capacity, TableRow.id).with_for_update()

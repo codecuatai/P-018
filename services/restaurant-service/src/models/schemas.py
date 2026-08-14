@@ -8,11 +8,24 @@ class RestaurantResponse(BaseModel):
     name: str
     location: str
     cuisine_type: str
+    cuisine_tags: list[str] = Field(default_factory=list)
     budget_range: str
+    price_level: str | None = None
     rating: float
+    review_count: int | None = None
     timezone: str
     image_url: str | None = None
     description: str | None = None
+    address: str | None = None
+    ward: str | None = None
+    district: str | None = None
+    city: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    coordinate_status: str | None = None
+    phone: str | None = None
+    website: str | None = None
+    opening_hours: str | None = None
 
 
 class RestaurantListResponse(BaseModel):

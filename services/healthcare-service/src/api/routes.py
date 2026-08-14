@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
@@ -78,6 +78,17 @@ def _request_hash(operation: str, payload: dict[str, Any]) -> str:
 def _idempotency_storage_key(actor_id: str, operation: str, key: str) -> str:
     encoded = json.dumps([actor_id, operation, key], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _active_catalog_version(db: Session) -> str | None:
+    try:
+        return db.execute(
+            text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='healthcare' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        ).scalar_one_or_none()
+    except Exception:
+        # Unit-test schemas may predate the catalog registry.
+        db.rollback()
+        return None
 
 
 def _load_idempotency(
@@ -208,6 +219,9 @@ def _facility_data(db: Session | None = None, facility_source_id: str | None = N
     facility = None
     if db is not None:
         query = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True))
+        active_version = _active_catalog_version(db)
+        if active_version:
+            query = query.filter(HealthcareFacility.dataset_version == active_version)
         if facility_source_id:
             query = query.filter(HealthcareFacility.source_id == facility_source_id)
         facility = query.order_by(HealthcareFacility.source_id).first()
@@ -282,7 +296,11 @@ def get_departments(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
-    departments = db.query(Department).filter(Department.is_active.is_(True)).order_by(Department.name).all()
+    query = db.query(Department).filter(Department.is_active.is_(True))
+    active_version = _active_catalog_version(db)
+    if active_version:
+        query = query.filter(Department.dataset_version == active_version)
+    departments = query.order_by(Department.name).all()
     return {
         "data": [
             {
@@ -302,11 +320,11 @@ def get_facility(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
-    facility = (
-        db.query(HealthcareFacility)
-        .filter(HealthcareFacility.source_id == facility_source_id, HealthcareFacility.is_active.is_(True))
-        .first()
-    )
+    query = db.query(HealthcareFacility).filter(HealthcareFacility.source_id == facility_source_id, HealthcareFacility.is_active.is_(True))
+    active_version = _active_catalog_version(db)
+    if active_version:
+        query = query.filter(HealthcareFacility.dataset_version == active_version)
+    facility = query.first()
     if not facility:
         raise HTTPException(status_code=404, detail={"code": "FACILITY_NOT_FOUND", "detail": "Healthcare facility was not found."})
     return {"data": _facility_data(db, facility_source_id)}
@@ -399,50 +417,51 @@ def get_doctors_by_department(
 ) -> dict[str, Any]:
     expired_appointment_ids = _reconcile_expired_holds(db)
     folded_department = _fold_department_name(department)
-    department_record = next(
-        (
-            candidate
-            for candidate in db.query(Department).all()
-            if folded_department in _fold_department_name(candidate.name)
-        ),
-        None,
-    )
-    if not department_record:
+    department_query = db.query(Department).filter(Department.is_active.is_(True))
+    active_version = _active_catalog_version(db)
+    if active_version:
+        department_query = department_query.filter(Department.dataset_version == active_version)
+    department_records = [candidate for candidate in department_query.order_by(Department.name).all() if folded_department in _fold_department_name(candidate.name)]
+    if not department_records:
         _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
     doctors: list[dict[str, Any]] = []
-    for doctor in db.query(Doctor).filter(Doctor.department_id == department_record.id, Doctor.is_active.is_(True)).order_by(Doctor.name).all():
-        slots = (
-            db.query(TimeSlot)
-            .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
-            .order_by(TimeSlot.start_time)
-            .all()
-        )
-        doctors.append(
-            {
-                "id": doctor.id,
-                "name": doctor.name,
-                "price": doctor.price,
-                "description": doctor.description,
-                "title": doctor.title,
-                "specialty": doctor.specialty,
-                "facility": _facility_data(db, doctor.facility_source_id),
-                "department": {
-                    "id": department_record.id,
-                    "name": department_record.name,
-                    "description": department_record.description,
-                },
-                "available_slots": [
-                    {
-                        "id": slot.id,
-                        "start_time": slot.start_time.isoformat(),
-                        "end_time": slot.end_time.isoformat(),
-                    }
-                    for slot in slots
-                ],
-            }
-        )
+    for department_record in department_records:
+        doctor_query = db.query(Doctor).filter(Doctor.department_id == department_record.id, Doctor.is_active.is_(True), Doctor.facility_source_id == department_record.facility_source_id)
+        if active_version:
+            doctor_query = doctor_query.filter(Doctor.dataset_version == active_version)
+        for doctor in doctor_query.order_by(Doctor.name).all():
+            slots = (
+                db.query(TimeSlot)
+                .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
+                .order_by(TimeSlot.start_time)
+                .all()
+            )
+            doctors.append(
+                {
+                    "id": doctor.id,
+                    "name": doctor.name,
+                    "price": doctor.price,
+                    "description": doctor.description,
+                    "title": doctor.title,
+                    "specialty": doctor.specialty,
+                    "facility": _facility_data(db, doctor.facility_source_id),
+                    "department": {
+                        "id": department_record.id,
+                        "name": department_record.name,
+                        "description": department_record.description,
+                    },
+                    "available_slots": [
+                        {
+                            "id": slot.id,
+                            "start_time": slot.start_time.isoformat(),
+                            "end_time": slot.end_time.isoformat(),
+                        }
+                        for slot in slots
+                    ],
+                }
+            )
     _commit_reconciliation(db, expired_appointment_ids)
     return {"data": doctors}
 
@@ -553,9 +572,15 @@ def ops_summary(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
+    active_version = _active_catalog_version(db)
+    facility_query = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True))
+    doctor_query = db.query(Doctor).filter(Doctor.is_active.is_(True))
+    if active_version:
+        facility_query = facility_query.filter(HealthcareFacility.dataset_version == active_version)
+        doctor_query = doctor_query.filter(Doctor.dataset_version == active_version)
     rows = db.query(Appointment.status, func.count(Appointment.id)).group_by(Appointment.status).all()
     by_status = {str(status): int(count) for status, count in rows}
-    return {"data": {"domain": "healthcare", "counts": {"appointments": sum(by_status.values()), "appointments_by_status": by_status, "facilities": int(db.query(func.count(HealthcareFacility.source_id)).filter(HealthcareFacility.is_active.is_(True)).scalar() or 0), "doctors": int(db.query(func.count(Doctor.id)).filter(Doctor.is_active.is_(True)).scalar() or 0)}}}
+    return {"data": {"domain": "healthcare", "counts": {"appointments": sum(by_status.values()), "appointments_by_status": by_status, "facilities": int(facility_query.count()), "doctors": int(doctor_query.count())}}}
 
 
 @router.get("/internal/ops/dataset-status")
@@ -563,9 +588,13 @@ def ops_dataset_status(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
 ) -> dict[str, Any]:
-    facilities = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True)).order_by(HealthcareFacility.last_verified_at.desc()).all()
-    latest = next((item for item in facilities if item.dataset_version), None)
-    return {"data": {"dataset_version": latest.dataset_version if latest else None, "source_name": latest.source_name if latest else None, "imported_at": latest.fetched_at.isoformat() if latest and latest.fetched_at else None, "last_verified_at": latest.last_verified_at.isoformat() if latest and latest.last_verified_at else None, "active": bool(facilities), "row_count": len(facilities), "quality_warnings": [], "rejected_count": 0}}
+    active_version = _active_catalog_version(db)
+    facilities_query = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True))
+    if active_version:
+        facilities_query = facilities_query.filter(HealthcareFacility.dataset_version == active_version)
+    facilities = facilities_query.order_by(HealthcareFacility.last_verified_at.desc()).all()
+    latest = facilities[0] if facilities else None
+    return {"data": {"dataset_version": active_version, "source_name": latest.source_name if latest else None, "imported_at": latest.fetched_at.isoformat() if latest and latest.fetched_at else None, "last_verified_at": latest.last_verified_at.isoformat() if latest and latest.last_verified_at else None, "active": bool(facilities), "row_count": len(facilities), "quality_warnings": [], "rejected_count": 0}}
 
 
 @router.get("/internal/ops/transactions")

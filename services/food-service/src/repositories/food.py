@@ -81,6 +81,20 @@ def _json_object(value: object) -> dict:
     return dict(value)
 
 
+def _safe_catalog_record(record_type: str, value: dict) -> dict:
+    """Return the explicit Food product DTO, excluding source provenance."""
+
+    if record_type == "restaurant":
+        fields = (
+            "id", "name", "address", "ward", "district", "city", "category", "cuisine_tags",
+            "phone", "opening_hours", "rating", "rating_source", "review_count", "price_level",
+            "image_url", "is_open", "latitude", "longitude",
+        )
+    else:
+        fields = ("id", "restaurant_id", "name", "description", "price", "currency", "image_url", "category", "available", "option_groups")
+    return {field: value.get(field) for field in fields if field in value}
+
+
 def _event(current: str | None, target: FoodOrderStatus, reason: str, actor_type: str) -> dict:
     return {
         "from_status": current,
@@ -125,8 +139,11 @@ class InMemoryFoodRepository:
         keyword = _fold_text(filters.get("keyword", ""))
         district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
+        restaurant_id = str(filters.get("restaurant_id", ""))
         result = []
         for item in self.items.values():
+            if restaurant_id and item["restaurant_id"] != restaurant_id:
+                continue
             restaurant = self.restaurants[item["restaurant_id"]]
             text = _fold_text(f"{item['name']} {item['description']} {item['category']} {restaurant['name']}")
             if keyword and not _matches_keyword(text, keyword):
@@ -349,8 +366,13 @@ class PostgresFoodRepository:
         return order
 
     async def _records(self, record_type: str) -> list[dict]:
-        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type = $1 AND is_active = TRUE", record_type)
-        return [_json_object(row["data"]) for row in rows]
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        if active_version:
+            rows = await pool.fetch("SELECT data FROM food_catalog WHERE record_type = $1 AND is_active = TRUE AND dataset_version = $2 ORDER BY id", record_type, active_version)
+        else:
+            rows = await pool.fetch("SELECT data FROM food_catalog WHERE record_type = $1 AND is_active = TRUE ORDER BY id", record_type)
+        return [_safe_catalog_record(record_type, _json_object(row["data"])) for row in rows]
 
     async def search(self, **filters) -> list[dict]:
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
@@ -358,7 +380,10 @@ class PostgresFoodRepository:
         keyword = _fold_text(filters.get("keyword", ""))
         district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
+        restaurant_id = str(filters.get("restaurant_id", ""))
         for item in await self._records("menu_item"):
+            if restaurant_id and item["restaurant_id"] != restaurant_id:
+                continue
             restaurant = restaurants.get(item["restaurant_id"])
             if restaurant is None:
                 continue
@@ -378,15 +403,30 @@ class PostgresFoodRepository:
             result.append({"item": item, "restaurant": restaurant})
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
+        result.sort(key=lambda value: (-(value["restaurant"].get("rating") or 0), -(value["restaurant"].get("review_count") or 0), str(value["item"].get("name", "")).casefold(), str(value["item"].get("id", ""))))
         return result[start:start + limit]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1 AND is_active = TRUE", restaurant_id)
-        return _json_object(row["data"]) if row else None
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        query = "SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1 AND is_active = TRUE"
+        args: tuple[object, ...] = (restaurant_id,)
+        if active_version:
+            query += " AND dataset_version = $2"
+            args += (active_version,)
+        row = await pool.fetchrow(query, *args)
+        return _safe_catalog_record("restaurant", _json_object(row["data"])) if row else None
 
     async def get_menu_item(self, item_id: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'menu_item' AND id = $1 AND is_active = TRUE", item_id)
-        return _json_object(row["data"]) if row else None
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        query = "SELECT data FROM food_catalog WHERE record_type = 'menu_item' AND id = $1 AND is_active = TRUE"
+        args: tuple[object, ...] = (item_id,)
+        if active_version:
+            query += " AND dataset_version = $2"
+            args += (active_version,)
+        row = await pool.fetchrow(query, *args)
+        return _safe_catalog_record("menu_item", _json_object(row["data"])) if row else None
 
     async def get_cart(self, cart_id: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data, version FROM food_carts WHERE id = $1", cart_id)
@@ -527,8 +567,8 @@ class PostgresFoodRepository:
 
     async def dataset_status(self) -> dict:
         pool = self._require_pool()
-        version = await pool.fetchrow("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='food' ORDER BY imported_at DESC LIMIT 1")
-        row_count = await pool.fetchval("SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE")
+        version = await pool.fetchrow("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        row_count = await pool.fetchval("SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE" if not version else "SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE AND dataset_version = $1", *(() if not version else (version["dataset_version"],)))
         if not version:
             return {"dataset_version": None, "source_name": None, "imported_at": None, "last_verified_at": None, "active": bool(row_count), "row_count": int(row_count or 0), "quality_warnings": [], "rejected_count": 0}
         manifest = _json_object(version["source_manifest"]) if version["source_manifest"] else {}

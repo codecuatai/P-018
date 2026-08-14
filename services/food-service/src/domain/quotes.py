@@ -10,28 +10,37 @@ from src.domain.policies import DeliveryConfig, DomainError, calculate_discount,
 
 def price_item(item: dict[str, Any], selected_options: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
     groups = {str(group["id"]): group for group in item.get("option_groups", [])}
-    selected_by_group: dict[str, str] = {}
+    selected_by_group: dict[str, list[str]] = {}
     for option in selected_options:
         group_id = str(option["group_id"])
-        if group_id in selected_by_group:
-            raise DomainError("INVALID_OPTION", "Mỗi nhóm tùy chọn chỉ được chọn một lần.")
-        selected_by_group[group_id] = str(option["option_id"])
+        option_id = str(option["option_id"])
+        selected_by_group.setdefault(group_id, [])
+        if option_id in selected_by_group[group_id]:
+            raise DomainError("INVALID_OPTION", "Tùy chọn chỉ được chọn một lần trong cùng một nhóm.")
+        selected_by_group[group_id].append(option_id)
 
     for group in groups.values():
-        if group["required"] and group["id"] not in selected_by_group:
+        group_id = str(group["id"])
+        min_select = int(group.get("min_select", 1 if group.get("required") else 0))
+        max_select = int(group.get("max_select", 1))
+        selected_count = len(selected_by_group.get(group_id, []))
+        if selected_count < min_select:
             raise DomainError("INVALID_OPTION", f"Vui lòng chọn {group['name']}.")
+        if selected_count > max_select:
+            raise DomainError("INVALID_OPTION", f"Chỉ được chọn tối đa {max_select} tùy chọn trong {group['name']}.")
 
     normalized: list[dict[str, Any]] = []
     extra = 0
-    for group_id, option_id in selected_by_group.items():
+    for group_id, option_ids in selected_by_group.items():
         group = groups.get(group_id)
         if group is None:
             raise DomainError("INVALID_OPTION", "Nhóm tùy chọn không hợp lệ.")
-        option = next((candidate for candidate in group["options"] if candidate["id"] == option_id), None)
-        if option is None:
-            raise DomainError("INVALID_OPTION", "Tùy chọn không hợp lệ.")
-        extra += int(option["price"])
-        normalized.append({"group_id": group_id, "group_name": group["name"], "option_id": option_id, "option_name": option["name"], "price": int(option["price"])})
+        for option_id in option_ids:
+            option = next((candidate for candidate in group["options"] if str(candidate["id"]) == option_id), None)
+            if option is None:
+                raise DomainError("INVALID_OPTION", "Tùy chọn không hợp lệ.")
+            extra += int(option["price"])
+            normalized.append({"group_id": group_id, "group_name": group["name"], "option_id": option_id, "option_name": option["name"], "price": int(option["price"])})
     return int(item["price"]) + extra, normalized
 
 

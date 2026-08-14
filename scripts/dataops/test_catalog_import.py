@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from catalog_import import ROOT, build_plan, database_timestamp, database_timestamp_without_timezone
+from catalog_import import ROOT, build_plan, database_timestamp, database_timestamp_without_timezone, resolve_source_root
 
 
 def test_database_timestamp_converts_iso_offset_to_aware_datetime() -> None:
@@ -48,7 +48,32 @@ def test_healthcare_plan_repairs_specialty_csv_and_keeps_quality_flags() -> None
     doctors = next(report for report in plan.reports if report.dataset == "healthcare-doctors")
     assert doctors.missing_prices == 102
     assert all(record.payload.get("record_type") == "department" for record in plan.records if record.source_name == "healthcare-specialties")
+    department_ids = {record.payload["source_id"] for record in plan.records if record.payload.get("record_type") == "department"}
+    doctor_records = [record.payload for record in plan.records if record.payload.get("record_type") == "doctor"]
+    assert len({record.payload["source_id"] for record in plan.records if record.payload.get("record_type") == "facility"}) == 3
+    assert len(department_ids) == 70
+    assert len(doctor_records) == 208
+    assert all(doctor["department_source_id"] in department_ids or doctor["department_source_id"].startswith("derived_department_") for doctor in doctor_records)
+
+
+def test_food_plan_preserves_product_fields_and_normalizes_nested_options() -> None:
+    plan = build_plan("food", "test-food-fields-v1")
+    item = next(record.payload for record in plan.records if record.payload.get("id", "").startswith("food_menu_item_") and record.payload.get("option_groups"))
+    assert item["description"]
+    assert item["image_url"].startswith("https://")
+    assert item["available"] is True
+    assert all({"id", "name", "required", "min_select", "max_select", "options"}.issubset(group) for group in item["option_groups"])
+    assert all({"id", "name", "price"}.issubset(option) for group in item["option_groups"] for option in group["options"])
+
+
+def test_restaurant_plan_reports_repeated_default_coordinates() -> None:
+    plan = build_plan("restaurant", "test-restaurant-quality-v1")
+    report = plan.reports[0]
+    assert report.suspicious_coordinates == 1307
+    assert report.suspicious_coordinate_distinct_addresses == 397
+    assert plan.records[0].payload["latitude"] is None
+    assert plan.records[0].payload["coordinate_status"] == "suspicious_default"
 
 
 def test_source_files_are_not_rewritten_by_read_only_plan() -> None:
-    assert (ROOT / "data" / "food-service" / "restaurants.csv").is_file()
+    assert (resolve_source_root() / "data" / "food-service" / "restaurants.csv").is_file()

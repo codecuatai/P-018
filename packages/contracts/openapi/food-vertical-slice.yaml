@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: X-One Food Vertical Slice
-  version: 1.2.0
+  version: 1.3.0
 servers:
   - url: http://food-service:8104/api/v1
 tags:
@@ -23,6 +23,8 @@ paths:
         - {name: min_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
         - {name: max_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
         - {name: open_only, in: query, required: false, schema: {type: boolean, default: true}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 12}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
         '200': {description: Restaurant search results}
         '401': {$ref: '#/components/responses/Error401'}
@@ -95,6 +97,8 @@ paths:
         - {name: min_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
         - {name: max_price, in: query, required: false, schema: {type: [integer, 'null'], minimum: 0}}
         - {name: open_only, in: query, required: false, schema: {type: boolean, default: true}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 12}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
         '200': {description: Search result, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}
         '401': {$ref: '#/components/responses/Error401'}
@@ -358,6 +362,62 @@ components:
     OptionalIdempotencyKey: {name: Idempotency-Key, in: header, required: false, schema: {type: string, minLength: 8, maxLength: 200}}
   schemas:
     Envelope: {type: object, additionalProperties: true, required: [data], properties: {data: {}}}
+    FoodRestaurant:
+      type: object
+      additionalProperties: false
+      required: [id, name, address, image_url, is_open]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        address: {type: [string, 'null']}
+        ward: {type: [string, 'null']}
+        district: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        category: {type: [string, 'null']}
+        cuisine_tags: {type: array, items: {type: string}}
+        phone: {type: [string, 'null']}
+        opening_hours: {type: [string, 'null']}
+        rating: {type: [number, 'null'], minimum: 0, maximum: 5}
+        review_count: {type: [integer, 'null'], minimum: 0}
+        price_level: {type: [string, 'null']}
+        image_url: {type: [string, 'null'], format: uri}
+        is_open: {type: boolean}
+        latitude: {type: [number, 'null'], minimum: -90, maximum: 90}
+        longitude: {type: [number, 'null'], minimum: -180, maximum: 180}
+        matching_items: {type: array, items: {$ref: '#/components/schemas/FoodMenuItem'}}
+    FoodMenuItem:
+      type: object
+      additionalProperties: false
+      required: [id, restaurant_id, name, price, currency, available]
+      properties:
+        id: {type: string}
+        restaurant_id: {type: string}
+        name: {type: string}
+        description: {type: [string, 'null']}
+        price: {type: integer, minimum: 0}
+        currency: {type: string, minLength: 3, maxLength: 3}
+        image_url: {type: [string, 'null'], format: uri}
+        category: {type: [string, 'null']}
+        available: {type: boolean}
+        option_groups: {type: array, items: {$ref: '#/components/schemas/FoodOptionGroup'}}
+    FoodOptionGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name, required, min_select, max_select, options]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        required: {type: boolean}
+        min_select: {type: integer, minimum: 0}
+        max_select: {type: integer, minimum: 0}
+        options: {type: array, items: {type: object, additionalProperties: false, required: [id, name, price], properties: {id: {type: string}, name: {type: string}, price: {type: integer, minimum: 0}}}}
+    FoodSearchResult:
+      type: object
+      additionalProperties: false
+      required: [item, restaurant]
+      properties:
+        item: {$ref: '#/components/schemas/FoodMenuItem'}
+        restaurant: {$ref: '#/components/schemas/FoodRestaurant'}
     FoodLegacyAddress:
       type: object
       additionalProperties: true

@@ -76,6 +76,14 @@ def quote_delivery(
     address: dict,
     config: DeliveryConfig,
 ) -> dict:
+    if any(restaurant.get(field) is None for field in ("latitude", "longitude")) or any(address.get(field) is None for field in ("latitude", "longitude")):
+        return {
+            "distance_km": None,
+            "distance_source": "address_only",
+            "fee": {"amount": config.minimum_fee, "currency": "VND"},
+            "breakdown": {"base_fee": config.base_fee, "distance_fee": 0, "long_distance_surcharge": 0},
+            "eta_minutes": config.eta_minutes,
+        }
     distance = haversine_km(restaurant["latitude"], restaurant["longitude"], address["latitude"], address["longitude"])
     if distance > config.max_distance_km:
         raise DomainError("DELIVERY_OUT_OF_RANGE", "Địa chỉ giao hàng nằm ngoài bán kính phục vụ.")
