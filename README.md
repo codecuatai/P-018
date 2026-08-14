@@ -17,6 +17,8 @@ X-One is a backend-first conversational multi-service booking platform. The loca
 
 For the complete local stack, create exactly one root `.env` and use the checked launcher. It validates configuration, builds Compose, waits for PostgreSQL and all application health checks, applies idempotent migrations, verifies Gateway readiness, and only then starts the Web dev server:
 
+The production Compose path also builds `apps/web/Dockerfile` and serves the SPA from the `web` container on `127.0.0.1:8080`. Staging Nginx proxies `/` to that container and `/api/` to the Gateway.
+
 ```powershell
 ./scripts/start-all.ps1
 # add deterministic demo data explicitly when needed:

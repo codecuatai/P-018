@@ -326,6 +326,8 @@ jobs:
         run: npm --prefix apps/web ci --no-audit --no-fund
       - name: Build web
         working-directory: apps/web
+        env:
+          VITE_API_URL: /api
         run: npm run build
 
   compose:

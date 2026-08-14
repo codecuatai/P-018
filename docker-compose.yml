@@ -68,6 +68,19 @@ services:
     restart: unless-stopped
     networks: [xone_internal]
 
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${WEB_API_URL:-/api}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+    networks: [xone_internal]
+
   agent-service:
     build: ./apps/agent-service
     environment:
