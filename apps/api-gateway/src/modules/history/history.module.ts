@@ -23,6 +23,13 @@ export interface HistoryItem {
   resource: JsonObject;
 }
 
+const TERMINAL_HISTORY_STATUSES: Record<HistoryType, ReadonlySet<string>> = {
+  ride_booking: new Set(['COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED']),
+  food_order: new Set(['DELIVERED', 'PAYMENT_FAILED', 'RESTAURANT_REJECTED', 'CANCELLED', 'REFUNDED']),
+  restaurant_reservation: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED', 'NO_SHOW']),
+  healthcare_appointment: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED']),
+};
+
 export class HistoryQueryDto {
   @IsOptional()
   @IsIn(['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'])
@@ -88,6 +95,31 @@ export class HistoryService {
     return { items: pageItems, total: filtered.length, page, page_size: pageSize, has_more: start + pageItems.length < filtered.length, partial: unavailable.length > 0, unavailable };
   }
 
+  async active(actorId: string, correlationId: string): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
+    const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
+    const responses = await Promise.allSettled(names.map((name) => {
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId });
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
+      return this.healthcare.listAppointments(actorId, correlationId);
+    }));
+    const unavailable: string[] = [];
+    const items: HistoryItem[] = [];
+    responses.forEach((result, index) => {
+      const name = names[index];
+      if (result.status === 'rejected') {
+        unavailable.push(name);
+        return;
+      }
+      for (const value of extractItems(result.value)) {
+        const normalized = normalizeHistoryItem(name, value);
+        if (!TERMINAL_HISTORY_STATUSES[name].has(normalized.status.toUpperCase())) items.push(normalized);
+      }
+    });
+    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    return { items, partial: unavailable.length > 0, unavailable };
+  }
+
   async get(type: HistoryType, id: string, actorId: string, correlationId: string): Promise<JsonObject> {
     if (!id.trim()) throw new BadRequestException({ code: 'HISTORY_ID_REQUIRED', detail: 'Mã lịch sử là bắt buộc.', retryable: false });
     if (type === 'food_order') {
@@ -113,6 +145,11 @@ export class HistoryController {
     return this.history.list(request.user.sub, request.correlationId ?? 'cor_unknown', query).then((data) => ({ data, meta: { request_id: request.correlationId } }));
   }
 
+  @Get('active')
+  active(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return this.history.active(request.user.sub, request.correlationId ?? 'cor_unknown').then((data) => ({ data, meta: { request_id: request.correlationId } }));
+  }
+
   @Get(':type/:id')
   get(@Param('type') type: string, @Param('id') id: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     if (!isHistoryType(type)) throw new BadRequestException({ code: 'HISTORY_TYPE_INVALID', detail: 'Loại lịch sử không được hỗ trợ.', retryable: false });
@@ -132,14 +169,47 @@ function extractItems(value: JsonObject): JsonObject[] {
 function normalizeHistoryItem(type: HistoryType, resource: JsonObject): HistoryItem {
   const id = String(resource.id ?? resource.booking_id ?? resource.appointment_id ?? resource.reservation_id ?? 'unknown');
   const slot = isObject(resource.slot) ? resource.slot : undefined;
-  const timestamp = String(resource.updated_at ?? resource.created_at ?? resource.start_at ?? slot?.start_time ?? new Date(0).toISOString());
+  const timestamp = String(resource.updated_at ?? resource.created_at ?? resource.booking_time ?? resource.start_at ?? resource.start_time ?? slot?.start_time ?? new Date(0).toISOString());
   const status = String(resource.status ?? 'UNKNOWN');
-  const title = type === 'food_order' ? 'Đơn giao đồ ăn' : type === 'ride_booking' ? 'Chuyến xe' : type === 'restaurant_reservation' ? 'Đặt bàn' : 'Lịch khám';
   const restaurant = isObject(resource.restaurant) ? resource.restaurant : undefined;
   const doctor = isObject(resource.doctor) ? resource.doctor : undefined;
   const department = isObject(resource.department) ? resource.department : undefined;
-  const detail = type === 'food_order' ? String(restaurant?.name ?? restaurant?.id ?? `Mã ${id}`) : type === 'ride_booking' ? `${String(resource.pickup_address ?? '')} → ${String(resource.dropoff_address ?? '')}` : type === 'restaurant_reservation' ? String(resource.restaurant_name ?? resource.restaurant_id ?? `Mã ${id}`) : String(doctor?.name ?? department?.name ?? `Mã ${id}`);
+  const pickup = String(resource.pickup_address ?? resource.pickup ?? '');
+  const dropoff = String(resource.dropoff_address ?? resource.dropoff ?? '');
+  const vehicle = String(resource.vehicle_type ?? '');
+  const fare = moneyText(resource.amount ?? resource.fare);
+  const foodItems = Array.isArray(resource.items) ? resource.items.filter(isObject) : [];
+  const foodNames = foodItems.map((item) => String(item.name ?? item.title ?? '')).filter(Boolean);
+  const restaurantName = String(restaurant?.name ?? resource.restaurant_name ?? '');
+  const foodSummary = foodNames.length ? foodNames.slice(0, 3).join(', ') : `${foodItems.length || 0} món`;
+  const facility = isObject(resource.facility)
+    ? resource.facility
+    : doctor && isObject(doctor.facility) ? doctor.facility : undefined;
+  const facilityName = String(facility?.name ?? resource.facility_name ?? '');
+  const doctorName = String(resource.doctor_name ?? doctor?.name ?? '');
+  const departmentName = String(resource.department_name ?? department?.name ?? (typeof resource.department === 'string' ? resource.department : ''));
+  const appointmentTime = String(resource.start_time ?? resource.start_at ?? slot?.start_time ?? '');
+  const title = type === 'food_order'
+    ? restaurantName ? `Đơn tại ${restaurantName}` : 'Đơn giao đồ ăn'
+    : type === 'ride_booking'
+      ? pickup && dropoff ? `Chuyến xe ${pickup} → ${dropoff}` : 'Chuyến xe'
+      : type === 'restaurant_reservation'
+        ? `Đặt bàn${restaurantName ? ` tại ${restaurantName}` : ''}`
+        : facilityName ? `Lịch khám tại ${facilityName}` : 'Lịch khám';
+  const detail = type === 'food_order'
+    ? `${foodSummary}${restaurantName ? ` tại ${restaurantName}` : ''}${moneyText(resource.amount ?? resource.total) ? ` • ${moneyText(resource.amount ?? resource.total)}` : ''}`
+    : type === 'ride_booking'
+      ? `${pickup && dropoff ? `${pickup} → ${dropoff}` : 'Lộ trình đang được cập nhật'}${vehicle ? ` • ${vehicle}` : ''}${fare ? ` • ${fare}` : ''}`
+      : type === 'restaurant_reservation'
+        ? `${restaurantName || 'Nhà hàng đang được cập nhật'}${resource.booking_time ? ` • ${String(resource.booking_time)}` : ''}${resource.party_size !== undefined ? ` • ${String(resource.party_size)} người` : ''}`
+        : `${facilityName || 'Cơ sở đang được cập nhật'}${doctorName ? ` • ${doctorName}` : ''}${departmentName ? ` • ${departmentName}` : ''}${appointmentTime ? ` • ${appointmentTime}` : ''}`;
   return { id, type, title, status, detail, timestamp, source: type, resource };
+}
+
+function moneyText(value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return `${value} VND`;
+  if (isObject(value) && typeof value.amount === 'number' && Number.isFinite(value.amount)) return `${value.amount} ${typeof value.currency === 'string' ? value.currency : 'VND'}`;
+  return '';
 }
 
 function isObject(value: unknown): value is JsonObject {

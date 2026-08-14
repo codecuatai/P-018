@@ -43,6 +43,7 @@ class SemanticSlots(BaseModel):
     address_query: str | None = None
     restaurant_alias: Literal["first", "second"] | None = None
     menu_item_alias: Literal["first", "second"] | None = None
+    selection_index: int | None = Field(default=None, ge=0, strict=True)
     order_alias: Literal["last"] | None = None
     dish_query: str | None = None
     district: str | None = None
@@ -82,6 +83,7 @@ SEMANTIC_SLOTS = {
     "address_query",
     "restaurant_alias",
     "menu_item_alias",
+    "selection_index",
     "order_alias",
     "dish_query",
     "district",
@@ -568,8 +570,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "quote_delivery": "Phí giao hàng đã được tính từ địa chỉ và nhà hàng.",
             "preview_order": "Đây là bản xem trước đơn hàng.",
             "view_menu": "Đây là menu hiện tại.",
-            "select_menu_item": "Mình đã lấy món từ menu authoritative.",
-            "search_food": "Mình tìm được các món phù hợp từ Food Service.",
+            "select_menu_item": "Mình đã lấy món bạn chọn từ menu hiện tại.",
+            "search_food": "Mình tìm được các món phù hợp.",
         }
         return {
             "response_type": "options" if results else "text",

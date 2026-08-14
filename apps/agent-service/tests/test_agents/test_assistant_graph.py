@@ -101,6 +101,32 @@ def test_follow_up_can_supply_a_plain_location() -> None:
     assert follow_up.tasks[0].extracted_slots["location"] == "Hoàn Kiếm"
 
 
+def test_ride_destination_change_is_a_follow_up_with_only_the_route_slot_changed() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("đổi điểm đến qua trường đại học công nghệ UET giúp tôi", state)
+
+    assert domains(follow_up) == ["ride"]
+    assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "truong dai hoc cong nghe uet"
+    assert follow_up.tasks[0].extracted_slots["pickup_address"] == "VinUni"
+    assert follow_up.tasks[0].extracted_slots["vehicle_type"] == "CAR_4"
+
+
+def test_restaurant_follow_up_adds_cuisine_without_dropping_party_or_location() -> None:
+    first = deterministic_plan("Tối nay tìm nhà hàng cho 2 người ở Hà Nội")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("tôi muốn ăn lẩu lúc 9 giờ tối nay", state)
+
+    assert domains(follow_up) == ["restaurant"]
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["location"] == "Hà Nội"
+    assert slots["party_size"] == 2
+    assert slots["cuisine_query"] == "lau"
+    assert "T21:00:00" in slots["start_at"]
+
+
 def test_unsupported_request_is_safe() -> None:
     plan = deterministic_plan("Đặt vé máy bay đi Đà Nẵng")
     assert plan.tasks == []

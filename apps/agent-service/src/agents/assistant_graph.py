@@ -198,9 +198,24 @@ def _route(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _changed_route_slot(text: str, slot: str) -> str | None:
+    """Extract an explicit route edit without discarding the other endpoint."""
+    lowered = _plain(text)
+    if slot == "dropoff_address":
+        pattern = r"(?:doi|thay|chuyen)\s+(?:diem den|den|destination)\s+(?:qua|sang|thanh|la|toi)?\s*(.+?)(?:[,.!?]|$)"
+    else:
+        pattern = r"(?:doi|thay|chuyen)\s+(?:diem don|don|pickup|diem xuat phat)\s+(?:qua|sang|thanh|la|toi)?\s*(.+?)(?:[,.!?]|$)"
+    match = re.search(pattern, lowered, flags=re.IGNORECASE)
+    if not match:
+        return None
+    value = match.group(1).strip()
+    value = re.sub(r"\s+(?:giup toi|nhe|nha)$", "", value).strip()
+    return value or None
+
+
 def _has_explicit_clock(text: str) -> bool:
     lowered = _plain(text)
-    return bool(re.search(r"\b\d{1,2}(?:\s*(?:giờ|h)|:[0-5]\d)\b", lowered))
+    return bool(re.search(r"\b\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)\b", lowered))
 
 
 def _time_slot(text: str, now: datetime | None = None) -> str | None:
@@ -216,16 +231,16 @@ def _time_slot(text: str, now: datetime | None = None) -> str | None:
             explicit_date = datetime(year, month, day, tzinfo=current.tzinfo).date()
         except ValueError:
             return None
-    hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:giờ|h)|:([0-5]\d))\s*(sáng|tối|trưa|am|pm)?", lowered)
+    hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|toi|trua|am|pm)?", lowered)
     hour: int | None = None
     minute = 0
     if hour_match:
         hour = int(hour_match.group(1))
         minute = int(hour_match.group(2) or 0)
         period = hour_match.group(3)
-        if period in {"tối", "pm"} and hour < 12:
+        if period in {"toi", "pm"} and hour < 12:
             hour += 12
-        if period == "trưa" and hour < 11:
+        if period == "trua" and hour < 11:
             hour += 12
     elif "sang mai" in lowered:
         hour = 8
@@ -252,6 +267,10 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         slots["party_size"] = party_size
     if domain == "ride":
         pickup, dropoff = _route(text)
+        changed_pickup = _changed_route_slot(text, "pickup_address")
+        changed_dropoff = _changed_route_slot(text, "dropoff_address")
+        pickup = changed_pickup or pickup
+        dropoff = changed_dropoff or dropoff
         if pickup:
             slots["pickup_address"] = pickup
         if dropoff:
@@ -272,6 +291,12 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             start_at = _time_slot(text)
             if start_at:
                 slots["start_at"] = start_at
+        if domain == "restaurant":
+            cuisine_match = re.search(r"(?:muon an|thich an|an)\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
+            if cuisine_match:
+                cuisine = re.split(r"\b(?:luc|vao|toi|sang|trua)\b", cuisine_match.group(1), maxsplit=1)[0].strip()
+                if cuisine and cuisine not in {"tai nha hang", "nha hang"}:
+                    slots["cuisine_query"] = cuisine
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
             slots["delivery_preference"] = "home"
@@ -316,6 +341,10 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         slots["selection"] = "fourth"
     elif "chon cai thu nam" in lowered or "chon quan thu nam" in lowered or "mon so nam" in lowered:
         slots["selection"] = "fifth"
+    else:
+        ordinal = re.search(r"\b(?:chon|lay)\s+(?:cai|mon|quan)?\s*(?:so|thu)\s*([1-9][0-9]?)\b", lowered)
+        if ordinal:
+            slots["selection_index"] = int(ordinal.group(1)) - 1
     return slots
 
 
@@ -418,12 +447,13 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
     unsupported = _has_any(lowered, ("may bay", "chuyen bay", "flight", "khach san", "hotel", "tau hoa", "train"))
     if unsupported:
         return AssistantPlan(
-            assistant_message="Mình chưa hỗ trợ đặt vé máy bay, phòng khách sạn hoặc vé tàu trong bản demo này.",
+            assistant_message="Mình chưa hỗ trợ đặt vé máy bay, phòng khách sạn hoặc vé tàu trong các dịch vụ hiện có.",
             tasks=[],
         )
 
     follow_up = _has_any(lowered, (
         "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
+        "doi diem den", "doi diem don", "thay diem den", "thay diem don", "chuyen diem den",
         "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "gio",
         "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
     ))
@@ -653,6 +683,8 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         text_slot("promo_code", 50)
     elif domain == "restaurant":
         text_slot("location", 300)
+        text_slot("cuisine_query", 200)
+        text_slot("cuisine", 200)
         party_size = slots.get("party_size")
         if isinstance(party_size, int) and not isinstance(party_size, bool) and 1 <= party_size <= 20:
             normalized["party_size"] = party_size
@@ -662,6 +694,9 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         selection = slots.get("selection")
         if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
+        selection_index = slots.get("selection_index")
+        if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
+            normalized["selection_index"] = selection_index
     elif domain == "healthcare":
         for name, limit in (("department", 200), ("symptoms", 500)):
             text_slot(name, limit)
@@ -676,6 +711,9 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         selection = slots.get("selection")
         if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
+        selection_index = slots.get("selection_index")
+        if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
+            normalized["selection_index"] = selection_index
     elif domain == "food":
         for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("delivery_preference", 80)):
             text_slot(name, limit)

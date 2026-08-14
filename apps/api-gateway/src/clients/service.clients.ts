@@ -594,7 +594,7 @@ export class HealthcareClient extends InternalServiceClient {
     const configured = this.config.get<string>('HEALTHCARE_DEFAULT_PATIENT_ID');
     const patientId = Number(configured);
     if (!Number.isInteger(patientId) || patientId < 1) {
-      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A demo Healthcare patient is not configured.' });
+      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'Chưa liên kết thông tin người bệnh cho tài khoản này.' });
     }
     return patientId;
   }

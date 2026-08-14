@@ -58,17 +58,17 @@ function isRecord(value: unknown): value is JsonObject {
 }
 
 function healthcareFinalStateError(appointment: JsonObject): { code: string; detail: string } | null {
-  if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
-  if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment has been cancelled.' };
-  if (appointment.status === 'CONFIRMED') return { code: 'APPOINTMENT_ALREADY_CONFIRMED', detail: 'The appointment is already confirmed.' };
+  if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'Khung giờ giữ trước đó đã hết hạn.' };
+  if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'Lịch khám này đã bị hủy.' };
+  if (appointment.status === 'CONFIRMED') return { code: 'APPOINTMENT_ALREADY_CONFIRMED', detail: 'Lịch khám này đã được xác nhận.' };
   if (appointment.is_paid !== true) return { code: 'PAYMENT_REQUIRED', detail: 'Appointment payment is required before confirmation.' };
   if (appointment.status !== 'DRAFT') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'Only a draft appointment can be confirmed.' };
   const slot = isRecord(appointment.slot) ? appointment.slot : null;
   const expiresAt = slot && typeof slot.hold_expires_at === 'string' ? Date.parse(slot.hold_expires_at) : Number.NaN;
   if (!slot || slot.status !== 'HOLDING' || !Number.isFinite(expiresAt)) {
-    return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment does not have an active slot hold.' };
+    return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'Lịch khám này không còn khung giờ được giữ.' };
   }
-  if (expiresAt <= Date.now()) return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
+  if (expiresAt <= Date.now()) return { code: 'APPOINTMENT_EXPIRED', detail: 'Khung giờ giữ trước đó đã hết hạn.' };
   return null;
 }
 

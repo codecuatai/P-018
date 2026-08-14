@@ -92,6 +92,10 @@ def extract_slots(query: str) -> dict[str, object]:
         slots["menu_item_alias"] = "first"
     elif "mon thu hai" in text or "mon so hai" in text:
         slots["menu_item_alias"] = "second"
+    else:
+        ordinal = re.search(r"\b(?:mon|cai)\s+(?:so|thu)\s*([1-9][0-9]?)\b", text)
+        if ordinal:
+            slots["selection_index"] = int(ordinal.group(1)) - 1
     if "don vua dat" in text or "don vua tao" in text or "don gan nhat" in text:
         slots["order_alias"] = "last"
     voucher = re.search(r"\b[A-Z][A-Z0-9]{3,}\b", query)

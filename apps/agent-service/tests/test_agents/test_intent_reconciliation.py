@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from src.agents.graph import build_graph, reconcile_intent
+from src.agents.reference_resolution import resolve_references
 
 
 def test_reconcile_intent_keeps_explicit_workflow_actions_authoritative() -> None:
@@ -12,6 +13,23 @@ def test_reconcile_intent_keeps_explicit_workflow_actions_authoritative() -> Non
     assert reconcile_intent("add_to_cart", "select_menu_item", {}) == "add_to_cart"
     assert reconcile_intent("quote_delivery", "list_addresses", {"restaurant_id": "res_opaque"}) == "quote_delivery"
     assert reconcile_intent("place_order", "quote_delivery", {"cart_id": "cart_opaque", "address_id": "addr_opaque"}) == "place_order"
+
+
+def test_numeric_food_ordinal_resolves_against_the_full_authoritative_candidate_list() -> None:
+    resolved = resolve_references(
+        {"selection_index": 2},
+        {
+            "menu_item_candidates": [
+                {"id": "item-1", "name": "Phở bò", "restaurant_id": "restaurant-1"},
+                {"id": "item-2", "name": "Bún bò", "restaurant_id": "restaurant-1"},
+                {"id": "item-3", "name": "Cơm tấm", "restaurant_id": "restaurant-2"},
+            ]
+        },
+    )
+
+    assert resolved["menu_item_id"] == "item-3"
+    assert resolved["menu_item_name"] == "Cơm tấm"
+    assert resolved["restaurant_id"] == "restaurant-2"
 
 
 class DisagreeingLLM:

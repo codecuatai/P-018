@@ -402,6 +402,131 @@ describe('Unified assistant orchestration', () => {
     await expect(service.act(user, { conversation_id: first.conversation_id, action_id: oldAction.id }, 'cor-3', 'retry-key')).rejects.toMatchObject({ response: { code: 'ACTION_NOT_AVAILABLE' } });
   });
 
+  it('requotes a Ride after an explicit destination change and disables the old route action', async () => {
+    const store = new InMemoryCoreRepository();
+    let planningTurn = 0;
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã cập nhật chuyến xe.' }
+        : { plan: { tasks: [{ domain: 'ride', goal: 'Tìm xe', normalized_request: String(payload.message), extracted_slots: planningTurn++ === 0
+          ? { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4' }
+          : { dropoff_address: 'Trường Đại học Công nghệ UET' } }] } }),
+    };
+    const ride = {
+      chat: jest.fn().mockResolvedValue({ workflow_id: 'ride-flow', stage: 'SERVICE_CONFIRMATION', quote: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4', amount: 50000, currency: 'VND', expires_at: '2099-01-01T18:00:00+07:00' } }),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never, ride as never, { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never);
+
+    const first = await service.chat(user, 'Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ.', undefined, 'cor-ride-1');
+    const oldAction = first.actions[0];
+    const second = await service.chat(user, 'Đổi điểm đến qua trường Đại học Công nghệ UET.', first.conversation_id, 'cor-ride-2');
+
+    expect(ride.chat).toHaveBeenCalledTimes(2);
+    expect(ride.chat.mock.calls[1][1]).toContain('Trường Đại học Công nghệ UET');
+    expect(second.actions[0].id).not.toBe(oldAction.id);
+    await expect(service.act(user, { conversation_id: first.conversation_id, action_id: oldAction.id }, 'cor-ride-3', 'old-route-key')).rejects.toMatchObject({ response: { code: 'ACTION_NOT_AVAILABLE' } });
+  });
+
+  it('keeps Restaurant party size while a follow-up changes cuisine and time', async () => {
+    const store = new InMemoryCoreRepository();
+    let planningTurn = 0;
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã cập nhật nhà hàng.' }
+        : { plan: { tasks: [{ domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: String(payload.message), extracted_slots: planningTurn++ === 0
+          ? { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' }
+          : { cuisine_query: 'lẩu', start_at: '2099-01-01T21:00:00+07:00' } }] } }),
+    };
+    const restaurant = {
+      executeTool: jest.fn()
+        .mockResolvedValueOnce([{ id: 'rest-1', name: 'Quán Cũ', location: 'Hà Nội' }])
+        .mockResolvedValueOnce([{ id: 'rest-lau', name: 'Quán Lẩu', location: 'Hà Nội' }])
+        .mockResolvedValueOnce({ restaurant_id: 'rest-lau', available: true, resource_version: 1 })
+        .mockResolvedValueOnce({ id: 'hold-lau', expires_at: '2099-01-01T20:00:00+07:00', status: 'ACTIVE' }),
+    };
+    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'restaurant-confirm-lau' }), executeDomain: jest.fn(), execute: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, restaurant as never, { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, confirmations as never);
+
+    const first = await service.chat(user, 'Tối nay tìm nhà hàng cho 2 người ở Hà Nội.', undefined, 'cor-rest-1');
+    const second = await service.chat(user, 'Tôi muốn ăn lẩu lúc 9 giờ tối nay.', first.conversation_id, 'cor-rest-2');
+    await service.act(user, { conversation_id: first.conversation_id, action_id: second.actions[0].id }, 'cor-rest-3', 'rest-lau-key');
+
+    expect(restaurant.executeTool).toHaveBeenCalledTimes(4);
+    expect(restaurant.executeTool.mock.calls[1][0]).toEqual(expect.objectContaining({ arguments: expect.objectContaining({ cuisine_type: 'lẩu' }) }));
+    expect(restaurant.executeTool.mock.calls[2][0]).toEqual(expect.objectContaining({ arguments: expect.objectContaining({ party_size: 2, start_at: '2099-01-01T21:00:00+07:00' }) }));
+  });
+
+  it('keeps the authoritative third Food candidate through selection', async () => {
+    const store = new InMemoryCoreRepository();
+    const candidates = [
+      { id: 'item-1', name: 'Phở bò', restaurant_id: 'restaurant-1' },
+      { id: 'item-2', name: 'Bún bò', restaurant_id: 'restaurant-1' },
+      { id: 'item-3', name: 'Cơm tấm', restaurant_id: 'restaurant-2' },
+    ];
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã cập nhật món.' } : { plan: { tasks: [{ domain: 'food', goal: 'Tìm món', normalized_request: 'Tìm món', extracted_slots: { query: 'món ăn' } }] } }),
+      chat: jest.fn()
+        .mockResolvedValueOnce({ response_type: 'options', message: 'Có món phù hợp.', data: { items: candidates }, state_updates: { menu_item_candidates: candidates, restaurant_candidates: [{ id: 'restaurant-2', name: 'Quán Cơm' }] } })
+        .mockResolvedValueOnce({ response_type: 'options', message: 'Đã chọn món.', data: { items: [] }, state_updates: {} }),
+    };
+    const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never);
+
+    const first = await service.chat(user, 'Tìm món ăn giao về nhà.', undefined, 'cor-food-select-1');
+    expect(first.actions).toHaveLength(3);
+    const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[2].id }, 'cor-food-select-2', 'food-select-key');
+
+    expect(agent.chat.mock.calls[1][0].workflow_context).toEqual(expect.objectContaining({ menu_item_id: 'item-3', restaurant_id: 'restaurant-2' }));
+    expect(selected.items[0]).toMatchObject({ kind: 'food_options', options: [{ name: 'Cơm tấm', restaurant: { name: 'Quán Cơm' } }] });
+  });
+
+  it('disables an unavailable Healthcare slot and refreshes choices once', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = { assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã cập nhật lịch.' } : { plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh', extracted_slots: { department: 'Thần kinh' } }] } }) };
+    const unavailable = new ServiceCallError({ service: 'healthcare-service', operation: 'healthcare.hold_slot', contractVersion: 'v1', httpStatus: 409, code: 'SLOT_UNAVAILABLE', detail: 'Slot unavailable', category: 'BUSINESS', retryable: false, retryAfterMs: null, outcome: 'NOT_SENT' });
+    const healthcare = {
+      executeTool: jest.fn()
+        .mockResolvedValueOnce({ doctors: [{ name: 'Bác sĩ A', department: { name: 'Thần kinh' }, available_slots: [{ id: 10, start_time: '2099-01-02T09:00:00+07:00' }] }] })
+        .mockRejectedValueOnce(unavailable)
+        .mockResolvedValueOnce({ doctors: [{ name: 'Bác sĩ B', department: { name: 'Thần kinh' }, available_slots: [{ id: 11, start_time: '2099-01-02T10:00:00+07:00' }, { id: 12, start_time: '2099-01-02T11:00:00+07:00' }] }] }),
+      acknowledgePayment: jest.fn(),
+      defaultPatientId: 1,
+    };
+    const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, healthcare as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never);
+
+    const first = await service.chat(user, 'Tìm lịch khám thần kinh.', undefined, 'cor-health-stale-1');
+    const failed = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-health-stale-2', 'health-stale-key');
+    await expect(service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-health-stale-3', 'different-key')).rejects.toMatchObject({ response: { code: 'ACTION_NOT_AVAILABLE' } });
+
+    expect(failed.items[0]).toMatchObject({ kind: 'task_error', error_code: 'SLOT_UNAVAILABLE', retryable: false });
+    expect(failed.actions).toHaveLength(2);
+    expect(healthcare.executeTool).toHaveBeenCalledTimes(3);
+  });
+
+  it('recovers a Healthcare payment retry with the original idempotency key', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = { assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã chuẩn bị.' } : { plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh', extracted_slots: { department: 'Thần kinh' } }] } }) };
+    const transient = new ServiceCallError({ service: 'healthcare-service', operation: 'healthcare.acknowledge_payment', contractVersion: 'v1', httpStatus: 503, code: 'UPSTREAM_UNAVAILABLE', detail: 'Temporary outage', category: 'TRANSIENT', retryable: true, retryAfterMs: null, outcome: 'UNKNOWN' });
+    const healthcare = {
+      executeTool: jest.fn()
+        .mockResolvedValueOnce({ doctors: [{ name: 'Bác sĩ A', department: { name: 'Thần kinh' }, available_slots: [{ id: 10, start_time: '2099-01-02T09:00:00+07:00' }] }] })
+        .mockResolvedValueOnce({ appointment_id: 51, doctor_name: 'Bác sĩ A', department: 'Thần kinh', start_time: '2099-01-02T09:00:00+07:00', status: 'DRAFT' }),
+      acknowledgePayment: jest.fn().mockRejectedValueOnce(transient).mockResolvedValueOnce({ status: 'success', appointment_id: 51, is_paid: true }),
+      defaultPatientId: 1,
+    };
+    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'health-confirm-1' }), execute: jest.fn(), executeDomain: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, healthcare as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, confirmations as never);
+
+    const first = await service.chat(user, 'Tìm lịch khám thần kinh.', undefined, 'cor-health-pay-1');
+    const held = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-health-pay-2', 'health-select-key');
+    await expect(service.act(user, { conversation_id: first.conversation_id, action_id: held.actions[0].id }, 'cor-health-pay-3', 'health-payment-key')).rejects.toBeInstanceOf(ServiceCallError);
+    const recovered = await service.act(user, { conversation_id: first.conversation_id, action_id: held.actions[0].id }, 'cor-health-pay-4', 'new-consumer-key');
+
+    expect(recovered.actions[0].kind).toBe('healthcare_confirm');
+    expect(healthcare.acknowledgePayment.mock.calls.map((call) => call[3])).toEqual(['health-payment-key', 'health-payment-key']);
+  });
+
   it('invalidates sibling selection actions after one restaurant is selected', async () => {
     const store = new InMemoryCoreRepository();
     const agent = { assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã chuẩn bị.' } : { plan: { tasks: [{ domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Nhà hàng Hà Nội', extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' } }] } }) };

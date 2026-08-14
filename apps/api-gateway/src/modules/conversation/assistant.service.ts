@@ -235,6 +235,13 @@ function healthcareHour(value: Date): number {
   return Number(new Intl.DateTimeFormat('en-GB', { timeZone: HEALTHCARE_TIMEZONE, hour: '2-digit', hour12: false }).format(value));
 }
 
+function flattenHealthcareSlots(doctors: JsonObject[]): JsonObject[] {
+  return doctors.flatMap((doctor) => arrayValue(doctor.available_slots).filter(isRecord).map((slot) => ({
+    ...doctor,
+    available_slots: [slot],
+  })));
+}
+
 function filterDoctorsByRequestedTime(doctors: JsonObject[], slots: Record<string, unknown>): JsonObject[] {
   const requested = parseAuthoritativeDate(slots.start_at);
   const preference = stringValue(slots.time_preference)?.toLowerCase();
@@ -292,7 +299,7 @@ function hasExactHealthcareSlot(doctors: JsonObject[], requested: Date | undefin
 
 function safeText(value: unknown, fallback: string): string {
   const text = stringValue(value) ?? fallback;
-  if (/workflow|tool[_ ]?request|state[_ ]?patch|risk[_ ]?level|correlation|actor[_ ]?id|api gateway|backend|confirmation token/i.test(text)) {
+  if (/authoritative|demo|sandbox|provider|workflow|tool[_ ]?request|state[_ ]?patch|risk[_ ]?level|correlation|actor[_ ]?id|api gateway|backend|confirmation token/i.test(text)) {
     return fallback;
   }
   return text;
@@ -593,8 +600,8 @@ export class AssistantService {
       if (hasFailedDependency(task, merged)) {
         const publicItem = {
           kind: 'task_error',
-          title: 'BÆ°á»›c phÃ¹ thuá»™c chÆ°a thá»ƒ tiáº¿p tá»¥c',
-          note: 'MÃ¬nh Ä‘Ã£ dá»«ng bÆ°á»›c phÃ­a sau vÃ¬ má»™t dá»‹ch vá»¥ trÆ°á»›c Ä‘Ã³ khÃ´ng hoÃ n táº¥t.',
+          title: 'Bước tiếp theo chưa thể thực hiện',
+          note: 'Mình đã tạm dừng bước tiếp theo vì thông tin trước đó chưa hoàn tất.',
           error_code: 'DEPENDENCY_BLOCKED',
           retryable: false,
         };
@@ -619,8 +626,8 @@ export class AssistantService {
         const code = publicFailureCode(error);
         const publicItem = {
           kind: 'task_error',
-          title: 'Dá»‹ch vá»¥ chÆ°a hoÃ n táº¥t',
-          note: 'MÃ¬nh Ä‘Ã£ giá»¯ nguyÃªn cÃ¡c dá»‹ch vá»¥ Ä‘á»™c láº­p vÃ  ghi nháº­n bÆ°á»›c nÃ y lÃ  tháº¥t báº¡i an toÃ n.',
+          title: 'Dịch vụ chưa hoàn tất',
+          note: 'Mình đã giữ nguyên các dịch vụ độc lập và ghi nhận bước này chưa hoàn tất an toàn.',
           error_code: code,
           retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE',
         };
@@ -669,37 +676,50 @@ export class AssistantService {
   ): Promise<AssistantResponse> {
     const requestHash = stableHash({ conversation_id: request.conversation_id, action_id: request.action_id });
     const conversation = await this.store.getConversation(request.conversation_id, user.sub);
-    if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Conversation not found.' });
+    if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.' });
     const state = storedState(conversation.state);
     const action = state.actions.find((candidate) => candidate.id === request.action_id);
     const previousExecution = await this.getAssistantActionExecution(user.sub, request.conversation_id, request.action_id);
+    let executionIdempotencyKey = idempotencyKey;
     if (previousExecution) {
-      if (previousExecution.idempotencyKey !== idempotencyKey) throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'This action has already been consumed.' });
-      if (previousExecution.requestHash !== requestHash) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different request.' });
+      if (previousExecution.requestHash !== requestHash) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Mã yêu cầu đã được dùng cho một lựa chọn khác.' });
       if (previousExecution.status === 'SUCCEEDED' && previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
-      if (previousExecution.status === 'FAILED_FINAL') throw new ConflictException({ code: 'ASSISTANT_ACTION_FAILED', detail: 'This action could not be completed safely.' });
+      if (previousExecution.status === 'FAILED_FINAL') {
+        if (previousExecution.idempotencyKey !== idempotencyKey) throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
+        if (previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
+        throw new ConflictException({ code: 'ASSISTANT_ACTION_FAILED', detail: 'Lựa chọn này chưa thể hoàn tất an toàn.' });
+      }
+      if (previousExecution.status === 'FAILED_RETRYABLE') {
+        // Recovery stays bound to the first key even if a consumer generated a
+        // fresh key after a transient response. Domain idempotency can then
+        // replay the original side effect instead of creating a second one.
+        executionIdempotencyKey = previousExecution.idempotencyKey;
+      } else if (previousExecution.idempotencyKey !== idempotencyKey) {
+        throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này đang được xử lý.' });
+      }
     }
-    if (!action) throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'This action is no longer available.' });
+    if (!action) throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
     const task = state.tasks.find((candidate) => candidate.id === action.task_id);
-    if (!task) throw new ConflictException({ code: 'TASK_NOT_FOUND', detail: 'This action is no longer available.' });
+    if (!task) throw new ConflictException({ code: 'TASK_NOT_FOUND', detail: 'Lựa chọn này không còn hiệu lực.' });
     if (action.task_revision !== task.revision) {
-      throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'This action belongs to an older task revision.' });
+      throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này đã cũ. Bạn chọn lại phương án hiện tại nhé.' });
     }
     if (action.kind === 'ride_service' && !this.rideActionAllowed(task, state.tasks)) {
-      throw new ConflictException({ code: 'PREREQUISITE_NOT_COMPLETED', detail: 'The dependent service must be completed before the ride can be confirmed.' });
+      throw new ConflictException({ code: 'PREREQUISITE_NOT_COMPLETED', detail: 'Bạn hoàn tất bước trước rồi mình sẽ xác nhận chuyến xe nhé.' });
     }
-    const claim = await this.claimAssistantActionExecution(user.sub, request.conversation_id, request.action_id, idempotencyKey, requestHash);
-    if (claim.state === 'ACTION_NOT_AVAILABLE') throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'This action has already been consumed.' });
-    if (claim.state === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different request.' });
+    const taskBeforeAction = JSON.parse(JSON.stringify(task)) as StoredTask;
+    const claim = await this.claimAssistantActionExecution(user.sub, request.conversation_id, request.action_id, executionIdempotencyKey, requestHash);
+    if (claim.state === 'ACTION_NOT_AVAILABLE') throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này đã được xử lý hoặc không còn hiệu lực.' });
+    if (claim.state === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Mã yêu cầu đã được dùng cho một lựa chọn khác.' });
     if (claim.state === 'SUCCEEDED' && claim.execution?.response) return claim.execution.response as unknown as AssistantResponse;
-    if (claim.state === 'PROCESSING') throw new ConflictException({ code: 'ASSISTANT_ACTION_PROCESSING', detail: 'This action is already being processed.', retryable: true });
-    if (claim.state === 'FAILED_FINAL') throw new ConflictException({ code: 'ASSISTANT_ACTION_FAILED', detail: 'This action could not be completed safely.' });
+    if (claim.state === 'PROCESSING') throw new ConflictException({ code: 'ASSISTANT_ACTION_PROCESSING', detail: 'Lựa chọn này đang được xử lý.', retryable: true });
+    if (claim.state === 'FAILED_FINAL') throw new ConflictException({ code: 'ASSISTANT_ACTION_FAILED', detail: 'Lựa chọn này chưa thể hoàn tất an toàn.' });
     // An action advances the task revision. This makes the selected action and
     // every sibling from the old phase unusable even if a client replays it.
     try {
       await this.hydrateRideAction(action, task, user.sub, correlationId);
       task.revision += 1;
-      const result = await this.executeAction(action, task, user, request.conversation_id, correlationId, idempotencyKey);
+      const result = await this.executeAction(action, task, user, request.conversation_id, correlationId, executionIdempotencyKey);
       task.phase = result.phase;
       task.authoritative = result.authoritative ?? task.authoritative;
       task.public_item = result.publicItem ?? task.public_item;
@@ -718,7 +738,7 @@ export class AssistantService {
         if (hasFailedDependency(dependent, state.tasks)) {
           dependent.phase = 'FAILED';
           dependent.failure_code = 'DEPENDENCY_BLOCKED';
-          const publicItem = { kind: 'task_error', title: 'Dependency blocked', note: 'The dependent step was stopped because a prerequisite failed.', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
+          const publicItem = { kind: 'task_error', title: 'Bước tiếp theo chưa thể thực hiện', note: 'Mình đã tạm dừng bước tiếp theo vì thông tin trước đó chưa hoàn tất.', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
           continue;
@@ -740,7 +760,7 @@ export class AssistantService {
           const code = publicFailureCode(error);
           dependent.phase = 'FAILED';
           dependent.failure_code = code;
-          const publicItem = { kind: 'task_error', title: 'Dependent service failed', note: 'The prerequisite completed, but this next step could not be prepared.', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
+          const publicItem = { kind: 'task_error', title: 'Chưa thể chuẩn bị bước tiếp theo', note: 'Bước trước đã hoàn tất nhưng mình chưa thể chuẩn bị phần tiếp theo.', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
         }
@@ -768,7 +788,7 @@ export class AssistantService {
           actorId: user.sub,
           conversationId: request.conversation_id,
           actionId: request.action_id,
-          idempotencyKey,
+          idempotencyKey: executionIdempotencyKey,
           requestHash,
           userMessage: turn.userMessage,
           assistantMessage: turn.assistantMessage,
@@ -785,7 +805,7 @@ export class AssistantService {
       if (error instanceof AssistantActionCommitFailure) {
         throw new ServiceUnavailableException({
           code: 'ASSISTANT_ACTION_COMMIT_RETRY',
-          detail: 'The action result is being saved. Retry shortly with the same idempotency key.',
+          detail: 'Kết quả đang được lưu. Bạn thử lại sau ít phút với cùng mã yêu cầu nhé.',
           retryable: true,
         });
       }
@@ -795,8 +815,8 @@ export class AssistantService {
         task.failure_code = code;
         const publicItem = {
           kind: 'task_error',
-          title: 'Ride chÆ°a hoÃ n táº¥t',
-          note: 'Lá»‹ch khÃ¡m hoáº·c dá»‹ch vá»¥ Ä‘á»™c láº­p khÃ´ng bá»‹ tá»± Ä‘á»™ng há»§y; hiá»‡n chÆ°a thá»ƒ hoÃ n táº¥t chuyáº¿n xe.',
+          title: 'Chuyến xe chưa hoàn tất',
+          note: 'Các dịch vụ độc lập vẫn được giữ nguyên; hiện chưa thể hoàn tất chuyến xe này.',
           error_code: code,
           retryable: false,
         };
@@ -810,7 +830,7 @@ export class AssistantService {
           request.conversation_id,
           user,
           action.kind,
-          'DÃ£ ghi nháº­n tháº¥t báº¡i cá»§a Ride vÃ  giá»¯ nguyÃªn cÃ¡c dá»‹ch vá»¥ Ä‘á»™c láº­p.',
+          'Mình đã ghi nhận chuyến xe chưa hoàn tất; các dịch vụ độc lập vẫn được giữ nguyên.',
           state,
           [publicItem],
           state.actions,
@@ -822,7 +842,7 @@ export class AssistantService {
             actorId: user.sub,
             conversationId: request.conversation_id,
             actionId: request.action_id,
-            idempotencyKey,
+            idempotencyKey: executionIdempotencyKey,
             requestHash,
             userMessage: failedTurn.userMessage,
             assistantMessage: failedTurn.assistantMessage,
@@ -835,8 +855,119 @@ export class AssistantService {
         return failedTurn.response;
       }
       const status = assistantActionFailureStatus(error);
-      await this.completeAssistantActionExecution(user.sub, request.conversation_id, request.action_id, idempotencyKey, requestHash, status);
+        if (status === 'FAILED_FINAL') {
+          const response = await this.persistFinalActionFailure(
+            user,
+            request.conversation_id,
+            correlationId,
+            action,
+            task,
+            taskBeforeAction,
+            state,
+            publicFailureCode(error),
+          );
+          await this.completeAssistantActionExecution(user.sub, request.conversation_id, request.action_id, executionIdempotencyKey, requestHash, status, response as unknown as Record<string, unknown>);
+          return response;
+        }
+        await this.completeAssistantActionExecution(user.sub, request.conversation_id, request.action_id, executionIdempotencyKey, requestHash, status);
       throw error;
+    }
+  }
+
+  private async persistFinalActionFailure(
+    user: AuthUser,
+    conversationId: string,
+    correlationId: string,
+    action: StoredAction,
+    task: StoredTask,
+    taskBeforeAction: StoredTask,
+    state: AssistantState,
+    code: string,
+  ): Promise<AssistantResponse> {
+    Object.assign(task, taskBeforeAction);
+    task.phase = 'NEEDS_INFO';
+    delete task.failure_code;
+    delete task.public_item;
+
+    let nextActions = state.actions.filter((candidate) => candidate.id !== action.id);
+    const refreshHealthcare = action.kind === 'select_healthcare_slot'
+      && ['APPOINTMENT_EXPIRED', 'SLOT_UNAVAILABLE', 'SLOT_ALREADY_HELD', 'APPOINTMENT_NOT_PAYABLE'].includes(code);
+    if (refreshHealthcare) {
+      const department = stringValue(task.extracted_slots.department);
+      if (department) {
+        try {
+          const result = await this.healthcare.executeTool({
+            tool_name: 'healthcare.list_slots',
+            risk_level: 'READ',
+            arguments: { department },
+            workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
+            tool_call_id: `call_${randomUUID()}`,
+            schema_version: '1',
+          }, user.sub, correlationId);
+          const doctors = flattenHealthcareSlots(this.resultItems(result)).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
+          task.authoritative = { ...(task.authoritative ?? {}), department, doctors };
+          nextActions = nextActions.filter((candidate) => candidate.task_id !== task.id || candidate.kind !== 'select_healthcare_slot');
+          nextActions.push(...this.healthcareSelectionActions(doctors, task));
+        } catch {
+          // Keep the remaining stored choices when a refresh is unavailable;
+          // the failed option itself has still been disabled below.
+        }
+      }
+    }
+    state.actions = nextActions;
+    const message = code === 'SELECTION_EXPIRED' || code === 'STALE_ACTION'
+      ? 'Lựa chọn này không còn hiệu lực. Bạn chọn lại trong danh sách hiện tại nhé.'
+      : ['APPOINTMENT_EXPIRED', 'SLOT_UNAVAILABLE', 'SLOT_ALREADY_HELD'].includes(code)
+        ? 'Khung giờ này không còn trống. Mình đã cập nhật các lựa chọn để bạn chọn lại nhé.'
+        : 'Mình chưa thể hoàn tất lựa chọn này. Bạn thử lại với thông tin hiện tại nhé.';
+    const item: JsonObject = {
+      kind: 'task_error',
+      title: 'Lựa chọn không còn khả dụng',
+      note: message,
+      error_code: code,
+      retryable: false,
+    };
+    state.orchestration = buildOrchestrationSnapshot(
+      state.tasks,
+      Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
+    );
+    const turn = this.buildTurn(
+      conversationId,
+      user,
+      action.kind,
+      message,
+      state,
+      [item],
+      state.actions,
+      [],
+      'INTERNAL_ACTION',
+    );
+    await this.store.appendConversationTurn({
+      conversationId,
+      actorId: user.sub,
+      userMessage: turn.userMessage,
+      assistantMessage: turn.assistantMessage,
+      stateUpdates: turn.stateUpdates,
+    });
+    return turn.response;
+  }
+
+  private async acknowledgeHealthcarePayment(
+    appointmentId: number,
+    actorId: string,
+    correlationId: string,
+    idempotencyKey: string,
+  ): Promise<JsonObject> {
+    try {
+      return await this.healthcare.acknowledgePayment(appointmentId, actorId, correlationId, idempotencyKey);
+    } catch (error: unknown) {
+      // A transient response can arrive after Healthcare committed the
+      // payment. Re-read the domain resource before treating a later 409 as a
+      // second failure; only an active, paid draft is safe to continue.
+      if (!(error instanceof ServiceCallError) || error.code !== 'APPOINTMENT_NOT_PAYABLE') throw error;
+      const appointment = await this.healthcare.getAppointment(appointmentId, actorId, correlationId);
+      if (appointment.status !== 'DRAFT' || appointment.is_paid !== true) throw error;
+      return { status: 'success', appointment_id: appointmentId, is_paid: true };
     }
   }
 
@@ -894,11 +1025,11 @@ export class AssistantService {
     // hydration capability. The production unified adapter always does.
     if (typeof hydrate !== 'function') return;
     if (!workflowId || (task.workflow_id && task.workflow_id !== workflowId)) {
-      throw new ConflictException({ code: 'RIDE_STATE_INVALID', detail: 'The Ride action is no longer bound to its task.' });
+      throw new ConflictException({ code: 'RIDE_STATE_INVALID', detail: 'Lựa chọn chuyến xe không còn gắn với yêu cầu hiện tại.' });
     }
     const references = rideReferences(task);
     if (!references || (action.kind === 'ride_payment' && !references.bookingId)) {
-      throw new ConflictException({ code: 'RIDE_STATE_NOT_DURABLE', detail: 'The authoritative Ride state is no longer available.' });
+      throw new ConflictException({ code: 'RIDE_STATE_NOT_DURABLE', detail: 'Thông tin chuyến xe hiện không còn sẵn sàng.' });
     }
     await hydrate.call(this.ride, actorId, workflowId, references, correlationId);
   }
@@ -1006,7 +1137,9 @@ export class AssistantService {
     if (task.domain === 'restaurant') {
       const previousLocation = stringValue(task.extracted_slots.location);
       const nextLocation = stringValue(nextSlots.location);
-      const candidates = previousLocation && nextLocation && previousLocation === nextLocation
+      const previousCuisine = stringValue(task.extracted_slots.cuisine_query) ?? stringValue(task.extracted_slots.cuisine);
+      const nextCuisine = stringValue(nextSlots.cuisine_query) ?? stringValue(nextSlots.cuisine);
+      const candidates = previousLocation && nextLocation && previousLocation === nextLocation && previousCuisine === nextCuisine
         ? arrayValue(task.authoritative?.candidates).filter(isRecord)
         : [];
       task.authoritative = candidates.length ? { candidates } : undefined;
@@ -1083,7 +1216,12 @@ export class AssistantService {
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
-        arguments: { location, limit: 5 },
+        arguments: {
+          location,
+          limit: 20,
+          ...(stringValue(slots.cuisine_query) ? { cuisine_type: stringValue(slots.cuisine_query) } : {}),
+          ...(stringValue(slots.cuisine) ? { cuisine_type: stringValue(slots.cuisine) } : {}),
+        },
         workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
         tool_call_id: `call_${randomUUID()}`,
         schema_version: '1',
@@ -1091,7 +1229,7 @@ export class AssistantService {
       const list = this.resultItems(result);
       const publicItem = this.restaurantOptions(list);
       const cohortId = this.newCohort(task);
-      const selectionActions = list.slice(0, 5).map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId));
+      const selectionActions = list.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId));
       return {
         phase: list.length ? 'NEEDS_INFO' : 'FAILED',
         authoritative: { candidates: list },
@@ -1108,11 +1246,11 @@ export class AssistantService {
         authoritative: existing,
         publicItem,
         items: [publicItem],
-        actions: candidates.slice(0, 5).map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId)),
+        actions: candidates.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId)),
       };
     }
     const restaurantId = stringValue(selected.id);
-    if (!restaurantId) throw new BadRequestException({ code: 'RESTAURANT_SELECTION_INVALID', detail: 'A current restaurant selection is required.' });
+    if (!restaurantId) throw new BadRequestException({ code: 'RESTAURANT_SELECTION_INVALID', detail: 'Bạn cần chọn một nhà hàng trong danh sách hiện tại.' });
     const availability = await this.restaurant.executeTool({
       tool_name: 'restaurant.check_availability',
       risk_level: 'READ',
@@ -1122,8 +1260,16 @@ export class AssistantService {
       schema_version: '1',
     }, user.sub, correlationId);
     if (!isRecord(availability) || availability.available !== true) {
-      const publicItem = { kind: 'restaurant_unavailable', title: 'Khung giờ này chưa còn bàn', restaurant: this.publicRestaurant(selected), alternatives: candidates.filter((candidate) => candidate.id !== restaurantId).slice(0, 3).map((candidate) => this.publicRestaurant(candidate)) };
-      return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: { ...existing, selected, availability }, publicItem, items: [publicItem] };
+      const alternatives = candidates.filter((candidate) => candidate.id !== restaurantId);
+      const cohortId = this.newCohort(task);
+      const publicItem = { kind: 'restaurant_unavailable', title: 'Khung giờ này chưa còn bàn', restaurant: this.publicRestaurant(selected), alternatives: alternatives.map((candidate) => this.publicRestaurant(candidate)) };
+      return {
+        phase: 'NEEDS_INFO' as TaskPhase,
+        authoritative: { ...existing, selected, availability },
+        publicItem,
+        items: [publicItem],
+        actions: alternatives.map((candidate) => this.actionFor(task, 'select_restaurant', { selection_index: candidates.indexOf(candidate) }, cohortId)),
+      };
     }
     const hold = await this.restaurant.executeTool({
       tool_name: 'restaurant.create_hold',
@@ -1134,7 +1280,7 @@ export class AssistantService {
       schema_version: '1',
       idempotency_key: `assistant:restaurant:hold:${conversationId}:${task.id}:${restaurantId}:${startAt}:${partySize}`,
     }, user.sub, correlationId);
-    if (!isRecord(hold) || !stringValue(hold.id)) throw new ConflictException({ code: 'HOLD_NOT_CREATED', detail: 'The restaurant could not be held.' });
+    if (!isRecord(hold) || !stringValue(hold.id)) throw new ConflictException({ code: 'HOLD_NOT_CREATED', detail: 'Mình chưa thể giữ bàn tại nhà hàng này.' });
     const tool: RestaurantTool = {
       tool_name: 'restaurant.create_reservation',
       risk_level: 'FINANCIAL_OR_FINAL',
@@ -1292,7 +1438,7 @@ export class AssistantService {
     const doctors = arrayValue(existing?.doctors).filter(isRecord);
     if (!doctors.length || existing?.department !== department) {
       const result = await this.healthcare.executeTool({ tool_name: 'healthcare.list_slots', risk_level: 'READ', arguments: { department }, workflow_id: workflowId, tool_call_id: `call_${randomUUID()}`, schema_version: '1' }, user.sub, correlationId);
-      const availableDoctors = this.resultItems(result).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
+      const availableDoctors = flattenHealthcareSlots(this.resultItems(result)).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
       const requestedDoctors = filterDoctorsByRequestedTime(availableDoctors, slots);
       const requestedStart = parseAuthoritativeDate(slots.start_at);
       const exactRequested = hasExactHealthcareSlot(requestedDoctors, requestedStart);
@@ -1335,8 +1481,8 @@ export class AssistantService {
       idempotency_key: `assistant:healthcare:hold:${conversationId}:${task.id}:${String(selectedSlot.id)}`,
     }, user.sub, correlationId);
     const appointmentId = numberValue(isRecord(appointment) ? appointment.appointment_id : undefined);
-    if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_CREATED', detail: 'The appointment could not be held.' });
-    const publicItem = { kind: 'appointment', title: 'Mình đã tạm giữ khung giờ', doctor: isRecord(appointment) ? appointment.doctor_name : undefined, department: isRecord(appointment) ? appointment.department : department, start_time: isRecord(appointment) ? appointment.start_time : undefined, price: isRecord(appointment) ? appointment.price : undefined, facility: isRecord(appointment) && isRecord(appointment.facility) ? appointment.facility : undefined, note: 'Bạn xác nhận thanh toán demo trước khi hoàn tất lịch khám.' };
+    if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_CREATED', detail: 'Mình chưa thể giữ khung giờ khám này.' });
+    const publicItem = { kind: 'appointment', title: 'Mình đã tạm giữ khung giờ', resource_id: appointmentId, doctor: isRecord(appointment) ? appointment.doctor_name : undefined, department: isRecord(appointment) ? appointment.department : department, start_time: isRecord(appointment) ? appointment.start_time : undefined, price: isRecord(appointment) ? appointment.price : undefined, facility: isRecord(appointment) && isRecord(appointment.facility) ? appointment.facility : undefined, note: 'Bạn xác nhận thanh toán trước khi hoàn tất lịch khám.' };
     const action = this.actionFor(task, 'healthcare_payment', { appointment_id: appointmentId, workflow_id: workflowId });
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { department, doctors, selectedSlot, appointment }, publicItem, items: [publicItem], actions: [action], workflowId };
   }
@@ -1347,26 +1493,51 @@ export class AssistantService {
       : isRecord(task.authoritative?.state_updates)
         ? task.authoritative.state_updates
         : {};
-    const selectedIndex = foodSelectionIndex(task.latest_message ?? '', arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord));
+    const storedCandidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
+    const selectedIndex = foodSelectionIndex(task.latest_message ?? '', storedCandidates);
+    const selectedCandidate = selectedIndex !== undefined
+      ? storedCandidates[selectedIndex]
+      : storedCandidates.find((candidate) => candidate.id === storedContext.menu_item_id);
     const previousContext = selectedIndex === undefined
       ? storedContext
       : (() => {
-        const candidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
-        const selected = candidates[selectedIndex];
-        return { ...storedContext, menu_item_id: selected?.id, restaurant_id: selected?.restaurant_id ?? storedContext.restaurant_id };
+        return {
+          ...storedContext,
+          menu_item_id: selectedCandidate?.id,
+          restaurant_id: selectedCandidate?.restaurant_id ?? storedContext.restaurant_id,
+        };
       })();
     const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm món đã chọn vào giỏ';
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
     const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
-    const nextContext = { ...previousContext, ...stateUpdates };
+    const nextContext = {
+      ...previousContext,
+      ...stateUpdates,
+      ...(selectedCandidate?.id ? {
+        menu_item_id: selectedCandidate.id,
+        ...(selectedCandidate.restaurant_id ? { restaurant_id: selectedCandidate.restaurant_id } : {}),
+      } : {}),
+    };
     const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
     const data = isRecord(response.data) ? response.data : {};
-    const foodData = isRecord(data) ? this.foodData(data) : {};
+    let foodData = isRecord(data) ? this.foodData(data) : {};
+    if (!arrayValue(foodData.options).length && selectedCandidate) {
+      const selectedRestaurant = arrayValue(storedContext.restaurant_candidates).find(
+        (candidate): candidate is JsonObject => isRecord(candidate) && candidate.id === selectedCandidate.restaurant_id,
+      );
+      foodData = {
+        ...foodData,
+        options: [{
+          name: selectedCandidate.name,
+          ...(selectedRestaurant && stringValue(selectedRestaurant.name) ? { restaurant: { name: selectedRestaurant.name } } : {}),
+        }],
+      };
+    }
     const publicItem: JsonObject = {
       kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
       title: pending ? 'Đơn hàng đã sẵn sàng' : arrayValue(foodData.options).length ? 'Món ăn phù hợp' : 'Chưa tìm thấy món phù hợp',
       ...foodData,
-      ...(!pending && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có lựa chọn món phù hợp từ Food Service.') } : {}),
+      ...(!pending && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
     };
     const optionActions = !pending
       ? arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, this.newCohort(task)))
@@ -1382,7 +1553,7 @@ export class AssistantService {
     if (action.kind === 'select_restaurant') {
       const candidates = arrayValue(task.authoritative?.candidates).filter(isRecord);
       const selected = candidates[action.selection_index ?? 0];
-      if (!selected) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'The restaurant choices have changed. Please search again.' });
+      if (!selected) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'Danh sách nhà hàng đã thay đổi. Bạn chọn lại trong danh sách hiện tại nhé.' });
       task.extracted_slots.selection = selectionName(action.selection_index ?? 0);
       task.authoritative = { ...task.authoritative, selected };
       task.phase = 'IN_PROGRESS';
@@ -1394,11 +1565,12 @@ export class AssistantService {
       const reservation = isRecord(result.reservation) ? result.reservation : result;
       const selected = isRecord(task.authoritative?.selected) ? task.authoritative.selected : undefined;
       const restaurantName = stringValue(reservation.restaurant_name) ?? stringValue(selected?.name);
-      if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'The reservation response did not include the restaurant name.' });
+      if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'Mình chưa nhận được tên nhà hàng trong kết quả đặt bàn.' });
       const restaurantLocation = stringValue(reservation.restaurant_location) ?? stringValue(selected?.location);
       const publicItem = {
         kind: 'reservation',
         title: 'Đặt bàn đã hoàn tất',
+        ...(stringValue(reservation.id) ? { resource_id: reservation.id } : {}),
         restaurant: { name: restaurantName, ...(restaurantLocation ? { location: restaurantLocation } : {}) },
         reservation_code: stringValue(reservation.reservation_code),
         start_at: reservation.start_at,
@@ -1411,28 +1583,30 @@ export class AssistantService {
       const result = await this.ride.confirmService(user.sub, action.workflow_id ?? task.workflow_id ?? '', correlationId);
       const publicItem = this.rideItem(result, task);
       const next = result.stage === 'PAYMENT_CONFIRMATION' ? this.actionFor(task, 'ride_payment', { workflow_id: result.workflow_id }) : undefined;
-      return { phase: next ? 'AWAITING_CONFIRMATION' : 'COMPLETED', message: next ? 'Thông tin chuyến đã được xác nhận. Bạn xác nhận thanh toán demo để hoàn tất nhé.' : 'Chuyến xe đã được cập nhật.', publicItem, authoritative: rideAuthority(result), nextAction: next };
+      return { phase: next ? 'AWAITING_CONFIRMATION' : 'COMPLETED', message: next ? 'Thông tin chuyến đã được xác nhận. Bạn xác nhận thanh toán để hoàn tất nhé.' : 'Chuyến xe đã được cập nhật.', publicItem, authoritative: rideAuthority(result), nextAction: next };
     }
     if (action.kind === 'ride_payment') {
       const result = await this.ride.confirmPayment(user.sub, action.workflow_id ?? task.workflow_id ?? '', correlationId);
       const status = stringValue(result.booking?.status) ?? 'UNKNOWN';
       const message = status === 'NO_DRIVER'
-        ? 'Chưa có tài xế phù hợp; trạng thái authoritative của chuyến là NO_DRIVER.'
-        : `Thanh toán đã được ghi nhận; trạng thái authoritative của chuyến là ${status}.`;
+        ? 'Hiện chưa tìm được tài xế phù hợp cho chuyến này.'
+        : status === 'COMPLETED'
+          ? 'Chuyến xe đã hoàn tất và thanh toán đã được ghi nhận.'
+          : 'Thanh toán đã được ghi nhận và chuyến xe đã được cập nhật.';
       return { phase: 'COMPLETED', message, publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
     }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
       const candidate = doctors[action.selection_index ?? 0];
-      if (!candidate) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'The healthcare choices have changed. Please search again.' });
+      if (!candidate) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'Lịch khám này không còn hiệu lực. Bạn chọn lại trong danh sách hiện tại nhé.' });
       task.extracted_slots.selection = selectionName(action.selection_index ?? 0);
       const result = await this.processHealthcare(task, user, conversationId, correlationId);
-      return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ khung giờ. Bạn xác nhận thanh toán demo để tiếp tục nhé.' : 'Mình đã cập nhật lịch khám.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
+      return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ khung giờ. Bạn xác nhận thanh toán để tiếp tục nhé.' : 'Mình đã cập nhật lịch khám.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
     if (action.kind === 'healthcare_payment') {
       const appointmentId = action.appointment_id;
-      if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_FOUND', detail: 'The appointment is no longer available.' });
-      const payment = await this.healthcare.acknowledgePayment(appointmentId, user.sub, correlationId, idempotencyKey);
+      if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_FOUND', detail: 'Lịch khám này không còn sẵn sàng.' });
+      const payment = await this.acknowledgeHealthcarePayment(appointmentId, user.sub, correlationId, idempotencyKey);
       const tool = {
         tool_name: 'healthcare.confirm_appointment' as const,
         risk_level: 'FINANCIAL_OR_FINAL' as const,
@@ -1443,8 +1617,8 @@ export class AssistantService {
         idempotency_key: `assistant:healthcare:confirm:${conversationId}:${task.id}`,
       };
       const pending = await this.confirmations.prepareDomainConfirmation(user, tool, undefined, correlationId);
-      const publicItem = { kind: 'healthcare_confirmation', title: 'Lịch khám đã sẵn sàng', appointment_id: appointmentId, payment_note: 'Thanh toán demo đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất.', doctor: task.authoritative?.appointment && isRecord(task.authoritative.appointment) ? task.authoritative.appointment.doctor_name : undefined };
-      return { phase: 'AWAITING_CONFIRMATION', message: 'Thanh toán demo đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất lịch khám nhé.', publicItem, authoritative: { ...task.authoritative, payment, pending }, nextAction: this.actionFor(task, 'healthcare_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id }) };
+      const publicItem = { kind: 'healthcare_confirmation', title: 'Lịch khám đã sẵn sàng', resource_id: appointmentId, appointment_id: appointmentId, payment_note: 'Thanh toán đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất.', doctor: task.authoritative?.appointment && isRecord(task.authoritative.appointment) ? task.authoritative.appointment.doctor_name : undefined };
+      return { phase: 'AWAITING_CONFIRMATION', message: 'Thanh toán đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất lịch khám nhé.', publicItem, authoritative: { ...task.authoritative, payment, pending }, nextAction: this.actionFor(task, 'healthcare_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id }) };
     }
     if (action.kind === 'healthcare_confirm') {
       const result = await this.confirmations.executeDomain(action.confirmation_id ?? '', user, { workflow_id: action.workflow_id }, correlationId, idempotencyKey, 'CONFIRM_HEALTHCARE_APPOINTMENT', action.workflow_id);
@@ -1456,8 +1630,8 @@ export class AssistantService {
           ? result.appointment
           : undefined;
       const status = stringValue(appointment?.status);
-      if (!appointment || !status) throw new ConflictException({ code: 'HEALTHCARE_RESULT_INVALID', detail: 'The healthcare confirmation did not return an authoritative appointment.' });
-      return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', title: 'Lịch khám đã hoàn tất', status, appointment } as JsonObject, authoritative: { ...task.authoritative, result } };
+      if (!appointment || !status) throw new ConflictException({ code: 'HEALTHCARE_RESULT_INVALID', detail: 'Mình chưa nhận được thông tin lịch khám hoàn tất.' });
+      return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', title: 'Lịch khám đã hoàn tất', resource_id: appointment.appointment_id, status, appointment } as JsonObject, authoritative: { ...task.authoritative, result } };
     }
     if (action.kind === 'select_food_item') {
       const context = isRecord(task.authoritative?.food_context)
@@ -1467,7 +1641,7 @@ export class AssistantService {
           : {};
       const candidates = arrayValue(context.menu_item_candidates ?? context.item_candidates).filter(isRecord);
       const selected = candidates[action.selection_index ?? 0];
-      if (!selected || typeof selected.id !== 'string') throw new ConflictException({ code: 'STALE_ACTION', detail: 'The food choices have changed. Please refresh the current list.', retryable: true });
+      if (!selected || typeof selected.id !== 'string') throw new ConflictException({ code: 'STALE_ACTION', detail: 'Món này không còn trong danh sách hiện tại. Bạn chọn lại nhé.', retryable: false });
       task.authoritative = { ...task.authoritative, food_context: { ...context, menu_item_id: selected.id, restaurant_id: selected.restaurant_id ?? context.restaurant_id } };
       task.latest_message = 'Thêm món đã chọn vào giỏ';
       const result = await this.processFood(task, user, conversationId, correlationId);
@@ -1476,9 +1650,10 @@ export class AssistantService {
     if (action.kind === 'food_confirm') {
       const result = await this.confirmations.execute(action.confirmation_id ?? '', user, { payment_method: 'card', conversation_id: conversationId }, correlationId, idempotencyKey);
       const payment = isRecord(result.payment) ? result.payment : undefined;
-      return { phase: 'COMPLETED', message: 'Đơn đồ ăn đã được tiếp nhận thành công.', publicItem: { kind: 'food_order', title: 'Đơn đồ ăn đã được tiếp nhận', order: result.order, ...(payment ? { payment } : {}) }, authoritative: { result } };
+      const order = isRecord(result.order) ? result.order : undefined;
+      return { phase: 'COMPLETED', message: 'Đơn đồ ăn đã được tiếp nhận thành công.', publicItem: { kind: 'food_order', title: 'Đơn đồ ăn đã được tiếp nhận', ...(order?.id ? { resource_id: order.id } : {}), order: result.order, ...(payment ? { payment } : {}) }, authoritative: { result } };
     }
-    throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'This action is no longer available.' });
+    throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
   }
 
   private buildTurn(
@@ -1582,7 +1757,7 @@ export class AssistantService {
       ride_service: 'Xác nhận chuyến xe',
       ride_payment: 'Xác nhận thanh toán',
       select_healthcare_slot: 'Chọn lịch này',
-      healthcare_payment: 'Xác nhận thanh toán demo',
+      healthcare_payment: 'Xác nhận thanh toán',
       healthcare_confirm: 'Xác nhận lịch khám',
       select_food_item: 'Chọn món này',
       food_confirm: 'Xác nhận đặt món',
@@ -1591,7 +1766,7 @@ export class AssistantService {
   }
 
   private restaurantOptions(candidates: JsonObject[]): JsonObject {
-    return { kind: 'restaurant_options', title: 'Nhà hàng phù hợp', options: candidates.slice(0, 5).map((candidate) => this.publicRestaurant(candidate)) };
+    return { kind: 'restaurant_options', title: 'Nhà hàng phù hợp', options: candidates.map((candidate) => this.publicRestaurant(candidate)) };
   }
 
   private resultItems(value: unknown): JsonObject[] {
@@ -1617,7 +1792,7 @@ export class AssistantService {
   }
 
   private healthcareOptionRows(doctors: JsonObject[]): JsonObject[] {
-    return doctors.slice(0, 5).flatMap((doctor) => arrayValue(doctor.available_slots).slice(0, 1).map((slot) => ({
+    return doctors.flatMap((doctor) => arrayValue(doctor.available_slots).filter(isRecord).map((slot) => ({
       facility: isRecord(doctor.facility) ? doctor.facility : undefined,
       doctor: doctor.name,
       department: isRecord(doctor.department) ? doctor.department.name : doctor.department,
@@ -1628,7 +1803,7 @@ export class AssistantService {
 
   private healthcareSelectionActions(doctors: JsonObject[], task: StoredTask): StoredAction[] {
     const cohortId = this.newCohort(task);
-    return doctors.slice(0, 5).map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
+    return doctors.map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
   }
 
   private rideItem(result: JsonObject, task?: StoredTask): JsonObject {
@@ -1650,7 +1825,6 @@ export class AssistantService {
       amount: quote.amount,
       currency: quote.currency,
       ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}),
-      ...(typeof quote.route_provider === 'string' ? { route_provider: quote.route_provider } : {}),
       ...(typeof quote.route_distance_meters === 'number' ? { route_distance_meters: quote.route_distance_meters } : {}),
       ...(typeof quote.route_duration_seconds === 'number' ? { route_duration_seconds: quote.route_duration_seconds } : {}),
       ...(Array.isArray(quote.route_geometry) ? { route_geometry: quote.route_geometry } : {}),
@@ -1659,6 +1833,7 @@ export class AssistantService {
       ...(typeof quote.dropoff_latitude === 'number' ? { dropoff_latitude: quote.dropoff_latitude } : {}),
       ...(typeof quote.dropoff_longitude === 'number' ? { dropoff_longitude: quote.dropoff_longitude } : {}),
       ...timing,
+      ...(booking?.id ? { resource_id: booking.id } : {}),
       ...(booking ? { status: booking.status, driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}),
     } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
   }
@@ -1683,7 +1858,7 @@ export class AssistantService {
   }
 
   private foodData(data: JsonObject): JsonObject {
-    const items = arrayValue(data.items ?? data.results ?? data.options).filter(isRecord).slice(0, 6).map((entry) => {
+    const items = arrayValue(data.items ?? data.results ?? data.options).filter(isRecord).map((entry) => {
       const item = isRecord(entry.item) ? entry.item : entry;
       const restaurant = isRecord(entry.restaurant) ? entry.restaurant : undefined;
       return {
@@ -1707,10 +1882,11 @@ export class AssistantService {
       'kind', 'title', 'note', 'question', 'options', 'departments', 'restaurant',
       'reservation_code', 'party_size', 'start_at', 'status', 'expires_at',
       'pickup', 'dropoff', 'vehicle', 'amount', 'currency', 'duration_minutes',
-      'route_provider', 'route_distance_meters', 'route_duration_seconds', 'route_geometry',
+      'route_distance_meters', 'route_duration_seconds', 'route_geometry',
       'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude',
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',
       'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note',
+      'resource_id',
       'appointment_id', 'appointment', 'facility', 'order', 'payment', 'preview',
       'error_code', 'retryable',
     ]);

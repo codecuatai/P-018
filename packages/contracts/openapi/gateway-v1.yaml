@@ -365,6 +365,13 @@ paths:
         '200': {description: Unified history; partial and unavailable fields identify degraded domains}
         '401': {description: Missing or invalid user token}
         '503': {description: All history sources unavailable}
+  /api/v1/history/active:
+    get:
+      summary: List current non-terminal actor-scoped resources across domain services
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Active resources with partial and unavailable fields for degraded domains}
+        '401': {description: Missing or invalid user token}
   /api/v1/history/{type}/{id}:
     get:
       summary: Read one actor-scoped history item from its authoritative service

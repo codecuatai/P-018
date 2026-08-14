@@ -189,15 +189,15 @@ def _tool_result_response(tool_name: str | None, result: Any) -> str:
             return "Mình chưa tìm thấy lựa chọn phù hợp. Bạn thử chuyên khoa khác nhé."
         if isinstance(result[0], dict) and "available_slots" in result[0]:
             candidates = []
-            for item in result[:5]:
+            for item in result:
                 doctor_name = str(item.get("name", "bác sĩ"))
                 actual_slots = item.get("available_slots", [])
-                slot_ids = [str(slot.get("id")) for slot in actual_slots if isinstance(slot, dict) and slot.get("id") is not None]
-                candidates.append(f"{doctor_name} (slot {', '.join(slot_ids) or 'chưa có'})")
-            return "Mình tìm thấy các bác sĩ: " + "; ".join(candidates) + ". Bạn chọn bác sĩ và slot theo mã hiển thị nhé."
-        names = [str(item.get("name", "chuyên khoa")) for item in result[:8] if isinstance(item, dict)]
+                slot_times = [str(slot.get("start_time")) for slot in actual_slots if isinstance(slot, dict) and slot.get("start_time")]
+                candidates.append(f"{doctor_name} ({', '.join(slot_times) or 'chưa có giờ trống'})")
+            return "Mình tìm thấy các bác sĩ: " + "; ".join(candidates) + ". Bạn chọn bác sĩ và khung giờ phù hợp nhé."
+        names = [str(item.get("name", "chuyên khoa")) for item in result if isinstance(item, dict)]
         return "Các chuyên khoa hiện có: " + ", ".join(names) + "."
-    return "Mình đã nhận được kết quả từ Healthcare Service."
+    return "Mình đã nhận được kết quả khám."
 
 
 async def classify_and_extract(state: AgentState) -> dict[str, Any]:
@@ -223,7 +223,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
                     "intent": "healthcare_booking",
                     "slots": slots,
                     "status": "TOOL_REQUEST_READY",
-                    "response": "Mình đã chọn chuyên khoa phù hợp từ mô tả của Healthcare Service và sẽ lấy bác sĩ, khung giờ còn trống.",
+                    "response": "Mình đã chọn chuyên khoa phù hợp và sẽ lấy bác sĩ, khung giờ còn trống.",
                     "tool_request": _tool_request(
                         "healthcare.list_slots",
                         "READ",
@@ -324,8 +324,8 @@ def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
     if state.get("status") == "NEEDS_INPUT":
         labels = {
             "department": "chuyên khoa",
-            "slot_id": "slot cần chọn",
-            "patient_id": "mã bệnh nhân trong hồ sơ",
+            "slot_id": "khung giờ cần chọn",
+            "patient_id": "thông tin người bệnh trong hồ sơ",
             "appointment_id": "mã lịch hẹn",
             "confirmation": "xác nhận giữ lịch",
         }
