@@ -1,9 +1,10 @@
 # Runtime Architecture
 
-Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, agent, Ride, Restaurant, Healthcare, and Food over internal DNS: `agent-service`, `ride-service`, `restaurant-service`, `healthcare-service`, and `food-service`. The default Compose publishes only the Gateway; Agent/Food use `expose` for container-network access.
+Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, Web, agent, Ride, Restaurant, Healthcare, and Food over the internal Compose network. The Web image builds the Vite bundle with the relative `/api` Gateway base URL and serves it from Nginx on container port 80; Compose publishes it only on the host loopback at port 8080. The default Compose publishes the Gateway on port 3000 for local API access; Agent/Food use `expose` for container-network access.
 
 ```mermaid
 flowchart TB
+  Host --> Web[web :8080 -> :80]
   Host --> Gateway[api-gateway :3000]
   Gateway --> Agent[agent-service :8001]
   Gateway --> Ride[ride-service :8101]
@@ -11,6 +12,7 @@ flowchart TB
   Gateway --> Healthcare[healthcare-service :8103]
   Gateway --> Food[food-service :8104]
   Gateway --> Postgres[(postgres :5432)]
+  Web -. browser uses /api .-> Gateway
 ```
 
 Root `.env` interpolates Compose only; containers receive explicit least-privilege variables, never a shared `env_file`. `/health/live` reports process availability. Food `/health/ready` reports its connected repository and workflow worker state; Gateway `/health/ready` reports reconciliation worker state. The `start-all` launcher waits for PostgreSQL and every required application health check before migrations and Web startup; individual Compose commands still remain available for service-level development. Domain/agent runtime errors are handled by gateway client timeout/error mapping after startup. PostgreSQL bootstrap runs only for a new volume. Future deployments split services and databases independently.

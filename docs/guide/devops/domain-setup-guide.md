@@ -78,11 +78,14 @@ server {
     # Giới hạn kích thước file tải lên (ví dụ: upload ảnh)
     client_max_body_size 20M;
 
-    # 1. Cấu hình phục vụ Frontend (Serve Static Files)
+    # 1. Cấu hình phục vụ Frontend Web container
     location / {
-        root /opt/xone/apps/web/dist; # Đường dẫn đến thư mục build dist của web trên VPS
-        index index.html;
-        try_files $uri $uri/ /index.html; # Hỗ trợ React Router SPA
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # 2. Cấu hình điều hướng cho Backend API (Reverse Proxy sang cổng 3000)
