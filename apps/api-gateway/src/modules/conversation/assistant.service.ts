@@ -1,8 +1,9 @@
-import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 
 import {
   AgentClient,
+  FoodClient,
   HealthcareClient,
   JsonObject,
   RestaurantClient,
@@ -22,7 +23,7 @@ import {
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
 type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
-type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'select_food_item' | 'food_confirm';
+type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm';
 
 type StoredAction = {
   id: string;
@@ -34,6 +35,12 @@ type StoredAction = {
   workflow_id?: string;
   appointment_id?: number;
   selection_index?: number;
+  doctor_index?: number;
+  slot_index?: number;
+  slot_id?: number;
+  cart_id?: string;
+  cart_item_id?: string;
+  quantity?: number;
 };
 
 type StoredTask = {
@@ -235,13 +242,6 @@ function healthcareHour(value: Date): number {
   return Number(new Intl.DateTimeFormat('en-GB', { timeZone: HEALTHCARE_TIMEZONE, hour: '2-digit', hour12: false }).format(value));
 }
 
-function flattenHealthcareSlots(doctors: JsonObject[]): JsonObject[] {
-  return doctors.flatMap((doctor) => arrayValue(doctor.available_slots).filter(isRecord).map((slot) => ({
-    ...doctor,
-    available_slots: [slot],
-  })));
-}
-
 function filterDoctorsByRequestedTime(doctors: JsonObject[], slots: Record<string, unknown>): JsonObject[] {
   const requested = parseAuthoritativeDate(slots.start_at);
   const preference = stringValue(slots.time_preference)?.toLowerCase();
@@ -350,7 +350,13 @@ function storedState(value: unknown): AssistantState {
     ...(stringValue(action.workflow_id) ? { workflow_id: action.workflow_id as string } : {}),
     ...(numberValue(action.appointment_id) ? { appointment_id: numberValue(action.appointment_id) } : {}),
     ...(numberValue(action.selection_index) !== undefined ? { selection_index: numberValue(action.selection_index) } : {}),
-  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'select_food_item', 'food_confirm'].includes(action.kind)) as StoredAction[];
+    ...(numberValue(action.doctor_index) !== undefined ? { doctor_index: numberValue(action.doctor_index) } : {}),
+    ...(numberValue(action.slot_index) !== undefined ? { slot_index: numberValue(action.slot_index) } : {}),
+    ...(numberValue(action.slot_id) !== undefined ? { slot_id: numberValue(action.slot_id) } : {}),
+    ...(stringValue(action.cart_id) ? { cart_id: action.cart_id as string } : {}),
+    ...(stringValue(action.cart_item_id) ? { cart_item_id: action.cart_item_id as string } : {}),
+    ...(numberValue(action.quantity) !== undefined ? { quantity: numberValue(action.quantity) } : {}),
+  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'select_food_item', 'food_cart_increment', 'food_cart_decrement', 'food_cart_remove', 'food_checkout', 'food_confirm'].includes(action.kind)) as StoredAction[];
   const decisionSource = stringValue(value.decision_source);
   return {
     tasks,
@@ -391,6 +397,7 @@ export class AssistantService {
     private readonly healthcare: HealthcareClient,
     private readonly ride: RideWorkflowService,
     private readonly confirmations: ConfirmationService,
+    @Optional() private readonly food?: FoodClient,
   ) {}
 
   private plannerSafeState(state: AssistantState): JsonObject {
@@ -718,12 +725,16 @@ export class AssistantService {
     // every sibling from the old phase unusable even if a client replays it.
     try {
       await this.hydrateRideAction(action, task, user.sub, correlationId);
-      task.revision += 1;
+      const preservesFoodSiblings = action.kind === 'select_food_item';
+      if (!preservesFoodSiblings) task.revision += 1;
       const result = await this.executeAction(action, task, user, request.conversation_id, correlationId, executionIdempotencyKey);
       task.phase = result.phase;
       task.authoritative = result.authoritative ?? task.authoritative;
       task.public_item = result.publicItem ?? task.public_item;
-      state.actions = state.actions.filter((candidate) => candidate.task_id !== task.id);
+      state.actions = preservesFoodSiblings
+        ? state.actions.filter((candidate) => candidate.id !== action.id)
+        : state.actions.filter((candidate) => candidate.task_id !== task.id);
+      if (result.nextActions) state.actions.push(...result.nextActions);
       if (result.nextAction) state.actions.push(result.nextAction);
       const remainingItems = result.publicItem ? [result.publicItem] : [];
       const dependentActions: StoredAction[] = [];
@@ -890,8 +901,9 @@ export class AssistantService {
     delete task.public_item;
 
     let nextActions = state.actions.filter((candidate) => candidate.id !== action.id);
+    let refreshedOptions: JsonObject | undefined;
     const refreshHealthcare = action.kind === 'select_healthcare_slot'
-      && ['APPOINTMENT_EXPIRED', 'SLOT_UNAVAILABLE', 'SLOT_ALREADY_HELD', 'APPOINTMENT_NOT_PAYABLE'].includes(code);
+      && ['APPOINTMENT_EXPIRED', 'SLOT_UNAVAILABLE', 'SLOT_ALREADY_HELD', 'APPOINTMENT_NOT_PAYABLE', 'SELECTION_EXPIRED'].includes(code);
     if (refreshHealthcare) {
       const department = stringValue(task.extracted_slots.department);
       if (department) {
@@ -904,10 +916,12 @@ export class AssistantService {
             tool_call_id: `call_${randomUUID()}`,
             schema_version: '1',
           }, user.sub, correlationId);
-          const doctors = flattenHealthcareSlots(this.resultItems(result)).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
+          const doctors = this.resultItems(result).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
           task.authoritative = { ...(task.authoritative ?? {}), department, doctors };
           nextActions = nextActions.filter((candidate) => candidate.task_id !== task.id || candidate.kind !== 'select_healthcare_slot');
           nextActions.push(...this.healthcareSelectionActions(doctors, task));
+          task.public_item = this.healthcareOptions(doctors, task.id);
+          refreshedOptions = task.public_item;
         } catch {
           // Keep the remaining stored choices when a refresh is unavailable;
           // the failed option itself has still been disabled below.
@@ -937,7 +951,7 @@ export class AssistantService {
       action.kind,
       message,
       state,
-      [item],
+      refreshedOptions ? [item, refreshedOptions] : [item],
       state.actions,
       [],
       'INTERNAL_ACTION',
@@ -1475,7 +1489,7 @@ export class AssistantService {
     const doctors = arrayValue(existing?.doctors).filter(isRecord);
     if (!doctors.length || existing?.department !== department) {
       const result = await this.healthcare.executeTool({ tool_name: 'healthcare.list_slots', risk_level: 'READ', arguments: { department }, workflow_id: workflowId, tool_call_id: `call_${randomUUID()}`, schema_version: '1' }, user.sub, correlationId);
-      const availableDoctors = flattenHealthcareSlots(this.resultItems(result)).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
+      const availableDoctors = this.resultItems(result).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
       const requestedDoctors = filterDoctorsByRequestedTime(availableDoctors, slots);
       const requestedStart = parseAuthoritativeDate(slots.start_at);
       const exactRequested = hasExactHealthcareSlot(requestedDoctors, requestedStart);
@@ -1504,10 +1518,14 @@ export class AssistantService {
       };
     }
     const selection = stringValue(slots.selection);
-    const index = selectionIndex(selection) ?? selectionIndexFromText(task.latest_message, doctors) ?? 0;
+    const selectedDoctorIndex = numberValue(existing?.selected_doctor_index);
+    const index = selectedDoctorIndex !== undefined && Number.isInteger(selectedDoctorIndex)
+      ? selectedDoctorIndex
+      : selectionIndex(selection) ?? selectionIndexFromText(task.latest_message, doctors) ?? 0;
     const candidate = doctors[index];
-    const slot = isRecord(candidate?.available_slots) ? candidate.available_slots : arrayValue(candidate?.available_slots)[0];
-    const selectedSlot = isRecord(slot) ? slot : arrayValue(candidate?.available_slots).filter(isRecord)[0];
+    const selectedSlotFromAction = isRecord(existing?.selectedSlot) ? existing.selectedSlot : undefined;
+    const slot = selectedSlotFromAction ?? arrayValue(candidate?.available_slots).filter(isRecord)[0];
+    const selectedSlot = isRecord(slot) ? slot : undefined;
     if (!selectedSlot || numberValue(selectedSlot.id) === undefined) {
       return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: existing, publicItem: this.healthcareOptions(doctors, task.id), items: [this.healthcareOptions(doctors, task.id)], actions: this.healthcareSelectionActions(doctors, task), workflowId };
     }
@@ -1551,6 +1569,12 @@ export class AssistantService {
     const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm 1 món đã chọn vào giỏ';
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
     const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
+    const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
+    const data = isRecord(response.data) ? response.data : {};
+    const returnedCart = isRecord(data.cart) ? data.cart : undefined;
+    const responseCartItems = arrayValue(returnedCart?.items ?? data.items).filter(isRecord);
+    const returnedCartItems = arrayValue(returnedCart?.items ?? stateUpdates.cart_items).filter(isRecord);
+    const returnedCartId = stringValue(stateUpdates.cart_id) ?? stringValue(returnedCart?.id);
     const nextContext = {
       ...previousContext,
       ...stateUpdates,
@@ -1558,21 +1582,18 @@ export class AssistantService {
         menu_item_id: selectedCandidate.id,
         ...(selectedCandidate.restaurant_id ? { restaurant_id: selectedCandidate.restaurant_id } : {}),
       } : {}),
+      ...(returnedCartId ? { cart_id: returnedCartId } : {}),
+      ...(returnedCartItems.length ? { cart_items: returnedCartItems } : {}),
     };
-    const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
-    const data = isRecord(response.data) ? response.data : {};
     let foodData = isRecord(data) ? this.foodData(data) : {};
-    const cartUpdated = selectedCandidate !== undefined && Boolean(stateUpdates.cart_id) && arrayValue(data.items).length > 0;
+    const cartUpdated = selectedCandidate !== undefined && Boolean(nextContext.cart_id) && responseCartItems.length > 0;
     if (!arrayValue(foodData.options).length && selectedCandidate) {
       const selectedRestaurant = arrayValue(storedContext.restaurant_candidates).find(
         (candidate): candidate is JsonObject => isRecord(candidate) && candidate.id === selectedCandidate.restaurant_id,
       );
       foodData = {
         ...foodData,
-        options: [{
-          name: selectedCandidate.name,
-          ...(selectedRestaurant && stringValue(selectedRestaurant.name) ? { restaurant: { name: selectedRestaurant.name } } : {}),
-        }],
+        options: [this.foodCandidateDisplay(selectedCandidate, selectedRestaurant)],
       };
     }
     const publicItem: JsonObject = {
@@ -1583,7 +1604,13 @@ export class AssistantService {
       ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
     };
     const optionActions = !pending
-      ? cartUpdated ? [] : arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, this.newCohort(task)))
+      ? [
+        ...(cartUpdated ? [] : (() => {
+          const cohortId = this.newCohort(task);
+          return arrayValue(foodData.options).map((_, index) => this.actionFor(task, 'select_food_item', { selection_index: index }, cohortId));
+        })()),
+        ...this.foodCartActions(task, nextContext),
+      ]
       : [];
     if (pending?.id) {
       const action = this.actionFor(task, 'food_confirm', { confirmation_id: String(pending.id) });
@@ -1592,7 +1619,68 @@ export class AssistantService {
     return { phase: response.response_type === 'error' ? 'FAILED' as TaskPhase : 'IN_PROGRESS' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext }, publicItem, items: [publicItem], actions: optionActions };
   }
 
-  private async executeAction(action: StoredAction, task: StoredTask, user: AuthUser, conversationId: string, correlationId: string, idempotencyKey: string): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; authoritative?: JsonObject; nextAction?: StoredAction }> {
+  private foodCartActions(task: StoredTask, context: JsonObject): StoredAction[] {
+    const cartId = stringValue(context.cart_id);
+    if (!cartId) return [];
+    const items = arrayValue(context.cart_items).filter(isRecord);
+    if (!items.length) return [];
+    const cohortId = this.newCohort(task);
+    const actions: StoredAction[] = [];
+    for (const item of items) {
+      const cartItemId = stringValue(item.id ?? item.cart_item_id);
+      if (!cartItemId) continue;
+      const quantity = numberValue(item.quantity) ?? 1;
+      actions.push(this.actionFor(task, 'food_cart_increment', { cart_id: cartId, cart_item_id: cartItemId, quantity: Math.min(50, quantity + 1) }, cohortId));
+      if (quantity > 1) actions.push(this.actionFor(task, 'food_cart_decrement', { cart_id: cartId, cart_item_id: cartItemId, quantity: quantity - 1 }, cohortId));
+      actions.push(this.actionFor(task, 'food_cart_remove', { cart_id: cartId, cart_item_id: cartItemId }, cohortId));
+    }
+    actions.push(this.actionFor(task, 'food_checkout', { cart_id: cartId }, cohortId));
+    return actions;
+  }
+
+  private async executeFoodCartAction(
+    action: StoredAction,
+    task: StoredTask,
+    user: AuthUser,
+    correlationId: string,
+    idempotencyKey: string,
+  ): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; authoritative?: JsonObject; nextActions?: StoredAction[] }> {
+    const foodContext = isRecord(task.authoritative?.food_context) ? task.authoritative.food_context : {};
+    const cartId = action.cart_id ?? stringValue(foodContext.cart_id);
+    if (!this.food || !cartId) throw new ConflictException({ code: 'FOOD_CART_ACTION_UNAVAILABLE', detail: 'The food cart is not ready for an update.' });
+
+    const cart = await this.food.getCart(user.sub, correlationId, cartId);
+    const cartItems = arrayValue(cart.items).filter(isRecord);
+    const currentItem = cartItems.find((item) => stringValue(item.id ?? item.cart_item_id) === action.cart_item_id);
+    if (!currentItem) throw new ConflictException({ code: 'CART_CHANGED', detail: 'The food cart changed. Please choose from the refreshed options.' });
+
+    let nextCart: JsonObject;
+    if (action.kind === 'food_cart_remove') {
+      nextCart = await this.food.removeCartItem(user.sub, correlationId, cartId, action.cart_item_id ?? '', idempotencyKey);
+    } else {
+      const currentQuantity = numberValue(currentItem.quantity) ?? 1;
+      const delta = action.kind === 'food_cart_increment' ? 1 : -1;
+      const quantity = Math.max(1, Math.min(50, currentQuantity + delta));
+      nextCart = await this.food.updateCartItem(user.sub, correlationId, cartId, action.cart_item_id ?? '', { quantity }, idempotencyKey);
+    }
+    const refreshedCart = arrayValue(nextCart.items).length ? nextCart : await this.food.getCart(user.sub, correlationId, cartId);
+    const context = {
+      ...foodContext,
+      cart_id: cartId,
+      cart_items: arrayValue(refreshedCart.items).filter(isRecord),
+    };
+    const publicItem = { kind: 'food_cart', title: 'Food cart updated', cart: refreshedCart };
+    const authoritative = { ...(task.authoritative ?? {}), food_context: context, state_updates: context };
+    return {
+      phase: 'IN_PROGRESS',
+      message: 'The food cart was updated.',
+      publicItem,
+      authoritative,
+      nextActions: this.foodCartActions(task, context),
+    };
+  }
+
+  private async executeAction(action: StoredAction, task: StoredTask, user: AuthUser, conversationId: string, correlationId: string, idempotencyKey: string): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; authoritative?: JsonObject; nextAction?: StoredAction; nextActions?: StoredAction[] }> {
     if (action.kind === 'select_restaurant') {
       const candidates = arrayValue(task.authoritative?.candidates).filter(isRecord);
       const selected = candidates[action.selection_index ?? 0];
@@ -1644,9 +1732,15 @@ export class AssistantService {
     }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
-      const candidate = doctors[action.selection_index ?? 0];
+      const doctorIndex = action.doctor_index ?? action.selection_index ?? 0;
+      const candidate = doctors[doctorIndex];
       if (!candidate) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'Lịch khám này không còn hiệu lực. Bạn chọn lại trong danh sách hiện tại nhé.' });
-      task.extracted_slots.selection = selectionName(action.selection_index ?? 0);
+      const exactSlot = action.slot_id === undefined
+        ? undefined
+        : arrayValue(candidate.available_slots).find((slot) => isRecord(slot) && numberValue(slot.id) === action.slot_id);
+      if (action.slot_id !== undefined && !exactSlot) throw new ConflictException({ code: 'SELECTION_EXPIRED', detail: 'Healthcare slot is no longer available.' });
+      task.extracted_slots.selection = selectionName(doctorIndex);
+      task.authoritative = { ...task.authoritative, selected_doctor_index: doctorIndex, ...(isRecord(exactSlot) ? { selectedSlot: exactSlot } : {}) };
       const result = await this.processHealthcare(task, user, conversationId, correlationId);
       return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ khung giờ. Bạn xác nhận thanh toán để tiếp tục nhé.' : 'Mình đã cập nhật lịch khám.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
@@ -1680,6 +1774,20 @@ export class AssistantService {
       if (!appointment || !status) throw new ConflictException({ code: 'HEALTHCARE_RESULT_INVALID', detail: 'Mình chưa nhận được thông tin lịch khám hoàn tất.' });
       return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', title: 'Lịch khám đã hoàn tất', resource_id: appointment.appointment_id, status, appointment } as JsonObject, authoritative: { ...task.authoritative, result } };
     }
+    if (action.kind === 'food_cart_increment' || action.kind === 'food_cart_decrement' || action.kind === 'food_cart_remove') {
+      return this.executeFoodCartAction(action, task, user, correlationId, idempotencyKey);
+    }
+    if (action.kind === 'food_checkout') {
+      task.latest_message = 'Mở giỏ hàng và chuẩn bị đặt món';
+      const result = await this.processFood(task, user, conversationId, correlationId);
+      return {
+        phase: result.phase,
+        message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã chuẩn bị đơn món. Bạn kiểm tra rồi xác nhận nhé.' : 'Mình đã cập nhật giỏ hàng và thông tin đặt món.',
+        publicItem: result.publicItem,
+        authoritative: result.authoritative,
+        nextActions: result.actions,
+      };
+    }
     if (action.kind === 'select_food_item') {
       const context = isRecord(task.authoritative?.food_context)
         ? task.authoritative.food_context
@@ -1692,6 +1800,9 @@ export class AssistantService {
       task.authoritative = { ...task.authoritative, food_context: { ...context, menu_item_id: selected.id, restaurant_id: selected.restaurant_id ?? context.restaurant_id } };
       task.latest_message = 'Thêm 1 món đã chọn vào giỏ';
       const result = await this.processFood(task, user, conversationId, correlationId);
+      if (result.actions?.length) {
+        return { phase: result.phase, message: 'Mình đã cập nhật giỏ hàng.', publicItem: result.publicItem, authoritative: result.authoritative, nextActions: result.actions };
+      }
       return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã chuẩn bị đơn món đã chọn. Bạn kiểm tra rồi xác nhận nhé.' : 'Mình đã chọn món và cập nhật giỏ hàng.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
     }
     if (action.kind === 'food_confirm') {
@@ -1807,6 +1918,10 @@ export class AssistantService {
       healthcare_payment: 'Xác nhận thanh toán',
       healthcare_confirm: 'Xác nhận lịch khám',
       select_food_item: 'Chọn món này',
+      food_cart_increment: 'Tăng món',
+      food_cart_decrement: 'Giảm món',
+      food_cart_remove: 'Xóa món',
+      food_checkout: 'Thanh toán',
       food_confirm: 'Xác nhận đặt món',
     };
     return { id: action.id, kind: action.kind, label: labels[action.kind] };
@@ -1855,18 +1970,58 @@ export class AssistantService {
   }
 
   private healthcareOptionRows(doctors: JsonObject[]): JsonObject[] {
-    return doctors.flatMap((doctor) => arrayValue(doctor.available_slots).filter(isRecord).map((slot) => ({
-      facility: isRecord(doctor.facility) ? doctor.facility : undefined,
-      doctor: doctor.name,
-      department: isRecord(doctor.department) ? doctor.department.name : doctor.department,
-      start_time: isRecord(slot) ? slot.start_time : undefined,
-      price: doctor.price,
-    })));
+    const rows: JsonObject[] = [];
+    const byIdentity = new Map<string, JsonObject>();
+    doctors.forEach((doctor, index) => {
+      const facility = isRecord(doctor.facility) ? doctor.facility : undefined;
+      const department = isRecord(doctor.department) ? doctor.department : undefined;
+      const stableIdentity = stringValue(doctor.id) ?? stringValue(doctor.doctor_id) ?? stringValue(doctor.source_id);
+      const identity = stableIdentity
+        ? `${stableIdentity}|${stringValue(facility?.name) ?? ''}|${stringValue(department?.name) ?? stringValue(doctor.department) ?? ''}`
+        : `${stringValue(doctor.name) ?? ''}|${stringValue(facility?.name) ?? ''}|${stringValue(department?.name) ?? stringValue(doctor.department) ?? ''}|${index}`;
+      let row = byIdentity.get(identity);
+      if (!row) {
+        row = {
+          facility,
+          doctor: doctor.name,
+          department: department?.name ?? doctor.department,
+          price: doctor.price,
+          slots: [],
+        };
+        byIdentity.set(identity, row);
+        rows.push(row);
+      }
+      const slots = arrayValue(doctor.available_slots).filter(isRecord);
+      const rowSlots = arrayValue(row.slots) as JsonObject[];
+      for (const slot of slots) {
+        const slotStart = stringValue(slot.start_time) ?? stringValue(slot.start_at);
+        if (!slotStart || rowSlots.some((candidate) => candidate.start_time === slotStart && candidate.price === (slot.price ?? doctor.price))) continue;
+        rowSlots.push({
+          start_time: slotStart,
+          ...(stringValue(slot.end_time) ? { end_time: stringValue(slot.end_time) } : {}),
+          ...(typeof (slot.price ?? doctor.price) === 'number' ? { price: slot.price ?? doctor.price } : {}),
+        });
+      }
+      row.slots = rowSlots;
+      if (!row.start_time && rowSlots[0]?.start_time) row.start_time = rowSlots[0].start_time;
+    });
+    return rows.filter((row) => arrayValue(row.slots).length > 0);
   }
 
   private healthcareSelectionActions(doctors: JsonObject[], task: StoredTask): StoredAction[] {
     const cohortId = this.newCohort(task);
-    return doctors.map((_, index) => this.actionFor(task, 'select_healthcare_slot', { selection_index: index }, cohortId));
+    let selectionIndex = 0;
+    return doctors.flatMap((doctor, doctorIndex) => arrayValue(doctor.available_slots).filter(isRecord).map((slot, slotIndex) => {
+      const slotId = numberValue(slot.id);
+      if (slotId === undefined) return undefined;
+      const action = this.actionFor(task, 'select_healthcare_slot', {
+        selection_index: selectionIndex++,
+        doctor_index: doctorIndex,
+        slot_index: slotIndex,
+        slot_id: slotId,
+      }, cohortId);
+      return action;
+    }).filter((action): action is StoredAction => Boolean(action)));
   }
 
   private rideItem(result: JsonObject, task?: StoredTask): JsonObject {
@@ -1897,7 +2052,7 @@ export class AssistantService {
       ...(typeof quote.dropoff_longitude === 'number' ? { dropoff_longitude: quote.dropoff_longitude } : {}),
       ...timing,
       ...(booking?.id ? { resource_id: booking.id } : {}),
-      ...(booking ? { status: booking.status, driver: isRecord(booking.driver) ? booking.driver.name ?? booking.driver.display_name : undefined } : {}),
+      ...(booking ? { status: booking.status, driver: this.sanitizeDriver(booking.driver) } : {}),
     } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
   }
 
@@ -1906,6 +2061,29 @@ export class AssistantService {
     if (value === 'CAR_7') return 'Xe 7 chỗ';
     if (value === 'BIKE') return 'Xe máy';
     return 'Phương tiện phù hợp';
+  }
+
+  private sanitizeDriver(value: unknown): JsonObject | undefined {
+    if (!isRecord(value)) return undefined;
+    const result: JsonObject = {};
+    for (const key of ['name', 'full_name', 'display_name', 'phone_masked', 'vehicle_type', 'vehicle_model', 'vehicle_color', 'license_plate']) {
+      if (typeof value[key] === 'string' && value[key].trim()) result[key] = value[key].trim();
+    }
+    for (const key of ['rating', 'rating_average', 'eta_seconds']) {
+      if (typeof value[key] === 'number' && Number.isFinite(value[key])) result[key] = value[key];
+    }
+    if (!result.phone_masked && typeof value.phone === 'string') {
+      const masked = maskPublicPhone(value.phone);
+      if (masked) result.phone_masked = masked;
+    }
+    if (isRecord(value.vehicle)) {
+      const vehicle: JsonObject = {};
+      for (const key of ['type', 'vehicle_type', 'make', 'model', 'vehicle_model', 'color', 'vehicle_color', 'license_plate']) {
+        if (typeof value.vehicle[key] === 'string' && value.vehicle[key].trim()) vehicle[key] = value.vehicle[key].trim();
+      }
+      if (Object.keys(vehicle).length) result.vehicle = vehicle;
+    }
+    return Object.keys(result).length ? result : undefined;
   }
 
   private authoritativeRideRouteContext(
@@ -1926,15 +2104,19 @@ export class AssistantService {
       const restaurant = isRecord(entry.restaurant) ? entry.restaurant : undefined;
       return {
         name: item.name ?? item.title,
-        price: item.price,
+        ...(typeof item.price === 'number' ? { price: item.price } : {}),
         ...(stringValue(item.currency) ? { currency: stringValue(item.currency) } : {}),
         ...(stringValue(item.category) ? { category: stringValue(item.category) } : {}),
         ...(stringValue(item.image_url) ? { image_url: stringValue(item.image_url) } : {}),
         ...(Array.isArray(item.option_groups) ? { option_groups: item.option_groups } : {}),
+        ...(Array.isArray(item.options) ? { options: item.options } : {}),
         restaurant: restaurant ? {
           name: restaurant.name,
           address: restaurant.address,
+          description: restaurant.description,
           rating: restaurant.rating,
+          review_count: restaurant.review_count,
+          price_level: restaurant.price_level,
           image_url: restaurant.image_url,
           latitude: restaurant.latitude,
           longitude: restaurant.longitude,
@@ -1942,7 +2124,27 @@ export class AssistantService {
         description: item.description ?? entry.description,
       };
     }).filter((item) => stringValue(item.name));
-    return { ...(items.length ? { options: items } : {}), ...(isRecord(data.preview) ? { preview: data.preview } : {}), ...(isRecord(data.order) ? { order: data.order } : {}) };
+    return {
+      ...(items.length ? { options: items } : {}),
+      ...(isRecord(data.cart) ? { cart: data.cart } : {}),
+      ...(isRecord(data.preview) ? { preview: data.preview } : {}),
+      ...(isRecord(data.order) ? { order: data.order } : {}),
+    };
+  }
+
+  private foodCandidateDisplay(candidate: JsonObject, restaurantCandidate?: JsonObject): JsonObject {
+    const restaurant = isRecord(candidate.restaurant) ? candidate.restaurant : restaurantCandidate;
+    return {
+      ...(stringValue(candidate.name ?? candidate.title) ? { name: stringValue(candidate.name ?? candidate.title) } : {}),
+      ...(typeof candidate.price === 'number' ? { price: candidate.price } : {}),
+      ...(stringValue(candidate.currency) ? { currency: stringValue(candidate.currency) } : {}),
+      ...(stringValue(candidate.category) ? { category: stringValue(candidate.category) } : {}),
+      ...(stringValue(candidate.description) ? { description: stringValue(candidate.description) } : {}),
+      ...(stringValue(candidate.image_url) ? { image_url: stringValue(candidate.image_url) } : {}),
+      ...(Array.isArray(candidate.option_groups) ? { option_groups: candidate.option_groups } : {}),
+      ...(Array.isArray(candidate.options) ? { options: candidate.options } : {}),
+      ...(restaurant ? { restaurant } : {}),
+    };
   }
 
   private sanitizeConsumerItem(item: JsonObject): JsonObject {
@@ -1953,7 +2155,7 @@ export class AssistantService {
       'route_distance_meters', 'route_duration_seconds', 'route_geometry',
       'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude',
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',
-      'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note',
+      'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note', 'cart',
       'resource_id',
       'appointment_id', 'appointment', 'facility', 'order', 'payment', 'preview',
       'error_code', 'retryable',
@@ -1975,6 +2177,10 @@ export class AssistantService {
         result[key] = this.sanitizePayment(value);
       } else if (key === 'preview') {
         result[key] = this.sanitizePreview(value);
+      } else if (key === 'cart') {
+        result[key] = this.sanitizeCart(value);
+      } else if (key === 'driver') {
+        result[key] = this.sanitizeDriver(value);
       } else if (key === 'route_geometry') {
         result[key] = arrayValue(value).filter(isRecord).map((point) => ({
           ...(typeof point.latitude === 'number' ? { latitude: point.latitude } : {}),
@@ -1995,6 +2201,7 @@ export class AssistantService {
     }
     if (typeof value.opening_hours === 'string' || Array.isArray(value.opening_hours) && value.opening_hours.every((item) => typeof item === 'string')) result.opening_hours = value.opening_hours;
     if (Array.isArray(value.option_groups)) result.option_groups = this.sanitizeFoodOptionGroups(value.option_groups);
+    if (Array.isArray(value.options)) result.options = this.sanitizeFoodOptions(value.options);
     if (isRecord(value.restaurant)) result.restaurant = this.sanitizeRestaurant(value.restaurant);
     else if (typeof value.restaurant === 'string') result.restaurant = value.restaurant;
     if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
@@ -2008,8 +2215,13 @@ export class AssistantService {
       ...(stringValue(value.location) ? { location: stringValue(value.location) } : {}),
       ...(stringValue(value.address) ? { address: stringValue(value.address) } : {}),
       ...(stringValue(value.cuisine) ? { cuisine: stringValue(value.cuisine) } : {}),
+      ...(stringValue(value.description) ? { description: stringValue(value.description) } : {}),
       ...(typeof value.rating === 'number' ? { rating: value.rating } : {}),
+      ...(typeof value.review_count === 'number' ? { review_count: value.review_count } : {}),
+      ...(typeof value.price_level === 'number' ? { price_level: value.price_level } : {}),
       ...(stringValue(value.image_url) ? { image_url: stringValue(value.image_url) } : {}),
+      ...(stringValue(value.city) ? { city: stringValue(value.city) } : {}),
+      ...(stringValue(value.district) ? { district: stringValue(value.district) } : {}),
       ...(typeof value.latitude === 'number' ? { latitude: value.latitude } : {}),
       ...(typeof value.longitude === 'number' ? { longitude: value.longitude } : {}),
     };
@@ -2029,6 +2241,41 @@ export class AssistantService {
         ...(options.length ? { options } : {}),
       };
     }).filter((group) => Object.keys(group).length > 0);
+  }
+
+  private sanitizeFoodOptions(value: unknown): JsonObject[] {
+    return arrayValue(value).filter(isRecord).map((option) => ({
+      ...(stringValue(option.name ?? option.title) ? { name: stringValue(option.name ?? option.title) } : {}),
+      ...(typeof option.price === 'number' ? { price: option.price } : {}),
+      ...(stringValue(option.description) ? { description: stringValue(option.description) } : {}),
+    })).filter((option) => Object.keys(option).length > 0);
+  }
+
+  private sanitizeCart(value: unknown): JsonObject {
+    if (!isRecord(value)) return {};
+    const result: JsonObject = {};
+    for (const key of ['status', 'subtotal', 'discount', 'total', 'delivery_fee', 'currency']) {
+      const item = value[key];
+      if (typeof item === 'string' || typeof item === 'number') result[key] = item;
+    }
+    if (isRecord(value.total)) {
+      result.total = {
+        ...(typeof value.total.amount === 'number' ? { amount: value.total.amount } : {}),
+        ...(stringValue(value.total.currency) ? { currency: stringValue(value.total.currency) } : {}),
+      };
+    }
+    const items = arrayValue(value.items).filter(isRecord).map((item) => ({
+      ...(stringValue(item.name ?? item.title) ? { name: stringValue(item.name ?? item.title) } : {}),
+      ...(typeof item.quantity === 'number' ? { quantity: item.quantity } : {}),
+      ...(typeof item.price === 'number' ? { price: item.price } : {}),
+      ...(typeof item.unit_price === 'number' ? { unit_price: item.unit_price } : {}),
+      ...(stringValue(item.description) ? { description: stringValue(item.description) } : {}),
+      ...(stringValue(item.image_url) ? { image_url: stringValue(item.image_url) } : {}),
+      ...(Array.isArray(item.selected_options) ? { selected_options: this.sanitizeFoodOptions(item.selected_options) } : {}),
+      ...(isRecord(item.restaurant) ? { restaurant: this.sanitizeRestaurant(item.restaurant) } : {}),
+    })).filter((item) => Object.keys(item).length > 0);
+    if (items.length) result.items = items;
+    return result;
   }
 
   private sanitizeAppointment(value: unknown): JsonObject {
@@ -2125,4 +2372,10 @@ export class AssistantService {
 
 function isTerminalRideBookingStatus(status: string | undefined): boolean {
   return status !== undefined && ['COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(status.toUpperCase());
+}
+
+function maskPublicPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 4) return '';
+  return `${'*'.repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
 }

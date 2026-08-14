@@ -498,7 +498,7 @@ describe('Unified assistant orchestration', () => {
     const candidates = [
       { id: 'item-1', name: 'Phở bò', restaurant_id: 'restaurant-1' },
       { id: 'item-2', name: 'Bún bò', restaurant_id: 'restaurant-1' },
-      { id: 'item-3', name: 'Cơm tấm', restaurant_id: 'restaurant-2' },
+      { id: 'item-3', name: 'Cơm tấm', restaurant_id: 'restaurant-2', image_url: 'https://cdn.example/cơm-tấm.jpg', price: 65000, description: 'Cơm tấm sườn nướng', option_groups: [{ id: 'size-secret', name: 'Khẩu phần', options: [{ id: 'large-secret', name: 'Đầy đặn', price: 10000 }] }], restaurant: { id: 'restaurant-2', name: 'Quán Cơm', image_url: 'https://cdn.example/quan-com.jpg' } },
     ];
     const agent = {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã cập nhật món.' } : { plan: { tasks: [{ domain: 'food', goal: 'Tìm món', normalized_request: 'Tìm món', extracted_slots: { query: 'món ăn' } }] } }),
@@ -513,7 +513,19 @@ describe('Unified assistant orchestration', () => {
     const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[2].id }, 'cor-food-select-2', 'food-select-key');
 
     expect(agent.chat.mock.calls[1][0].workflow_context).toEqual(expect.objectContaining({ menu_item_id: 'item-3', restaurant_id: 'restaurant-2' }));
-    expect(selected.items[0]).toMatchObject({ kind: 'food_options', options: [{ name: 'Cơm tấm', restaurant: { name: 'Quán Cơm' } }] });
+    expect(selected.items[0]).toMatchObject({
+      kind: 'food_options',
+      options: [{
+        name: 'Cơm tấm',
+        image_url: 'https://cdn.example/cơm-tấm.jpg',
+        price: 65000,
+        description: 'Cơm tấm sườn nướng',
+        option_groups: [{ name: 'Khẩu phần', options: [{ name: 'Đầy đặn', price: 10000 }] }],
+        restaurant: { name: 'Quán Cơm', image_url: 'https://cdn.example/quan-com.jpg' },
+      }],
+    });
+    expect(selected.actions).toHaveLength(3);
+    expect(selected.actions.every((action) => action.kind === 'select_food_item')).toBe(true);
   });
 
   it('disables an unavailable Healthcare slot and refreshes choices once', async () => {

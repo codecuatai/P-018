@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Injectable, Module, NotFoundException, P
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 
-import { AgentClient, JsonObject } from '../../clients/service.clients';
+import { AgentClient, FoodClient, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthModule } from '../auth/auth.module';
 import { AuthGuard } from '../auth/auth.guard';
@@ -113,7 +113,7 @@ export class FoodConversationController {
 @Module({
   imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule, PersonalModule],
   controllers: [FoodConversationController, RideConversationController, AssistantController],
-  providers: [ConversationService, AgentClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
+  providers: [ConversationService, AgentClient, FoodClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
   exports: [ConversationService, RideConversationService, AssistantService],
 })
 export class ConversationModule {}

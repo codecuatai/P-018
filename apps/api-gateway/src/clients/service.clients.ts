@@ -693,12 +693,17 @@ export class FoodClient extends InternalServiceClient {
     );
   }
 
-  patch(path: string, payload: JsonObject, correlationId: string, actorId?: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>(path, { method: 'PATCH', body: JSON.stringify(payload) }, correlationId, actorId);
+  patch(path: string, payload: JsonObject, correlationId: string, actorId?: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      path,
+      { method: 'PATCH', body: JSON.stringify(payload), headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} },
+      correlationId,
+      actorId,
+    );
   }
 
-  delete(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>(path, { method: 'DELETE' }, correlationId, actorId);
+  delete(path: string, correlationId: string, actorId?: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(path, { method: 'DELETE', headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} }, correlationId, actorId);
   }
 
   async searchCatalog(filters: { keyword?: string; district?: string; category?: string; limit?: number }, correlationId: string): Promise<FoodCatalogResponse> {
@@ -724,12 +729,12 @@ export class FoodClient extends InternalServiceClient {
     return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/items`, payload, correlationId, idempotencyKey, actorId);
   }
 
-  async updateCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, payload: JsonObject): Promise<JsonObject> {
-    return this.patch(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, payload, correlationId, actorId);
+  async updateCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, payload: JsonObject, idempotencyKey?: string): Promise<JsonObject> {
+    return this.patch(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, payload, correlationId, actorId, idempotencyKey);
   }
 
-  async removeCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string): Promise<JsonObject> {
-    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, correlationId, actorId);
+  async removeCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, correlationId, actorId, idempotencyKey);
   }
 
   async applyVoucher(actorId: string, correlationId: string, cartId: string, code: string): Promise<JsonObject> {

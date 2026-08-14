@@ -1,4 +1,28 @@
-import { HistoryService } from '../src/modules/history/history.module';
+import { HistoryService, isHistoryResourceActive } from '../src/modules/history/history.module';
+
+describe('history active semantics', () => {
+  const now = new Date('2026-08-15T05:00:00.000Z');
+
+  it('keeps future confirmed restaurant reservations active', () => {
+    expect(isHistoryResourceActive('restaurant_reservation', { status: 'CONFIRMED', booking_time: '2026-08-15T13:00:00' }, now)).toBe(true);
+  });
+
+  it('removes past confirmed, held, and booked restaurant reservations', () => {
+    for (const status of ['CONFIRMED', 'HELD', 'BOOKED']) {
+      expect(isHistoryResourceActive('restaurant_reservation', { status, start_at: '2026-08-15T11:00:00+07:00' }, now)).toBe(false);
+    }
+  });
+
+  it('removes cancelled future reservations and malformed scheduled resources', () => {
+    expect(isHistoryResourceActive('restaurant_reservation', { status: 'CANCELLED', booking_time: '2099-01-01T19:00:00+07:00' }, now)).toBe(false);
+    expect(isHistoryResourceActive('restaurant_reservation', { status: 'CONFIRMED', booking_time: 'not-a-date' }, now)).toBe(false);
+  });
+
+  it('applies the same conservative rule to healthcare appointments', () => {
+    expect(isHistoryResourceActive('healthcare_appointment', { status: 'CONFIRMED', start_time: '2026-08-15T11:00:00+07:00' }, now)).toBe(false);
+    expect(isHistoryResourceActive('healthcare_appointment', { status: 'CONFIRMED', slot: { start_time: '2026-08-15T13:00:00+07:00' } }, now)).toBe(true);
+  });
+});
 
 describe('active history', () => {
   it('returns only non-terminal resources with renderable summaries', async () => {

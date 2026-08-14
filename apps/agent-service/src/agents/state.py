@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RestaurantCandidate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     name: str = ""
 
 
 class MenuItemCandidate(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     id: str
     name: str = ""
     restaurant_id: str | None = None

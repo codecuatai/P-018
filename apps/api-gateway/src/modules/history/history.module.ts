@@ -30,6 +30,51 @@ const TERMINAL_HISTORY_STATUSES: Record<HistoryType, ReadonlySet<string>> = {
   healthcare_appointment: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED']),
 };
 
+const SCHEDULED_HISTORY_TYPES = new Set<HistoryType>(['restaurant_reservation', 'healthcare_appointment']);
+const SCHEDULED_STATUS_FIELDS = ['reservation_time', 'booking_time', 'appointment_time', 'start_at', 'start_time', 'scheduled_at'] as const;
+
+/**
+ * Active history is a read-model concern. It must not mutate the owning
+ * service, and scheduled resources need a conservative time check so a
+ * non-terminal reservation/appointment does not remain active forever.
+ */
+export function isHistoryResourceActive(type: HistoryType, resource: JsonObject, now: Date = new Date()): boolean {
+  const status = String(resource.status ?? '').trim().toUpperCase();
+  if (TERMINAL_HISTORY_STATUSES[type].has(status)) return false;
+  if (!SCHEDULED_HISTORY_TYPES.has(type)) return true;
+
+  const scheduled = scheduledHistoryTimestamp(resource);
+  if (!scheduled) return false;
+  const scheduledAt = parseHistoryTimestamp(scheduled);
+  return Number.isFinite(scheduledAt) && Number.isFinite(now.getTime()) && scheduledAt > now.getTime();
+}
+
+function scheduledHistoryTimestamp(resource: JsonObject): string | undefined {
+  for (const field of SCHEDULED_STATUS_FIELDS) {
+    const value = resource[field];
+    if (typeof value === 'string') return value;
+  }
+  if (isObject(resource.slot)) {
+    for (const field of ['start_at', 'start_time', 'appointment_time'] as const) {
+      const value = resource.slot[field];
+      if (typeof value === 'string') return value;
+    }
+  }
+  return undefined;
+}
+
+function parseHistoryTimestamp(value: string): number {
+  const raw = value.trim();
+  if (!raw) return Number.NaN;
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? `${raw}T00:00:00+07:00`
+    : /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)
+      ? raw
+      : `${raw}+07:00`;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
 export class HistoryQueryDto {
   @IsOptional()
   @IsIn(['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'])
@@ -105,6 +150,7 @@ export class HistoryService {
     }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
+    const now = new Date();
     responses.forEach((result, index) => {
       const name = names[index];
       if (result.status === 'rejected') {
@@ -113,7 +159,7 @@ export class HistoryService {
       }
       for (const value of extractItems(result.value)) {
         const normalized = normalizeHistoryItem(name, value);
-        if (!TERMINAL_HISTORY_STATUSES[name].has(normalized.status.toUpperCase())) items.push(normalized);
+        if (isHistoryResourceActive(name, value, now)) items.push(normalized);
       }
     });
     items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
@@ -300,9 +346,13 @@ function publicPerson(value: unknown): JsonObject | undefined {
 
 function publicDriver(value: unknown): JsonObject | undefined {
   if (!isObject(value)) return undefined;
-  const result = pickFields(value, ['name', 'full_name', 'display_name', 'rating', 'rating_average', 'phone_masked', 'vehicle_type', 'vehicle_model', 'vehicle_color', 'license_plate', 'vehicle', 'eta_seconds']);
+  const result = pickFields(value, ['name', 'full_name', 'display_name', 'rating', 'rating_average', 'phone_masked', 'vehicle_type', 'vehicle_model', 'vehicle_color', 'license_plate', 'eta_seconds']);
   const phone = typeof value.phone === 'string' ? maskPhone(value.phone) : undefined;
   if (!result.phone_masked && phone) result.phone_masked = phone;
+  if (isObject(value.vehicle)) {
+    const vehicle = pickFields(value.vehicle, ['type', 'vehicle_type', 'make', 'model', 'vehicle_model', 'color', 'vehicle_color', 'license_plate']);
+    if (Object.keys(vehicle).length) result.vehicle = vehicle;
+  }
   return Object.keys(result).length ? result : undefined;
 }
 

@@ -77,6 +77,43 @@ class StructuredDecision(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
+_CANDIDATE_SCALAR_FIELDS = {
+    "id",
+    "name",
+    "title",
+    "restaurant_id",
+    "restaurant_name",
+    "image_url",
+    "price",
+    "currency",
+    "description",
+    "category",
+    "address",
+    "city",
+    "district",
+    "rating",
+    "review_count",
+    "price_level",
+}
+
+
+def _candidate_snapshot(value: Any) -> dict[str, Any]:
+    """Keep display data needed for follow-up selection without copying payloads wholesale."""
+    if not isinstance(value, dict):
+        return {}
+    result = {
+        key: value[key]
+        for key in _CANDIDATE_SCALAR_FIELDS
+        if key in value and isinstance(value[key], (str, int, float, bool))
+    }
+    for key in ("option_groups", "options"):
+        if isinstance(value.get(key), list):
+            result[key] = value[key]
+    if isinstance(value.get("restaurant"), dict):
+        result["restaurant"] = _candidate_snapshot(value["restaurant"])
+    return result
+
+
 SEMANTIC_SLOTS = {
     "quantity",
     "option_preferences",
@@ -501,15 +538,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                     restaurant = candidate.get("restaurant") or {} if isinstance(candidate, dict) else {}
                     item = candidate.get("item") or {} if isinstance(candidate, dict) else {}
                     if restaurant.get("id") and not any(value["id"] == restaurant["id"] for value in restaurants):
-                        restaurants.append({"id": restaurant["id"], "name": restaurant.get("name", "")})
+                        restaurants.append(_candidate_snapshot(restaurant))
                     if item.get("id"):
-                        items.append(
-                            {"id": item["id"], "name": item.get("name", ""), "restaurant_id": item.get("restaurant_id")}
-                        )
+                        snapshot = _candidate_snapshot(item)
+                        snapshot.setdefault("restaurant_id", restaurant.get("id"))
+                        if restaurant:
+                            snapshot.setdefault("restaurant", _candidate_snapshot(restaurant))
+                        items.append(snapshot)
                 updates.update({"restaurant_candidates": restaurants, "menu_item_candidates": items})
             if name == "view_menu" and isinstance(data, dict) and isinstance(data.get("items"), list):
                 updates["menu_item_candidates"] = [
-                    {"id": item.get("id"), "name": item.get("name", ""), "restaurant_id": item.get("restaurant_id")}
+                    _candidate_snapshot(item)
                     for item in data["items"]
                     if isinstance(item, dict) and item.get("id")
                 ]
