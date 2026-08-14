@@ -81,16 +81,21 @@ describe('Unified Ride workflow hydration', () => {
       })),
     };
     const tools = { require: jest.fn().mockReturnValue({ toolName: 'ride.quote.create' }) };
-    return { ride, agent, tools };
+    const locations = {
+      realMode: true,
+      geocode: jest.fn(async (address: string) => ({ provider: 'geoapify', status: 'RESOLVED', query: address, candidates: [{ address_text: address, latitude: 20.9914, longitude: 105.945975, confidence: 1 }] })),
+      route: jest.fn(async (origin: { latitude: number; longitude: number }, destination: { latitude: number; longitude: number }) => ({ provider: 'geoapify', status: 'RESOLVED', distance_km: 15, duration_minutes: 15, origin, destination, route_distance_meters: 15_000, route_duration_seconds: 900, route_geometry: [origin, { latitude: 21.0102, longitude: 105.9001 }, destination], route_polyline: null, route_snapshot_hash: 'restart-route' })),
+    };
+    return { ride, agent, tools, locations };
   }
 
   it('re-reads the authoritative quote after a Gateway restart and prepares once', async () => {
     const first = dependencies();
-    const initial = new RideConversationService(first.agent as never, first.ride as never, first.tools as never);
+    const initial = new RideConversationService(first.agent as never, first.ride as never, first.tools as never, first.locations as never);
     const workflowId = 'gw_restart_quote_workflow';
     await initial.chat('actor-restart', 'Đặt xe từ VinUni đến Ho Guom', workflowId, 'cor-before-restart');
 
-    const restarted = new RideConversationService(first.agent as never, first.ride as never, first.tools as never);
+    const restarted = new RideConversationService(first.agent as never, first.ride as never, first.tools as never, first.locations as never);
     await restarted.hydrateWorkflow('actor-restart', workflowId, { quoteId: quote.id }, 'cor-after-restart');
     const result = await restarted.confirmService('actor-restart', workflowId, 'cor-service');
 
@@ -108,19 +113,19 @@ describe('Unified Ride workflow hydration', () => {
 
   it('re-reads the authoritative booking after a second Gateway restart and completes payment once', async () => {
     const first = dependencies();
-    const quoteWorkflow = new RideConversationService(first.agent as never, first.ride as never, first.tools as never);
+    const quoteWorkflow = new RideConversationService(first.agent as never, first.ride as never, first.tools as never, first.locations as never);
     const workflowId = 'gw_restart_payment_workflow';
     await quoteWorkflow.chat('actor-restart', 'Đặt xe từ VinUni đến Ho Guom', workflowId, 'cor-quote');
 
-    const serviceRestart = new RideConversationService(first.agent as never, first.ride as never, first.tools as never);
+    const serviceRestart = new RideConversationService(first.agent as never, first.ride as never, first.tools as never, first.locations as never);
     await serviceRestart.hydrateWorkflow('actor-restart', workflowId, { quoteId: quote.id }, 'cor-hydrate-service');
     await serviceRestart.confirmService('actor-restart', workflowId, 'cor-service');
 
-    const paymentRestart = new RideConversationService(first.agent as never, first.ride as never, first.tools as never);
+    const paymentRestart = new RideConversationService(first.agent as never, first.ride as never, first.tools as never, first.locations as never);
     await paymentRestart.hydrateWorkflow('actor-restart', workflowId, { quoteId: quote.id, bookingId: prepared.id }, 'cor-hydrate-payment');
     const result = await paymentRestart.confirmPayment('actor-restart', workflowId, 'cor-payment');
 
-    expect(result.stage).toBe('COMPLETED');
+    expect(result.stage).toBe('TRACKING');
     expect(result.booking?.status).toBe('DRIVER_ASSIGNED');
     expect(first.ride.getBooking).toHaveBeenCalledWith(
       'actor-restart',

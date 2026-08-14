@@ -63,7 +63,7 @@ export class RideActionsController {
     const key = requiredKey(idempotencyKey);
     const booking = await this.ride.getBooking(request.user.sub, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_confirm_read' }, bookingId);
     const quote = await this.ride.getQuote(request.user.sub, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_confirm_quote' }, booking.quote_id);
-    const paymentReference = `pay_sandbox_${digest(`${request.user.sub}|${booking.id}`).slice(0, 24)}`;
+    const paymentReference = `pay_ride_${digest(`${request.user.sub}|${booking.id}`).slice(0, 24)}`;
     const payload = { action: 'ride.booking.confirm', actor_id: request.user.sub, booking_id: booking.id, quote_id: booking.quote_id, quote_version: booking.quote_version, amount: booking.amount, currency: booking.currency, payment_reference: paymentReference };
     const confirmed = await this.ride.confirmBooking(request.user.sub, key, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_confirm' }, booking.id, JSON.stringify({ payment_reference: paymentReference, confirmation: evidence(request.user.sub, key, 'ride.booking.confirm', payload, quote) }));
     return { data: confirmed, meta: { request_id: request.correlationId } };

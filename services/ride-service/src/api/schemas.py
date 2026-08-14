@@ -16,14 +16,14 @@ class QuoteCreate(StrictModel):
     vehicle_type: Literal["BIKE", "CAR_4", "CAR_7"] = "CAR_4"
     promo_code: str | None = Field(default=None, min_length=1, max_length=50)
     pickup_time: datetime | None = None
-    pickup_latitude: float | None = Field(default=None, ge=-90, le=90)
-    pickup_longitude: float | None = Field(default=None, ge=-180, le=180)
-    dropoff_latitude: float | None = Field(default=None, ge=-90, le=90)
-    dropoff_longitude: float | None = Field(default=None, ge=-180, le=180)
-    route_provider: str | None = Field(default=None, min_length=1, max_length=80)
-    route_distance_meters: int | None = Field(default=None, gt=0)
-    route_duration_seconds: int | None = Field(default=None, gt=0)
-    route_geometry: list[dict[str, float]] | None = None
+    pickup_latitude: float = Field(ge=-90, le=90)
+    pickup_longitude: float = Field(ge=-180, le=180)
+    dropoff_latitude: float = Field(ge=-90, le=90)
+    dropoff_longitude: float = Field(ge=-180, le=180)
+    route_provider: str = Field(min_length=1, max_length=80)
+    route_distance_meters: int = Field(gt=0)
+    route_duration_seconds: int = Field(gt=0)
+    route_geometry: list[dict[str, float]] = Field(min_length=2)
     route_snapshot_hash: str | None = Field(default=None, min_length=1, max_length=64)
 
 

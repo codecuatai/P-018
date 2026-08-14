@@ -11,6 +11,24 @@ from src.infrastructure.models import BookingRow, QuoteRow, RideDriverRow, RideT
 ACTOR = "user_ride_test"
 
 
+def _near_route(location: dict[str, float], route: list[dict[str, float]]) -> bool:
+    for start, end in zip(route, route[1:]):
+        latitude_span = end["latitude"] - start["latitude"]
+        longitude_span = end["longitude"] - start["longitude"]
+        length_squared = latitude_span**2 + longitude_span**2
+        if length_squared == 0:
+            continue
+        ratio = ((location["latitude"] - start["latitude"]) * latitude_span + (location["longitude"] - start["longitude"]) * longitude_span) / length_squared
+        bounded = min(1.0, max(0.0, ratio))
+        projected = {
+            "latitude": start["latitude"] + latitude_span * bounded,
+            "longitude": start["longitude"] + longitude_span * bounded,
+        }
+        if abs(projected["latitude"] - location["latitude"]) < 1e-5 and abs(projected["longitude"] - location["longitude"]) < 1e-5:
+            return True
+    return False
+
+
 def _headers(*, actor: str = ACTOR, key: str | None = None) -> dict[str, str]:
     headers = {
         "X-Internal-Service-Token": "test-token",
@@ -29,7 +47,21 @@ def _create_quote(client: TestClient, *, key: str = "quote-key", with_coordinate
         "promo_code": "SAVE5000",
     }
     if with_coordinates:
-        payload.update({"pickup_latitude": 21.0285, "pickup_longitude": 105.8048, "dropoff_latitude": 21.0301, "dropoff_longitude": 105.8122})
+        payload.update({
+            "pickup_latitude": 21.0285,
+            "pickup_longitude": 105.8048,
+            "dropoff_latitude": 21.0301,
+            "dropoff_longitude": 105.8122,
+            "route_provider": "geoapify",
+            "route_distance_meters": 1_250,
+            "route_duration_seconds": 420,
+            "route_geometry": [
+                {"latitude": 21.0285, "longitude": 105.8048},
+                {"latitude": 21.0292, "longitude": 105.8080},
+                {"latitude": 21.0301, "longitude": 105.8122},
+            ],
+            "route_snapshot_hash": "test-route-hash",
+        })
     response = client.post(
         "/v1/quotes",
         headers=_headers(key=key),
@@ -153,10 +185,47 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
             "pickup_address": "VinUni, Gia Lam",
             "dropoff_address": "Noi Bai Airport",
             "vehicle_type": "CAR_4",
+            "pickup_latitude": 21.0285,
+            "pickup_longitude": 105.8048,
+            "dropoff_latitude": 21.0301,
+            "dropoff_longitude": 105.8122,
+            "route_provider": "geoapify",
+            "route_distance_meters": 1_250,
+            "route_duration_seconds": 420,
+            "route_geometry": [
+                {"latitude": 21.0285, "longitude": 105.8048},
+                {"latitude": 21.0301, "longitude": 105.8122},
+            ],
         },
     )
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_quote_rejects_coordinates_without_a_real_route(client: TestClient) -> None:
+    response = client.post(
+        "/v1/quotes",
+        headers=_headers(key="missing-real-route"),
+        json={
+            "pickup_address": "VinUni",
+            "dropoff_address": "Ho Guom",
+            "vehicle_type": "CAR_4",
+            "pickup_latitude": 20.9914,
+            "pickup_longitude": 105.945975,
+            "dropoff_latitude": 21.02977,
+            "dropoff_longitude": 105.854434,
+            "route_provider": "deterministic-straight-line",
+            "route_distance_meters": 5_000,
+            "route_duration_seconds": 900,
+            "route_geometry": [
+                {"latitude": 20.9914, "longitude": 105.945975},
+                {"latitude": 21.02977, "longitude": 105.854434},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "REAL_ROUTE_REQUIRED"
 
 
 def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> None:
@@ -198,6 +267,11 @@ def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> Non
     assigned = client.get(f"/v1/bookings/{booking['id']}", headers=_headers()).json()["data"]
     assert assigned["resource_version"] == 3
     assert assigned["driver"]["id"].startswith("driver_simulated")
+    assert assigned["driver"]["vehicle_type"] == "CAR_4"
+    assert assigned["driver"]["vehicle_model"] == "Vios"
+    assert assigned["driver"]["vehicle_color"] == "Trang"
+    assert assigned["driver"]["license_plate"] == "30H-482.19"
+    assert assigned["driver"]["phone_masked"].startswith("*** ***")
     assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "CONSUMED"
 
     replay = client.post(
@@ -257,6 +331,81 @@ def test_actor_cannot_read_another_actors_quote(client: TestClient) -> None:
     assert response.json()["code"] == "QUOTE_NOT_FOUND"
 
 
+def test_new_route_expires_old_quote_and_old_confirmation_cannot_prepare(client: TestClient) -> None:
+    old_quote = _create_quote(client, key="old-route")
+    replacement = client.post(
+        "/v1/quotes",
+        headers=_headers(key="new-route"),
+        json={
+            "pickup_address": "VinUni, Gia Lam",
+            "dropoff_address": "UET, Cau Giay",
+            "vehicle_type": "CAR_4",
+            "pickup_latitude": 20.9914,
+            "pickup_longitude": 105.945975,
+            "dropoff_latitude": 21.028333,
+            "dropoff_longitude": 105.854041,
+            "route_provider": "geoapify",
+            "route_distance_meters": 16_051,
+            "route_duration_seconds": 932,
+            "route_geometry": [
+                {"latitude": 20.9914, "longitude": 105.945975},
+                {"latitude": 21.0102, "longitude": 105.9001},
+                {"latitude": 21.028333, "longitude": 105.854041},
+            ],
+        },
+    )
+    assert replacement.status_code == 201
+    assert client.get(f"/v1/quotes/{old_quote['id']}", headers=_headers()).json()["data"]["status"] == "EXPIRED"
+
+    payload = {
+        "action": "ride.booking.prepare",
+        "actor_id": ACTOR,
+        "quote_id": old_quote["id"],
+        "quote_version": old_quote["quote_version"],
+        "amount": old_quote["amount"],
+        "currency": old_quote["currency"],
+    }
+    response = client.post(
+        "/v1/bookings:prepare",
+        headers=_headers(key="old-route-prepare"),
+        json={"quote_id": old_quote["id"], "confirmation": _confirmation("ride.booking.prepare", payload, old_quote)},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "QUOTE_EXPIRED"
+
+
+def test_matching_assigns_the_closest_available_compatible_driver(client: TestClient) -> None:
+    engine = getattr(client, "ride_engine")
+    now = datetime.now(UTC)
+    with Session(engine) as session:
+        session.add(RideDriverRow(
+            id="driver_closest_car4",
+            display_name="Closest Driver",
+            vehicle_type="CAR_4",
+            vehicle_model="City",
+            vehicle_color="Xam",
+            license_plate="30H-000.01",
+            phone_masked="*** *** 0001",
+            rating=4.8,
+            latitude=21.0286,
+            longitude=105.8049,
+            vehicle={"type": "CAR_4", "model": "City", "license_plate": "30H-000.01"},
+            availability_status="AVAILABLE",
+            created_at=now,
+            updated_at=now,
+        ))
+        session.commit()
+
+    quote = _create_quote(client, key="closest-driver")
+    booking = _prepare(client, quote)
+    assigned = _confirm(client, quote, booking, key="closest-driver-confirm")
+    tracking = client.get(f"/v1/bookings/{assigned['id']}/tracking", headers=_headers())
+
+    assert tracking.status_code == 200
+    assert tracking.json()["data"]["status"] == "DRIVER_ASSIGNED"
+    assert tracking.json()["data"]["driver"]["id"] == "driver_closest_car4"
+
+
 def test_cancellation_is_bound_to_current_resource_version(client: TestClient) -> None:
     quote = _create_quote(client)
     booking = _prepare(client, quote)
@@ -294,18 +443,27 @@ def test_v2_quote_keeps_coordinate_route_snapshot_and_tariff(client: TestClient)
             "pickup_longitude": 105.9001,
             "dropoff_latitude": 21.0285,
             "dropoff_longitude": 105.8048,
+            "route_provider": "geoapify",
+            "route_distance_meters": 8_500,
+            "route_duration_seconds": 1_200,
+            "route_geometry": [
+                {"latitude": 21.0001, "longitude": 105.9001},
+                {"latitude": 21.0140, "longitude": 105.8500},
+                {"latitude": 21.0285, "longitude": 105.8048},
+            ],
         },
     )
     assert response.status_code == 201
     quote = response.json()["data"]
-    assert quote["route_provider"] == "deterministic-haversine"
+    assert quote["route_provider"] == "geoapify"
     assert quote["route_distance_meters"] > 0
+    assert len(quote["route_geometry"]) == 3
     assert quote["route_snapshot_hash"]
     assert quote["tariff_snapshot"]["version"] == quote["tariff_version"]
 
 
 def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: TestClient) -> None:
-    quote = _create_quote(client, key="tracking-quote", with_coordinates=False)
+    quote = _create_quote(client, key="tracking-quote")
     booking = _prepare(client, quote)
     payment_reference = "payment_tracking"
     bound_payload = {
@@ -328,8 +486,9 @@ def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: Te
     second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
     assert first.status_code == 200
     assert first.json()["data"] == second.json()["data"]
-    assert first.json()["data"]["status"] == "NO_DRIVER"
-    assert first.json()["data"]["driver_location"] is None
+    assert first.json()["data"]["status"] == "DRIVER_ASSIGNED"
+    assert first.json()["data"]["driver_location"] == {"latitude": 21.0301, "longitude": 105.8122}
+    assert first.json()["data"]["route"]["geometry"] == quote["route_geometry"]
 
 
 def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClient) -> None:
@@ -363,7 +522,11 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         _set_tracking_start(client, confirmed["id"], seconds_ago=seconds_ago)
         response = client.get(f"/v1/bookings/{confirmed['id']}/tracking", headers=_headers())
         assert response.status_code == 200
-        assert response.json()["data"]["status"] == expected_status
+        data = response.json()["data"]
+        assert data["status"] == expected_status
+        if expected_status == "IN_PROGRESS":
+            assert data["current_location"] is not None
+            assert _near_route(data["current_location"], quote["route_geometry"])
         assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == expected_status
 
     _set_booking_updated_at(client, confirmed["id"], seconds_ago=11)

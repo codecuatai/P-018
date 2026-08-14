@@ -222,7 +222,8 @@ function geometryPoints(value: unknown): GeoCoordinate[] {
   const visit = (node: unknown): void => {
     if (Array.isArray(node) && node.length >= 2 && typeof node[0] === 'number' && typeof node[1] === 'number') {
       const point = { latitude: node[1], longitude: node[0] };
-      if (validCoordinate(point)) points.push(point);
+      const previous = points[points.length - 1];
+      if (validCoordinate(point) && (previous?.latitude !== point.latitude || previous.longitude !== point.longitude)) points.push(point);
       return;
     }
     if (Array.isArray(node)) node.forEach(visit);

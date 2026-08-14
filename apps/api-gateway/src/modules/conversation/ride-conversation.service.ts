@@ -25,6 +25,8 @@ type WorkflowStage =
   | 'COLLECTING_DETAILS'
   | 'SERVICE_CONFIRMATION'
   | 'PAYMENT_CONFIRMATION'
+  | 'TRACKING'
+  | 'FAILED'
   | 'COMPLETED';
 
 type PendingRideOperation = {
@@ -98,7 +100,7 @@ export class RideConversationService {
     correlationId: string,
   ): Promise<void> {
     if (!workflowId || !references.quoteId) {
-      throw new ConflictException('A durable Ride quote is required to resume this action.');
+      throw new ConflictException('Mình chưa tìm thấy thông tin chuyến xe để tiếp tục. Bạn tạo lại báo giá nhé.');
     }
     const existing = this.workflows.get(workflowId);
     if (existing && existing.actorId !== actorId) {
@@ -121,7 +123,7 @@ export class RideConversationService {
       || booking.amount !== quote.amount
       || booking.currency !== quote.currency
     )) {
-      throw new ConflictException('Durable Ride state no longer matches the authoritative quote.');
+      throw new ConflictException('Thông tin chuyến xe đã thay đổi. Bạn tạo lại báo giá trước khi tiếp tục nhé.');
     }
 
     const workflow: Workflow = existing ?? {
@@ -164,13 +166,14 @@ export class RideConversationService {
     routeContext?: RideRouteContext,
   ): Promise<PublicWorkflow> {
     const workflow = this.resolveWorkflow(actorId, requestedWorkflowId);
+    const normalizedRouteContext = validatedRouteContext(routeContext);
     const decision = await this.agent.interpret(
       message,
       workflow.id,
       workflow.context,
       this.callContext(correlationId, workflow, 'agent_' + workflow.context.ride.revision),
     );
-    this.applyStatePatch(workflow, decision);
+    this.applyStatePatch(workflow, decision, normalizedRouteContext);
 
     if (decision.tool_request) {
       if (decision.tool_request.workflow_id !== workflow.id) {
@@ -183,10 +186,22 @@ export class RideConversationService {
         const dropoffAddress = requiredString(arguments_, 'dropoff_address');
         const vehicleType = requiredVehicle(arguments_.vehicle_type);
         const promoCode = optionalString(arguments_.promo_code);
-        const pickup = await this.resolveAddress(pickupAddress, routeContext?.pickup_latitude, routeContext?.pickup_longitude);
-        const dropoff = await this.resolveAddress(dropoffAddress, routeContext?.dropoff_latitude, routeContext?.dropoff_longitude);
-        const route = this.locations?.realMode ? await this.locations.route(pickup.coordinate, dropoff.coordinate) : undefined;
-        if (this.locations?.realMode && (route?.provider !== 'geoapify' || route.status !== 'RESOLVED' || !route.route_geometry?.length)) {
+        if (!this.locations) {
+          throw new BadGatewayException({ code: 'LOCATION_SERVICE_UNAVAILABLE', detail: 'Mình chưa thể xác định tuyến đường lúc này. Bạn thử lại giúp mình nhé.', retryable: true });
+        }
+        const pickup = await this.resolveAddress(pickupAddress, normalizedRouteContext.pickup_latitude, normalizedRouteContext.pickup_longitude);
+        const dropoff = await this.resolveAddress(dropoffAddress, normalizedRouteContext.dropoff_latitude, normalizedRouteContext.dropoff_longitude);
+        const route = await this.locations.route(pickup.coordinate, dropoff.coordinate);
+        if (
+          route.status !== 'RESOLVED'
+          || !route.route_distance_meters
+          || route.route_distance_meters <= 0
+          || !route.route_duration_seconds
+          || route.route_duration_seconds <= 0
+          || !route.route_geometry
+          || route.route_geometry.length < 2
+          || (this.locations.realMode && route.provider !== 'geoapify')
+        ) {
           throw new BadGatewayException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
         }
         const quote = await this.ride.createQuote(
@@ -202,13 +217,11 @@ export class RideConversationService {
             pickup_longitude: pickup.coordinate.longitude,
             dropoff_latitude: dropoff.coordinate.latitude,
             dropoff_longitude: dropoff.coordinate.longitude,
-            ...(route ? {
-              route_provider: route.provider,
-              route_distance_meters: route.route_distance_meters,
-              route_duration_seconds: route.route_duration_seconds,
-              route_geometry: route.route_geometry,
-              route_snapshot_hash: route.route_snapshot_hash,
-            } : {}),
+            route_provider: route.provider,
+            route_distance_meters: route.route_distance_meters,
+            route_duration_seconds: route.route_duration_seconds,
+            route_geometry: route.route_geometry,
+            route_snapshot_hash: route.route_snapshot_hash,
           },
         );
         workflow.quote = quote;
@@ -251,13 +264,13 @@ export class RideConversationService {
     if (workflow.stage === 'PAYMENT_CONFIRMATION' && workflow.booking) {
       return this.view(
         workflow,
-        'Thông tin chuyến đã được xác nhận. Booking đang chờ xác nhận thanh toán sandbox.',
+        'Thông tin chuyến đã được xác nhận. Bạn có thể xác nhận thanh toán để tiếp tục tìm tài xế.',
         'prepare_ride_booking',
         [],
       );
     }
     if (workflow.stage !== 'SERVICE_CONFIRMATION' || !workflow.quote) {
-      throw new ConflictException('Workflow is not awaiting service confirmation.');
+      throw new ConflictException('Chuyến xe hiện không ở bước xác nhận thông tin.');
     }
     if (new Date(workflow.quote.expires_at).getTime() <= Date.now()) {
       throw new ConflictException('Quote has expired. Request a new quote.');
@@ -280,7 +293,7 @@ export class RideConversationService {
       workflow.context.ride.revision += 1;
       return this.view(
         workflow,
-        'Thông tin chuyến đã được xác nhận. Booking đã tạo nhưng chưa hoàn tất; hãy xác nhận thanh toán sandbox riêng biệt.',
+        'Thông tin chuyến đã được xác nhận. Bạn kiểm tra lại rồi xác nhận thanh toán để tiếp tục.',
         'prepare_ride_booking',
         [],
       );
@@ -295,16 +308,20 @@ export class RideConversationService {
     correlationId: string,
   ): Promise<PublicWorkflow> {
     const workflow = this.ownedWorkflow(actorId, workflowId);
-    if (workflow.stage === 'COMPLETED' && workflow.booking) {
+    if ((workflow.stage === 'TRACKING' || workflow.stage === 'FAILED' || workflow.stage === 'COMPLETED') && workflow.booking) {
       return this.view(
         workflow,
-        `Booking đã được ghi nhận. Trạng thái chuyến hiện tại: ${workflow.booking.status}.`,
+        workflow.stage === 'COMPLETED'
+          ? 'Chuyến xe đã hoàn tất.'
+          : workflow.stage === 'FAILED'
+            ? 'Chuyến xe chưa thể tiếp tục. Bạn có thể thử lại với hành trình mới.'
+            : 'Thanh toán đã được xác nhận. Đang tìm tài xế gần bạn…',
         'ride_booking_confirmed',
         [],
       );
     }
     if (workflow.stage !== 'PAYMENT_CONFIRMATION' || !workflow.booking || !workflow.quote) {
-      throw new ConflictException('Workflow is not awaiting payment confirmation.');
+      throw new ConflictException('Chuyến xe hiện không ở bước xác nhận thanh toán.');
     }
 
     const pending = this.confirmSnapshot(workflow, actorId);
@@ -335,12 +352,16 @@ export class RideConversationService {
     }
 
     workflow.pendingOperation = null;
-    workflow.stage = 'COMPLETED';
+    workflow.stage = workflowStageForBooking(workflow.booking.status);
     workflow.context.ride.pending_action = null;
     workflow.context.ride.revision += 1;
     return this.view(
       workflow,
-      `Thanh toán sandbox đã được xác nhận. Booking đã chuyển sang trạng thái ${workflow.booking.status}; chuyến sẽ tiếp tục được theo dõi theo trạng thái Ride authoritative.`,
+      workflow.stage === 'TRACKING'
+        ? 'Thanh toán đã được xác nhận. Đang tìm tài xế gần bạn…'
+        : workflow.stage === 'COMPLETED'
+          ? 'Thanh toán đã được xác nhận và chuyến xe đã hoàn tất.'
+          : 'Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại với hành trình mới.',
       'ride_booking_confirmed',
       [],
     );
@@ -349,13 +370,13 @@ export class RideConversationService {
   private prepareSnapshot(workflow: Workflow, actorId: string): PendingRideOperation {
     if (workflow.pendingOperation) {
       if (workflow.pendingOperation.kind !== 'prepare') {
-        throw new ConflictException('A different workflow operation is pending.');
+        throw new ConflictException('Chuyến xe đang có một thao tác khác cần hoàn tất.');
       }
       return workflow.pendingOperation;
     }
     const quote = workflow.quote;
     if (!quote) {
-      throw new ConflictException('Workflow has no quote.');
+      throw new ConflictException('Mình chưa có báo giá cho chuyến xe này.');
     }
     const confirmation = evidence(
       actorId,
@@ -385,16 +406,16 @@ export class RideConversationService {
   private confirmSnapshot(workflow: Workflow, actorId: string): PendingRideOperation {
     if (workflow.pendingOperation) {
       if (workflow.pendingOperation.kind !== 'confirm') {
-        throw new ConflictException('A different workflow operation is pending.');
+        throw new ConflictException('Chuyến xe đang có một thao tác khác cần hoàn tất.');
       }
       return workflow.pendingOperation;
     }
     const booking = workflow.booking;
     const quote = workflow.quote;
     if (!booking || !quote) {
-      throw new ConflictException('Workflow is missing booking details.');
+      throw new ConflictException('Mình chưa có đủ thông tin chuyến xe để tiếp tục.');
     }
-    const paymentReference = 'pay_sandbox_' + digest(workflow.id + '|' + booking.id).slice(0, 24);
+    const paymentReference = 'pay_ride_' + digest(workflow.id + '|' + booking.id).slice(0, 24);
     const confirmation = evidence(
       actorId,
       {
@@ -423,8 +444,11 @@ export class RideConversationService {
   }
 
   private async resolveAddress(address: string, latitude?: number, longitude?: number): Promise<{ address: string; coordinate: LocationCoordinate }> {
+    if ((latitude === undefined) !== (longitude === undefined)) {
+      throw new BadGatewayException({ code: 'COORDINATE_PAIR_REQUIRED', detail: 'Mình chưa xác định đủ tọa độ cho hành trình. Bạn thử lại giúp mình nhé.', retryable: true });
+    }
     if (latitude !== undefined && longitude !== undefined) return { address: address.trim(), coordinate: { latitude, longitude } };
-    if (!this.locations) return { address: address.trim(), coordinate: { latitude: 0, longitude: 0 } };
+    if (!this.locations) throw new BadGatewayException({ code: 'LOCATION_SERVICE_UNAVAILABLE', detail: 'Mình chưa thể xác định địa chỉ lúc này. Bạn thử lại giúp mình nhé.', retryable: true });
     const result = await this.locations.geocode(address);
     const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
     if (!candidate || candidate.latitude === null || candidate.longitude === null) throw new BadGatewayException({ code: 'LOCATION_UNRESOLVED', detail: 'Hiện mình chưa xác định được địa chỉ này. Bạn thử chọn gợi ý hoặc nhập rõ hơn nhé.', retryable: true });
@@ -464,7 +488,7 @@ export class RideConversationService {
       return;
     }
     workflow.pendingOperation = null;
-    throw new ConflictException('Confirmation has expired. Confirm the current details again.');
+    throw new ConflictException('Xác nhận đã hết hạn. Bạn kiểm tra và xác nhận lại thông tin hiện tại nhé.');
   }
 
   private callContext(
@@ -516,7 +540,15 @@ export class RideConversationService {
     return workflow;
   }
 
-  private applyStatePatch(workflow: Workflow, decision: AgentDecision): void {
+  private applyStatePatch(workflow: Workflow, decision: AgentDecision, routeContext: RideRouteContext): void {
+    const previousContext: AgentContext = {
+      active_domain: workflow.context.active_domain,
+      ride: { ...workflow.context.ride },
+    };
+    const previousPickup = workflow.context.ride.pickup_address;
+    const previousDropoff = workflow.context.ride.dropoff_address;
+    const previousVehicle = workflow.context.ride.vehicle_type;
+    const previousQuote = workflow.quote;
     workflow.context.active_domain = decision.state_patch.active_domain;
     for (const field of decision.state_patch.clear_fields) {
       clearRideField(workflow.context, field);
@@ -524,8 +556,43 @@ export class RideConversationService {
     for (const update of decision.state_patch.slot_updates) {
       setRideField(workflow.context, update.slot, update.value);
     }
-    workflow.context.ride.revision = decision.state_patch.revision;
-    workflow.context.ride.pending_action = decision.state_patch.pending_action;
+    const routeChanged = (
+      normalizeAddress(previousPickup) !== normalizeAddress(workflow.context.ride.pickup_address)
+      || normalizeAddress(previousDropoff) !== normalizeAddress(workflow.context.ride.dropoff_address)
+      || previousVehicle !== workflow.context.ride.vehicle_type
+      || coordinatesChanged(previousQuote, routeContext)
+    );
+    const patchChanged = (
+      previousPickup !== workflow.context.ride.pickup_address
+      || previousDropoff !== workflow.context.ride.dropoff_address
+      || previousVehicle !== workflow.context.ride.vehicle_type
+    );
+    const requestedRevision = Number.isFinite(decision.state_patch.revision) ? decision.state_patch.revision : 0;
+    workflow.context.ride.revision = Math.max(
+      workflow.context.ride.revision,
+      requestedRevision,
+      patchChanged ? workflow.context.ride.revision + 1 : workflow.context.ride.revision,
+    );
+    if (routeChanged && workflow.booking && isActiveRideStatus(workflow.booking.status)) {
+      workflow.context = previousContext;
+      throw new ConflictException('Chuyến xe hiện tại đã bắt đầu. Hãy hoàn tất hoặc hủy chuyến trước khi đổi hành trình.');
+    }
+    if (routeChanged && (workflow.quote || workflow.booking || workflow.pendingOperation)) {
+      workflow.quote = null;
+      workflow.booking = null;
+      workflow.pendingOperation = null;
+      workflow.stage = 'COLLECTING_DETAILS';
+      workflow.context.ride.latest_quote_id = null;
+      workflow.context.ride.latest_booking_id = null;
+      workflow.context.ride.quote_version = null;
+      workflow.context.ride.quote_amount = null;
+      workflow.context.ride.quote_currency = null;
+      workflow.context.ride.quote_expires_at = null;
+      workflow.context.ride.pending_action = null;
+      workflow.context.ride.revision = Math.max(workflow.context.ride.revision, requestedRevision + 1);
+    } else {
+      workflow.context.ride.pending_action = decision.state_patch.pending_action;
+    }
   }
 
   private view(
@@ -536,7 +603,7 @@ export class RideConversationService {
   ): PublicWorkflow {
     return {
       workflow_id: workflow.id,
-      response,
+      response: consumerRideText(response),
       intent,
       stage: workflow.stage,
       missing_fields: missingFields,
@@ -554,8 +621,25 @@ function ambiguousOutcome(error: unknown): unknown {
 function hydratedStage(booking: RideBooking | null): WorkflowStage {
   if (!booking) return 'SERVICE_CONFIRMATION';
   if (booking.status === 'AWAITING_CONFIRMATION' || booking.status === 'AWAITING_PAYMENT_CONFIRMATION') return 'PAYMENT_CONFIRMATION';
-  if (isRideAfterPayment(booking.status)) return 'COMPLETED';
+  return workflowStageForBooking(booking.status);
+}
+
+function workflowStageForBooking(status: RideBooking['status']): WorkflowStage {
+  if (status === 'COMPLETED') return 'COMPLETED';
+  if (status === 'NO_DRIVER' || status === 'FAILED' || status === 'PAYMENT_FAILED' || status === 'CANCELLED') return 'FAILED';
+  if (isRideAfterPayment(status)) return 'TRACKING';
   throw new ConflictException('The durable Ride booking is no longer actionable.');
+}
+
+function isActiveRideStatus(status: RideBooking['status']): boolean {
+  return [
+    'SEARCHING_DRIVER',
+    'DRIVER_ASSIGNED',
+    'DRIVER_TO_PICKUP',
+    'DRIVER_ARRIVED',
+    'IN_PROGRESS',
+    'ARRIVED_DESTINATION',
+  ].includes(status);
 }
 
 function isRideAfterPayment(status: RideBooking['status']): boolean {
@@ -667,6 +751,24 @@ function requiredVehicle(value: unknown): 'BIKE' | 'CAR_4' | 'CAR_7' {
   throw new BadGatewayException('Agent proposed an invalid vehicle type.');
 }
 
+function normalizeAddress(value: string | null): string {
+  return (value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+}
+
+function coordinatesChanged(quote: RideQuote | null, routeContext: RideRouteContext): boolean {
+  if (!quote) return false;
+  return (
+    coordinateChanged(quote.pickup_latitude, routeContext.pickup_latitude)
+    || coordinateChanged(quote.pickup_longitude, routeContext.pickup_longitude)
+    || coordinateChanged(quote.dropoff_latitude, routeContext.dropoff_latitude)
+    || coordinateChanged(quote.dropoff_longitude, routeContext.dropoff_longitude)
+  );
+}
+
+function coordinateChanged(previous: number | null | undefined, next: number | undefined): boolean {
+  return next !== undefined && previous !== next;
+}
+
 function validatedRouteContext(value: RideRouteContext | undefined): RideRouteContext {
   if (!value) return {};
   const result: RideRouteContext = {};
@@ -717,6 +819,22 @@ function digest(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+function consumerRideText(value: string): string {
+  return value
+    .replace(/\bNO_DRIVER\b/g, 'Hiện chưa tìm được tài xế phù hợp')
+    .replace(/\bSEARCHING_DRIVER\b/g, 'Đang tìm tài xế gần bạn')
+    .replace(/\bAWAITING_CONFIRMATION\b/g, 'Đang chờ bạn xác nhận')
+    .replace(/\bDRIVER_ASSIGNED\b/g, 'Đã tìm thấy tài xế')
+    .replace(/\bDRIVER_TO_PICKUP\b/g, 'Tài xế đang đến điểm đón')
+    .replace(/\bDRIVER_ARRIVED\b/g, 'Tài xế đã đến điểm đón')
+    .replace(/\bIN_PROGRESS\b/g, 'Chuyến xe đang diễn ra')
+    .replace(/\bARRIVED_DESTINATION\b/g, 'Đã đến điểm đến')
+    .replace(/\bprovider\b/gi, 'dịch vụ vị trí')
+    .replace(/\bauthoritative\b/gi, 'hiện tại')
+    .replace(/\bsandbox\b/gi, 'thanh toán')
+    .replace(/\bworkflow\b/gi, 'yêu cầu');
+}
+
 function idempotencyKey(workflowId: string, operation: string, material: string): string {
   return 'gw_' + operation + '_' + digest(workflowId + '|' + material).slice(0, 32);
 }
@@ -733,8 +851,8 @@ function confirmationView(workflow: Workflow): PublicWorkflow['confirmation'] {
   if (workflow.stage === 'PAYMENT_CONFIRMATION' && workflow.booking) {
     return {
       kind: 'PAYMENT',
-      title: 'Xác nhận thanh toán sandbox',
-      detail: 'Xác nhận riêng giá và booking trước khi Ride gán tài xế.',
+      title: 'Xác nhận thanh toán',
+      detail: 'Xác nhận riêng giá và chuyến xe trước khi tiếp tục tìm tài xế.',
       action_label: 'Xác nhận thanh toán',
     };
   }

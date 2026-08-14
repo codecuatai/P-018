@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -348,26 +349,9 @@ def cancel_confirmation_payload(booking: Booking, actor_id: str) -> dict[str, An
 
 def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime | None = None) -> Quote:
     now = now or utc_now()
-    seed = hashlib.sha256(
-        f"{command.pickup_address.strip().casefold()}|{command.dropoff_address.strip().casefold()}".encode()
-    ).hexdigest()
-    coordinates_available = all(value is not None for value in (command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude))
-    real_route_available = (
-        coordinates_available
-        and command.route_provider == "geoapify"
-        and command.route_distance_meters is not None
-        and command.route_duration_seconds is not None
-        and len(command.route_geometry or []) >= 2
-    )
-    if real_route_available:
-        distance_km = max(1, round((command.route_distance_meters or 0) / 1000))
-        duration_minutes = max(1, round((command.route_duration_seconds or 0) / 60))
-    elif coordinates_available:
-        distance_km = max(1, round(_haversine_km(command.pickup_latitude or 0, command.pickup_longitude or 0, command.dropoff_latitude or 0, command.dropoff_longitude or 0)))
-        duration_minutes = max(3, round(distance_km * 3.2))
-    else:
-        distance_km = 3 + int(seed[:4], 16) % 28
-        duration_minutes = distance_km * 3 + int(seed[4:6], 16) % 10
+    route_geometry = _validated_real_route(command)
+    distance_km = max(1, round((command.route_distance_meters or 0) / 1000))
+    duration_minutes = max(1, round((command.route_duration_seconds or 0) / 60))
     tariff_version = str(tariff["version"])
     peak_surcharge = 5_000 if command.pickup_time and _is_peak(command.pickup_time) else 0
     discount = PROMO_DISCOUNTS.get((command.promo_code or "").upper(), 0)
@@ -376,11 +360,10 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
     time_fee = duration_minutes * int(tariff["per_minute"])
     amount = max(0, base_fee + distance_fee + time_fee + peak_surcharge - discount)
     quote_id = f"quote_{uuid4().hex[:20]}"
-    route_provider = command.route_provider if real_route_available else ("deterministic-haversine" if coordinates_available else "deterministic-address-hash")
-    route_distance_meters = command.route_distance_meters if real_route_available else distance_km * 1000
-    route_duration_seconds = command.route_duration_seconds if real_route_available else duration_minutes * 60
-    route_geometry = command.route_geometry if real_route_available else None
-    route_polyline = None if real_route_available else _route_polyline(command.pickup_latitude, command.pickup_longitude, command.dropoff_latitude, command.dropoff_longitude)
+    route_provider = str(command.route_provider).strip()
+    route_distance_meters = command.route_distance_meters
+    route_duration_seconds = command.route_duration_seconds
+    route_polyline = None
     route_snapshot = {
         "provider": route_provider,
         "origin": {"latitude": command.pickup_latitude, "longitude": command.pickup_longitude},
@@ -422,6 +405,48 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         route_snapshot_hash=command.route_snapshot_hash or normalized_hash(route_snapshot),
         tariff_snapshot={"version": tariff_version, **tariff},
     )
+
+
+def _validated_real_route(command: QuoteCommand) -> list[dict[str, float]]:
+    coordinates = (
+        command.pickup_latitude,
+        command.pickup_longitude,
+        command.dropoff_latitude,
+        command.dropoff_longitude,
+    )
+    if any(value is None for value in coordinates):
+        raise RideError(
+            422,
+            "REAL_ROUTE_REQUIRED",
+            "Chưa xác định được tuyến đường thực tế cho chuyến xe. Bạn thử lại giúp mình nhé.",
+            retryable=True,
+        )
+    points = command.route_geometry or []
+    provider = (command.route_provider or "").strip().lower()
+    if (
+        not provider
+        or provider.startswith("deterministic")
+        or command.route_distance_meters is None
+        or command.route_distance_meters <= 0
+        or command.route_duration_seconds is None
+        or command.route_duration_seconds <= 0
+        or len(points) < 2
+        or not all(
+            isinstance(point, dict)
+            and _valid_point(point.get("latitude"), point.get("longitude"))
+            for point in points
+        )
+    ):
+        raise RideError(
+            422,
+            "REAL_ROUTE_REQUIRED",
+            "Chưa xác định được tuyến đường thực tế cho chuyến xe. Bạn thử lại giúp mình nhé.",
+            retryable=True,
+        )
+    return [
+        {"latitude": float(point["latitude"]), "longitude": float(point["longitude"])}
+        for point in points
+    ]
 
 
 def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = None) -> dict[str, Any]:
@@ -543,6 +568,17 @@ def _point(latitude: float | None, longitude: float | None) -> dict[str, float] 
     return {"latitude": latitude, "longitude": longitude}
 
 
+def _valid_point(latitude: Any, longitude: Any) -> bool:
+    return (
+        isinstance(latitude, (int, float))
+        and isinstance(longitude, (int, float))
+        and math.isfinite(float(latitude))
+        and math.isfinite(float(longitude))
+        and -90 <= float(latitude) <= 90
+        and -180 <= float(longitude) <= 180
+    )
+
+
 def _route_polyline(
     pickup_latitude: float | None,
     pickup_longitude: float | None,
@@ -569,21 +605,51 @@ def _simulated_driver_location(
     if not pickup or not destination or not start:
         return None
     if status in {BookingStatus.DRIVER_ASSIGNED.value, BookingStatus.DRIVER_TO_PICKUP.value}:
-        return _interpolate(start, pickup, elapsed / max(1, eta_seconds))
+        return _interpolate_route([start, pickup], elapsed / max(1, eta_seconds))
     if status == BookingStatus.DRIVER_ARRIVED.value:
         return pickup
     if status in {BookingStatus.IN_PROGRESS.value, BookingStatus.ARRIVED_DESTINATION.value, BookingStatus.COMPLETED.value}:
         ratio = 1.0 if status in {BookingStatus.ARRIVED_DESTINATION.value, BookingStatus.COMPLETED.value} else (elapsed - eta_seconds - 60) / max(1, travel_seconds)
-        return _interpolate(pickup, destination, ratio)
+        geometry = quote.route_geometry or [pickup, destination]
+        return _interpolate_route(geometry, ratio)
     return start
 
 
-def _interpolate(start: dict[str, Any], end: dict[str, Any], ratio: float) -> dict[str, float]:
+def _interpolate_route(points: list[dict[str, Any]], ratio: float) -> dict[str, float]:
+    normalized = [
+        {"latitude": float(point["latitude"]), "longitude": float(point["longitude"])}
+        for point in points
+        if _valid_point(point.get("latitude"), point.get("longitude"))
+    ]
+    if not normalized:
+        return {"latitude": 0.0, "longitude": 0.0}
+    if len(normalized) == 1:
+        return {key: round(value, 6) for key, value in normalized[0].items()}
     bounded = min(1.0, max(0.0, ratio))
-    return {
-        "latitude": round(float(start["latitude"]) + (float(end["latitude"]) - float(start["latitude"])) * bounded, 6),
-        "longitude": round(float(start["longitude"]) + (float(end["longitude"]) - float(start["longitude"])) * bounded, 6),
-    }
+    segment_lengths = [
+        _haversine_km(
+            normalized[index]["latitude"],
+            normalized[index]["longitude"],
+            normalized[index + 1]["latitude"],
+            normalized[index + 1]["longitude"],
+        )
+        for index in range(len(normalized) - 1)
+    ]
+    total_length = sum(segment_lengths)
+    if total_length <= 0:
+        return {key: round(value, 6) for key, value in normalized[-1].items()}
+    distance = total_length * bounded
+    for index, segment_length in enumerate(segment_lengths):
+        if distance <= segment_length or index == len(segment_lengths) - 1:
+            segment_ratio = distance / max(segment_length, 1e-12)
+            start = normalized[index]
+            end = normalized[index + 1]
+            return {
+                "latitude": round(start["latitude"] + (end["latitude"] - start["latitude"]) * segment_ratio, 6),
+                "longitude": round(start["longitude"] + (end["longitude"] - start["longitude"]) * segment_ratio, 6),
+            }
+        distance -= segment_length
+    return {key: round(value, 6) for key, value in normalized[-1].items()}
 
 
 def tracking_elapsed(booking: Booking, now: datetime) -> float:

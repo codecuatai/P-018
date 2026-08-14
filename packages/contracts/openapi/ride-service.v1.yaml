@@ -106,7 +106,8 @@ paths:
       operationId: confirmRideBooking
       description: >
         Consumes the second confirmation, bound to the quote and opaque payment
-        reference, then assigns a simulated driver. Ride does not process payment.
+        reference, then places the booking into driver search. Ride does not
+        process payment; assignment and tracking progress are exposed separately.
       parameters:
         - $ref: "#/components/parameters/BookingId"
         - $ref: "#/components/parameters/ActorId"
@@ -120,7 +121,7 @@ paths:
               $ref: "#/components/schemas/ConfirmBookingRequest"
       responses:
         "200":
-          description: Simulated driver assigned.
+          description: Payment accepted and driver search started.
           content:
             application/json:
               schema:
@@ -321,7 +322,17 @@ components:
     QuoteCreate:
       type: object
       additionalProperties: false
-      required: [pickup_address, dropoff_address]
+      required:
+        - pickup_address
+        - dropoff_address
+        - pickup_latitude
+        - pickup_longitude
+        - dropoff_latitude
+        - dropoff_longitude
+        - route_provider
+        - route_distance_meters
+        - route_duration_seconds
+        - route_geometry
       properties:
         pickup_address:
           type: string
@@ -342,26 +353,34 @@ components:
         pickup_time:
           type: [string, "null"]
         pickup_latitude:
-          type: [number, "null"]
+          type: number
           minimum: -90
           maximum: 90
         pickup_longitude:
-          type: [number, "null"]
+          type: number
           minimum: -180
           maximum: 180
         dropoff_latitude:
-          type: [number, "null"]
+          type: number
           minimum: -90
           maximum: 90
         dropoff_longitude:
-          type: [number, "null"]
+          type: number
           minimum: -180
           maximum: 180
-          format: date-time
-        pickup_latitude: {type: [number, "null"], minimum: -90, maximum: 90}
-        pickup_longitude: {type: [number, "null"], minimum: -180, maximum: 180}
-        dropoff_latitude: {type: [number, "null"], minimum: -90, maximum: 90}
-        dropoff_longitude: {type: [number, "null"], minimum: -180, maximum: 180}
+        route_provider: {type: string, minLength: 1, maxLength: 80}
+        route_distance_meters: {type: integer, exclusiveMinimum: 0}
+        route_duration_seconds: {type: integer, exclusiveMinimum: 0}
+        route_geometry:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
     Confirmation:
       type: object
       additionalProperties: false
@@ -467,6 +486,7 @@ components:
         - route_distance_meters
         - route_duration_seconds
         - route_polyline
+        - route_geometry
         - route_snapshot_hash
         - tariff_snapshot
       properties:
@@ -496,6 +516,15 @@ components:
         route_distance_meters: {type: [integer, "null"]}
         route_duration_seconds: {type: [integer, "null"]}
         route_polyline: {type: [string, "null"]}
+        route_geometry:
+          type: [array, "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
         route_snapshot_hash: {type: [string, "null"]}
         created_at: {type: string, format: date-time}
         tariff_snapshot: {type: [object, "null"], additionalProperties: true}
@@ -526,7 +555,7 @@ components:
         currency: {type: string}
         status:
           type: string
-          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
         resource_version: {type: integer}
         payment_reference:
           type: [string, "null"]
@@ -543,7 +572,7 @@ components:
       required: [booking_id, status, progress, eta_seconds, driver, driver_location, current_location, route, route_provider, route_snapshot_hash, updated_at]
       properties:
         booking_id: {type: string}
-        status: {type: string, enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]}
+        status: {type: string, enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]}
         progress: {type: number, minimum: 0, maximum: 1}
         eta_seconds: {type: integer, minimum: 0}
         driver: {type: [object, "null"], additionalProperties: true}

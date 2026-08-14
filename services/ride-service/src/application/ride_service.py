@@ -49,6 +49,7 @@ class RideApplication:
         quote = create_quote(command, tariff)
         payload = quote.snapshot()
         try:
+            self._invalidate_prior_quotes(command.actor_id)
             self.repository.save_quote(quote)
             self._save_idempotency(command.actor_id, operation, idempotency_key, request_hash, payload)
             self.repository.commit()
@@ -56,6 +57,15 @@ class RideApplication:
         except Exception:
             self.repository.rollback()
             raise
+
+    def _invalidate_prior_quotes(self, actor_id: str) -> None:
+        for previous in self.repository.list_quotes(actor_id):
+            if previous.status in {
+                QuoteStatus.QUOTE_CREATED.value,
+                QuoteStatus.AWAITING_CONFIRMATION.value,
+            }:
+                transition_quote(previous, QuoteStatus.EXPIRED.value)
+                self.repository.save_quote(previous)
 
     def get_quote(self, quote_id: str, actor_id: str) -> dict:
         quote = self._owned_quote(quote_id, actor_id)
@@ -87,6 +97,8 @@ class RideApplication:
         if replay := self._replay(command.actor_id, operation, idempotency_key, request_hash):
             return replay
         quote = self._owned_quote(command.quote_id, command.actor_id)
+        if quote.status == QuoteStatus.EXPIRED.value:
+            raise RideError(409, "QUOTE_EXPIRED", "The quote has expired; request a new quote.")
         if _aware(quote.expires_at) <= utc_now():
             self._expire_quote_if_needed(quote)
             raise RideError(409, "QUOTE_EXPIRED", "The quote has expired; request a new quote.")

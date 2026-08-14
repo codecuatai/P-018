@@ -7,6 +7,7 @@ import { AgentClient, RideClient } from '../src/clients/service.clients';
 import { CorrelationIdMiddleware } from '../src/common/correlation-id.middleware';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
 import { ServiceCallError } from '../src/resilience/service-call-error';
+import { LocationService } from '../src/modules/personal/personal.module';
 
 describe('Ride conversation workflow', () => {
   let app: INestApplication;
@@ -79,11 +80,18 @@ describe('Ride conversation workflow', () => {
   };
 
   beforeAll(async () => {
+    const locations = {
+      realMode: true,
+      geocode: jest.fn(async (address: string) => ({ provider: 'geoapify', status: 'RESOLVED', query: address, candidates: [{ address_text: address, latitude: 20.9914, longitude: 105.945975, confidence: 1 }] })),
+      route: jest.fn(async (origin: { latitude: number; longitude: number }, destination: { latitude: number; longitude: number }) => ({ provider: 'geoapify', status: 'RESOLVED', distance_km: 15, duration_minutes: 15, origin, destination, route_distance_meters: 15_000, route_duration_seconds: 900, route_geometry: [origin, { latitude: 21.0102, longitude: 105.9001 }, destination], route_polyline: null, route_snapshot_hash: 'conversation-route' })),
+    };
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AgentClient)
       .useValue(agent)
       .overrideProvider(RideClient)
       .useValue(ride)
+      .overrideProvider(LocationService)
+      .useValue(locations)
       .compile();
     app = module.createNestApplication();
     app.use(new CorrelationIdMiddleware().use);
@@ -118,9 +126,9 @@ describe('Ride conversation workflow', () => {
       .post('/api/v1/workflows/' + workflowId + '/confirm-payment')
       .set('X-Actor-Id', 'actor_test')
       .expect(201);
-    expect(paymentConfirmation.body.data.stage).toBe('COMPLETED');
+    expect(paymentConfirmation.body.data.stage).toBe('TRACKING');
     expect(paymentConfirmation.body.data.booking.status).toBe('DRIVER_ASSIGNED');
-    expect(paymentConfirmation.body.data.response).toContain('DRIVER_ASSIGNED');
+    expect(paymentConfirmation.body.data.response).toContain('tài xế');
 
     const firstEvidence = JSON.parse(ride.prepareBooking.mock.calls[0][3]).confirmation;
     const finalEvidence = JSON.parse(ride.confirmBooking.mock.calls[0][4]).confirmation;
@@ -223,9 +231,9 @@ describe('Ride conversation workflow', () => {
       .set('X-Actor-Id', 'actor_reconcile')
       .expect(201)
       .expect(({ body }) => {
-        expect(body.data.stage).toBe('COMPLETED');
+        expect(body.data.stage).toBe('TRACKING');
         expect(body.data.booking.status).toBe('DRIVER_ASSIGNED');
-        expect(body.data.response).toContain('DRIVER_ASSIGNED');
+        expect(body.data.response).toContain('tài xế');
       });
 
     expect(ride.getBooking).toHaveBeenCalledTimes(1);
