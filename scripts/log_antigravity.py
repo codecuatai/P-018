@@ -180,23 +180,32 @@ def extract_user_prompt(content: str) -> str:
 # Reading existing log to avoid duplicates
 # ---------------------------------------------------------------------------
 
-def get_logged_entry_ids(log_file: Path) -> set[str]:
-    logged: set[str] = set()
-    if not log_file.exists():
-        return logged
-    with open(log_file, encoding="utf-8-sig") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            eid = entry.get("entry_id", "")
-            if eid:
-                logged.add(eid)
-    return logged
+def get_logged_entry_ids(log_dir: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    logged_ids: set[str] = set()
+    logged_prompts: set[tuple[str, str]] = set()
+    if not log_dir.exists():
+        return logged_ids, logged_prompts
+    for fpath in log_dir.glob("**/*.jsonl"):
+        try:
+            with open(fpath, encoding="utf-8-sig", errors="ignore") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    eid = entry.get("entry_id", "")
+                    if eid:
+                        logged_ids.add(eid)
+                    sid = entry.get("session_id", "")
+                    prompt = entry.get("prompt", "")
+                    if prompt:
+                        logged_prompts.add((sid, prompt.strip()))
+        except OSError:
+            pass
+    return logged_ids, logged_prompts
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +393,7 @@ def main() -> None:
     log_dir = Path(os.environ.get("AI_LOG_DIR", ".ai-log"))
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / "session.jsonl"
-    logged_ids = get_logged_entry_ids(log_file)
+    logged_ids, logged_prompts = get_logged_entry_ids(log_dir)
 
     cutoff = None
     if not args.all:
@@ -402,10 +411,12 @@ def main() -> None:
     for msg in iter_user_inputs(brain_dirs, cutoff, args.conv_id, repo_root_n):
         entry = build_entry(msg, repo or Path.cwd().name, branch, commit,
                             student)
-        if entry["entry_id"] in logged_ids:
+        prompt_key = (entry["session_id"], entry["prompt"].strip())
+        if entry["entry_id"] in logged_ids or prompt_key in logged_prompts:
             continue
         new_entries.append(entry)
         logged_ids.add(entry["entry_id"])
+        logged_prompts.add(prompt_key)
 
     if not new_entries:
         scope = "all" if args.all else f"{args.hours}h"
