@@ -520,7 +520,10 @@ def tracking_snapshot(booking: Booking, quote: Quote, *, now: datetime | None = 
     # couple of seconds, which is the cadence used by the demo client.
     elapsed = tracking_elapsed(booking, now)
     travel_seconds = max(60, int(quote.route_duration_seconds or quote.duration_minutes * 60))
-    status = tracking_status_for_elapsed(status, elapsed, eta_seconds, travel_seconds)
+    # The application layer advances and persists the lifecycle before taking a
+    # snapshot. Keep that stored state authoritative here; deriving a second
+    # status from the wall clock can expose a state that was not persisted and
+    # can skip the initial DRIVER_ASSIGNED response on a fast request.
     progress = tracking_progress(status, elapsed, eta_seconds, travel_seconds)
     eta_remaining = (
         max(0, eta_seconds - int(elapsed))
@@ -604,7 +607,9 @@ def _simulated_driver_location(
     start = driver.get("location") if isinstance(driver.get("location"), dict) else None
     if not pickup or not destination or not start:
         return None
-    if status in {BookingStatus.DRIVER_ASSIGNED.value, BookingStatus.DRIVER_TO_PICKUP.value}:
+    if status == BookingStatus.DRIVER_ASSIGNED.value:
+        return start
+    if status == BookingStatus.DRIVER_TO_PICKUP.value:
         return _interpolate_route([start, pickup], elapsed / max(1, eta_seconds))
     if status == BookingStatus.DRIVER_ARRIVED.value:
         return pickup
@@ -656,7 +661,7 @@ def tracking_elapsed(booking: Booking, now: datetime) -> float:
     started = _as_utc(booking.tracking_started_at or booking.updated_at)
     elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
     scaled = elapsed * get_settings().tracking_time_scale
-    return float(int(scaled // 2) * 2)
+    return scaled
 
 
 def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> str:

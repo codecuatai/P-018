@@ -3,9 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from src.domain.ride import normalized_hash
+from src.config import get_settings
+from src.domain.ride import Booking, BookingStatus, normalized_hash, tracking_elapsed, tracking_progress
 from src.infrastructure.models import BookingRow, QuoteRow, RideDriverRow, RideTrackingEventRow
 
 ACTOR = "user_ride_test"
@@ -272,6 +274,8 @@ def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> Non
     assert assigned["driver"]["vehicle_color"] == "Trang"
     assert assigned["driver"]["license_plate"] == "30H-482.19"
     assert assigned["driver"]["phone_masked"].startswith("*** ***")
+    assert assigned["driver"]["rating"] == 4.9
+    assert assigned["driver"]["vehicle"] == {"type": "CAR_4", "model": "Vios"}
     assert client.get(f"/v1/quotes/{quote['id']}", headers=_headers()).json()["data"]["status"] == "CONSUMED"
 
     replay = client.post(
@@ -485,10 +489,42 @@ def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: Te
     first = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
     second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
     assert first.status_code == 200
-    assert first.json()["data"] == second.json()["data"]
     assert first.json()["data"]["status"] == "DRIVER_ASSIGNED"
     assert first.json()["data"]["driver_location"] == {"latitude": 21.0301, "longitude": 105.8122}
+    assert second.json()["data"]["status"] == "DRIVER_TO_PICKUP"
+    assert second.json()["data"]["progress"] >= first.json()["data"]["progress"]
+    assert second.json()["data"]["driver_location"] is not None
     assert first.json()["data"]["route"]["geometry"] == quote["route_geometry"]
+    assert second.json()["data"]["route"]["geometry"] == quote["route_geometry"]
+
+
+def test_tracking_elapsed_and_progress_are_continuous(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRACKING_TIME_SCALE", "1")
+    get_settings.cache_clear()
+    started_at = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)
+    booking = Booking(
+        id="booking_tracking_unit",
+        actor_id=ACTOR,
+        quote_id="quote_tracking_unit",
+        quote_version="test:quote_tracking_unit",
+        amount=10_000,
+        currency="VND",
+        status=BookingStatus.IN_PROGRESS.value,
+        resource_version=1,
+        payment_reference="payment_tracking_unit",
+        driver={"id": "driver_tracking_unit"},
+        created_at=started_at,
+        updated_at=started_at,
+        tracking_started_at=started_at,
+    )
+
+    elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=123.75))
+    assert elapsed == pytest.approx(123.75)
+    first = tracking_progress(BookingStatus.IN_PROGRESS.value, elapsed, 60, 420)
+    later_elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=124.25))
+    later = tracking_progress(BookingStatus.IN_PROGRESS.value, later_elapsed, 60, 420)
+    assert later_elapsed == pytest.approx(124.25)
+    assert later > first
 
 
 def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClient) -> None:
@@ -518,12 +554,15 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         (eta_seconds + 62, "IN_PROGRESS"),
         (eta_seconds + 62 + route_seconds + 2, "ARRIVED_DESTINATION"),
     ]
+    previous_progress = 0.0
     for seconds_ago, expected_status in expected_states:
         _set_tracking_start(client, confirmed["id"], seconds_ago=seconds_ago)
         response = client.get(f"/v1/bookings/{confirmed['id']}/tracking", headers=_headers())
         assert response.status_code == 200
         data = response.json()["data"]
         assert data["status"] == expected_status
+        assert data["progress"] >= previous_progress
+        previous_progress = data["progress"]
         if expected_status == "IN_PROGRESS":
             assert data["current_location"] is not None
             assert _near_route(data["current_location"], quote["route_geometry"])
@@ -533,6 +572,7 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
     response = client.get(f"/v1/bookings/{confirmed['id']}/tracking", headers=_headers())
     assert response.status_code == 200
     assert response.json()["data"]["status"] == "COMPLETED"
+    assert response.json()["data"]["progress"] == 1.0
     assert client.get(f"/v1/bookings/{confirmed['id']}", headers=_headers()).json()["data"]["status"] == "COMPLETED"
 
     with Session(engine) as session:

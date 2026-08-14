@@ -15,9 +15,14 @@ class Settings(BaseSettings):
     tracking_time_scale: float = Field(default=1.0, gt=0.0, le=120.0)
 
     @model_validator(mode="after")
-    def reject_accelerated_tracking_in_production(self) -> "Settings":
-        if self.app_env.lower() in {"production", "prod"} and self.tracking_time_scale != 1.0:
-            raise ValueError("TRACKING_TIME_SCALE must remain 1.0 in production")
+    def reject_accelerated_tracking_outside_dev_or_test(self) -> "Settings":
+        if self.tracking_time_scale != 1.0 and self.app_env.lower() not in {
+            "development",
+            "dev",
+            "test",
+            "testing",
+        }:
+            raise ValueError("TRACKING_TIME_SCALE other than 1.0 is limited to development/test environments")
         return self
 
 

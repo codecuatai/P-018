@@ -26,8 +26,23 @@ def test_tracking_time_scale_is_allowed_for_local_e2e(monkeypatch: pytest.Monkey
     assert get_settings().tracking_time_scale == 60
 
 
+def test_tracking_time_scale_defaults_to_normal_speed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("TRACKING_TIME_SCALE", raising=False)
+    get_settings.cache_clear()
+    assert get_settings().tracking_time_scale == 1.0
+
+
 def test_tracking_time_scale_is_rejected_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("TRACKING_TIME_SCALE", "2")
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError):
+        get_settings()
+
+
+def test_tracking_time_scale_is_rejected_outside_development_or_test(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "staging")
     monkeypatch.setenv("TRACKING_TIME_SCALE", "2")
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
