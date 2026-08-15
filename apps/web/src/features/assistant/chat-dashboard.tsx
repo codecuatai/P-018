@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
-import { isUserVisibleConversationMessage, type AssistantAction, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
+import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
 
@@ -126,7 +126,9 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setComposer("");
     setSending(true);
     try {
+      const requestStartedAt = Date.now();
       const response = await sendAssistantMessage(text, conversationId);
+      await holdHealthcareDemoResponse(response, requestStartedAt);
       setConversationId(response.conversation_id);
       if (response.items.some((item) => item.kind === "food_options") && response.actions.some((action) => action.kind === "select_food_item")) {
         setFoodSelections({});
@@ -254,6 +256,15 @@ function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelection
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {
   return messages.some((message) => message.response?.items.some((item) => item.kind === "food_options")
     && message.response.actions.some((action) => action.kind === "select_food_item"));
+}
+
+async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {
+  const isHealthcareResponse = response.items.some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
+    || response.actions.some((action) => action.kind.startsWith("healthcare_") || action.kind === "select_healthcare_slot");
+  if (!isHealthcareResponse) return;
+
+  const remainingDelay = 6000 - (Date.now() - requestStartedAt);
+  if (remainingDelay > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
 }
 
 function toChatMessages(record: ConversationRecord, consumedActionIds: Set<string> = new Set()): ChatMessage[] { return record.messages.filter(isUserVisibleConversationMessage).map((message, index) => ({ id: `${record.conversationId}-${index}`, role: message.role, text: message.content, timestamp: message.createdAt, ...(message.role === "assistant" && message.data ? { response: { ...message.data, actions: message.data.actions.filter((action) => !consumedActionIds.has(action.id)) } } : {}), requestStatus: "sent" })); }
