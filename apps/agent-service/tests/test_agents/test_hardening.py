@@ -31,6 +31,14 @@ def test_fallback_stops_food_query_before_delivery_and_another_domain() -> None:
     assert slots["dish_query"] == "phở"
 
 
+def test_initial_food_delivery_request_searches_by_dish_not_the_full_sentence() -> None:
+    query = "tôi muốn đặt phở bò giao về nhà"
+    slots = extract_slots(query)
+    assert classify(query) == "search_food"
+    assert slots["dish_query"] == "phở bò"
+    assert select_tools(classify(query), slots, []) == [{"name": "search_food", "arguments": {"keyword": "phở bò"}}]
+
+
 def test_references_and_options_use_authoritative_opaque_values() -> None:
     slots = resolve_references(
         {"menu_item_alias": "second", "option_preferences": [{"concept": "size", "value": "lon"}]},
