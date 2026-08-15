@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from src.config import get_settings
-from src.domain.ride import Booking, BookingStatus, normalized_hash, tracking_elapsed, tracking_progress
+from src.domain.ride import Booking, BookingStatus, _haversine_km, normalized_hash, tracking_elapsed, tracking_progress
 from src.infrastructure.models import BookingRow, QuoteRow, RideDriverRow, RideTrackingEventRow
 
 ACTOR = "user_ride_test"
@@ -466,7 +466,7 @@ def test_v2_quote_keeps_coordinate_route_snapshot_and_tariff(client: TestClient)
     assert quote["tariff_snapshot"]["version"] == quote["tariff_version"]
 
 
-def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: TestClient) -> None:
+def test_tracking_spawns_driver_near_pickup_then_follows_two_legs(client: TestClient) -> None:
     quote = _create_quote(client, key="tracking-quote")
     booking = _prepare(client, quote)
     payment_reference = "payment_tracking"
@@ -487,15 +487,53 @@ def test_tracking_is_deterministic_and_never_fakes_driver_coordinates(client: Te
     )
     assert confirmed.status_code == 200
     first = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
-    second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
     assert first.status_code == 200
-    assert first.json()["data"]["status"] == "DRIVER_ASSIGNED"
-    assert first.json()["data"]["driver_location"] == {"latitude": 21.0301, "longitude": 105.8122}
-    assert second.json()["data"]["status"] == "DRIVER_TO_PICKUP"
-    assert second.json()["data"]["progress"] >= first.json()["data"]["progress"]
-    assert second.json()["data"]["driver_location"] is not None
-    assert first.json()["data"]["route"]["geometry"] == quote["route_geometry"]
-    assert second.json()["data"]["route"]["geometry"] == quote["route_geometry"]
+    first_data = first.json()["data"]
+    pickup = quote["route_geometry"][0]
+    assert first_data["status"] == "DRIVER_ASSIGNED"
+    assert first_data["driver_location"] == first_data["driver"]["location"]
+    assert first_data["driver"]["tracking_speed_factor"] == 0.2
+    spawn_distance_km = _haversine_km(
+        first_data["driver_location"]["latitude"],
+        first_data["driver_location"]["longitude"],
+        pickup["latitude"],
+        pickup["longitude"],
+    )
+    assert 1.99 <= spawn_distance_km <= 3.01
+    assert first_data["driver"]["distance_to_pickup_km"] == pytest.approx(spawn_distance_km, abs=0.001)
+    assert first_data["driver"]["eta_seconds"] == pytest.approx(
+        spawn_distance_km / (quote["route_distance_meters"] / 1_000) * quote["route_duration_seconds"],
+        abs=1,
+    )
+    _set_tracking_start(
+        client,
+        booking["id"],
+        seconds_ago=max(1, int(2 / first_data["driver"]["tracking_speed_factor"])),
+    )
+    second = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    assert second.status_code == 200
+    second_data = second.json()["data"]
+    assert second_data["status"] == "DRIVER_TO_PICKUP"
+    assert second_data["progress"] >= first_data["progress"]
+    assert second_data["driver_location"] is not None
+    _set_tracking_start(
+        client,
+        booking["id"],
+        seconds_ago=max(1, int(first_data["driver"]["eta_seconds"] / (2 * first_data["driver"]["tracking_speed_factor"]))),
+    )
+    moving = client.get(f"/v1/bookings/{booking['id']}/tracking", headers=_headers())
+    assert moving.status_code == 200
+    moving_data = moving.json()["data"]
+    assert moving_data["status"] == "DRIVER_TO_PICKUP"
+    remaining_distance_km = _haversine_km(
+        moving_data["driver_location"]["latitude"],
+        moving_data["driver_location"]["longitude"],
+        pickup["latitude"],
+        pickup["longitude"],
+    )
+    assert remaining_distance_km < spawn_distance_km
+    assert first_data["route"]["geometry"] == quote["route_geometry"]
+    assert second_data["route"]["geometry"] == quote["route_geometry"]
 
 
 def test_tracking_elapsed_and_progress_are_continuous(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -512,18 +550,18 @@ def test_tracking_elapsed_and_progress_are_continuous(monkeypatch: pytest.Monkey
         status=BookingStatus.IN_PROGRESS.value,
         resource_version=1,
         payment_reference="payment_tracking_unit",
-        driver={"id": "driver_tracking_unit"},
+        driver={"id": "driver_tracking_unit", "tracking_speed_factor": 0.2},
         created_at=started_at,
         updated_at=started_at,
         tracking_started_at=started_at,
     )
 
-    elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=123.75))
-    assert elapsed == pytest.approx(123.75)
+    elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=623.75))
+    assert elapsed == pytest.approx(124.75)
     first = tracking_progress(BookingStatus.IN_PROGRESS.value, elapsed, 60, 420)
-    later_elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=124.25))
+    later_elapsed = tracking_elapsed(booking, started_at + timedelta(seconds=624.25))
     later = tracking_progress(BookingStatus.IN_PROGRESS.value, later_elapsed, 60, 420)
-    assert later_elapsed == pytest.approx(124.25)
+    assert later_elapsed == pytest.approx(124.85)
     assert later > first
 
 
@@ -547,12 +585,16 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         assert persisted.driver_snapshot["id"] == assigned_driver_id
     eta_seconds = confirmed["driver"]["eta_seconds"]
     route_seconds = quote["route_duration_seconds"]
+    speed_factor = confirmed["driver"]["tracking_speed_factor"]
+
+    def wall_clock_seconds(simulated_seconds: int) -> int:
+        return int(simulated_seconds / speed_factor) + 1
 
     expected_states = [
-        (2, "DRIVER_TO_PICKUP"),
-        (eta_seconds + 2, "DRIVER_ARRIVED"),
-        (eta_seconds + 62, "IN_PROGRESS"),
-        (eta_seconds + 62 + route_seconds + 2, "ARRIVED_DESTINATION"),
+        (wall_clock_seconds(2), "DRIVER_TO_PICKUP"),
+        (wall_clock_seconds(eta_seconds + 2), "DRIVER_ARRIVED"),
+        (wall_clock_seconds(eta_seconds + 62), "IN_PROGRESS"),
+        (wall_clock_seconds(eta_seconds + 62 + route_seconds + 2), "ARRIVED_DESTINATION"),
     ]
     previous_progress = 0.0
     for seconds_ago, expected_status in expected_states:
@@ -563,6 +605,8 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         assert data["status"] == expected_status
         assert data["progress"] >= previous_progress
         previous_progress = data["progress"]
+        if expected_status == "DRIVER_ARRIVED":
+            assert data["current_location"] == quote["route_geometry"][0]
         if expected_status == "IN_PROGRESS":
             assert data["current_location"] is not None
             assert _near_route(data["current_location"], quote["route_geometry"])

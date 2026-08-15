@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Headers, Post, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
@@ -29,6 +29,12 @@ class AssistantActionBody {
   @MinLength(1)
   @MaxLength(128)
   action_id!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  quantity?: number;
 }
 
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };

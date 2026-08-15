@@ -71,7 +71,7 @@ def _dish_query(text: str) -> str | None:
     cleaned = re.sub(r"\bap ma\b.*$", " ", cleaned)
     cleaned = re.sub(r"\b(?:mot|hai|ba|bon|nam|[1-9][0-9]?)\b", " ", cleaned)
     cleaned = re.sub(r"\b(?:co lon|size lon|size thuong|khong cay|it cay|cay|nha rieng|duoi \d+ nghin)\b", " ", cleaned)
-    cleaned = re.split(r"\b(?:giao\s+(?:ve|toi)|ship|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b", cleaned, maxsplit=1)[0]
+    cleaned = re.split(r"\b(?:giao\s+(?:ve|toi)|ship|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe|da\s+vao\s+gio|da\s+chon\s+vao\s+gio|vao\s+gio)\b", cleaned, maxsplit=1)[0]
     cleaned = re.sub(r"\b(?:o|tai|khu vuc)\s+[a-z ]+[.!?,;:]*$", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,!?;:")
     return cleaned or None
@@ -96,8 +96,9 @@ def extract_slots(query: str) -> dict[str, object]:
         slots.setdefault("option_preferences", []).append({"concept": "spice", "value": "it cay"})
     if "them nem" in text:
         slots.setdefault("option_preferences", []).append({"concept": "extra", "value": "nem"})
-    if "nha rieng" in text or "dia chi" in text or "giao ve" in text or "giao toi" in text:
-        slots["address_query"] = "nha rieng" if "nha rieng" in text else text
+    if "nha rieng" in text or "dia chi" in text or "giao ve" in text or "giao toi" in text or "giao den" in text:
+        delivery = re.search(r"\bgiao\s+(?:ve|toi|den)\s+(.+?)(?:[.!?,;:]|$)", text)
+        slots["address_query"] = "nha rieng" if "nha rieng" in text else (delivery.group(1).strip() if delivery else text)
     if "quan dau tien" in text or "nha hang dau tien" in text:
         slots["restaurant_alias"] = "first"
     elif "quan thu hai" in text or "nha hang thu hai" in text:

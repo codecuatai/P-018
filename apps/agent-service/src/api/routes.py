@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 
-from src.agents.assistant_graph import assistant_agent, model_diagnostics
+from src.agents.assistant_graph import assistant_agent, deterministic_plan, model_diagnostics
 from src.agents.graph import agent as food_agent
 from src.agents.healthcare_graph import agent as healthcare_agent
 from src.agents.restaurant_graph import agent as restaurant_agent
@@ -29,6 +29,8 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+
+
 @router.post("/assistant-chat", response_model=None)
 async def assistant_chat(
     request: AssistantChatRequest,
@@ -45,16 +47,24 @@ async def assistant_chat(
     ):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
     try:
-        result = await assistant_agent.ainvoke(
-            {
-                "query": request.message,
-                "conversation_id": request.conversation_id,
-                "messages": request.messages,
-                "conversation_state": request.conversation_state,
-                "authoritative_results": request.authoritative_results,
-                "mode": request.mode,
+        fast_plan = deterministic_plan(request.message, request.conversation_state)
+        if len(fast_plan.tasks) == 1:
+            result = {
+                "assistant_message": fast_plan.assistant_message,
+                "plan": fast_plan.model_dump(),
+                "decision_source": "deterministic",
             }
-        )
+        else:
+            result = await assistant_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "conversation_id": request.conversation_id,
+                    "messages": request.messages,
+                    "conversation_state": request.conversation_state,
+                    "authoritative_results": request.authoritative_results,
+                    "mode": request.mode,
+                }
+            )
         return {
             "data": {
                 "conversation_id": request.conversation_id,

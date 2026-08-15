@@ -5,7 +5,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { errorText, getRideTracking } from "@/lib/api-client";
 import type { RideTracking } from "@/types";
 
-const POLL_INTERVAL_MS = 2500;
+const POLL_INTERVAL_MS = 1000;
 
 type RideSnapshot = {
   data?: RideTracking;
@@ -66,6 +66,7 @@ async function fetchRide(entry: RideEntry, background: boolean): Promise<void> {
   }
   try {
     const data = await getRideTracking(entry.bookingId, controller.signal);
+    if (controller.signal.aborted || entry.controller !== controller || !entry.listeners.size) return;
     entry.data = data;
     entry.error = "";
     entry.loading = false;
@@ -133,6 +134,20 @@ export function useRideTracking(bookingId?: string): RideSnapshot & { refresh: (
   }, [key]);
   useEffect(() => { if (key) ensureVisibilityListener(); }, [key]);
   return { ...snapshot, refresh };
+}
+
+export function markRideTrackingCancelled(bookingId: string): void {
+  const key = bookingId.trim();
+  if (!key) return;
+  const entry = getEntry(key);
+  clearTimer(entry);
+  entry.controller?.abort();
+  entry.controller = undefined;
+  entry.inFlight = false;
+  entry.data = entry.data ? { ...entry.data, status: "CANCELLED" } : { booking_id: key, status: "CANCELLED", progress: 0, eta_seconds: 0 };
+  entry.loading = false;
+  entry.error = "";
+  notify(entry);
 }
 
 export function resetRideTrackingCache(): void {

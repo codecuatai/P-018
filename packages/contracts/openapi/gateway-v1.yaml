@@ -327,6 +327,18 @@ paths:
         '401': {description: Missing or invalid user token}
         '409': {description: Confirmation, payment, or idempotency conflict}
 
+  /api/v1/service-actions/ride/{bookingId}/cancel:
+    post:
+      summary: Cancel an actor-owned Ride booking with confirmation evidence
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+        - {$ref: '#/components/parameters/BookingId'}
+      responses:
+        '200': {description: Cancelled Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Confirmation, resource-version, or idempotency conflict}
+
   /api/v1/rides/{bookingId}/tracking:
     get:
       summary: Read actor-scoped Ride tracking and route snapshot
@@ -999,8 +1011,9 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, food_confirm]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm]}
               label: {type: string}
+              target_index: {type: integer, minimum: 0}
         completed:
           type: array
           maxItems: 8
@@ -1148,8 +1161,11 @@ components:
         start_time: {type: string, format: date-time}
         price: {type: integer}
         appointment_id: {type: integer}
+        resource_id: {type: integer}
+        status: {type: string}
         appointment: {type: object, additionalProperties: true}
         facility: {$ref: '#/components/schemas/HealthcareFacility'}
+        alternative_slots: {type: array, items: {$ref: '#/components/schemas/HealthcareOption'}}
         note: {type: string}
         payment_note: {type: string}
     HealthcareOption:
@@ -1161,6 +1177,8 @@ components:
         department: {type: string}
         start_time: {type: string, format: date-time}
         price: {type: integer}
+        target_index: {type: integer, minimum: 0}
+        facility: {$ref: '#/components/schemas/HealthcareFacility'}
     HealthcareFacility:
       type: object
       required: [name, address]
@@ -1168,6 +1186,8 @@ components:
       properties:
         name: {type: string}
         address: {type: string}
+        latitude: {type: number}
+        longitude: {type: number}
     AssistantProgressItem:
       type: object
       required: [kind, title]

@@ -14,7 +14,7 @@ export type XOnePoint = {
 
 type LeafletMap = import("leaflet").Map;
 type LeafletApi = typeof import("leaflet");
-type LeafletMarker = import("leaflet").CircleMarker;
+type LeafletMarker = import("leaflet").CircleMarker | import("leaflet").Marker;
 type MarkerKey = "origin" | "destination" | "current" | "user" | "driver" | "restaurant" | "healthcare";
 
 type XOneMapProps = {
@@ -40,6 +40,16 @@ type XOneMapProps = {
 type MapState = "loading" | "ready" | "error";
 
 const TILE_BASE_URL = "https://maps.geoapify.com/v1/tile";
+const DRIVER_MOTION_DURATION_MS = 1_250;
+const MARKER_STYLES: Record<MarkerKey, { color: string; label: string }> = {
+  origin: { color: "#102A43", label: "Điểm đón" },
+  destination: { color: "#1F9D68", label: "Điểm đến" },
+  current: { color: "#315EF5", label: "Vị trí hiện tại" },
+  user: { color: "#315EF5", label: "Vị trí của bạn" },
+  driver: { color: "#E07A3F", label: "Tài xế" },
+  restaurant: { color: "#E07A3F", label: "Nhà hàng" },
+  healthcare: { color: "#A54D86", label: "Cơ sở y tế" },
+};
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · <a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a>';
 
 export function XOneMap({
@@ -154,6 +164,29 @@ export function XOneMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    const node = mapNodeRef.current;
+    if (!map || !node || mapState !== "ready") return;
+    let frame: number | undefined;
+    const invalidate = () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        if (mapRef.current === map) map.invalidateSize({ animate: false });
+      });
+    };
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(invalidate) : undefined;
+    observer?.observe(node);
+    window.addEventListener("resize", invalidate);
+    invalidate();
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", invalidate);
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+    };
+  }, [mapState]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const L = leafletRef.current;
     if (!map || !L || mapState !== "ready") return;
 
@@ -169,16 +202,8 @@ export function XOneMap({
       polylineRef.current = undefined;
     }
 
-    const markerStyles: Array<[MarkerKey, string, string]> = [
-      ["origin", "#102A43", "Điểm đón"],
-      ["destination", "#1F9D68", "Điểm đến"],
-      ["current", "#315EF5", "Vị trí hiện tại"],
-      ["user", "#315EF5", "Vị trí của bạn"],
-      ["driver", "#E07A3F", "Tài xế"],
-      ["restaurant", "#E07A3F", "Nhà hàng"],
-      ["healthcare", "#A54D86", "Cơ sở y tế"],
-    ];
-    for (const [key, color, markerLabel] of markerStyles) {
+    for (const key of Object.keys(MARKER_STYLES) as MarkerKey[]) {
+      const { color, label: markerLabel } = MARKER_STYLES[key];
       const point = mapData.markers[key];
       const existing = markerRefs.current[key];
       if (!point) {
@@ -189,10 +214,20 @@ export function XOneMap({
         delete markerRefs.current[key];
         continue;
       }
-      const marker = existing ?? L.circleMarker(toLatLng(point), { radius: key === "current" || key === "driver" ? 8 : 7, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
-      animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion());
+      const marker = existing ?? (key === "healthcare"
+        ? L.marker(toLatLng(point), { icon: L.divIcon({ className: "xone-healthcare-marker", html: '<span aria-hidden="true"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map)
+        : L.circleMarker(toLatLng(point), { radius: key === "current" || key === "driver" ? 8 : 7, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map));
+      const isStationaryMarker = key === "origin" || key === "destination" || key === "restaurant" || key === "healthcare";
+      if (!existing || isStationaryMarker) {
+        const frame = markerAnimationRefs.current[key];
+        if (frame !== undefined) window.cancelAnimationFrame(frame);
+        delete markerAnimationRefs.current[key];
+        marker.setLatLng(toLatLng(point));
+      } else {
+        animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion(), key === "driver" ? mapData.route : undefined);
+      }
       marker.unbindTooltip();
-      marker.bindTooltip(point.label ?? markerLabel, { direction: "top", offset: [0, -6] });
+      marker.bindTooltip(point.label ?? markerLabel, { direction: "top", offset: [0, -6], ...(key === "healthcare" ? { permanent: true, className: "xone-healthcare-tooltip" } : {}) });
       markerRefs.current[key] = marker;
     }
 
@@ -214,8 +249,7 @@ export function XOneMap({
       </span>
     </div>
     {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
-    {mapData.points.length ? <div className="xone-map-legend"><LegendDot color="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot color="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot color="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
-    <small>{mapState === "loading" && canRenderMap ? "Đang tải bản đồ nền…" : mapData.route.length > 1 ? "Tuyến đường hiển thị theo dữ liệu đã xác minh." : mapData.markers.origin && mapData.markers.destination ? "Chưa có dữ liệu đường đi cho chuyến này." : "Chỉ hiển thị các tọa độ đã được xác minh."}</small>
+    {mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
 }
 
@@ -235,8 +269,8 @@ function MapFallback({ label, points, providerUnavailable, locationDenied, route
   </div>;
 }
 
-function LegendDot({ color, label, show }: { color: string; label: string; show: boolean }) {
-  return show ? <span><i className={`legend-dot ${color}`} />{label}</span> : null;
+function LegendDot({ marker, label, show }: { marker: MarkerKey; label: string; show: boolean }) {
+  return show ? <span><i className="legend-dot" style={{ backgroundColor: MARKER_STYLES[marker].color }} />{label}</span> : null;
 }
 
 function parseRoute(value?: string | null): XOnePoint[] {
@@ -270,7 +304,7 @@ function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
-function animateMarker(marker: LeafletMarker, key: MarkerKey, target: [number, number], frames: MutableRefObject<Partial<Record<MarkerKey, number>>>, reduceMotion: boolean): void {
+function animateMarker(marker: LeafletMarker, key: MarkerKey, target: [number, number], frames: MutableRefObject<Partial<Record<MarkerKey, number>>>, reduceMotion: boolean, route?: XOnePoint[]): void {
   const current = marker.getLatLng();
   const from: [number, number] = [current.lat, current.lng];
   const distance = Math.abs(from[0] - target[0]) + Math.abs(from[1] - target[1]);
@@ -281,13 +315,93 @@ function animateMarker(marker: LeafletMarker, key: MarkerKey, target: [number, n
     delete frames.current[key];
     return;
   }
+  if (route && route.length > 1) {
+    animateMarkerOnRoute(marker, key, route, target, frames, reduceMotion);
+    return;
+  }
   const startedAt = performance.now();
+  const duration = key === "driver" ? DRIVER_MOTION_DURATION_MS : 850;
   const tick = (now: number) => {
-    const progress = Math.min(1, (now - startedAt) / 450);
-    const eased = 1 - Math.pow(1 - progress, 3);
+    const progress = Math.min(1, (now - startedAt) / duration);
+    const eased = key === "driver" ? progress : 1 - Math.pow(1 - progress, 3);
     marker.setLatLng([from[0] + (target[0] - from[0]) * eased, from[1] + (target[1] - from[1]) * eased]);
     if (progress < 1) frames.current[key] = window.requestAnimationFrame(tick);
     else delete frames.current[key];
   };
   frames.current[key] = window.requestAnimationFrame(tick);
+}
+
+function animateMarkerOnRoute(marker: LeafletMarker, key: MarkerKey, route: XOnePoint[], target: [number, number], frames: MutableRefObject<Partial<Record<MarkerKey, number>>>, reduceMotion: boolean): void {
+  const fromRatio = nearestRouteRatio(marker.getLatLng().lat, marker.getLatLng().lng, route);
+  const targetRatio = nearestRouteRatio(target[0], target[1], route);
+  if (reduceMotion || Math.abs(targetRatio - fromRatio) < 0.000001) {
+    marker.setLatLng(toLatLng(pointAlongRoute(route, targetRatio)));
+    delete frames.current[key];
+    return;
+  }
+  const startedAt = performance.now();
+  const duration = DRIVER_MOTION_DURATION_MS;
+  const tick = (now: number) => {
+    const progress = Math.min(1, (now - startedAt) / duration);
+    const ratio = fromRatio + (targetRatio - fromRatio) * progress;
+    marker.setLatLng(toLatLng(pointAlongRoute(route, ratio)));
+    if (progress < 1) frames.current[key] = window.requestAnimationFrame(tick);
+    else {
+      marker.setLatLng(toLatLng(pointAlongRoute(route, targetRatio)));
+      delete frames.current[key];
+    }
+  };
+  frames.current[key] = window.requestAnimationFrame(tick);
+}
+
+function pointAlongRoute(route: XOnePoint[], ratio: number): XOnePoint {
+  if (route.length < 2) return route[0] ?? { latitude: 0, longitude: 0 };
+  const bounded = Math.min(1, Math.max(0, ratio));
+  const lengths = route.slice(1).map((point, index) => distanceBetween(route[index], point));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return route[0];
+  let remaining = total * bounded;
+  for (let index = 0; index < lengths.length; index += 1) {
+    const segment = lengths[index];
+    if (remaining <= segment || index === lengths.length - 1) {
+      const start = route[index];
+      const end = route[index + 1];
+      const segmentRatio = segment > 0 ? remaining / segment : 0;
+      return { latitude: start.latitude + (end.latitude - start.latitude) * segmentRatio, longitude: start.longitude + (end.longitude - start.longitude) * segmentRatio };
+    }
+    remaining -= segment;
+  }
+  return route[route.length - 1];
+}
+
+function nearestRouteRatio(latitude: number, longitude: number, route: XOnePoint[]): number {
+  const lengths = route.slice(1).map((point, index) => distanceBetween(route[index], point));
+  const total = lengths.reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return 0;
+  let traversed = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestDistanceAlong = 0;
+  for (let index = 0; index < lengths.length; index += 1) {
+    const start = route[index];
+    const end = route[index + 1];
+    const deltaLatitude = end.latitude - start.latitude;
+    const deltaLongitude = end.longitude - start.longitude;
+    const denominator = deltaLatitude ** 2 + deltaLongitude ** 2;
+    const segmentRatio = denominator > 0 ? Math.min(1, Math.max(0, ((latitude - start.latitude) * deltaLatitude + (longitude - start.longitude) * deltaLongitude) / denominator)) : 0;
+    const projectedLatitude = start.latitude + deltaLatitude * segmentRatio;
+    const projectedLongitude = start.longitude + deltaLongitude * segmentRatio;
+    const distance = (latitude - projectedLatitude) ** 2 + (longitude - projectedLongitude) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestDistanceAlong = traversed + lengths[index] * segmentRatio;
+    }
+    traversed += lengths[index];
+  }
+  return bestDistanceAlong / total;
+}
+
+function distanceBetween(left: XOnePoint, right: XOnePoint): number {
+  const latitude = (right.latitude - left.latitude) * 111_000;
+  const longitude = (right.longitude - left.longitude) * 111_000 * Math.cos((left.latitude * Math.PI) / 180);
+  return Math.sqrt(latitude ** 2 + longitude ** 2);
 }

@@ -133,9 +133,6 @@
 .xone-map-legend { display: flex; flex-wrap: wrap; gap: 12px; color: var(--color-muted); font-size: 0.66rem; }
 .xone-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend-dot { width: 7px; height: 7px; display: inline-block; border-radius: 50%; background: var(--color-success); }
-.legend-dot.origin { background: var(--color-navy); }
-.legend-dot.destination { background: var(--accent-food); }
-.legend-dot.current { background: var(--color-primary); }
 .xone-map small { color: var(--color-muted); font-size: 0.66rem; line-height: 1.4; }
 .xone-map-empty { min-height: 134px; place-content: center; text-align: center; }
 .xone-map-empty span { color: var(--color-navy); font-size: 0.78rem; font-weight: 750; }
@@ -828,5 +825,545 @@
   .admin-domain-detail { grid-column: 2 / -1; }
   .admin-health-row { grid-template-columns: auto 1fr auto; }
   .admin-health-row span:not(.admin-status-dot) { grid-column: 2; }
-  .admin-health-row time { grid-column: 3; grid-row: 1 / span 2; }
+.admin-health-row time { grid-column: 3; grid-row: 1 / span 2; }
+}
+
+.detail-view-tabs { display: inline-flex; width: max-content; gap: 3px; padding: 3px; background: var(--surface-slate); border: 1px solid var(--color-border); border-radius: 999px; }
+.detail-view-tabs button { min-height: 30px; padding: 5px 12px; color: var(--color-muted); background: transparent; border: 0; border-radius: 999px; font: inherit; font-size: 0.68rem; font-weight: 750; }
+.detail-view-tabs button.is-active { color: var(--color-navy); background: var(--color-surface); box-shadow: 0 1px 3px rgb(10 37 64 / 10%); }
+.service-detail-dialog-ride { display: flex; flex-direction: column; height: min(86vh, 900px); max-height: calc(100dvh - 32px); }
+.ride-modal-canvas { position: relative; z-index: 0; isolation: isolate; display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; gap: 10px; }
+.ride-modal-toolbar { position: relative; z-index: 2; top: auto; right: auto; left: auto; display: flex; align-items: center; justify-content: flex-end; flex: 0 0 auto; min-height: 36px; gap: 10px; pointer-events: auto; padding: 2px 10px 0; }
+.ride-modal-toolbar .eyebrow { display: none; }
+.detail-info-button { pointer-events: auto; min-height: 34px; padding: 7px 11px; color: var(--color-navy); background: rgb(255 255 255 / 94%); border: 1px solid var(--color-border); border-radius: 999px; box-shadow: var(--shadow-tight); font: inherit; font-size: 0.7rem; font-weight: 760; }
+.ride-modal-map { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.ride-modal-map > .xone-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; padding: 10px; margin: 0; }
+.ride-modal-map > .ride-tracking { display: grid; height: 100%; min-height: 0; gap: 10px; padding: 0; margin: 0; overflow-y: auto; background: transparent; border: 0; }
+.ride-modal-map > .ride-tracking .xone-map { margin: 0; }
+.ride-modal-map .ride-tracking .tracking-heading { visibility: hidden; height: 0; margin: 0; overflow: hidden; }
+.ride-modal-map .xone-map-leaflet,
+.ride-modal-map .xone-map-leaflet-active { height: 100%; min-height: 0; }
+.ride-modal-info { position: absolute; z-index: 1100; top: 56px; right: 10px; width: min(360px, calc(100% - 20px)); max-height: calc(100% - 66px); overflow: auto; padding: 14px; pointer-events: auto; background: rgb(255 255 255 / 98%); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 16px 40px rgb(10 37 64 / 16%); }
+.service-detail-dialog-ride .service-detail-dialog-body { max-height: none; }
+
+@media (max-width: 560px) {
+  .detail-view-tabs { width: 100%; }
+  .detail-view-tabs button { flex: 1; }
+  .service-detail-dialog-ride { height: calc(100dvh - 20px); max-height: calc(100dvh - 20px); padding: 23px 18px 20px; }
+  .ride-modal-toolbar { min-height: 34px; padding: 0 2px; }
+  .ride-modal-info { top: 48px; right: 2px; width: calc(100% - 4px); max-height: calc(100% - 54px); }
+}
+
+.ride-tracking .tracking-timeline li span,
+.ride-map-status-panel .tracking-timeline li span,
+.active-ride-detail-dialog .tracking-timeline li span {
+  width: 32px;
+  height: 32px;
+  border-width: 2px;
+  font-size: 0.68rem;
+}
+
+.ride-cancel-actions {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ride-cancel-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  color: #9f382f;
+  background: #fff8f7;
+  border-color: #edc5c0;
+}
+
+.ride-cancel-button:hover:not(:disabled) {
+  color: #7d2d27;
+  background: #fff0ee;
+  border-color: #d9958c;
+}
+
+.ride-cancel-error {
+  max-width: 100%;
+  padding: 8px 10px;
+  margin: 0;
+  color: #9f382f;
+  background: #fff8f7;
+  border: 1px solid #f0d3cf;
+  border-radius: 7px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.assistant-card.card-ride > .ride-cancel-actions {
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #e6edf1;
+}
+
+.active-ride-rail-card > .active-ride-cancel {
+  grid-column: 2;
+  align-self: start;
+  margin: 0;
+}
+
+.active-ride-rail-card > .active-ride-cancel .ride-cancel-button {
+  width: 100%;
+}
+
+.active-ride-detail-dialog { display: flex; flex-direction: column; width: min(96vw, 1420px); height: min(94vh, 1100px); max-height: calc(100dvh - 24px); padding: 12px 12px 16px; overflow: hidden; }
+.active-ride-detail-dialog > .active-ride-detail { flex: 1 1 auto; min-height: 0; }
+.active-ride-detail { display: block; height: 100%; min-height: 0; overflow-y: auto; padding: 0 3px 10px 0; }
+.active-ride-map-stage { position: relative; display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; isolation: isolate; overflow: hidden; background: var(--surface-ice); border: 1px solid #CBDCF0; border-radius: 12px; }
+.active-ride-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 0 0 auto; min-height: 48px; padding: 8px 12px; }
+.active-ride-map-toolbar .eyebrow { color: var(--color-primary-strong); }
+.active-ride-map { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.active-ride-map > .xone-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; gap: 8px; padding: 0 4px 6px; margin: 0; }
+.active-ride-map .xone-map-leaflet,
+.active-ride-map .xone-map-leaflet-active,
+.active-ride-map .xone-map-fallback { height: 100%; min-height: 0; }
+.active-ride-info-panel { position: absolute; z-index: 1100; top: 58px; right: 12px; width: min(400px, calc(100% - 24px)); max-height: calc(100% - 70px); overflow: auto; padding: 12px; background: rgb(255 255 255 / 98%); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 16px 40px rgb(10 37 64 / 16%); }
+.active-ride-info-panel .consumer-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.active-ride-status-panel { min-width: 0; padding: 16px; margin: 14px 0 0; }
+.active-ride-status-panel .tracking-timeline { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+
+@media (max-width: 560px) {
+  .active-ride-detail-dialog { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); padding: 8px 8px 12px; }
+  .active-ride-map-stage { height: calc(100dvh - 94px); min-height: 460px; }
+  .active-ride-map-toolbar { min-height: 44px; padding: 6px 6px; }
+  .active-ride-map-toolbar .eyebrow { font-size: 0.58rem; }
+  .active-ride-info-panel { top: 54px; right: 8px; width: calc(100% - 16px); max-height: calc(100% - 64px); }
+  .active-ride-info-panel .consumer-detail-grid { grid-template-columns: 1fr; }
+  .active-ride-status-panel .tracking-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+}
+
+/* Shared Ride detail surface: the form modal and active-service modal use one map-first contract. */
+.service-detail-dialog-ride,
+.active-ride-detail-dialog { width: min(96vw, 1420px); height: min(94vh, 1100px); max-height: calc(100dvh - 24px); padding: 16px; overflow: hidden; }
+.ride-map-detail { display: block; height: 100%; min-height: 0; overflow-y: auto; padding: 0 4px 12px 0; }
+.ride-map-detail.no-status .ride-map-stage { height: calc(100% - 12px); }
+.ride-map-stage { position: relative; display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; isolation: isolate; overflow: hidden; background: var(--surface-ice); border: 1px solid #CBDCF0; border-radius: 12px; }
+.ride-map-toolbar { display: flex; align-items: center; min-height: 48px; flex: 0 0 auto; padding: 8px 12px; pointer-events: none; }
+.ride-map-toolbar .eyebrow { color: var(--color-primary-strong); }
+.ride-map-canvas { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.ride-map-canvas > .xone-map { display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; height: 100%; min-height: 0; gap: 8px; padding: 0 4px 6px; margin: 0; }
+.ride-map-canvas .xone-map-leaflet,
+.ride-map-canvas .xone-map-leaflet-active,
+.ride-map-canvas .xone-map-fallback { height: 100%; min-height: 0; }
+.ride-map-info-button { position: absolute; z-index: 1110; top: 10px; right: 72px; }
+.ride-map-info-panel { position: absolute; z-index: 1100; top: 58px; right: 12px; width: min(400px, calc(100% - 24px)); max-height: calc(100% - 70px); overflow: auto; padding: 12px; background: rgb(255 255 255 / 98%); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 16px 40px rgb(10 37 64 / 16%); }
+.ride-map-info-panel .consumer-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ride-map-status-panel { min-width: 0; padding: 16px; margin: 14px 0 0; }
+.ride-map-status-panel .tracking-timeline { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+
+@media (max-width: 560px) {
+  .service-detail-dialog-ride,
+  .active-ride-detail-dialog { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); padding: 10px; }
+  .ride-map-stage { height: calc(100dvh - 96px); min-height: 460px; }
+  .ride-map-toolbar { min-height: 44px; padding: 6px; }
+  .ride-map-toolbar .eyebrow { font-size: 0.58rem; }
+  .ride-map-info-button { top: 8px; right: 64px; }
+  .ride-map-info-panel { top: 54px; right: 8px; width: calc(100% - 16px); max-height: calc(100% - 64px); }
+  .ride-map-info-panel .consumer-detail-grid { grid-template-columns: 1fr; }
+  .ride-map-status-panel .tracking-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+}
+
+/* Final Ride modal polish: reserve a clean header for the close control and
+   keep the scrollable surface comfortably inside the dialog frame. */
+.service-detail-dialog-ride,
+.active-ride-detail-dialog {
+  box-sizing: border-box;
+  width: min(94vw, 1420px);
+  height: min(92vh, 1100px);
+  max-height: calc(100dvh - 32px);
+  padding: 64px 24px 24px;
+  border: 1px solid rgb(22 50 79 / 18%);
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgb(6 29 50 / 22%);
+}
+
+.service-detail-dialog-ride > .auth-dialog-close,
+.active-ride-detail-dialog > .auth-dialog-close {
+  z-index: 20;
+  top: 16px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  color: var(--color-navy);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgb(10 37 64 / 10%);
+}
+
+.service-detail-dialog-ride > .auth-dialog-close:hover,
+.active-ride-detail-dialog > .auth-dialog-close:hover {
+  color: var(--color-primary-strong);
+  background: #F7FAFC;
+  border-color: var(--color-border-strong);
+}
+
+.service-detail-dialog-ride > .auth-dialog-close:focus-visible,
+.active-ride-detail-dialog > .auth-dialog-close:focus-visible {
+  outline: 3px solid rgb(49 94 245 / 22%);
+  outline-offset: 2px;
+}
+
+.ride-map-detail {
+  padding: 0 8px 24px;
+  scrollbar-gutter: stable;
+}
+
+.ride-map-stage {
+  height: min(76vh, 760px);
+  border-radius: 16px;
+}
+
+.ride-map-toolbar {
+  min-height: 56px;
+  padding: 12px 18px 10px;
+}
+
+.ride-map-canvas {
+  padding: 0 8px 10px;
+}
+
+.ride-map-canvas > .xone-map {
+  padding: 0 4px 6px;
+}
+
+.ride-map-status-panel {
+  padding: 20px;
+  margin: 20px 0 0;
+  border-radius: 16px;
+}
+
+@media (max-width: 560px) {
+  .service-detail-dialog-ride,
+  .active-ride-detail-dialog {
+    width: calc(100vw - 24px);
+    height: calc(100dvh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 56px 14px 16px;
+    border-radius: 18px;
+  }
+
+  .service-detail-dialog-ride > .auth-dialog-close,
+  .active-ride-detail-dialog > .auth-dialog-close {
+    top: 12px;
+    right: 12px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .ride-map-detail {
+    padding: 0 4px 18px;
+  }
+
+  .ride-map-stage {
+    height: calc(100dvh - 128px);
+    min-height: 440px;
+    border-radius: 14px;
+  }
+
+  .ride-map-toolbar {
+    min-height: 48px;
+    padding: 10px 12px 8px;
+  }
+
+  .ride-map-canvas {
+    padding: 0 4px 8px;
+  }
+
+  .ride-map-status-panel {
+    padding: 16px;
+    margin-top: 16px;
+    border-radius: 14px;
+  }
+}
+
+/* Ride map overlays: all map controls belong to the actual Leaflet surface,
+   leaving the stage as a layout wrapper rather than a second blue card. */
+.ride-map-stage {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.ride-map-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 16px;
+}
+
+.ride-map-canvas > .xone-map {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar {
+  position: absolute;
+  z-index: 600;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar small,
+.ride-map-canvas > .xone-map > .xone-map-legend,
+.ride-map-canvas > .xone-map > small:last-child {
+  color: var(--color-navy);
+  background: rgb(255 255 255 / 90%);
+  border: 1px solid rgb(217 224 231 / 92%);
+  box-shadow: 0 4px 14px rgb(10 37 64 / 12%);
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar small {
+  max-width: min(42vw, 300px);
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.68rem;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar > span {
+  pointer-events: auto;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar button {
+  width: 32px;
+  height: 32px;
+  background: rgb(255 255 255 / 94%);
+  border-color: rgb(217 224 231 / 92%);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(10 37 64 / 12%);
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar button:hover {
+  background: var(--color-surface);
+}
+
+.ride-map-canvas > .xone-map > .xone-map-leaflet,
+.ride-map-canvas > .xone-map > .xone-map-fallback {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 1px solid #C9DCE2;
+  border-radius: 16px;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-toolbar,
+.ride-map-canvas > .xone-map > .xone-map-legend,
+.ride-map-canvas > .xone-map > small:last-child {
+  z-index: 700;
+}
+
+.ride-map-canvas > .xone-map > .xone-map-legend {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  display: inline-flex;
+  width: max-content;
+  max-width: calc(100% - 28px);
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.ride-map-canvas > .xone-map > small:last-child {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  max-width: min(48%, 380px);
+  padding: 7px 10px;
+  border-radius: 8px;
+  line-height: 1.35;
+}
+
+.ride-map-info-button {
+  position: absolute;
+  z-index: 800;
+  top: 14px;
+  right: 94px;
+}
+
+.ride-map-info-panel {
+  position: absolute;
+  z-index: 1100;
+  top: 62px;
+  right: 14px;
+  width: min(400px, calc(100% - 28px));
+  max-height: calc(100% - 76px);
+}
+
+@media (max-width: 560px) {
+  .ride-map-canvas,
+  .ride-map-canvas > .xone-map,
+  .ride-map-canvas > .xone-map > .xone-map-leaflet,
+  .ride-map-canvas > .xone-map > .xone-map-fallback {
+    border-radius: 14px;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar small {
+    max-width: 44%;
+    padding: 6px 8px;
+    font-size: 0.61rem;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-legend {
+    right: auto;
+    bottom: 10px;
+    left: 10px;
+    max-width: calc(100% - 20px);
+    padding: 6px 8px;
+  }
+
+  .ride-map-canvas > .xone-map > small:last-child {
+    right: 10px;
+    bottom: 10px;
+    max-width: 46%;
+    padding: 6px 8px;
+    font-size: 0.58rem;
+  }
+
+  .ride-map-info-button {
+    top: 10px;
+    right: 84px;
+  }
+
+  .ride-map-info-panel {
+    top: 54px;
+    right: 10px;
+    width: calc(100% - 20px);
+    max-height: calc(100% - 64px);
+  }
+}
+
+/* Healthcare uses the same map-first modal pattern as Ride: the map remains
+   the primary surface while the selected appointment is available in a calm,
+   actionable information panel. */
+.service-detail-dialog-healthcare { display: flex; flex-direction: column; width: min(96vw, 1420px); height: min(94vh, 980px); max-height: calc(100dvh - 24px); padding: 16px; overflow: hidden; }
+.service-detail-dialog-healthcare > .auth-dialog-close { z-index: 1300; }
+.healthcare-map-detail { display: block; height: 100%; min-height: 0; overflow-y: auto; padding: 0 4px 12px 0; }
+.healthcare-map-stage { display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; overflow: hidden; background: var(--surface-mist); border: 1px solid #CBE0DE; border-radius: 16px; }
+.healthcare-map-canvas { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; border-radius: 16px; }
+.healthcare-map-canvas > .xone-map { position: relative; display: block; height: 100%; min-height: 0; padding: 0; margin: 0; overflow: hidden; background: transparent; border: 0; border-radius: 16px; }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar { position: absolute; z-index: 600; top: 14px; right: 14px; left: 14px; min-height: 0; pointer-events: none; }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar small,
+.healthcare-map-canvas > .xone-map > .xone-map-legend,
+.healthcare-map-canvas > .xone-map > small:last-child { color: var(--color-navy); background: rgb(255 255 255 / 90%); border: 1px solid rgb(217 224 231 / 92%); box-shadow: 0 4px 14px rgb(10 37 64 / 12%); }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar small { max-width: min(42vw, 300px); padding: 7px 10px; border-radius: 8px; font-size: 0.68rem; }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar > span { pointer-events: auto; }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar button { width: 32px; height: 32px; background: rgb(255 255 255 / 94%); border-color: rgb(217 224 231 / 92%); border-radius: 8px; box-shadow: 0 4px 14px rgb(10 37 64 / 12%); }
+.healthcare-map-canvas > .xone-map > .xone-map-leaflet,
+.healthcare-map-canvas > .xone-map > .xone-map-fallback { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; min-height: 0; border: 1px solid #C9DCE2; border-radius: 16px; }
+.healthcare-map-canvas > .xone-map > .xone-map-toolbar,
+.healthcare-map-canvas > .xone-map > .xone-map-legend,
+.healthcare-map-canvas > .xone-map > small:last-child { z-index: 700; }
+.healthcare-map-canvas > .xone-map > .xone-map-legend { position: absolute; bottom: 14px; left: 14px; display: inline-flex; width: max-content; max-width: calc(100% - 28px); padding: 7px 10px; border-radius: 8px; }
+.healthcare-map-canvas > .xone-map > small:last-child { position: absolute; right: 14px; bottom: 14px; max-width: min(48%, 380px); padding: 7px 10px; border-radius: 8px; line-height: 1.35; }
+.healthcare-map-info-button { position: absolute; z-index: 800; top: 14px; right: 94px; }
+.healthcare-map-info-panel { position: absolute; z-index: 1100; top: 62px; right: 14px; display: grid; gap: 10px; width: min(400px, calc(100% - 28px)); max-height: calc(100% - 76px); overflow: auto; padding: 14px; background: rgb(255 255 255 / 98%); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 16px 40px rgb(10 37 64 / 16%); }
+.healthcare-map-info-panel h3 { margin: 0; color: var(--color-navy); font-size: 1rem; }
+.healthcare-map-info-panel > p { margin: -5px 0 0; color: var(--color-muted); font-size: 0.72rem; line-height: 1.45; }
+.healthcare-map-select { width: 100%; margin-top: 2px; }
+.active-healthcare-map-detail { padding: 0; }
+.healthcare-change-slot { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.healthcare-change-form { display: grid; gap: 10px; padding: 12px; background: var(--surface-mist); border: 1px solid #CBE0DE; border-radius: 10px; }
+.healthcare-change-form label { display: grid; gap: 6px; color: var(--color-navy); font-size: 0.78rem; font-weight: 650; }
+.healthcare-change-form select { width: 100%; min-height: 40px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 0 10px; font: inherit; }
+.healthcare-change-form .button { justify-self: start; }
+.healthcare-cancel-action { margin-top: 10px; border-color: #DC2626; color: #B42318; }
+.healthcare-cancel-action:hover:not(:disabled) { background: #FFF4F2; }
+.xone-healthcare-marker { display: grid; width: 18px !important; height: 18px !important; place-items: center; background: transparent; border: 0; }
+.xone-healthcare-marker > span { display: block; width: 14px; height: 14px; background: #A54D86; border: 3px solid #FFFFFF; border-radius: 50%; box-shadow: 0 2px 8px rgb(10 37 64 / 30%); }
+.leaflet-tooltip.xone-healthcare-tooltip { max-width: 220px; padding: 5px 8px; color: var(--color-navy); background: rgb(255 255 255 / 96%); border: 1px solid #CBA4BE; border-radius: 7px; box-shadow: 0 4px 12px rgb(10 37 64 / 14%); font: 600 0.7rem/1.35 "Be Vietnam Pro", sans-serif; white-space: normal; }
+.leaflet-tooltip-top.xone-healthcare-tooltip::before { border-top-color: #CBA4BE; }
+
+@media (max-width: 560px) {
+  .service-detail-dialog-healthcare { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); padding: 10px; }
+  .healthcare-map-detail { padding: 0 0 10px; }
+  .healthcare-map-stage { height: calc(100dvh - 96px); min-height: 460px; border-radius: 14px; }
+  .healthcare-map-canvas,
+  .healthcare-map-canvas > .xone-map,
+  .healthcare-map-canvas > .xone-map > .xone-map-leaflet,
+  .healthcare-map-canvas > .xone-map > .xone-map-fallback { border-radius: 14px; }
+  .healthcare-map-canvas > .xone-map > .xone-map-toolbar { top: 10px; right: 10px; left: 10px; }
+  .healthcare-map-canvas > .xone-map > .xone-map-toolbar small { max-width: 44%; padding: 6px 8px; font-size: 0.61rem; }
+  .healthcare-map-canvas > .xone-map > .xone-map-toolbar button { width: 30px; height: 30px; }
+  .healthcare-map-canvas > .xone-map > .xone-map-legend { bottom: 10px; left: 10px; max-width: calc(100% - 20px); padding: 6px 8px; }
+  .healthcare-map-canvas > .xone-map > small:last-child { right: 10px; bottom: 10px; max-width: 46%; padding: 6px 8px; font-size: 0.58rem; }
+  .healthcare-map-info-button { top: 10px; right: 84px; }
+  .healthcare-map-info-panel { top: 54px; right: 10px; width: calc(100% - 20px); max-height: calc(100% - 64px); }
+}
+
+/* Restaurant follows the same map-first interaction contract as Ride. */
+.service-detail-dialog-restaurant { display: flex; flex-direction: column; width: min(96vw, 1420px); height: min(94vh, 980px); max-height: calc(100dvh - 24px); padding: 16px; overflow: hidden; }
+.service-detail-dialog-restaurant > .auth-dialog-close { z-index: 1300; }
+.restaurant-map-detail { display: block; height: 100%; min-height: 0; overflow-y: auto; padding: 0 4px 12px 0; }
+.restaurant-map-stage { display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; overflow: hidden; background: #FFF7F9; border: 1px solid #E7C9D5; border-radius: 16px; }
+.restaurant-map-canvas { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; border-radius: 16px; }
+.restaurant-map-canvas > .xone-map { position: relative; display: block; height: 100%; min-height: 0; padding: 0; margin: 0; overflow: hidden; background: transparent; border: 0; border-radius: 16px; }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar { position: absolute; z-index: 600; top: 14px; right: 14px; left: 14px; min-height: 0; pointer-events: none; }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar small,
+.restaurant-map-canvas > .xone-map > .xone-map-legend,
+.restaurant-map-canvas > .xone-map > small:last-child { color: var(--color-navy); background: rgb(255 255 255 / 90%); border: 1px solid rgb(217 224 231 / 92%); box-shadow: 0 4px 14px rgb(10 37 64 / 12%); }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar small { max-width: min(42vw, 300px); padding: 7px 10px; border-radius: 8px; font-size: 0.68rem; }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar > span { pointer-events: auto; }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar button { width: 32px; height: 32px; background: rgb(255 255 255 / 94%); border-color: rgb(217 224 231 / 92%); border-radius: 8px; box-shadow: 0 4px 14px rgb(10 37 64 / 12%); }
+.restaurant-map-canvas > .xone-map > .xone-map-leaflet,
+.restaurant-map-canvas > .xone-map > .xone-map-fallback { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; min-height: 0; border: 1px solid #E7C9D5; border-radius: 16px; }
+.restaurant-map-canvas > .xone-map > .xone-map-toolbar,
+.restaurant-map-canvas > .xone-map > .xone-map-legend,
+.restaurant-map-canvas > .xone-map > small:last-child { z-index: 700; }
+.restaurant-map-canvas > .xone-map > .xone-map-legend { position: absolute; bottom: 14px; left: 14px; display: inline-flex; width: max-content; max-width: calc(100% - 28px); padding: 7px 10px; border-radius: 8px; }
+.restaurant-map-canvas > .xone-map > small:last-child { position: absolute; right: 14px; bottom: 14px; max-width: min(48%, 380px); padding: 7px 10px; border-radius: 8px; line-height: 1.35; }
+.restaurant-map-empty { display: grid; height: 100%; place-items: center; padding: 24px; margin: 0; text-align: center; }
+.restaurant-map-info-button { position: absolute; z-index: 800; top: 14px; right: 94px; }
+.restaurant-map-info-panel { position: absolute; z-index: 1100; top: 62px; right: 14px; display: grid; gap: 10px; width: min(400px, calc(100% - 28px)); max-height: calc(100% - 76px); overflow: auto; padding: 14px; background: rgb(255 255 255 / 98%); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: 0 16px 40px rgb(10 37 64 / 16%); }
+.restaurant-map-info-panel h3 { margin: 0; color: var(--color-navy); font-size: 1rem; }
+.restaurant-map-info-panel > p { margin: -5px 0 0; color: var(--color-muted); font-size: 0.72rem; line-height: 1.45; }
+.restaurant-map-select { width: 100%; margin-top: 2px; }
+
+@media (max-width: 560px) {
+  .service-detail-dialog-restaurant { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); padding: 10px; }
+  .restaurant-map-detail { padding: 0 0 10px; }
+  .restaurant-map-stage { height: calc(100dvh - 96px); min-height: 460px; border-radius: 14px; }
+  .restaurant-map-canvas,
+  .restaurant-map-canvas > .xone-map,
+  .restaurant-map-canvas > .xone-map > .xone-map-leaflet,
+  .restaurant-map-canvas > .xone-map > .xone-map-fallback { border-radius: 14px; }
+  .restaurant-map-canvas > .xone-map > .xone-map-toolbar { top: 10px; right: 10px; left: 10px; }
+  .restaurant-map-canvas > .xone-map > .xone-map-toolbar small { max-width: 44%; padding: 6px 8px; font-size: 0.61rem; }
+  .restaurant-map-canvas > .xone-map > .xone-map-toolbar button { width: 30px; height: 30px; }
+  .restaurant-map-canvas > .xone-map > .xone-map-legend { bottom: 10px; left: 10px; max-width: calc(100% - 20px); padding: 6px 8px; }
+  .restaurant-map-canvas > .xone-map > small:last-child { right: 10px; bottom: 10px; max-width: 46%; padding: 6px 8px; font-size: 0.58rem; }
+  .restaurant-map-info-button { top: 10px; right: 84px; }
+  .restaurant-map-info-panel { top: 54px; right: 10px; width: calc(100% - 20px); max-height: calc(100% - 64px); }
 }

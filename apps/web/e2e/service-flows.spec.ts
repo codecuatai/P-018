@@ -101,3 +101,115 @@ test("cross-user resource access is denied by the Gateway boundary", async ({ br
   expect(otherGateway.deniedRequests.length).toBeGreaterThan(0);
   await otherContext.close();
 });
+
+test("Ride detail modal keeps the shared map-first layout and the info layer above Leaflet", async ({ context, page }) => {
+  await installAuthenticatedFixture(context, { email: "ride-modal@example.test" });
+  await page.goto("/app/services/ride");
+  await page.locator("#ride-pickup").fill("12 Nguyen Hue");
+  await page.locator("#ride-dropoff").fill("Ho Guom");
+  await page.locator(".ride-form button[type=submit]").click();
+  await expect(page.locator(".quote-result")).toBeVisible();
+  await page.locator(".quote-result .ride-detail-action").click();
+
+  const modal = page.locator(".service-detail-dialog-ride");
+  await expect(modal).toBeVisible();
+  await expect(modal.locator(".ride-map-stage")).toBeVisible();
+  await expect(modal.locator(".xone-map-toolbar small")).toHaveText("Lộ trình đã được cập nhật");
+  const modalBox = await modal.boundingBox();
+  const mapBox = await modal.locator(".ride-map-stage").boundingBox();
+  expect(modalBox).not.toBeNull();
+  expect(mapBox).not.toBeNull();
+  expect(mapBox?.height ?? 0).toBeGreaterThan((modalBox?.height ?? 0) * 0.65);
+
+  await modal.locator(".detail-info-button").click();
+  const info = modal.locator(".ride-map-info-panel");
+  await expect(info).toBeVisible();
+  await expect(info).toHaveCSS("z-index", "1100");
+  const infoButtonBox = await modal.locator(".ride-map-info-button").boundingBox();
+  const closeButtonBox = await modal.locator(".auth-dialog-close").boundingBox();
+  expect(infoButtonBox).not.toBeNull();
+  expect(closeButtonBox).not.toBeNull();
+  expect(infoButtonBox?.x ?? 0).toBeLessThan(closeButtonBox?.x ?? Number.POSITIVE_INFINITY);
+});
+
+test("Ride form keeps the shared detail modal after both confirmations", async ({ context, page }) => {
+  await installAuthenticatedFixture(context, { email: "ride-form-confirmed@example.test" });
+  await page.goto("/app/services/ride");
+  await page.locator("#ride-pickup").fill("12 Nguyen Hue");
+  await page.locator("#ride-dropoff").fill("Ho Guom");
+  await page.locator(".ride-form button[type=submit]").click();
+  await expect(page.locator(".quote-result")).toBeVisible();
+  await page.getByRole("checkbox", { name: /xác nhận điểm đi/i }).check();
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await page.getByRole("checkbox", { name: /xác nhận thanh toán/i }).check();
+  await page.getByRole("button", { name: "Xác nhận" }).click();
+  await expect(page.getByText("Chuyến của bạn đã được ghi nhận")).toBeVisible();
+  await page.locator(".quote-result .ride-detail-action").click();
+
+  const modal = page.locator(".service-detail-dialog-ride");
+  await expect(modal.locator(".ride-map-stage")).toBeVisible();
+  await expect(modal.locator(".ride-map-status-panel")).toBeVisible();
+  await expect(modal.locator(".ride-map-status-panel .xone-map")).toHaveCount(0);
+  expect(await modal.locator(".ride-map-detail").evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
+});
+
+test("Active service rail keeps its content compact on mobile", async ({ context, page }) => {
+  await installAuthenticatedFixture(context, { email: "active-rail@example.test" });
+  await context.route("**/api/v1/history/active", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { items: [{ id: "ride-active-1", type: "ride_booking", title: "Chuyến xe", status: "AWAITING_CONFIRMATION", detail: "Lộ trình đang được cập nhật · 139.000 VND", timestamp: new Date().toISOString(), source: "ride_booking", resource: { booking_id: "ride-active-1", pickup: "12 Nguyễn Huệ", dropoff: "Hồ Gươm" } }] } }),
+    });
+  });
+  await page.goto("/app");
+
+  const rail = page.locator(".context-rail-active");
+  const card = rail.locator(".active-ride-rail-card");
+  await expect(rail).toBeVisible();
+  await expect(card).toBeVisible();
+  const railBox = await rail.boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(railBox).not.toBeNull();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox?.height ?? 0).toBeLessThan(260);
+  expect(railBox?.height ?? 0).toBeLessThan(430);
+});
+
+test("Active Ride detail puts the map first and keeps confirmed trip data behind a button", async ({ context, page }) => {
+  await installAuthenticatedFixture(context, { email: "active-ride-detail@example.test" });
+  await context.route("**/api/v1/history/active", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { items: [{ id: "ride-active-detail", type: "ride_booking", title: "Chuyến xe VinUni → Ho Guom", status: "AWAITING_CONFIRMATION", detail: "VinUni → Ho Guom · CAR_4 · 139.000 VND", timestamp: new Date().toISOString(), source: "ride_booking", resource: { booking_id: "ride-active-detail", pickup_address: "VinUni", dropoff_address: "Ho Guom", vehicle_type: "CAR_4", amount: 139000, currency: "VND", distance_km: 16.4, duration_minutes: 17, pickup_latitude: 21.0102, pickup_longitude: 105.8048, dropoff_latitude: 21.0285, dropoff_longitude: 105.8542, route: { origin: { latitude: 21.0102, longitude: 105.8048 }, destination: { latitude: 21.0285, longitude: 105.8542 }, distance_meters: 16400, duration_seconds: 1020, geometry: [{ latitude: 21.0102, longitude: 105.8048 }, { latitude: 21.0201, longitude: 105.83 }, { latitude: 21.0285, longitude: 105.8542 }] } } }] } }),
+    });
+  });
+  await context.route("**/api/v1/rides/ride-active-detail/tracking", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { booking_id: "ride-active-detail", status: "AWAITING_CONFIRMATION", progress: 0, eta_seconds: 0, route: { provider: "fixture", origin: { latitude: 21.0102, longitude: 105.8048 }, destination: { latitude: 21.0285, longitude: 105.8542 }, distance_meters: 16400, duration_seconds: 1020, geometry: [{ latitude: 21.0102, longitude: 105.8048 }, { latitude: 21.0201, longitude: 105.83 }, { latitude: 21.0285, longitude: 105.8542 }] } } }),
+    });
+  });
+  await page.goto("/app");
+  await page.locator(".active-ride-rail-card .text-link").click();
+
+  const modal = page.locator(".active-ride-detail-dialog");
+  await expect(modal).toBeVisible();
+  await expect(modal.locator(".ride-map-stage")).toBeVisible();
+  await expect(modal.locator(".ride-map-status-panel")).toBeVisible();
+  await expect(modal.locator(".ride-map-status-panel .xone-map")).toHaveCount(0);
+  await expect(modal.locator(".tracking-timeline")).toBeVisible();
+  expect(await modal.locator(".ride-map-detail").evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
+  await expect(modal.locator(".tracking-footnote")).toHaveCount(0);
+
+  await modal.locator(".detail-info-button").click();
+  const info = modal.locator(".ride-map-info-panel");
+  await expect(info).toContainText("VinUni");
+  await expect(info).toContainText("Ho Guom");
+  await expect(info).toContainText("CAR_4");
+  await expect(info).toContainText("16.4 km");
+  await expect(info).toContainText("17 phút");
+  await expect(info).toContainText("139.000 đ");
+});

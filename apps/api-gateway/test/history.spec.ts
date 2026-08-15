@@ -63,4 +63,34 @@ describe('active history', () => {
 
     await expect(service.active('actor-1', 'cor-history')).resolves.toMatchObject({ partial: true, unavailable: ['food_order'], items: [] });
   });
+
+  it('projects nested Healthcare appointment data into display-ready fields', async () => {
+    const healthcare = { getAppointment: jest.fn().mockResolvedValue({ appointment_id: 51, status: 'DRAFT', doctor: { name: 'Bác sĩ A', price: 120000 }, department: { name: 'Thần kinh' }, facility: { name: 'Bệnh viện A', address: '1 Test Street', latitude: 21, longitude: 105.8 }, slot: { start_time: '2099-01-05T09:00:00+07:00' } }) };
+    const service = new HistoryService({} as never, {} as never, {} as never, healthcare as never, {} as never);
+
+    await expect(service.get('healthcare_appointment', '51', 'actor-1', 'cor-history')).resolves.toMatchObject({
+      facility_name: 'Bệnh viện A',
+      address: '1 Test Street',
+      doctor_name: 'Bác sĩ A',
+      department_name: 'Thần kinh',
+      start_time: '2099-01-05T09:00:00+07:00',
+      price: 120000,
+      facility: { name: 'Bệnh viện A', location: { latitude: 21, longitude: 105.8 } },
+    });
+  });
+
+  it('keeps restaurant snapshots available to the active-service detail', async () => {
+    const restaurant = { getReservation: jest.fn().mockResolvedValue({
+      id: 'reservation-1', status: 'CONFIRMED', restaurant_name: 'Nhà hàng A', party_size: 2,
+      start_at: '2099-01-05T19:00:00+07:00', address: '1 Phố A, Hà Nội',
+      restaurant: { name: 'Nhà hàng A', address: '1 Phố A, Hà Nội', cuisine: 'Vietnamese', latitude: 21.03, longitude: 105.84 },
+    }) };
+    const service = new HistoryService({} as never, {} as never, restaurant as never, {} as never, {} as never);
+
+    await expect(service.get('restaurant_reservation', 'reservation-1', 'actor-1', 'cor-history')).resolves.toMatchObject({
+      restaurant_name: 'Nhà hàng A',
+      address: '1 Phố A, Hà Nội',
+      restaurant: { name: 'Nhà hàng A', address: '1 Phố A, Hà Nội', location: { latitude: 21.03, longitude: 105.84 } },
+    });
+  });
 });

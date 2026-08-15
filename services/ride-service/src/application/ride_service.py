@@ -25,6 +25,7 @@ from src.domain.ride import (
     normalized_hash,
     prepare_confirmation_payload,
     quote_request_payload,
+    spawn_simulated_driver_near_pickup,
     tracking_elapsed,
     tracking_snapshot,
     transition_booking,
@@ -221,6 +222,15 @@ class RideApplication:
                 quote.pickup_latitude,
                 quote.pickup_longitude,
             )
+            if booking.driver:
+                booking.driver = spawn_simulated_driver_near_pickup(
+                    booking.driver,
+                    booking_id=booking.id,
+                    pickup_latitude=quote.pickup_latitude,
+                    pickup_longitude=quote.pickup_longitude,
+                    passenger_route_distance_meters=quote.route_distance_meters,
+                    passenger_route_duration_seconds=quote.route_duration_seconds,
+                )
             booking.driver_id = str(booking.driver.get("id")) if booking.driver else None
             if booking.driver:
                 booking.tracking_started_at = utc_now()

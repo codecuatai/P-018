@@ -68,4 +68,14 @@ export class RideActionsController {
     const confirmed = await this.ride.confirmBooking(request.user.sub, key, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_confirm' }, booking.id, JSON.stringify({ payment_reference: paymentReference, confirmation: evidence(request.user.sub, key, 'ride.booking.confirm', payload, quote) }));
     return { data: confirmed, meta: { request_id: request.correlationId } };
   }
+
+  @Post(':bookingId/cancel')
+  async cancel(@Param('bookingId') bookingId: string, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const key = requiredKey(idempotencyKey);
+    const booking = await this.ride.getBooking(request.user.sub, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_cancel_read' }, bookingId);
+    const quote = await this.ride.getQuote(request.user.sub, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_cancel_quote' }, booking.quote_id);
+    const payload = { action: 'ride.booking.cancel', actor_id: request.user.sub, booking_id: booking.id, quote_version: booking.quote_version, amount: booking.amount, currency: booking.currency, resource_version: booking.resource_version };
+    const cancelled = await this.ride.cancelBooking(request.user.sub, key, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${bookingId}`, toolCallId: 'web_cancel' }, booking.id, JSON.stringify({ confirmation: evidence(request.user.sub, key, 'ride.booking.cancel', payload, quote) }));
+    return { data: cancelled, meta: { request_id: request.correlationId } };
+  }
 }

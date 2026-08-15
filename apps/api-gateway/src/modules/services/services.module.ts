@@ -209,13 +209,8 @@ export class RideTrackingController {
       this.driverRoutes.set(bookingId, snapshot);
     }
     if (!snapshot) return data;
-    const progress = typeof data.progress === 'number' && Number.isFinite(data.progress) ? data.progress : 0;
-    const routeProgress = status === 'DRIVER_ASSIGNED' ? 0 : Math.min(1, Math.max(0, progress / 0.25));
-    const current = pointAlongRoute(snapshot.geometry, routeProgress);
     return {
       ...data,
-      current_location: current,
-      driver_location: current,
       driver_route: snapshot,
     };
   }
@@ -235,34 +230,6 @@ function coordinateValue(value: unknown): { latitude: number; longitude: number 
   if (!isObject(value) || typeof value.latitude !== 'number' || typeof value.longitude !== 'number') return undefined;
   if (!Number.isFinite(value.latitude) || !Number.isFinite(value.longitude)) return undefined;
   return { latitude: value.latitude, longitude: value.longitude };
-}
-
-function pointAlongRoute(geometry: Array<{ latitude: number; longitude: number }>, ratio: number): { latitude: number; longitude: number } {
-  if (geometry.length < 2) return geometry[0] ?? { latitude: 0, longitude: 0 };
-  const lengths = geometry.slice(1).map((point, index) => distanceBetween(geometry[index], point));
-  const total = lengths.reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return geometry[0];
-  let remaining = total * Math.min(1, Math.max(0, ratio));
-  for (let index = 0; index < lengths.length; index += 1) {
-    const segment = lengths[index];
-    if (remaining <= segment) {
-      const start = geometry[index];
-      const end = geometry[index + 1];
-      const segmentRatio = segment > 0 ? remaining / segment : 0;
-      return {
-        latitude: start.latitude + (end.latitude - start.latitude) * segmentRatio,
-        longitude: start.longitude + (end.longitude - start.longitude) * segmentRatio,
-      };
-    }
-    remaining -= segment;
-  }
-  return geometry[geometry.length - 1];
-}
-
-function distanceBetween(left: { latitude: number; longitude: number }, right: { latitude: number; longitude: number }): number {
-  const latitude = (right.latitude - left.latitude) * 111_000;
-  const longitude = (right.longitude - left.longitude) * 111_000 * Math.cos((left.latitude * Math.PI) / 180);
-  return Math.sqrt(latitude ** 2 + longitude ** 2);
 }
 
 function isServiceKey(value: string): value is ServiceKey { return catalog.some((item) => item.key === value); }

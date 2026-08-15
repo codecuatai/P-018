@@ -139,6 +139,7 @@ export interface FoodTracking {
   eta_minutes?: number | null;
   restaurant?: Record<string, unknown> | null;
   address?: Record<string, unknown> | null;
+  pickup_stops?: Array<Record<string, unknown>>;
   delivery_route?: {
     provider?: string;
     distance_meters?: number;
@@ -394,13 +395,20 @@ export type AssistantActionKind =
   | "select_healthcare_slot"
   | "healthcare_payment"
   | "healthcare_confirm"
+  | "healthcare_cancel"
   | "select_food_item"
-  | "food_confirm";
+  | "food_cart_increment"
+  | "food_cart_decrement"
+  | "food_cart_remove"
+  | "food_checkout"
+  | "food_confirm"
+  | "food_payment";
 
 type AssistantActionOf<K extends AssistantActionKind> = {
   id: string;
   kind: K;
   label: string;
+  target_index?: number;
 };
 
 export type AssistantAction =
@@ -411,8 +419,14 @@ export type AssistantAction =
   | AssistantActionOf<"select_healthcare_slot">
   | AssistantActionOf<"healthcare_payment">
   | AssistantActionOf<"healthcare_confirm">
+  | AssistantActionOf<"healthcare_cancel">
   | AssistantActionOf<"select_food_item">
-  | AssistantActionOf<"food_confirm">;
+  | AssistantActionOf<"food_cart_increment">
+  | AssistantActionOf<"food_cart_decrement">
+  | AssistantActionOf<"food_cart_remove">
+  | AssistantActionOf<"food_checkout">
+  | AssistantActionOf<"food_confirm">
+  | AssistantActionOf<"food_payment">;
 
 export interface AssistantOption {
   name?: string;
@@ -425,7 +439,7 @@ export interface AssistantOption {
   category?: string;
   review_count?: number;
   price_level?: string;
-  opening_hours?: string | string[];
+  opening_hours?: string | string[] | Array<Record<string, unknown>>;
   doctor_title?: string;
   options?: Array<Record<string, unknown>>;
   option_groups?: Array<Record<string, unknown>>;
@@ -438,6 +452,7 @@ export interface AssistantOption {
   latitude?: number;
   longitude?: number;
   facility?: AssistantFacility;
+  target_index?: number;
 }
 
 export interface AssistantRestaurant {
@@ -473,7 +488,9 @@ export interface AssistantPreview {
   cart_version?: number;
   quote_version?: string;
   total?: { amount?: number; currency?: string };
-  delivery?: { eta_minutes?: number; fee?: { amount?: number; currency?: string } };
+  delivery?: { eta_minutes?: number; fee?: { amount?: number; currency?: string }; pickup_stops?: AssistantRestaurant[] };
+  address?: { address?: string; latitude?: number; longitude?: number };
+  restaurants?: AssistantRestaurant[];
 }
 
 interface AssistantItemBase<K extends string> {
@@ -547,6 +564,7 @@ export interface AssistantHealthcareItem extends AssistantItemBase<"appointment"
   appointment_id?: number;
   facility?: AssistantFacility;
   appointment?: AssistantAppointment;
+  alternative_slots?: AssistantOption[];
 }
 
 export interface AssistantFoodOrder {
@@ -559,20 +577,52 @@ export interface AssistantFoodOrder {
   restaurant?: string | AssistantRestaurant;
 }
 
+export interface AssistantFoodCartItem {
+  id?: string;
+  name?: string;
+  quantity?: number;
+  price?: number;
+  unit_price?: number;
+  description?: string;
+  image_url?: string;
+  currency?: string;
+  restaurant?: string | AssistantRestaurant;
+  selected_options?: Array<Record<string, unknown>>;
+}
+
+export interface AssistantFoodCart {
+  items?: AssistantFoodCartItem[];
+  subtotal?: number;
+  discount?: number;
+  total?: number | { amount?: number; currency?: string };
+  delivery_fee?: number | { amount?: number; currency?: string };
+  currency?: string;
+  cart_version?: number;
+}
+
 export interface AssistantPayment {
   status?: string;
   amount?: number;
   currency?: string;
 }
 
-export interface AssistantFoodItem extends AssistantItemBase<"food_options" | "food_confirmation" | "food_order" | "food_empty"> {
+export interface AssistantFoodItem extends AssistantItemBase<"food_options" | "food_confirmation" | "food_order" | "food_empty" | "food_cart"> {
   options?: AssistantOption[];
   order?: AssistantFoodOrder;
   payment?: AssistantPayment;
   preview?: AssistantPreview;
+  cart?: AssistantFoodCart;
+  pickup_stops?: AssistantRestaurant[];
+  delivery_address?: string;
+  confirmation_state?: "DETAILS_REQUIRED" | "PAYMENT_REQUIRED" | string;
 }
 
 export interface AssistantProgressItem extends AssistantItemBase<"progress" | "clarification"> {}
+
+export interface AssistantTaskErrorItem extends AssistantItemBase<"task_error"> {
+  error_code?: string;
+  retryable?: boolean;
+}
 
 export type KnownAssistantItem =
   | AssistantRestaurantOptionsItem
@@ -582,7 +632,8 @@ export type KnownAssistantItem =
   | AssistantHealthcareOptionsItem
   | AssistantHealthcareItem
   | AssistantFoodItem
-  | AssistantProgressItem;
+  | AssistantProgressItem
+  | AssistantTaskErrorItem;
 
 export type UnknownAssistantItem = {
   kind: string;
@@ -600,7 +651,7 @@ export function isKnownAssistantItem(item: AssistantItem): item is KnownAssistan
     "restaurant_options", "restaurant_unavailable", "restaurant_confirmation", "reservation",
     "ride_quote", "ride_booking", "ride_timing_conflict", "healthcare_options",
     "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed",
-    "food_options", "food_confirmation", "food_order", "food_empty", "progress", "clarification",
+    "food_options", "food_confirmation", "food_order", "food_empty", "food_cart", "progress", "clarification", "task_error",
   ].includes(item.kind as KnownAssistantItemKind);
 }
 

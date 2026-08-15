@@ -267,7 +267,7 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
   const result = pickFields(resource, type === 'ride_booking'
     ? ['status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
     : type === 'food_order'
-      ? ['status', 'restaurant_name', 'delivery_address', 'address', 'image_url', 'total', 'amount', 'currency']
+      ? ['status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
       : type === 'restaurant_reservation'
         ? ['status', 'name', 'restaurant_name', 'address', 'location', 'reservation_time', 'start_at', 'booking_time', 'party_size', 'image_url']
         : ['status', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
@@ -297,6 +297,27 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
     const restaurant = publicPlace(resource.restaurant);
     if (restaurant) result.restaurant = restaurant;
     if (Array.isArray(resource.items)) result.items = resource.items.filter(isObject).map(publicFoodItem);
+    const delivery = isObject(resource.delivery) ? resource.delivery : undefined;
+    const pickupSource = Array.isArray(delivery?.pickup_stops)
+      ? delivery.pickup_stops
+      : Array.isArray(resource.restaurants)
+        ? resource.restaurants
+        : restaurant ? [restaurant] : [];
+    const pickupStops = pickupSource.filter(isObject).map(publicPlace).filter((place): place is JsonObject => Boolean(place));
+    if (pickupStops.length) result.pickup_stops = pickupStops;
+    if (Array.isArray(resource.restaurants)) result.restaurants = resource.restaurants.filter(isObject).map(publicPlace).filter((place): place is JsonObject => Boolean(place));
+    const addressSource = isObject(resource.address) ? resource.address : undefined;
+    const deliveryAddress = stringField(addressSource?.address ?? addressSource?.address_text) ?? stringField(resource.delivery_address);
+    const addressPoint = publicPointFromFields(addressSource?.latitude, addressSource?.longitude);
+    if (deliveryAddress) result.delivery_address = deliveryAddress;
+    if (addressPoint) result.delivery_location = addressPoint;
+    const routePoints = [
+      ...pickupStops.map((stop) => publicPoint(stop.location)).filter((point): point is { latitude: number; longitude: number } => Boolean(point)),
+      ...(addressPoint ? [addressPoint] : []),
+    ];
+    if (routePoints.length > 1) result.delivery_route = { origin: routePoints[0], destination: routePoints[routePoints.length - 1], geometry: routePoints };
+    const driver = publicDriver(resource.driver);
+    if (driver) result.driver = driver;
   } else if (type === 'restaurant_reservation') {
     const restaurant = publicPlace(resource.restaurant);
     if (restaurant) result.restaurant = restaurant;
@@ -310,7 +331,20 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
     if (doctor) result.doctor = doctor;
     const department = publicPerson(resource.department);
     if (department) result.department = department;
-    const point = publicPoint(resource.location) ?? publicPointFromFields(resource.latitude, resource.longitude);
+    const facilityName = stringField(resource.facility_name) ?? stringField(facility?.name);
+    const facilityAddress = stringField(resource.address) ?? stringField(facility?.address);
+    const doctorName = stringField(resource.doctor_name) ?? stringField(doctor?.name);
+    const departmentName = stringField(resource.department_name) ?? stringField(resource.department) ?? stringField(department?.name);
+    const slot = isObject(resource.slot) ? resource.slot : undefined;
+    const startTime = stringField(resource.start_time) ?? stringField(resource.start_at) ?? stringField(slot?.start_time);
+    const price = typeof resource.price === 'number' ? resource.price : typeof doctor?.price === 'number' ? doctor.price : undefined;
+    if (facilityName) result.facility_name = facilityName;
+    if (facilityAddress) result.address = facilityAddress;
+    if (doctorName) result.doctor_name = doctorName;
+    if (departmentName) result.department_name = departmentName;
+    if (startTime) result.start_time = startTime;
+    if (price !== undefined) result.price = price;
+    const point = publicPoint(resource.location) ?? publicPointFromFields(resource.latitude, resource.longitude) ?? publicPoint(facility?.location);
     if (point) result.location = point;
   }
   return result;
@@ -386,6 +420,10 @@ function publicPointFromFields(latitude: unknown, longitude: unknown): { latitud
   if (typeof latitude !== 'number' || typeof longitude !== 'number' || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return undefined;
   if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return undefined;
   return { latitude, longitude };
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function maskPhone(value: string): string {

@@ -255,17 +255,18 @@ class InMemoryFoodRepository:
             if cart is None or cart.get("user_id") != order["user_id"]:
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
             if expected is not None and delivery_config is not None and address_id is not None:
-                restaurant = self.restaurants.get(str(cart["restaurant_id"]))
                 address = deepcopy(address_snapshot) if address_snapshot is not None else self.addresses.get(address_id)
                 voucher_code = str((cart.get("voucher") or {}).get("code", ""))
                 current_voucher = self.vouchers.get(voucher_code.upper()) if voucher_code else None
                 items = {item["menu_item_id"]: self.items[item["menu_item_id"]] for item in cart.get("items", []) if item["menu_item_id"] in self.items}
-                if restaurant is None or address is None or address.get("user_id") != order["user_id"]:
+                if address is None or address.get("user_id") != order["user_id"]:
                     raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
-                quote = build_authoritative_quote(cart, restaurant, items, current_voucher, address, delivery_config)
+                restaurant_ids = {str(item.get("restaurant_id", "")) for item in items.values() if str(item.get("restaurant_id", ""))}
+                restaurants = {restaurant_id: self.restaurants[restaurant_id] for restaurant_id in restaurant_ids if restaurant_id in self.restaurants}
+                quote = build_authoritative_quote(cart, restaurants, items, current_voucher, address, delivery_config)
                 if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
                     raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
-                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "restaurants": quote.get("restaurants", []), "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
                 voucher = current_voucher
             elif int(cart.get("version", 0)) != int(order.get("cart_version", 0)):
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
@@ -277,7 +278,7 @@ class InMemoryFoodRepository:
                 if current is None or key in self.redeemed_vouchers or int(current.get("used_count", 0)) >= int(current.get("usage_limit", 0)):
                     raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
                 calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
-                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                if current.get("restaurant_id") and any(current["restaurant_id"] != restaurant.get("id") for restaurant in order.get("restaurants", [order["restaurant"]])):
                     raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
                 current["used_count"] = int(current.get("used_count", 0)) + 1
                 self.vouchers[code] = deepcopy(current)
@@ -405,6 +406,8 @@ class PostgresFoodRepository:
         return [_safe_catalog_record(record_type, _json_object(row["data"])) for row in rows]
 
     async def search(self, **filters) -> list[dict]:
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
         result = []
         raw_keyword = str(filters.get("keyword", "")).strip().casefold()
@@ -415,7 +418,31 @@ class PostgresFoodRepository:
         restaurant_id = str(filters.get("restaurant_id", ""))
         item_keyword_match = False
         primary_item_keyword_match = False
-        for item in await self._records("menu_item"):
+        item_query = (
+            "SELECT id, data->>'restaurant_id' AS restaurant_id, data->>'name' AS name, "
+            "data->>'description' AS description, data->>'price' AS price, "
+            "data->>'category' AS category FROM food_catalog "
+            "WHERE record_type='menu_item' AND is_active=TRUE"
+        )
+        item_args: list[object] = []
+        if active_version:
+            item_query += " AND dataset_version=$1"
+            item_args.append(active_version)
+        item_query += " ORDER BY id"
+        # Search only the scalar fields needed for matching. Full JSON payloads
+        # (images, option groups, descriptions, etc.) are hydrated after the
+        # result window is selected, avoiding a 17k-record JSON decode on every
+        # assistant turn.
+        item_rows = await pool.fetch(item_query, *item_args)
+        for row in item_rows:
+            item = {
+                "id": str(row["id"]),
+                "restaurant_id": str(row["restaurant_id"] or ""),
+                "name": str(row["name"] or ""),
+                "description": str(row["description"] or ""),
+                "price": int(row["price"] or 0),
+                "category": str(row["category"] or ""),
+            }
             if restaurant_id and item["restaurant_id"] != restaurant_id:
                 continue
             restaurant = restaurants.get(item["restaurant_id"])
@@ -464,7 +491,24 @@ class PostgresFoodRepository:
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
         result.sort(key=lambda value: (-(value["restaurant"].get("rating") or 0), -(value["restaurant"].get("review_count") or 0), str(value["item"].get("name", "")).casefold(), str(value["item"].get("id", ""))))
-        return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start:start + limit]]
+        window = result[start:start + limit]
+        item_ids = [str(entry["item"]["id"]) for entry in window]
+        if not item_ids:
+            return []
+        full_query = "SELECT id, data FROM food_catalog WHERE record_type='menu_item' AND is_active=TRUE AND id=ANY($1::text[])"
+        full_args: list[object] = [item_ids]
+        if active_version:
+            full_query += " AND dataset_version=$2"
+            full_args.append(active_version)
+        rows = await pool.fetch(full_query, *full_args)
+        full_items = {
+            str(row["id"]): _safe_catalog_record("menu_item", _json_object(row["data"]))
+            for row in rows
+        }
+        return [
+            {"item": full_items.get(str(entry["item"]["id"]), entry["item"]), "restaurant": entry["restaurant"]}
+            for entry in window
+        ]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         pool = self._require_pool()
@@ -570,23 +614,25 @@ class PostgresFoodRepository:
             else:
                 if delivery_config is None or address_id is None:
                     raise DomainError("CART_CHANGED", "Authoritative quote configuration is missing.")
-                restaurant_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='restaurant' AND id=$1 AND is_active = TRUE FOR UPDATE", cart["restaurant_id"])
                 address_row = None if address_snapshot is not None else await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='address' AND id=$1 AND is_active = TRUE FOR UPDATE", address_id)
-                if not restaurant_row or (address_snapshot is None and not address_row):
-                    raise DomainError("NOT_FOUND", "Không tìm thấy nhà hàng hoặc địa chỉ giao hàng.")
+                if address_snapshot is None and not address_row:
+                    raise DomainError("NOT_FOUND", "Không tìm thấy địa chỉ giao hàng.")
                 address = deepcopy(address_snapshot) if address_snapshot is not None else _json_object(address_row["data"])
                 if address.get("user_id") != order["user_id"]:
                     raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
                 item_ids = [str(item["menu_item_id"]) for item in cart.get("items", [])]
                 item_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='menu_item' AND is_active = TRUE AND id=ANY($1::text[]) FOR UPDATE", item_ids)
                 items = {str(row["id"]): _json_object(row["data"]) for row in item_rows}
+                restaurant_ids = list(dict.fromkeys(str(item.get("restaurant_id", "")) for item in items.values() if str(item.get("restaurant_id", ""))))
+                restaurant_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='restaurant' AND is_active = TRUE AND id=ANY($1::text[]) FOR UPDATE", restaurant_ids)
+                restaurants = {str(row["id"]): _json_object(row["data"]) for row in restaurant_rows}
                 voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
                 voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 AND is_active = TRUE FOR UPDATE", voucher_code.upper()) if voucher_code else None
                 current_voucher = _json_object(voucher_row["data"]) if voucher_row else None
-                quote = build_authoritative_quote(cart, _json_object(restaurant_row["data"]), items, current_voucher, address, delivery_config)
+                quote = build_authoritative_quote(cart, restaurants, items, current_voucher, address, delivery_config)
                 if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
                     raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
-                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "restaurants": quote.get("restaurants", []), "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
                 voucher = current_voucher
             if voucher:
                 code = str(voucher["code"]).upper()
@@ -597,7 +643,7 @@ class PostgresFoodRepository:
                 if await connection.fetchval("SELECT 1 FROM food_voucher_redemptions WHERE voucher_code=$1 AND user_id=$2", code, order["user_id"]):
                     raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã được user sử dụng.")
                 calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
-                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                if current.get("restaurant_id") and any(current["restaurant_id"] != restaurant.get("id") for restaurant in order.get("restaurants", [order["restaurant"]])):
                     raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
                 updated = await connection.fetchrow("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}',to_jsonb(COALESCE((data->>'used_count')::int,0)+1)),updated_at=now() WHERE record_type='voucher' AND id=$1 AND is_active = TRUE AND COALESCE((data->>'used_count')::int,0) < COALESCE((data->>'usage_limit')::int,0) RETURNING data", code)
                 if not updated:

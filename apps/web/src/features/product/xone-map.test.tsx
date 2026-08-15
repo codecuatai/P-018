@@ -41,6 +41,24 @@ describe("XOneMap", () => {
     expect(screen.getByText("8 phút")).toBeInTheDocument();
   });
 
+  it("uses the same destination color in the legend as the map marker", () => {
+    render(
+      <XOneMap
+        destination={{ latitude: 21.0301, longitude: 105.8122 }}
+        providerUnavailable
+      />,
+    );
+
+    const legend = screen.getByText("Điểm đến").parentElement;
+    expect(legend?.querySelector(".legend-dot")).toHaveStyle({ backgroundColor: "#1F9D68" });
+  });
+
+  it("labels a Healthcare facility distinctly from a generic destination", () => {
+    render(<XOneMap healthcare={{ latitude: 21.0301, longitude: 105.8122, label: "Bệnh viện A" }} providerUnavailable />);
+
+    expect(screen.getByText("Cơ sở khám")).toBeInTheDocument();
+  });
+
   it("explains a denied location permission without inventing a marker", () => {
     render(<XOneMap locationDenied label="Vị trí hiện tại" />);
 

@@ -96,19 +96,79 @@ class FoodApplicationService:
         restaurant = await self.restaurant(restaurant_id)
         if not restaurant.get("is_open", False):
             raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
-        cart = {"id": ident("cart"), "user_id": user_id, "restaurant_id": restaurant_id, "items": [], "voucher": None, "subtotal": 0, "discount": 0, "total": 0, "currency": "VND", "version": 0}
+        cart = {"id": ident("cart"), "user_id": user_id, "restaurant_id": restaurant_id, "restaurant_ids": [restaurant_id], "items": [], "voucher": None, "subtotal": 0, "discount": 0, "total": 0, "currency": "VND", "version": 0}
         return await self.repository.create_cart_idempotent(cart, idempotency_key)
 
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
         return price_item(item, selected_options)
 
+    @staticmethod
+    def _restaurant_snapshot(restaurant: dict) -> dict:
+        """Keep only the safe restaurant fields already exposed by the repository DTO."""
+
+        fields = (
+            "id",
+            "name",
+            "address",
+            "ward",
+            "district",
+            "city",
+            "category",
+            "cuisine_tags",
+            "phone",
+            "opening_hours",
+            "rating",
+            "rating_source",
+            "review_count",
+            "price_level",
+            "image_url",
+            "is_open",
+            "latitude",
+            "longitude",
+        )
+        return {field: restaurant[field] for field in fields if field in restaurant and restaurant[field] is not None}
+
+    @classmethod
+    def _cart_item_snapshot(
+        cls,
+        item: dict,
+        restaurant: dict,
+        *,
+        item_id: str,
+        unit_price: int,
+        normalized_options: list[dict],
+        quantity: int,
+        note: str | None,
+    ) -> dict:
+        fields = {
+            "id": item_id,
+            "menu_item_id": item["id"],
+            "name": item["name"],
+            "unit_price": unit_price,
+            "base_price": item["price"],
+            "quantity": quantity,
+            "selected_options": normalized_options,
+            "note": note,
+            "restaurant": cls._restaurant_snapshot(restaurant),
+        }
+        for field in ("description", "image_url", "currency", "category"):
+            if field in item and item[field] is not None:
+                fields[field] = item[field]
+        return fields
+
     async def _recalculate(self, cart: dict, expected_version: int | None = None, persist: bool = True) -> dict:
         subtotal = sum(item["unit_price"] * item["quantity"] for item in cart["items"])
+        restaurant_ids = list(dict.fromkeys(
+            str((item.get("restaurant") or {}).get("id", ""))
+            for item in cart["items"]
+            if str((item.get("restaurant") or {}).get("id", ""))
+        ))
+        cart["restaurant_ids"] = restaurant_ids or list(dict.fromkeys(str(value) for value in cart.get("restaurant_ids", []) if str(value))) or [cart["restaurant_id"]]
         discount = 0
         voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
         voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
         if voucher:
-            if voucher.get("restaurant_id") and voucher["restaurant_id"] != cart["restaurant_id"]:
+            if voucher.get("restaurant_id") and any(voucher["restaurant_id"] != restaurant_id for restaurant_id in cart["restaurant_ids"]):
                 raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
             discount = calculate_discount(voucher, subtotal, datetime.now(UTC))
         cart["subtotal"] = subtotal
@@ -133,12 +193,23 @@ class FoodApplicationService:
         if user_id is not None and cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
         item = await self.menu_item(payload["menu_item_id"])
-        if item["restaurant_id"] != cart["restaurant_id"]:
-            raise DomainError("CROSS_RESTAURANT_CART", "Một giỏ hàng chỉ chứa món từ một nhà hàng.")
+        restaurant = await self.restaurant(item["restaurant_id"])
+        if not restaurant.get("is_open", False):
+            raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
         if not item["available"]:
             raise DomainError("MENU_ITEM_UNAVAILABLE", "Món ăn hiện không phục vụ.")
         unit_price, normalized_options = await self._price_item(item, payload.get("selected_options", []))
-        cart["items"].append({"id": ident("ci"), "menu_item_id": item["id"], "name": item["name"], "unit_price": unit_price, "base_price": item["price"], "quantity": payload["quantity"], "selected_options": normalized_options, "note": payload.get("note")})
+        cart["items"].append(
+            self._cart_item_snapshot(
+                item,
+                restaurant,
+                item_id=ident("ci"),
+                unit_price=unit_price,
+                normalized_options=normalized_options,
+                quantity=payload["quantity"],
+                note=payload.get("note"),
+            )
+        )
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
     async def update_item(self, cart_id: str, item_id: str, payload: dict, user_id: str | None = None) -> dict:
@@ -148,11 +219,28 @@ class FoodApplicationService:
         cart_item = next((value for value in cart["items"] if value["id"] == item_id), None)
         if cart_item is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy món trong giỏ hàng.")
-        if payload.get("selected_options") is not None:
-            item = await self.menu_item(cart_item["menu_item_id"])
-            cart_item["unit_price"], cart_item["selected_options"] = await self._price_item(item, payload["selected_options"])
-        cart_item["quantity"] = payload["quantity"]
-        cart_item["note"] = payload.get("note")
+        item = await self.menu_item(cart_item["menu_item_id"])
+        restaurant = await self.restaurant(item["restaurant_id"])
+        selected_options = payload.get("selected_options")
+        if selected_options is None:
+            selected_options = [
+                {"group_id": option["group_id"], "option_id": option["option_id"]}
+                for option in cart_item.get("selected_options", [])
+            ]
+        unit_price, normalized_options = await self._price_item(item, selected_options)
+        note = payload["note"] if "note" in payload else cart_item.get("note")
+        cart_item.clear()
+        cart_item.update(
+            self._cart_item_snapshot(
+                item,
+                restaurant,
+                item_id=item_id,
+                unit_price=unit_price,
+                normalized_options=normalized_options,
+                quantity=payload["quantity"],
+                note=note,
+            )
+        )
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
     async def remove_item(self, cart_id: str, item_id: str, user_id: str | None = None) -> dict:
@@ -172,7 +260,8 @@ class FoodApplicationService:
         voucher = await self.repository.get_voucher(code)
         if voucher is None:
             raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
-        if voucher.get("restaurant_id") and voucher["restaurant_id"] != cart["restaurant_id"]:
+        restaurant_ids = {str((item.get("restaurant") or {}).get("id", "")) for item in cart.get("items", [])}
+        if voucher.get("restaurant_id") and any(voucher["restaurant_id"] != restaurant_id for restaurant_id in restaurant_ids if restaurant_id):
             raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
         cart["voucher"] = {"code": str(voucher["code"]).upper()}
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
@@ -194,17 +283,29 @@ class FoodApplicationService:
         return {"restaurant": restaurant, "address": address, **quote_delivery(restaurant, address, self.delivery_config)}
 
     async def _reprice_cart(self, cart: dict, persist: bool = False) -> dict:
-        restaurant = await self.restaurant(cart["restaurant_id"])
-        if not restaurant.get("is_open", False):
-            raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
         for cart_item in cart["items"]:
             item = await self.menu_item(cart_item["menu_item_id"])
-            if item["restaurant_id"] != cart["restaurant_id"]:
-                raise DomainError("CROSS_RESTAURANT_CART", "Một giỏ hàng chỉ chứa món từ một nhà hàng.")
+            restaurant = await self.restaurant(item["restaurant_id"])
+            if not restaurant.get("is_open", False):
+                raise DomainError("RESTAURANT_CLOSED", "Một nhà hàng trong đơn hiện đã đóng cửa.")
             if not item.get("available", False):
                 raise DomainError("MENU_ITEM_UNAVAILABLE", "Món ăn hiện không phục vụ.")
             unit_price, options = await self._price_item(item, [{"group_id": option["group_id"], "option_id": option["option_id"]} for option in cart_item.get("selected_options", [])])
-            cart_item.update({"name": item["name"], "base_price": item["price"], "unit_price": unit_price, "selected_options": options})
+            item_id = str(cart_item["id"])
+            quantity = int(cart_item["quantity"])
+            note = cart_item.get("note")
+            cart_item.clear()
+            cart_item.update(
+                self._cart_item_snapshot(
+                    item,
+                    restaurant,
+                    item_id=item_id,
+                    unit_price=unit_price,
+                    normalized_options=options,
+                    quantity=quantity,
+                    note=note,
+                )
+            )
         return await self._recalculate(cart, persist=persist, expected_version=int(cart.get("version", 0)) if persist else None)
 
     async def preview_order(self, cart_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
@@ -216,13 +317,14 @@ class FoodApplicationService:
         address = self._delivery_address(address_id, user_id, address_snapshot) if address_snapshot is not None else await self.repository.get_address(address_id)
         if address is None or address.get("user_id") != user_id:
             raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
-        restaurant = await self.restaurant(cart["restaurant_id"])
         items = {item["menu_item_id"]: await self.menu_item(item["menu_item_id"]) for item in cart["items"]}
+        restaurant_ids = list(dict.fromkeys(str(item["restaurant_id"]) for item in items.values()))
+        restaurants = {restaurant_id: await self.restaurant(restaurant_id) for restaurant_id in restaurant_ids}
         voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
         voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
         if voucher_code:
             await self.repository.ensure_voucher_eligible(voucher_code, user_id)
-        return build_authoritative_quote(cart, restaurant, items, voucher, address, self.delivery_config)
+        return build_authoritative_quote(cart, restaurants, items, voucher, address, self.delivery_config)
 
     async def create_order(self, payload: dict) -> dict:
         existing = await self.repository.get_order_by_idempotency(payload["user_id"], payload["idempotency_key"])
@@ -244,7 +346,9 @@ class FoodApplicationService:
             payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}
         expected = {"snapshot_hash": payload["expected_snapshot_hash"], "cart_version": payload["expected_cart_version"], "amount": payload["expected_amount"], "currency": payload["expected_currency"], "quote_version": payload["expected_quote_version"]}
         created_at = datetime.now(UTC).isoformat()
-        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "created_at": created_at, "updated_at": created_at, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": created_at, "reason": "Order created", "actor_type": "gateway"}]}
+        cart = await self._cart(payload["cart_id"])
+        multi_pickup = len({str((item.get("restaurant") or {}).get("id", "")) for item in cart.get("items", []) if str((item.get("restaurant") or {}).get("id", ""))}) > 1
+        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "multi_pickup_demo" if multi_pickup else "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "created_at": created_at, "updated_at": created_at, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": created_at, "reason": "Order created", "actor_type": "gateway"}]}
         return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"], payload.get("address_snapshot"))
 
     async def get_order(self, order_id: str, user_id: str | None = None) -> dict:
@@ -288,7 +392,8 @@ class FoodApplicationService:
                 if target is None:
                     raise DomainError("INVALID_ORDER_TRANSITION", "Đơn hàng không có transition timed hợp lệ.")
                 decision = None
-            next_at = datetime.now(UTC) + timedelta(milliseconds=self._delay(target)) if target in {FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING} else None
+            hold_multi_pickup_demo = order.get("workflow_scenario") == "multi_pickup_demo" and target == FoodOrderStatus.PICKED_UP
+            next_at = None if hold_multi_pickup_demo else datetime.now(UTC) + timedelta(milliseconds=self._delay(target)) if target in {FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING} else None
             return target, decision, next_at
 
         return len(await self.repository.claim_and_advance_due_orders(now, 1, decide))
@@ -305,6 +410,24 @@ class FoodApplicationService:
     async def tracking(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.get_order(order_id, user_id)
         events = await self.repository.get_order_events(order_id)
+        delivery = order.get("delivery") or {}
+        pickup_stops = delivery.get("pickup_stops") if isinstance(delivery.get("pickup_stops"), list) else [order.get("restaurant")] if order.get("restaurant") else []
+        points = [
+            {"latitude": stop["latitude"], "longitude": stop["longitude"]}
+            for stop in pickup_stops
+            if isinstance(stop, dict) and isinstance(stop.get("latitude"), (int, float)) and isinstance(stop.get("longitude"), (int, float))
+        ]
+        address = order.get("address") if isinstance(order.get("address"), dict) else {}
+        if isinstance(address.get("latitude"), (int, float)) and isinstance(address.get("longitude"), (int, float)):
+            points.append({"latitude": address["latitude"], "longitude": address["longitude"]})
+        delivery_route = {
+            "provider": "food-service:planned-pickups",
+            "origin": points[0] if points else None,
+            "destination": points[-1] if points else None,
+            "geometry": points,
+            "distance_meters": int(float(delivery.get("distance_km") or 0) * 1000) if delivery.get("distance_km") is not None else None,
+            "duration_seconds": int(float(delivery.get("eta_minutes") or 0) * 60) if delivery.get("eta_minutes") is not None else None,
+        }
         return {
             "order_id": order["id"],
             "status": order["status"],
@@ -312,7 +435,9 @@ class FoodApplicationService:
             "eta_minutes": order["delivery"].get("eta_minutes"),
             "restaurant": order.get("restaurant"),
             "address": order.get("address"),
-            "delivery": order.get("delivery"),
+            "delivery": delivery,
+            "pickup_stops": pickup_stops,
+            "delivery_route": delivery_route,
             "timeline": events or order.get("timeline", []),
         }
 

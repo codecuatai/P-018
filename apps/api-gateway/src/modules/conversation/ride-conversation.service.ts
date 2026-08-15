@@ -50,7 +50,7 @@ type Workflow = {
 };
 
 export type RideWorkflowHydration = {
-  quoteId: string;
+  quoteId?: string;
   bookingId?: string;
 };
 
@@ -99,7 +99,7 @@ export class RideConversationService {
     references: RideWorkflowHydration,
     correlationId: string,
   ): Promise<void> {
-    if (!workflowId || !references.quoteId) {
+    if (!workflowId) {
       throw new ConflictException('Mình chưa tìm thấy thông tin chuyến xe để tiếp tục. Bạn tạo lại báo giá nhé.');
     }
     const existing = this.workflows.get(workflowId);
@@ -107,8 +107,6 @@ export class RideConversationService {
       throw new NotFoundException('Workflow not found.');
     }
 
-    const context: ServiceCallContext = { correlationId, workflowId, toolCallId: 'hydrate_quote' };
-    const quote = await this.ride.getQuote(actorId, context, references.quoteId);
     let booking = existing?.booking ?? null;
     if (references.bookingId) {
       booking = await this.ride.getBooking(
@@ -117,6 +115,11 @@ export class RideConversationService {
         references.bookingId,
       );
     }
+    const quoteId = references.quoteId ?? booking?.quote_id;
+    if (!quoteId) {
+      throw new ConflictException('MÃ¬nh chÆ°a tÃ¬m tháº¥y thÃ´ng tin chuyáº¿n xe Ä‘á»ƒ tiáº¿p tá»¥c. Báº¡n táº¡o láº¡i bÃ¡o giÃ¡ nhÃ©.');
+    }
+    const quote = await this.ride.getQuote(actorId, { correlationId, workflowId, toolCallId: 'hydrate_quote' }, quoteId);
     if (booking && (
       booking.quote_id !== quote.id
       || booking.quote_version !== quote.quote_version

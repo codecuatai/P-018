@@ -561,6 +561,60 @@ def _haversine_km(latitude_a: float, longitude_a: float, latitude_b: float, long
     return 6371 * 2 * atan2(sqrt(value), sqrt(1 - value))
 
 
+# The demo assigns a real available driver record, then gives that booking a
+# stable simulated starting position near its pickup. Deriving the position
+# from the booking keeps retries and refreshes idempotent while making each
+# new ride look like a driver was dispatched from a different nearby street.
+SIMULATED_DRIVER_SPAWN_MIN_METERS = 2_000.0
+SIMULATED_DRIVER_SPAWN_MAX_METERS = 3_000.0
+SIMULATED_DRIVER_FALLBACK_SPEED_KM_PER_MINUTE = 0.35
+SIMULATED_DRIVER_TRACKING_SPEED_FACTOR = 0.2
+
+
+def spawn_simulated_driver_near_pickup(
+    driver: dict[str, Any],
+    *,
+    booking_id: str,
+    pickup_latitude: float | None,
+    pickup_longitude: float | None,
+    passenger_route_distance_meters: int | None,
+    passenger_route_duration_seconds: int | None,
+) -> dict[str, Any]:
+    pickup = _point(pickup_latitude, pickup_longitude)
+    if pickup is None:
+        return driver
+
+    seed = hashlib.sha256(f"{booking_id}:{driver.get('id', '')}".encode()).digest()
+    bearing = int.from_bytes(seed[:8], "big") / 2**64 * math.tau
+    area_fraction = int.from_bytes(seed[8:16], "big") / 2**64
+    radius_meters = math.sqrt(
+        SIMULATED_DRIVER_SPAWN_MIN_METERS**2
+        + (SIMULATED_DRIVER_SPAWN_MAX_METERS**2 - SIMULATED_DRIVER_SPAWN_MIN_METERS**2) * area_fraction
+    )
+    north_meters = math.cos(bearing) * radius_meters
+    east_meters = math.sin(bearing) * radius_meters
+    latitude = pickup["latitude"] + north_meters / 111_320
+    longitude_scale = max(0.1, math.cos(math.radians(pickup["latitude"])))
+    longitude = pickup["longitude"] + east_meters / (111_320 * longitude_scale)
+    location = {"latitude": round(latitude, 6), "longitude": round(longitude, 6)}
+    distance_km = _haversine_km(location["latitude"], location["longitude"], pickup["latitude"], pickup["longitude"])
+    passenger_distance_km = (passenger_route_distance_meters or 0) / 1_000
+    passenger_duration_seconds = passenger_route_duration_seconds or 0
+    passenger_speed_km_per_minute = (
+        passenger_distance_km / (passenger_duration_seconds / 60)
+        if passenger_distance_km > 0 and passenger_duration_seconds > 0
+        else SIMULATED_DRIVER_FALLBACK_SPEED_KM_PER_MINUTE
+    )
+
+    return {
+        **driver,
+        "location": location,
+        "distance_to_pickup_km": round(distance_km, 3),
+        "eta_seconds": max(60, int(round(distance_km / passenger_speed_km_per_minute * 60))),
+        "tracking_speed_factor": SIMULATED_DRIVER_TRACKING_SPEED_FACTOR,
+    }
+
+
 def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
@@ -661,7 +715,11 @@ def tracking_elapsed(booking: Booking, now: datetime) -> float:
     started = _as_utc(booking.tracking_started_at or booking.updated_at)
     elapsed = max(0.0, (_as_utc(now) - started).total_seconds())
     scaled = elapsed * get_settings().tracking_time_scale
-    return scaled
+    driver = booking.driver or {}
+    speed_factor = driver.get("tracking_speed_factor", 1.0)
+    if not isinstance(speed_factor, (int, float)) or not math.isfinite(float(speed_factor)) or not 0 < float(speed_factor) <= 1:
+        speed_factor = 1.0
+    return scaled * float(speed_factor)
 
 
 def tracking_status_for_elapsed(status: str, elapsed: float, eta_seconds: int, travel_seconds: int) -> str:

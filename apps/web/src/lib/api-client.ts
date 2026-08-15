@@ -315,6 +315,10 @@ export function confirmRideBooking(bookingId: string): Promise<Record<string, un
   return request(`/api/v1/service-actions/ride/${encodeURIComponent(bookingId)}/confirm`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("ride-confirm") });
 }
 
+export function cancelRideBooking(bookingId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/service-actions/ride/${encodeURIComponent(bookingId)}/cancel`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("ride-cancel") });
+}
+
 export function listHistory(filters: HistoryFilters = {}): Promise<HistoryResult> {
   const params = new URLSearchParams();
   if (filters.service) params.set("service", filters.service);
@@ -512,10 +516,10 @@ export function sendAssistantMessage(message: string, conversationId?: string): 
   });
 }
 
-export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string): Promise<AssistantResponse> {
+export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/actions", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId }),
+    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}) }),
   }, { idempotencyKey });
 }
 

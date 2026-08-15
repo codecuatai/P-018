@@ -103,6 +103,13 @@ drivers from its own database, and enforces actor/operation idempotency. The
 Gateway may retry or reconcile a result, but it never infers driver, price,
 availability, or final success from model output.
 
+For local simulated dispatch, a newly assigned driver receives a stable spawn
+position 2â€“3 km from the pickup and a persisted tracking-speed factor of `0.2`.
+Its approach ETA is derived from the passenger route's distance/duration ratio,
+so the approach and passenger legs use the same simulated speed. Both legs
+therefore progress at 20% of the prior simulator rate (80% slower); existing
+bookings retain their stored behavior.
+
 ## Food ordering (target flow)
 
 ```mermaid
@@ -180,7 +187,11 @@ An explicit Healthcare clock is matched exactly when available. If no exact slot
 exists, the response labels nearby or other real alternatives as unavailable at
 the requested time; it never silently changes a request such as 10:00 to 14:00.
 Daypart requests such as “sáng mai” remain a morning range preference rather
-than an invented exact 08:00 slot.
+than an invented exact 08:00 slot. A date-only request such as “ngày kia” is
+kept as a local calendar-day filter, separate from an exact clock, so changing
+the day cannot retain an earlier appointment hour. Before payment, the held
+appointment card also exposes an idempotent `healthcare_cancel` action to
+release that temporary hold; it is removed once payment starts.
 
 Assistant action execution receipts are Core-owned. The first successful
 `/api/v1/assistant/actions` request stores the actor, conversation, action,

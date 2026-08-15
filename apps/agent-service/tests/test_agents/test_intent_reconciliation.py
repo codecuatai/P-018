@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from src.agents.graph import build_graph, reconcile_intent
+from src.agents.intent import extract_slots
 from src.agents.reference_resolution import resolve_references
 
 
@@ -13,6 +14,11 @@ def test_reconcile_intent_keeps_explicit_workflow_actions_authoritative() -> Non
     assert reconcile_intent("add_to_cart", "select_menu_item", {}) == "add_to_cart"
     assert reconcile_intent("quote_delivery", "list_addresses", {"restaurant_id": "res_opaque"}) == "quote_delivery"
     assert reconcile_intent("place_order", "quote_delivery", {"cart_id": "cart_opaque", "address_id": "addr_opaque"}) == "place_order"
+
+
+def test_selected_food_action_does_not_turn_cart_language_into_a_dish_query() -> None:
+    slots = extract_slots("Them 1 mon da chon vao gio")
+    assert "dish_query" not in slots
 
 
 def test_numeric_food_ordinal_resolves_against_the_full_authoritative_candidate_list() -> None:

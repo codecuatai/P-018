@@ -28,6 +28,7 @@ class FoodWorkflowContext(BaseModel):
     cart_id: str | None = None
     cart_items: list[dict[str, Any]] = Field(default_factory=list)
     address_id: str | None = None
+    address_query: str | None = None
     address_candidates: list[dict[str, Any]] = Field(default_factory=list)
     last_order_id: str | None = None
     last_payment_id: str | None = None

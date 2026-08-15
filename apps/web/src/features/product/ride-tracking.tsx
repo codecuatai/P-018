@@ -5,6 +5,7 @@ import { statusLabel } from "@/lib/presentation";
 import type { RideTracking } from "@/types";
 
 import { XOneMap } from "./xone-map";
+import { RideCancelButton } from "./ride-cancel-button";
 
 export type ParsedRideDriver = {
   name: string;
@@ -15,7 +16,12 @@ export type ParsedRideDriver = {
   licensePlate: string;
 };
 
-export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
+export function RideTrackingPanel(props: { bookingId: string; hideMap?: boolean; className?: string }) {
+  const { data: tracking } = useRideTracking(props.bookingId);
+  return <><RideTrackingPanelContent {...props} /><RideCancelButton bookingId={props.bookingId} status={tracking?.status} /></>;
+}
+
+function RideTrackingPanelContent({ bookingId, hideMap = false, className }: { bookingId: string; hideMap?: boolean; className?: string }) {
   const { data: tracking, loading, error } = useRideTracking(bookingId);
   const origin = pointFrom(tracking?.route?.origin);
   const destination = pointFrom(tracking?.route?.destination);
@@ -25,14 +31,13 @@ export function RideTrackingPanel({ bookingId }: { bookingId: string }) {
   const activeRoute = driverPhase ? tracking?.driver_route : tracking?.route;
   const parsedDriver = parseRideDriver(tracking?.driver);
 
-  return <section className="ride-tracking" aria-labelledby="ride-tracking-title">
+  return <section className={`ride-tracking${className ? ` ${className}` : ""}`} aria-labelledby="ride-tracking-title">
     <div className="tracking-heading"><div><span className="eyebrow">THEO DÕI CHUYẾN</span><h2 id="ride-tracking-title">Trạng thái tài xế</h2></div></div>
     {loading && !tracking ? <p className="inline-note" aria-live="polite">Đang cập nhật vị trí chuyến…</p> : error && !tracking ? <div className="error-panel" role="alert"><p>{error}</p></div> : tracking ? <>
-      <XOneMap origin={origin} destination={destination} current={current} driver={driver} density="active" routeGeometry={activeRoute?.geometry} routePolyline={driverPhase ? undefined : tracking.route?.polyline} routeProvider={activeRoute?.provider ?? tracking.route_provider} routeStatus={tracking.status} routeDistanceMeters={activeRoute?.distance_meters} routeDurationSeconds={activeRoute?.duration_seconds} label="Theo dõi chuyến xe" />
+      {!hideMap ? <XOneMap origin={origin} destination={destination} current={driver ? undefined : current} driver={driver} density="active" routeGeometry={activeRoute?.geometry} routePolyline={driverPhase ? undefined : tracking.route?.polyline} routeProvider={activeRoute?.provider ?? tracking.route_provider} routeStatus={tracking.status} routeDistanceMeters={activeRoute?.distance_meters} routeDurationSeconds={activeRoute?.duration_seconds} label="Theo dõi chuyến xe" /> : null}
       <div className="tracking-summary" aria-live="polite"><strong>{trackingLabel(tracking.status)}</strong><span>{tracking.eta_seconds > 0 ? `Còn khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Đã cập nhật"}</span><span>{Math.round(tracking.progress * 100)}% hành trình</span></div>
       {tracking.driver ? <div className="tracking-driver-card"><span className="driver-avatar" aria-hidden="true">{parsedDriver.name.slice(0, 1).toUpperCase()}</span><span><strong>{parsedDriver.name}</strong><small>{parsedDriver.rating ? `${parsedDriver.rating} ★` : "Rating đang cập nhật"}{parsedDriver.phone ? ` · ${parsedDriver.phone}` : ""}</small><small>{parsedDriver.vehicle}{parsedDriver.color ? ` · ${parsedDriver.color}` : ""}{parsedDriver.licensePlate ? ` · ${parsedDriver.licensePlate}` : ""}</small><small>{tracking.eta_seconds > 0 ? `Đến trong khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "ETA đang cập nhật"}</small></span></div> : tracking.status === "SEARCHING_DRIVER" ? <div className="driver-search-card" role="status"><span className="driver-search-pulse" aria-hidden="true" /><span><strong>Đang tìm tài xế phù hợp</strong><small>Mình sẽ báo ngay khi có người nhận chuyến.</small></span></div> : null}
       <ol className="tracking-timeline" aria-label="Tiến trình chuyến xe">{trackingSteps.map((step, index) => <li className={index <= trackingStepIndex(tracking.status) ? "is-complete" : ""} key={step.status}><span aria-hidden="true">{index + 1}</span><small>{step.label}</small></li>)}</ol>
-      <p className="tracking-footnote">Cập nhật nền mỗi 2–3 giây khi trang đang mở. Polling dừng ở trạng thái kết thúc và tạm dừng khi tab bị ẩn.</p>
     </> : <p className="inline-note">Chưa có dữ liệu tracking.</p>}
   </section>;
 }

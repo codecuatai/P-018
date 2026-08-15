@@ -293,7 +293,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "decision_source": "deterministic",
             "extracted_slots": {**state.get("extracted_slots", {}), **deterministic},
         }
-        if not use_model:
+        # The production graph is constructed with the default Gemini adapter
+        # even when the runtime is using the deterministic path.  Keep model
+        # injection available for tests and explicit callers, but do not make
+        # ordinary classified food requests wait for a remote model.
+        if not use_model or (llm is None and deterministic_intent != "general_food_support"):
             try:
                 registry = await gateway.registry(str(state.get("correlation_id")))
             except GatewayToolError:
@@ -448,7 +452,19 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         list(state.get("extracted_slots", {}).get("option_preferences", [])),
                     )
                     if missing:
-                        return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
+                        # Card selection uses the first explicitly displayed
+                        # option as its default.  This keeps direct +/- food
+                        # controls usable while the selected default remains
+                        # visible in the authoritative cart and confirmation.
+                        selected_groups = {value["group_id"] for value in selected}
+                        defaults = [
+                            {"group_id": str(group["id"]), "option_id": str(group["options"][0]["id"])}
+                            for group in item.get("option_groups", [])
+                            if group.get("required") and str(group.get("id")) not in selected_groups and group.get("options")
+                        ]
+                        if len(defaults) != len([group for group in item.get("option_groups", []) if group.get("required") and str(group.get("id")) not in selected_groups]):
+                            return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
+                        selected.extend(defaults)
                     slots = state.get("extracted_slots", {})
                     if not slots.get("cart_id"):
                         created = await invoke("create_cart", {"restaurant_id": slots.get("restaurant_id")})
@@ -530,7 +546,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         intent = str(state.get("intent", "general_food_support"))
         slots = state.get("extracted_slots", {})
         updates: dict[str, Any] = {}
-        for key in ("restaurant_id", "menu_item_id", "address_id"):
+        for key in ("restaurant_id", "menu_item_id", "address_id", "address_query"):
             if slots.get(key):
                 updates[key] = slots[key]
         for result in results:

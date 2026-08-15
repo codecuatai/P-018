@@ -69,10 +69,11 @@ export function FoodTrackingPanel({ orderId }: { orderId: string }) {
   const destination = point(tracking?.delivery_route?.destination ?? tracking?.address);
   const current = tracking?.courier_location ?? undefined;
   const driverName = text(tracking?.driver, "Người giao hàng");
+  const pickupStops = tracking?.pickup_stops?.filter((stop) => text(stop, "").length > 0) ?? [];
 
   return <section className="food-tracking" aria-labelledby="food-tracking-title">
     <div className="tracking-heading"><div><span className="eyebrow">THEO DÕI ĐƠN</span><h3 id="food-tracking-title">{foodStatus(tracking?.status)}</h3></div><button className="icon-button" type="button" onClick={() => void load()} aria-label="Cập nhật đơn"><RefreshCw size={16} /></button></div>
-    {loading ? <p className="inline-note">Đang tải trạng thái giao hàng…</p> : error ? <div className="error-panel" role="alert"><p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load()}>Thử lại</button></div> : tracking ? <><p className="inline-note">{tracking.driver ? `${driverName} đang xử lý đơn.` : "Nhà hàng đang chuẩn bị đơn của bạn."}</p><XOneMap origin={origin} destination={destination} current={current} driver={current} routeGeometry={tracking.delivery_route?.geometry} routeProvider={tracking.delivery_route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.delivery_route?.distance_meters} routeDurationSeconds={tracking.delivery_route?.duration_seconds} label="Theo dõi giao hàng" /></> : null}
+    {loading ? <p className="inline-note">Đang tải trạng thái giao hàng…</p> : error ? <div className="error-panel" role="alert"><p>{error}</p><button className="button button-secondary" type="button" onClick={() => void load()}>Thử lại</button></div> : tracking ? <><p className="inline-note">{tracking.driver ? `${driverName} đang xử lý đơn.` : "Nhà hàng đang chuẩn bị đơn của bạn."}</p>{pickupStops.length ? <ol className="food-pickup-stops" aria-label="Lộ trình lấy món">{pickupStops.map((stop, index) => <li key={`${text(stop, "Điểm lấy hàng")}-${index}`}><strong>{index + 1}. {text(stop, "Nhà hàng")}</strong><span>{addressText(stop)}</span></li>)}<li className="food-delivery-stop"><strong>Giao đến</strong><span>{addressText(tracking.address)}</span></li></ol> : null}<XOneMap origin={origin} destination={destination} current={current} driver={current} routeGeometry={tracking.delivery_route?.geometry} routeProvider={tracking.delivery_route?.provider} routeStatus={tracking.status} routeDistanceMeters={tracking.delivery_route?.distance_meters} routeDurationSeconds={tracking.delivery_route?.duration_seconds} label="Theo dõi giao hàng" /></> : null}
   </section>;
 }
 
@@ -86,6 +87,12 @@ function text(value: Record<string, unknown> | null | undefined, fallback: strin
   if (!value) return fallback;
   for (const key of ["name", "display_name", "full_name"]) if (typeof value[key] === "string" && value[key].trim()) return value[key] as string;
   return fallback;
+}
+
+function addressText(value: Record<string, unknown> | null | undefined): string {
+  if (!value) return "Địa chỉ đang cập nhật";
+  for (const key of ["address", "address_text", "location"]) if (typeof value[key] === "string" && value[key].trim()) return value[key] as string;
+  return "Địa chỉ đang cập nhật";
 }
 
 function foodStatus(status?: string): string { return status ? statusLabel(status) : "Đang cập nhật"; }

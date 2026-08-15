@@ -40,17 +40,17 @@
 .composer-box textarea::placeholder { color: #8394A5; }
 .send-button { display: grid; width: 36px; height: 36px; place-items: center; flex: 0 0 auto; color: var(--color-surface); background: var(--color-primary); border: 0; border-radius: 8px; transition: background-color 150ms ease; }
 .send-button:not(:disabled):hover { background: var(--color-primary-strong); }
-.context-rail { position: sticky; top: 24px; display: grid; gap: 12px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-tight); }
-.context-rail-heading { display: grid; gap: 5px; padding-bottom: 2px; }
+.context-rail { position: sticky; top: 24px; display: grid; align-self: start; align-content: start; gap: 12px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-tight); }
+.context-rail-heading { display: grid; align-content: start; gap: 5px; padding-bottom: 2px; }
 .context-rail-heading h2 { margin: 0; color: var(--color-navy); font-size: 0.96rem; letter-spacing: -0.03em; }
 .context-rail-heading p { margin: 0; color: var(--color-muted); font-size: 0.71rem; line-height: 1.5; }
 .context-rail-active { border-color: #BBD5FF; }
 .context-rail-recovery { border-color: #EDC5C0; }
 .context-rail-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 35px; padding: 7px 9px; color: var(--color-primary-strong); background: var(--surface-ice); border: 1px solid #C9D8FA; border-radius: 7px; font-size: 0.68rem; font-weight: 760; }
 .context-rail-action:hover { color: var(--color-navy); border-color: var(--color-primary); }
-.active-ride-rail-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 11px; background: #F4F8FF; border: 1px solid #D7E3FC; border-radius: 9px; }
+.active-ride-rail-card { display: grid; align-content: start; align-self: start; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 11px; background: #F4F8FF; border: 1px solid #D7E3FC; border-radius: 9px; }
 .active-ride-rail-icon { display: grid; width: 30px; height: 30px; place-items: center; color: var(--color-primary-strong); background: #E2EBFF; border-radius: 8px; }
-.active-ride-rail-card > div:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
+.active-ride-rail-card > div:nth-child(2) { display: grid; align-content: start; gap: 3px; min-width: 0; }
 .active-ride-rail-card strong { color: var(--color-navy); font-size: 0.72rem; }
 .active-ride-rail-card span,
 .active-ride-rail-card small { color: var(--color-muted); font-size: 0.64rem; line-height: 1.4; }
@@ -97,6 +97,10 @@
 .detail-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; padding: 1px; margin-top: 12px; overflow: hidden; background: #E3EBF0; border: 1px solid #E3EBF0; border-radius: 8px; }
 .detail-item { display: grid; gap: 5px; padding: 9px; background: var(--color-surface); }
 .card-note { display: flex; align-items: flex-start; gap: 6px; margin: 11px 0 0; color: var(--color-muted); font-size: 0.71rem; line-height: 1.5; }
+.restaurant-confirmation-form { display: grid; gap: 10px; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--color-border); }
+.restaurant-confirmation-form label { display: flex; align-items: flex-start; gap: 8px; color: var(--color-ink); font-size: 0.71rem; line-height: 1.45; }
+.restaurant-confirmation-form input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--color-primary); }
+.restaurant-confirmation-form .card-action { justify-self: start; }
 .action-list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
 .card-action { min-height: 34px; padding: 7px 11px; color: var(--color-surface); background: var(--color-primary); border-color: var(--color-primary); }
 .card-action:hover { color: var(--color-surface); background: var(--color-primary-strong); border-color: var(--color-primary-strong); }
@@ -140,7 +144,7 @@
 }
 
 .context-empty-state { padding: 10px 0 4px; margin: 0; color: var(--color-muted); font-size: 0.74rem; line-height: 1.5; }
-.active-work-list { display: grid; gap: 9px; }
+.active-work-list { display: grid; align-content: start; gap: 9px; }
 .active-ride-rail-card .text-link { justify-self: start; border: 0; background: transparent; }
 .assistant-page { width: 100%; height: 100%; margin: 0 auto; }
 .assistant-page > .assistant-header { display: none; }
@@ -173,3 +177,35 @@
 .option-image.compact { width: 52px; height: 44px; }
 .service-image-fallback { display: grid; place-items: center; color: var(--color-muted-soft); font-size: 0.61rem; text-align: center; }
 .ride-detail-action { margin-top: 12px; }
+.food-cart-dock { position: sticky; z-index: 3; bottom: 0; margin-top: 11px; background: var(--color-surface); border: 1px solid #C9D8FA; border-left: 3px solid var(--accent-food); border-radius: 10px; box-shadow: 0 -8px 20px rgb(10 37 64 / 8%); }
+.food-cart-dock-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.food-cart-dock-heading h2 { margin: 3px 0 0; color: var(--color-navy); font-size: 0.82rem; }
+.food-cart-count { color: var(--color-muted); font-size: 0.66rem; }
+.food-cart-items { display: grid; gap: 7px; max-height: 190px; overflow-y: auto; }
+.food-cart-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.food-cart-row-copy { display: grid; gap: 3px; min-width: 0; }
+.food-cart-row-copy strong { overflow: hidden; color: var(--color-ink); font-size: 0.71rem; text-overflow: ellipsis; white-space: nowrap; }
+.food-cart-row-copy span,
+.food-cart-row-copy small { overflow: hidden; color: var(--color-muted); font-size: 0.61rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.food-cart-row-copy b { color: var(--color-navy); font-size: 0.66rem; }
+.food-cart-row-actions { display: grid; justify-items: end; gap: 6px; }
+.cart-remove-button { display: inline-grid; width: 25px; height: 25px; place-items: center; color: var(--color-danger); background: transparent; border: 1px solid #EFC7C1; border-radius: 5px; }
+.food-cart-dock-footer { display: flex; align-items: center; gap: 9px; min-height: 52px; padding: 0 12px; color: var(--color-muted); font-size: 0.68rem; }
+.food-cart-dock-footer strong { margin-right: auto; color: var(--color-navy); font-size: 0.76rem; }
+.food-cart-dock-footer .card-action { min-height: 32px; padding: 6px 9px; }
+.food-option-quantity input { width: 34px; min-height: 25px; padding: 2px; color: var(--color-navy); font: inherit; text-align: center; background: #fff; border: 0; outline: 0; }
+.food-option-quantity input::-webkit-inner-spin-button,
+.food-option-quantity input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.food-confirmation-form { display: grid; gap: 10px; margin-top: 12px; padding: 11px; background: #fbfcfd; border: 1px solid #dce8ef; border-radius: 9px; }
+.food-confirmation-form label { display: flex; gap: 7px; align-items: flex-start; color: var(--color-ink); font-size: 0.7rem; line-height: 1.45; }
+.food-confirmation-items { display: grid; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.food-confirmation-items li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 7px; font-size: 0.69rem; }
+.food-confirmation-items strong { color: var(--color-navy); white-space: nowrap; }
+.food-pickup-stops { display: grid; gap: 7px; padding: 0; margin: 10px 0; list-style: none; }
+.food-pickup-stops li { display: grid; gap: 2px; padding: 8px 10px; border-left: 3px solid var(--accent-food); background: #fbfcfd; border-radius: 6px; }
+.food-pickup-stops span { color: var(--color-muted); font-size: 0.68rem; }
+.food-delivery-stop { border-left-color: var(--accent-success, #1f9d68) !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .food-cart-dock { scroll-behavior: auto; }
+}

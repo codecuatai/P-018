@@ -12,6 +12,7 @@ import {
 
 export type JsonObject = Record<string, unknown>;
 
+
 export class UpstreamClientError extends HttpException {
   constructor(public readonly code: string, public readonly retryable: boolean, message: string, status: number) {
     super({ code, detail: message, retryable }, status);
@@ -113,6 +114,19 @@ export type ServiceCallContext = {
   correlationId: string;
   workflowId?: string;
   toolCallId?: string;
+};
+
+const rideBookingCancelProfile: OperationProfile = {
+  serviceId: 'ride-service',
+  operationId: 'ride.booking.cancel',
+  contractVersion: 'v1',
+  risk: 'REVERSIBLE_WRITE',
+  maxAttempts: 2,
+  perAttemptTimeoutMs: 5_000,
+  totalTimeoutMs: 11_000,
+  retryableStatuses: [408, 429, 502, 503, 504],
+  retryableDomainCodes: [],
+  retryAfterCapMs: 2_000,
 };
 
 abstract class InternalServiceClient {
@@ -394,6 +408,23 @@ export class RideClient extends InternalServiceClient {
       { method: 'POST', body: serializedBody },
       writeHeaders(actorId, idempotencyKey),
       operationProfile('ride.booking.confirm'),
+      (value) => parseBooking(envelopeData(value)),
+    );
+  }
+
+  async cancelBooking(
+    actorId: string,
+    idempotencyKey: string,
+    callContext: ServiceCallContext,
+    bookingId: string,
+    serializedBody: string,
+  ): Promise<RideBooking> {
+    return this.request(
+      '/v1/bookings/' + encodeURIComponent(bookingId) + ':cancel',
+      callContext,
+      { method: 'POST', body: serializedBody },
+      writeHeaders(actorId, idempotencyKey),
+      rideBookingCancelProfile,
       (value) => parseBooking(envelopeData(value)),
     );
   }
