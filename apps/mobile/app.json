@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "X-One",
+    "slug": "xone-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#182230"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.xone.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#182230"
+      },
+      "package": "com.xone.mobile"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    }
+  }
+}
