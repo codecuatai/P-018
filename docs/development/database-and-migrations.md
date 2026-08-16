@@ -19,7 +19,8 @@ migration 011 persists multi-service workflow plans and step idempotency;
 migration 012 adds Product/Ops records and migration 013 adds idempotency
 evidence for Admin support updates.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
-`0001` through `0005`; Healthcare owns SQL migrations `001` through `005`; and
+`0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
+`003a`, `004`, and `005`; and
 Ride owns its Alembic revisions through `20260814_0005_route_geometry`. Each owner
 controls its own data boundary.
 
@@ -37,7 +38,7 @@ repair state.
 | --- | --- | --- |
 | Core/Gateway | `001` through `013` SQL | `014` or greater, additive SQL |
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
-| Healthcare | `001` through `005` SQL | `006` or greater, additive SQL |
+| Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
 | Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
 | Ride | Alembic through `20260814_0005_route_geometry` | a new Alembic revision from `head` |
 
