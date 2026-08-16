@@ -48,4 +48,22 @@ for `/api/v1/status`; it never reports keys or raw prompts.
 
 `xone_agent` may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The LLM never determines price, availability, payment, or booking/order success.
 
+## Checked-in graphs and boundaries
+
+| File | Role |
+| --- | --- |
+| `src/agents/assistant_graph.py` | Top-level unified planner returning `AssistantPlan` |
+| `src/agents/graph.py` | Food ordering graph |
+| `src/agents/ride_graph.py` | Ride quote and booking graph |
+| `src/agents/restaurant_graph.py` | Restaurant reservation graph |
+| `src/agents/healthcare_graph.py` | Healthcare department/slot/hold graph |
+| `src/agents/nodes/restaurant_node.py` | Restaurant node reused by the planner |
+| `src/agents/policies/tool_policy.py`, `policies/healthcare_policy.py` | Risk and tool-eligibility policy |
+| `src/agents/{intent,reference_resolution,option_resolution,tool_selection,tool_ids,state}.py` | Pure, unit-testable decision boundaries |
+| `src/model/adapter.py`, `src/model/gemini_adapter.py`, `src/services/llm.py` | Isolated model adapter layer, mocked by default in tests |
+| `src/services/gateway.py` | The only outbound path — `GET /internal/tools`, `POST /internal/tools/execute` |
+| `src/api/routes.py`, `src/api/dependencies.py` | Internal `/api/v1` surface and internal-token dependency |
+
+There is one agent process with several graphs, not several agents — see [ADR 0004](../adr/0004-one-agent-tool-gateway.md).
+
 User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.

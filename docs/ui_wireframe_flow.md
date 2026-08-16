@@ -1,9 +1,11 @@
 # X-One Web — Wireframe & UI Flow
 
 Tài liệu này mô tả pre-demo frontend trong `apps/web/`. Web là một client mỏng
-gọi NestJS API Gateway tại `http://localhost:3000`; không gọi Agent, domain service
-hoặc database trực tiếp. Bốn capability hiển thị trong UI là Ride, Food,
-Restaurant và Healthcare.
+gọi NestJS API Gateway; không gọi Agent, domain service hoặc database trực tiếp.
+Base URL lấy từ `import.meta.env.VITE_API_URL`, fallback `http://localhost:3000`
+(`apps/web/src/api.ts`); bản build trong Compose được truyền
+`VITE_API_URL=${WEB_API_URL:-/api}` nên dùng đường dẫn tương đối `/api` qua Nginx.
+Bốn capability hiển thị trong UI là Ride, Food, Restaurant và Healthcare.
 
 ## Information architecture
 
@@ -23,12 +25,13 @@ flowchart TB
     Result --> Activity[Hoạt động trong phiên]
 ```
 
-App shell có tối đa bốn khu vực:
+App shell (`apps/web/src/App.tsx`) có đúng **ba** view điều hướng, không có tab "Dịch vụ" riêng:
 
-1. **Trợ lý** — màn hình mặc định, chat-first, hiển thị các card trong cùng cuộc trò chuyện.
-2. **Dịch vụ** — các card Ride/Food/Restaurant/Healthcare xuất hiện theo yêu cầu, không có tab/service selector tách riêng.
-3. **Hoạt động** — chỉ các kết quả đã được Gateway xác nhận trong browser session hiện tại.
-4. **Tài khoản** — identity từ `/api/v1/auth/me`, trạng thái phiên và đăng xuất.
+1. **Trò chuyện** (`assistant`) — màn hình mặc định, chat-first. Các card Ride/Food/Restaurant/Healthcare xuất hiện ngay trong cuộc trò chuyện này theo yêu cầu, không có service selector tách riêng.
+2. **Hoạt động gần đây** (`activity`) — chỉ các kết quả đã được Gateway xác nhận trong browser session hiện tại, giữ tối đa 40 mục trong state.
+3. **Tài khoản** (`account`) — identity từ `GET /api/v1/auth/me`, trạng thái phiên và đăng xuất.
+
+Sidebar có nút **Cuộc trò chuyện mới** (reset `chatKey`) và identity card + **Đăng xuất**. Trên mobile, ba view đó chuyển thành bottom navigation với nhãn ngắn (`Trò chuyện` / `Hoạt động` / `Tài khoản`).
 
 ## Authentication
 
@@ -53,17 +56,16 @@ frontend xóa phiên và quay lại màn hình đăng nhập.
 ## X-One Assistant
 
 ```text
-+----------------------+-------------------------------------------+
-| X-One                | Backend ●       [Phiên mới]              |
-| [Trợ lý]             | Bạn muốn làm gì hôm nay?                  |
-| [Dịch vụ]            | Các card Ride/Food/Restaurant/Healthcare   |
-| [Hoạt động]          +-------------------------------------------+
-| [Tài khoản]          | Chat bubbles                              |
-|                      | Authoritative workflow card               |
-| identity + logout    |                                           |
-|                      +-------------------------------------------+
-|                      | Composer [Nhập yêu cầu…]          [Send]  |
-+----------------------+-------------------------------------------+
++----------------------------+-------------------------------------------+
+| X-One  Trợ lý hằng ngày    | Bạn muốn làm gì hôm nay?                  |
+| [+ Cuộc trò chuyện mới]    | Các card Ride/Food/Restaurant/Healthcare  |
+| [Trò chuyện]               +-------------------------------------------+
+| [Hoạt động gần đây]        | Chat bubbles                              |
+| [Tài khoản]                | Authoritative workflow card               |
+|                            |                                           |
+| identity + Đăng xuất       +-------------------------------------------+
+|                            | Composer [Nhập yêu cầu…]          [Send]  |
++----------------------------+-------------------------------------------+
 ```
 
 Tin nhắn có role, domain, timestamp và payload cấu trúc tùy chọn. Text luôn được
@@ -167,11 +169,12 @@ backend; không tự suy đoán availability hoặc giá.
 
 ## Loading, error và offline
 
-- Header gọi `GET /health/ready` và chỉ hiện xanh sau khi nhận response healthy.
+- Không có backend-status indicator: `apps/web/src/` không gọi `GET /health/ready` ở đâu cả. Sức khỏe stack là việc của launcher (`scripts/start-all.*`), không phải của header. Đừng mô tả một đèn xanh "Backend ●" trong UI vì nó không tồn tại.
 - Mỗi lượt gửi có typing state; nút confirmation bị khóa trong lúc request chạy.
-- Error hiển thị code/detail an toàn, không hiển thị stack trace hoặc object thô.
+- Error hiển thị code/detail an toàn, không hiển thị stack trace hoặc object thô. `api.ts` nhận diện `ACTION_NOT_AVAILABLE`, `SELECTION_EXPIRED`, `IDEMPOTENCY`, `NO LONGER AVAILABLE` để đưa ra thông báo an toàn.
 - Retry giữ message và confirmation/idempotency key cần thiết.
 - Một lỗi không xóa các message hoặc kết quả trước đó.
+- Gateway trả `401` ⇒ `api.ts` xóa token khỏi `sessionStorage` và app quay về màn hình đăng nhập.
 
 ## Hoạt động trong phiên
 
@@ -181,9 +184,9 @@ tài khoản đầy đủ. Không có booking/order giả từ local state.
 
 ## Responsive direction
 
-- Desktop: sidebar, chat chính, context card bên phải.
-- Tablet/mobile: một cột, selector có thể cuộn ngang, composer ở cuối, navigation
-  chuyển thành bottom navigation.
+- Desktop: sidebar cố định, chat chính, card render trong luồng hội thoại.
+- Tablet/mobile: một cột, `mobile-header` gọn ở trên, composer ở cuối, navigation
+  chuyển thành bottom navigation ba mục.
 - UI dùng system font, nền slate trung tính, surface trắng, border 1px, radius
   vừa phải và icon Lucide; không phụ thuộc font network hay ảnh minh họa.
 

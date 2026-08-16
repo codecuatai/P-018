@@ -84,15 +84,17 @@ uvicorn src.main:app --reload
 
 ## Deliverables Checklist
 
-- [x] Source Code (GitHub)
-- [x] README.md
-- [x] Architecture Diagram (`docs/architecture_diagram.md`)
-- [x] AI Logs (auto-collected)
+_Template form — leave these unchecked here. The authoritative status of this repository's deliverables is [docs/project-status.md](docs/project-status.md) and [current architecture state](docs/architecture/current-state.md); do not read the boxes below as a claim about X-One._
+
+- [ ] Source Code (GitHub)
+- [ ] README.md
+- [ ] Architecture Diagram (`docs/architecture_diagram.md`)
+- [ ] AI Logs (auto-collected)
 - [ ] Live URL / Deploy
 - [ ] Video Demo
 - [ ] Pitch Deck (`presentation/`)
-- [x] Weekly Journal (`JOURNAL.md`)
-- [x] Worklog (`WORKLOG.md`)
+- [ ] Weekly Journal (`JOURNAL.md`)
+- [ ] Worklog (`WORKLOG.md`)
 - [ ] Evaluation Evidence (`eval/results/`)
 
 ## Team

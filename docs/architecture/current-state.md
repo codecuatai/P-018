@@ -1,6 +1,6 @@
 # Current Architecture State
 
-This is the canonical, filesystem-backed source of truth for X-One's implementation status. It describes the repository as inspected on 2026-08-09; roadmap diagrams and legacy course material do not change a status below.
+This is the canonical, filesystem-backed source of truth for X-One's implementation status. Structure, ownership, ports, routes, migrations, and command surface were last re-verified against the checked-in files on 2026-08-16. The runtime numbers under [Verification observed in this audit](#verification-observed-in-this-audit) are the recorded evidence of the 2026-08-09 execution pass and are not re-run by a documentation-only update. Roadmap diagrams and legacy course material do not change a status below.
 
 ## Status vocabulary
 
@@ -34,11 +34,13 @@ Logical ownership is mandatory: each domain owns its schema/tables, migrations, 
 | Ride service | implemented (simulation slice) | services/ride-service/src/{main.py,api/rides.py,application/ride_service.py,domain/ride.py,infrastructure/,repositories/}, migrations/versions/20260806_0001_ride_simulation.py, tests/ | Deterministic PostgreSQL-backed quote/booking lifecycle is local/demo-only; Gateway owns public orchestration and two explicit confirmations. |
 | Restaurant service | implemented (partial vertical slice) | services/restaurant-service/src/main.py, src/api/v1/, src/infrastructure/, migrations/versions/0001_restaurant_booking.py, migrations/versions/0002_restaurant_idempotency_records.py, migrations/versions/0003_restaurant_legacy_idempotency_backfill.py, seeds/seed.py, tests/test_restaurant_service.py, tests/test_contract_parity.py | PostgreSQL-backed discovery, availability, holds, reservation create/read/update/cancel, durable actor/operation/key replay evidence, additive legacy backfill/runtime promotion, actor auth, and structured response envelope are wired; Gateway/Agent currently orchestrate search/availability/hold/proposal/final create only. Confirmation evidence is owned by Gateway; generated clients remain intentionally absent. |
 | Healthcare service | implemented (local booking slice) | services/healthcare-service/src/{main.py,api/routes.py,config.py,database.py,models/medical.py}, migrations/{001_healthcare_booking.sql,002_healthcare_slot_reuse.sql,003_healthcare_provider_catalog.sql}, seeds/{seed_medical.py,import_healthcare_csv.py}, tests/{test_contract_parity.py,test_medical_schema.py,test_postgres_slot_reuse.py,test_routes.py} | PostgreSQL-backed facility/department/doctor catalog and appointment state, actor-scoped holds/payment acknowledgement/cancel, required idempotency, explicit final confirmation, expiry reconciliation, active-slot reuse, and facility metadata returned per provider are wired. Imported doctors without a source consultation price remain discoverable but cannot be held until priced. Payment is a local acknowledgement adapter and is not a provider refund; production provider integration is out of scope. |
+| Healthcare provider sandbox | skeleton (not deployed) | services/healthcare-sandbox/{requirements.txt,src/main.py} | Standalone FastAPI mock of an external clinic provider with hard-coded Vietnamese departments/doctors and an in-memory idempotency store. It has no Dockerfile, no tests, no migrations, and no `docker-compose.yml` entry, and nothing in the running stack calls it. It is a local experiment surface only and is not part of the Healthcare service boundary. |
 | Food service | implemented (vertical slice) | services/food-service/src/application/food_service.py, src/domain/quotes.py, src/api/food.py, src/repositories/food.py, migrations 001-005, seeds/{001_demo_hanoi.sql,import_food_csv.py}, tests/ | PostgreSQL adapter recomputes the canonical quote under cart/catalog/address/voucher locks, exposes actor-scoped address discovery, enforces actor-owned resources, cart/order idempotency, voucher eligibility, transition operation idempotency, due workflow claims, driver locks, and immutable event tables. The CSV importer has populated the local catalog with 239 restaurants and 17,357 menu items using source-ID upserts; source records use explicitly marked approximate Hanoi-center coordinates because the source CSV has no coordinates. |
 | Tool/OpenAPI contracts and generated TS clients | implemented (four-domain plus unified assistant contract) | packages/contracts/tools/{tool-request.schema.json,ride-tool-request.schema.json}, packages/contracts/openapi/{food-vertical-slice.yaml,gateway-food-vertical-slice.yaml,restaurant-service-v1.yaml,healthcare-service-v1.yaml,gateway-v1.yaml,agent-service.v1.yaml,ride-service.v1.yaml,gateway-public.v1.yaml} | `gateway-v1.yaml` documents `/api/v1/assistant/chat` and `/api/v1/assistant/actions`; generated clients remain ungenerated because the typed Gateway adapters are hand-owned transport code. |
 | Local Compose and database bootstrap | implemented | docker-compose.yml, .env.example, infra/postgres/init/01-create-databases.sh, scripts/validate-env-config.py | All seven application containers plus PostgreSQL build from the checked Compose file; bootstrap still runs only for a new postgres_data volume. |
-| Migrations and seeds | implemented (four domain slices) | Core migration 001-008, Food migration 001-005, Restaurant Alembic revisions 0001-0003, Healthcare SQL migrations 001-002, Ride Alembic revision, deterministic Food/Restaurant/Healthcare seeds and additive Food/Healthcare CSV importers, scripts/migrate.{ps1,sh}, scripts/seed.{ps1,sh} | Each owner keeps its migration boundary; root helpers apply all current migrations and deterministic seeds without deleting the existing volume. PowerShell Food seeding preserves UTF-8 catalog data. |
+| Migrations and seeds | implemented (four domain slices) | Core SQL migrations 001-008, Food SQL migrations 001-005, Healthcare SQL migrations 001-003, Restaurant Alembic revisions 0001-0003, Ride Alembic revision 20260806_0001, deterministic Food/Restaurant/Healthcare seeds and additive Food/Healthcare CSV importers, scripts/migrate.{ps1,sh}, scripts/seed.{ps1,sh}, scripts/check-migration-parity.py | Each owner keeps its migration boundary and its own migration style: Core, Food, and Healthcare apply ordered raw `.sql` files, while Restaurant and Ride use Alembic revisions. Root helpers apply all current migrations and deterministic seeds without deleting the existing volume. PowerShell Food seeding preserves UTF-8 catalog data. |
 | Automated tests and CI | implemented (local integrated scope) | services/{food-service,restaurant-service,healthcare-service,ride-service}/tests/, apps/{api-gateway,agent-service}/test*/, apps/web/package.json, .github/workflows/ci-cd.yml | Local service tests, Gateway lint/build/Jest, Agent pytest/Ruff, application Python Ruff, and Web production build pass; dedicated PostgreSQL tests remain environment-dependent, while the disposable live proof is recorded below. |
+| Evaluation harness | planned | eval/results/report.md | Only `eval/results/report.md` is tracked; no evaluation runner, dataset, or scoring code exists in the repository. The report's metrics are correctly recorded as `not measured`. |
 | Deployment | implemented (staging automation) | .github/workflows/ci-cd.yml, docker-compose.yml, apps/web/Dockerfile | Successful `staging` push checks can deploy the exact tested commit to `/opt/xone` over SSH; Compose builds and starts the Web image with `/api` as its Gateway base URL alongside the backend stack. The VPS, repository checkout, `.env`, GitHub environment, and secrets remain externally operated. No production deployment pipeline is claimed. |
 
 ## Intended ownership and deployment reading
@@ -67,6 +69,10 @@ The checked repository has separate runtime entrypoints for the listed component
 - packages/shared-config/ is limited to small reference configuration such as currency, timezone, service type, and common error code - never ORM, database access, business logic, or secrets.
 - infra/postgres/init/ is local PostgreSQL bootstrap only. It is not a service migration runner. Service-owned migrations/ and seeds/ run migration first, then deterministic seed data when those implementations exist.
 - Root tests/ is reserved for cross-service unit/integration/contract/e2e/evaluation suites; live public E2E coverage is split between tests/e2e/test_food_vertical_slice.py, tests/e2e/test_four_domain_workflows.py, and tests/e2e/test_unified_assistant.py.
+- services/healthcare-sandbox/ is the one directory under services/ that is not a deployable domain owner. It is an unwired standalone mock of an external clinic provider, absent from Compose and CI, and must not be treated as the Healthcare boundary.
+- scripts/ mixes two unrelated concerns: platform helpers (start-all, setup-env, migrate, seed, dev, test, validate-env-config, check-migration-parity) and the course AI-usage logging tooling (log_*.py, submit_log.py, setup_hooks.*, _pyrun.*). The logging tooling is hook-managed; see [.agents/rules/ai-log-hook.md](../../.agents/rules/ai-log-hook.md).
+- eval/ currently tracks only results/report.md. There is no evaluation runner in the repository, so any coverage/accuracy figure is `not measured` until one exists.
+- presentation/ currently tracks only README.md. The pitch deck and demo video it describes are not in the repository.
 
 ## Local development facts
 
@@ -74,25 +80,33 @@ Root .env.example is the Compose source of truth. Compose uses explicit mappings
 
 | Service | Compose name | Host/container port in the checked example | Health endpoints |
 | --- | --- | --- | --- |
-| Web | web | 8080:80 (host loopback only) | `/` (Nginx SPA) |
-| Gateway | api-gateway | 3000:3000 | /health/live, /health/ready |
-| Agent | agent-service | 8001 internal only (expose) | /health/live, /health/ready |
-| Ride | ride-service | 8101 internal only (expose) | /health/live, /health/ready |
-| Restaurant | restaurant-service | 8102 internal only (expose) | /health/live, /health/ready |
-| Healthcare | healthcare-service | 8103 internal only (expose) | /health/live, /health/ready |
-| Food | food-service | 8104 internal only (expose) | /health/live, /health/ready |
-| PostgreSQL | postgres | 5432 internal only | container pg_isready |
+| Web | web | `127.0.0.1:${WEB_PORT:-8080}:80` (host loopback only) | `/` (Nginx SPA) |
+| Gateway | api-gateway | `${API_GATEWAY_PORT}:3000` | /health/live, /health/ready |
+| Agent | agent-service | 8001, internal only — declares `expose: ["8001"]` | /health/live, /health/ready |
+| Ride | ride-service | 8101, internal only — declares no `ports:` and no `expose:` | /health/live, /health/ready |
+| Restaurant | restaurant-service | 8102, internal only — declares no `ports:` and no `expose:` | /health/live, /health/ready |
+| Healthcare | healthcare-service | 8103, internal only — declares no `ports:` and no `expose:` | /health/live, /health/ready |
+| Food | food-service | 8104, internal only — declares `expose: ["8104"]` | /health/live, /health/ready |
+| PostgreSQL | postgres | `5432:5432` — the one backing service published to the host | container `pg_isready` |
 
-The repository provides these local commands:
+Only `web`, `api-gateway`, and `postgres` declare `ports:`. The five internal services take their listening port from `SERVICE_PORT`, so the numbers above are the configured container ports, not host bindings; `expose:` is declarative documentation in Compose and its absence on Ride/Restaurant/Healthcare does not block container-to-container calls on the `xone_internal` network.
+
+The checked launcher is the primary local path; it validates configuration, builds Compose, waits for PostgreSQL and every application health check, applies idempotent migrations, verifies Gateway readiness, and only then starts the Web dev server:
+
+    ./scripts/start-all.ps1                 # add -SeedDemo for deterministic demo data
+    ./scripts/start-all.sh                  # add --seed-demo for deterministic demo data
+
+The individual steps the launcher composes are also runnable on their own:
 
     ./scripts/setup-env.ps1
     docker compose up --build
     python scripts/validate-env-config.py
+    python scripts/check-migration-parity.py
     docker compose --env-file .env.example config --quiet
     ./scripts/migrate.ps1 .env.example
     ./scripts/seed.ps1 .env.example
 
-The equivalent shell helpers are scripts/setup-env.sh, scripts/migrate.sh, and scripts/seed.sh; migration/seed helpers accept an optional env-file path as their first argument. Food and Gateway /health/ready report the database/worker dependencies they actually check; they are not a substitute for the full cross-service smoke flow.
+The equivalent shell helpers are scripts/setup-env.sh, scripts/migrate.sh, and scripts/seed.sh; migration/seed helpers accept an optional env-file path as their first argument. `scripts/dev.{ps1,sh}` and `scripts/test.{ps1,sh}` are thin developer wrappers, and the root `package.json` exposes `build:gateway`, `test:gateway`, `check:agent`, `compose:config`, and `test:e2e`. Food and Gateway /health/ready report the database/worker dependencies they actually check; they are not a substitute for the full cross-service smoke flow.
 
 ## Verification observed in this audit
 
@@ -107,7 +121,7 @@ For this evidence-only pass, the four required service commands and their collec
 
 These are BASE SUITES counts only; Ruff, targeted PostgreSQL, public E2E, and live Gemini evidence are not added to them. Previously recorded Agent, Gateway, and Web checks remain separate and unchanged. No existing `p-018` volume was deleted.
 
-Source reconciliation used repository root `C:/Users/ADMIN/Personal_proj/AIBuildPhase/P-018`, HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367`, and the captured dirty working-tree status. Every collected service test source is under that root and tracked; no untracked/ignored/outside-root test source contributes to the counts. The apparent `develop.xml` result `21/7/18/18` omitted the content blocks for the four tracked service `tests/test_config.py` files even though its directory index lists them. Those files contribute exactly Food `+4`, Ride `+3`, Restaurant `+3`, and Healthcare `+4`, yielding reproducible repository collection `25/10/21/22`. Exact node IDs and tracked-source proof are recorded in [Testing Strategy](../development/testing-strategy.md). No test was modified for reconciliation.
+Source reconciliation for that pass ran from the repository root at HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367` with the captured dirty working-tree status. Every collected service test source is tracked and inside the repository root; no untracked/ignored/outside-root test source contributes to the counts. The apparent `develop.xml` result `21/7/18/18` omitted the content blocks for the four tracked service `tests/test_config.py` files even though its directory index lists them. Those files contribute exactly Food `+4`, Ride `+3`, Restaurant `+3`, and Healthcare `+4`, yielding reproducible repository collection `25/10/21/22`. Exact node IDs and tracked-source proof are recorded in [Testing Strategy](../development/testing-strategy.md). No test was modified for reconciliation.
 
 ### TARGETED POSTGRESQL
 

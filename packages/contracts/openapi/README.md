@@ -1,24 +1,34 @@
 # OpenAPI Contracts
 
-Versioned OpenAPI descriptions belong here. The Restaurant Service business contract is captured in `restaurant-service-v1.yaml`; generated clients must be produced from this contract and never hand-edited.
+Versioned OpenAPI descriptions live here. Generated clients must be produced from these contracts and never hand-edited.
 
-The Gateway's Restaurant walking slice is `POST /api/v1/restaurant-workflows/chat` followed by `POST /api/v1/restaurant-workflows/confirm`. The first request may prepare a hold and a pending final confirmation; only the explicit confirmation endpoint can call `POST /v1/reservations`, with actor/workflow validation and the original idempotency key.
+## Checked-in contracts
 
-Healthcare uses the same Gateway-only orchestration boundary at
-`POST /api/v1/healthcare-workflows/chat`. The agent emits typed department,
-slot, hold, cancel, or final-confirmation requests; the Gateway dispatches only
-read and reversible requests. A held appointment is paid through the existing
-Healthcare payment acknowledgement endpoint, then final confirmation is stored
-and executed only through `POST /api/v1/healthcare-workflows/confirm`.
+Note the inconsistent naming — some files use `-v1`, some use `.v1`. Reference them exactly as listed:
 
-The Ride contracts are captured in `agent-service.v1.yaml`, `ride-service-v1.yaml`,
-and `gateway-public.v1.yaml`; they describe the internal typed interpretation and
-the two Gateway confirmation boundaries. The current Gateway uses small typed
-adapters with runtime response validation. No generated-client toolchain is
-configured yet; do not hand-edit generated output when one is introduced.
+| File | Describes |
+| --- | --- |
+| `gateway-v1.yaml` | The public Gateway surface, including the unified `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/actions` |
+| `gateway-public.v1.yaml` | Public Gateway confirmation boundaries |
+| `gateway-food-vertical-slice.yaml` | The Gateway side of the Food ordering slice |
+| `food-vertical-slice.yaml` | The Food service boundary |
+| `restaurant-service-v1.yaml` | The Restaurant service business contract |
+| `healthcare-service-v1.yaml` | The Healthcare service boundary |
+| `ride-service.v1.yaml` | The Ride service boundary |
+| `agent-service.v1.yaml` | The Agent's internal typed interpretation surface |
 
-`tool-request.schema.json` is the canonical cross-language ToolRequest shape:
-`tool_name`, `risk_level`, `arguments`, `workflow_id`, `tool_call_id`,
-`schema_version`, and optional `idempotency_key`. The Agent, Gateway, and
-domain contracts must not add actor credentials or executed results to that
-request.
+Ride's two Gateway confirmation boundaries are described across `agent-service.v1.yaml`, `ride-service.v1.yaml`, and `gateway-public.v1.yaml`.
+
+## Orchestration boundaries these contracts encode
+
+**Restaurant** — `POST /api/v1/restaurant-workflows/chat` then `POST /api/v1/restaurant-workflows/confirm`. The first request may prepare a hold and a pending final confirmation; only the explicit confirmation endpoint can call `POST /v1/reservations`, with actor/workflow validation and the original idempotency key.
+
+**Healthcare** — same Gateway-only boundary at `POST /api/v1/healthcare-workflows/chat`. The Agent emits typed department, slot, hold, cancel, or final-confirmation requests; the Gateway dispatches only read and reversible requests. A held appointment is paid through `POST /api/v1/healthcare-workflows/payment`, then final confirmation is stored and executed only through `POST /api/v1/healthcare-workflows/confirm`.
+
+## Generated clients
+
+No generated-client toolchain is configured. `packages/generated-ts-clients/` contains only a README because the Gateway uses small hand-owned typed adapters with runtime response validation. When a toolchain is introduced, do not hand-edit its output.
+
+## Tool schemas are not REST
+
+`packages/contracts/tools/` is a sibling directory, not part of this one. `tool-request.schema.json` is the canonical cross-language ToolRequest shape — `tool_name`, `risk_level`, `arguments`, `workflow_id`, `tool_call_id`, `schema_version`, and optional `idempotency_key` — with `ride-tool-request.schema.json` narrowing it for Ride. The Agent, Gateway, and domain contracts must not add actor credentials or executed results to that request. See [tool contracts](../../../docs/api/tool-contracts.md).

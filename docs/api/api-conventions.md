@@ -1,14 +1,16 @@
 # API Conventions
 
-Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/internal/v1`. The checked-in internal domain prefixes are currently split by the incremental slices:
+Public Gateway routes use `/api/v1`. The Gateway's only non-public prefix is `/internal/tools` (`GET /internal/tools` lists the registry, `POST /internal/tools/execute` runs one) — it is not versioned, and there is no `/internal/v1` surface. Unversioned Gateway probes are `GET /health/live` and `GET /health/ready`. The checked-in domain prefixes are still split by the incremental slices:
 
-| Boundary | Prefix |
-| --- | --- |
-| Public Gateway | `/api/v1` |
-| Restaurant Service | `/v1` |
-| Ride Service | `/v1` |
-| Food Service | `/api/v1` |
-| Healthcare Service | `/api/v1` |
+| Boundary | Prefix | Registered in |
+| --- | --- | --- |
+| Public Gateway | `/api/v1` | `apps/api-gateway/src/modules/**/*.controller.ts` |
+| Gateway tool registry (internal) | `/internal/tools` | `apps/api-gateway/src/modules/tools/tool.module.ts` |
+| Agent Service (internal only) | `/api/v1` | `apps/agent-service/src/api/` |
+| Restaurant Service | `/v1` | `services/restaurant-service` |
+| Ride Service | `/v1` | `services/ride-service` |
+| Food Service | `/api/v1` | `services/food-service` |
+| Healthcare Service | `/api/v1` | `services/healthcare-service` |
 
 This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 

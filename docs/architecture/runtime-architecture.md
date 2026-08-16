@@ -1,6 +1,6 @@
 # Runtime Architecture
 
-Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, Web, agent, Ride, Restaurant, Healthcare, and Food over the internal Compose network. The Web image builds the Vite bundle with the relative `/api` Gateway base URL and serves it from Nginx on container port 80; Compose publishes it only on the host loopback at port 8080. The default Compose publishes the Gateway on port 3000 for local API access; Agent/Food use `expose` for container-network access.
+Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, Web, agent, Ride, Restaurant, Healthcare, and Food over the internal Compose network. The Web image builds the Vite bundle with the relative `/api` Gateway base URL and serves it from Nginx on container port 80; Compose publishes it only on the host loopback at port 8080. The default Compose publishes the Gateway on port 3000 for local API access; Agent/Food use `expose` for container-network access. Ride, Restaurant, and Healthcare declare neither `ports:` nor `expose:` — Compose networking still makes them reachable container-to-container, so like Agent and Food they are internal-only. PostgreSQL is the one backing service published broadly (`5432:5432`), for local psql and migration runs.
 
 ```mermaid
 flowchart TB

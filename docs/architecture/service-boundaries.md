@@ -8,7 +8,7 @@ This is the target responsibility map, not a claim that every listed interface i
 | Agent | intent, slots, tool requests, safe language response, agent checkpoints | gateway only | call domains, pay, confirm, invent availability/prices |
 | Ride | ride availability, quotes, holds, bookings/events | gateway | access other DBs |
 | Restaurant | dine-in discovery, tables, reservation holds/lifecycle | gateway | own food delivery/orders |
-| Healthcare | appointments/availability | gateway | access core/payment data |
+| Healthcare | facilities, departments, doctors, appointment slots/holds, appointments | gateway | access core/payment data |
 | Food | merchants, menus, items, order quotes/drafts, orders/items/events | gateway | manage tables/reservations |
 
 Gateway may orchestrate multiple services, but a domain service remains authoritative for its own business invariants and state transitions. Restaurant Service = table reservation. Food Service = menu ordering and food delivery. No booking/order belongs to both services. Domain route prefixes follow the checked-in versioned contracts; current prefixes differ by incremental slice. See [API conventions](../api/api-conventions.md). Contracts, not SQL, carry cross-boundary references and snapshots.

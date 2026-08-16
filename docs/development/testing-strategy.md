@@ -1,6 +1,18 @@
 # Testing Strategy
 
-Unit tests cover application/domain code; config tests prove fail-fast process settings; API tests cover health/validation; contract tests cover versioned provider/consumer behavior; integration/E2E tests live under root `tests/`; agent evaluations cover intent/slots/tool selection and native/fallback structured-output safety. Default tests use fake LLMs and never call Gemini or a live payment/domain system. Durable Assistant receipt tests cover in-memory claim/replay/conflict semantics, retryable failure, stale lease reclaim, and an optional PostgreSQL integration path. Healthcare tests cover exact-clock matching, daypart behavior, and domain-owned facility responses. The separate live smoke is limited to a small fixed set of public scenarios and reports configured-key/provider/schema status without exposing secrets.
+Unit tests cover application/domain code; config tests prove fail-fast process settings; API tests cover health/validation; contract tests cover versioned provider/consumer behavior. Default tests use fake LLMs and never call Gemini or a live payment/domain system. Durable Assistant receipt tests cover in-memory claim/replay/conflict semantics, retryable failure, stale lease reclaim, and an optional PostgreSQL integration path. Healthcare tests cover exact-clock matching, daypart behavior, and domain-owned facility responses. The separate live smoke is limited to a small fixed set of public scenarios and reports configured-key/provider/schema status without exposing secrets.
+
+Suites live with their owner, not in one central place:
+
+| Suite | Location | Command |
+| --- | --- | --- |
+| Gateway unit/integration (Jest) | `apps/api-gateway/test/` | `pnpm test:gateway` |
+| Agent planner/graph/LLM | `apps/agent-service/tests/` | `pnpm check:agent` (Ruff + pytest) |
+| Domain service suites | `services/<name>/tests/` | `python -m pytest tests -q` from the service directory |
+| Contract parity | `services/{food,restaurant,healthcare}-service/tests/test_contract_parity.py` | part of the service suite |
+| Cross-service E2E | `tests/e2e/` | `E2E_GATEWAY_URL=http://localhost:3000 python -m pytest tests/e2e -q` |
+
+Under root `tests/`, only `e2e/` holds test code. `tests/integration/`, `tests/contract/`, and `tests/agent-evals/` are documented scaffolds containing a README and no tests — the corresponding coverage is service-owned, as their READMEs record. `eval/` has no runner at all, so product metrics stay `not measured`.
 
 Before a PR, run environment validation, Compose config, Python lint/pytest and package/import checks for changed services, gateway lint/test/build, and web build when affected. Add deterministic tests with every behavior, config, contract, or migration change.
 
@@ -17,7 +29,7 @@ For this evidence-only pass, the four required service commands and their collec
 
 These are BASE SUITES counts only. Ruff, targeted PostgreSQL, deterministic public E2E, and live Gemini evidence are separate categories. Previously recorded Agent, Gateway, and Web checks remain unchanged.
 
-The source/count contradiction is resolved. The pass ran from repository root `C:/Users/ADMIN/Personal_proj/AIBuildPhase/P-018` at HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367`, after capturing the dirty working-tree status. Disk inventory and `git ls-files` agreed for every `test_*.py` under the four service test directories: no test source was untracked, ignored, generated, symlinked outside the root, or collected from outside the root. Ignored entries were bytecode under `__pycache__` only and are not evidence.
+The source/count contradiction is resolved. The pass ran from the repository root at HEAD `6672e988c4cdd4de19a542a0ab4bacfbad216367`, after capturing the dirty working-tree status. Disk inventory and `git ls-files` agreed for every `test_*.py` under the four service test directories: no test source was untracked, ignored, generated, symlinked outside the root, or collected from outside the root. Ignored entries were bytecode under `__pycache__` only and are not evidence.
 
 `develop.xml` is the source of the lower `21/7/18/18` recount: its directory index names each service `tests/test_config.py`, but its packed file-content section omits all four files. The snapshot itself warns that packed contents may exclude files, so it is not a complete test-source authority. Git proves all four omitted files are tracked at HEAD, and the following omitted node IDs account for the complete `+4/+3/+3/+4` difference:
 

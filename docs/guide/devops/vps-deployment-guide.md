@@ -83,7 +83,7 @@ docker compose version
 
 ## 4. Khởi Tạo Cơ Sở Dữ Liệu Logic (Postgres Logical Separation)
 
-Dự án X-One yêu cầu sự cô lập dữ liệu nghiêm ngặt giữa các dịch vụ theo nguyên tắc tại [AGENTS.md](file:///d:/VIN/Projects/P-018/AGENTS.md). Ta cần tạo 6 database logic trên một cụm cơ sở dữ liệu duy nhất.
+Dự án X-One yêu cầu sự cô lập dữ liệu nghiêm ngặt giữa các dịch vụ theo nguyên tắc tại [AGENTS.md](../../../AGENTS.md). Ta cần tạo 6 database logic trên một cụm cơ sở dữ liệu duy nhất.
 
 ### 4.1. Chuẩn bị thư mục chứa dữ liệu trên VPS
 ```bash
@@ -130,7 +130,7 @@ GEMINI_API_KEY=AIzaSy...
 ```
 
 ### 4.3. Chạy Database Engine
-Khi deploy lần đầu, container Postgres sẽ tự động đọc file khởi tạo database có cấu trúc tương tự script [01-create-databases.sh](file:///d:/VIN/Projects/P-018/infra/postgres/init/01-create-databases.sh) để phân tách các role và database.
+Khi deploy lần đầu, container Postgres sẽ tự động đọc file khởi tạo database có cấu trúc tương tự script [01-create-databases.sh](../../../infra/postgres/init/01-create-databases.sh) để phân tách các role và database.
 
 ---
 
