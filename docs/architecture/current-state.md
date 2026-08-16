@@ -15,6 +15,17 @@ demo-only public authentication. Historic work evidence belongs in
 - **unverified**: source/configuration exists but this worktree has not yet
   completed the named runtime acceptance check.
 
+## Gate G2 audit snapshot - 2026-08-16
+
+The Gate G2 documentation, Compose contract, and evaluation runner were
+audited against the current filesystem. Static validation and Compose rendering
+passed after the offline deterministic default and explicit provider mapping
+changes. An isolated Compose stack was then built, migrated, seeded, and
+health-checked; seven public Gateway cases ran with 6/7 passing. Safe Agent
+diagnostics recorded a successful Gemini call without fallback. The canonical
+record is [the Gate G2 evaluation report](../../eval/results/gate-g2-mvp-eval.md);
+E02 remains an explicit assertion mismatch, not a hidden pass claim.
+
 ## Current local completion evidence - 2026-08-13
 
 The local release-candidate path is wired from Web through Gateway to the
@@ -55,8 +66,8 @@ cross-domain SQL. The Agent emits validated typed requests only and does not
 make a booking, payment or database call. Restaurant owns dine-in
 reservations; Food owns menus, food orders and delivery ordering.
 
-One physical PostgreSQL instance contains separate logical databases/owners:
-Core `xone_core`, Agent `xone_agent`, Ride `xone_ride`, Restaurant
+One physical PostgreSQL instance provisions separate logical databases/owners:
+Core `xone_core`, Agent target `xone_agent`, Ride `xone_ride`, Restaurant
 `xone_restaurant`, Healthcare `xone_healthcare` and Food `xone_food`.
 Cross-database queries, foreign keys, shared ORM models and shared domain
 business logic are prohibited.
@@ -69,9 +80,10 @@ business logic are prohibited.
 | Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | Calm task-first Vietnamese UI has route loading/error/empty/disabled states, reduced-motion handling, responsive shells, location/map panels, and tracking polling. The map is a deterministic visual snapshot, not a claim of a production map provider. |
 | Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
 | Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
+| Agent persistence | skeleton | `apps/agent-service/src/application/workflow_store.py`, `apps/agent-service/src/config.py` | `workflow_store` is process-local and no Agent persistence client/migration is wired. `xone_agent` is provisioned for target checkpoint/run metadata, so Agent state is lost on restart. |
 | Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
 | Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migration `20260812_0003_ride_lifecycle.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, and actor-scoped history. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
-| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, `apps/agent-service/tests/test_agents/test_tool_registry_parity.py` | Version-2 inventory has 46 canonical entries: 23 `IMPLEMENTED_AGENT_TOOL`, 12 `IMPLEMENTED_GATEWAY_ACTION`, and 11 `IMPLEMENTED_DOMAIN_API`. Legacy Agent aliases remain `LEGACY_COMPAT`; the Agent never executes final side effects. |
+| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, `apps/agent-service/tests/test_agents/test_tool_registry_parity.py` | Version-2 inventory has 46 canonical entries: 23 `IMPLEMENTED_AGENT_TOOL`, 12 `IMPLEMENTED_GATEWAY_ACTION`, and 11 `IMPLEMENTED_DOMAIN_API`. Active V1 compatibility paths remain and runtime→JSON parity is one-way; the Agent never executes final side effects. |
 | Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
 | Catalog data pipeline | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |
 | Recommendation + multi-service reliability | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, Core migration `011`, tests | Deterministic ranking, owning-service resource re-read, dependency/partial-success/compensation semantics, step idempotency, and durable plan readback are wired. Route-provider ETA is available for explicit routes/quotes; live browser transaction coverage passed. |
@@ -150,7 +162,7 @@ Chromium run above is the current browser evidence.
 - Playwright Chromium passed `27/27` responsive tests at 375x812, 768x1024
   and 1440x1000; live Product `2/2`, Admin `1/1`, and the real transaction
   flow `1/1` passed with browser error listeners.
-- Gemini remains unverified because no key is configured. The legacy
-  `tests/e2e` batch is not counted as acceptance evidence because it hit the
-  intentionally bounded process-local login limiter and includes slow
-  Assistant scenarios.
+- The 2026-08-16 isolated Gate G2 run provides the first private-key Gemini
+  evidence; the legacy `tests/e2e` batch is still not counted as acceptance
+  evidence because it hit the intentionally bounded process-local login
+  limiter and includes slow Assistant scenarios.

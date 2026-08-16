@@ -1,11 +1,11 @@
 # Data Architecture
 
-Local PostgreSQL uses one physical instance containing six logical databases and owners: `xone_core`/`core_user`, `xone_agent`/`agent_user`, `xone_ride`/`ride_user`, `xone_restaurant`/`restaurant_user`, `xone_healthcare`/`healthcare_user`, and `xone_food`/`food_user`.
+Local PostgreSQL provisions six logical databases and owners: `xone_core`/`core_user`, `xone_agent`/`agent_user`, `xone_ride`/`ride_user`, `xone_restaurant`/`restaurant_user`, `xone_healthcare`/`healthcare_user`, and `xone_food`/`food_user`. `xone_agent` is provisioned for the target Agent checkpoint/run-metadata boundary; the current Agent workflow store is process-local and does not connect to it.
 
 ```mermaid
 flowchart TB
   Gateway --> Core[(xone_core)]
-  Agent --> AgentDb[(xone_agent)]
+  Agent -. target only .-> AgentDb[(xone_agent)]
   Ride --> RideDb[(xone_ride)]
   Restaurant --> RestaurantDb[(xone_restaurant)]
   Healthcare --> HealthcareDb[(xone_healthcare)]

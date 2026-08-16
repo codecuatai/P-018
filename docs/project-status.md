@@ -1,5 +1,21 @@
 # Project Status
 
+## Gate G2 audit snapshot - 2026-08-16
+
+- Docker/setup and canonical documentation were hardened, including an
+  offline deterministic Agent default, optional Gemini configuration, corrected
+  Gateway host/container port semantics, optional Geoapify mappings, and
+  configurable Python service ports.
+- The detailed architecture deliverable remains under `docs/`; all evaluation
+  protocol, runner, and results now live under the root `eval/` directory.
+- Static validation, Compose rendering, migration parity, Docker build, live
+  health, migration/seed, and Gateway evaluation ran successfully. The actual
+  Gate G2 result is **PASS_WITH_FINDING (6/7)**; E02 returned an honest
+  `healthcare_no_availability` response while its assertion expects
+  `healthcare_options`. Gemini evidence is paired with safe diagnostics showing
+  `model_mode=gemini`, configured key, successful model call, and no fallback.
+  See [the canonical evaluation report](../eval/results/gate-g2-mvp-eval.md).
+
 ## Local product-completion snapshot - 2026-08-13
 
 - Phase 1-9 local runtime scope: **PASS**. Targeted HTTP and browser gates

@@ -59,9 +59,10 @@ truth for schemas, risk, owner, idempotency, confirmation, and aliases.
 Legacy Food names such as `view_menu`, `view_menu_item`, `create_cart`,
 `add_to_cart`, `preview_order`, and `track_food_order` are compatibility inputs
 mapped to the canonical definitions. They are not additional authorities and
-must not be added to new model prompts. The runtime parity test rejects a
-registry entry that is absent from the JSON inventory or has mismatched
-metadata.
+must not be added to new model prompts. The current parity test verifies that
+each JSON-inventory entry exists at runtime with matching metadata. Runtime-only
+compatibility entries are not yet rejected; a bidirectional registry-parity
+check is required before V2 can be described as the complete runtime registry.
 
 ## Ride evidence audit
 
