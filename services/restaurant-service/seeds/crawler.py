@@ -1,13 +1,14 @@
-import os
-import re
 import json
+import os
 import random
-import urllib.request
+import re
 import urllib.parse
-from datetime import datetime
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+
 from sqlalchemy import select
-from src.infrastructure.database import make_session_factory, RestaurantRow, TableRow, OpeningHourRow
+from src.infrastructure.database import OpeningHourRow, RestaurantRow, TableRow, make_session_factory
 
 # Overpass API endpoint
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
@@ -227,7 +228,7 @@ def write_files(crawled_list):
         existing_data = []
         if os.path.exists(output_path):
             try:
-                with open(output_path, "r", encoding="utf-8") as f:
+                with open(output_path, encoding="utf-8") as f:
                     existing_data = json.load(f)
             except Exception:
                 pass

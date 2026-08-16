@@ -1,6 +1,0 @@
-import { CircleCheck, CircleUserRound, LogOut, ShieldCheck } from "lucide-react";
-import type { AuthUser } from "../types";
-
-export function ProfileSettings({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
-  return <section className="account-page" aria-labelledby="account-title"><div className="section-heading"><div><span className="eyebrow">TÀI KHOẢN</span><h1 id="account-title">Tài khoản</h1><p>Thông tin tài khoản đang hoạt động trong phiên này.</p></div></div><div className="account-grid"><article className="account-card account-identity-card"><div className="large-avatar"><CircleUserRound size={30} /></div><span className="eyebrow">X-ONE</span><h2>{user.email}</h2><p>Tài khoản đang được bảo vệ trong phiên hiện tại.</p><div className="account-status"><CircleCheck size={16} /> Phiên đang hoạt động</div></article><article className="account-card"><div className="account-card-heading"><ShieldCheck size={18} /><h2>Email</h2></div><p className="account-note">{user.email}</p><p className="account-note">Thông tin đặt dịch vụ chỉ được giữ trong phiên trình duyệt hiện tại.</p><button className="button button-danger" type="button" onClick={onLogout}><LogOut size={16} /> Đăng xuất</button></article></div></section>;
-}

@@ -76,6 +76,14 @@ def quote_delivery(
     address: dict,
     config: DeliveryConfig,
 ) -> dict:
+    if any(restaurant.get(field) is None for field in ("latitude", "longitude")) or any(address.get(field) is None for field in ("latitude", "longitude")):
+        return {
+            "distance_km": None,
+            "distance_source": "address_only",
+            "fee": {"amount": config.minimum_fee, "currency": "VND"},
+            "breakdown": {"base_fee": config.base_fee, "distance_fee": 0, "long_distance_surcharge": 0},
+            "eta_minutes": config.eta_minutes,
+        }
     distance = haversine_km(restaurant["latitude"], restaurant["longitude"], address["latitude"], address["longitude"])
     if distance > config.max_distance_km:
         raise DomainError("DELIVERY_OUT_OF_RANGE", "Địa chỉ giao hàng nằm ngoài bán kính phục vụ.")
@@ -87,6 +95,53 @@ def quote_delivery(
         "fee": {"amount": fee, "currency": "VND"},
         "breakdown": {"base_fee": config.base_fee, "distance_fee": distance_fee, "long_distance_surcharge": surcharge},
         "eta_minutes": config.eta_minutes + round(distance * 2),
+    }
+
+
+def quote_multi_pickup_delivery(
+    restaurants: list[dict],
+    address: dict,
+    config: DeliveryConfig,
+) -> dict:
+    """Price one courier route that collects from every restaurant in order.
+
+    A cart may now contain items from more than one restaurant.  The Food
+    domain, rather than a client, keeps the pickup sequence and delivery fee
+    authoritative.  The legacy one-pickup response remains byte-for-byte
+    compatible through ``quote_delivery``.
+    """
+    if not restaurants:
+        raise DomainError("CART_EMPTY", "Giỏ hàng đang trống.")
+    if len(restaurants) == 1:
+        return {"pickup_stops": restaurants, **quote_delivery(restaurants[0], address, config)}
+
+    points = [*restaurants, address]
+    if any(point.get(field) is None for point in points for field in ("latitude", "longitude")):
+        return {
+            "pickup_stops": restaurants,
+            "distance_km": None,
+            "distance_source": "address_only",
+            "fee": {"amount": config.minimum_fee, "currency": "VND"},
+            "breakdown": {"base_fee": config.base_fee, "distance_fee": 0, "long_distance_surcharge": 0, "pickup_stop_count": len(restaurants)},
+            "eta_minutes": config.eta_minutes + (len(restaurants) - 1) * 5,
+        }
+
+    legs = [
+        haversine_km(left["latitude"], left["longitude"], right["latitude"], right["longitude"])
+        for left, right in zip(points, points[1:])
+    ]
+    distance = sum(legs)
+    if distance > config.max_distance_km:
+        raise DomainError("DELIVERY_OUT_OF_RANGE", "Lộ trình lấy và giao hàng nằm ngoài bán kính phục vụ.")
+    distance_fee = round(distance * config.per_km_fee / 1000) * 1000
+    surcharge = config.long_distance_surcharge if distance > config.long_distance_threshold_km else 0
+    fee = max(config.minimum_fee, config.base_fee + distance_fee + surcharge)
+    return {
+        "pickup_stops": restaurants,
+        "distance_km": round(distance, 2),
+        "fee": {"amount": fee, "currency": "VND"},
+        "breakdown": {"base_fee": config.base_fee, "distance_fee": distance_fee, "long_distance_surcharge": surcharge, "pickup_stop_count": len(restaurants)},
+        "eta_minutes": config.eta_minutes + round(distance * 2) + (len(restaurants) - 1) * 5,
     }
 
 

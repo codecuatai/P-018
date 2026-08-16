@@ -9,7 +9,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$webProcess = $null
 $script:ComposeEnvFile = $null
 
 function Invoke-CheckedCommand {
@@ -122,12 +121,12 @@ try {
     Write-Host "[2/7] Validating environment configuration..." -ForegroundColor Yellow
     Invoke-CheckedCommand -FilePath "python" -Arguments @("scripts/validate-env-config.py") -FailureMessage "Environment configuration validation failed."
 
-    Write-Host "[3/7] Building and starting backend services..." -ForegroundColor Green
+    Write-Host "[3/7] Building and starting X-One services..." -ForegroundColor Green
     $composeForwardedArguments = @($ComposeArgs | Where-Object { $_ -and -not [string]::IsNullOrWhiteSpace([string]$_) })
     $composeUpArguments = @("compose", "--env-file", $script:ComposeEnvFile, "up", "--build", "-d") + $composeForwardedArguments
     Invoke-CheckedCommand -FilePath "docker" -Arguments $composeUpArguments -FailureMessage "Docker Compose could not start the backend services."
 
-    $requiredServices = @("postgres", "api-gateway", "agent-service", "ride-service", "restaurant-service", "healthcare-service", "food-service")
+    $requiredServices = @("postgres", "api-gateway", "web", "agent-service", "ride-service", "restaurant-service", "healthcare-service", "food-service")
     Write-Host "[4/7] Waiting for PostgreSQL and application containers to become healthy..." -ForegroundColor Yellow
     Wait-ComposeHealthy -Services $requiredServices -Seconds $TimeoutSeconds
 
@@ -152,53 +151,21 @@ try {
         throw "API Gateway readiness check failed at $gatewayUrl/health/ready."
     }
 
-    Write-Host "[7/7] Starting Web UI only after backend readiness..." -ForegroundColor Cyan
-    $webDir = Join-Path $repoRoot "apps\web"
-    if (-not (Test-Path $webDir)) {
-        throw "apps/web directory was not found."
-    }
-    Push-Location $webDir
-    try {
-        if (-not (Test-Path "node_modules")) {
-            Invoke-CheckedCommand -FilePath "npm" -Arguments @("install") -FailureMessage "Web dependency installation failed."
-        }
-        $previousViteApiUrl = $env:VITE_API_URL
-        $env:VITE_API_URL = $gatewayUrl
-        try {
-            $webProcess = Start-Process -FilePath "npm.cmd" -WindowStyle Hidden -PassThru -WorkingDirectory $webDir -ArgumentList @("run", "dev", "--", "--host", "0.0.0.0")
-        } finally {
-            if ($null -eq $previousViteApiUrl) {
-                Remove-Item Env:VITE_API_URL -ErrorAction SilentlyContinue
-            } else {
-                $env:VITE_API_URL = $previousViteApiUrl
-            }
-        }
-    } finally {
-        Pop-Location
-    }
-
-    $webDeadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    while ((Get-Date) -lt $webDeadline) {
-        if (Test-HttpReady -Uri "http://localhost:5173") {
-            break
-        }
-        Start-Sleep -Seconds 2
-    }
-    if (-not (Test-HttpReady -Uri "http://localhost:5173")) {
-        throw "Web UI readiness check failed at http://localhost:5173."
-    }
+    Write-Host "[7/7] Verifying Next.js Web UI..." -ForegroundColor Cyan
+    $webBinding = (& docker compose --env-file $script:ComposeEnvFile port web 3000 2>$null).Trim()
+    if (-not $webBinding) { throw "Web host binding is unavailable." }
+    $webAddress = $webBinding -replace '^\[::\]:', 'localhost:' -replace '^0\.0\.0\.0:', 'localhost:' -replace '^127\.0\.0\.1:', 'localhost:'
+    $webUrl = "http://$webAddress"
+    if (-not (Test-HttpReady -Uri "$webUrl/api/health")) { throw "Web UI readiness check failed at $webUrl/api/health." }
 
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host "  ALL REQUIRED SERVICES ARE HEALTHY AND WEB IS READY       " -ForegroundColor Green
-    Write-Host "  Web:     http://localhost:5173                            " -ForegroundColor Green
+    Write-Host "  Web:     $webUrl                              " -ForegroundColor Green
     Write-Host "  Gateway: $gatewayUrl                              " -ForegroundColor Cyan
     Write-Host "  Agent/domain services: internal Compose DNS only         " -ForegroundColor DarkGray
     Write-Host "============================================================" -ForegroundColor Cyan
 } catch {
-    if ($webProcess -and -not $webProcess.HasExited) {
-        Stop-Process -Id $webProcess.Id -Force -ErrorAction SilentlyContinue
-    }
     Write-Error "X-One startup failed: $($_.Exception.Message)"
     exit 1
 } finally {

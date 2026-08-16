@@ -79,6 +79,27 @@ export class ToolService {
   private resourceIds(args: JsonObject): string[] { return Object.entries(args).filter(([key, value]) => key.endsWith('_id') && typeof value === 'string').map(([, value]) => String(value)); }
   private errorCode(error: unknown): string { const response = error instanceof Error && 'getResponse' in error && typeof (error as { getResponse?: unknown }).getResponse === 'function' ? (error as { getResponse: () => unknown }).getResponse() : undefined; return typeof response === 'object' && response !== null && 'code' in response ? String((response as { code: unknown }).code) : error instanceof Error ? error.name : 'UNKNOWN'; }
 
+  private addressSnapshot(address: Awaited<ReturnType<CoreStore['getSavedAddress']>>): JsonObject | undefined {
+    if (!address) return undefined;
+    return {
+      user_id: address.actorId,
+      address_text: address.addressText,
+      ...(address.label ? { label: address.label } : {}),
+      ...(address.city ? { city: address.city } : {}),
+      ...(address.district ? { district: address.district } : {}),
+      ...(address.ward ? { ward: address.ward } : {}),
+      ...(address.latitude !== undefined ? { latitude: address.latitude } : {}),
+      ...(address.longitude !== undefined ? { longitude: address.longitude } : {}),
+      ...(address.provider ? { provider: address.provider } : {}),
+      source: address.source,
+    };
+  }
+
+  private async withCoreAddress(args: JsonObject, actorId: string): Promise<JsonObject> {
+    const snapshot = this.addressSnapshot(await this.store.getSavedAddress(String(args.address_id ?? ''), actorId));
+    return snapshot ? { ...args, address_snapshot: snapshot } : args;
+  }
+
   private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string): Promise<JsonObject> {
     const definition = definitions.find((tool) => tool.name === name);
     if (!definition) throw new UnauthorizedException({ code: 'TOOL_NOT_FOUND', detail: 'Tool is not registered.' });
@@ -88,7 +109,14 @@ export class ToolService {
       case 'search_food': { const params = new URLSearchParams({ keyword: String(args.keyword ?? '') }); if (typeof args.district === 'string') params.set('district', args.district); if (typeof args.category === 'string') params.set('category', args.category); if (typeof args.max_price === 'number') params.set('max_price', String(args.max_price)); return this.food.get(`/api/v1/food/search?${params.toString()}`, correlationId, actor.sub); }
       case 'view_menu': return this.food.get(`/api/v1/restaurants/${String(args.restaurant_id)}/menu`, correlationId);
       case 'view_menu_item': return this.food.get(`/api/v1/menu-items/${String(args.menu_item_id)}`, correlationId);
-      case 'list_food_delivery_addresses': return this.food.get(`/api/v1/addresses${typeof args.label === 'string' && args.label ? `?label=${encodeURIComponent(args.label)}` : ''}`, correlationId, actor.sub);
+      case 'list_food_delivery_addresses': {
+        const saved = await this.store.listSavedAddresses(actor.sub);
+        if (saved.length) {
+          const label = typeof args.label === 'string' ? args.label.trim().toLowerCase() : '';
+          return { addresses: saved.filter((address) => !label || address.label.toLowerCase().includes(label) || address.addressText.toLowerCase().includes(label)).map((address) => ({ id: address.id, user_id: address.actorId, label: address.label, address: address.addressText, city: address.city, district: address.district, ward: address.ward, latitude: address.latitude, longitude: address.longitude, source: address.source })) };
+        }
+        return this.food.get(`/api/v1/addresses${typeof args.label === 'string' && args.label ? `?label=${encodeURIComponent(args.label)}` : ''}`, correlationId, actor.sub);
+      }
       case 'get_food_cart': return this.food.get(`/api/v1/carts/${String(args.cart_id)}?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
       case 'create_cart': return this.food.post('/api/v1/carts', { user_id: actor.sub, restaurant_id: args.restaurant_id }, correlationId, `cart:${actor.sub}:${String(args.restaurant_id)}:${conversationId ?? correlationId}`, actor.sub);
       case 'add_to_cart': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/items`, args, correlationId, undefined, actor.sub);
@@ -96,8 +124,8 @@ export class ToolService {
       case 'remove_food_cart_item': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, correlationId, actor.sub);
       case 'apply_voucher': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/voucher`, { code: args.code }, correlationId, undefined, actor.sub);
       case 'remove_food_voucher': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/voucher`, correlationId, actor.sub);
-      case 'quote_delivery': return this.food.post('/api/v1/delivery/quote', args, correlationId, undefined, actor.sub);
-      case 'preview_order': return this.food.post('/api/v1/orders/preview', { ...args, user_id: actor.sub }, correlationId, undefined, actor.sub);
+      case 'quote_delivery': return this.food.post('/api/v1/delivery/quote', await this.withCoreAddress(args, actor.sub), correlationId, undefined, actor.sub);
+      case 'preview_order': return this.food.post('/api/v1/orders/preview', await this.withCoreAddress({ ...args, user_id: actor.sub }, actor.sub), correlationId, undefined, actor.sub);
       case 'get_food_order': return this.food.get(`/api/v1/orders/${String(args.order_id)}?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
       case 'track_food_order': return this.food.get(`/api/v1/orders/${String(args.order_id)}/tracking?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
       case 'preview_food_order_cancellation': return this.food.post(`/api/v1/orders/${String(args.order_id)}/cancel-preview?user_id=${encodeURIComponent(actor.sub)}`, {}, correlationId, undefined, actor.sub);
@@ -114,9 +142,11 @@ function requireInternal(token: string | undefined, actorId: string | undefined,
 
 @Controller('internal/tools')
 export class ToolController {
-  constructor(private readonly tools: ToolService, private readonly config: ConfigService) {}
+  constructor(private readonly tools: ToolService, private readonly registry: ToolRegistry, private readonly config: ConfigService) {}
   @Get()
   list(@Headers('x-internal-service-token') token: string | undefined, @Req() request: CorrelatedRequest): object { if (!token || token !== this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN')) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication required.' }); return { data: this.tools.list(), meta: { request_id: request.correlationId } }; }
+  @Get('registry-v2')
+  registryV2(@Headers('x-internal-service-token') token: string | undefined, @Req() request: CorrelatedRequest): object { if (!token || token !== this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN')) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication required.' }); return { data: this.registry.list(), meta: { request_id: request.correlationId } }; }
   @Post('execute')
   execute(@Headers('x-internal-service-token') token: string | undefined, @Headers('x-actor-id') actorId: string | undefined, @Body() body: { name: string; arguments: JsonObject; actor_id?: string; conversation_id?: string }, @Req() request: CorrelatedRequest): Promise<object> { requireInternal(token, actorId, this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'), body.actor_id); return this.tools.execute(body.name, body.arguments, { sub: actorId!, email: 'internal@xone.local', role: 'customer' }, request.correlationId ?? 'cor_unknown', body.conversation_id).then((data) => ({ data, meta: { request_id: request.correlationId } })); }
 }

@@ -6,7 +6,7 @@ X-One is a backend-first conversational multi-service booking platform. The loca
 
 | Component | Port | Status |
 | --- | ---: | --- |
-| Web | 5173 | X-One chat-first UI with real Gateway auth and one unified Ride, Food, Restaurant, Healthcare conversation |
+| Web | 5173 | Next.js App Router landing, authenticated product shell, and one unified Gateway-only Ride, Food, Restaurant, Healthcare conversation |
 | API Gateway | 3000 | Food, Restaurant, Healthcare, and Ride routing/orchestration with typed service clients |
 | Agent Service | 8001 (internal Compose DNS only) | One bounded structured planner for Ride, Food, Restaurant, and Healthcare; Gemini is primary with deterministic fallback |
 | Ride Service | 8101 (internal Compose DNS only) | Simulated quote/booking lifecycle with persistence and two explicit confirmations |
@@ -15,7 +15,7 @@ X-One is a backend-first conversational multi-service booking platform. The loca
 | Food Service | 8104 (internal Compose DNS only) | PostgreSQL-backed catalog/cart/order boundary with deterministic demo seed |
 | PostgreSQL | 5432 (internal Compose DNS only) | Local logical-database bootstrap |
 
-For the complete local stack, create exactly one root `.env` and use the checked launcher. It validates configuration, builds Compose, waits for PostgreSQL and all application health checks, applies idempotent migrations, verifies Gateway readiness, and only then starts the Web dev server:
+For the complete local stack, create exactly one root `.env` and use the checked launcher. It validates configuration, builds Compose, waits for PostgreSQL and all application health checks, applies idempotent migrations, verifies Gateway readiness, and then verifies the Next.js Web container:
 
 ```powershell
 ./scripts/start-all.ps1
@@ -29,7 +29,7 @@ For the complete local stack, create exactly one root `.env` and use the checked
 # ./scripts/start-all.sh --seed-demo
 ```
 
-The setup script never overwrites an existing `.env`. Normal launcher runs do not seed or reset data; use `-SeedDemo`/`--seed-demo` only for deterministic local demo data. Compose reads root `.env` for interpolation and sends each container only its explicit, least-privilege values. Service-level `.env.example` files are only for standalone runs outside Compose. The Web assistant calls only the public Gateway, keeps one X-One conversation, and never exposes internal service URLs or credentials.
+The setup script never overwrites an existing `.env`. Normal launcher runs do not seed or reset data; use `-SeedDemo`/`--seed-demo` only for deterministic local demo data. Compose reads root `.env` for interpolation and sends each container only its explicit, least-privilege values. Service-level `.env.example` files are only for standalone runs outside Compose. The Web uses a short-lived access token only in memory, receives its rotating refresh token only as an HttpOnly cookie, calls only the public Gateway, and never exposes internal service URLs or credentials.
 
 For a disposable/template-based local verification, PowerShell also accepts `-EnvFile .env.example`; the default remains `.env`, and an existing user file is never overwritten.
 

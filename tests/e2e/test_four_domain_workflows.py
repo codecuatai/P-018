@@ -175,26 +175,39 @@ def propose_healthcare_confirmation(
 def test_ride_public_two_step_confirmation() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=30) as client:
-        actor = unique_id("ride-actor")
-        first = client.post(
-            "/api/v1/chat",
-            headers={"X-Actor-Id": actor},
-            json={"message": "from Noi Bai Airport to Hoan Kiem by car 4"},
+        token = login(client)
+        quote_response = client.post(
+            "/api/v1/services/ride/quote",
+            headers=auth_headers(token, unique_id("ride-quote")),
+            json={
+                "pickup_address": "VinUni, Gia Lam",
+                "dropoff_address": "Hoan Kiem",
+                "vehicle_type": "CAR_4",
+                "pickup_latitude": 21.0285,
+                "pickup_longitude": 105.8048,
+                "dropoff_latitude": 21.0301,
+                "dropoff_longitude": 105.8122,
+            },
         )
-        first.raise_for_status()
-        data = first.json()["data"]
-        assert data["stage"] == "SERVICE_CONFIRMATION"
-        workflow_id = data["workflow_id"]
+        quote_response.raise_for_status()
+        quote = quote_response.json()["data"]
 
-        service = client.post(f"/api/v1/workflows/{workflow_id}/confirm-service", headers={"X-Actor-Id": actor})
-        service.raise_for_status()
-        assert service.json()["data"]["stage"] == "PAYMENT_CONFIRMATION"
+        prepared = client.post(
+            "/api/v1/service-actions/ride/prepare",
+            headers=auth_headers(token, unique_id("ride-prepare")),
+            json={"quote_id": quote["id"]},
+        )
+        prepared.raise_for_status()
+        booking = prepared.json()["data"]
+        assert booking["status"] == "AWAITING_CONFIRMATION"
 
-        payment = client.post(f"/api/v1/workflows/{workflow_id}/confirm-payment", headers={"X-Actor-Id": actor})
+        payment = client.post(
+            f"/api/v1/service-actions/ride/{booking['id']}/confirm",
+            headers=auth_headers(token, unique_id("ride-confirm")),
+        )
         payment.raise_for_status()
         completed = payment.json()["data"]
-        assert completed["stage"] == "COMPLETED"
-        assert completed["booking"]["status"] == "DRIVER_ASSIGNED"
+        assert completed["status"] == "DRIVER_ASSIGNED"
 
 
 def test_restaurant_public_flow_requires_explicit_final_confirmation() -> None:

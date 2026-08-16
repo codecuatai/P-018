@@ -1,21 +1,68 @@
 # Tool Contracts
 
-A tool is a governed domain capability, not a raw REST endpoint. The Tool Registry belongs to the gateway. The agent can only emit the versioned JSON-schema request in `packages/contracts/tools/`; it cannot invoke a tool itself.
+A tool is a governed domain capability, not a raw REST endpoint. The Gateway
+owns the registry and public execution boundary. The Agent emits only the
+versioned JSON-schema request described by
+[`tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json);
+it cannot invoke a tool itself.
+
+The canonical inventory contains 46 entries with the explicit classifications
+`IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
+`IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, and `DEPRECATED`. The Gateway
+parity test and Agent policy parity test keep the JSON inventory, runtime
+registry, and policy names aligned.
 
 | Risk | Example behavior | Confirmation |
 | --- | --- | --- |
-| `READ` | search availability | no |
-| `REVERSIBLE_WRITE` | hold/reserve | policy-dependent |
-| `FINANCIAL_OR_FINAL` | confirm booking/payment | required |
+| `READ` | search, detail, availability, tracking | no |
+| `REVERSIBLE_WRITE` | cart update, hold, reservation cancellation | policy-dependent; domain idempotency required |
+| `FINANCIAL_OR_FINAL` | order/booking/appointment confirmation or payment | explicit Gateway confirmation required |
 
-Implemented Food slice lifecycle: agent discovers `GET /internal/tools`, proposes a versioned tool request, and calls `POST /internal/tools/execute` with internal token, actor assertion, and conversation context; Gateway validates complete JSON schemas and rejects invalid arguments and all `transaction` tools. Cart creation scopes its idempotency identity to actor/restaurant/conversation, while retries in the same conversation reuse the same draft. Cart/order/tracking/cancellation tools execute only through typed `FoodClient`. `prepare_food_order_confirmation` and cancellation preparation return confirmation forms. Final execution is only through public confirmation endpoints, bound to actor, fresh authoritative Food preview, payload/version/amount/currency, expiry, idempotency key, and one-time use. Non-Food domain APIs are not skeletons: Restaurant exposes discovery, availability, holds, reservation create/read/update/cancel; Healthcare exposes authoritative department/slot, hold, payment acknowledgement, confirmation, cancellation, and actor-scoped idempotency. Gateway/Agent orchestration is narrower and is documented separately from the domain API surface.
-The canonical `ToolRequest` requires `tool_name`, `risk_level`, `arguments`, `workflow_id`, `tool_call_id`, and `schema_version`; write-capable requests also carry an idempotency key. Restaurant tools are `restaurant.search`, `restaurant.check_availability`, `restaurant.create_hold`, and `restaurant.create_reservation`; the last action is prepared by Gateway and executes only after explicit confirmation. The Restaurant domain's read/update/cancel REST operations are implemented but are not currently exposed as Agent final tools. Healthcare tools are `healthcare.list_departments`, `healthcare.list_slots`, `healthcare.hold_slot`, `healthcare.confirm_appointment`, and `healthcare.cancel_appointment`; payment acknowledgement is a domain call between hold and explicit final confirmation. Ride keeps its separate quote/prepare/confirm contract. Production payment/authentication remains out of scope.
+The canonical `ToolRequest` requires `tool_name`, `risk_level`, `arguments`,
+`workflow_id`, `tool_call_id`, and `schema_version`; write-capable requests
+also carry an idempotency key. The registry owns risk and confirmation
+metadata, so a model cannot elevate a read into a write or supply authoritative
+IDs, prices, availability, coordinates, status, payment, or final-success
+claims.
 
-The unified Assistant planner may emit semantic task dependencies, but it never
-emits a final side effect. In particular, a Healthcare→Ride plan carries the
-pickup only; Gateway obtains the destination, appointment start, and facility
-from Healthcare and the duration from Ride. The public action descriptors are
-the only executable Assistant surface. Core migration
-`007_core_assistant_action_executions.sql` records one durable action receipt
-per actor/conversation/action so Restaurant, Ride, Healthcare, and Food replay
-the same safe response without repeating a domain write.
+## Domain execution boundaries
+
+Food Agent tools cover discovery, menu/cart, delivery quote, preview, tracking
+and confirmation preparation. Food final order/cancellation/refund execution
+remains Gateway/Core confirmation work and calls `FoodClient` only after a
+fresh authoritative preview, payload/version/amount/currency/expiry binding,
+idempotency, and one-time confirmation claim.
+
+Ride has one Agent-proposable quote tool. Booking preparation, final booking,
+tracking, status, list, and cancellation are Gateway/domain capabilities. The
+Ride domain owns tariff/driver selection, quote and booking transitions,
+tracking events, idempotency, and final status; two explicit confirmations are
+required before final payment/booking execution.
+
+Restaurant Agent tools cover search, detail, availability and holds. Final
+reservation, read/list/cancel operations are represented in the registry, with
+the final write still gated by Gateway confirmation and domain idempotency.
+
+Healthcare Agent tools cover departments, slots, holds and cancellation.
+Facility/doctor/appointment reads and final confirmation are represented as
+domain or Gateway capabilities; payment acknowledgement is a separate
+Gateway/domain step between the hold and final confirmation.
+
+Legacy aliases remain `LEGACY_COMPAT` inputs during migration and do not create
+a second authority. The Agent never calls a domain service or database and
+never confirms on behalf of a user.
+
+## Unified assistant and multi-service plans
+
+The unified Assistant planner may emit semantic task dependencies, but never a
+final side effect. A Healthcare-to-Ride plan carries the pickup only; Gateway
+obtains the destination, appointment start and facility from Healthcare and
+the duration from Ride. Public action descriptors are the only executable
+Assistant surface. Core migration `007_core_assistant_action_executions.sql`
+records one durable action receipt per actor/conversation/action, while
+`011_core_multi_service_workflows.sql` records Gateway orchestration plans and
+typed step results. Neither migration becomes authority for a Restaurant,
+Healthcare, Ride, or Food booking/order.
+
+Evidence: `apps/api-gateway/test/tools/tool-registry.spec.ts` and
+`apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.

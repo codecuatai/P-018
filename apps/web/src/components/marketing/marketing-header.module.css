@@ -1,0 +1,156 @@
+.scrollSentinel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.header {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  left: 0;
+  padding: 14px 16px 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.headerRaised {
+  background: transparent;
+}
+
+.headerFrame {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(1160px, calc(100% - 48px));
+  min-height: 58px;
+  margin: 0 auto;
+  pointer-events: none;
+}
+
+.brandIsland,
+.navIsland,
+.mobileMenuIsland {
+  background: rgb(255 255 255 / 64%);
+  border: 1px solid rgb(255 255 255 / 70%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 54%), 0 10px 24px rgb(22 50 79 / 6%);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
+  transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.brandIsland {
+  display: inline-flex;
+  min-height: 58px;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 999px;
+}
+
+.navIsland {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 58px;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 8px 6px 18px;
+  border-radius: 999px;
+}
+
+.mobileMenuIsland { display: none; }
+
+.headerRaised .brandIsland,
+.headerRaised .navIsland,
+.headerRaised .mobileMenuIsland {
+  background: rgb(255 255 255 / 76%);
+  border-color: rgb(255 255 255 / 82%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 66%), 0 13px 28px rgb(22 50 79 / 8%);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 9px;
+  color: var(--color-navy);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+
+.brand svg { color: var(--color-primary); }
+.brand span { font-size: 1.1rem; }
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav a {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  color: var(--color-muted);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 620;
+  white-space: nowrap;
+  transition: color 200ms ease, background-color 200ms ease, transform 200ms ease, font-weight 200ms ease;
+}
+
+.nav a:hover { color: var(--color-navy); background: rgb(22 50 79 / 6%); font-weight: 700; transform: translateY(-1px); }
+.nav a:focus-visible { color: var(--color-navy); background: rgb(22 50 79 / 5%); }
+
+.actions { display: flex; align-items: center; flex-shrink: 0; gap: 8px; }
+.navIsland :global(.button) { border-radius: 999px; box-shadow: 0 5px 12px rgb(49 94 245 / 12%); }
+.navIsland :global(.button):active { transform: translateY(0) scale(0.98); }
+.navIsland .authTrigger { display: inline-flex; flex-shrink: 0; min-height: 40px; align-items: center; padding: 8px 12px; color: var(--color-navy); background: rgb(255 255 255 / 72%); border: 1px solid rgb(22 50 79 / 14%); border-radius: 999px; font-size: 0.8rem; font-weight: 700; text-decoration: none; white-space: nowrap; transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease; }
+.navIsland .authTrigger:hover { color: var(--color-navy); background: var(--color-surface); border-color: rgb(22 50 79 / 27%); box-shadow: 0 6px 14px rgb(22 50 79 / 9%); transform: translateY(-1px); }
+.navIsland .authTrigger:active { transform: translateY(0) scale(0.98); }
+.menuButton,
+.mobileNav { display: none; }
+.menuButton { border-radius: 999px; }
+
+@media (max-width: 820px) {
+  .header { padding: 10px 12px 0; }
+  .headerFrame { width: min(100%, calc(100% - 24px)); min-height: 50px; }
+  .brandIsland,
+  .mobileMenuIsland { min-height: 50px; border-radius: 999px; }
+  .brandIsland { padding: 8px 13px; }
+  .mobileMenuIsland { display: grid; place-items: center; padding: 5px; }
+  .navIsland { display: none; }
+  .nav,
+  .actions { display: none; }
+  .menuButton { display: grid; margin-left: auto; }
+  .mobileNav { display: grid; gap: 2px; }
+  .mobileNav > a,
+  .mobileNav > button {
+    padding: 10px 4px;
+    color: var(--color-muted);
+    background: transparent;
+    border: 0;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-align: left;
+  }
+  .mobileNav > a:hover,
+  .mobileNav > button:hover { color: var(--color-navy); }
+  .mobileNav > button { border-radius: 999px; }
+  .mobileNav > button:not(:global(.button)) { padding-right: 12px; padding-left: 12px; background: rgb(22 50 79 / 5%); }
+  .mobileNav :global(.button) { width: 100%; margin-top: 7px; color: var(--color-surface); text-align: center; }
+}
+
+@media (max-width: 560px) {
+  .header { padding: 8px 8px 0; }
+  .headerFrame { width: calc(100% - 16px); }
+  .brandIsland,
+  .mobileMenuIsland { min-height: 48px; border-radius: 999px; }
+  .brandIsland { padding: 7px 11px; }
+  .brand span { font-size: 1rem; }
+}

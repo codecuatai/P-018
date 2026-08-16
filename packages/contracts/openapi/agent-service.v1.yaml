@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: X-One Agent Service
-  version: 1.1.0
+  version: 1.2.0
   description: >
     Internal interpretation boundary. The Agent returns safe language and a
     validated typed tool request. It never calls a domain service, database,
@@ -10,6 +10,7 @@ paths:
   /api/v1/assistant-chat:
     post:
       operationId: planUnifiedAssistantTurn
+      description: The current bounded multi-domain planner. It returns a validated plan only; the Gateway owns all tool execution and side effects.
       security: [{internalServiceToken: []}]
       parameters: [{ $ref: '#/components/parameters/ActorId' }]
       requestBody:
@@ -18,11 +19,19 @@ paths:
           application/json: {schema: {$ref: '#/components/schemas/AssistantChatRequest'}}
       responses:
         '200':
-          description: Semantic interpretation, Core A planning decision, and compatibility plan.
+          description: Planner result with safe diagnostics and no raw prompt or chain-of-thought.
           content:
-            application/json: {schema: {$ref: '#/components/schemas/AssistantPlanningEnvelope'}}
-        '401': {description: Internal service or actor authentication failed.}
-        '422': {description: Request or capability snapshot validation failed.}
+            application/json: {schema: {$ref: '#/components/schemas/AssistantEnvelope'}}
+        '401': {description: Internal service authentication failed.}
+        '422': {description: Request validation failed.}
+  /api/v1/status:
+    get:
+      operationId: getAgentStatus
+      description: Safe internal model diagnostics. Keys, prompts, and provider payloads are never returned.
+      security: [{internalServiceToken: []}]
+      responses:
+        '200': {description: Safe Agent status}
+        '401': {description: Internal service authentication failed.}
   /api/v1/chat:
     post:
       operationId: interpretFoodChatTurn
@@ -102,49 +111,19 @@ components:
     AssistantChatRequest:
       type: object
       required: [message, conversation_id, user_id]
-      additionalProperties: false
+
       properties:
         message: {type: string, minLength: 1, maxLength: 5000}
         conversation_id: {type: string, minLength: 1, maxLength: 128}
         user_id: {type: string, minLength: 1, maxLength: 128}
         correlation_id: {type: [string, 'null'], maxLength: 128}
-        messages:
-          type: array
-          maxItems: 20
-          items: {type: object, additionalProperties: {type: string}}
+        messages: {type: array, items: {type: object, additionalProperties: true}}
         conversation_state: {type: object, additionalProperties: true}
-        authoritative_results:
-          type: array
-          maxItems: 8
-          items: {type: object, additionalProperties: true}
-        capability_snapshot:
-          oneOf: [{$ref: '#/components/schemas/CapabilitySnapshot'}, {type: 'null'}]
-        mode: {enum: [plan, compose], default: plan}
-    CapabilitySnapshot:
-      type: object
-      required: [version, capabilities]
+        authoritative_results: {type: array, items: {type: object, additionalProperties: true}}
+        capability_snapshot: {type: [object, 'null'], additionalProperties: true}
+        mode: {type: string, enum: [plan, compose]}
       additionalProperties: false
-      properties:
-        version: {type: string, minLength: 1, maxLength: 80}
-        capabilities:
-          type: array
-          maxItems: 128
-          items: {$ref: '#/components/schemas/CapabilityDefinition'}
-    CapabilityDefinition:
-      type: object
-      required: [name, domain, schema_version, risk_level, confirmation_gate, status]
-      additionalProperties: false
-      properties:
-        name: {type: string, minLength: 1, maxLength: 160}
-        domain: {enum: [ride, food, restaurant, healthcare]}
-        schema_version: {type: string, minLength: 1, maxLength: 40}
-        risk_level: {enum: [READ, REVERSIBLE_WRITE, FINANCIAL_OR_FINAL]}
-        confirmation_gate: {enum: [NONE, SERVICE_DETAILS, FINAL_COMMIT, PAYMENT, CANCELLATION]}
-        status: {enum: [implemented, skeleton]}
-        input_fields:
-          type: array
-          items: {type: string}
-    AssistantPlanningEnvelope:
+    AssistantEnvelope:
       type: object
       required: [data, meta]
       additionalProperties: false
@@ -161,10 +140,8 @@ components:
             planning_decision:
               type: object
               description: >-
-                Typed Core A plan. Every step declares step_kind: CAPABILITY or
-                WAIT_FOR_CONFIRMATION. CAPABILITY steps name one Gateway
-                snapshot capability; waiting steps never name a capability and
-                only represent an explicit user-confirmation gate.
+                Typed Core A plan. Each step is a bounded capability request or
+                an explicit confirmation wait; the Agent never executes it.
               additionalProperties: true
             decision_source: {enum: [model, deterministic]}
             model: {type: string}

@@ -15,6 +15,7 @@ WRITE_PATHS = (
     "/api/v1/appointments/{appointment_id}/confirm",
     "/api/v1/appointments/{appointment_id}/cancel",
 )
+READ_PATHS = ("/api/v1/departments", "/api/v1/facilities/{facility_source_id}")
 
 
 def _path_block(contract: str, path: str) -> str:
@@ -58,3 +59,9 @@ def test_healthcare_runtime_rejects_missing_and_empty_key() -> None:
     with pytest.raises(HTTPException) as empty:
         _require_idempotency_key("  ")
     assert empty.value.status_code == 400
+
+
+def test_healthcare_contract_describes_facility_lookup() -> None:
+    contract = CONTRACT_PATH.read_text(encoding="utf-8")
+    for path in READ_PATHS:
+        assert _path_block(contract, path)

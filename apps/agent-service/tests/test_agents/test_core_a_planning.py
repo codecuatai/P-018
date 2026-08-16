@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
-
 from src.agents.assistant.contracts import (
     AuthoritativeFact,
     CapabilitySnapshot,
@@ -18,8 +17,8 @@ from src.agents.assistant.contracts import (
     PlannerContext,
     PlannerTaskContext,
     ReferenceResolution,
-    RestaurantSemanticSlots,
     ReplanDirective,
+    RestaurantSemanticSlots,
     RideSemanticSlots,
     RiskLevel,
     SemanticIntent,
@@ -27,9 +26,9 @@ from src.agents.assistant.contracts import (
     SemanticSlot,
     SemanticTurn,
     SlotSource,
+    StepKind,
     StepOutcome,
     StepOutcomeKind,
-    StepKind,
     TaskDisposition,
 )
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot

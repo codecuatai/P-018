@@ -13,7 +13,6 @@ from ..contracts import (
     TaskDisposition,
 )
 
-
 SEMANTIC_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[str, ...]] = {
     (Domain.FOOD, Operation.DISCOVER): ('query|dish_query',),
     (Domain.FOOD, Operation.CREATE): ('query|dish_query',),

@@ -256,8 +256,9 @@ jobs:
       - name: Run Gateway PostgreSQL integration
         shell: bash
         run: |
-          pnpm install --filter @x-one/api-gateway... --frozen-lockfile
-          CORE_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:55432/xone_core pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
+          corepack enable
+          pnpm --dir apps/api-gateway install --frozen-lockfile
+          CORE_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xone_core AUTH_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xone_core pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts test/auth.postgres.integration.spec.ts
 
   # ----------------------------------------------------
   # Job Frontend Web
@@ -269,21 +270,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20', cache: npm, cache-dependency-path: apps/web/package-lock.json }
-      - name: Cache web node_modules
-        id: web-modules-cache
-        uses: actions/cache@v4
-        with:
-          path: apps/web/node_modules
-          key: web-node-modules-${{ runner.os }}-node20-${{ hashFiles('apps/web/package-lock.json', 'apps/web/package.json') }}
-      - name: Ensure web dependencies
-        shell: bash
-        run: |
-          if [ ! -x apps/web/node_modules/.bin/vite ] || \
-             [ ! -x apps/web/node_modules/.bin/tsc ]; then
-            npm --prefix apps/web ci --prefer-offline --no-audit --no-fund
-          fi
-      - run: cd apps/web && npm run build
+        with: { node-version: '22', cache: pnpm, cache-dependency-path: pnpm-lock.yaml }
+      - run: corepack enable && pnpm --dir apps/web install --frozen-lockfile
+      - run: corepack enable && pnpm --dir apps/web run lint && pnpm --dir apps/web run typecheck && pnpm --dir apps/web test && pnpm --dir apps/web build
 
   # ----------------------------------------------------
   # Job Validate Docker Compose
@@ -299,4 +288,4 @@ jobs:
       - run: python scripts/validate-env-config.py
       - run: python scripts/check-migration-parity.py
       - run: docker compose --env-file .env.example config --quiet
-      - run: docker compose --env-file .env.example build --parallel api-gateway food-service agent-service
+      - run: docker compose --env-file .env.example build api-gateway web food-service agent-service

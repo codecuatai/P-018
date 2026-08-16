@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
@@ -11,14 +11,14 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
 
-class Domain(str, Enum):
+class Domain(StrEnum):
     FOOD = 'food'
     RESTAURANT = 'restaurant'
     HEALTHCARE = 'healthcare'
     RIDE = 'ride'
 
 
-class Operation(str, Enum):
+class Operation(StrEnum):
     DISCOVER = 'DISCOVER'
     CREATE = 'CREATE'
     STATUS = 'STATUS'
@@ -26,7 +26,7 @@ class Operation(str, Enum):
     CANCEL = 'CANCEL'
 
 
-class SlotSource(str, Enum):
+class SlotSource(StrEnum):
     USER_EXPLICIT = 'USER_EXPLICIT'
     CONVERSATION_REFERENCE = 'CONVERSATION_REFERENCE'
     AUTHORITATIVE_CONTEXT = 'AUTHORITATIVE_CONTEXT'
@@ -46,6 +46,7 @@ class RideSemanticSlots(StrictModel):
     pickup_address: SemanticSlot | None = None
     dropoff_address: SemanticSlot | None = None
     vehicle_type: SemanticSlot | None = None
+    passenger_count: SemanticSlot | None = None
     promo_code: SemanticSlot | None = None
 
 
@@ -94,7 +95,7 @@ DomainSlots: TypeAlias = (
 )
 
 
-class ReferenceResolution(str, Enum):
+class ReferenceResolution(StrEnum):
     RESOLVED = 'RESOLVED'
     AMBIGUOUS = 'AMBIGUOUS'
     UNRESOLVED = 'UNRESOLVED'
@@ -156,7 +157,7 @@ class SemanticTurn(StrictModel):
         return self
 
 
-class FactType(str, Enum):
+class FactType(StrEnum):
     SELECTED_CANDIDATE = 'selected_candidate'
     SAVED_ADDRESS = 'saved_address'
     RESOURCE_SNAPSHOT = 'resource_snapshot'
@@ -186,13 +187,13 @@ class PlannerContext(StrictModel):
     tasks: list[PlannerTaskContext] = Field(default_factory=list, max_length=8)
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     READ = 'READ'
     REVERSIBLE_WRITE = 'REVERSIBLE_WRITE'
     FINANCIAL_OR_FINAL = 'FINANCIAL_OR_FINAL'
 
 
-class ConfirmationGate(str, Enum):
+class ConfirmationGate(StrEnum):
     NONE = 'NONE'
     SERVICE_DETAILS = 'SERVICE_DETAILS'
     FINAL_COMMIT = 'FINAL_COMMIT'
@@ -200,7 +201,7 @@ class ConfirmationGate(str, Enum):
     CANCELLATION = 'CANCELLATION'
 
 
-class CapabilityStatus(str, Enum):
+class CapabilityStatus(StrEnum):
     IMPLEMENTED = 'implemented'
     SKELETON = 'skeleton'
 
@@ -234,7 +235,7 @@ class AuthorityRequirement(StrictModel):
     must_be_unexpired: bool = False
 
 
-class PlanningPhase(str, Enum):
+class PlanningPhase(StrEnum):
     DISCOVERY = 'DISCOVERY'
     SELECTION = 'SELECTION'
     AVAILABILITY = 'AVAILABILITY'
@@ -248,7 +249,7 @@ class PlanningPhase(str, Enum):
     CANCELLATION_CONFIRMATION = 'CANCELLATION_CONFIRMATION'
 
 
-class TaskDisposition(str, Enum):
+class TaskDisposition(StrEnum):
     READY = 'READY'
     NEEDS_INFO = 'NEEDS_INFO'
     WAITING = 'WAITING'
@@ -257,7 +258,7 @@ class TaskDisposition(str, Enum):
     COMPLETED = 'COMPLETED'
 
 
-class StepKind(str, Enum):
+class StepKind(StrEnum):
     CAPABILITY = 'CAPABILITY'
     WAIT_FOR_CONFIRMATION = 'WAIT_FOR_CONFIRMATION'
 
@@ -315,14 +316,14 @@ class ClarificationNeed(StrictModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
-class WorkflowRelation(str, Enum):
+class WorkflowRelation(StrEnum):
     SINGLE_TASK = 'SINGLE_TASK'
     INDEPENDENT_TASKS = 'INDEPENDENT_TASKS'
     DEPENDENT_TASKS = 'DEPENDENT_TASKS'
     MIXED = 'MIXED'
 
 
-class ReplanDirective(str, Enum):
+class ReplanDirective(StrEnum):
     CONTINUE = 'CONTINUE'
     ASK_USER = 'ASK_USER'
     REFRESH_AUTHORITY = 'REFRESH_AUTHORITY'
@@ -342,7 +343,7 @@ class PlanningDecision(StrictModel):
     blocked_task_refs: list[int] = Field(default_factory=list, max_length=4)
 
 
-class StepOutcomeKind(str, Enum):
+class StepOutcomeKind(StrEnum):
     SUCCEEDED = 'SUCCEEDED'
     REJECTED = 'REJECTED'
     RETRYABLE_FAILURE = 'RETRYABLE_FAILURE'

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.2.0
+  version: 1.3.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -142,6 +142,696 @@ paths:
             application/json: {schema: {$ref: '#/components/schemas/WorkflowEnvelope'}}
         '401': {description: Missing or invalid user token}
         '409': {description: Confirmation or idempotency precondition failed}
+
+  /api/v1/services:
+    get:
+      summary: List the four X-One service entry points
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Service entry points
+          content: {application/json: {schema: {$ref: '#/components/schemas/JsonEnvelope'}}}
+        '401': {description: Missing or invalid user token}
+  /api/v1/services/catalog:
+    get:
+      summary: Read service availability and browse previews
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Per-service catalog status; an individual dependency may be DEGRADED
+          content: {application/json: {schema: {$ref: '#/components/schemas/JsonEnvelope'}}}
+        '401': {description: Missing or invalid user token}
+  /api/v1/services/{service}:
+    get:
+      summary: Browse one service through the Gateway
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ServiceKey'
+        - {$ref: '#/components/parameters/Keyword'}
+        - {$ref: '#/components/parameters/Latitude'}
+        - {$ref: '#/components/parameters/Longitude'}
+      responses:
+        '200':
+          description: Authoritative service results, optionally location-ranked
+          content: {application/json: {schema: {$ref: '#/components/schemas/JsonEnvelope'}}}
+        '400': {description: Invalid service or coordinates}
+        '401': {description: Missing or invalid user token}
+        '503': {description: Service unavailable}
+  /api/v1/services/ride/quote:
+    post:
+      summary: Create an actor-scoped Ride quote through the Gateway
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RideQuoteRequest'}}}
+      responses:
+        '200': {description: Authoritative Ride quote}
+        '400': {description: Invalid request or missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency conflict}
+
+  /api/v1/service-actions/food/restaurants/{restaurantId}:
+    get:
+      summary: Read one Food restaurant through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Authoritative Food restaurant detail}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/food/restaurants/{restaurantId}/menu:
+    get:
+      summary: Read an authoritative Food menu through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Food menu for the restaurant}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/food/cart:
+    post:
+      summary: Create an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartRequest'}}}
+      responses:
+        '201': {description: Created Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency conflict}
+  /api/v1/service-actions/food/cart/{cartId}:
+    get:
+      summary: Read an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CartId'}]
+      responses:
+        '200': {description: Food cart}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart not found}
+  /api/v1/service-actions/food/cart/{cartId}/items:
+    post:
+      summary: Add a menu item to an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/CartId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartItemRequest'}}}
+      responses:
+        '200': {description: Updated Food cart}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart or menu item not found}
+  /api/v1/service-actions/restaurant/{restaurantId}:
+    get:
+      summary: Read one Restaurant catalog record through the Gateway
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      responses:
+        '200': {description: Authoritative Restaurant detail}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/restaurant/availability:
+    post:
+      summary: Check authoritative Restaurant table availability
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}}}
+      responses:
+        '200': {description: Availability result}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Restaurant not found}
+  /api/v1/service-actions/restaurant/hold:
+    post:
+      summary: Create an actor-scoped Restaurant reservation hold
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantHoldRequest'}}}
+      responses:
+        '201': {description: Reservation hold}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency or availability conflict}
+  /api/v1/service-actions/healthcare/doctors:
+    get:
+      summary: List authoritative Healthcare doctors by department
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: department
+          in: query
+          required: true
+          schema: {type: string, minLength: 1}
+      responses:
+        '200': {description: Healthcare doctor results}
+        '400': {description: Department is required}
+        '401': {description: Missing or invalid user token}
+  /api/v1/service-actions/healthcare/hold:
+    post:
+      summary: Hold an actor-scoped Healthcare slot
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/HealthcareHoldRequest'}}}
+      responses:
+        '201': {description: Healthcare appointment hold}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Slot or idempotency conflict}
+  /api/v1/service-actions/ride/prepare:
+    post:
+      summary: Prepare an explicit Ride booking from a quote
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RidePrepareRequest'}}}
+      responses:
+        '200': {description: Prepared Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Quote, confirmation, or idempotency conflict}
+  /api/v1/service-actions/ride/{bookingId}/confirm:
+    post:
+      summary: Execute explicit final Ride booking confirmation
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+        - {$ref: '#/components/parameters/BookingId'}
+      responses:
+        '200': {description: Confirmed Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Confirmation, payment, or idempotency conflict}
+
+  /api/v1/service-actions/ride/{bookingId}/cancel:
+    post:
+      summary: Cancel an actor-owned Ride booking with confirmation evidence
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+        - {$ref: '#/components/parameters/BookingId'}
+      responses:
+        '200': {description: Cancelled Ride booking}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Confirmation, resource-version, or idempotency conflict}
+
+  /api/v1/rides/{bookingId}/tracking:
+    get:
+      summary: Read actor-scoped Ride tracking and route snapshot
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/BookingId'}
+      responses:
+        '200': {description: Tracking snapshot with current location and route}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Booking not found}
+
+  /api/v1/history:
+    get:
+      summary: List unified actor-scoped history across domain services and Core conversations
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: service
+          in: query
+          schema: {type: string, enum: [food_order, ride_booking, restaurant_reservation, healthcare_appointment]}
+        - name: status
+          in: query
+          schema: {type: string, maxLength: 80}
+        - name: from
+          in: query
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          schema: {type: string, format: date-time}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses:
+        '200': {description: Unified history; partial and unavailable fields identify degraded domains}
+        '401': {description: Missing or invalid user token}
+        '503': {description: All history sources unavailable}
+  /api/v1/history/active:
+    get:
+      summary: List current non-terminal actor-scoped resources across domain services
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Active resources with partial and unavailable fields for degraded domains}
+        '401': {description: Missing or invalid user token}
+  /api/v1/history/{type}/{id}:
+    get:
+      summary: Read one actor-scoped history item from its authoritative service
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/HistoryType'}
+        - {$ref: '#/components/parameters/ResourceId'}
+      responses:
+        '200': {description: Authoritative transaction detail}
+        '400': {description: Invalid history type or resource id}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Resource not found}
+
+  /api/v1/conversations:
+    get:
+      summary: List Core-owned conversations for the authenticated actor
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Conversation summaries}
+        '401': {description: Missing or invalid user token}
+    post:
+      summary: Create a Core-owned conversation
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ConversationCreateRequest'}}}
+      responses:
+        '201': {description: Created conversation}
+        '401': {description: Missing or invalid user token}
+        '422': {description: Invalid conversation request}
+  /api/v1/conversations/{conversationId}:
+    get:
+      summary: Read one actor-scoped Core conversation
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ConversationId'}]
+      responses:
+        '200': {description: Persisted conversation and transcript data}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Conversation not found}
+    patch:
+      summary: Rename or archive a Core conversation
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ConversationId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ConversationPatchRequest'}}}
+      responses:
+        '200': {description: Updated conversation}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Conversation not found}
+    delete:
+      summary: Delete an actor-owned conversation
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ConversationId'}]
+      responses:
+        '200': {description: Conversation deleted}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Conversation not found}
+
+  /api/v1/users/me:
+    get:
+      summary: Read the authenticated Core profile
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Safe profile fields}
+        '401': {description: Missing or invalid user token}
+    patch:
+      summary: Update allowed Core profile fields
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ProfilePatchRequest'}}}
+      responses:
+        '200': {description: Updated profile}
+        '401': {description: Missing or invalid user token}
+        '422': {description: Invalid profile request}
+  /api/v1/addresses:
+    get:
+      summary: List actor-owned saved addresses
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Saved addresses}, '401': {description: Missing or invalid user token}}
+    post:
+      summary: Create an actor-owned saved address
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SavedAddressRequest'}}}
+      responses: {'201': {description: Saved address}, '401': {description: Missing or invalid user token}, '422': {description: Invalid address}}
+  /api/v1/addresses/{id}:
+    patch:
+      summary: Update an actor-owned saved address
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SavedAddressPatchRequest'}}}
+      responses: {'200': {description: Updated saved address}, '401': {description: Missing or invalid user token}, '404': {description: Address not found}}
+    delete:
+      summary: Delete an actor-owned saved address
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Address deleted}, '401': {description: Missing or invalid user token}, '404': {description: Address not found}}
+  /api/v1/addresses/{id}/default:
+    post:
+      summary: Make an actor-owned saved address the default
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Updated default address}, '401': {description: Missing or invalid user token}, '404': {description: Address not found}}
+  /api/v1/location/geocode:
+    post:
+      summary: Resolve an explicit address through the configured Gateway provider or transparent fallback
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address_text]
+              additionalProperties: false
+              properties:
+                address_text: {type: string, minLength: 3, maxLength: 500}
+      responses: {'200': {description: Candidate addresses with explicit resolution status}, '400': {description: Invalid address}, '401': {description: Missing or invalid user token}}
+  /api/v1/location/route:
+    post:
+      summary: Resolve a route from validated coordinates
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [origin, destination]
+              additionalProperties: false
+              properties:
+                origin: {$ref: '#/components/schemas/GeoPoint'}
+                destination: {$ref: '#/components/schemas/GeoPoint'}
+      responses: {'200': {description: Route snapshot with distance, duration and provider status}, '400': {description: Invalid coordinates}, '401': {description: Missing or invalid user token}}
+  /api/v1/healthcare/patients:
+    get:
+      summary: List Healthcare patient profiles linked to the authenticated actor
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Actor-scoped linked patients}, '401': {description: Missing or invalid user token}, '503': {description: Healthcare service unavailable}}
+    post:
+      summary: Create and link a Healthcare patient profile
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatientCreateRequest'}}}
+      responses: {'201': {description: Created linked patient}, '400': {description: Missing idempotency key}, '401': {description: Missing or invalid user token}, '409': {description: Idempotency conflict}}
+  /api/v1/healthcare/patients/{patientId}/default:
+    post:
+      summary: Select an actor-linked Healthcare patient as default
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PatientId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses: {'200': {description: Updated default patient}, '401': {description: Missing or invalid user token}, '404': {description: Patient is not linked to the actor}}
+
+  /api/v1/recommendations/rank:
+    post:
+      summary: Deterministically rank authoritative candidates using relevance, distance, ETA, price, and rating
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RecommendationRankRequest'}}}
+      responses:
+        '200': {description: Stable ranked candidates with score and optional distance}
+        '401': {description: Missing or invalid user token}
+        '422': {description: Invalid candidates}
+
+  /api/v1/workflows/multi-service/plan:
+    post:
+      summary: Persist a multi-service plan without executing domain side effects
+      description: >
+        The source contains only the ID and owning service of an already-selected
+        resource. The Gateway re-reads that resource through its owning service
+        before building a snapshot; caller-supplied address or coordinates are
+        not accepted as authoritative and this endpoint never writes a domain
+        database.
+      security: [{bearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/MultiServicePlanRequest'}}}
+      responses:
+        '201': {description: Durable multi-service plan}
+        '400': {description: Invalid plan or missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency conflict}
+
+  /api/v1/workflows/multi-service/{workflowId}:
+    get:
+      summary: Read an actor-scoped durable multi-service plan
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/WorkflowId'}]
+      responses:
+        '200': {description: Durable workflow state}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Workflow not found}
+  /api/v1/workflows/multi-service/{workflowId}/steps/{stepId}/result:
+    post:
+      summary: Record a typed domain step result and apply dependency policy
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/StepId'}
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowStepResult'}}}
+      responses:
+        '200': {description: Updated durable workflow state}
+        '400': {description: Invalid step}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Dependency or idempotency conflict}
+  /api/v1/workflows/multi-service/{workflowId}/compensations/{compensationId}/result:
+    post:
+      summary: Record an explicit compensation result
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/CompensationId'}
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/WorkflowStepResult'}}}
+      responses:
+        '200': {description: Updated durable workflow state}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Recovery or idempotency conflict}
+
+  /api/v1/notifications:
+    get:
+      summary: List durable actor-scoped notifications and synchronize domain events
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [UNREAD, READ]}
+      responses:
+        '200': {description: Notifications with unread count and degraded dependency metadata}
+        '401': {description: Missing or invalid user token}
+  /api/v1/notifications/unread-count:
+    get:
+      summary: Read the actor's durable unread notification count
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Unread count}, '401': {description: Missing or invalid user token}}
+  /api/v1/notifications/{id}/read:
+    post:
+      summary: Mark one actor-owned notification as read
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Updated notification}, '401': {description: Missing or invalid user token}, '404': {description: Notification not found}}
+  /api/v1/notifications/read-all:
+    post:
+      summary: Mark all actor-owned notifications as read
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Number of updated notifications}, '401': {description: Missing or invalid user token}}
+  /api/v1/favorites:
+    get:
+      summary: List actor-owned favorite Food, Restaurant and Healthcare resources
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Favorites}, '401': {description: Missing or invalid user token}}
+    post:
+      summary: Validate and create or return an actor-owned favorite
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, resource_id]
+              additionalProperties: false
+              properties:
+                domain: {type: string, enum: [food, restaurant, healthcare]}
+                resource_id: {type: string, minLength: 1, maxLength: 160}
+      responses: {'200': {description: Validated favorite}, '401': {description: Missing or invalid user token}, '404': {description: Resource not found}}
+  /api/v1/favorites/{id}:
+    delete:
+      summary: Delete one actor-owned favorite
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Deletion result}, '401': {description: Missing or invalid user token}}
+  /api/v1/feedback:
+    post:
+      summary: Create or update product feedback for an actor-owned completed transaction
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, resource_type, resource_id, rating]
+              additionalProperties: false
+              properties:
+                domain: {type: string, enum: [food, ride, restaurant, healthcare]}
+                resource_type: {type: string, enum: [food_order, ride_booking, restaurant_reservation, healthcare_appointment]}
+                resource_id: {type: string, minLength: 1, maxLength: 160}
+                rating: {type: integer, minimum: 1, maximum: 5}
+                comment: {type: string, maxLength: 1000}
+      responses: {'200': {description: Saved feedback}, '401': {description: Missing or invalid user token}, '409': {description: Resource is not owned or completed}}
+  /api/v1/feedback/mine:
+    get:
+      summary: List the actor's product feedback
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Actor-scoped feedback}, '401': {description: Missing or invalid user token}}
+  /api/v1/reorders/food/{orderId}:
+    post:
+      summary: Prepare a fresh Food reorder without placing it
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/OrderId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses: {'200': {description: New cart/current menu and unavailable-item details}, '401': {description: Missing or invalid user token}, '409': {description: Reorder context conflict}}
+  /api/v1/reorders/ride/{bookingId}:
+    post:
+      summary: Create a fresh Ride quote from an actor-owned prior booking
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/BookingId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses: {'200': {description: Fresh Ride quote}, '401': {description: Missing or invalid user token}, '409': {description: Rebook conflict}}
+  /api/v1/reorders/restaurant/{reservationId}:
+    post:
+      summary: Prepare a fresh Restaurant availability check from an actor-owned reservation
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ReservationId'}]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                start_at: {type: string, format: date-time}
+                party_size: {type: integer, minimum: 1, maximum: 50}
+      responses: {'200': {description: Fresh availability and prefill}, '401': {description: Missing or invalid user token}, '409': {description: Rebook conflict}}
+  /api/v1/reorders/healthcare/{appointmentId}:
+    post:
+      summary: Prepare fresh Healthcare doctors and facility context from an actor-owned appointment
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AppointmentId'}]
+      responses: {'200': {description: Fresh Healthcare booking context}, '401': {description: Missing or invalid user token}, '409': {description: Rebook conflict}}
+  /api/v1/support/tickets:
+    get:
+      summary: List actor-owned support tickets
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+      responses: {'200': {description: Actor-scoped support tickets}, '401': {description: Missing or invalid user token}}
+    post:
+      summary: Create an actor-owned support ticket with optional validated transaction link
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [subject, description], additionalProperties: false, properties: {subject: {type: string, minLength: 3, maxLength: 180}, description: {type: string, minLength: 3, maxLength: 5000}, resource_type: {type: string}, resource_id: {type: string}, priority: {type: string, enum: [LOW, NORMAL, HIGH, URGENT]}}}}}
+      responses: {'200': {description: Created or idempotently replayed ticket}, '400': {description: Missing idempotency key}, '401': {description: Missing or invalid user token}, '409': {description: Invalid linked resource}}
+  /api/v1/support/tickets/{id}:
+    get:
+      summary: Read one actor-owned support ticket and timeline
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Ticket detail and timeline}, '401': {description: Missing or invalid user token}, '404': {description: Ticket not found}}
+  /api/v1/support/tickets/{id}/messages:
+    post:
+      summary: Add an actor-owned support ticket message
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ResourceId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [message], additionalProperties: false, properties: {message: {type: string, minLength: 1, maxLength: 5000}}}}}
+      responses: {'200': {description: Updated ticket}, '400': {description: Missing idempotency key}, '401': {description: Missing or invalid user token}, '404': {description: Ticket not found}}
+  /api/v1/admin/summary:
+    get:
+      summary: Read operational aggregate summary
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Admin summary}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/users:
+    get:
+      summary: List users for administrators
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminPage'}, {$ref: '#/components/parameters/AdminPageSize'}]
+      responses: {'200': {description: Paged safe user summaries}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/transactions:
+    get:
+      summary: Aggregate domain-owned transaction reads through internal ops APIs
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminPage'}, {$ref: '#/components/parameters/AdminPageSize'}]
+      responses: {'200': {description: Paged partial-aware transactions}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/payments:
+    get:
+      summary: List Core-owned payments and refunds for administrators
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminPage'}, {$ref: '#/components/parameters/AdminPageSize'}]
+      responses: {'200': {description: Paged payments and refunds}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/workflows:
+    get:
+      summary: List Core workflow reconciliation records
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminPage'}, {$ref: '#/components/parameters/AdminPageSize'}]
+      responses: {'200': {description: Paged workflows}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/datasets:
+    get:
+      summary: Aggregate domain-owned dataset freshness status
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Dataset version/provenance status}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/system-health:
+    get:
+      summary: Probe Gateway, Agent and domain service health
+      security: [{bearerAuth: []}]
+      responses: {'200': {description: Per-service health and latency}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/support-tickets:
+    get:
+      summary: List support tickets for administrators
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/AdminPage'}, {$ref: '#/components/parameters/AdminPageSize'}]
+      responses: {'200': {description: Paged support tickets}, '401': {description: Missing token}, '403': {description: Admin role required}}
+  /api/v1/admin/support-tickets/{id}:
+    get:
+      summary: Read one support ticket for administrators
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      responses: {'200': {description: Ticket and timeline}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}}
+    patch:
+      summary: Update support ticket status or priority
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, properties: {status: {type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]}, priority: {type: string, enum: [LOW, NORMAL, HIGH, URGENT]}}}}}
+      responses: {'200': {description: Updated support ticket}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}}
 components:
   securitySchemes:
     bearerAuth:
@@ -165,6 +855,106 @@ components:
         type: string
         minLength: 1
         maxLength: 255
+    RequiredIdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+    ServiceKey:
+      in: path
+      name: service
+      required: true
+      schema: {type: string, enum: [food, ride, restaurant, healthcare]}
+    Keyword:
+      in: query
+      name: q
+      required: false
+      schema: {type: string, maxLength: 200}
+    Latitude:
+      in: query
+      name: latitude
+      required: false
+      schema: {type: number, minimum: -90, maximum: 90}
+    Longitude:
+      in: query
+      name: longitude
+      required: false
+      schema: {type: number, minimum: -180, maximum: 180}
+    BookingId:
+      in: path
+      name: bookingId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    HistoryType:
+      in: path
+      name: type
+      required: true
+      schema: {type: string, enum: [food_order, ride_booking, restaurant_reservation, healthcare_appointment]}
+    ResourceId:
+      in: path
+      name: id
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    RestaurantId:
+      in: path
+      name: restaurantId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    CartId:
+      in: path
+      name: cartId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    PatientId:
+      in: path
+      name: patientId
+      required: true
+      schema: {type: integer, minimum: 1}
+    ConversationId:
+      in: path
+      name: conversationId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    WorkflowId:
+      in: path
+      name: workflowId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    StepId:
+      in: path
+      name: stepId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    CompensationId:
+      in: path
+      name: compensationId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 160}
+    OrderId:
+      in: path
+      name: orderId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    ReservationId:
+      in: path
+      name: reservationId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    AppointmentId:
+      in: path
+      name: appointmentId
+      required: true
+      schema: {type: integer, minimum: 1}
+    AdminPage:
+      in: query
+      name: page
+      required: false
+      schema: {type: integer, minimum: 1, default: 1}
+    AdminPageSize:
+      in: query
+      name: page_size
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
   schemas:
     AssistantChatRequest:
       type: object
@@ -221,14 +1011,15 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, food_confirm]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
               label: {type: string}
+              target_index: {type: integer, minimum: 0}
         completed:
           type: array
           maxItems: 8
           items: {$ref: '#/components/schemas/AssistantItem'}
         workflow_status:
-          enum: [IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED]
+          enum: [PENDING, RUNNING, COMPLETED, PARTIAL_SUCCESS, FAILED]
 
     AssistantItem:
       oneOf:
@@ -385,8 +1176,11 @@ components:
         price: {type: [integer, 'null']}
         facility: {$ref: '#/components/schemas/HealthcareFacility'}
         appointment_id: {type: integer}
+        resource_id: {type: integer}
+        status: {type: string}
         appointment: {type: object, additionalProperties: true}
         facility: {$ref: '#/components/schemas/HealthcareFacility'}
+        alternative_slots: {type: array, items: {$ref: '#/components/schemas/HealthcareOption'}}
         note: {type: string}
         payment_note: {type: string}
     HealthcareOption:
@@ -397,7 +1191,9 @@ components:
         doctor: {type: string}
         department: {type: string}
         start_time: {type: string, format: date-time}
-        price: {type: [integer, 'null']}
+        price: {type: integer}
+        target_index: {type: integer, minimum: 0}
+        facility: {$ref: '#/components/schemas/HealthcareFacility'}
     HealthcareFacility:
       type: object
       required: [name, address]
@@ -407,9 +1203,8 @@ components:
         source_id: {type: string}
         name: {type: string}
         address: {type: string}
-        city: {type: string}
-        district: {type: string}
-        website: {type: string}
+        latitude: {type: number}
+        longitude: {type: number}
     AssistantProgressItem:
       type: object
       required: [kind, title]
@@ -480,3 +1275,182 @@ components:
       properties:
         data: {type: object, additionalProperties: true}
         meta: {type: object, additionalProperties: true}
+    JsonEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: {type: object, additionalProperties: true}
+        meta: {type: object, additionalProperties: true}
+    FoodCartRequest:
+      type: object
+      required: [restaurant_id]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string, minLength: 1}
+    FoodCartItemRequest:
+      type: object
+      required: [menu_item_id, quantity]
+      additionalProperties: false
+      properties:
+        menu_item_id: {type: string, minLength: 1}
+        quantity: {type: integer, minimum: 1, maximum: 50}
+        note: {type: string, maxLength: 500}
+        selected_options:
+          type: array
+          items:
+            type: object
+            required: [group_id, option_id]
+            additionalProperties: false
+            properties:
+              group_id: {type: string, minLength: 1}
+              option_id: {type: string, minLength: 1}
+    RestaurantAvailabilityRequest:
+      type: object
+      required: [restaurant_id, party_size, start_at]
+      additionalProperties: false
+      properties:
+        restaurant_id: {type: string, minLength: 1}
+        party_size: {type: integer, minimum: 1, maximum: 50}
+        start_at: {type: string, format: date-time}
+        duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
+        seating_type: {type: string, maxLength: 80}
+    RestaurantHoldRequest:
+      allOf:
+        - {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}
+      description: Availability request used to create an idempotent hold.
+    HealthcareHoldRequest:
+      type: object
+      required: [slot_id, symptoms]
+      additionalProperties: false
+      properties:
+        slot_id: {type: integer, minimum: 1}
+        patient_id: {type: integer, minimum: 1}
+        symptoms: {type: string, minLength: 1, maxLength: 2000}
+    RidePrepareRequest:
+      type: object
+      required: [quote_id]
+      additionalProperties: false
+      properties:
+        quote_id: {type: string, minLength: 1, maxLength: 128}
+    RideQuoteRequest:
+      type: object
+      required: [pickup_address, dropoff_address]
+      additionalProperties: false
+      properties:
+        pickup_address: {type: string, minLength: 3, maxLength: 500}
+        dropoff_address: {type: string, minLength: 3, maxLength: 500}
+        vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
+        passenger_count: {type: integer, minimum: 1, maximum: 20, default: 1}
+        pickup_latitude: {type: number, minimum: -90, maximum: 90}
+        pickup_longitude: {type: number, minimum: -180, maximum: 180}
+        dropoff_latitude: {type: number, minimum: -90, maximum: 90}
+        dropoff_longitude: {type: number, minimum: -180, maximum: 180}
+    ConversationCreateRequest:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        service_context: {type: string, maxLength: 80}
+    ConversationPatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        status: {type: string, enum: [ACTIVE, ARCHIVED]}
+    ProfilePatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        full_name: {type: string, minLength: 1, maxLength: 120}
+        phone: {type: [string, "null"], maxLength: 40}
+        avatar_url: {type: [string, "null"], maxLength: 500}
+        language: {type: string, minLength: 2, maxLength: 20}
+        timezone: {type: string, minLength: 1, maxLength: 80}
+        onboarding_completed: {type: boolean}
+    SavedAddressRequest:
+      type: object
+      required: [label, address_text]
+      additionalProperties: false
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+        address_text: {type: string, minLength: 3, maxLength: 500}
+        city: {type: string, maxLength: 120}
+        district: {type: string, maxLength: 120}
+        ward: {type: string, maxLength: 120}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+        provider: {type: string, maxLength: 80}
+        source: {type: string, enum: [manual, geocoded, imported]}
+        is_default: {type: boolean}
+    SavedAddressPatchRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+        address_text: {type: string, minLength: 3, maxLength: 500}
+        city: {type: string, maxLength: 120}
+        district: {type: string, maxLength: 120}
+        ward: {type: string, maxLength: 120}
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+        provider: {type: string, maxLength: 80}
+        source: {type: string, enum: [manual, geocoded, imported]}
+        is_default: {type: boolean}
+    GeoPoint:
+      type: object
+      required: [latitude, longitude]
+      additionalProperties: false
+      properties:
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+    PatientCreateRequest:
+      type: object
+      required: [name, phone]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 2, maxLength: 255}
+        phone: {type: string, minLength: 6, maxLength: 64}
+        relationship: {type: string, enum: [self, child, parent, dependent]}
+        blood_type: {type: string, maxLength: 16}
+        medical_history: {type: string, maxLength: 4000}
+    RecommendationRankRequest:
+      type: object
+      required: [candidates]
+      additionalProperties: false
+      properties:
+        candidates:
+          type: array
+          maxItems: 100
+          items: {type: object, required: [id], additionalProperties: true}
+        origin:
+          type: object
+          required: [latitude, longitude]
+          additionalProperties: false
+          properties:
+            latitude: {type: number, minimum: -90, maximum: 90}
+            longitude: {type: number, minimum: -180, maximum: 180}
+    MultiServicePlanRequest:
+      type: object
+      required: [kind, source]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [restaurant_ride, healthcare_ride, food_healthcare]}
+        workflow_id: {type: string, minLength: 1, maxLength: 120}
+        source: {$ref: '#/components/schemas/AuthoritativeResource'}
+    AuthoritativeResource:
+      type: object
+      required: [id, authority]
+      additionalProperties: false
+      properties:
+        id: {type: string, minLength: 1, maxLength: 160}
+        authority: {type: string, enum: [restaurant-service, healthcare-service]}
+    WorkflowStepResult:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: {type: string, enum: [SUCCEEDED, FAILED]}
+        payload_hash: {type: string, maxLength: 120}
+        error_code: {type: string, maxLength: 120}
+        result: {type: object, additionalProperties: true}

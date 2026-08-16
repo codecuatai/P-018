@@ -1,4 +1,11 @@
 process.env.PORT = '3000';
+process.env.GATEWAY_CORS_ORIGINS = 'http://localhost:5173,http://localhost:3000';
+process.env.GATEWAY_BODY_LIMIT_BYTES = '262144';
+process.env.GATEWAY_RATE_LIMIT_WINDOW_SECONDS = '60';
+process.env.GATEWAY_AUTH_LOGIN_RATE_LIMIT = '5';
+process.env.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT = '30';
+process.env.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT = '20';
+process.env.GATEWAY_FUTURE_AUTH_RATE_LIMIT = '5';
 process.env.DATABASE_URL = 'postgresql://core_user:test-password@postgres:5432/xone_core';
 process.env.AGENT_SERVICE_URL = 'http://agent-service:8001';
 process.env.RIDE_SERVICE_URL = 'http://ride-service:8101';
@@ -13,4 +20,14 @@ process.env.DEMO_AUTH_ENABLED = 'true';
 process.env.DEMO_AUTH_EMAIL = 'demo@xone.vn';
 process.env.DEMO_AUTH_PASSWORD = 'Xone@123';
 process.env.DEMO_AUTH_USER_ID = 'usr_demo_001';
-process.env.GATEWAY_CORS_ORIGINS = 'http://localhost:3000';
+process.env.AUTH_ACCESS_TOKEN_TTL_SECONDS = '900';
+process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS = '2592000';
+process.env.AUTH_RESET_TOKEN_TTL_SECONDS = '1800';
+process.env.AUTH_ISSUER = 'x-one';
+process.env.AUTH_AUDIENCE = 'x-one-web';
+process.env.AUTH_REFRESH_COOKIE_NAME = 'xone_refresh';
+process.env.AUTH_DEV_RESET_TOKEN_CAPTURE = 'true';
+// Unit tests keep the offline deterministic location boundary. Live demo
+// verification runs through the host runtime with GEOAPIFY_REAL_MODE=true.
+process.env.GEOAPIFY_REAL_MODE = 'false';
+process.env.LOCAL_DETERMINISTIC_LOCATION_FALLBACK = 'true';

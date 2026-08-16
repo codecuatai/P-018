@@ -78,6 +78,38 @@ invalidates its siblings and stale actions return `ACTION_NOT_AVAILABLE` without
 a domain call. An unrelated Food or Healthcare follow-up therefore does not
 re-quote an awaiting Restaurant or Ride task.
 
+## Ride lifecycle (current runtime)
+
+Ride is the authority for quote and booking state. A quote moves through
+`QUOTE_CREATED -> AWAITING_CONFIRMATION -> CONSUMED` or `EXPIRED`; a booking
+starts at `AWAITING_CONFIRMATION` and requires two explicit user confirmations:
+service details first, then payment/final confirmation. The normal dispatch
+path is:
+
+```text
+AWAITING_CONFIRMATION
+  -> SEARCHING_DRIVER
+  -> DRIVER_ASSIGNED
+  -> DRIVER_TO_PICKUP
+  -> DRIVER_ARRIVED
+  -> IN_PROGRESS
+  -> COMPLETED
+```
+
+`NO_DRIVER`, `PAYMENT_FAILED`, `FAILED`, and `CANCELLED` are terminal outcomes
+where applicable. The Ride domain validates every transition, persists a
+monotonic `resource_version`, records tracking events, resolves tariffs and
+drivers from its own database, and enforces actor/operation idempotency. The
+Gateway may retry or reconcile a result, but it never infers driver, price,
+availability, or final success from model output.
+
+For local simulated dispatch, a newly assigned driver receives a stable spawn
+position 2â€“3 km from the pickup and a persisted tracking-speed factor of `0.2`.
+Its approach ETA is derived from the passenger route's distance/duration ratio,
+so the approach and passenger legs use the same simulated speed. Both legs
+therefore progress at 20% of the prior simulator rate (80% slower); existing
+bookings retain their stored behavior.
+
 ## Food ordering (target flow)
 
 ```mermaid
@@ -155,7 +187,11 @@ An explicit Healthcare clock is matched exactly when available. If no exact slot
 exists, the response labels nearby or other real alternatives as unavailable at
 the requested time; it never silently changes a request such as 10:00 to 14:00.
 Daypart requests such as “sáng mai” remain a morning range preference rather
-than an invented exact 08:00 slot.
+than an invented exact 08:00 slot. A date-only request such as “ngày kia” is
+kept as a local calendar-day filter, separate from an exact clock, so changing
+the day cannot retain an earlier appointment hour. Before payment, the held
+appointment card also exposes an idempotent `healthcare_cancel` action to
+release that temporary hold; it is removed once payment starts.
 
 Assistant action execution receipts are Core-owned. The first successful
 `/api/v1/assistant/actions` request stores the actor, conversation, action,
@@ -164,3 +200,47 @@ same action with the same key returns the exact stored response, while a
 different key receives `ACTION_NOT_AVAILABLE` and cannot re-run the domain
 side effect. This applies uniformly to Restaurant, Ride, Healthcare, and Food
 actions.
+
+## Multi-service reliability (Phase 9)
+
+The Gateway persists a Core-owned plan before a multi-service caller records
+domain results. `restaurant_ride` and `healthcare_ride` use
+`STOP_DEPENDENTS`: the selected authoritative resource must succeed before a
+Ride step can run. `food_healthcare` uses independent steps so a failure in one
+does not block the other. The state machine exposes `PENDING`, `RUNNING`,
+`COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `COMPENSATING`, and
+`RECOVERY_REQUIRED`.
+
+The public plan request carries only the selected resource ID and owning
+authority. The Gateway re-reads the active resource through the typed
+Restaurant or Healthcare client before creating the snapshot; caller-supplied
+address and coordinates are not authoritative. Restaurant/Healthcare
+coordinates enter Ride only through that domain-owned `AuthoritativeResource`
+snapshot. Suspicious default coordinates are retained as provenance but are not
+used as real distance inputs. A Healthcare success followed by `NO_DRIVER` is
+`PARTIAL_SUCCESS`; the appointment remains authoritative and is not
+auto-cancelled. Compensation is declared per step: Healthcare is `NONE`, Food
+may require a new user confirmation, and automatic compensation is permitted
+only for an explicitly safe domain policy.
+
+Workflow plans and step idempotency evidence are persisted in Core migration
+`011_core_multi_service_workflows.sql`. Re-reading the plan after Gateway
+process recreation returns the same state; domain writes still use their own
+typed clients, confirmation evidence, and domain idempotency keys.
+
+## Product/Ops workflow
+
+Completed domain events are projected by the Gateway into Core-owned,
+actor-scoped notifications using deterministic `event_key` values. Opening the
+notification center also creates missing Healthcare reminder records inside
+the local reminder window; polling and retries are idempotent. Favorites and
+feedback first validate the authoritative resource through its owning service.
+Feedback is accepted only for an actor-owned completed transaction.
+
+History actions create a fresh reorder/rebook preparation: current menu,
+tariff, availability or Healthcare slots are re-read and no old final price,
+hold or confirmation is replayed. Support tickets store a Core timeline and
+are linked to a transaction only after Gateway ownership validation. Admin
+support changes require the server-side Admin guard and a durable idempotency
+key; a same-payload replay returns the existing ticket without repeating the
+audit side effect.

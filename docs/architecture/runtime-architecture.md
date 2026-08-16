@@ -1,18 +1,56 @@
 # Runtime Architecture
 
-Each backend component has its own Docker image. Local Compose starts PostgreSQL, API gateway, agent, Ride, Restaurant, Healthcare, and Food over internal DNS: `agent-service`, `ride-service`, `restaurant-service`, `healthcare-service`, and `food-service`. The default Compose publishes only the Gateway; Agent/Food use `expose` for container-network access.
+The local stack contains a Next.js Web application, the NestJS Gateway, an
+Agent, four domain services, and one PostgreSQL instance with logically
+separate databases. Compose publishes the Web at `${WEB_PORT}` (5173 in the
+example) and the Gateway at `${API_GATEWAY_PORT}` (3000 in the example).
+Domain and Agent ports are container-network-only.
 
 ```mermaid
 flowchart TB
-  Host --> Gateway[api-gateway :3000]
+  Browser --> Web[Next.js Web :5173]
+  Browser --> Gateway[Gateway :3000]
+  Web -. technical health probe only .-> Web
   Gateway --> Agent[agent-service :8001]
   Gateway --> Ride[ride-service :8101]
   Gateway --> Restaurant[restaurant-service :8102]
   Gateway --> Healthcare[healthcare-service :8103]
   Gateway --> Food[food-service :8104]
-  Gateway --> Postgres[(postgres :5432)]
+  Gateway --> Core[(xone_core)]
+  Agent --> AgentDb[(xone_agent)]
+  Ride --> RideDb[(xone_ride)]
+  Restaurant --> RestaurantDb[(xone_restaurant)]
+  Healthcare --> HealthcareDb[(xone_healthcare)]
+  Food --> FoodDb[(xone_food)]
 ```
 
-Root `.env` interpolates Compose only; containers receive explicit least-privilege variables, never a shared `env_file`. `/health/live` reports process availability. Food `/health/ready` reports its connected repository and workflow worker state; Gateway `/health/ready` reports reconciliation worker state. The `start-all` launcher waits for PostgreSQL and every required application health check before migrations and Web startup; individual Compose commands still remain available for service-level development. Domain/agent runtime errors are handled by gateway client timeout/error mapping after startup. PostgreSQL bootstrap runs only for a new volume. Future deployments split services and databases independently.
+The browser calls the public Gateway directly through `NEXT_PUBLIC_API_URL`.
+The Web's `/api/health` route is an intentionally technical Next.js/Docker
+probe, not a BFF and not a proxy for domain data. The browser never calls a
+domain database or internal service. The Gateway is the public validation,
+routing, response-shaping, correlation/audit and typed-client boundary; it
+does not own a domain state transition by cross-domain SQL.
 
-The Agent's optional Gemini adapter tries the configured model first. A confirmed native structured-schema/capability failure retries raw output on that same model and sends it through the existing validated parser. A configured `GEMINI_FALLBACK_MODEL` is eligible only for confirmed quota/rate-limit, temporary 5xx, timeout/network, or model-unavailable failures; authentication, permission, billing, and malformed-request failures remain visible and do not silently fall back. The checked-in `.env.example` defaults `AGENT_MODEL_MODE=gemini`; offline acceptance runs explicitly set `AGENT_MODEL_MODE=deterministic` so provider credentials are not required. The internal status response reports configured primary/fallback, actual last model, invocation mode, fallback usage, call time, safe exception type, HTTP status/category, and safe status. All public Restaurant and Healthcare turns still pass through Gateway confirmation/payment gates; the Agent only emits typed requests.
+Root `.env` interpolates Compose only; every container receives explicit
+least-privilege variables and no service uses a shared `env_file`. Internal
+URLs use Compose DNS names (`agent-service`, `ride-service`,
+`restaurant-service`, `healthcare-service`, and `food-service`), never
+`localhost`. The Web image is a standalone Next output and accepts only its
+build-time `NEXT_PUBLIC_*` configuration; it does not receive credentials.
+
+`/health/live` reports process availability. Gateway `/health/ready` reports
+the Gateway-owned dependencies it checks. The Web health endpoint confirms
+that the rendered Next server is available; it does not claim Gateway or
+domain readiness. `start-all.{ps1,sh}` waits for container health, runs the
+owned migrations, then verifies Gateway and Web endpoints. Migrations remain
+explicit and idempotent; starting a container never performs destructive
+schema repair.
+
+The Agent's optional Gemini adapter tries the configured model first. A
+confirmed native structured-schema/capability failure retries raw output on
+that model and sends it through the existing validated parser. A configured
+fallback is eligible only for confirmed quota/rate-limit, temporary 5xx,
+timeout/network, or model-unavailable failures; authentication, permission,
+billing and malformed-request failures remain visible. All public Restaurant
+and Healthcare turns still pass through Gateway confirmation/payment gates;
+the Agent only emits typed requests.

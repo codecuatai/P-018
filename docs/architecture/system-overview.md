@@ -24,11 +24,11 @@ flowchart TB
     classDef database fill:#EAECEE,stroke:#34495E,stroke-width:2px,color:#1B2631;
 
     subgraph ClientLayer["1. Client Layer"]
-        Web["Web Application\n(React / Vite)"]:::client
+        Web["Web Application\n(Next.js App Router)"]:::client
         Mobile["Mobile Shell\n(React Native / Expo)"]:::client
     end
 
-    subgraph GatewayLayer["2. API Gateway Layer (BFF & Orchestration)"]
+    subgraph GatewayLayer["2. Public Gateway & Orchestration"]
         Gateway["NestJS API Gateway (Port :3000)\n- Core Workflow Orchestration\n- Confirmation & Idempotency Engine\n- Audit Log & Payment Sandbox"]:::gateway
     end
 
@@ -70,4 +70,4 @@ flowchart TB
     Food -.->|SQL Connection| FoodDB
 ```
 
-The current integrated local scope covers Food ordering, Ride booking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, and Healthcare doctor/slot/hold/payment acknowledgement/final confirmation/cancellation through Gateway orchestration and typed Agent requests. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md). Non-goals are queues, service mesh, Kubernetes, Redis, multi-agent orchestration, and production payment/authentication.
+The current integrated local scope covers Food ordering, Ride booking/tracking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, Healthcare doctor/department/patient/slot/hold/payment acknowledgement/final confirmation/cancellation, Core profile/saved addresses/conversations/history, service browsing, real-catalog provenance, deterministic ranking, and durable multi-service workflow planning through Gateway orchestration and typed Agent requests. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. Production payment providers, queues, service mesh, Kubernetes, Redis and Phase 10 evaluation remain outside this scope. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md).

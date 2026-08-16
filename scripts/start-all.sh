@@ -50,6 +50,7 @@ docker compose --env-file .env up --build -d "${compose_args[@]}"
 required_services=(
     postgres
     api-gateway
+    web
     agent-service
     ride-service
     restaurant-service
@@ -128,27 +129,15 @@ gateway_host="$(normalize_gateway_host "$gateway_host")"
 gateway_url="http://${gateway_host}:${gateway_bound_port}"
 wait_http "${gateway_url}/health/ready"
 
-web_pid=""
-web_log="/tmp/xone-web-dev.log"
-if [[ -d apps/web ]]; then
-    if [[ ! -d apps/web/node_modules ]]; then
-        (cd apps/web && npm install)
-    fi
-    (cd apps/web && VITE_API_URL="$gateway_url" npm run dev -- --host 0.0.0.0) >"$web_log" 2>&1 &
-    web_pid="$!"
-    if ! wait_http "http://localhost:5173"; then
-        kill "$web_pid" 2>/dev/null || true
-        fail "Web readiness failed; see $web_log."
-    fi
-else
-    fail "apps/web directory is missing."
-fi
+web_port="$(docker compose --env-file .env port web 3000 | head -n 1)"
+web_host="${web_port%:*}"
+web_bound_port="${web_port##*:}"
+web_host="$(normalize_gateway_host "$web_host")"
+web_url="http://${web_host}:${web_bound_port}"
+wait_http "${web_url}/api/health"
 
 echo ""
 echo "X-One started successfully."
-echo "  Web:     http://localhost:5173"
+echo "  Web:     ${web_url}"
 echo "  Gateway: ${gateway_url}"
 echo "  Internal services: Compose DNS only (agent-service, ride-service, restaurant-service, healthcare-service, food-service)"
-if [[ -n "$web_pid" ]]; then
-    echo "  Web PID: $web_pid (logs: $web_log)"
-fi

@@ -34,6 +34,7 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+artifacts/dataops/
 *.db
 *.sqlite3
 
@@ -57,6 +58,9 @@ node_modules/
 out/
 .nuxt/
 .expo/
+playwright-report/
+playwright-live-report/
+test-results/
 
 # Build
 *.pyc
@@ -66,7 +70,11 @@ out/
 .ai-log/*.jsonl
 .ai-log/archive/
 
+# Local process metadata (PIDs and non-secret runtime state)
+.local-runtime/
+
 phong.md
 job.txt
 .pnpm-store/
 plan.md
+work.md

@@ -60,10 +60,11 @@ class FoodRepository(Protocol):
     async def ensure_voucher_eligible(self, code: str, user_id: str) -> None: ...
     async def get_address(self, address_id: str) -> dict | None: ...
     async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]: ...
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict: ...
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None, address_snapshot: dict | None = None) -> dict: ...
     async def get_order(self, order_id: str) -> dict | None: ...
     async def get_order_by_idempotency(self, user_id: str, idempotency_key: str) -> dict | None: ...
     async def list_orders(self) -> list[dict]: ...
+    async def dataset_status(self) -> dict: ...
     async def list_due_orders(self, now: datetime) -> list[dict]: ...
     async def claim_and_advance_due_orders(self, now: datetime, limit: int, advance: AdvanceDecision) -> list[dict]: ...
     async def transition_order_atomic(
@@ -94,6 +95,20 @@ def _json_object(value: object) -> dict:
     if not isinstance(value, dict):
         raise TypeError("Expected a JSON object")
     return dict(value)
+
+
+def _safe_catalog_record(record_type: str, value: dict) -> dict:
+    """Return the explicit Food product DTO, excluding source provenance."""
+
+    if record_type == "restaurant":
+        fields = (
+            "id", "name", "address", "ward", "district", "city", "category", "cuisine_tags",
+            "phone", "opening_hours", "rating", "rating_source", "review_count", "price_level",
+            "image_url", "is_open", "latitude", "longitude",
+        )
+    else:
+        fields = ("id", "restaurant_id", "name", "description", "price", "currency", "image_url", "category", "available", "option_groups")
+    return {field: value.get(field) for field in fields if field in value}
 
 
 def _event(current: str | None, target: FoodOrderStatus, reason: str, actor_type: str) -> dict:
@@ -138,14 +153,41 @@ class InMemoryFoodRepository:
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
-        keyword = _fold_text(filters.get("keyword", ""))
-        district = _search_district(filters.get("district", ""), self.location_aliases)
+        raw_keyword = str(filters.get("keyword", "")).strip().casefold()
+        keyword = _fold_text(raw_keyword)
+        preserve_diacritics = any(ord(char) > 127 for char in raw_keyword)
+        district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
+        restaurant_id = str(filters.get("restaurant_id", ""))
         result = []
+        item_keyword_match = False
+        primary_item_keyword_match = False
         for item in self.items.values():
+            if restaurant_id and item["restaurant_id"] != restaurant_id:
+                continue
             restaurant = self.restaurants[item["restaurant_id"]]
-            text = _fold_text(f"{item['name']} {item['description']} {item['category']} {restaurant['name']}")
-            if keyword and not _matches_keyword(text, keyword):
+            primary_item_text = _fold_text(f"{item['name']} {item['category']}")
+            item_text = _fold_text(f"{primary_item_text} {item['description']}")
+            restaurant_text = _fold_text(restaurant["name"])
+            raw_primary_item_text = f"{item['name']} {item['category']}".casefold()
+            raw_item_text = f"{raw_primary_item_text} {item['description']}".casefold()
+            raw_restaurant_text = str(restaurant["name"]).casefold()
+            matches_primary_item = not keyword or (
+                _matches_keyword(raw_primary_item_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(primary_item_text, keyword)
+            )
+            matches_item = matches_primary_item or (bool(keyword) and (
+                _matches_keyword(raw_item_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(item_text, keyword)
+            ))
+            matches_restaurant = not keyword or (
+                _matches_keyword(raw_restaurant_text, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(restaurant_text, keyword)
+            )
+            if keyword and not matches_item and not matches_restaurant:
                 continue
             if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
@@ -157,9 +199,16 @@ class InMemoryFoodRepository:
                 continue
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
-            result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant)})
-        result.sort(key=lambda value: (str(value["restaurant"].get("name", "")), str(value["item"].get("name", ""))))
-        return result[:int(filters.get("limit", 20))]
+            item_keyword_match = item_keyword_match or matches_item
+            primary_item_keyword_match = primary_item_keyword_match or matches_primary_item
+            result.append({"item": deepcopy(item), "restaurant": deepcopy(restaurant), "_item_keyword_match": matches_item, "_primary_item_keyword_match": matches_primary_item})
+        if keyword and primary_item_keyword_match:
+            result = [entry for entry in result if entry["_primary_item_keyword_match"]]
+        elif keyword and item_keyword_match:
+            result = [entry for entry in result if entry["_item_keyword_match"]]
+        start = int(filters.get("offset", 0) or 0)
+        limit = int(filters.get("limit", 12) or 12)
+        return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start:start + limit]]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         return deepcopy(self.restaurants.get(restaurant_id))
@@ -212,7 +261,7 @@ class InMemoryFoodRepository:
         wanted = str(label or "").casefold()
         return [deepcopy(value) for value in self.addresses.values() if value.get("user_id") == user_id and (not wanted or wanted in str(value.get("label", "")).casefold() or wanted in str(value.get("address", "")).casefold())]
 
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None, address_snapshot: dict | None = None) -> dict:
         async with self._lock:
             existing = next((value for value in self.orders.values() if value["user_id"] == order["user_id"] and value["idempotency_key"] == order["idempotency_key"]), None)
             if existing:
@@ -223,17 +272,18 @@ class InMemoryFoodRepository:
             if cart is None or cart.get("user_id") != order["user_id"]:
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
             if expected is not None and delivery_config is not None and address_id is not None:
-                restaurant = self.restaurants.get(str(cart["restaurant_id"]))
-                address = self.addresses.get(address_id)
+                address = deepcopy(address_snapshot) if address_snapshot is not None else self.addresses.get(address_id)
                 voucher_code = str((cart.get("voucher") or {}).get("code", ""))
                 current_voucher = self.vouchers.get(voucher_code.upper()) if voucher_code else None
                 items = {item["menu_item_id"]: self.items[item["menu_item_id"]] for item in cart.get("items", []) if item["menu_item_id"] in self.items}
-                if restaurant is None or address is None or address.get("user_id") != order["user_id"]:
+                if address is None or address.get("user_id") != order["user_id"]:
                     raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
-                quote = build_authoritative_quote(cart, restaurant, items, current_voucher, address, delivery_config)
+                restaurant_ids = {str(item.get("restaurant_id", "")) for item in items.values() if str(item.get("restaurant_id", ""))}
+                restaurants = {restaurant_id: self.restaurants[restaurant_id] for restaurant_id in restaurant_ids if restaurant_id in self.restaurants}
+                quote = build_authoritative_quote(cart, restaurants, items, current_voucher, address, delivery_config)
                 if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
                     raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
-                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "restaurants": quote.get("restaurants", []), "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
                 voucher = current_voucher
             elif int(cart.get("version", 0)) != int(order.get("cart_version", 0)):
                 raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
@@ -245,7 +295,7 @@ class InMemoryFoodRepository:
                 if current is None or key in self.redeemed_vouchers or int(current.get("used_count", 0)) >= int(current.get("usage_limit", 0)):
                     raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
                 calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
-                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                if current.get("restaurant_id") and any(current["restaurant_id"] != restaurant.get("id") for restaurant in order.get("restaurants", [order["restaurant"]])):
                     raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
                 current["used_count"] = int(current.get("used_count", 0)) + 1
                 self.vouchers[code] = deepcopy(current)
@@ -286,6 +336,7 @@ class InMemoryFoodRepository:
         order.setdefault("timeline", []).append(event)
         self.order_events.setdefault(order["id"], []).append(deepcopy(event))
         order["version"] = int(order.get("version", 0)) + 1
+        order["updated_at"] = event["occurred_at"]
         return deepcopy(order)
 
     async def transition_order_atomic(self, order_id: str, target: FoodOrderStatus, reason: str, actor_type: str = "system", next_transition_at: datetime | None = None, expected_version: int | None = None, operation_key: str | None = None) -> dict:
@@ -330,6 +381,9 @@ class InMemoryFoodRepository:
     async def get_order_events(self, order_id: str) -> list[dict]:
         return deepcopy(self.order_events.get(order_id, []))
 
+    async def dataset_status(self) -> dict:
+        return {"dataset_version": "demo-hanoi", "source_name": "local-seed", "imported_at": None, "last_verified_at": None, "active": True, "row_count": len(self.restaurants) + len(self.items), "quality_warnings": [], "rejected_count": 0}
+
 
 class PostgresFoodRepository:
     """PostgreSQL adapter; every multi-step mutation owns one transaction."""
@@ -356,25 +410,83 @@ class PostgresFoodRepository:
     def _order_from_row(row: object) -> dict:
         record = dict(row)
         order = _json_object(record["data"])
-        order.update({"status": record["status"], "version": record["version"], "next_transition_at": record["next_transition_at"].isoformat() if record["next_transition_at"] else None, "restaurant_decision": record["restaurant_decision"], "driver_id": record["driver_id"]})
+        order.update({"status": record["status"], "version": record["version"], "next_transition_at": record["next_transition_at"].isoformat() if record["next_transition_at"] else None, "restaurant_decision": record["restaurant_decision"], "driver_id": record["driver_id"], "created_at": record["created_at"].isoformat() if record["created_at"] else None, "updated_at": record["updated_at"].isoformat() if record["updated_at"] else None})
         return order
 
     async def _records(self, record_type: str) -> list[dict]:
-        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type = $1", record_type)
-        return [_json_object(row["data"]) for row in rows]
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        if active_version:
+            rows = await pool.fetch("SELECT data FROM food_catalog WHERE record_type = $1 AND is_active = TRUE AND dataset_version = $2 ORDER BY id", record_type, active_version)
+        else:
+            rows = await pool.fetch("SELECT data FROM food_catalog WHERE record_type = $1 AND is_active = TRUE ORDER BY id", record_type)
+        return [_safe_catalog_record(record_type, _json_object(row["data"])) for row in rows]
 
     async def search(self, **filters) -> list[dict]:
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
         restaurants = {value["id"]: value for value in await self._records("restaurant")}
         result = []
-        keyword = _fold_text(filters.get("keyword", ""))
-        district = _search_district(filters.get("district", ""), await self._records("location_alias"))
+        raw_keyword = str(filters.get("keyword", "")).strip().casefold()
+        keyword = _fold_text(raw_keyword)
+        preserve_diacritics = any(ord(char) > 127 for char in raw_keyword)
+        district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
-        for item in await self._records("menu_item"):
+        restaurant_id = str(filters.get("restaurant_id", ""))
+        item_keyword_match = False
+        primary_item_keyword_match = False
+        item_query = (
+            "SELECT id, data->>'restaurant_id' AS restaurant_id, data->>'name' AS name, "
+            "data->>'description' AS description, data->>'price' AS price, "
+            "data->>'category' AS category FROM food_catalog "
+            "WHERE record_type='menu_item' AND is_active=TRUE"
+        )
+        item_args: list[object] = []
+        if active_version:
+            item_query += " AND dataset_version=$1"
+            item_args.append(active_version)
+        item_query += " ORDER BY id"
+        # Search only the scalar fields needed for matching. Full JSON payloads
+        # (images, option groups, descriptions, etc.) are hydrated after the
+        # result window is selected, avoiding a 17k-record JSON decode on every
+        # assistant turn.
+        item_rows = await pool.fetch(item_query, *item_args)
+        for row in item_rows:
+            item = {
+                "id": str(row["id"]),
+                "restaurant_id": str(row["restaurant_id"] or ""),
+                "name": str(row["name"] or ""),
+                "description": str(row["description"] or ""),
+                "price": int(row["price"] or 0),
+                "category": str(row["category"] or ""),
+            }
+            if restaurant_id and item["restaurant_id"] != restaurant_id:
+                continue
             restaurant = restaurants.get(item["restaurant_id"])
             if restaurant is None:
                 continue
-            haystack = _fold_text(f"{item['name']} {item.get('description', '')} {item.get('category', '')} {restaurant['name']}")
-            if keyword and not _matches_keyword(haystack, keyword):
+            primary_item_haystack = _fold_text(f"{item['name']} {item.get('category', '')}")
+            item_haystack = _fold_text(f"{primary_item_haystack} {item.get('description', '')}")
+            restaurant_haystack = _fold_text(restaurant["name"])
+            raw_primary_item_haystack = f"{item['name']} {item.get('category', '')}".casefold()
+            raw_item_haystack = f"{raw_primary_item_haystack} {item.get('description', '')}".casefold()
+            raw_restaurant_haystack = str(restaurant["name"]).casefold()
+            matches_primary_item = not keyword or (
+                _matches_keyword(raw_primary_item_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(primary_item_haystack, keyword)
+            )
+            matches_item = matches_primary_item or (bool(keyword) and (
+                _matches_keyword(raw_item_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(item_haystack, keyword)
+            ))
+            matches_restaurant = not keyword or (
+                _matches_keyword(raw_restaurant_haystack, raw_keyword)
+                if preserve_diacritics
+                else _matches_keyword(restaurant_haystack, keyword)
+            )
+            if keyword and not matches_item and not matches_restaurant:
                 continue
             if district and district not in _fold_text(f"{restaurant['district']} {restaurant.get('address', '')}"):
                 continue
@@ -386,17 +498,56 @@ class PostgresFoodRepository:
                 continue
             if filters.get("open_only", True) and not restaurant["is_open"]:
                 continue
-            result.append({"item": item, "restaurant": restaurant})
-        result.sort(key=lambda value: (str(value["restaurant"].get("name", "")), str(value["item"].get("name", ""))))
-        return result[:int(filters.get("limit", 20))]
+            item_keyword_match = item_keyword_match or matches_item
+            primary_item_keyword_match = primary_item_keyword_match or matches_primary_item
+            result.append({"item": item, "restaurant": restaurant, "_item_keyword_match": matches_item, "_primary_item_keyword_match": matches_primary_item})
+        if keyword and primary_item_keyword_match:
+            result = [entry for entry in result if entry["_primary_item_keyword_match"]]
+        elif keyword and item_keyword_match:
+            result = [entry for entry in result if entry["_item_keyword_match"]]
+        start = int(filters.get("offset", 0) or 0)
+        limit = int(filters.get("limit", 12) or 12)
+        result.sort(key=lambda value: (-(value["restaurant"].get("rating") or 0), -(value["restaurant"].get("review_count") or 0), str(value["item"].get("name", "")).casefold(), str(value["item"].get("id", ""))))
+        window = result[start:start + limit]
+        item_ids = [str(entry["item"]["id"]) for entry in window]
+        if not item_ids:
+            return []
+        full_query = "SELECT id, data FROM food_catalog WHERE record_type='menu_item' AND is_active=TRUE AND id=ANY($1::text[])"
+        full_args: list[object] = [item_ids]
+        if active_version:
+            full_query += " AND dataset_version=$2"
+            full_args.append(active_version)
+        rows = await pool.fetch(full_query, *full_args)
+        full_items = {
+            str(row["id"]): _safe_catalog_record("menu_item", _json_object(row["data"]))
+            for row in rows
+        }
+        return [
+            {"item": full_items.get(str(entry["item"]["id"]), entry["item"]), "restaurant": entry["restaurant"]}
+            for entry in window
+        ]
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1", restaurant_id)
-        return _json_object(row["data"]) if row else None
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        query = "SELECT data FROM food_catalog WHERE record_type = 'restaurant' AND id = $1 AND is_active = TRUE"
+        args: tuple[object, ...] = (restaurant_id,)
+        if active_version:
+            query += " AND dataset_version = $2"
+            args += (active_version,)
+        row = await pool.fetchrow(query, *args)
+        return _safe_catalog_record("restaurant", _json_object(row["data"])) if row else None
 
     async def get_menu_item(self, item_id: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'menu_item' AND id = $1", item_id)
-        return _json_object(row["data"]) if row else None
+        pool = self._require_pool()
+        active_version = await pool.fetchval("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        query = "SELECT data FROM food_catalog WHERE record_type = 'menu_item' AND id = $1 AND is_active = TRUE"
+        args: tuple[object, ...] = (item_id,)
+        if active_version:
+            query += " AND dataset_version = $2"
+            args += (active_version,)
+        row = await pool.fetchrow(query, *args)
+        return _safe_catalog_record("menu_item", _json_object(row["data"])) if row else None
 
     async def get_cart(self, cart_id: str) -> dict | None:
         row = await self._require_pool().fetchrow("SELECT data, version FROM food_carts WHERE id = $1", cart_id)
@@ -436,11 +587,11 @@ class PostgresFoodRepository:
             return saved
 
     async def get_voucher(self, code: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'voucher' AND id = $1", code.upper())
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'voucher' AND id = $1 AND is_active = TRUE", code.upper())
         return _json_object(row["data"]) if row else None
 
     async def ensure_voucher_eligible(self, code: str, user_id: str) -> None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1", code.upper())
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 AND is_active = TRUE", code.upper())
         if not row:
             raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
         voucher = _json_object(row["data"])
@@ -449,18 +600,18 @@ class PostgresFoodRepository:
             raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
 
     async def get_address(self, address_id: str) -> dict | None:
-        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1", address_id)
+        row = await self._require_pool().fetchrow("SELECT data FROM food_catalog WHERE record_type = 'address' AND id = $1 AND is_active = TRUE", address_id)
         return _json_object(row["data"]) if row else None
 
     async def list_addresses(self, user_id: str, label: str | None = None) -> list[dict]:
         wanted = _fold_text(label)
-        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type='address' AND data->>'user_id'=$1 ORDER BY id", user_id)
+        rows = await self._require_pool().fetch("SELECT data FROM food_catalog WHERE record_type='address' AND is_active = TRUE AND data->>'user_id'=$1 ORDER BY id", user_id)
         addresses = [_json_object(row["data"]) for row in rows]
         if not wanted:
             return addresses
         return [address for address in addresses if wanted in _fold_text(address.get("label", "")) or wanted in _fold_text(address.get("address", ""))]
 
-    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None) -> dict:
+    async def create_order_with_optional_voucher(self, order: dict, voucher: dict | None, expected: dict | None = None, delivery_config: DeliveryConfig | None = None, address_id: str | None = None, address_snapshot: dict | None = None) -> dict:
         pool = self._require_pool()
         async with pool.acquire() as connection, connection.transaction():
             existing = await connection.fetchrow("SELECT * FROM food_orders WHERE user_id=$1 AND idempotency_key=$2 FOR UPDATE", order["user_id"], order["idempotency_key"])
@@ -480,36 +631,38 @@ class PostgresFoodRepository:
             else:
                 if delivery_config is None or address_id is None:
                     raise DomainError("CART_CHANGED", "Authoritative quote configuration is missing.")
-                restaurant_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='restaurant' AND id=$1 FOR UPDATE", cart["restaurant_id"])
-                address_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='address' AND id=$1 FOR UPDATE", address_id)
-                if not restaurant_row or not address_row:
-                    raise DomainError("NOT_FOUND", "Không tìm thấy nhà hàng hoặc địa chỉ giao hàng.")
-                address = _json_object(address_row["data"])
+                address_row = None if address_snapshot is not None else await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='address' AND id=$1 AND is_active = TRUE FOR UPDATE", address_id)
+                if address_snapshot is None and not address_row:
+                    raise DomainError("NOT_FOUND", "Không tìm thấy địa chỉ giao hàng.")
+                address = deepcopy(address_snapshot) if address_snapshot is not None else _json_object(address_row["data"])
                 if address.get("user_id") != order["user_id"]:
                     raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
                 item_ids = [str(item["menu_item_id"]) for item in cart.get("items", [])]
-                item_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='menu_item' AND id=ANY($1::text[]) FOR UPDATE", item_ids)
+                item_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='menu_item' AND is_active = TRUE AND id=ANY($1::text[]) FOR UPDATE", item_ids)
                 items = {str(row["id"]): _json_object(row["data"]) for row in item_rows}
+                restaurant_ids = list(dict.fromkeys(str(item.get("restaurant_id", "")) for item in items.values() if str(item.get("restaurant_id", ""))))
+                restaurant_rows = await connection.fetch("SELECT id,data FROM food_catalog WHERE record_type='restaurant' AND is_active = TRUE AND id=ANY($1::text[]) FOR UPDATE", restaurant_ids)
+                restaurants = {str(row["id"]): _json_object(row["data"]) for row in restaurant_rows}
                 voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
-                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 FOR UPDATE", voucher_code.upper()) if voucher_code else None
+                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 AND is_active = TRUE FOR UPDATE", voucher_code.upper()) if voucher_code else None
                 current_voucher = _json_object(voucher_row["data"]) if voucher_row else None
-                quote = build_authoritative_quote(cart, _json_object(restaurant_row["data"]), items, current_voucher, address, delivery_config)
+                quote = build_authoritative_quote(cart, restaurants, items, current_voucher, address, delivery_config)
                 if quote["snapshot_hash"] != expected["snapshot_hash"] or int(quote["cart_version"]) != int(expected["cart_version"]) or int(quote["total"]["amount"]) != int(expected["amount"]) or quote["total"]["currency"] != expected["currency"] or quote["quote_version"] != expected["quote_version"]:
                     raise DomainError("CART_CHANGED", "Báo giá hoặc giỏ hàng đã thay đổi, vui lòng tạo lại xác nhận.")
-                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
+                order.update({"cart_version": quote["cart_version"], "snapshot_hash": quote["snapshot_hash"], "amount": quote["total"]["amount"], "currency": quote["total"]["currency"], "subtotal": quote["subtotal"], "restaurant": quote["delivery"]["restaurant"], "restaurants": quote.get("restaurants", []), "items": quote["items"], "address": quote["address"], "delivery": quote["delivery"], "voucher": quote.get("voucher"), "voucher_code": quote.get("voucher_code"), "discount": quote["discount"]})
                 voucher = current_voucher
             if voucher:
                 code = str(voucher["code"]).upper()
-                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 FOR UPDATE", code)
+                voucher_row = await connection.fetchrow("SELECT data FROM food_catalog WHERE record_type='voucher' AND id=$1 AND is_active = TRUE FOR UPDATE", code)
                 if not voucher_row:
                     raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
                 current = _json_object(voucher_row["data"])
                 if await connection.fetchval("SELECT 1 FROM food_voucher_redemptions WHERE voucher_code=$1 AND user_id=$2", code, order["user_id"]):
                     raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã được user sử dụng.")
                 calculate_discount(current, int(order["subtotal"]), datetime.now(UTC))
-                if current.get("restaurant_id") and current["restaurant_id"] != order["restaurant"]["id"]:
+                if current.get("restaurant_id") and any(current["restaurant_id"] != restaurant.get("id") for restaurant in order.get("restaurants", [order["restaurant"]])):
                     raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
-                updated = await connection.fetchrow("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}',to_jsonb(COALESCE((data->>'used_count')::int,0)+1)),updated_at=now() WHERE record_type='voucher' AND id=$1 AND COALESCE((data->>'used_count')::int,0) < COALESCE((data->>'usage_limit')::int,0) RETURNING data", code)
+                updated = await connection.fetchrow("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}',to_jsonb(COALESCE((data->>'used_count')::int,0)+1)),updated_at=now() WHERE record_type='voucher' AND id=$1 AND is_active = TRUE AND COALESCE((data->>'used_count')::int,0) < COALESCE((data->>'usage_limit')::int,0) RETURNING data", code)
                 if not updated:
                     raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
                 order["voucher"] = _json_object(updated["data"])
@@ -534,6 +687,15 @@ class PostgresFoodRepository:
     async def list_orders(self) -> list[dict]:
         rows = await self._require_pool().fetch("SELECT * FROM food_orders ORDER BY created_at")
         return [self._order_from_row(row) for row in rows]
+
+    async def dataset_status(self) -> dict:
+        pool = self._require_pool()
+        version = await pool.fetchrow("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        row_count = await pool.fetchval("SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE" if not version else "SELECT count(*)::int FROM food_catalog WHERE is_active = TRUE AND dataset_version = $1", *(() if not version else (version["dataset_version"],)))
+        if not version:
+            return {"dataset_version": None, "source_name": None, "imported_at": None, "last_verified_at": None, "active": bool(row_count), "row_count": int(row_count or 0), "quality_warnings": [], "rejected_count": 0}
+        manifest = _json_object(version["source_manifest"]) if version["source_manifest"] else {}
+        return {"dataset_version": version["dataset_version"], "source_name": manifest.get("source_name"), "imported_at": version["imported_at"].isoformat() if version["imported_at"] else None, "last_verified_at": manifest.get("last_verified_at"), "active": bool(version["is_active"]), "row_count": int(row_count or 0), "quality_warnings": manifest.get("quality_warnings", []), "rejected_count": manifest.get("rejected_count", 0)}
 
     async def list_due_orders(self, now: datetime) -> list[dict]:
         rows = await self._require_pool().fetch("SELECT * FROM food_orders WHERE next_transition_at IS NOT NULL AND next_transition_at <= $1 ORDER BY next_transition_at", now)

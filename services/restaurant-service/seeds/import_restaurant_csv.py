@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 from sqlalchemy import select
-
 from src.infrastructure.database import OpeningHourRow, RestaurantRow, TableRow, make_session_factory
 
 SERVICE_ROOT = Path(__file__).resolve().parents[1]

@@ -41,14 +41,14 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
         route = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+)$", query, re.IGNORECASE)
     if route:
         slots["pickup_address"] = route.group(1).strip(" .,!?")[:300]
-        slots["dropoff_address"] = route.group(2).strip(" .,!?")[:300]
+        slots["dropoff_address"] = _strip_vehicle_suffix(route.group(2).strip(" .,!?"))[:300]
     else:
         pickup = re.search(r"(?:điểm đón|pickup)\s*[:：]\s*(.+?)(?:,|;|\s+điểm đến|\s+dropoff)\s*[:：]?", query, re.IGNORECASE)
         dropoff = re.search(r"(?:điểm đến|dropoff)\s*[:：]\s*(.+)$", query, re.IGNORECASE)
         if pickup:
             slots["pickup_address"] = pickup.group(1).strip(" .,!?")[:300]
         if dropoff:
-            slots["dropoff_address"] = dropoff.group(1).strip(" .,!?")[:300]
+            slots["dropoff_address"] = _strip_vehicle_suffix(dropoff.group(1).strip(" .,!?"))[:300]
 
     folded = _fold(query)
     if "xe may" in folded or "bike" in folded:
@@ -58,14 +58,31 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
     elif "4 cho" in folded or "car_4" in folded or "car 4" in folded:
         slots["vehicle_type"] = "CAR_4"
 
+    passenger = re.search(r"\b([1-9][0-9]?)\s*(?:người|nguoi|khách|khach|passengers?)\b", query, re.IGNORECASE)
+    if passenger:
+        slots["passenger_count"] = passenger.group(1)
+
     promo = re.search(r"(?:ma|mã)\s*(?:khuyen mai|khuyến mãi|promo)?\s*[:：]?\s*([A-Za-z0-9_-]{2,50})", query, re.IGNORECASE)
     if promo:
         slots["promo_code"] = promo.group(1)
 
-    for field in ("pickup_address", "dropoff_address", "vehicle_type", "promo_code"):
+    for field in ("pickup_address", "dropoff_address", "vehicle_type", "passenger_count", "promo_code"):
         if field not in slots and ride.get(field) not in (None, ""):
             slots[field] = str(ride[field])
     return slots
+
+
+def _strip_vehicle_suffix(value: str) -> str:
+    result = value
+    for _ in range(2):
+        result = re.sub(r"\s+(?:cho\s+)?[1-9][0-9]?\s*(?:người|nguoi|khách|khach|passengers?)\s*$", "", result, flags=re.IGNORECASE)
+        result = re.sub(
+            r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
+            "",
+            result,
+            flags=re.IGNORECASE,
+        )
+    return result.strip()
 
 
 def _patch(context: dict[str, Any], slots: dict[str, str]) -> dict[str, Any]:
@@ -132,6 +149,8 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
         }
         if slots.get("promo_code"):
             arguments["promo_code"] = slots["promo_code"]
+        if slots.get("passenger_count"):
+            arguments["passenger_count"] = int(slots["passenger_count"])
         return {
             "response": "Mình sẽ lấy báo giá chính thức cho chuyến đi này.",
             "intent": "request_ride_quote",

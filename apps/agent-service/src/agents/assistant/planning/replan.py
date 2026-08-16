@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from ..contracts import (
     CapabilitySnapshot,
-    PlanningDecision,
     PlannerContext,
+    PlanningDecision,
     ReplanDirective,
     StepOutcome,
     StepOutcomeKind,
     TaskDisposition,
 )
 from .dependencies import block_dependents
-
 
 REQUOTE_CODES = {
     'CART_CHANGED',

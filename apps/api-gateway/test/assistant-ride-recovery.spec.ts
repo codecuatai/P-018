@@ -23,7 +23,7 @@ describe('Unified Assistant Ride receipt recovery', () => {
     quote_version: quote.quote_version,
     amount: quote.amount,
     currency: quote.currency,
-    status: 'AWAITING_PAYMENT_CONFIRMATION' as const,
+    status: 'AWAITING_CONFIRMATION' as const,
     resource_version: 1,
     payment_reference: null,
     driver: null,
@@ -33,7 +33,7 @@ describe('Unified Assistant Ride receipt recovery', () => {
   const completed = {
     ...prepared,
     status: 'DRIVER_ASSIGNED' as const,
-    resource_version: 2,
+    resource_version: 3,
     payment_reference: 'pay_sandbox_assistant_recovery',
     driver: { id: 'driver_assistant_recovery', display_name: 'Minh Anh' },
   };
@@ -95,8 +95,13 @@ describe('Unified Assistant Ride receipt recovery', () => {
       })),
     };
     const tools = { require: jest.fn().mockReturnValue({ toolName: 'ride.quote.create' }) };
+    const locations = {
+      realMode: true,
+      geocode: jest.fn(async (address: string) => ({ provider: 'geoapify', status: 'RESOLVED', query: address, candidates: [{ address_text: address, latitude: 20.9914, longitude: 105.945975, confidence: 1 }] })),
+      route: jest.fn(async (origin: { latitude: number; longitude: number }, destination: { latitude: number; longitude: number }) => ({ provider: 'geoapify', status: 'RESOLVED', distance_km: 15, duration_minutes: 15, origin, destination, route_distance_meters: 15_000, route_duration_seconds: 900, route_geometry: [origin, { latitude: 21.0102, longitude: 105.9001 }, destination], route_polyline: null, route_snapshot_hash: 'recovery-route' })),
+    };
     const makeService = () => {
-      const rideWorkflow = new RideConversationService(agent as never, rideClient as never, tools as never);
+      const rideWorkflow = new RideConversationService(agent as never, rideClient as never, tools as never, locations as never);
       return new AssistantService(
         store as never,
         agent as never,

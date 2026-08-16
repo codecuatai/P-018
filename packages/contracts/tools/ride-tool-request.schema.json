@@ -66,10 +66,35 @@
                 "vehicle_type": {
                   "enum": ["BIKE", "CAR_4", "CAR_7"]
                 },
+                "passenger_count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 20
+                },
                 "promo_code": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 50
+                },
+                "pickup_latitude": {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                "pickup_longitude": {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
+                },
+                "dropoff_latitude": {
+                  "type": "number",
+                  "minimum": -90,
+                  "maximum": 90
+                },
+                "dropoff_longitude": {
+                  "type": "number",
+                  "minimum": -180,
+                  "maximum": 180
                 }
               },
               "additionalProperties": false
