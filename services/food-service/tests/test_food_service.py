@@ -13,13 +13,82 @@ def make_service() -> FoodApplicationService:
 
 
 @pytest.mark.asyncio
-async def test_cart_total_and_cross_restaurant_protection() -> None:
+async def test_cart_total_and_multi_restaurant_pickup_route() -> None:
     food = make_service()
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-total-key")
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
     assert cart["total"] == (65_000 + 15_000) * 2
-    with pytest.raises(DomainError, match="một nhà hàng"):
-        await food.add_item(cart["id"], {"menu_item_id": "item_bun_cha", "quantity": 1, "selected_options": []})
+    cart = await food.add_item(cart["id"], {"menu_item_id": "item_bun_cha", "quantity": 1, "selected_options": []})
+    assert {item["restaurant"]["id"] for item in cart["items"]} == {"res_pho_hanoi", "res_bun_cha"}
+    preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
+    assert [stop["id"] for stop in preview["delivery"]["pickup_stops"]] == ["res_pho_hanoi", "res_bun_cha"]
+    assert preview["total"]["amount"] > cart["total"]
+
+
+@pytest.mark.asyncio
+async def test_cart_items_retain_rich_catalog_fields_through_update_and_reprice() -> None:
+    repository = InMemoryFoodRepository()
+    repository.items["item_pho_bo"].update({
+        "image_url": "https://cdn.example.test/pho-bo.jpg",
+        "currency": "VND",
+        "category": "Pho",
+    })
+    food = FoodApplicationService(
+        repository,
+        Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"),
+    )
+
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-fields-key")
+    cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    cart_item = cart["items"][0]
+    assert cart_item["description"] == repository.items["item_pho_bo"]["description"]
+    assert cart_item["image_url"] == "https://cdn.example.test/pho-bo.jpg"
+    assert cart_item["currency"] == "VND"
+    assert cart_item["category"] == "Pho"
+    assert cart_item["restaurant"] == {
+        "id": "res_pho_hanoi",
+        "name": repository.restaurants["res_pho_hanoi"]["name"],
+        "address": repository.restaurants["res_pho_hanoi"]["address"],
+        "category": repository.restaurants["res_pho_hanoi"]["category"],
+        "district": repository.restaurants["res_pho_hanoi"]["district"],
+        "latitude": repository.restaurants["res_pho_hanoi"]["latitude"],
+        "longitude": repository.restaurants["res_pho_hanoi"]["longitude"],
+        "is_open": True,
+    }
+
+    repository.items["item_pho_bo"].update({
+        "description": "Pho bo tai cap nhat.",
+        "image_url": "https://cdn.example.test/pho-bo-v2.jpg",
+        "price": 70000,
+    })
+    updated = await food.update_item(cart["id"], cart_item["id"], {"quantity": 2})
+    updated_item = updated["items"][0]
+    assert updated_item["quantity"] == 2
+    assert updated_item["selected_options"] == cart_item["selected_options"]
+    assert updated_item["description"] == "Pho bo tai cap nhat."
+    assert updated_item["image_url"] == "https://cdn.example.test/pho-bo-v2.jpg"
+    assert updated["subtotal"] == 140000
+
+    reloaded = await food.get_cart(cart["id"], "usr_demo_001")
+    assert reloaded["items"][0]["description"] == "Pho bo tai cap nhat."
+    assert reloaded["items"][0]["restaurant"]["address"] == repository.restaurants["res_pho_hanoi"]["address"]
+
+
+@pytest.mark.asyncio
+async def test_rich_cart_fields_do_not_bypass_actor_scoping_or_cart_idempotency() -> None:
+    repository = InMemoryFoodRepository()
+    food = FoodApplicationService(
+        repository,
+        Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"),
+    )
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-actor-key")
+    with pytest.raises(DomainError, match="user hiện tại"):
+        await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]}, "usr_two")
+
+    retry = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-actor-key")
+    assert retry["id"] == cart["id"]
+    with pytest.raises(DomainError, match="nhà hàng khác"):
+        await food.create_cart("usr_demo_001", "res_bun_cha", "cart-rich-actor-key")
 
 
 @pytest.mark.asyncio
@@ -32,6 +101,58 @@ async def test_required_option_and_preview() -> None:
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert preview["snapshot_hash"]
     assert preview["total"]["amount"] > preview["subtotal"]
+
+
+@pytest.mark.asyncio
+async def test_core_saved_address_is_received_as_an_immutable_food_snapshot() -> None:
+    food = make_service()
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-core-address-key")
+    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    snapshot = {
+        "user_id": "usr_demo_001",
+        "address_text": "25 Le Dai Hanh, Hai Ba Trung, Ha Noi",
+        "label": "Nha rieng",
+        "district": "Hai Ba Trung",
+        "latitude": 21.0125,
+        "longitude": 105.848,
+        "source": "geocoded",
+    }
+    preview = await food.preview_order(cart["id"], "core_addr_home", "usr_demo_001", snapshot)
+    assert preview["address"]["id"] == "core_addr_home"
+    assert preview["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
+    assert preview["address"]["latitude"] == 21.0125
+    order = await food.create_order({
+        "cart_id": cart["id"],
+        "address_id": "core_addr_home",
+        "address_snapshot": snapshot,
+        "user_id": "usr_demo_001",
+        "idempotency_key": "order-core-address-key",
+        "payment_method": "card",
+        "expected_snapshot_hash": preview["snapshot_hash"],
+        "expected_cart_version": preview["cart_version"],
+        "expected_amount": preview["total"]["amount"],
+        "expected_currency": preview["total"]["currency"],
+        "expected_quote_version": preview["quote_version"],
+    })
+    assert order["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
+
+
+@pytest.mark.asyncio
+async def test_quote_hash_ignores_catalog_provenance_but_keeps_commercial_terms() -> None:
+    repository = InMemoryFoodRepository()
+    food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-provenance-key")
+    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+
+    first = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
+    repository.restaurants["res_pho_hanoi"]["source_metadata"] = {"imported_at": "changed"}
+    repository.items["item_pho_bo"]["source_metadata"] = {"source": "changed"}
+    unchanged = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
+    repository.items["item_pho_bo"]["price"] += 1_000
+    changed = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
+
+    assert unchanged["snapshot_hash"] == first["snapshot_hash"]
+    assert changed["snapshot_hash"] != first["snapshot_hash"]
 
 
 @pytest.mark.asyncio
@@ -103,3 +224,10 @@ async def test_search_folds_accents_and_accepts_city_address_filter() -> None:
     results = await food.search(keyword="pho bo", district="ha noi")
     assert [result["item"]["name"] for result in results] == ["Phở bò tái"]
     assert [result["item"]["name"] for result in await food.search(keyword="pho ga")] == ["Phở gà"]
+
+
+@pytest.mark.asyncio
+async def test_search_keeps_accented_dish_terms_distinct() -> None:
+    food = make_service()
+    results = await food.search(keyword="phở bò")
+    assert [result["item"]["name"] for result in results] == ["Phở bò tái"]

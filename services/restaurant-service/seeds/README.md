@@ -1,6 +1,6 @@
 # Seeds
 
-`seed.py` creates deterministic Restaurant-only restaurants, tables, and opening-hour data after migrations have been applied. It does not access another service/database.
+`seed.py` creates deterministic Restaurant-only tables and opening-hour data after migrations have been applied. If an imported catalog already exists, it preserves those restaurant rows and adds only missing booking resources; it does not access another service/database.
 
 Run from the repository root after the Compose stack is running:
 

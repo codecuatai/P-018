@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Headers, Post, Req, UseGuards } 
 
 import { AgentClient, JsonObject, RestaurantClient, RestaurantTool } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 
@@ -41,7 +41,7 @@ export class RestaurantWorkflowController {
   ) {}
 
   @Post('chat')
-  @UseGuards(DemoAuthGuard)
+  @UseGuards(AuthGuard)
   async chat(@Body() body: RestaurantChatBody, @Req() request: AuthenticatedRequest) {
     const workflowId = body.workflow_id ?? `wf-${Date.now()}`;
     const actorId = String(request.user.sub);
@@ -112,7 +112,7 @@ export class RestaurantWorkflowController {
   }
 
   @Post('confirm')
-  @UseGuards(DemoAuthGuard)
+  @UseGuards(AuthGuard)
   async confirm(
     @Body() body: RestaurantConfirmationBody,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

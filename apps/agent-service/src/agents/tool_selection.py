@@ -30,21 +30,12 @@ def select_tools(intent: str, slots: dict[str, Any], registry: list[dict[str, An
         return call("create_cart", {"restaurant_id": slots["restaurant_id"]})
     if intent == "add_to_cart":
         if slots.get("cart_id") and slots.get("menu_item_id"):
-            if slots.get("option_preferences"):
-                return call("view_menu_item", {"menu_item_id": slots["menu_item_id"]})
-            return call(
-                "add_to_cart",
-                {
-                    "cart_id": slots["cart_id"],
-                    "menu_item_id": slots["menu_item_id"],
-                    "quantity": slots.get("quantity", 1),
-                    "selected_options": slots.get("selected_options", []),
-                },
-            )
+            # Always re-read the authoritative item before adding it. This
+            # keeps required options and current pricing in the Food domain,
+            # including when the user selected a rendered candidate.
+            return call("view_menu_item", {"menu_item_id": slots["menu_item_id"]})
         if slots.get("restaurant_id") and slots.get("menu_item_id"):
-            if slots.get("option_preferences"):
-                return call("view_menu_item", {"menu_item_id": slots["menu_item_id"]})
-            return call("create_cart", {"restaurant_id": slots["restaurant_id"]})
+            return call("view_menu_item", {"menu_item_id": slots["menu_item_id"]})
         return call("search_food", {"keyword": slots.get("dish_query", "")})
     if intent == "list_addresses":
         return call("list_food_delivery_addresses", {"label": slots.get("address_query", "")})

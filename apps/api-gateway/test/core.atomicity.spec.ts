@@ -82,7 +82,7 @@ describe('Core atomicity adapter', () => {
       actionId: 'action-1',
       idempotencyKey: 'key-1',
       requestHash: 'hash-1',
-      userMessage: { role: 'user', content: '__assistant_action__:restaurant_confirm', createdAt: new Date().toISOString() },
+      userMessage: { role: 'user', content: 'action:restaurant_confirm', kind: 'INTERNAL_ACTION', visibility: 'INTERNAL', createdAt: new Date().toISOString() },
       assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
       stateUpdates: { actions: [] },
       response,
@@ -92,7 +92,7 @@ describe('Core atomicity adapter', () => {
     expect(replay.state).toBe('SUCCEEDED');
     expect(replay.execution?.response).toEqual(response);
     expect((await repository.getAssistantActionExecution('actor-1', 'conversation-1', 'action-1'))?.response).toEqual(response);
-    expect((await repository.getConversation('conversation-1', 'actor-1'))?.messages).toHaveLength(2);
+    expect((await repository.getConversation('conversation-1', 'actor-1'))?.messages).toHaveLength(1);
     expect((await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-2', 'hash-1')).state).toBe('ACTION_NOT_AVAILABLE');
     expect((await repository.claimAssistantActionExecution('actor-1', 'conversation-1', 'action-1', 'key-1', 'hash-2')).state).toBe('IDEMPOTENCY_KEY_REUSED');
   });
@@ -114,7 +114,7 @@ describe('Core atomicity adapter', () => {
       actionId: 'action-atomic-failure',
       idempotencyKey: 'key-atomic-failure',
       requestHash: 'changed-hash',
-      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      userMessage: { role: 'user', content: 'action:food_confirm', kind: 'INTERNAL_ACTION', visibility: 'INTERNAL', createdAt: new Date().toISOString() },
       assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
       stateUpdates: { actions: [] },
       response: { conversation_id: 'conversation-atomic-failure', message: 'done', items: [], actions: [], completed: [] },
@@ -142,5 +142,26 @@ describe('Core atomicity adapter', () => {
     expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'different-key', 'hash-retry')).state).toBe('ACTION_NOT_AVAILABLE');
     await repository.completeAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry', 'FAILED_FINAL');
     expect((await repository.claimAssistantActionExecution('actor-retry', 'conversation-retry', 'action-retry', 'key-retry', 'hash-retry')).state).toBe('FAILED_FINAL');
+  });
+
+  it('projects legacy internal action messages out of public conversation reads', async () => {
+    const repository = new InMemoryCoreRepository();
+    await repository.saveConversation({
+      conversationId: 'conversation-legacy-action',
+      actorId: 'actor-legacy-action',
+      messages: [
+        { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+        { role: 'user', content: 'Tôi muốn đặt phở.', createdAt: new Date().toISOString() },
+        { role: 'assistant', content: 'Mình đã tìm được món phù hợp.', createdAt: new Date().toISOString() },
+      ],
+      state: {},
+      version: 1,
+    });
+
+    const projected = await repository.getConversation('conversation-legacy-action', 'actor-legacy-action');
+    expect(projected?.messages.map((message) => message.content)).toEqual([
+      'Tôi muốn đặt phở.',
+      'Mình đã tìm được món phù hợp.',
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: X-One Restaurant Service
-  version: 1.1.0
+  version: 1.2.0
 paths:
   /v1/restaurants:
     get:
@@ -67,6 +67,14 @@ paths:
         '201': {description: Hold created or replayed}
         '409': {description: Conflict}
   /v1/reservations:
+    get:
+      summary: List reservations owned by the asserted actor
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+      responses:
+        '200': {description: Actor-owned reservations}
+    post:
     post:
       summary: Consume a validated hold into a reservation
       parameters:
@@ -130,6 +138,24 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
         '404': {description: Reservation not found}
         '409': {description: Conflict}
+  /v1/internal/ops/summary:
+    get:
+      summary: Read Restaurant operational counts
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Operational summary}, '401': {description: Internal authentication is missing}}
+  /v1/internal/ops/dataset-status:
+    get:
+      summary: Read Restaurant dataset status
+      parameters: [{$ref: '#/components/parameters/InternalToken'}]
+      responses: {'200': {description: Dataset status}, '401': {description: Internal authentication is missing}}
+  /v1/internal/ops/transactions:
+    get:
+      summary: Read paged Restaurant reservations
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      responses: {'200': {description: Paged reservations}, '401': {description: Internal authentication is missing}}
 components:
   parameters:
     InternalToken:
@@ -154,6 +180,33 @@ components:
       properties:
         data: {type: object, additionalProperties: true}
         meta: {type: object, additionalProperties: true}
+    Restaurant:
+      type: object
+      additionalProperties: false
+      required: [id, name, location, cuisine_type, budget_range, rating, timezone]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        location: {type: string}
+        cuisine_type: {type: string}
+        cuisine_tags: {type: array, items: {type: string}}
+        budget_range: {type: string}
+        price_level: {type: [string, 'null']}
+        rating: {type: number, minimum: 0, maximum: 5}
+        review_count: {type: [integer, 'null'], minimum: 0}
+        timezone: {type: string}
+        image_url: {type: [string, 'null'], format: uri}
+        description: {type: [string, 'null']}
+        address: {type: [string, 'null']}
+        ward: {type: [string, 'null']}
+        district: {type: [string, 'null']}
+        city: {type: [string, 'null']}
+        latitude: {type: [number, 'null'], minimum: -90, maximum: 90}
+        longitude: {type: [number, 'null'], minimum: -180, maximum: 180}
+        coordinate_status: {type: [string, 'null'], enum: [validated, missing, suspicious_default, null]}
+        phone: {type: [string, 'null']}
+        website: {type: [string, 'null'], format: uri}
+        opening_hours: {type: [string, 'null']}
     AvailabilityRequest:
       type: object
       required: [party_size, start_at]

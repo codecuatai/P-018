@@ -1,9 +1,11 @@
 import json
+import re
+import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,23 +35,81 @@ class RestaurantRepository:
     def __init__(self, database_url: str):
         self.factory = make_session_factory(database_url)
 
+    @staticmethod
+    def _active_dataset_version(db: Session) -> str | None:
+        try:
+            return db.execute(
+                text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='restaurant' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+            ).scalar_one_or_none()
+        except Exception:
+            # Older unit-test schemas do not include the optional provenance registry.
+            db.rollback()
+            return None
+
+    @classmethod
+    def _active_restaurant_statement(cls, db: Session):
+        version = cls._active_dataset_version(db)
+        stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True))
+        return stmt.where(RestaurantRow.dataset_version == version) if version else stmt
+
     def seed(self) -> None:
         with self.factory() as db:
-            if db.scalar(select(RestaurantRow.id).limit(1)):
-                return
-            for index, (rid, name, location, cuisine, budget, rating) in enumerate(RESTAURANT_SEEDS):
-                restaurant = RestaurantRow(id=rid, name=name, location=location, cuisine_type=cuisine,
-                    budget_range=budget, rating=rating, timezone="Asia/Ho_Chi_Minh", active=True)
-                db.add(restaurant)
-                # Flush the parent before inserting FK children. OpeningHourRow
-                # intentionally keeps a scalar FK without an ORM relationship.
+            restaurants = list(
+                db.scalars(self._active_restaurant_statement(db).order_by(RestaurantRow.id))
+            )
+            if not restaurants:
+                for rid, name, location, cuisine, budget, rating in RESTAURANT_SEEDS:
+                    restaurants.append(
+                        RestaurantRow(
+                            id=rid,
+                            name=name,
+                            location=location,
+                            cuisine_type=cuisine,
+                            budget_range=budget,
+                            rating=rating,
+                            timezone="Asia/Ho_Chi_Minh",
+                            active=True,
+                        )
+                    )
+                    db.add(restaurants[-1])
                 db.flush()
-                capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
-                for table_index, capacity in enumerate(capacities, 1):
-                    db.add(TableRow(restaurant_id=rid, table_code=f"T{table_index:02d}", capacity=capacity,
-                        seating_type="standard", active=True))
-                for weekday in range(7):
-                    db.add(OpeningHourRow(restaurant_id=rid, weekday=weekday, opens_at="06:00", closes_at="23:00"))
+
+            # Imported catalog rows are authoritative.  Add only the minimal
+            # deterministic booking resources that an imported row may lack.
+            # This keeps seed idempotent and makes real catalog records bookable
+            # without replacing or mutating their imported identity.
+            for index, restaurant in enumerate(restaurants):
+                table_count = db.scalar(
+                    select(func.count(TableRow.id)).where(TableRow.restaurant_id == restaurant.id)
+                )
+                if not table_count:
+                    capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
+                    for table_index, capacity in enumerate(capacities, 1):
+                        db.add(
+                            TableRow(
+                                restaurant_id=restaurant.id,
+                                table_code=f"T{table_index:02d}",
+                                capacity=capacity,
+                                seating_type="standard",
+                                active=True,
+                            )
+                        )
+
+                hour_count = db.scalar(
+                    select(func.count(OpeningHourRow.id)).where(
+                        OpeningHourRow.restaurant_id == restaurant.id
+                    )
+                )
+                if not hour_count:
+                    for weekday in range(7):
+                        db.add(
+                            OpeningHourRow(
+                                restaurant_id=restaurant.id,
+                                weekday=weekday,
+                                opens_at="06:00",
+                                closes_at="23:00",
+                            )
+                        )
             db.commit()
 
     @staticmethod
@@ -160,7 +220,7 @@ class RestaurantRepository:
             return
         table = db.get(TableRow, row.table_id)
         restaurant = db.get(RestaurantRow, row.restaurant_id)
-        response = self.reservation_dict(row, table, restaurant.name if restaurant else None)
+        response = self.reservation_dict(row, table, restaurant)
         db.add(
             IdempotencyRecordRow(
                 actor_id=row.actor_id,
@@ -177,11 +237,41 @@ class RestaurantRepository:
     def _legacy_key(operation: str, key: str) -> str:
         return f"{operation}:{key}"
 
+    @staticmethod
+    def _fold_search_text(value: str) -> str:
+        normalized = unicodedata.normalize("NFD", value.casefold())
+        return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+    @classmethod
+    def _is_generated_discovery_placeholder(cls, row: RestaurantRow) -> bool:
+        """Keep OSM placeholders for provenance/ops, but hide them from discovery."""
+        folded_name = cls._fold_search_text(row.name).strip()
+        return re.fullmatch(r"nha hang osm #[0-9]+", folded_name) is not None
+
+    @classmethod
+    def _matches_cuisine_query(cls, row: RestaurantRow, query: str) -> bool:
+        """Search the authoritative display fields, including imported provenance."""
+        tokens = [token for token in cls._fold_search_text(query).split() if token]
+        if not tokens:
+            return True
+        searchable = cls._fold_search_text(
+            " ".join(
+                value
+                for value in (
+                    row.name,
+                    row.cuisine_type,
+                    row.description,
+                    row.provenance_json,
+                )
+                if value
+            )
+        )
+        return all(token in searchable for token in tokens)
+
     def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, query=None, limit=50, offset=0):
         with self.factory() as db:
-            stmt = select(RestaurantRow).where(RestaurantRow.active.is_(True)).order_by(RestaurantRow.id)
+            stmt = self._active_restaurant_statement(db).order_by(RestaurantRow.id)
 
-            # 1. Lọc theo địa điểm
             if location:
                 aliases = {
                     "hà nội": ("Hà Nội", "Hanoi"),
@@ -191,32 +281,73 @@ class RestaurantRepository:
                 }
                 candidates = aliases.get(location.strip().lower(), (location,))
                 stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))
-            # Nếu không parse được địa điểm cụ thể nhưng có query thô, fallback tìm kiếm tương đối trên cột location
             elif query:
                 stmt = stmt.where(RestaurantRow.location.ilike(f"%{query}%"))
 
-            # 2. Lọc theo loại hình ẩm thực
-            if cuisine_type:
-                stmt = stmt.where(RestaurantRow.cuisine_type.ilike(f"%{cuisine_type}%"))
-
-            # 3. Lọc theo khoảng giá
             if budget_range:
                 stmt = stmt.where(RestaurantRow.budget_range == budget_range)
 
-            rows = db.scalars(stmt.offset(offset).limit(limit)).all()
+            rows = [
+                row
+                for row in db.scalars(stmt).all()
+                if not self._is_generated_discovery_placeholder(row)
+                and (not cuisine_type or self._matches_cuisine_query(row, cuisine_type))
+            ]
+            # Prefer restaurants with an actual image without changing the
+            # relative order of records in either group.
+            rows.sort(key=lambda row: not isinstance(row.image_url, str) or not row.image_url.strip())
+            rows = rows[offset : offset + limit]
             return [self.restaurant_dict(row) for row in rows]
 
 
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:
-            row = db.scalar(select(RestaurantRow).where(RestaurantRow.id == restaurant_id, RestaurantRow.active.is_(True)))
+            row = db.scalar(self._active_restaurant_statement(db).where(RestaurantRow.id == restaurant_id))
             return self.restaurant_dict(row) if row else None
+
+    def ops_summary(self):
+        with self.factory() as db:
+            reservations = db.scalars(select(ReservationRow)).all()
+            statuses: dict[str, int] = {}
+            for row in reservations:
+                statuses[row.status] = statuses.get(row.status, 0) + 1
+            return {"domain": "restaurant", "counts": {"restaurants": int(db.scalar(select(func.count()).select_from(self._active_restaurant_statement(db).subquery())) or 0), "reservations": len(reservations), "reservations_by_status": statuses}}
+
+    def ops_transactions(self, limit=20, offset=0):
+        with self.factory() as db:
+            stmt = select(ReservationRow, TableRow).join(TableRow, TableRow.id == ReservationRow.table_id).order_by(ReservationRow.updated_at.desc()).offset(offset).limit(limit)
+            rows = db.execute(stmt).all()
+            items = [self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id)) for row, table in rows]
+            total = int(db.scalar(select(func.count(ReservationRow.id))) or 0)
+            return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+    def ops_dataset_status(self):
+        with self.factory() as db:
+            try:
+                version = db.execute(text("SELECT dataset_version,source_manifest,imported_at,is_active,status FROM catalog_dataset_versions WHERE domain='restaurant' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")).mappings().first()
+            except Exception:
+                db.rollback()
+                version = None
+            rows = db.scalars(self._active_restaurant_statement(db)).all()
+            manifest = version["source_manifest"] if version else {}
+            return {"dataset_version": version["dataset_version"] if version else None, "source_name": manifest.get("source_name") if isinstance(manifest, dict) else None, "imported_at": version["imported_at"].isoformat() if version and version["imported_at"] else None, "last_verified_at": manifest.get("last_verified_at") if isinstance(manifest, dict) else None, "active": bool(rows), "row_count": len(rows), "quality_warnings": manifest.get("quality_warnings", []) if isinstance(manifest, dict) else [], "rejected_count": manifest.get("rejected_count", 0) if isinstance(manifest, dict) else 0}
 
     @staticmethod
     def restaurant_dict(row):
+        provenance = {}
+        if row.provenance_json:
+            try:
+                provenance = row.provenance_json if isinstance(row.provenance_json, dict) else json.loads(row.provenance_json)
+            except (TypeError, json.JSONDecodeError):
+                provenance = {}
+        catalog = provenance.get("catalog", provenance) if isinstance(provenance, dict) else {}
         return {"id": row.id, "name": row.name, "location": row.location, "cuisine_type": row.cuisine_type,
-                "budget_range": row.budget_range, "rating": row.rating, "timezone": row.timezone,
-                "description": row.description, "image_url": row.image_url}
+                "cuisine_tags": catalog.get("cuisine_tags", []), "budget_range": row.budget_range, "price_level": catalog.get("price_level") or row.budget_range, "rating": row.rating, "review_count": catalog.get("review_count"), "timezone": row.timezone,
+                "description": row.description, "phone": catalog.get("phone"), "website": catalog.get("website"), "opening_hours": catalog.get("opening_hours"), "image_url": row.image_url,
+                **({"address": row.address} if row.address else {}), **({"ward": row.ward} if row.ward else {}),
+                **({"district": row.district} if row.district else {}), **({"city": row.city} if row.city else {}),
+                **({"latitude": row.latitude, "longitude": row.longitude} if row.latitude is not None and row.longitude is not None else {}),
+                **({"coordinate_status": row.coordinate_status} if row.coordinate_status else {})}
 
     def _available_table(self, db: Session, restaurant_id, party_size, start_at, end_at, seating_type=None, exclude_id=None):
         stmt = select(TableRow).where(TableRow.restaurant_id == restaurant_id, TableRow.active.is_(True), TableRow.capacity >= party_size).order_by(TableRow.capacity, TableRow.id).with_for_update()
@@ -308,7 +439,7 @@ class RestaurantRepository:
                     raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
                 table = db.get(TableRow, legacy.table_id)
                 restaurant = db.get(RestaurantRow, legacy.restaurant_id)
-                result = self.reservation_dict(legacy, table, restaurant.name if restaurant else None)
+                result = self.reservation_dict(legacy, table, restaurant)
                 self._complete_idempotency(record, result)
                 db.commit()
                 return result
@@ -336,7 +467,7 @@ class RestaurantRepository:
             db.add(row)
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="CREATED", actor_id=actor_id, occurred_at=now))
             restaurant = db.get(RestaurantRow, row.restaurant_id)
-            result = self.reservation_dict(row, table, restaurant.name if restaurant else None)
+            result = self.reservation_dict(row, table, restaurant)
             self._complete_idempotency(record, result)
             db.commit()
             return result
@@ -350,12 +481,46 @@ class RestaurantRepository:
             if not result:
                 return None
             restaurant = db.get(RestaurantRow, result[0].restaurant_id)
-            return self.reservation_dict(result[0], result[1], restaurant.name if restaurant else None)
+            return self.reservation_dict(result[0], result[1], restaurant)
+
+    def list_reservations(self, actor_id):
+        with self.factory() as db:
+            stmt = (
+                select(ReservationRow, TableRow)
+                .join(TableRow, TableRow.id == ReservationRow.table_id)
+                .where(ReservationRow.actor_id == actor_id)
+                .order_by(ReservationRow.start_at.desc())
+            )
+            result = db.execute(stmt).all()
+            return [
+                self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id))
+                for row, table in result
+            ]
 
     @staticmethod
-    def reservation_dict(row, table, restaurant_name=None):
+    def reservation_dict(row, table, restaurant=None):
+        restaurant_name = restaurant.name if restaurant else None
+        address = (restaurant.address or restaurant.location) if restaurant else None
+        restaurant_snapshot = ({
+            "name": restaurant.name,
+            "address": address,
+            "city": restaurant.city,
+            "district": restaurant.district,
+            "ward": restaurant.ward,
+            "cuisine": restaurant.cuisine_type,
+            "rating": restaurant.rating,
+            "price_level": restaurant.budget_range,
+            "image_url": restaurant.image_url,
+            **({"latitude": restaurant.latitude, "longitude": restaurant.longitude}
+               if restaurant.latitude is not None and restaurant.longitude is not None else {}),
+            **({"coordinate_status": restaurant.coordinate_status} if restaurant.coordinate_status else {}),
+        } if restaurant else None)
         return {"id": row.id, "reservation_code": row.reservation_code, "actor_id": row.actor_id,
-                "restaurant_id": row.restaurant_id, "restaurant_name": restaurant_name, "table_code": table.table_code,
+                "restaurant_id": row.restaurant_id, "restaurant_name": restaurant_name,
+                **({"address": address} if address else {}),
+                **({"image_url": restaurant.image_url} if restaurant and restaurant.image_url else {}),
+                **({"restaurant": restaurant_snapshot} if restaurant_snapshot else {}),
+                "table_code": table.table_code,
                 "party_size": row.party_size, "start_at": RestaurantRepository._as_utc(row.start_at),
                 "end_at": RestaurantRepository._as_utc(row.end_at), "status": row.status,
                 "special_requests": row.special_requests, "created_at": RestaurantRepository._as_utc(row.created_at),
@@ -380,7 +545,7 @@ class RestaurantRepository:
                 return None
             table = db.get(TableRow, row.table_id)
             restaurant = db.get(RestaurantRow, row.restaurant_id)
-            return self.reservation_dict(row, table, restaurant.name if restaurant else None)
+            return self.reservation_dict(row, table, restaurant)
 
     def update_reservation(self, actor_id, reservation_id, party_size, start_at, special_requests, fields_set, key, request_hash):
         with self.factory() as db:
@@ -397,7 +562,7 @@ class RestaurantRepository:
             if legacy:
                 if legacy.request_hash != request_hash:
                     raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
-                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id).name)
+                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id))
                 self._complete_idempotency(record, result)
                 db.commit()
                 return result
@@ -435,7 +600,7 @@ class RestaurantRepository:
             row.request_hash = request_hash
             row.updated_at = utc_now()
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="MODIFIED", actor_id=actor_id, occurred_at=utc_now()))
-            result = self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id).name)
+            result = self.reservation_dict(row, table, db.get(RestaurantRow, row.restaurant_id))
             self._complete_idempotency(record, result)
             db.commit()
             return result
@@ -455,7 +620,7 @@ class RestaurantRepository:
             if legacy:
                 if legacy.request_hash != request_hash:
                     raise ValueError("IDEMPOTENCY_PAYLOAD_MISMATCH")
-                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id).name)
+                result = self.reservation_dict(legacy, db.get(TableRow, legacy.table_id), db.get(RestaurantRow, legacy.restaurant_id))
                 self._complete_idempotency(record, result)
                 db.commit()
                 return result
@@ -465,7 +630,7 @@ class RestaurantRepository:
                 raise ValueError("RESERVATION_NOT_FOUND")
             self._promote_surviving_create_evidence(db, row)
             if row.status == "CANCELLED":
-                result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+                result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id))
                 self._complete_idempotency(record, result)
                 db.commit()
                 return result
@@ -477,7 +642,7 @@ class RestaurantRepository:
             row.request_hash = request_hash
             row.updated_at = utc_now()
             db.add(EventRow(aggregate_type="reservation", aggregate_id=row.id, event_type="CANCELLED", actor_id=actor_id, occurred_at=utc_now()))
-            result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id).name)
+            result = self.reservation_dict(row, db.get(TableRow, row.table_id), db.get(RestaurantRow, row.restaurant_id))
             self._complete_idempotency(record, result)
             db.commit()
             return result

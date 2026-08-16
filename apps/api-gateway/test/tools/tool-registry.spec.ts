@@ -1,4 +1,6 @@
 import { BadGatewayException } from '@nestjs/common';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 
 import { ToolRegistry } from '../../src/modules/tools/tool-registry';
 
@@ -43,5 +45,61 @@ describe('ToolRegistry', () => {
         },
       }),
     ).toThrow(BadGatewayException);
+  });
+
+  it('exposes versioned metadata for all four domain owners', () => {
+    const tools = registry.list();
+    expect(new Set(tools.map((tool) => tool.domain))).toEqual(new Set(['food', 'ride', 'restaurant', 'healthcare']));
+    for (const tool of tools) {
+      expect(tool.version).toBe(2);
+      expect(tool.toolName).toBe(tool.name);
+      expect(tool.owner).toBeTruthy();
+      expect(tool.argumentSchema).toBeTruthy();
+      expect(tool.resultSchema).toBeTruthy();
+      expect(['IMPLEMENTED_AGENT_TOOL', 'IMPLEMENTED_GATEWAY_ACTION', 'IMPLEMENTED_DOMAIN_API', 'LEGACY_COMPAT', 'DEPRECATED']).toContain(tool.classification);
+    }
+  });
+
+  it('keeps the runtime registry in parity with the canonical contract inventory', () => {
+    const contract = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../..', 'packages/contracts/tools/tool-registry-v2.json'), 'utf8'),
+    ) as { tools: Array<Record<string, unknown>> };
+    const runtime = new Map(registry.list().map((tool) => [tool.name, tool]));
+    for (const expected of contract.tools) {
+      const actual = runtime.get(String(expected.name));
+      expect(actual).toBeDefined();
+      expect(actual).toMatchObject({
+        domain: expected.domain,
+        version: expected.version,
+        risk: expected.risk,
+        argumentSchema: expected.argument_schema,
+        resultSchema: expected.result_schema,
+        idempotencyRequirement: expected.idempotency_requirement,
+        confirmationRequirement: expected.confirmation_requirement,
+        owner: expected.owner,
+        classification: expected.classification,
+      });
+    }
+  });
+
+  it('recognizes canonical Food, Ride, Restaurant, and Healthcare names', () => {
+    for (const toolName of [
+      'food.get_restaurant',
+      'food.create_cart',
+      'food.prepare_order',
+      'ride.booking.list',
+      'ride.tracking.get',
+      'restaurant.list_reservations',
+      'healthcare.search_facilities',
+      'healthcare.list_appointments',
+    ]) {
+      expect(registry.list().some((tool) => tool.name === toolName)).toBe(true);
+    }
+  });
+
+  it('rejects model-supplied authoritative fields and unknown tools', () => {
+    expect(() => registry.require({ tool_name: 'unknown.execute', workflow_id: 'wf_test', arguments: {} })).toThrow(BadGatewayException);
+    expect(() => registry.require({ tool_name: 'restaurant.search', risk_level: 'READ', workflow_id: 'wf_test', arguments: { location: 'Hà Nội', price: 0 } })).toThrow(BadGatewayException);
+    expect(() => registry.require({ tool_name: 'healthcare.hold_slot', workflow_id: 'wf_test', arguments: { slot_id: 10, patient_id: 99 } })).toThrow(BadGatewayException);
   });
 });

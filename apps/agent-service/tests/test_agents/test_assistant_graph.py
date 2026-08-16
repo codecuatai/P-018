@@ -1,11 +1,15 @@
 import json
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from src.agents.assistant_graph import (
     AssistantPlan,
     PlannedTask,
+    _healthcare_requested_date,
     _model_prompt,
+    _time_slot,
     build_assistant_graph,
     deterministic_plan,
 )
@@ -25,6 +29,14 @@ def test_deterministic_fallback_supports_single_ride() -> None:
 def test_deterministic_fallback_distinguishes_food_and_restaurant() -> None:
     assert domains(deterministic_plan("Đặt phở giao về nhà")) == ["food"]
     assert domains(deterministic_plan("Đặt bàn ăn phở cho 2 người")) == ["restaurant"]
+
+
+def test_restaurant_consults_for_missing_booking_details_before_any_options() -> None:
+    plan = deterministic_plan("Tìm nhà hàng ở Hà Nội")
+
+    assert domains(plan) == ["restaurant"]
+    assert plan.tasks[0].needs_clarification is True
+    assert plan.tasks[0].missing_information == ["party_size", "start_at"]
 
 
 def test_deterministic_fallback_plans_independent_tasks() -> None:
@@ -48,6 +60,30 @@ def test_healthcare_then_ride_uses_dependency_without_guessing_destination() -> 
     assert plan.tasks[1].depends_on == [0]
     assert plan.tasks[1].extracted_slots["pickup_address"] == "VinUni"
     assert "dropoff_address" not in plan.tasks[1].extracted_slots
+
+
+def test_healthcare_day_after_tomorrow_is_a_calendar_filter_not_a_stale_clock() -> None:
+    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Bangkok"))
+    assert _healthcare_requested_date("đổi lịch sang ngày kia", now) == "2026-08-17"
+    assert _time_slot("10 giờ ngày kia", now) == "2026-08-17T10:00:00+07:00"
+
+    state = {
+        "tasks": [{
+            "domain": "healthcare",
+            "phase": "NEEDS_INFO",
+            "goal": "Tìm lịch khám",
+            "normalized_request": "Khám thần kinh",
+            "extracted_slots": {
+                "department": "than kinh",
+                "start_at": "2026-08-16T10:00:00+07:00",
+            },
+            "pending_actions": ["select_healthcare_slot"],
+        }],
+    }
+    follow_up = deterministic_plan("đổi lại sang ngày kia", state)
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["appointment_date"] == _healthcare_requested_date("ngày kia")
+    assert "start_at" not in slots
 
 
 def test_follow_up_updates_existing_task_instead_of_creating_random_task() -> None:
@@ -101,6 +137,86 @@ def test_follow_up_can_supply_a_plain_location() -> None:
     assert follow_up.tasks[0].extracted_slots["location"] == "Hoàn Kiếm"
 
 
+def test_ride_destination_change_is_a_follow_up_with_only_the_route_slot_changed() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("đổi điểm đến qua trường đại học công nghệ UET giúp tôi", state)
+
+    assert domains(follow_up) == ["ride"]
+    assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "trường đại học công nghệ UET"
+    assert follow_up.tasks[0].extracted_slots["pickup_address"] == "VinUni"
+    assert follow_up.tasks[0].extracted_slots["vehicle_type"] == "CAR_4"
+
+
+def test_ride_follow_up_replaces_both_endpoints_and_vehicle_type() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan(
+        "đổi điểm đón thành đại học quốc gia hà nội và điểm đến thành công viên nghĩa đô giúp tôi, "
+        "đổi phương tiện bằng xe máy thôi",
+        state,
+    )
+
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["pickup_address"] == "đại học quốc gia hà nội"
+    assert slots["dropoff_address"] == "công viên nghĩa đô"
+    assert slots["vehicle_type"] == "BIKE"
+
+
+def test_ride_follow_up_keeps_parenthetical_pickup_and_existing_vehicle() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan(
+        "đổi điểm đón thành đại học quốc gia hà nội (cầu giấy) và điểm đến thành công viên nghĩa đô giúp tôi",
+        state,
+    )
+
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["pickup_address"] == "đại học quốc gia hà nội (cầu giấy)"
+    assert slots["dropoff_address"] == "công viên nghĩa đô"
+    assert slots["vehicle_type"] == "CAR_4"
+
+
+def test_ride_follow_up_updates_vehicle_without_replacing_endpoints() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("đổi phương tiện bằng xe máy thôi", state)
+
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["pickup_address"] == "VinUni"
+    assert slots["dropoff_address"] == "Hồ Gươm"
+    assert slots["vehicle_type"] == "BIKE"
+
+
+def test_restaurant_follow_up_adds_cuisine_without_dropping_party_or_location() -> None:
+    first = deterministic_plan("Tối nay tìm nhà hàng cho 2 người ở Hà Nội")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("tôi muốn ăn lẩu lúc 9 giờ tối nay", state)
+
+    assert domains(follow_up) == ["restaurant"]
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["location"] == "Hà Nội"
+    assert slots["party_size"] == 2
+    assert slots["cuisine_query"] == "lau"
+    assert "T21:00:00" in slots["start_at"]
+
+
+def test_restaurant_request_keeps_location_separate_from_time_clause() -> None:
+    plan = deterministic_plan("Tìm nhà hàng ăn lẩu, 6 người ở Hà Nội lúc 21 giờ ngày mai")
+
+    assert domains(plan) == ["restaurant"]
+    slots = plan.tasks[0].extracted_slots
+    assert slots["location"] == "Hà Nội"
+    assert slots["party_size"] == 6
+    assert slots["cuisine_query"] == "lau"
+    assert "T21:00:00" in slots["start_at"]
+
+
 def test_unsupported_request_is_safe() -> None:
     plan = deterministic_plan("Đặt vé máy bay đi Đà Nẵng")
     assert plan.tasks == []
@@ -130,6 +246,56 @@ class FakePlanner:
         )
 
 
+class PartialRidePlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình sẽ giúp bạn.",
+            tasks=[
+                PlannedTask(
+                    domain="ride",
+                    goal="Tìm chuyến xe",
+                    normalized_request="Đặt xe",
+                    extracted_slots={"pickup_address": "VinUni", "dropoff_address": "Hồ Gươm"},
+                ),
+            ],
+        )
+
+
+class IncorrectRideEditPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình đã chuẩn bị xong.",
+            tasks=[
+                PlannedTask(
+                    domain="ride",
+                    goal="Tìm chuyến xe",
+                    normalized_request="Đặt xe",
+                    extracted_slots={
+                        "pickup_address": "đại học quốc gia hà nội và điểm",
+                        "dropoff_address": "thành công viên nghĩa đô đến Hồ Gươm",
+                        "vehicle_type": "CAR_4",
+                    },
+                ),
+            ],
+        )
+
+
+class FailingPlanner:
+    async def ainvoke_structured(self, _prompt: str, _schema: type[Any]) -> Any:
+        raise AssertionError("direct healthcare requests should use the bounded fast path")
+
+
+@pytest.mark.asyncio
+async def test_direct_healthcare_request_skips_slow_model_planner() -> None:
+    graph = build_assistant_graph(llm=FailingPlanner())
+    result = await graph.ainvoke({"query": "Đặt lịch khám thần kinh sáng mai", "conversation_state": {}})
+    assert result["decision_source"] == "deterministic"
+    assert [task["domain"] for task in result["plan"]["tasks"]] == ["healthcare"]
+    assert result["plan"]["tasks"][0]["extracted_slots"]["department"] == "than kinh"
+
+
 @pytest.mark.asyncio
 async def test_model_path_uses_structured_planner_and_removes_resource_ids() -> None:
     graph = build_assistant_graph(llm=FakePlanner())
@@ -137,6 +303,34 @@ async def test_model_path_uses_structured_planner_and_removes_resource_ids() -> 
     assert result["decision_source"] == "model"
     assert [task["domain"] for task in result["plan"]["tasks"]] == ["restaurant", "ride"]
     assert "restaurant_id" not in result["plan"]["tasks"][0]["extracted_slots"]
+
+
+@pytest.mark.asyncio
+async def test_model_path_restores_explicit_route_and_vehicle_slots() -> None:
+    graph = build_assistant_graph(llm=PartialRidePlanner())
+    result = await graph.ainvoke({"query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ", "conversation_state": {}})
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    assert slots["pickup_address"] == "VinUni"
+    assert slots["dropoff_address"] == "Hồ Gươm"
+    assert slots["vehicle_type"] == "CAR_4"
+
+
+@pytest.mark.asyncio
+async def test_model_path_replaces_incorrect_combined_ride_edit_slots() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    graph = build_assistant_graph(llm=IncorrectRideEditPlanner())
+    result = await graph.ainvoke({
+        "query": (
+            "đổi điểm đón thành đại học quốc gia hà nội và điểm đến thành công viên nghĩa đô giúp tôi, "
+            "đổi phương tiện bằng xe máy thôi"
+        ),
+        "conversation_state": {"tasks": [task.model_dump() for task in first.tasks]},
+    })
+
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    assert slots["pickup_address"] == "đại học quốc gia hà nội"
+    assert slots["dropoff_address"] == "công viên nghĩa đô"
+    assert slots["vehicle_type"] == "BIKE"
 
 
 def test_model_prompt_contains_only_planner_safe_state() -> None:

@@ -18,6 +18,8 @@ from src.api.schemas import (
     QuoteEnvelope,
     QuoteOut,
     ResponseMeta,
+    TrackingEnvelope,
+    TrackingOut,
 )
 from src.application.ride_service import RideApplication
 from src.config import get_settings
@@ -83,10 +85,31 @@ def create_quote(
             vehicle_type=VehicleType(payload.vehicle_type),
             promo_code=payload.promo_code,
             pickup_time=payload.pickup_time,
+            pickup_latitude=payload.pickup_latitude,
+            pickup_longitude=payload.pickup_longitude,
+            dropoff_latitude=payload.dropoff_latitude,
+            dropoff_longitude=payload.dropoff_longitude,
+            route_provider=payload.route_provider,
+            route_distance_meters=payload.route_distance_meters,
+            route_duration_seconds=payload.route_duration_seconds,
+            route_geometry=payload.route_geometry,
+            route_snapshot_hash=payload.route_snapshot_hash,
         ),
         idempotency_key,
     )
     return QuoteEnvelope(data=QuoteOut.model_validate(result), meta=_meta(request))
+
+
+@router.get(
+    "/quotes",
+    dependencies=[Depends(require_internal_service)],
+)
+def list_quotes(
+    request: Request,
+    actor_id: Annotated[str, Depends(require_actor)],
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, object]:
+    return {"data": {"items": [QuoteOut.model_validate(value) for value in application(session).list_quotes(actor_id)]}, "meta": _meta(request).model_dump(mode="json")}
 
 
 @router.get(
@@ -190,6 +213,47 @@ def get_booking(
 ) -> BookingEnvelope:
     result = application(session).get_booking(booking_id, actor_id)
     return BookingEnvelope(data=BookingOut.model_validate(result), meta=_meta(request))
+
+
+@router.get(
+    "/bookings/{booking_id}/tracking",
+    response_model=TrackingEnvelope,
+    dependencies=[Depends(require_internal_service)],
+)
+def get_tracking(
+    booking_id: str,
+    request: Request,
+    actor_id: Annotated[str, Depends(require_actor)],
+    session: Annotated[Session, Depends(get_session)],
+) -> TrackingEnvelope:
+    return TrackingEnvelope(data=TrackingOut.model_validate(application(session).get_tracking(booking_id, actor_id)), meta=_meta(request))
+
+
+@router.get(
+    "/bookings",
+    dependencies=[Depends(require_internal_service)],
+)
+def list_bookings(
+    request: Request,
+    actor_id: Annotated[str, Depends(require_actor)],
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, object]:
+    return {"data": {"items": [BookingOut.model_validate(value) for value in application(session).list_bookings(actor_id)]}, "meta": _meta(request).model_dump(mode="json")}
+
+
+@router.get("/internal/ops/summary", dependencies=[Depends(require_internal_service)])
+def ops_summary(session: Annotated[Session, Depends(get_session)]) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_summary()}
+
+
+@router.get("/internal/ops/dataset-status", dependencies=[Depends(require_internal_service)])
+def ops_dataset_status(session: Annotated[Session, Depends(get_session)]) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_dataset_status()}
+
+
+@router.get("/internal/ops/transactions", dependencies=[Depends(require_internal_service)])
+def ops_transactions(session: Annotated[Session, Depends(get_session)], limit: int = 20, offset: int = 0) -> dict[str, object]:
+    return {"data": SqlAlchemyRideRepository(session).ops_transactions(min(max(limit, 1), 100), max(offset, 0))}
 
 
 def _confirmation(value: ConfirmationRequest) -> ConfirmationEvidence:

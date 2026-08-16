@@ -12,6 +12,8 @@ class SearchQuery(BaseModel):
     min_price: int | None = Field(default=None, ge=0)
     max_price: int | None = Field(default=None, ge=0)
     open_only: bool = True
+    limit: int = Field(default=12, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
 
 
 class CreateCartRequest(BaseModel):
@@ -41,15 +43,30 @@ class VoucherRequest(BaseModel):
     code: str = Field(min_length=1, max_length=40)
 
 
+class DeliveryAddressSnapshot(BaseModel):
+    user_id: str = Field(min_length=1, max_length=128)
+    address_text: str = Field(min_length=1, max_length=500)
+    label: str | None = Field(default=None, max_length=80)
+    city: str | None = Field(default=None, max_length=120)
+    district: str | None = Field(default=None, max_length=120)
+    ward: str | None = Field(default=None, max_length=120)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
+    provider: str | None = Field(default=None, max_length=120)
+    source: str | None = Field(default=None, max_length=32)
+
+
 class DeliveryQuoteRequest(BaseModel):
     restaurant_id: str
     address_id: str
+    address_snapshot: DeliveryAddressSnapshot | None = None
 
 
 class PreviewOrderRequest(BaseModel):
     cart_id: str
     address_id: str
     user_id: str
+    address_snapshot: DeliveryAddressSnapshot | None = None
 
 
 class CreateOrderRequest(PreviewOrderRequest):

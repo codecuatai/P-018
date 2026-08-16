@@ -1,10 +1,27 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from src.database import Base
+
+PROVENANCE_TYPE = JSON().with_variant(JSONB, "postgresql")
 
 
 class SlotStatus(StrEnum):
@@ -53,6 +70,16 @@ class Department(Base):
     facility_id = Column(Integer, ForeignKey("healthcare_facilities.id"), nullable=True, index=True)
     name = Column(String, index=True, nullable=False)
     description = Column(Text, nullable=True)
+    source_id = Column(String(255), nullable=True, unique=True)
+    facility_source_id = Column(String(255), nullable=True)
+    source_name = Column(String(120), nullable=True)
+    source_url = Column(String(800), nullable=True)
+    fetched_at = Column(DateTime, nullable=True)
+    last_verified_at = Column(DateTime, nullable=True)
+    dataset_version = Column(String(120), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
     facility = relationship("HealthcareFacility", back_populates="departments")
     doctors = relationship("Doctor", back_populates="department")
@@ -65,17 +92,52 @@ class Doctor(Base):
     source_id = Column(String(255), unique=True, nullable=True, index=True)
     facility_id = Column(Integer, ForeignKey("healthcare_facilities.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
-    title = Column(String(80), nullable=True)
-    specialty = Column(String(120), nullable=True)
     price = Column(Integer, nullable=True)
     description = Column(Text, nullable=True)
-    image_url = Column(String(500), nullable=True)
-    source_url = Column(String(500), nullable=True)
+    source_id = Column(String(255), nullable=True, unique=True)
+    facility_source_id = Column(String(255), nullable=True)
+    title = Column(String(255), nullable=True)
+    specialty = Column(Text, nullable=True)
+    source_name = Column(String(120), nullable=True)
+    source_url = Column(String(800), nullable=True)
+    fetched_at = Column(DateTime, nullable=True)
+    last_verified_at = Column(DateTime, nullable=True)
+    dataset_version = Column(String(120), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
     department = relationship("Department", back_populates="doctors")
     facility = relationship("HealthcareFacility", back_populates="doctors")
     slots = relationship("TimeSlot", back_populates="doctor")
     appointments = relationship("Appointment", back_populates="doctor")
+
+class HealthcareFacility(Base):
+    __tablename__ = "healthcare_facilities"
+
+    source_id = Column(String(255), primary_key=True)
+    name = Column(String(255), nullable=False)
+    facility_type = Column(String(120), nullable=True)
+    address = Column(Text, nullable=False)
+    ward = Column(String(120), nullable=True)
+    district = Column(String(120), nullable=True)
+    city = Column(String(120), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    phone = Column(String(64), nullable=True)
+    website = Column(String(800), nullable=True)
+    description = Column(Text, nullable=True)
+    emergency_available = Column(Boolean, nullable=True)
+    opening_hours = Column(Text, nullable=True)
+    image_url = Column(String(800), nullable=True)
+    source_name = Column(String(120), nullable=True)
+    source_url = Column(String(800), nullable=True)
+    fetched_at = Column(DateTime, nullable=True)
+    last_verified_at = Column(DateTime, nullable=True)
+    dataset_version = Column(String(120), nullable=True)
+    content_hash = Column(String(64), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    provenance_json = Column(PROVENANCE_TYPE, nullable=True)
 
 class Patient(Base):
     __tablename__ = "patients"
@@ -87,6 +149,21 @@ class Patient(Base):
     medical_history = Column(Text, nullable=True)
 
     appointments = relationship("Appointment", back_populates="patient")
+    user_links = relationship("PatientUserLink", back_populates="patient")
+
+
+class PatientUserLink(Base):
+    __tablename__ = "patient_user_links"
+    __table_args__ = (UniqueConstraint("actor_user_id", "patient_id", name="uq_patient_user_links_actor_patient"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    actor_user_id = Column(String(128), nullable=False, index=True)
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
+    relationship_type = Column("relationship", String(24), nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    patient = relationship("Patient", back_populates="user_links")
 
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"

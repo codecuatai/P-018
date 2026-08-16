@@ -1,0 +1,347 @@
+openapi: 3.0.3
+info:
+  title: X-One Gateway Authentication API
+  version: 1.0.0
+  description: >
+    Public X-One authentication routes. Browser clients retain the short-lived
+    access JWT in memory and receive the opaque rotating refresh token only as
+    an HttpOnly cookie. Domain services are never called by this API directly.
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/v1/auth/register:
+    post:
+      summary: Create a customer account and initial session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201': {$ref: '#/components/responses/AuthIssued'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/login:
+    post:
+      summary: Create a session for valid credentials
+      description: Unknown accounts and invalid passwords return the same safe error.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '201': {$ref: '#/components/responses/AuthIssued'}
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/refresh:
+    post:
+      summary: Rotate the opaque refresh token and issue a new access JWT
+      description: >
+        Requires the HttpOnly refresh cookie and a trusted Origin (or allowed
+        Referer fallback). A reused token revokes its full token family.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+      responses:
+        '201': {$ref: '#/components/responses/AuthIssued'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/me:
+    get:
+      summary: Read the currently authenticated identity
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Safe current identity
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UserEnvelope'}
+        '401': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the current refresh-token family and clear its cookie
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+      responses:
+        '200': {$ref: '#/components/responses/LoggedOut'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/logout-all:
+    post:
+      summary: Revoke all sessions for the authenticated actor
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+      responses:
+        '200': {$ref: '#/components/responses/LoggedOut'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/sessions:
+    get:
+      summary: List active session families for the authenticated actor
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Active session families; refresh-token generations are not exposed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SessionsEnvelope'}
+        '401': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/sessions/{sessionId}:
+    delete:
+      summary: Revoke one actor-owned session family
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/Origin'
+      responses:
+        '200':
+          description: The requested family was revoked.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RevokedEnvelope'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/change-password:
+    post:
+      summary: Change the current password and revoke all sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/Origin'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChangePasswordRequest'}
+      responses:
+        '200':
+          description: Password changed; the caller must authenticate again.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PasswordChangedEnvelope'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/forgot-password:
+    post:
+      summary: Request password-reset delivery without account enumeration
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ForgotPasswordRequest'}
+      responses:
+        '200':
+          description: Always accepted. `dev_reset_token` is test-only and forbidden in production.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ForgotPasswordEnvelope'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/reset-password:
+    post:
+      summary: Consume an unexpired one-time reset token and set a new password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ResetPasswordRequest'}
+      responses:
+        '200':
+          description: Password reset and existing sessions revoked.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PasswordResetEnvelope'}
+        '400': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Origin:
+      name: Origin
+      in: header
+      required: false
+      schema: {type: string, format: uri}
+      description: Required for cookie-authenticated state changes unless a trusted Referer is present.
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+  responses:
+    AuthIssued:
+      description: >
+        Access token issued; the opaque refresh token is set only in an HttpOnly,
+        SameSite=Lax cookie scoped to /api/v1/auth. It never appears in JSON.
+      headers:
+        Set-Cookie:
+          schema: {type: string}
+          description: HttpOnly refresh cookie; Secure outside local HTTP development.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/AuthEnvelope'}
+    LoggedOut:
+      description: Refresh cookie cleared and requested revocation completed.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/LoggedOutEnvelope'}
+    Error:
+      description: Safe public error envelope
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  schemas:
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [full_name, email, password]
+      properties:
+        full_name: {type: string, minLength: 1, maxLength: 160}
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, minLength: 15, maxLength: 128, format: password}
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+        password: {type: string, maxLength: 128, format: password}
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password: {type: string, format: password}
+        new_password: {type: string, minLength: 15, maxLength: 128, format: password}
+    ForgotPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: {type: string, format: email, maxLength: 320}
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [token, new_password]
+      properties:
+        token: {type: string, minLength: 1, maxLength: 512}
+        new_password: {type: string, minLength: 15, maxLength: 128, format: password}
+    AuthUser:
+      type: object
+      additionalProperties: false
+      required: [sub, email, role, authentication_kind]
+      properties:
+        id: {type: string, description: Real users use a UUID; development/test demo identity is compatibility-only.}
+        sub: {type: string, description: Real users use a UUID; development/test demo identity is compatibility-only.}
+        email: {type: string, format: email}
+        full_name: {type: string}
+        phone: {type: string}
+        role: {type: string, enum: [customer, admin]}
+        status: {type: string, enum: [active, disabled]}
+        session_id: {type: string, format: uuid}
+        authentication_kind: {type: string, enum: [real, demo]}
+    AuthEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [access_token, token_type, expires_in, user]
+          properties:
+            access_token: {type: string, description: Short-lived JWT retained only in application memory.}
+            token_type: {type: string, enum: [bearer]}
+            expires_in: {type: integer, minimum: 1}
+            user: {$ref: '#/components/schemas/AuthUser'}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    UserEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/AuthUser'}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    SessionsEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: {$ref: '#/components/schemas/SessionSummary'}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    SessionSummary:
+      type: object
+      required: [id, created_at, last_used_at, expires_at, current]
+      properties:
+        id: {type: string, format: uuid, description: Token family identifier, not a raw token.}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        current: {type: boolean}
+        user_agent: {type: string}
+    LoggedOutEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, required: [logged_out], properties: {logged_out: {type: boolean}}}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    RevokedEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, required: [revoked], properties: {revoked: {type: boolean}}}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    PasswordChangedEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, required: [password_changed, reauthentication_required], properties: {password_changed: {type: boolean}, reauthentication_required: {type: boolean}}}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    ForgotPasswordEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [accepted, delivery_configured]
+          properties:
+            accepted: {type: boolean}
+            delivery_configured: {type: boolean}
+            dev_reset_token: {type: string, writeOnly: true, description: Explicit test-only capture; never present in production.}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    PasswordResetEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: {type: object, required: [password_reset], properties: {password_reset: {type: boolean}}}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
+    ResponseMeta:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: {type: string}
+    ErrorEnvelope:
+      type: object
+      required: [code, detail, retryable, request_id]
+      properties:
+        status: {type: integer}
+        code: {type: string}
+        detail: {type: string}
+        retryable: {type: boolean}
+        request_id: {type: string}

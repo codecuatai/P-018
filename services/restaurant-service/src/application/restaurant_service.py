@@ -114,6 +114,18 @@ Example:
     def get_reservation(self, reservation_id, actor_id):
         return self.repo.get_reservation_by_id(reservation_id, actor_id)
 
+    def list_reservations(self, actor_id):
+        return self.repo.list_reservations(actor_id)
+
+    def ops_summary(self):
+        return self.repo.ops_summary()
+
+    def ops_transactions(self, limit, offset):
+        return self.repo.ops_transactions(limit, offset)
+
+    def ops_dataset_status(self):
+        return self.repo.ops_dataset_status()
+
     def update_reservation(
         self,
         actor_id,

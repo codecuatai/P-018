@@ -157,6 +157,13 @@ def _has_any(text: str, values: tuple[str, ...]) -> bool:
     return any(value in text for value in values)
 
 
+def _is_direct_healthcare_request(text: str) -> bool:
+    lowered = _plain(text)
+    healthcare = _has_any(lowered, ("dat lich kham", "lich kham", "bac si", "kham", "chuyen khoa", "khoa", "dau dau", "trieu chung"))
+    other_service = _has_any(lowered, ("goi xe", "dat xe", "nha hang", "dat ban", "dat mon", "giao do an", "ship do an"))
+    return healthcare and not other_service
+
+
 def _number(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | None:
     match = re.search(r"\b([1-9][0-9]?)\b", text)
     if match:
@@ -172,7 +179,12 @@ def _location(text: str) -> str | None:
     if not match:
         return None
     result = match.group(1).strip()
-    result = re.split(r"\b(?:roi|sau do|va|rồi|sau đó|và)\b", result, maxsplit=1, flags=re.IGNORECASE)[0]
+    result = re.split(
+        r"\b(?:roi|sau do|va|rồi|sau đó|và|lúc|luc|vào|vao|ngày|ngay|tối|toi|sáng|sang|trưa|trua)\b",
+        result,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
     return result.strip() or None
 
 
@@ -190,6 +202,7 @@ def _route(text: str) -> tuple[str | None, str | None]:
         pickup = match.group(1).strip()
         dropoff = match.group(2).strip()
         dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", dropoff, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        dropoff = _strip_vehicle_suffix(dropoff)
         return pickup or None, dropoff or None
 
     # "từ VinUni đưa tôi tới đó" intentionally carries only a pickup.  The
@@ -198,9 +211,103 @@ def _route(text: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _strip_vehicle_suffix(value: str) -> str:
+    return re.sub(
+        r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def _clean_changed_route_value(value: str) -> str | None:
+    value = re.sub(r"^(?:qua|sang|thành|thanh|là|la|tới|toi)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(
+        r"\s+(?:và\s+)?(?:đổi|doi|thay|chuyển|chuyen)?\s*"
+        r"(?:phương tiện|phuong tien|loại xe|loai xe).*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        r"\s*(?:giúp\s+(?:tôi|mình)|giup\s+(?:toi|minh)|nhé|nhe|thôi|thoi)\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    value = _strip_vehicle_suffix(value).strip(" ,;")
+    return value or None
+
+
+def _changed_route_slots(text: str) -> dict[str, str]:
+    """Extract explicit ride-field edits without letting one field consume another."""
+
+    change = r"(?:đổi|doi|thay|chuyển|chuyen)"
+    pickup_label = r"(?:điểm đón|diem don|đón|don|pickup|điểm xuất phát|diem xuat phat)"
+    dropoff_label = r"(?:điểm đến|diem den|đến|den|destination)"
+    change_value = r"(?:qua|sang|thành|thanh|là|la|tới|toi)"
+    value_end = (
+        r"(?=\s*(?:[,;.!?]|$)|\s+(?:và\s+)?(?:đổi|doi|thay|chuyển|chuyen)\s*"
+        r"(?:phương tiện|phuong tien|loại xe|loai xe)\b)"
+    )
+
+    for candidate in (text, _plain(text)):
+        slots: dict[str, str] = {}
+
+        # Parse the two endpoints together for instructions such as
+        # "đổi điểm đón ... và điểm đến ...". This keeps the connector out of
+        # the pickup address and makes both fields authoritative replacements.
+        pair = re.search(
+            rf"\b{change}\s+{pickup_label}\s*(?:{change_value}\s+)?"
+            rf"(?P<pickup>.+?)\s+và\s+(?:{change}\s+)?{dropoff_label}\s*"
+            rf"(?:{change_value}\s+)?(?P<dropoff>.+?){value_end}",
+            candidate,
+            re.IGNORECASE,
+        )
+        if pair:
+            pickup = _clean_changed_route_value(pair.group("pickup"))
+            dropoff = _clean_changed_route_value(pair.group("dropoff"))
+            if pickup:
+                slots["pickup_address"] = pickup
+            if dropoff:
+                slots["dropoff_address"] = dropoff
+            if slots:
+                return slots
+
+        pickup = re.search(
+            rf"\b{change}\s+{pickup_label}\s*(?:{change_value}\s+)?(?P<value>.+?)"
+            rf"(?=\s+(?:và\s+)?(?:{change}\s+)?{dropoff_label}\b|{value_end})",
+            candidate,
+            re.IGNORECASE,
+        )
+        if pickup:
+            value = _clean_changed_route_value(pickup.group("value"))
+            if value:
+                slots["pickup_address"] = value
+
+        dropoff = re.search(
+            rf"\b{change}\s+{dropoff_label}\s*(?:{change_value}\s+)?(?P<value>.+?){value_end}",
+            candidate,
+            re.IGNORECASE,
+        )
+        if dropoff:
+            value = _clean_changed_route_value(dropoff.group("value"))
+            if value:
+                slots["dropoff_address"] = value
+
+        if slots:
+            return slots
+
+    return {}
+
+
+def _changed_route_slot(text: str, slot: str) -> str | None:
+    return _changed_route_slots(text).get(slot)
+
+
 def _has_explicit_clock(text: str) -> bool:
     lowered = _plain(text)
-    return bool(re.search(r"\b\d{1,2}(?:\s*(?:giờ|h)|:[0-5]\d)\b", lowered))
+    return bool(re.search(r"\b\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)\b", lowered))
 
 
 def _time_slot(text: str, now: datetime | None = None) -> str | None:
@@ -216,16 +323,16 @@ def _time_slot(text: str, now: datetime | None = None) -> str | None:
             explicit_date = datetime(year, month, day, tzinfo=current.tzinfo).date()
         except ValueError:
             return None
-    hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:giờ|h)|:([0-5]\d))\s*(sáng|tối|trưa|am|pm)?", lowered)
+    hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|toi|trua|am|pm)?", lowered)
     hour: int | None = None
     minute = 0
     if hour_match:
         hour = int(hour_match.group(1))
         minute = int(hour_match.group(2) or 0)
         period = hour_match.group(3)
-        if period in {"tối", "pm"} and hour < 12:
+        if period in {"toi", "pm"} and hour < 12:
             hour += 12
-        if period == "trưa" and hour < 11:
+        if period == "trua" and hour < 11:
             hour += 12
     elif "sang mai" in lowered:
         hour = 8
@@ -236,12 +343,36 @@ def _time_slot(text: str, now: datetime | None = None) -> str | None:
     if hour is None or hour > 23:
         return None
     day = explicit_date or current.date()
-    if explicit_date is None and ("mai" in lowered or "ngay mai" in lowered):
+    if explicit_date is None and "ngay kia" in lowered:
+        day += timedelta(days=2)
+    elif explicit_date is None and ("mai" in lowered or "ngay mai" in lowered):
         day += timedelta(days=1)
     candidate = datetime(day.year, day.month, day.day, hour, minute, tzinfo=current.tzinfo)
     if explicit_date is None and candidate <= current and "mai" not in lowered:
         candidate += timedelta(days=1)
     return candidate.isoformat()
+
+
+def _healthcare_requested_date(text: str, now: datetime | None = None) -> str | None:
+    """Return an explicit calendar day without inventing an appointment hour."""
+    current = now or _now()
+    lowered = _plain(text)
+    date_match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", lowered)
+    if date_match:
+        day, month, year = (int(value) for value in date_match.groups())
+        if year < 100:
+            year += 2000
+        try:
+            return datetime(year, month, day, tzinfo=current.tzinfo).date().isoformat()
+        except ValueError:
+            return None
+    if "ngay kia" in lowered:
+        return (current.date() + timedelta(days=2)).isoformat()
+    if "ngay mai" in lowered or "mai" in lowered:
+        return (current.date() + timedelta(days=1)).isoformat()
+    if "hom nay" in lowered:
+        return current.date().isoformat()
+    return None
 
 
 def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
@@ -252,6 +383,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         slots["party_size"] = party_size
     if domain == "ride":
         pickup, dropoff = _route(text)
+        changed_slots = _changed_route_slots(text)
+        pickup = changed_slots.get("pickup_address") or pickup
+        dropoff = changed_slots.get("dropoff_address") or dropoff
         if pickup:
             slots["pickup_address"] = pickup
         if dropoff:
@@ -272,6 +406,12 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             start_at = _time_slot(text)
             if start_at:
                 slots["start_at"] = start_at
+        if domain == "restaurant":
+            cuisine_match = re.search(r"(?:muon an|thich an|an)\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
+            if cuisine_match:
+                cuisine = re.split(r"\b(?:luc|vao|toi|sang|trua)\b", cuisine_match.group(1), maxsplit=1)[0].strip()
+                if cuisine and cuisine not in {"tai nha hang", "nha hang"}:
+                    slots["cuisine_query"] = cuisine
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
             slots["delivery_preference"] = "home"
@@ -288,6 +428,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         if location:
             slots["location"] = location
     if domain == "healthcare":
+        appointment_date = _healthcare_requested_date(text)
+        if appointment_date:
+            slots["appointment_date"] = appointment_date
         for department in ("than kinh", "tieu hoa", "tim mach", "noi tiet", "da lieu", "nhi khoa"):
             if department in lowered:
                 slots["department"] = department
@@ -298,18 +441,28 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["time_preference"] = "tomorrow_afternoon"
         elif "toi mai" in lowered:
             slots["time_preference"] = "tomorrow_evening"
-        elif "buoi sang" in lowered:
+        elif "sang ngay kia" in lowered or "buoi sang" in lowered:
             slots["time_preference"] = "morning"
-        elif "buoi chieu" in lowered:
+        elif "chieu ngay kia" in lowered or "buoi chieu" in lowered:
             slots["time_preference"] = "afternoon"
-        elif "buoi toi" in lowered or "toi nay" in lowered:
+        elif "toi ngay kia" in lowered or "buoi toi" in lowered or "toi nay" in lowered:
             slots["time_preference"] = "evening"
         if _has_any(lowered, ("dau", "met", "trieu chung", "symptom")):
             slots["symptoms"] = text[:500]
-    if "chon cai dau tien" in lowered or "chon quan dau tien" in lowered or "chon nha hang dau tien" in lowered:
+    if "chon cai dau tien" in lowered or "chon quan dau tien" in lowered or "chon nha hang dau tien" in lowered or "mon so mot" in lowered:
         slots["selection"] = "first"
-    elif "chon cai thu hai" in lowered or "chon quan thu hai" in lowered:
+    elif "chon cai thu hai" in lowered or "chon quan thu hai" in lowered or "mon so hai" in lowered:
         slots["selection"] = "second"
+    elif "chon cai thu ba" in lowered or "chon quan thu ba" in lowered or "mon so ba" in lowered:
+        slots["selection"] = "third"
+    elif "chon cai thu tu" in lowered or "chon quan thu tu" in lowered or "mon so bon" in lowered:
+        slots["selection"] = "fourth"
+    elif "chon cai thu nam" in lowered or "chon quan thu nam" in lowered or "mon so nam" in lowered:
+        slots["selection"] = "fifth"
+    else:
+        ordinal = re.search(r"\b(?:chon|lay)\s+(?:cai|mon|quan)?\s*(?:so|thu)\s*([1-9][0-9]?)\b", lowered)
+        if ordinal:
+            slots["selection_index"] = int(ordinal.group(1)) - 1
     return slots
 
 
@@ -368,7 +521,10 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     )
     healthcare_words = ("lich kham", "bac si", "kham", "than kinh", "chon lich", "trieu chung")
     restaurant_words = ("dat ban", "nha hang", "chon nha hang", "so nguoi")
-    ride_words = ("dat xe", "goi xe", "di tu", "xe may", "xe 4 cho", "xe 7 cho")
+    ride_words = (
+        "dat xe", "goi xe", "di tu", "xe may", "xe 4 cho", "xe 7 cho",
+        "doi phuong tien", "thay phuong tien", "loai xe",
+    )
 
     matches: list[int] = []
     if _has_any(lowered, food_words):
@@ -412,13 +568,15 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
     unsupported = _has_any(lowered, ("may bay", "chuyen bay", "flight", "khach san", "hotel", "tau hoa", "train"))
     if unsupported:
         return AssistantPlan(
-            assistant_message="Mình chưa hỗ trợ đặt vé máy bay, phòng khách sạn hoặc vé tàu trong bản demo này.",
+            assistant_message="Mình chưa hỗ trợ đặt vé máy bay, phòng khách sạn hoặc vé tàu trong các dịch vụ hiện có.",
             tasks=[],
         )
 
     follow_up = _has_any(lowered, (
         "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
-        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "bat",
+        "doi diem den", "doi diem don", "thay diem den", "thay diem don", "chuyen diem den",
+        "doi phuong tien", "thay phuong tien", "loai xe", "xe may",
+        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "ngay kia", "gio",
         "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
     ))
     explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(lowered, ("giao ve", "ship", "dat mon"))
@@ -459,7 +617,13 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
                 domain = str(item.get("domain", ""))
                 if domain in SUPPORTED_DOMAINS:
                     slots = dict(item.get("extracted_slots", {})) if isinstance(item.get("extracted_slots"), dict) else {}
-                    slots.update(_semantic_slots(text, domain))
+                    explicit_slots = _semantic_slots(text, domain)
+                    # A new day without a clock supersedes an old exact clock.
+                    # Keeping it would incorrectly constrain the new day to the
+                    # prior appointment time.
+                    if domain == "healthcare" and "appointment_date" in explicit_slots and "start_at" not in explicit_slots:
+                        slots.pop("start_at", None)
+                    slots.update(explicit_slots)
                     if domain == "restaurant" and not slots.get("location") and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh")):
                         slots["location"] = text
                     if domain == "restaurant":
@@ -530,7 +694,7 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
         if isinstance(pending_actions, list):
             safe_actions = [str(item) for item in pending_actions if str(item) in {
                 "select_restaurant", "restaurant_confirm", "ride_service", "ride_payment",
-                "select_healthcare_slot", "healthcare_payment", "healthcare_confirm", "food_confirm",
+                "select_healthcare_slot", "healthcare_payment", "healthcare_confirm", "select_food_item", "food_confirm", "food_payment",
             }]
             if safe_actions:
                 safe_task["pending_actions"] = safe_actions
@@ -622,6 +786,15 @@ def _normalized_datetime(value: Any) -> str | None:
     return parsed.astimezone(ZoneInfo(TIMEZONE)).isoformat()
 
 
+def _normalized_local_date(value: Any) -> str | None:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        return None
+
+
 def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
     """Keep semantic planner slots bounded and domain-shaped.
 
@@ -647,6 +820,8 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         text_slot("promo_code", 50)
     elif domain == "restaurant":
         text_slot("location", 300)
+        text_slot("cuisine_query", 200)
+        text_slot("cuisine", 200)
         party_size = slots.get("party_size")
         if isinstance(party_size, int) and not isinstance(party_size, bool) and 1 <= party_size <= 20:
             normalized["party_size"] = party_size
@@ -654,11 +829,17 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         if start_at:
             normalized["start_at"] = start_at
         selection = slots.get("selection")
-        if selection in {"first", "second"}:
+        if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
+        selection_index = slots.get("selection_index")
+        if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
+            normalized["selection_index"] = selection_index
     elif domain == "healthcare":
         for name, limit in (("department", 200), ("symptoms", 500)):
             text_slot(name, limit)
+        appointment_date = _normalized_local_date(slots.get("appointment_date"))
+        if appointment_date:
+            normalized["appointment_date"] = appointment_date
         start_at = _normalized_datetime(slots.get("start_at"))
         if start_at:
             normalized["start_at"] = start_at
@@ -668,8 +849,11 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         }:
             normalized["time_preference"] = preference
         selection = slots.get("selection")
-        if selection in {"first", "second"}:
+        if selection in {"first", "second", "third", "fourth", "fifth"}:
             normalized["selection"] = selection
+        selection_index = slots.get("selection_index")
+        if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
+            normalized["selection_index"] = selection_index
     elif domain == "food":
         for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("delivery_preference", 80)):
             text_slot(name, limit)
@@ -686,6 +870,30 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
     if clarification and len(clarification) > 500:
         clarification = clarification[:500]
     return plan.model_copy(update={"tasks": tasks, "clarification_question": clarification})
+
+
+def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPlan:
+    """Keep explicit user slots when a model response omits them.
+
+    The model chooses the task shape, but the bounded deterministic extractor
+    is the safer source for direct route, vehicle, selection, and preference
+    phrases.  Merge only those semantic slots; identifiers and authoritative
+    values still come from the Gateway/domain workflow.
+    """
+    tasks: list[PlannedTask] = []
+    for task in plan.tasks:
+        explicit = _semantic_slots(message, task.domain)
+        if not explicit:
+            tasks.append(task)
+            continue
+        slots = {**task.extracted_slots, **explicit}
+        if task.domain == "healthcare" and "appointment_date" in explicit and "start_at" not in explicit:
+            # The deterministic extraction is authoritative for explicit
+            # relative dates; do not retain an older exact clock from the
+            # planner or previous turn.
+            slots.pop("start_at", None)
+        tasks.append(task.model_copy(update={"extracted_slots": slots}))
+    return plan.model_copy(update={"tasks": tasks})
 
 
 def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> AssistantPlan:
@@ -829,10 +1037,15 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
             return {"plan": plan.model_dump(), "assistant_message": plan.assistant_message, "decision_source": "deterministic"}
         try:
-            plan = _enforce_reference_dependencies(
-                _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan)),
-                str(state.get("query", "")),
-            )
+            message = str(state.get("query", ""))
+            deterministic = deterministic_plan(message, state.get("conversation_state", {}))
+            if _is_direct_healthcare_request(message) or (llm is None and len(deterministic.tasks) == 1):
+                plan = deterministic
+                logger.info("assistant.model_decision.fast_path tasks=%d", len(plan.tasks))
+                return {"plan": plan.model_dump(), "assistant_message": plan.assistant_message, "decision_source": "deterministic"}
+            plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
+            plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
+            plan = _enforce_reference_dependencies(plan, message)
             MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "succeeded", "last_model_call_error": None})
             runtime = llm_diagnostics(settings)
             logger.info("assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks))

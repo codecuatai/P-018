@@ -1,66 +1,124 @@
 # Current Architecture State
 
-This is the canonical, filesystem-backed source of truth for X-One's implementation status. Structure, ownership, ports, routes, migrations, and command surface were last re-verified against the checked-in files on 2026-08-16. The runtime numbers under [Verification observed in this audit](#verification-observed-in-this-audit) are the recorded evidence of the 2026-08-09 execution pass and are not re-run by a documentation-only update. Roadmap diagrams and legacy course material do not change a status below.
+This is the canonical, filesystem-backed source of truth for X-One's implementation status. Structure, ownership, ports, routes, migrations, and command surface were last re-verified against the checked-in files on 2026-08-16. It supersedes earlier Phase 0 descriptions that referred to a Vite Web demo or demo-only public authentication. Historic work evidence belongs in `WORKLOG.md`; it is not a claim about the current implementation.
 
 ## Status vocabulary
 
-- implemented: the repository contains the stated behavior/configuration and this document cites the supporting path and a check.
-- skeleton: boundary, configuration, or layout exists, but the domain behavior is not wired or implemented.
-- planned: no runnable or wired implementation exists.
-- in-process: a module runs within an existing deployable boundary; it is not automatically a separately deployable service.
-- standalone: a component has its own runtime/deployment boundary. This says nothing about feature completeness, availability, or production readiness.
-- deprecated: retained but not for new development. legacy-reference: retained only for historical or course/reference use and not authoritative for X-One.
+- **implemented**: source/configuration exists and a cited verification has
+  passed for this worktree.
+- **skeleton**: a route or boundary exists but the underlying domain capability
+  is not wired.
+- **planned**: no runnable/wired implementation exists.
+- **unverified**: source/configuration exists but this worktree has not yet
+  completed the named runtime acceptance check.
 
-Status and deployment mode are independent. A current skeleton may be standalone, and a target box may remain in-process until a measured need supports a separate deployment boundary.
+## Gate G2 audit snapshot - 2026-08-16
 
-## Runtime shape and ownership
+The Gate G2 documentation, Compose contract, and evaluation runner were
+audited against the current filesystem. Static validation and Compose rendering
+passed after the offline deterministic default and explicit provider mapping
+changes. An isolated Compose stack was then built, migrated, seeded, and
+health-checked; seven public Gateway cases ran with 6/7 passing. Safe Agent
+diagnostics recorded a successful Gemini call without fallback. The canonical
+record is [the Gate G2 evaluation report](../../eval/results/gate-g2-mvp-eval.md);
+E02 remains an explicit assertion mismatch, not a hidden pass claim.
 
-Clients may call only the gateway. The gateway owns public workflow orchestration, confirmation, audit/idempotency, and the payment sandbox boundary. The agent may only return a typed tool request to that gateway; it cannot call a domain service or database, create a booking, or charge payment. Restaurant owns dine-in table reservations; Food owns menus, food orders, and delivery/takeaway ordering.
+## Current local completion evidence - 2026-08-13
 
-Canonical product name: X-One. Older NaviGo flight, bus, train, and hotel material is historical reference only; it is not part of the current product surface or an approved domain. The currently declared backend domains are Ride, Restaurant, Healthcare, and Food; travel and lodging ownership remain planned/TBD and must not be inferred from frontend mock data.
+The local release-candidate path is wired from Web through Gateway to the
+authoritative service and database for all four product domains. Core migration
+`012_core_product_ops.sql` owns durable notifications, favorites, feedback,
+support tickets and ticket events; `013_core_admin_support_idempotency.sql`
+owns the Admin support-update replay evidence. Product/Ops and Admin routes
+are actor/role scoped and the domain data remains owner-local.
 
-Each backend owner has one logical PostgreSQL database: gateway/Core xone_core, agent xone_agent, Ride xone_ride, Restaurant xone_restaurant, Healthcare xone_healthcare, and Food xone_food. The bootstrap script at infra/postgres/init/01-create-databases.sh creates the distinct roles/databases. Cross-database queries, foreign keys, and shared ORM models are prohibited; cross-service data travels through REST/JSON/OpenAPI contracts.
+The direct-process runtime (`scripts/local-dev.ps1`) was restarted with
+`.env.example`; Gateway, Web, Agent, Ride, Restaurant, Healthcare and Food
+health checks passed. Additive local seed produced the synthetic Ride pool and
+demo Healthcare records without removing imported catalog rows. Playwright
+Chromium passed 27/27 responsive tests, live Product 2/2, Admin 1/1 and the
+real multi-domain transaction flow 1/1. The optional `agent-browser` CLI is
+not installed; these browser results came from Playwright Chromium.
 
-Logical ownership is mandatory: each domain owns its schema/tables, migrations, and state, while other domains use contracts rather than SQL or shared ORM entities. The local foundation currently uses one PostgreSQL instance with separate logical databases/roles. Physical instance or cluster separation is deferred until measured scale, reliability, security, compliance, team-ownership, deployment-independence, or operational-isolation needs justify it.
+`LOCAL_DETERMINISTIC_LOCATION_FALLBACK=true` and
+`RIDE_TRACKING_TIME_SCALE=60` are local-only test/demo settings. Production
+validation rejects the deterministic location flag and requires the Ride
+tracking scale to remain `1.0`; external geocoding/routing remains optional
+and explicitly labeled when unavailable.
+
+For the final corrective pass, capability and acceptance labels use the
+following explicit vocabulary where applicable: `IMPLEMENTED_RUNTIME`,
+`IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
+`IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, `DEPRECATED`, and the historical
+`BROWSER_ACCEPTANCE_PENDING` label. The current 2026-08-13 browser result is
+recorded above and supersedes that historical pending state.
+
+## Runtime and ownership
+
+Web and mobile call only the NestJS Gateway. The Next.js Web's `/api/health`
+is a technical Docker probe only; it is not a BFF, domain proxy or authority.
+The Gateway validates public requests, routes typed internal clients and owns
+Core audit/idempotency/session evidence, but never writes a domain's data by
+cross-domain SQL. The Agent emits validated typed requests only and does not
+make a booking, payment or database call. Restaurant owns dine-in
+reservations; Food owns menus, food orders and delivery ordering.
+
+One physical PostgreSQL instance provisions separate logical databases/owners:
+Core `xone_core`, Agent target `xone_agent`, Ride `xone_ride`, Restaurant
+`xone_restaurant`, Healthcare `xone_healthcare` and Food `xone_food`.
+Cross-database queries, foreign keys, shared ORM models and shared domain
+business logic are prohibited.
 
 ## Observed implementation matrix
 
 | Component | Status | Evidence | Current limitation |
 | --- | --- | --- | --- |
-| Web | implemented (unified assistant demo surface and Compose image) | apps/web/src/App.tsx, apps/web/src/api.ts, apps/web/src/pages/ChatDashboard.tsx, apps/web/src/components/WorkflowCards.tsx, apps/web/Dockerfile, apps/web/nginx.conf, docker-compose.yml | Browser traffic is centralized through `/api/v1/assistant/chat` and `/api/v1/assistant/actions`; the production bundle uses `/api`, and the Compose image serves the SPA on host loopback port 8080. |
-| Mobile | skeleton | apps/mobile/App.tsx | Expo shell only; no API integration. |
-| API Gateway | implemented (unified four-domain orchestration) | apps/api-gateway/src/modules/{auth,tools,confirmation,payment,workflow,conversation}, apps/api-gateway/src/modules/conversation/{assistant.controller.ts,assistant.service.ts}, apps/api-gateway/src/clients/{clients.module.ts,service.clients.ts}, apps/api-gateway/src/resilience/, migrations 001-008 | PostgreSQL is the runtime repository in Compose; in-memory Core repository is test-only. Core migration 007 stores one actor/conversation/action execution receipt and safe public response for exact replay; migration 008 adds retryable failures and stale processing lease reclaim. `commitAssistantActionSuccess` atomically appends the action turn/state and marks that receipt `SUCCEEDED`, so a failed commit leaves the old action and `PROCESSING` receipt together for same-key lease reclaim; a different key cannot resurrect it. Generic follow-up selection unions current public actions with authoritative safe Food/Restaurant/Healthcare choice metadata and asks a dynamic clarification when more than one domain is eligible. The unified assistant keeps final/financial operations confirmation-gated, sends only planner-safe state to Agent, and composes Healthcare/Restaurant→Ride only from authoritative domain results. |
-| Agent service | implemented (top-level structured planner plus domain subgraphs) | apps/agent-service/src/agents/{assistant_graph.py,graph.py,restaurant_graph.py,healthcare_graph.py,ride_graph.py}, apps/agent-service/src/services/{gateway.py,llm.py}, apps/agent-service/src/api/routes.py | `assistant_graph.py` is the bounded one-conversation planner for Ride, Food, Restaurant, and Healthcare. Gemini first attempts the configured model; confirmed structured-schema/capability failures retry raw output on the same model, while configured-model fallback is limited to quota/rate-limit, temporary provider, timeout/network, or model-unavailable failures. Auth/permission/billing failures stay visible. `/api/v1/status` reports safe model diagnostics. The Agent emits typed plans only and never executes a final side effect. |
-| Ride service | implemented (simulation slice) | services/ride-service/src/{main.py,api/rides.py,application/ride_service.py,domain/ride.py,infrastructure/,repositories/}, migrations/versions/20260806_0001_ride_simulation.py, tests/ | Deterministic PostgreSQL-backed quote/booking lifecycle is local/demo-only; Gateway owns public orchestration and two explicit confirmations. |
-| Restaurant service | implemented (partial vertical slice) | services/restaurant-service/src/main.py, src/api/v1/, src/infrastructure/, migrations/versions/0001_restaurant_booking.py, migrations/versions/0002_restaurant_idempotency_records.py, migrations/versions/0003_restaurant_legacy_idempotency_backfill.py, seeds/seed.py, tests/test_restaurant_service.py, tests/test_contract_parity.py | PostgreSQL-backed discovery, availability, holds, reservation create/read/update/cancel, durable actor/operation/key replay evidence, additive legacy backfill/runtime promotion, actor auth, and structured response envelope are wired; Gateway/Agent currently orchestrate search/availability/hold/proposal/final create only. Confirmation evidence is owned by Gateway; generated clients remain intentionally absent. |
-| Healthcare service | implemented (local booking slice) | services/healthcare-service/src/{main.py,api/routes.py,config.py,database.py,models/medical.py}, migrations/{001_healthcare_booking.sql,002_healthcare_slot_reuse.sql,003_healthcare_provider_catalog.sql}, seeds/{seed_medical.py,import_healthcare_csv.py}, tests/{test_contract_parity.py,test_medical_schema.py,test_postgres_slot_reuse.py,test_routes.py} | PostgreSQL-backed facility/department/doctor catalog and appointment state, actor-scoped holds/payment acknowledgement/cancel, required idempotency, explicit final confirmation, expiry reconciliation, active-slot reuse, and facility metadata returned per provider are wired. Imported doctors without a source consultation price remain discoverable but cannot be held until priced. Payment is a local acknowledgement adapter and is not a provider refund; production provider integration is out of scope. |
-| Healthcare provider sandbox | skeleton (not deployed) | services/healthcare-sandbox/{requirements.txt,src/main.py} | Standalone FastAPI mock of an external clinic provider with hard-coded Vietnamese departments/doctors and an in-memory idempotency store. It has no Dockerfile, no tests, no migrations, and no `docker-compose.yml` entry, and nothing in the running stack calls it. It is a local experiment surface only and is not part of the Healthcare service boundary. |
-| Food service | implemented (vertical slice) | services/food-service/src/application/food_service.py, src/domain/quotes.py, src/api/food.py, src/repositories/food.py, migrations 001-005, seeds/{001_demo_hanoi.sql,import_food_csv.py}, tests/ | PostgreSQL adapter recomputes the canonical quote under cart/catalog/address/voucher locks, exposes actor-scoped address discovery, enforces actor-owned resources, cart/order idempotency, voucher eligibility, transition operation idempotency, due workflow claims, driver locks, and immutable event tables. The CSV importer has populated the local catalog with 239 restaurants and 17,357 menu items using source-ID upserts; source records use explicitly marked approximate Hanoi-center coordinates because the source CSV has no coordinates. |
-| Tool/OpenAPI contracts and generated TS clients | implemented (four-domain plus unified assistant contract) | packages/contracts/tools/{tool-request.schema.json,ride-tool-request.schema.json}, packages/contracts/openapi/{food-vertical-slice.yaml,gateway-food-vertical-slice.yaml,restaurant-service-v1.yaml,healthcare-service-v1.yaml,gateway-v1.yaml,agent-service.v1.yaml,ride-service.v1.yaml,gateway-public.v1.yaml} | `gateway-v1.yaml` documents `/api/v1/assistant/chat` and `/api/v1/assistant/actions`; generated clients remain ungenerated because the typed Gateway adapters are hand-owned transport code. |
-| Local Compose and database bootstrap | implemented | docker-compose.yml, .env.example, infra/postgres/init/01-create-databases.sh, scripts/validate-env-config.py | All seven application containers plus PostgreSQL build from the checked Compose file; bootstrap still runs only for a new postgres_data volume. |
-| Migrations and seeds | implemented (four domain slices) | Core SQL migrations 001-008, Food SQL migrations 001-005, Healthcare SQL migrations 001-003, Restaurant Alembic revisions 0001-0003, Ride Alembic revision 20260806_0001, deterministic Food/Restaurant/Healthcare seeds and additive Food/Healthcare CSV importers, scripts/migrate.{ps1,sh}, scripts/seed.{ps1,sh}, scripts/check-migration-parity.py | Each owner keeps its migration boundary and its own migration style: Core, Food, and Healthcare apply ordered raw `.sql` files, while Restaurant and Ride use Alembic revisions. Root helpers apply all current migrations and deterministic seeds without deleting the existing volume. PowerShell Food seeding preserves UTF-8 catalog data. |
-| Automated tests and CI | implemented (local integrated scope) | services/{food-service,restaurant-service,healthcare-service,ride-service}/tests/, apps/{api-gateway,agent-service}/test*/, apps/web/package.json, .github/workflows/ci-cd.yml | Local service tests, Gateway lint/build/Jest, Agent pytest/Ruff, application Python Ruff, and Web production build pass; dedicated PostgreSQL tests remain environment-dependent, while the disposable live proof is recorded below. |
-| Evaluation harness | planned | eval/results/report.md | Only `eval/results/report.md` is tracked; no evaluation runner, dataset, or scoring code exists in the repository. The report's metrics are correctly recorded as `not measured`. |
-| Deployment | implemented (staging automation) | .github/workflows/ci-cd.yml, docker-compose.yml, apps/web/Dockerfile | Successful `staging` push checks can deploy the exact tested commit to `/opt/xone` over SSH; Compose builds and starts the Web image with `/api` as its Gateway base URL alongside the backend stack. The VPS, repository checkout, `.env`, GitHub environment, and secrets remain externally operated. No production deployment pipeline is claimed. |
+| Web | implemented | `apps/web/src/app/`, `src/components/marketing/`, `src/features/`, `src/providers/auth-provider.tsx`, `src/lib/api-client.ts` | Next.js App Router provides landing, auth, resumable onboarding, app/admin route guards, persistent conversations/history, saved-address CRUD, Service Hub browse/action states, map/location and Ride tracking states. Jest (13 suites/52 tests), typecheck/build pass; Playwright Chromium 27/27 responsive and live Product/Admin/transaction suites pass. |
+| Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | Calm task-first Vietnamese UI has route loading/error/empty/disabled states, reduced-motion handling, responsive shells, location/map panels, and tracking polling. The map is a deterministic visual snapshot, not a claim of a production map provider. |
+| Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
+| Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`013` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
+| Agent persistence | skeleton | `apps/agent-service/src/application/workflow_store.py`, `apps/agent-service/src/config.py` | `workflow_store` is process-local and no Agent persistence client/migration is wired. `xone_agent` is provisioned for target checkpoint/run metadata, so Agent state is lost on restart. |
+| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
+| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migration `20260812_0003_ride_lifecycle.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, and actor-scoped history. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
+| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, `apps/agent-service/tests/test_agents/test_tool_registry_parity.py` | Version-2 inventory has 46 canonical entries: 23 `IMPLEMENTED_AGENT_TOOL`, 12 `IMPLEMENTED_GATEWAY_ACTION`, and 11 `IMPLEMENTED_DOMAIN_API`. Active V1 compatibility paths remain and runtime→JSON parity is one-way; the Agent never executes final side effects. |
+| Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
+| Catalog data pipeline | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |
+| Recommendation + multi-service reliability | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, Core migration `011`, tests | Deterministic ranking, owning-service resource re-read, dependency/partial-success/compensation semantics, step idempotency, and durable plan readback are wired. Route-provider ETA is available for explicit routes/quotes; live browser transaction coverage passed. |
+| Product routes | implemented | `apps/web/src/app/app/`, `apps/web/src/app/admin/` | `/app`, conversations, history/detail, services/browse, profile, addresses, settings and `/admin` routes build with route-level loading/error/empty states. |
+| Local Compose | implemented | `docker-compose.yml`, Web/Gateway Dockerfiles, `scripts/start-all.{ps1,sh}` | A disposable project with its own volume/network built and reached healthy state for all eight containers, including Web on host port 5173 and Gateway on 3000. The primary persistent volume was not touched. |
+| Mobile | skeleton | `apps/mobile/App.tsx` | Expo shell only; no Phase 1 mobile implementation. |
+| Deployment/cloud | planned | no deployment manifest outside local Compose | No cloud deployment, commit, push or external publish is part of this phase. |
 
-## Intended ownership and deployment reading
+## Phase 1 authentication behavior
 
-The current contract inventory also includes `packages/contracts/openapi/healthcare-service-v1.yaml`; the domain and workflow contracts above are the checked-in source of truth for the local integrated slice.
+`users`, `user_credentials`, `user_sessions` and `password_reset_tokens` are
+Core-owned migration-009 tables. Registration atomically creates the user,
+Argon2id password hash and initial refresh-token generation. Access JWTs are
+issued/verified with `jsonwebtoken`, constraining algorithm, signature,
+issuer/audience, expiry and the bound identity/session claims. The Web keeps
+the access JWT in memory only.
 
-This table describes intended authority, not a promise that an interface exists. The implementation matrix above remains the status source of truth.
+Refresh tokens are opaque 48-byte random values. Only SHA-256 hashes persist;
+the raw value is an HttpOnly, SameSite=Lax cookie scoped to `/api/v1/auth` and
+is Secure in production. Refresh rotation consumes one generation and writes
+the next. A replay revokes the whole family. Login failures avoid account
+enumeration, session actions are actor scoped, password changes/resets revoke
+all sessions and auth-relevant actions are audit recorded without raw secrets.
 
-| Component | Current status | Intended authority/data owner | Current deployment mode |
-| --- | --- | --- | --- |
-| Web | implemented (unified Gateway chat) | No authoritative domain data | standalone web demo |
-| Mobile | skeleton | No authoritative domain data | standalone mobile shell |
-| Gateway | implemented (four-domain orchestration) | Public workflow/audit/idempotency metadata in Core; never domain state | standalone gateway runtime |
-| Agent | implemented (structured unified planner) | Approved agent run/checkpoint metadata only | standalone agent runtime |
-| Ride, Restaurant, Healthcare | implemented (partial local slices) | Their respective domain data and state transitions | standalone domain-service runtimes |
-| Food | implemented (ordering slice) | Menus, carts, vouchers, delivery, orders, drivers, and status events | standalone domain-service runtime |
+Credentialed browser operations validate configured Origin/Referer evidence in
+addition to the exact CORS allowlist. Development/test demo auth remains
+explicit compatibility behavior; environment validation rejects it in
+production.
 
-The checked repository has separate runtime entrypoints for the listed components, but that does not make their planned business interfaces implemented or available.
+## Web architecture
 
-## Repository roles
+The Web is a single Next.js App Router application with server layouts/pages
+and small client islands only where browser state is needed: navigation,
+Motion visuals, auth bootstrap, forms, route gates and chat interaction. It
+uses `next/link` and `next/navigation`; React Router, Vite runtime files and a
+second frontend are absent. The accessible root has route-level loading,
+error and not-found states. The static landing contains exactly the four
+current service categories: Food, Ride, Restaurant and Healthcare.
 
 - apps/ contains deployable applications: the gateway and agent today, plus web/mobile shells. Future browser/mobile traffic still terminates at the gateway.
 - services/ contains independently deployable domain owners. Each owns its persistence and API; api/ is the HTTP edge, application/ coordinates use cases, domain/ holds pure rules, and repositories/ is the persistence boundary. Current models/ directories contain API/schema placeholders, not database models.
@@ -74,13 +132,15 @@ The checked repository has separate runtime entrypoints for the listed component
 - eval/ currently tracks only results/report.md. There is no evaluation runner in the repository, so any coverage/accuracy figure is `not measured` until one exists.
 - presentation/ currently tracks only README.md. The pitch deck and demo video it describes are not in the repository.
 
-## Local development facts
+The Web calls `NEXT_PUBLIC_API_URL` directly with `credentials: include`. There is no database access, service URL, secret or domain invariant in the frontend. `sessionStorage` is limited to transient current-tab assistant UI state; it never contains access/refresh credentials.
 
-Root .env.example is the Compose source of truth. Compose uses explicit mappings, not env_file: PostgreSQL receives bootstrap credentials; gateway receives Core DB/internal URLs/token; agent receives its DB, CORS, Gemini configuration, and token; each domain receives only its own database URL, port, and token. Internal URLs use Docker service names (agent-service, ride-service, restaurant-service, healthcare-service, food-service), not localhost.
+## Historical verification evidence - 2026-08-12
+
+The following checks passed on this worktree:
 
 | Service | Compose name | Host/container port in the checked example | Health endpoints |
 | --- | --- | --- | --- |
-| Web | web | `127.0.0.1:${WEB_PORT:-8080}:80` (host loopback only) | `/` (Nginx SPA) |
+| Web | web | `127.0.0.1:${WEB_PORT:-5173}:80` (host loopback only) | `/` (Nginx SPA) |
 | Gateway | api-gateway | `${API_GATEWAY_PORT}:3000` | /health/live, /health/ready |
 | Agent | agent-service | 8001, internal only — declares `expose: ["8001"]` | /health/live, /health/ready |
 | Ride | ride-service | 8101, internal only — declares no `ports:` and no `expose:` | /health/live, /health/ready |
@@ -125,7 +185,7 @@ Source reconciliation for that pass ran from the repository root at HEAD `6672e9
 
 ### TARGETED POSTGRESQL
 
-Disposable PostgreSQL evidence passed Food `3/3` and Gateway Core `5/5`. These targeted counts are separate from BASE SUITES and are not summed into them. Core migrations 001-008 and deterministic seeds were applied only to the disposable acceptance project.
+Disposable PostgreSQL evidence passed Food `3/3` and Gateway Core `5/5`. These targeted counts are separate from BASE SUITES and are not summed into them. Core migrations 001-013 and deterministic seeds were applied only to the disposable acceptance project.
 
 ### DETERMINISTIC PUBLIC E2E
 
@@ -139,7 +199,7 @@ The prior live-provider run remains separate from deterministic acceptance: `25 
 
 ## Static, security, and boundaries
 
-- `python -m compileall -q apps/agent-service/src services scripts`, `python scripts/check-migration-parity.py` (`15 files`), `python scripts/validate-env-config.py` (`81 root variables, 77 Compose variables`), `docker compose --env-file .env.example config --quiet`, `bash -n scripts/start-all.sh`, `bash scripts/tests/test-start-all-host-normalization.sh`, and `git diff --check` all passed. The diff check emitted only existing LF/CRLF warnings.
+- `python -m compileall -q apps/agent-service/src services scripts`, `python scripts/check-migration-parity.py` (`24 files`), `python scripts/validate-env-config.py` (`81 root variables, 77 Compose variables`), `docker compose --env-file .env.example config --quiet`, `bash -n scripts/start-all.sh`, `bash scripts/tests/test-start-all-host-normalization.sh`, and `git diff --check` all passed. The diff check emitted only existing LF/CRLF warnings.
 - Direct Git inspection listed tracked `.github/workflows/ci-cd.yml`, `pnpm-lock.yaml`, and `apps/web/package-lock.json`; the current workflow runs Agent/Ride/Restaurant/Healthcare/Food lint and tests in service-specific jobs, while Gateway uses frozen pnpm install and Web uses `npm ci`. The workflow still runs Ruff and pytest for all five Python service owners, plus the dedicated integration/build jobs. Frozen Gateway install and Web `npm ci` both passed; lockfiles were not regenerated.
 - `npm audit --json` and `npm audit --omit=dev --json` each reported one high advisory: transitive `nanoid@3.3.16` via `vite@6.4.3 -> postcss@8.5.25`, affected `<3.3.17`, `fixAvailable=true`; patched `3.3.17`/`3.3.18` fit the existing `^3.3.16` range. The omit-dev result remains nonzero because Vite is manifest-classified as a production dependency. Deployment inspection classifies the chain as build tooling only: Vite runs only in the Docker builder, the final image is static Nginx output, source/dist contain no Nanoid/PostCSS/custom-generator code, and PostCSS calls `nanoid(6)`, not the vulnerable zero-size path. It is not shipped or exploitable in the deployed browser runtime; no dependency change was made. Full details are in [Testing Strategy](../development/testing-strategy.md).
 - `.gemini/settings.json` contains only the `STITCH_API_KEY` environment expansion; no literal credential was printed or used. `apps/agent-service/src/agents/tools/medical_tools.py` remains absent, and Web/Agent boundary scans found no direct internal service calls.
@@ -154,3 +214,10 @@ Business API changes must add a versioned OpenAPI contract, any needed generated
 ## Incremental delivery guidance
 
 Implement one walking vertical slice at a time: user request -> gateway -> agent intent/tool selection -> provider lookup -> draft/quote -> user confirmation -> domain booking creation -> structured result. This is a target sequence, not a running flow. Add confirmation, idempotency, and audit before its important side effects; a target box does not need to become a separate physical service/database before the first end-to-end slice is complete.
+
+## Current verification evidence - 2026-08-16
+
+- Direct local runtime health passed for Gateway, Web, Agent, Ride, Restaurant, Healthcare and Food; additive seed and scoped reset checks preserved the PostgreSQL volume and imported catalogs.
+- Contract/DataOps tests passed (`8` tests), migration parity passed (`24` files), and the latest Gateway/Web/Python checks passed: Gateway `25` suites, `108` passed and `7` skipped (`115` total); Web `13` suites / `52` tests; Agent `106`; Food `23` / `3` skipped; Ride `19`; Restaurant `21` / `1` skipped; Healthcare `25` / `1` skipped. Ruff, typecheck, build and lint passed in their applicable scopes.
+- Playwright Chromium passed `27/27` responsive tests at 375x812, 768x1024 and 1440x1000; live Product `2/2`, Admin `1/1`, and the real transaction flow `1/1` passed with browser error listeners.
+- The 2026-08-16 isolated Gate G2 run provides the first private-key Gemini evidence; the legacy `tests/e2e` batch is still not counted as acceptance evidence because it hit the intentionally bounded process-local login limiter and includes slow Assistant scenarios.
