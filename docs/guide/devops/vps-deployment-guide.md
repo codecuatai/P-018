@@ -291,11 +291,17 @@ jobs:
             docker image prune -f
 ```
 
-#### Bước B2: Cấu hình Secrets trên GitHub
-Nhờ Repo Admin hoặc tự truy cập `Settings` -> `Secrets and variables` -> `Actions` để thêm các khóa:
-*   `STAGING_HOST`: IP tĩnh của VPS Staging.
-*   `STAGING_USER`: Tên user đăng nhập SSH (ví dụ: `ubuntu`).
-*   `STAGING_SSH_KEY`: Nội dung private key tương ứng (file `~/.ssh/gcp-vps-key`).
+#### Bước B2: Cấu hình Secrets trên GitHub cho 2 Máy Ảo
+Truy cập `Settings` -> `Secrets and variables` -> `Actions` để cấu hình các khóa cho từng máy ảo:
+
+*   **Cho Máy Ảo Develop (khi push vào nhánh `develop`):**
+    *   `DEV_HOST` (hoặc `DEVELOP_HOST`): IP tĩnh của VPS Develop.
+    *   `DEV_USER` (hoặc `DEVELOP_USER`): Tên user đăng nhập SSH (ví dụ: `ubuntu` hoặc `root`).
+    *   `DEV_SSH_KEY` (hoặc `DEVELOP_SSH_KEY`): Nội dung private key SSH của VPS Develop.
+*   **Cho Máy Ảo Production (khi push vào nhánh `main`):**
+    *   `PROD_HOST` (hoặc `MAIN_HOST`): IP tĩnh của VPS Production.
+    *   `PROD_USER` (hoặc `MAIN_USER`): Tên user đăng nhập SSH (ví dụ: `ubuntu` hoặc `root`).
+    *   `PROD_SSH_KEY` (hoặc `MAIN_SSH_KEY`): Nội dung private key SSH của VPS Production.
 
 ---
 

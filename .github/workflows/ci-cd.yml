@@ -2,9 +2,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, develop, staging]
+    branches: [main, develop]
   pull_request:
-    branches: [main, develop, staging]
+    branches: [main, develop]
   schedule:
     # 01:00 Asia/Bangkok. Scheduled workflows use UTC.
     - cron: '0 18 * * *'
@@ -16,9 +16,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # Let an in-flight staging deployment finish; newer runs may still cancel
-  # older CI runs on branches that never deploy from this workflow.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/staging' }}
+  # Let an in-flight develop/main deployment finish; newer runs may still cancel
+  # older CI runs on PR branches that never deploy from this workflow.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
@@ -347,8 +347,8 @@ jobs:
       - name: Validate Docker Compose configuration
         run: docker compose --env-file .env.example config --quiet
 
-  deploy:
-    name: VPS Staging Deploy
+  deploy-develop:
+    name: VPS Develop Deploy
     needs:
       - detect-changes
       - agent-service
@@ -366,16 +366,16 @@ jobs:
         always() &&
         !cancelled() &&
         github.event_name == 'push' &&
-        github.ref == 'refs/heads/staging' &&
+        github.ref == 'refs/heads/develop' &&
         needs.detect-changes.result == 'success' &&
         !contains(needs.*.result, 'failure') &&
         !contains(needs.*.result, 'cancelled')
       }}
     runs-on: [self-hosted, linux, x64, cohort3]
     timeout-minutes: 35
-    environment: staging
+    environment: development
     steps:
-      - name: SSH and deploy on VPS
+      - name: SSH and deploy on Develop VPS
         uses: appleboy/ssh-action@v1.2.5
         env:
           DEPLOY_GITHUB_TOKEN: ${{ github.token }}
@@ -383,9 +383,9 @@ jobs:
           DEPLOY_SERVER_URL: ${{ github.server_url }}
           DEPLOY_SHA: ${{ github.sha }}
         with:
-          host: ${{ secrets.STAGING_HOST }}
-          username: ${{ secrets.STAGING_USER }}
-          key: ${{ secrets.STAGING_SSH_KEY }}
+          host: ${{ secrets.DEV_HOST || secrets.DEVELOP_HOST || secrets.STAGING_HOST }}
+          username: ${{ secrets.DEV_USER || secrets.DEVELOP_USER || secrets.STAGING_USER }}
+          key: ${{ secrets.DEV_SSH_KEY || secrets.DEVELOP_SSH_KEY || secrets.STAGING_SSH_KEY }}
           envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
           command_timeout: 30m
           script: |
@@ -409,4 +409,68 @@ jobs:
             docker compose --env-file .env up -d --build --remove-orphans
 
             docker image prune -f
-            echo "Staging deployment completed successfully."
+            echo "Develop deployment completed successfully."
+
+  deploy-production:
+    name: VPS Production Deploy
+    needs:
+      - detect-changes
+      - agent-service
+      - ride-service
+      - restaurant-service
+      - healthcare-service
+      - food-service
+      - gateway
+      - food-postgres-integration
+      - gateway-postgres-integration
+      - web
+      - compose
+    if: >-
+      ${{
+        always() &&
+        !cancelled() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        needs.detect-changes.result == 'success' &&
+        !contains(needs.*.result, 'failure') &&
+        !contains(needs.*.result, 'cancelled')
+      }}
+    runs-on: [self-hosted, linux, x64, cohort3]
+    timeout-minutes: 35
+    environment: production
+    steps:
+      - name: SSH and deploy on Production VPS
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_SERVER_URL: ${{ github.server_url }}
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.PROD_HOST || secrets.MAIN_HOST || secrets.STAGING_HOST }}
+          username: ${{ secrets.PROD_USER || secrets.MAIN_USER || secrets.STAGING_USER }}
+          key: ${{ secrets.PROD_SSH_KEY || secrets.MAIN_SSH_KEY || secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
+          command_timeout: 30m
+          script: |
+            set -eu
+            cd /opt/xone
+
+            # Initialize only once. The VPS-owned .env remains untracked and
+            # is therefore preserved by the exact-commit reset below.
+            if [ ! -d .git ]; then
+              git init
+            fi
+
+            # GITHUB_TOKEN is job-scoped and is not saved as a VPS credential.
+            deploy_auth="$(printf 'x-access-token:%s' "$DEPLOY_GITHUB_TOKEN" | base64 -w 0)"
+            git -c http.extraheader="AUTHORIZATION: basic $deploy_auth" fetch \
+              --no-tags "$DEPLOY_SERVER_URL/$DEPLOY_REPOSITORY.git" "$DEPLOY_SHA"
+            unset DEPLOY_GITHUB_TOKEN deploy_auth
+            git reset --hard FETCH_HEAD
+
+            docker compose --env-file .env config --quiet
+            docker compose --env-file .env up -d --build --remove-orphans
+
+            docker image prune -f
+            echo "Production deployment completed successfully."
