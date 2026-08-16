@@ -2,7 +2,8 @@
 
 Quick links to the Gate G2 demo, architecture deliverable, and evaluation
 evidence.
-
+## Root README.md
+- [README](../README.md)
 ## Demo
 
 | Resource | Link | Notes |
