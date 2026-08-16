@@ -2,19 +2,17 @@ import 'reflect-metadata';
 
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/http-exception.filter';
-import { CorrelationIdMiddleware } from './common/correlation-id.middleware';
+import { configureGatewayHttpSecurity } from './common/http-security';
+import { getGatewaySecurityConfig } from './config/environment';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({
-    origin: '*', // Allows all origins for local development, or configure specific ones
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
-  app.use(new CorrelationIdMiddleware().use);
+  const securityConfig = getGatewaySecurityConfig(process.env);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  configureGatewayHttpSecurity(app, securityConfig);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
   await app.listen(process.env.PORT ?? 3000, '0.0.0.0');

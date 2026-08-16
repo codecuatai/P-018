@@ -1,12 +1,18 @@
 
-from ...models.schemas import ToolRequest
+from src.models.schemas import ToolRequest
 
 READ_TOOLS = {
     "restaurant.search",
     "restaurant.get",
     "restaurant.check_availability",
+    "restaurant.get_reservation",
+    "restaurant.list_reservations",
 }
-WRITE_TOOLS = {"restaurant.create_hold", "restaurant.create_reservation"}
+WRITE_TOOLS = {
+    "restaurant.create_hold",
+    "restaurant.create_reservation",
+    "restaurant.cancel_reservation",
+}
 
 
 def validate_tool_request(request: ToolRequest) -> ToolRequest:

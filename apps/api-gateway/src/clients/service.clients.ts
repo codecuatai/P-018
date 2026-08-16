@@ -12,6 +12,7 @@ import {
 
 export type JsonObject = Record<string, unknown>;
 
+
 export class UpstreamClientError extends HttpException {
   constructor(public readonly code: string, public readonly retryable: boolean, message: string, status: number) {
     super({ code, detail: message, retryable }, status);
@@ -57,6 +58,7 @@ export type AgentDecision = {
 
 export type RideQuote = {
   id: string;
+  status: 'QUOTE_CREATED' | 'AWAITING_CONFIRMATION' | 'CONSUMED' | 'EXPIRED';
   pickup_address: string;
   dropoff_address: string;
   vehicle_type: 'BIKE' | 'CAR_4' | 'CAR_7';
@@ -67,6 +69,17 @@ export type RideQuote = {
   tariff_version: string;
   quote_version: string;
   expires_at: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  dropoff_latitude?: number | null;
+  dropoff_longitude?: number | null;
+  route_provider?: string;
+  route_distance_meters?: number | null;
+  route_duration_seconds?: number | null;
+  route_polyline?: string | null;
+  route_geometry?: Array<{ latitude: number; longitude: number }> | null;
+  route_snapshot_hash?: string | null;
+  tariff_snapshot?: Record<string, unknown> | null;
 };
 
 export type RideBooking = {
@@ -75,12 +88,14 @@ export type RideBooking = {
   quote_version: string;
   amount: number;
   currency: string;
-  status: 'AWAITING_PAYMENT_CONFIRMATION' | 'DRIVER_ASSIGNED' | 'CANCELLED';
+  status: 'AWAITING_CONFIRMATION' | 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'ARRIVED_DESTINATION' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
   resource_version: number;
   payment_reference: string | null;
   driver: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
+  driver_id?: string | null;
+  tracking_started_at?: string | null;
 };
 
 export type ConfirmationEvidence = {
@@ -101,6 +116,19 @@ export type ServiceCallContext = {
   toolCallId?: string;
 };
 
+const rideBookingCancelProfile: OperationProfile = {
+  serviceId: 'ride-service',
+  operationId: 'ride.booking.cancel',
+  contractVersion: 'v1',
+  risk: 'REVERSIBLE_WRITE',
+  maxAttempts: 2,
+  perAttemptTimeoutMs: 5_000,
+  totalTimeoutMs: 11_000,
+  retryableStatuses: [408, 429, 502, 503, 504],
+  retryableDomainCodes: [],
+  retryAfterCapMs: 2_000,
+};
+
 abstract class InternalServiceClient {
   constructor(
     protected readonly config: ConfigService,
@@ -115,7 +143,7 @@ abstract class InternalServiceClient {
     return this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN');
   }
 
-  protected async legacyRequest<T extends JsonObject>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
+  protected async legacyRequest<T>(path: string, init: RequestInit, correlationId?: string, actorId?: string, timeoutMs?: number): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
@@ -248,11 +276,16 @@ export interface HealthcareTool {
 }
 
 export type RestaurantReadTool = RestaurantTool;
+export type FoodCatalogResponse = JsonObject[] | JsonObject;
 
 @Injectable()
 export class AgentClient extends InternalServiceClient {
   constructor(config: ConfigService) {
     super(config, 'AGENT_SERVICE_URL');
+  }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
   async interpret(
@@ -306,6 +339,14 @@ export class RideClient extends InternalServiceClient {
   constructor(config: ConfigService) {
     super(config, 'RIDE_SERVICE_URL');
   }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
 
   async createQuote(
     actorId: string,
@@ -371,6 +412,23 @@ export class RideClient extends InternalServiceClient {
     );
   }
 
+  async cancelBooking(
+    actorId: string,
+    idempotencyKey: string,
+    callContext: ServiceCallContext,
+    bookingId: string,
+    serializedBody: string,
+  ): Promise<RideBooking> {
+    return this.request(
+      '/v1/bookings/' + encodeURIComponent(bookingId) + ':cancel',
+      callContext,
+      { method: 'POST', body: serializedBody },
+      writeHeaders(actorId, idempotencyKey),
+      rideBookingCancelProfile,
+      (value) => parseBooking(envelopeData(value)),
+    );
+  }
+
   async getBooking(
     actorId: string,
     callContext: ServiceCallContext,
@@ -385,11 +443,73 @@ export class RideClient extends InternalServiceClient {
       (value) => parseBooking(envelopeData(value)),
     );
   }
+
+  async listBookings(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/bookings', { method: 'GET' }, callContext.correlationId, actorId);
+  }
+
+  async listQuotes(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/quotes', { method: 'GET' }, callContext.correlationId, actorId);
+  }
+
+  async getTracking(actorId: string, callContext: ServiceCallContext, bookingId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/bookings/${encodeURIComponent(bookingId)}/tracking`, { method: 'GET' }, callContext.correlationId, actorId);
+  }
 }
 
 @Injectable()
 export class RestaurantClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'RESTAURANT_SERVICE_URL'); }
+
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+
+  async searchCatalog(filters: { location?: string; cuisineType?: string; budgetRange?: string; limit?: number }, correlationId: string): Promise<JsonObject> {
+    const query = new URLSearchParams();
+    if (filters.location) query.set('location', filters.location);
+    if (filters.cuisineType) query.set('cuisine_type', filters.cuisineType);
+    if (filters.budgetRange) query.set('budget_range', filters.budgetRange);
+    query.set('limit', String(filters.limit ?? 8));
+    return this.legacyRequest<JsonObject>(`/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  async listReservations(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async checkAvailability(actorId: string, correlationId: string, restaurantId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/restaurants/${encodeURIComponent(restaurantId)}/availability`, { method: 'POST', body: JSON.stringify(payload) }, correlationId, actorId);
+  }
+
+  async createHold(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservation-holds', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async createReservation(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async cancelReservation(actorId: string, correlationId: string, idempotencyKey: string, reservationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(reservationId)}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async listRestaurants(actorId: string, correlationId: string, keyword?: string): Promise<JsonObject> {
+    const query = keyword ? `?location=${encodeURIComponent(keyword)}` : '';
+    return this.legacyRequest<JsonObject>(`/v1/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async getRestaurant(restaurantId: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/restaurants/${encodeURIComponent(restaurantId)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async getReservation(id: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(id)}`, { method: 'GET' }, correlationId, actorId);
+  }
 
   async executeTool(tool: RestaurantTool, actorId: string, correlationId: string): Promise<unknown> {
     const context: ServiceCallContext = {
@@ -417,7 +537,7 @@ export class RestaurantClient extends InternalServiceClient {
       });
     } else if (tool.tool_name === 'restaurant.search') {
       const query = new URLSearchParams();
-      for (const key of ['location', 'cuisine_type', 'budget_range', 'limit', 'offset', 'query']) {
+      for (const key of ['location', 'cuisine_type', 'budget_range', 'limit', 'offset']) {
         const value = tool.arguments[key];
         if (value !== undefined && value !== null) query.set(key, String(value));
       }
@@ -446,8 +566,68 @@ export class RestaurantClient extends InternalServiceClient {
 export class HealthcareClient extends InternalServiceClient {
   constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
 
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+
+  async listDepartmentsCatalog(correlationId: string): Promise<JsonObject[]> {
+    return this.legacyRequest<JsonObject[]>('/api/v1/departments', { method: 'GET' }, correlationId);
+  }
+
+  async listAppointments(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/appointments', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listDepartments(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/departments', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listDoctors(actorId: string, correlationId: string, department: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/doctors?department=${encodeURIComponent(department)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async holdSlot(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/slots/hold', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async confirmAppointment(actorId: string, correlationId: string, idempotencyKey: string, appointmentId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/appointments/${encodeURIComponent(String(appointmentId))}/confirm`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async cancelAppointment(actorId: string, correlationId: string, idempotencyKey: string, appointmentId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/appointments/${encodeURIComponent(String(appointmentId))}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async getFacility(facilitySourceId: string, actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/facilities/${encodeURIComponent(facilitySourceId)}`, { method: 'GET' }, correlationId, actorId);
+  }
+
+  async listPatients(actorId: string, correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/patients', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async createPatient(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/patients', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async setDefaultPatient(actorId: string, correlationId: string, idempotencyKey: string, patientId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}/default`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
   get defaultPatientId(): number {
-    return this.config.get<number>('HEALTHCARE_DEFAULT_PATIENT_ID', 1);
+    if (this.config.get<string>('APP_ENV') === 'production') {
+      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A Healthcare patient link is required in production.' });
+    }
+    const configured = this.config.get<string>('HEALTHCARE_DEFAULT_PATIENT_ID');
+    const patientId = Number(configured);
+    if (!Number.isInteger(patientId) || patientId < 1) {
+      throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'Chưa liên kết thông tin người bệnh cho tài khoản này.' });
+    }
+    return patientId;
   }
 
   async getAppointment(appointmentId: number, actorId: string, correlationId: string): Promise<JsonObject> {
@@ -523,6 +703,14 @@ export class FoodClient extends InternalServiceClient {
     super(config, 'FOOD_SERVICE_URL');
   }
 
+  async live(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
+  async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+
   get(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>(path, { method: 'GET' }, correlationId, actorId);
   }
@@ -536,12 +724,72 @@ export class FoodClient extends InternalServiceClient {
     );
   }
 
-  patch(path: string, payload: JsonObject, correlationId: string, actorId?: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>(path, { method: 'PATCH', body: JSON.stringify(payload) }, correlationId, actorId);
+  patch(path: string, payload: JsonObject, correlationId: string, actorId?: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      path,
+      { method: 'PATCH', body: JSON.stringify(payload), headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} },
+      correlationId,
+      actorId,
+    );
   }
 
-  delete(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>(path, { method: 'DELETE' }, correlationId, actorId);
+  delete(path: string, correlationId: string, actorId?: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(path, { method: 'DELETE', headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} }, correlationId, actorId);
+  }
+
+  async searchCatalog(filters: { keyword?: string; district?: string; category?: string; limit?: number }, correlationId: string): Promise<FoodCatalogResponse> {
+    const query = new URLSearchParams({ keyword: filters.keyword ?? '', limit: String(filters.limit ?? 8) });
+    if (filters.district) query.set('district', filters.district);
+    if (filters.category) query.set('category', filters.category);
+    return this.legacyRequest<FoodCatalogResponse>(`/api/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  listOrders(correlationId: string, actorId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/orders', { method: 'GET' }, correlationId, actorId);
+  }
+
+  async createCart(actorId: string, correlationId: string, idempotencyKey: string, restaurantId: string): Promise<JsonObject> {
+    return this.post('/api/v1/carts', { user_id: actorId, restaurant_id: restaurantId }, correlationId, idempotencyKey, actorId);
+  }
+
+  async getCart(actorId: string, correlationId: string, cartId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/carts/${encodeURIComponent(cartId)}`, correlationId, actorId);
+  }
+
+  async addCartItem(actorId: string, correlationId: string, cartId: string, payload: JsonObject, idempotencyKey?: string): Promise<JsonObject> {
+    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/items`, payload, correlationId, idempotencyKey, actorId);
+  }
+
+  async updateCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, payload: JsonObject, idempotencyKey?: string): Promise<JsonObject> {
+    return this.patch(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, payload, correlationId, actorId, idempotencyKey);
+  }
+
+  async removeCartItem(actorId: string, correlationId: string, cartId: string, cartItemId: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/items/${encodeURIComponent(cartItemId)}`, correlationId, actorId, idempotencyKey);
+  }
+
+  async applyVoucher(actorId: string, correlationId: string, cartId: string, code: string): Promise<JsonObject> {
+    return this.post(`/api/v1/carts/${encodeURIComponent(cartId)}/voucher`, { code }, correlationId, undefined, actorId);
+  }
+
+  async removeVoucher(actorId: string, correlationId: string, cartId: string): Promise<JsonObject> {
+    return this.delete(`/api/v1/carts/${encodeURIComponent(cartId)}/voucher`, correlationId, actorId);
+  }
+
+  async deliveryQuote(actorId: string, correlationId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.post('/api/v1/delivery/quote', payload, correlationId, undefined, actorId);
+  }
+
+  async previewOrder(actorId: string, correlationId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.post('/api/v1/orders/preview', payload, correlationId, undefined, actorId);
+  }
+
+  async getOrder(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}`, correlationId, actorId);
+  }
+
+  async getOrderTracking(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
+    return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, correlationId, actorId);
   }
 }
 
@@ -622,6 +870,7 @@ function envelopeValue(payload: unknown): unknown {
   if (!isRecord(payload) || !('data' in payload)) {
     throw new Error('Internal service returned an invalid envelope.');
   }
+
   return payload.data;
 }
 
@@ -646,6 +895,7 @@ function parseAgentDecision(data: Record<string, unknown>): AgentDecision {
 function parseQuote(data: Record<string, unknown>): RideQuote {
   if (
     typeof data.id !== 'string'
+    || !['QUOTE_CREATED', 'AWAITING_CONFIRMATION', 'CONSUMED', 'EXPIRED'].includes(String(data.status))
     || typeof data.pickup_address !== 'string'
     || typeof data.dropoff_address !== 'string'
     || !['BIKE', 'CAR_4', 'CAR_7'].includes(String(data.vehicle_type))
@@ -659,8 +909,12 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
   ) {
     throw new Error('Ride returned an invalid quote contract.');
   }
+  const routeGeometry = Array.isArray(data.route_geometry)
+    ? data.route_geometry.filter(isRecord).filter((point) => typeof point.latitude === 'number' && typeof point.longitude === 'number').map((point) => ({ latitude: point.latitude as number, longitude: point.longitude as number }))
+    : undefined;
   return {
     id: data.id,
+    status: data.status as RideQuote['status'],
     pickup_address: data.pickup_address,
     dropoff_address: data.dropoff_address,
     vehicle_type: data.vehicle_type as RideQuote['vehicle_type'],
@@ -671,6 +925,17 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     tariff_version: data.tariff_version,
     quote_version: data.quote_version,
     expires_at: data.expires_at,
+    ...(typeof data.pickup_latitude === 'number' || data.pickup_latitude === null ? { pickup_latitude: data.pickup_latitude as number | null } : {}),
+    ...(typeof data.pickup_longitude === 'number' || data.pickup_longitude === null ? { pickup_longitude: data.pickup_longitude as number | null } : {}),
+    ...(typeof data.dropoff_latitude === 'number' || data.dropoff_latitude === null ? { dropoff_latitude: data.dropoff_latitude as number | null } : {}),
+    ...(typeof data.dropoff_longitude === 'number' || data.dropoff_longitude === null ? { dropoff_longitude: data.dropoff_longitude as number | null } : {}),
+    ...(typeof data.route_provider === 'string' ? { route_provider: data.route_provider } : {}),
+    ...(typeof data.route_distance_meters === 'number' ? { route_distance_meters: data.route_distance_meters } : {}),
+    ...(typeof data.route_duration_seconds === 'number' ? { route_duration_seconds: data.route_duration_seconds } : {}),
+    ...(typeof data.route_polyline === 'string' || data.route_polyline === null ? { route_polyline: data.route_polyline as string | null } : {}),
+    ...(routeGeometry ? { route_geometry: routeGeometry, route_polyline: typeof data.route_polyline === 'string' ? data.route_polyline : JSON.stringify(routeGeometry) } : {}),
+    ...(typeof data.route_snapshot_hash === 'string' || data.route_snapshot_hash === null ? { route_snapshot_hash: data.route_snapshot_hash as string | null } : {}),
+    ...(isRecord(data.tariff_snapshot) || data.tariff_snapshot === null ? { tariff_snapshot: data.tariff_snapshot as Record<string, unknown> | null } : {}),
   };
 }
 
@@ -681,7 +946,7 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     || typeof data.quote_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
-    || !['AWAITING_PAYMENT_CONFIRMATION', 'DRIVER_ASSIGNED', 'CANCELLED'].includes(
+    || !['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'ARRIVED_DESTINATION', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
       String(data.status),
     )
     || typeof data.resource_version !== 'number'
@@ -704,6 +969,8 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     driver: data.driver,
     created_at: data.created_at,
     updated_at: data.updated_at,
+    ...(typeof data.driver_id === 'string' || data.driver_id === null ? { driver_id: data.driver_id as string | null } : {}),
+    ...(typeof data.tracking_started_at === 'string' || data.tracking_started_at === null ? { tracking_started_at: data.tracking_started_at as string | null } : {}),
   };
 }
 

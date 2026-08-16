@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.api.health import router as health_router
+from src.api.v1.ops import router as ops_router
 from src.api.v1.reservations import router as reservations_router
 from src.api.v1.restaurants import router as restaurants_router
 from src.application.restaurant_service import RestaurantApplicationService
@@ -40,4 +41,5 @@ async def validation_error(request: Request, _exc: RequestValidationError):
 app.include_router(health_router)
 app.include_router(restaurants_router, prefix="/v1")
 app.include_router(reservations_router, prefix="/v1")
+app.include_router(ops_router, prefix="/v1")
 

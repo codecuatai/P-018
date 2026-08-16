@@ -1,7 +1,54 @@
 # Database and Migrations
 
-The local PostgreSQL initialization script receives database names, owners, and passwords through explicit Compose environment mappings. It creates six logical databases with distinct owners and never grants cross-service access.
+The local PostgreSQL initialization script receives database names, owners and
+passwords through explicit Compose mappings. It creates six logical databases
+with distinct owners and never grants cross-service access.
 
-Files in `/docker-entrypoint-initdb.d` run only when PostgreSQL initializes a new `postgres_data` volume. Changing `.env` later does not update an existing volume. Apply deliberate migrations/role changes for an existing database; do not delete a user's volume automatically. Core owns additive migrations `001_core_vertical_slice.sql` through `008_core_assistant_action_recovery.sql`; migration 007 stores safe Assistant action receipts for durable same-key replay and migration 008 adds retryable failures plus a bounded processing lease without editing 001–007. Food owns `001_food_vertical_slice.sql` through `005_food_idempotency_eligibility.sql`; Restaurant owns Alembic revisions `0001_restaurant_booking`, additive `0002_restaurant_idempotency` in `0002_restaurant_idempotency_records.py`, and additive `0003_restaurant_legacy_backfill` in `0003_restaurant_legacy_idempotency_backfill.py`; Healthcare owns `001_healthcare_booking.sql` and `002_healthcare_slot_reuse.sql`; Ride owns its Alembic revision. The Restaurant second revision adds durable actor/operation/key response snapshots without removing legacy reservation idempotency columns, and the third backfills only reconstructable legacy evidence while preserving runtime promotion for surviving create keys. The Healthcare second migration removes the legacy global `slot_id` uniqueness and adds a partial unique index for active appointments, preserving cancelled/expired history for slot reuse.
+Files in `/docker-entrypoint-initdb.d` run only when PostgreSQL initializes a
+new `postgres_data` volume. Changing `.env` later does not update an existing
+volume. Apply deliberate migrations or role changes for an existing database;
+do not delete a user's volume automatically.
 
-The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env` after Compose health checks and may run the same migrations repeatedly; each owner helper is idempotent. The PowerShell helper checks every individual Core, Food, Healthcare, Restaurant, and Ride migration immediately and stops with the owning domain/path on the first non-zero exit; PostgreSQL SQL is sent as UTF-8 with `ON_ERROR_STOP=1`. Seeds are not part of a normal restart: pass `-SeedDemo`/`--seed-demo` to invoke the deterministic seed helper explicitly. The first argument is an optional env-file path. Neither script deletes volumes. The PowerShell Food seed writes the UTF-8 SQL payload directly to `psql` so the Vietnamese demo catalog is not corrupted by native-pipeline encoding. Food Compose runs against PostgreSQL when `FOOD_PERSISTENCE=postgres`. Core application tests use an in-memory adapter for speed, while explicit PostgreSQL persistence tests are available through `CORE_TEST_DATABASE_URL`; Healthcare slot-reuse checks use `HEALTHCARE_TEST_DATABASE_URL` when a disposable PostgreSQL target is provided.
+Core owns additive migrations `001_core_vertical_slice.sql` through
+`013_core_admin_support_idempotency.sql`. Migration 007 stores safe Assistant
+action receipts for durable same-key replay, migration 008 adds retryable
+failures plus a bounded processing lease, migration 009 adds Core-owned users,
+Argon2id credentials, refresh-session generations and one-time reset-token
+hashes, migration 010 adds profile/saved-address/conversation context, and
+migration 011 persists multi-service workflow plans and step idempotency;
+migration 012 adds Product/Ops records and migration 013 adds idempotency
+evidence for Admin support updates.
+Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
+`0001` through `0005`; Healthcare owns SQL migrations `001` through `005`; and
+Ride owns its Alembic revisions through `20260814_0005_route_geometry`. Each owner
+controls its own data boundary.
+
+## Migration policy
+
+Applied migrations are immutable. Never edit, reorder, renumber or silently
+replace a migration that may already have run. Every schema change is additive,
+owned by the service that owns the data, and accompanied by compatibility or
+rollback notes, tests, deterministic seed changes when needed and a
+data-architecture update. Do not use runtime `create_all()`, destructive
+startup migration, cross-service SQL, shared ORM models or volume deletion to
+repair state.
+
+| Owner | Current baseline | Next migration convention |
+| --- | --- | --- |
+| Core/Gateway | `001` through `013` SQL | `014` or greater, additive SQL |
+| Food | `001` through `006` SQL | `007` or greater, additive SQL |
+| Healthcare | `001` through `005` SQL | `006` or greater, additive SQL |
+| Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
+| Ride | Alembic through `20260814_0005_route_geometry` | a new Alembic revision from `head` |
+
+Run `python scripts/check-migration-parity.py` after changing migration helpers.
+The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
+after Compose health checks and can run the same additive migrations repeatedly.
+It stops on the first owner/path failure and never deletes a volume. Seeds are
+not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
+
+Core application tests use in-memory repositories for deterministic unit speed.
+Explicit Core and Auth PostgreSQL persistence tests use
+`CORE_TEST_DATABASE_URL`; Auth additionally requires the explicit test-only
+`AUTH_TEST_DATABASE_URL` seam. Healthcare slot-reuse checks use
+`HEALTHCARE_TEST_DATABASE_URL` with a disposable target.

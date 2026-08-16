@@ -67,7 +67,7 @@ describe('Core PostgreSQL persistence', () => {
       actionId,
       idempotencyKey: 'assistant-key-1',
       requestHash: 'assistant-hash',
-      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      userMessage: { role: 'user', content: 'action:food_confirm', kind: 'INTERNAL_ACTION', visibility: 'INTERNAL', createdAt: new Date().toISOString() },
       assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
       stateUpdates: { actions: [] },
       response,
@@ -75,7 +75,7 @@ describe('Core PostgreSQL persistence', () => {
     const replay = await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-key-1', 'assistant-hash');
     expect(replay.state).toBe('SUCCEEDED');
     expect(replay.execution?.response).toEqual(response);
-    expect((await repository.getConversation(conversationId, actorId))?.messages).toHaveLength(2);
+    expect((await repository.getConversation(conversationId, actorId))?.messages).toHaveLength(1);
     expect((await repository.claimAssistantActionExecution(actorId, conversationId, actionId, 'assistant-key-2', 'assistant-hash')).state).toBe('ACTION_NOT_AVAILABLE');
   });
 
@@ -99,7 +99,7 @@ describe('Core PostgreSQL persistence', () => {
       actionId,
       idempotencyKey: 'assistant-rollback-key',
       requestHash: 'assistant-rollback-hash',
-      userMessage: { role: 'user', content: '__assistant_action__:food_confirm', createdAt: new Date().toISOString() },
+      userMessage: { role: 'user', content: 'action:food_confirm', kind: 'INTERNAL_ACTION', visibility: 'INTERNAL', createdAt: new Date().toISOString() },
       assistantMessage: { role: 'assistant', content: 'done', createdAt: new Date().toISOString() },
       stateUpdates: { actions: [] },
       // This fails while serializing response_json after the conversation

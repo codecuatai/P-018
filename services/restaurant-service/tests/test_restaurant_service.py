@@ -6,7 +6,7 @@ os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
 
 from fastapi.testclient import TestClient
 from src.application.restaurant_service import RestaurantApplicationService
-from src.infrastructure.database import Base, build_engine
+from src.infrastructure.database import Base, RestaurantRow, build_engine
 from src.main import app
 from src.repositories.restaurant_repository import RestaurantRepository
 
@@ -30,6 +30,49 @@ def test_search_restaurants():
     hanoi_res = client.get("/v1/restaurants?location=Hà Nội", headers=AUTH)
     assert hanoi_res.status_code == 200
     assert len(hanoi_res.json()["data"]["items"]) >= 2
+
+
+def test_consumer_discovery_searches_authoritative_fields_and_hides_only_placeholders():
+    with engine.begin() as connection:
+        connection.execute(
+            RestaurantRow.__table__.insert(),
+            [
+                {
+                    "id": "rest-hotpot-authoritative",
+                    "name": "Lẩu Gà Hồ Tây",
+                    "location": "Hà Nội",
+                    "cuisine_type": "Vietnamese",
+                    "budget_range": "$$",
+                    "rating": 4.5,
+                    "timezone": "Asia/Ho_Chi_Minh",
+                    "active": True,
+                    "description": "Nhà hàng lẩu gia đình",
+                    "provenance_json": '{"catalog":{"cuisine_tags":["hotpot"]}}',
+                },
+                {
+                    "id": "rest-hotpot-placeholder",
+                    "name": "Nhà hàng OSM #999999",
+                    "location": "Hà Nội",
+                    "cuisine_type": "Vietnamese",
+                    "budget_range": "$$",
+                    "rating": 4.0,
+                    "timezone": "Asia/Ho_Chi_Minh",
+                    "active": True,
+                    "description": "lẩu",
+                    "provenance_json": None,
+                },
+            ],
+        )
+
+    response = client.get(
+        "/v1/restaurants?location=Hà%20Nội&cuisine_type=lau",
+        headers=AUTH,
+    )
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert "rest-hotpot-authoritative" in {item["id"] for item in items}
+    assert all(not item["name"].startswith("Nhà hàng OSM #") for item in items)
 
 
 def test_get_restaurant_by_id():
@@ -69,6 +112,18 @@ def test_hold_reservation_and_idempotency():
     read = client.get(f"/v1/reservations/{reservation_id}", headers=AUTH)
     assert read.status_code == 200
     assert read.json()["data"]["actor_id"] == "usr-123"
+    assert read.json()["data"]["address"] == "District 1, Ho Chi Minh City"
+    assert read.json()["data"]["restaurant"] == {
+        "name": "Le Petit Bistro",
+        "address": "District 1, Ho Chi Minh City",
+        "city": None,
+        "district": None,
+        "ward": None,
+        "cuisine": "French",
+        "rating": 4.8,
+        "price_level": "$$$",
+        "image_url": None,
+    }
 
 
 def test_update_and_cancel_reservation_are_actor_scoped_and_idempotent():

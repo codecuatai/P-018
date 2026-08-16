@@ -365,7 +365,7 @@ server {
     location / {
         # Chuyển tiếp request đến API Gateway chạy cổng 3000
         proxy_pass http://127.0.0.1:3000;
-        
+
         # Cấu hình header chuẩn cho proxy chuyển tiếp thông tin IP gốc
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -403,4 +403,3 @@ Chứng chỉ Let's Encrypt có thời hạn 90 ngày. Certbot đã tự động
 ```bash
 sudo certbot renew --dry-run
 ```
-

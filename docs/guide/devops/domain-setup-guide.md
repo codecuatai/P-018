@@ -91,7 +91,7 @@ server {
     # 2. Cấu hình điều hướng cho Backend API (Reverse Proxy sang cổng 3000)
     location /api/ {
         proxy_pass http://127.0.0.1:3000/; # Chuyển tiếp request đến API Gateway
-        
+
         # Cấu hình Header chuyển tiếp thông tin IP gốc của Client
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -132,7 +132,7 @@ server {
 
     location / {
         proxy_pass http://127.0.0.1:3000; # Chuyển tiếp đến API Gateway
-        
+
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

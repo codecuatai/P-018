@@ -38,6 +38,18 @@ paths:
           $ref: "#/components/responses/Problem"
         "422":
           $ref: "#/components/responses/Problem"
+    get:
+      operationId: listRideQuotes
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned quote history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteListEnvelope"
   /v1/quotes/{quote_id}:
     get:
       operationId: getRideQuote
@@ -94,7 +106,8 @@ paths:
       operationId: confirmRideBooking
       description: >
         Consumes the second confirmation, bound to the quote and opaque payment
-        reference, then assigns a simulated driver. Ride does not process payment.
+        reference, then places the booking into driver search. Ride does not
+        process payment; assignment and tracking progress are exposed separately.
       parameters:
         - $ref: "#/components/parameters/BookingId"
         - $ref: "#/components/parameters/ActorId"
@@ -108,7 +121,7 @@ paths:
               $ref: "#/components/schemas/ConfirmBookingRequest"
       responses:
         "200":
-          description: Simulated driver assigned.
+          description: Payment accepted and driver search started.
           content:
             application/json:
               schema:
@@ -172,6 +185,90 @@ paths:
           $ref: "#/components/responses/Problem"
         "404":
           $ref: "#/components/responses/Problem"
+  /v1/bookings:
+    get:
+      operationId: listRideBookings
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned booking history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingListEnvelope"
+  /v1/bookings/{booking_id}/tracking:
+    get:
+      operationId: getRideTracking
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned deterministic tracking snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/summary:
+    get:
+      operationId: getRideOpsSummary
+      description: Internal operational counts. Requires the service token.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Ride operational summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/dataset-status:
+    get:
+      operationId: getRideOpsDatasetStatus
+      description: Internal synthetic-driver dataset status.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Dataset freshness and quality status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/transactions:
+    get:
+      operationId: listRideOpsTransactions
+      description: Internal paged booking snapshots for operations.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: offset
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Paged ride booking snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     InternalServiceToken:
@@ -225,7 +322,17 @@ components:
     QuoteCreate:
       type: object
       additionalProperties: false
-      required: [pickup_address, dropoff_address]
+      required:
+        - pickup_address
+        - dropoff_address
+        - pickup_latitude
+        - pickup_longitude
+        - dropoff_latitude
+        - dropoff_longitude
+        - route_provider
+        - route_distance_meters
+        - route_duration_seconds
+        - route_geometry
       properties:
         pickup_address:
           type: string
@@ -245,7 +352,35 @@ components:
           maxLength: 50
         pickup_time:
           type: [string, "null"]
-          format: date-time
+        pickup_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        pickup_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        dropoff_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        dropoff_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        route_provider: {type: string, minLength: 1, maxLength: 80}
+        route_distance_meters: {type: integer, exclusiveMinimum: 0}
+        route_duration_seconds: {type: integer, exclusiveMinimum: 0}
+        route_geometry:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
     Confirmation:
       type: object
       additionalProperties: false
@@ -326,6 +461,7 @@ components:
       required:
         - id
         - actor_id
+        - status
         - pickup_address
         - dropoff_address
         - vehicle_type
@@ -342,9 +478,21 @@ components:
         - quote_version
         - expires_at
         - created_at
+        - pickup_latitude
+        - pickup_longitude
+        - dropoff_latitude
+        - dropoff_longitude
+        - route_provider
+        - route_distance_meters
+        - route_duration_seconds
+        - route_polyline
+        - route_geometry
+        - route_snapshot_hash
+        - tariff_snapshot
       properties:
         id: {type: string}
         actor_id: {type: string}
+        status: {type: string, enum: [QUOTE_CREATED, AWAITING_CONFIRMATION, CONSUMED, EXPIRED]}
         pickup_address: {type: string}
         dropoff_address: {type: string}
         vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
@@ -360,7 +508,26 @@ components:
         tariff_version: {type: string}
         quote_version: {type: string}
         expires_at: {type: string, format: date-time}
+        pickup_latitude: {type: [number, "null"]}
+        pickup_longitude: {type: [number, "null"]}
+        dropoff_latitude: {type: [number, "null"]}
+        dropoff_longitude: {type: [number, "null"]}
+        route_provider: {type: string}
+        route_distance_meters: {type: [integer, "null"]}
+        route_duration_seconds: {type: [integer, "null"]}
+        route_polyline: {type: [string, "null"]}
+        route_geometry:
+          type: [array, "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
+        route_snapshot_hash: {type: [string, "null"]}
         created_at: {type: string, format: date-time}
+        tariff_snapshot: {type: [object, "null"], additionalProperties: true}
     Booking:
       type: object
       additionalProperties: false
@@ -377,6 +544,8 @@ components:
         - driver
         - created_at
         - updated_at
+        - driver_id
+        - tracking_started_at
       properties:
         id: {type: string}
         actor_id: {type: string}
@@ -386,7 +555,7 @@ components:
         currency: {type: string}
         status:
           type: string
-          enum: [AWAITING_PAYMENT_CONFIRMATION, DRIVER_ASSIGNED, CANCELLED]
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
         resource_version: {type: integer}
         payment_reference:
           type: [string, "null"]
@@ -395,6 +564,24 @@ components:
           additionalProperties: true
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+        driver_id: {type: [string, "null"]}
+        tracking_started_at: {type: [string, "null"], format: date-time}
+    Tracking:
+      type: object
+      additionalProperties: false
+      required: [booking_id, status, progress, eta_seconds, driver, driver_location, current_location, route, route_provider, route_snapshot_hash, updated_at]
+      properties:
+        booking_id: {type: string}
+        status: {type: string, enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]}
+        progress: {type: number, minimum: 0, maximum: 1}
+        eta_seconds: {type: integer, minimum: 0}
+        driver: {type: [object, "null"], additionalProperties: true}
+        driver_location: {type: [object, "null"], additionalProperties: true}
+        current_location: {type: [object, "null"], additionalProperties: true}
+        route: {type: object, additionalProperties: true}
+        route_provider: {type: string}
+        route_snapshot_hash: {type: [string, "null"]}
+        updated_at: {type: [string, "null"], format: date-time}
     ResponseMeta:
       type: object
       additionalProperties: false
@@ -411,6 +598,22 @@ components:
           $ref: "#/components/schemas/Quote"
         meta:
           $ref: "#/components/schemas/ResponseMeta"
+    QuoteListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Quote"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
     BookingEnvelope:
       type: object
       additionalProperties: false
@@ -418,6 +621,41 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/Booking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    BookingListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Booking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    TrackingEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Tracking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    OpsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
         meta:
           $ref: "#/components/schemas/ResponseMeta"
     Problem:

@@ -11,9 +11,9 @@ def envelope(data, request: Request):
 
 
 @router.get("")
-def search_restaurants(request: Request, _actor=Depends(require_internal_auth), location: str | None = Query(None), cuisine_type: str | None = Query(None), budget_range: str | None = Query(None), query: str | None = Query(None), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+def search_restaurants(request: Request, _actor=Depends(require_internal_auth), location: str | None = Query(None), cuisine_type: str | None = Query(None), budget_range: str | None = Query(None), limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
     service = request.app.state.restaurant_service
-    items = service.search_restaurants(location, cuisine_type, budget_range, query, limit, offset)
+    items = service.search_restaurants(location, cuisine_type, budget_range, limit, offset)
     return envelope({"items": items, "total": len(items), "limit": limit, "offset": offset}, request)
 
 

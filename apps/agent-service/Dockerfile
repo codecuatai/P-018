@@ -8,5 +8,5 @@ RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8001
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health/live')" || exit 1
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD python -c "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" || exit 1
+CMD ["sh", "-c", "exec uvicorn src.main:app --host 0.0.0.0 --port \"$SERVICE_PORT\""]

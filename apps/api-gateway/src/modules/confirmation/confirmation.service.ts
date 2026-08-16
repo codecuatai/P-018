@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 
@@ -7,6 +7,7 @@ import { ServiceCallError } from '../../resilience/service-call-error';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationClaim, ConfirmationRecord, CoreStore, PaymentRecord } from '../core/core.module';
 import { PaymentService } from '../payment/payment.service';
+import { LocationService } from '../personal/personal.module';
 
 function stableHash(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function errorCode(error: unknown): string {
@@ -54,14 +55,54 @@ export class ConfirmationService {
     private readonly config: ConfigService,
     private readonly restaurant: RestaurantClient,
     private readonly healthcare: HealthcareClient,
+    @Optional() private readonly locations?: LocationService,
   ) {}
 
+  private async coreAddressSnapshot(actorId: string, addressId: unknown): Promise<JsonObject | undefined> {
+    if (typeof addressId !== 'string' || !addressId) return undefined;
+    const address = await this.store.getSavedAddress(addressId, actorId);
+    if (!address) return undefined;
+    let latitude = address.latitude;
+    let longitude = address.longitude;
+    let provider = address.provider;
+    let source = address.source;
+    if ((latitude === undefined || longitude === undefined) && this.locations) {
+      const resolved = await this.locations.geocode(address.addressText);
+      const candidate = resolved.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+      if (candidate && candidate.latitude !== null && candidate.longitude !== null) {
+        latitude = candidate.latitude;
+        longitude = candidate.longitude;
+        provider = resolved.provider;
+        source = 'geocoded';
+      }
+    }
+    return {
+      user_id: actorId,
+      address_text: address.addressText,
+      ...(address.label ? { label: address.label } : {}),
+      ...(address.city ? { city: address.city } : {}),
+      ...(address.district ? { district: address.district } : {}),
+      ...(address.ward ? { ward: address.ward } : {}),
+      ...(latitude !== undefined ? { latitude } : {}),
+      ...(longitude !== undefined ? { longitude } : {}),
+      ...(provider ? { provider } : {}),
+      source,
+    };
+  }
+
+  private async foodAddressPayload(actorId: string, values: JsonObject): Promise<JsonObject> {
+    if (isRecord(values.address_snapshot)) return values;
+    const snapshot = await this.coreAddressSnapshot(actorId, values.address_id);
+    return snapshot ? { ...values, address_snapshot: snapshot } : values;
+  }
+
   async prepare(user: AuthUser, payload: JsonObject, correlationId: string): Promise<ConfirmationRecord & { preview: JsonObject }> {
-    const preview = await this.food.post('/api/v1/orders/preview', { cart_id: payload.cart_id, address_id: payload.address_id, user_id: user.sub }, correlationId, undefined, user.sub);
+    const previewPayload = await this.foodAddressPayload(user.sub, { cart_id: payload.cart_id, address_id: payload.address_id, user_id: user.sub });
+    const preview = await this.food.post('/api/v1/orders/preview', previewPayload, correlationId, undefined, user.sub);
     const total = preview.total as JsonObject;
     const amount = Number(total.amount);
     const currency = String(total.currency);
-    const normalized = { cart_id: String(payload.cart_id), address_id: String(payload.address_id), user_id: user.sub, snapshot_hash: String(preview.snapshot_hash), quote_version: String(preview.quote_version), amount, currency, cart_version: Number(preview.cart_version) };
+    const normalized = { cart_id: String(payload.cart_id), address_id: String(payload.address_id), user_id: user.sub, ...(isRecord(previewPayload.address_snapshot) ? { address_snapshot: previewPayload.address_snapshot } : {}), snapshot_hash: String(preview.snapshot_hash), quote_version: String(preview.quote_version), amount, currency, cart_version: Number(preview.cart_version) };
     const confirmation: ConfirmationRecord = { id: `cnf_${randomUUID().replaceAll('-', '').slice(0, 12)}`, actorId: user.sub, action: 'PLACE_FOOD_ORDER', payload: normalized, payloadHash: stableHash(normalized), quoteVersion: normalized.quote_version, amount, currency, expiresAt: Date.now() + this.config.get<number>('CONFIRMATION_TTL_SECONDS', 600) * 1000, createdAt: new Date().toISOString(), status: 'PENDING', version: 0 };
     await this.store.createConfirmation(confirmation);
     await this.store.audit({ action: 'confirmation.created', actorId: user.sub, resourceId: confirmation.id, correlationId });
@@ -181,14 +222,16 @@ export class ConfirmationService {
     if (!confirmation || claim.state !== 'CLAIMED') throw new ConflictException({ code: 'CONFIRMATION_PROCESSING', detail: 'Confirmation is already being processed.', retryable: true });
 
     try {
-      const preview = await this.food.post('/api/v1/orders/preview', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub }, correlationId, undefined, user.sub);
+      const previewPayload = await this.foodAddressPayload(user.sub, { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub, ...(isRecord(confirmation.payload.address_snapshot) ? { address_snapshot: confirmation.payload.address_snapshot } : {}) });
+      const preview = await this.food.post('/api/v1/orders/preview', previewPayload, correlationId, undefined, user.sub);
       const currentTotal = preview.total as JsonObject;
       if (String(preview.snapshot_hash) !== confirmation.payload.snapshot_hash || String(preview.quote_version) !== confirmation.payload.quote_version || Number(preview.cart_version) !== Number(confirmation.payload.cart_version) || Number(currentTotal.amount) !== confirmation.amount || String(currentTotal.currency) !== confirmation.currency) {
         const result = { confirmation_id: id, code: 'CART_CHANGED', detail: 'Cart, price, voucher, delivery quote, or currency changed.' };
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'CART_CHANGED');
         throw new ConflictException({ code: 'CART_CHANGED', detail: 'Cart, price, voucher, delivery quote, or currency changed. Prepare a new confirmation.' });
       }
-      const order = await this.food.post('/api/v1/orders', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version }, correlationId, orderKey, user.sub);
+      const orderPayload = await this.foodAddressPayload(user.sub, { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: user.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version, ...(isRecord(confirmation.payload.address_snapshot) ? { address_snapshot: confirmation.payload.address_snapshot } : {}) });
+      const order = await this.food.post('/api/v1/orders', orderPayload, correlationId, orderKey, user.sub);
       if (Number(order.amount) !== confirmation.amount || String(order.currency) !== confirmation.currency) {
         const result = { confirmation_id: id, order, code: 'PAYLOAD_MISMATCH' };
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_FINAL', result, 'PAYLOAD_MISMATCH');
@@ -265,13 +308,6 @@ export class ConfirmationService {
     } as DomainFinalTool;
     if (tool.risk_level !== 'FINANCIAL_OR_FINAL') {
       throw new ConflictException({ code: 'PAYLOAD_MISMATCH', detail: 'The pending action is not a final operation.' });
-    }
-
-    if (confirmation.action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
-      const appointmentId = Number(tool.arguments.appointment_id);
-      const appointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
-      const stateError = healthcareFinalStateError(appointment);
-      if (stateError) throw new ConflictException(stateError);
     }
 
     const executionHash = stableHash({ confirmation_id: id, action: confirmation.action, workflow_id: workflowId, action_body: body });
@@ -391,7 +427,8 @@ export class ConfirmationService {
           const paymentMethod = String(payload.payment_method ?? 'card');
           const orderKey = String(payload.order_idempotency_key ?? `order:${confirmation.id}:recovery`);
           const paymentKey = String(payload.payment_idempotency_key ?? `payment:${confirmation.id}:recovery`);
-          const order = await this.food.post('/api/v1/orders', { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: actor.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version }, correlationId, orderKey, actor.sub);
+          const orderPayload = await this.foodAddressPayload(actor.sub, { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: actor.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version, ...(isRecord(confirmation.payload.address_snapshot) ? { address_snapshot: confirmation.payload.address_snapshot } : {}) });
+          const order = await this.food.post('/api/v1/orders', orderPayload, correlationId, orderKey, actor.sub);
           const payment = await this.payments.createAndConfirm({ actorId: actor.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: payload.simulate_failure === true, simulateTimeout: payload.simulate_timeout === true, confirmationId: confirmation.id, confirmationExecutionKey: confirmation.executionKey, conversationId: typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined });
           if (payment.status === 'FAILED') await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment recovery failed', operation_key: `payment-failed:${confirmation.id}` }, correlationId, `payment-failed:${confirmation.id}`);
           else if (payment.status === 'SUCCEEDED') {

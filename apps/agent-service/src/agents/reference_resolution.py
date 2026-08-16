@@ -38,6 +38,11 @@ def resolve_references(slots: dict[str, Any], context: dict[str, Any]) -> dict[s
             resolved["menu_item_id"] = items[index].get("id")
             resolved["menu_item_name"] = items[index].get("name")
             resolved["restaurant_id"] = resolved.get("restaurant_id") or items[index].get("restaurant_id")
+    selection_index = resolved.get("selection_index")
+    if isinstance(selection_index, int) and 0 <= selection_index < len(items):
+        resolved["menu_item_id"] = items[selection_index].get("id")
+        resolved["menu_item_name"] = items[selection_index].get("name")
+        resolved["restaurant_id"] = resolved.get("restaurant_id") or items[selection_index].get("restaurant_id")
     if resolved.get("dish_query") and not resolved.get("menu_item_id"):
         matches = _match(items, str(resolved["dish_query"]))
         if len(matches) == 1:

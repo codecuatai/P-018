@@ -8,14 +8,14 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..config import get_settings
-from ..services.gateway import GatewayToolClient, GatewayToolError
-from ..services.llm import GeminiAdapter, LLMAdapter
-from .intent import classify, extract_slots
-from .option_resolution import resolve_options
-from .reference_resolution import resolve_references
-from .state import AgentState, FoodWorkflowContext
-from .tool_selection import select_tools
+from src.agents.intent import classify, extract_slots
+from src.agents.option_resolution import resolve_options
+from src.agents.reference_resolution import resolve_references
+from src.agents.state import AgentState, FoodWorkflowContext
+from src.agents.tool_selection import select_tools
+from src.config import get_settings
+from src.services.gateway import GatewayToolClient, GatewayToolError
+from src.services.llm import GeminiAdapter, LLMAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ class SemanticSlots(BaseModel):
     address_query: str | None = None
     restaurant_alias: Literal["first", "second"] | None = None
     menu_item_alias: Literal["first", "second"] | None = None
+    selection_index: int | None = Field(default=None, ge=0, strict=True)
     order_alias: Literal["last"] | None = None
     dish_query: str | None = None
     district: str | None = None
@@ -76,12 +77,50 @@ class StructuredDecision(BaseModel):
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
+_CANDIDATE_SCALAR_FIELDS = {
+    "id",
+    "name",
+    "title",
+    "restaurant_id",
+    "restaurant_name",
+    "image_url",
+    "price",
+    "currency",
+    "description",
+    "category",
+    "address",
+    "city",
+    "district",
+    "rating",
+    "review_count",
+    "price_level",
+}
+
+
+def _candidate_snapshot(value: Any) -> dict[str, Any]:
+    """Keep display data needed for follow-up selection without copying payloads wholesale."""
+    if not isinstance(value, dict):
+        return {}
+    result = {
+        key: value[key]
+        for key in _CANDIDATE_SCALAR_FIELDS
+        if key in value and isinstance(value[key], (str, int, float, bool))
+    }
+    for key in ("option_groups", "options"):
+        if isinstance(value.get(key), list):
+            result[key] = value[key]
+    if isinstance(value.get("restaurant"), dict):
+        result["restaurant"] = _candidate_snapshot(value["restaurant"])
+    return result
+
+
 SEMANTIC_SLOTS = {
     "quantity",
     "option_preferences",
     "address_query",
     "restaurant_alias",
     "menu_item_alias",
+    "selection_index",
     "order_alias",
     "dish_query",
     "district",
@@ -254,7 +293,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "decision_source": "deterministic",
             "extracted_slots": {**state.get("extracted_slots", {}), **deterministic},
         }
-        if not use_model:
+        # The production graph is constructed with the default Gemini adapter
+        # even when the runtime is using the deterministic path.  Keep model
+        # injection available for tests and explicit callers, but do not make
+        # ordinary classified food requests wait for a remote model.
+        if not use_model or (llm is None and deterministic_intent != "general_food_support"):
             try:
                 registry = await gateway.registry(str(state.get("correlation_id")))
             except GatewayToolError:
@@ -283,7 +326,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
-            slots = {**state.get("extracted_slots", {}), **model_slots, **deterministic}
+            # The structured model output is accepted only after schema and
+            # semantic-slot validation; let those validated semantic values
+            # refine deterministic extraction (while resource IDs remain
+            # excluded by _safe_model_slots).
+            slots = {**state.get("extracted_slots", {}), **deterministic, **model_slots}
             return {
                 "intent": reconcile_intent(deterministic_intent, decision.intent, state.get("extracted_slots", {})),
                 "confidence": decision.confidence,
@@ -405,7 +452,19 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         list(state.get("extracted_slots", {}).get("option_preferences", [])),
                     )
                     if missing:
-                        return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
+                        # Card selection uses the first explicitly displayed
+                        # option as its default.  This keeps direct +/- food
+                        # controls usable while the selected default remains
+                        # visible in the authoritative cart and confirmation.
+                        selected_groups = {value["group_id"] for value in selected}
+                        defaults = [
+                            {"group_id": str(group["id"]), "option_id": str(group["options"][0]["id"])}
+                            for group in item.get("option_groups", [])
+                            if group.get("required") and str(group.get("id")) not in selected_groups and group.get("options")
+                        ]
+                        if len(defaults) != len([group for group in item.get("option_groups", []) if group.get("required") and str(group.get("id")) not in selected_groups]):
+                            return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
+                        selected.extend(defaults)
                     slots = state.get("extracted_slots", {})
                     if not slots.get("cart_id"):
                         created = await invoke("create_cart", {"restaurant_id": slots.get("restaurant_id")})
@@ -487,7 +546,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         intent = str(state.get("intent", "general_food_support"))
         slots = state.get("extracted_slots", {})
         updates: dict[str, Any] = {}
-        for key in ("restaurant_id", "menu_item_id", "address_id"):
+        for key in ("restaurant_id", "menu_item_id", "address_id", "address_query"):
             if slots.get(key):
                 updates[key] = slots[key]
         for result in results:
@@ -499,15 +558,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                     restaurant = candidate.get("restaurant") or {} if isinstance(candidate, dict) else {}
                     item = candidate.get("item") or {} if isinstance(candidate, dict) else {}
                     if restaurant.get("id") and not any(value["id"] == restaurant["id"] for value in restaurants):
-                        restaurants.append({"id": restaurant["id"], "name": restaurant.get("name", "")})
+                        restaurants.append(_candidate_snapshot(restaurant))
                     if item.get("id"):
-                        items.append(
-                            {"id": item["id"], "name": item.get("name", ""), "restaurant_id": item.get("restaurant_id")}
-                        )
+                        snapshot = _candidate_snapshot(item)
+                        snapshot.setdefault("restaurant_id", restaurant.get("id"))
+                        if restaurant:
+                            snapshot.setdefault("restaurant", _candidate_snapshot(restaurant))
+                        items.append(snapshot)
                 updates.update({"restaurant_candidates": restaurants, "menu_item_candidates": items})
             if name == "view_menu" and isinstance(data, dict) and isinstance(data.get("items"), list):
                 updates["menu_item_candidates"] = [
-                    {"id": item.get("id"), "name": item.get("name", ""), "restaurant_id": item.get("restaurant_id")}
+                    _candidate_snapshot(item)
                     for item in data["items"]
                     if isinstance(item, dict) and item.get("id")
                 ]
@@ -568,8 +629,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "quote_delivery": "Phí giao hàng đã được tính từ địa chỉ và nhà hàng.",
             "preview_order": "Đây là bản xem trước đơn hàng.",
             "view_menu": "Đây là menu hiện tại.",
-            "select_menu_item": "Mình đã lấy món từ menu authoritative.",
-            "search_food": "Mình tìm được các món phù hợp từ Food Service.",
+            "select_menu_item": "Mình đã lấy món bạn chọn từ menu hiện tại.",
+            "search_food": "Mình tìm được các món phù hợp.",
         }
         return {
             "response_type": "options" if results else "text",

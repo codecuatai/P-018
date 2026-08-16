@@ -69,7 +69,7 @@ def assistant_chat(client: httpx.Client, token: str, message: str, conversation_
     )
     response.raise_for_status()
     data = response.json()["data"]
-    assert set(data) == {"conversation_id", "message", "items", "actions", "completed"}
+    assert set(data) == {"conversation_id", "message", "items", "actions", "completed", "workflow_status"}
     assert "workflow_id" not in data
     assert "tool_request" not in data
     assert "state_patch" not in data
@@ -84,7 +84,7 @@ def assistant_action(client: httpx.Client, token: str, conversation_id: str, act
     )
     response.raise_for_status()
     data = response.json()["data"]
-    assert set(data) == {"conversation_id", "message", "items", "actions", "completed"}
+    assert set(data) == {"conversation_id", "message", "items", "actions", "completed", "workflow_status"}
     assert "workflow_id" not in data
     assert "tool_request" not in data
     return data

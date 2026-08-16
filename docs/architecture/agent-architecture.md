@@ -46,6 +46,6 @@ accepts bounded query, location, and delivery preference fields. The adapter rec
 primary/fallback, actual last model, fallback usage, call time, and safe status
 for `/api/v1/status`; it never reports keys or raw prompts.
 
-`xone_agent` may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The LLM never determines price, availability, payment, or booking/order success.
+Target Agent persistence may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The current MVP uses a process-local legacy workflow store and does not connect to `xone_agent`; Agent state is therefore not durable across an Agent restart. The LLM never determines price, availability, payment, or booking/order success.
 
 User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.

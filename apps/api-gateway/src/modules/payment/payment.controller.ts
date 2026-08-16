@@ -1,12 +1,12 @@
 import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
-import { DemoAuthGuard } from '../auth/auth.guard';
+import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { PaymentService } from './payment.service';
 
 @Controller('api/v1/payments')
-@UseGuards(DemoAuthGuard)
+@UseGuards(AuthGuard)
 export class PaymentController {
   constructor(private readonly payments: PaymentService) {}
 

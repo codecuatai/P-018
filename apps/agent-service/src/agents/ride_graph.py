@@ -6,8 +6,8 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from ..models.schemas import ToolRequest
-from .tool_ids import make_tool_call_id
+from src.agents.tool_ids import make_tool_call_id
+from src.models.schemas import ToolRequest
 
 
 class RideAgentState(TypedDict, total=False):
@@ -41,14 +41,14 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
         route = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+)$", query, re.IGNORECASE)
     if route:
         slots["pickup_address"] = route.group(1).strip(" .,!?")[:300]
-        slots["dropoff_address"] = route.group(2).strip(" .,!?")[:300]
+        slots["dropoff_address"] = _strip_vehicle_suffix(route.group(2).strip(" .,!?"))[:300]
     else:
         pickup = re.search(r"(?:điểm đón|pickup)\s*[:：]\s*(.+?)(?:,|;|\s+điểm đến|\s+dropoff)\s*[:：]?", query, re.IGNORECASE)
         dropoff = re.search(r"(?:điểm đến|dropoff)\s*[:：]\s*(.+)$", query, re.IGNORECASE)
         if pickup:
             slots["pickup_address"] = pickup.group(1).strip(" .,!?")[:300]
         if dropoff:
-            slots["dropoff_address"] = dropoff.group(1).strip(" .,!?")[:300]
+            slots["dropoff_address"] = _strip_vehicle_suffix(dropoff.group(1).strip(" .,!?"))[:300]
 
     folded = _fold(query)
     if "xe may" in folded or "bike" in folded:
@@ -66,6 +66,15 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
         if field not in slots and ride.get(field) not in (None, ""):
             slots[field] = str(ride[field])
     return slots
+
+
+def _strip_vehicle_suffix(value: str) -> str:
+    return re.sub(
+        r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    ).strip()
 
 
 def _patch(context: dict[str, Any], slots: dict[str, str]) -> dict[str, Any]:
