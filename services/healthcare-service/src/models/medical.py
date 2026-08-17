@@ -34,6 +34,8 @@ class AppointmentStatus(StrEnum):
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
     EXPIRED = "EXPIRED"
+    PENDING_REFUND = "PENDING_REFUND"
+    REFUNDED = "REFUNDED"
 
 class Department(Base):
     __tablename__ = "departments"
@@ -163,7 +165,7 @@ class Appointment(Base):
     __tablename__ = "appointments"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('DRAFT', 'CONFIRMED', 'CANCELLED', 'EXPIRED')",
+            "status IN ('DRAFT', 'CONFIRMED', 'CANCELLED', 'EXPIRED', 'PENDING_REFUND', 'REFUNDED')",
             name="appointments_status_check",
         ),
         Index(

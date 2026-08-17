@@ -30,6 +30,7 @@ docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/003a_healthcare_legacy_catalog_bridge.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/006_healthcare_appointment_refund_states.sql
 echo 'Healthcare Service migrations applied.'
 docker compose --env-file "$env_file" exec -T ride-service alembic upgrade head
 echo 'Ride Service migrations applied.'

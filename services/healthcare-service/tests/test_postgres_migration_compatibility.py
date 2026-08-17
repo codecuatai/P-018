@@ -203,9 +203,25 @@ def test_fresh_healthcare_migration_path_and_bridge_noop(schema_factory) -> None
         connection.execute(f"SET search_path TO {_quote_identifier(schema)}, public")
         assert connection.execute("SELECT to_regclass('healthcare_facilities')").fetchone()[0] is None
 
-    _apply_current(database_url, schema, ("004_healthcare_catalog_provenance.sql", "005_healthcare_catalog_nullable_price.sql"))
+    _apply_current(
+        database_url,
+        schema,
+        (
+            "004_healthcare_catalog_provenance.sql",
+            "005_healthcare_catalog_nullable_price.sql",
+            "006_healthcare_appointment_refund_states.sql",
+        ),
+    )
     _apply_file(database_url, schema, BRIDGE)
-    _apply_current(database_url, schema, ("004_healthcare_catalog_provenance.sql", "005_healthcare_catalog_nullable_price.sql"))
+    _apply_current(
+        database_url,
+        schema,
+        (
+            "004_healthcare_catalog_provenance.sql",
+            "005_healthcare_catalog_nullable_price.sql",
+            "006_healthcare_appointment_refund_states.sql",
+        ),
+    )
 
     assert {"source_id", "last_verified_at", "dataset_version", "content_hash", "is_active", "provenance_json"}.issubset(_columns(database_url, schema, "healthcare_facilities"))
     assert "id" not in _columns(database_url, schema, "healthcare_facilities")
@@ -222,7 +238,15 @@ def test_legacy_healthcare_catalog_upgrades_without_data_loss(schema_factory) ->
     _apply_file(database_url, schema, MIGRATIONS / "003_patient_user_links.sql")
     _apply_file(database_url, schema, BRIDGE)
     _apply_file(database_url, schema, BRIDGE)
-    _apply_current(database_url, schema, ("004_healthcare_catalog_provenance.sql", "005_healthcare_catalog_nullable_price.sql"))
+    _apply_current(
+        database_url,
+        schema,
+        (
+            "004_healthcare_catalog_provenance.sql",
+            "005_healthcare_catalog_nullable_price.sql",
+            "006_healthcare_appointment_refund_states.sql",
+        ),
+    )
 
     assert {"id", "source_id", "last_verified_at", "dataset_version", "content_hash", "is_active", "provenance_json"}.issubset(_columns(database_url, schema, "healthcare_facilities"))
     assert {"facility_id", "facility_source_id", "dataset_version", "provenance_json"}.issubset(_columns(database_url, schema, "departments"))
@@ -240,7 +264,10 @@ def test_legacy_healthcare_catalog_upgrades_without_data_loss(schema_factory) ->
             (legacy["patient_id"],),
         )
         assert connection.execute("SELECT patient_id FROM patient_user_links WHERE actor_user_id = 'legacy-actor'").fetchone()[0] == legacy["patient_id"]
-        connection.execute("UPDATE appointments SET status = 'CANCELLED' WHERE id = %s", (legacy["appointment_id"],))
+        connection.execute(
+            "UPDATE appointments SET status = 'PENDING_REFUND', is_paid = TRUE WHERE id = %s",
+            (legacy["appointment_id"],),
+        )
         replacement_id = connection.execute(
             "INSERT INTO appointments (actor_id, patient_id, doctor_id, slot_id, status, is_paid) VALUES ('replacement-actor', %s, %s, %s, 'DRAFT', FALSE) RETURNING id",
             (legacy["patient_id"], legacy["doctor_id"], legacy["slot_id"]),

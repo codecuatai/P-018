@@ -2042,16 +2042,22 @@ export class AssistantService {
       if (!appointmentId) throw new ConflictException({ code: 'APPOINTMENT_NOT_FOUND', detail: 'Giữ chỗ lịch khám này không còn sẵn sàng.' });
       const cancellation = await this.healthcare.cancelAppointment(user.sub, correlationId, idempotencyKey, appointmentId);
       const appointment = isRecord(task.authoritative?.appointment) ? task.authoritative.appointment : {};
+      const refundRequired = cancellation.refund_required === true;
+      const cancellationStatus = typeof cancellation.appointment_status === 'string' ? cancellation.appointment_status : 'CANCELLED';
       return {
         phase: 'COMPLETED',
-        message: 'Mình đã hủy giữ chỗ lịch khám. Chưa có thanh toán nào được thực hiện.',
+        message: refundRequired
+          ? 'Mình đã hủy lịch khám. Yêu cầu hoàn tiền đang được xử lý.'
+          : 'Mình đã hủy giữ chỗ lịch khám. Chưa có thanh toán nào được thực hiện.',
         publicItem: {
           kind: 'appointment',
-          title: 'Đã hủy giữ chỗ',
+          title: refundRequired ? 'Đã hủy lịch khám' : 'Đã hủy giữ chỗ',
           resource_id: appointmentId,
           ...this.publicHealthcareAppointment(appointment),
-          status: 'CANCELLED',
-          note: 'Giữ chỗ đã được hủy trước thanh toán.',
+          status: cancellationStatus,
+          note: refundRequired
+            ? 'Lịch khám đã hủy; Gateway cần tiếp tục xử lý hoàn tiền.'
+            : 'Giữ chỗ đã được hủy trước thanh toán.',
         },
         authoritative: { ...task.authoritative, cancellation },
       };

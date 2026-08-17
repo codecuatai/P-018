@@ -135,6 +135,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003a_healthcare_legacy_catalog_bridge.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/006_healthcare_appointment_refund_states.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
     Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260814_0005_route_geometry.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile

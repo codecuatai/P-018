@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from src.application.expired_hold_worker import cleanup_expired_holds_once
 from src.database import Base, get_db
 from src.main import app
 from src.models.medical import (
@@ -183,6 +184,21 @@ def test_expired_hold_rejects_payment_and_final_confirmation_and_releases_slot()
     assert replacement["slot_id"] == appointment["slot_id"]
 
 
+def test_background_cleanup_expires_stale_hold_in_one_transaction() -> None:
+    appointment = hold(client, key="background-expiry-hold")
+    expire_appointment(appointment["appointment_id"])
+
+    assert cleanup_expired_holds_once(TestingSessionLocal) == 1
+
+    with TestingSessionLocal() as db:
+        current = db.get(Appointment, appointment["appointment_id"])
+        assert current is not None
+        assert current.status == "EXPIRED"
+        assert current.is_paid is False
+        assert current.slot.status == SlotStatus.AVAILABLE.value
+        assert current.slot.hold_expires_at is None
+
+
 def test_active_payment_confirmation_cancellation_and_scoped_replay() -> None:
     appointment = hold(client, key="same-client-key")
     assert appointment["hold_expires_at"].endswith("Z")
@@ -225,7 +241,87 @@ def test_active_payment_confirmation_cancellation_and_scoped_replay() -> None:
         headers=headers(key="cancel-active"),
     )
     assert cancelled.status_code == 200
-    assert cancelled.json()["data"]["slot_status"] == "AVAILABLE"
+    cancellation = cancelled.json()["data"]
+    assert cancellation["appointment_status"] == "PENDING_REFUND"
+    assert cancellation["is_paid"] is True
+    assert cancellation["slot_status"] == "AVAILABLE"
+    assert cancellation["refund_required"] is True
+    assert cancellation["refund_event"] == "HEALTHCARE_APPOINTMENT_REFUND_REQUIRED"
+    assert client.post(
+        f"/api/v1/appointments/{appointment['appointment_id']}/cancel",
+        headers=headers(key="cancel-active"),
+    ).json()["data"] == cancellation
+
+    with TestingSessionLocal() as db:
+        current = db.get(Appointment, appointment["appointment_id"])
+        assert current is not None
+        assert current.status == "PENDING_REFUND"
+        assert current.is_paid is True
+        assert current.slot.status == SlotStatus.AVAILABLE.value
+        assert current.slot.hold_expires_at is None
+
+
+def test_cancel_unpaid_draft_does_not_request_refund() -> None:
+    appointment = hold(client, key="cancel-unpaid-hold")
+
+    cancelled = client.post(
+        f"/api/v1/appointments/{appointment['appointment_id']}/cancel",
+        headers=headers(key="cancel-unpaid"),
+    )
+
+    assert cancelled.status_code == 200
+    cancellation = cancelled.json()["data"]
+    assert cancellation["appointment_status"] == "CANCELLED"
+    assert cancellation["is_paid"] is False
+    assert cancellation["slot_status"] == "AVAILABLE"
+    assert cancellation["refund_required"] is False
+    assert cancellation["refund_event"] is None
+
+
+def test_cancel_unpaid_confirmed_appointment_does_not_request_refund() -> None:
+    appointment = hold(client, key="cancel-unpaid-confirmed-hold")
+    with TestingSessionLocal() as db:
+        current = db.get(Appointment, appointment["appointment_id"])
+        assert current is not None
+        current.status = "CONFIRMED"
+        current.slot.status = SlotStatus.BOOKED.value
+        current.slot.hold_expires_at = None
+        db.commit()
+
+    cancelled = client.post(
+        f"/api/v1/appointments/{appointment['appointment_id']}/cancel",
+        headers=headers(key="cancel-unpaid-confirmed"),
+    )
+
+    assert cancelled.status_code == 200
+    cancellation = cancelled.json()["data"]
+    assert cancellation["appointment_status"] == "CANCELLED"
+    assert cancellation["is_paid"] is False
+    assert cancellation["slot_status"] == "AVAILABLE"
+    assert cancellation["refund_required"] is False
+    assert cancellation["refund_event"] is None
+
+
+def test_cancel_paid_draft_preserves_payment_and_requests_refund() -> None:
+    appointment = hold(client, key="cancel-paid-draft-hold")
+    payment = client.post(
+        "/api/v1/payment/webhook",
+        headers=headers(key="cancel-paid-draft-payment"),
+        json={"appointment_id": appointment["appointment_id"]},
+    )
+    assert payment.status_code == 200
+
+    cancelled = client.post(
+        f"/api/v1/appointments/{appointment['appointment_id']}/cancel",
+        headers=headers(key="cancel-paid-draft"),
+    )
+
+    assert cancelled.status_code == 200
+    cancellation = cancelled.json()["data"]
+    assert cancellation["appointment_status"] == "PENDING_REFUND"
+    assert cancellation["is_paid"] is True
+    assert cancellation["refund_required"] is True
+    assert cancellation["refund_event"] == "HEALTHCARE_APPOINTMENT_REFUND_REQUIRED"
 
 
 def test_confirm_cannot_bypass_payment() -> None:
@@ -331,3 +427,43 @@ def test_patient_links_are_actor_scoped_and_support_default_dependents() -> None
     )
     assert denied.status_code == 403
     assert denied.json()["detail"]["code"] == "PATIENT_NOT_LINKED"
+
+
+def test_hold_without_patient_id_uses_only_the_actor_default_patient() -> None:
+    dependent = client.post(
+        "/api/v1/patients",
+        headers=headers(key="default-patient-create"),
+        json={"name": "Người phụ thuộc", "phone": "0911111111", "relationship": "dependent"},
+    )
+    assert dependent.status_code == 200
+    dependent_id = dependent.json()["data"]["id"]
+
+    selected = client.post(
+        f"/api/v1/patients/{dependent_id}/default",
+        headers=headers(key="default-patient-select"),
+    )
+    assert selected.status_code == 200
+
+    response = client.post(
+        "/api/v1/slots/hold",
+        headers=headers(key="default-patient-hold"),
+        json={"slot_id": 1, "symptoms": "test"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["patient_id"] == dependent_id
+
+
+def test_hold_without_patient_id_rejects_actor_without_default_profile() -> None:
+    response = client.post(
+        "/api/v1/slots/hold",
+        headers=headers(actor="actor-unlinked", key="missing-default-patient"),
+        json={"slot_id": 1, "symptoms": "test"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "PATIENT_PROFILE_REQUIRED"
+
+    with TestingSessionLocal() as db:
+        assert db.query(Appointment).count() == 0
+        slot = db.get(TimeSlot, 1)
+        assert slot is not None
+        assert slot.status == SlotStatus.AVAILABLE.value

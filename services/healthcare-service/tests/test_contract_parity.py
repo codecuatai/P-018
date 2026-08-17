@@ -65,3 +65,13 @@ def test_healthcare_contract_describes_facility_lookup() -> None:
     contract = CONTRACT_PATH.read_text(encoding="utf-8")
     for path in READ_PATHS:
         assert _path_block(contract, path)
+
+
+def test_cancel_contract_exposes_refund_aware_states_and_event() -> None:
+    contract = CONTRACT_PATH.read_text(encoding="utf-8")
+    cancel_path = _path_block(contract, "/api/v1/appointments/{appointment_id}/cancel")
+
+    assert "#/components/schemas/CancelAppointmentResponse" in cancel_path
+    assert "PENDING_REFUND" in contract
+    assert "REFUNDED" in contract
+    assert "HEALTHCARE_APPOINTMENT_REFUND_REQUIRED" in contract

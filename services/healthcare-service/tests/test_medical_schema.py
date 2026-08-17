@@ -16,10 +16,26 @@ def test_orm_relationships_and_active_slot_index_are_configured() -> None:
     index = next(index for index in Appointment.__table__.indexes if index.name == "uq_appointments_active_slot")
     assert index.unique is True
     assert "DRAFT" in str(index.dialect_options["postgresql"]["where"])
-    assert any(constraint.name == "appointments_status_check" for constraint in Appointment.__table__.constraints)
+    status_constraint = next(
+        constraint
+        for constraint in Appointment.__table__.constraints
+        if constraint.name == "appointments_status_check"
+    )
+    assert "PENDING_REFUND" in str(status_constraint.sqltext)
+    assert "REFUNDED" in str(status_constraint.sqltext)
 
 
-def test_cancelled_appointment_can_reuse_slot_but_active_duplicate_is_rejected() -> None:
+@pytest.mark.parametrize(
+    "released_status",
+    [
+        AppointmentStatus.CANCELLED.value,
+        AppointmentStatus.PENDING_REFUND.value,
+        AppointmentStatus.REFUNDED.value,
+    ],
+)
+def test_released_appointment_can_reuse_slot_but_active_duplicate_is_rejected(
+    released_status: str,
+) -> None:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
 
@@ -57,7 +73,8 @@ def test_cancelled_appointment_can_reuse_slot_but_active_duplicate_is_rejected()
 
         first = db.get(Appointment, first.id)
         assert first is not None
-        first.status = AppointmentStatus.CANCELLED.value
+        first.status = released_status
+        first.is_paid = released_status != AppointmentStatus.CANCELLED.value
         slot = db.get(TimeSlot, slot.id)
         assert slot is not None
         slot.status = SlotStatus.AVAILABLE.value
