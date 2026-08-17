@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, text
+from sqlalchemy import func, inspect, text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
@@ -82,12 +82,12 @@ def _idempotency_storage_key(actor_id: str, operation: str, key: str) -> str:
 
 def _active_catalog_version(db: Session) -> str | None:
     try:
+        if not inspect(db.connection()).has_table("catalog_dataset_versions"):
+            return None
         return db.execute(
             text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='healthcare' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
         ).scalar_one_or_none()
     except Exception:
-        # Unit-test schemas may predate the catalog registry.
-        db.rollback()
         return None
 
 

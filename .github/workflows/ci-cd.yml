@@ -318,17 +318,18 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           package-manager-cache: false
       - name: Install web dependencies
-        run: npm --prefix apps/web ci --no-audit --no-fund
+        run: pnpm install --filter p018-frontend-web... --frozen-lockfile
       - name: Build web
         working-directory: apps/web
-        env:
-          VITE_API_URL: /api
-        run: npm run build
+        run: pnpm run build
 
   compose:
     needs: detect-changes
