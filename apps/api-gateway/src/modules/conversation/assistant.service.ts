@@ -1582,25 +1582,20 @@ export class AssistantService {
     const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
-    if (!location) {
+    if (!location || !partySize || !startAt) {
       const missing = [!location ? 'khu vực' : '', !partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
       const question = missing.length === 1 && missing[0] === 'thời gian'
         ? 'Bạn muốn đặt bàn lúc mấy giờ?'
         : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm thông tin để đặt bàn', question }] };
     }
-    const initialStartAtMilliseconds = Date.parse(startAt ?? '');
-    if (Number.isFinite(initialStartAtMilliseconds) && initialStartAtMilliseconds <= Date.now()) {
+    const startAtMilliseconds = Date.parse(startAt ?? '');
+    if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{
-          kind: 'clarification',
-          title: 'Mình cần thêm một chút thông tin',
-          question: 'Bạn muốn tìm nhà hàng ở khu vực nào hoặc có yêu cầu gì không?'
-        }]
+        items: [{ kind: 'clarification', title: 'Thời gian này đã qua', question: 'Bạn hãy cho mình một thời gian muộn hơn để tiếp tục đặt bàn nhé?' }],
       };
     }
-
     const existing = task.authoritative;
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
     const selection = stringValue(slots.selection);
@@ -1680,7 +1675,6 @@ export class AssistantService {
         actions: selectionActions,
       };
     }
-
     if (!selected) {
       const publicItem = this.restaurantOptions(candidates);
       const cohortId = this.newCohort(task);
@@ -1692,28 +1686,6 @@ export class AssistantService {
         actions: candidates.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId)),
       };
     }
-
-    // Một khi đã chọn xong nhà hàng (selected), mới kiểm tra partySize và startAt
-    if (!partySize || !startAt) {
-      const missing = [!partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
-      return {
-        phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{
-          kind: 'clarification',
-          title: 'Mình cần thêm một chút thông tin',
-          question: `Bạn cho mình biết ${missing.join(' và ')} để mình kiểm tra bàn trống nhé?`
-        }]
-      };
-    }
-
-    const startAtMilliseconds = Date.parse(startAt);
-    if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
-      return {
-        phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{ kind: 'clarification', title: 'Thời gian này đã qua', question: 'Bạn hãy cho mình một thời gian muộn hơn để tiếp tục đặt bàn nhé?' }],
-      };
-    }
-
     const restaurantId = stringValue(selected.id);
     if (!restaurantId) throw new BadRequestException({ code: 'RESTAURANT_SELECTION_INVALID', detail: 'Bạn cần chọn một nhà hàng trong danh sách hiện tại.' });
     const availability = await this.restaurant.executeTool({

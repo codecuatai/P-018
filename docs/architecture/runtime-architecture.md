@@ -17,7 +17,7 @@ flowchart TB
   Gateway --> Healthcare[healthcare-service :8103]
   Gateway --> Food[food-service :8104]
   Gateway --> Core[(xone_core)]
-  Agent --> AgentDb[(xone_agent)]
+  Agent -. provisioned target only .-> AgentDb[(xone_agent)]
   Ride --> RideDb[(xone_ride)]
   Restaurant --> RestaurantDb[(xone_restaurant)]
   Healthcare --> HealthcareDb[(xone_healthcare)]
@@ -46,7 +46,9 @@ owned migrations, then verifies Gateway and Web endpoints. Migrations remain
 explicit and idempotent; starting a container never performs destructive
 schema repair.
 
-The Agent's optional Gemini adapter tries the configured model first. A
+The Agent's current workflow store is process-local; `xone_agent` is
+provisioned but no Agent persistence client/migration is wired, so it is not a
+durability claim. The optional Gemini adapter tries the configured model first. A
 confirmed native structured-schema/capability failure retries raw output on
 that model and sends it through the existing validated parser. A configured
 fallback is eligible only for confirmed quota/rate-limit, temporary 5xx,

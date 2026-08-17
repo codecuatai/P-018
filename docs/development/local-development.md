@@ -93,8 +93,8 @@ bookings and dataset metadata; `demo-reset.ps1` is dry-run by default and
 requires `-ConfirmReset` for an actor-scoped mutable-data reset.
 
 For local browser acceptance, `.env.example` enables the labeled deterministic
-geocode fallback and accelerates the Ride simulator with
-`RIDE_TRACKING_TIME_SCALE=60`. Both are rejected or constrained in production;
+geocode fallback and keeps `RIDE_TRACKING_TIME_SCALE=1`. A disposable
+test/demo run may explicitly override the Ride scale (for example, `60`). Both are rejected or constrained in production;
 the fallback is labeled `deterministic-local-demo` and is not booking
 authority.
 

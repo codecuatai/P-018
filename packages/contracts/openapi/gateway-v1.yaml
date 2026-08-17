@@ -1191,7 +1191,7 @@ components:
         doctor: {type: string}
         department: {type: string}
         start_time: {type: string, format: date-time}
-        price: {type: integer}
+        price: {type: [integer, 'null']}
         target_index: {type: integer, minimum: 0}
         facility: {$ref: '#/components/schemas/HealthcareFacility'}
     HealthcareFacility:
@@ -1205,6 +1205,9 @@ components:
         address: {type: string}
         latitude: {type: number}
         longitude: {type: number}
+        city: {type: string}
+        district: {type: string}
+        website: {type: string}
     AssistantProgressItem:
       type: object
       required: [kind, title]

@@ -44,7 +44,7 @@ $env:AUTH_TEST_DATABASE_URL = $env:CORE_TEST_DATABASE_URL
 corepack pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts test/auth.postgres.integration.spec.ts
 ```
 
-The Auth PostgreSQL test applies owned migrations through `011_core_multi_service_workflows.sql`,
+The Auth PostgreSQL test applies the Core migrations it needs through `011_core_multi_service_workflows.sql`;
 then proves the atomic registration rows, Argon2id/hash-only storage, rotation
 replay revocation, one-time reset hash and session invalidation. It must never
 target a user-owned volume.

@@ -1,6 +1,6 @@
 # Environment Variables
 
-Root `.env.example` is the local Docker Compose source of truth. It groups shared settings, PostgreSQL admin and logical-database credentials, per-service database URLs, ports/internal URLs, Gateway security settings, and Gemini configuration. It contains placeholders only. `AGENT_MODEL_MODE` defaults to `gemini` for the demo; set it to `deterministic` explicitly for offline tests.
+Root `.env.example` is the local Docker Compose source of truth. It groups shared settings, PostgreSQL admin and logical-database credentials, per-service database URLs, ports/internal URLs, Gateway security settings, and Gemini configuration. It contains placeholders only. Normal local development defaults to `AGENT_MODEL_MODE=deterministic` with a blank `GEMINI_API_KEY`, so the stack works without a provider credential.
 
 Compose automatically reads root `.env` for `${VARIABLE}` interpolation but does not pass that full file to containers. PostgreSQL receives only bootstrap/database variables; Gateway receives Core database, internal URLs, token, explicit `APP_ENV`, CORS allowlist, body limit, rate-limit profiles, real-auth settings and development/test-only demo-auth configuration; Agent receives agent database, Gemini values, CORS, and token; Healthcare receives its database/token plus its domain-owned `HEALTHCARE_FACILITY_NAME` and `HEALTHCARE_FACILITY_ADDRESS`; Food receives only its database/token plus explicit persistence, delivery, rejection, and timed-workflow settings. The Web image receives only build-time `NEXT_PUBLIC_*` values, never Gemini or internal tokens. `FOOD_PERSISTENCE` is required and only `postgres` is valid in production; `memory` is an explicit development/test adapter.
 
@@ -12,4 +12,6 @@ Real authentication requires `AUTH_ACCESS_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_TOKE
 
 Production is different: do not upload root `.env` wholesale. The deployment platform supplies each service's individual environment variables and secrets. The same configuration names keep code unchanged.
 
-Never commit/share `.env`, put live secrets in examples, pass database credentials across service boundaries, or expose Gemini/internal credentials to a browser client. `GEMINI_API_KEY` is mapped only to `agent-service`; status/health may report only whether it is configured, never its value.
+For a real-Gemini Gate G2 evaluation, set a valid `GEMINI_API_KEY` in a private root `.env` and set `AGENT_MODEL_MODE=gemini`. The key is optional for normal local startup but required for that evaluation path. `GEMINI_API_KEY` is mapped only to `agent-service`; status/health may report only whether it is configured, never its value.
+
+Never commit/share `.env`, put live secrets in examples, pass database credentials across service boundaries, or expose Gemini/internal credentials to a browser client. If a credential was ever committed or copied into a template, revoke/rotate it outside the repository before relying on the replacement placeholder.

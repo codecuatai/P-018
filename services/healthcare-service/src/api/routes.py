@@ -84,11 +84,14 @@ def _active_catalog_version(db: Session) -> str | None:
     # Unit-test and pre-migration schemas may not contain the registry. Check
     # before issuing SQL so a missing optional read never aborts or rolls back
     # the caller's write transaction.
-    if not inspect(db.connection()).has_table("catalog_dataset_versions"):
+    try:
+        if not inspect(db.connection()).has_table("catalog_dataset_versions"):
+            return None
+        return db.execute(
+            text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='healthcare' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
+        ).scalar_one_or_none()
+    except Exception:
         return None
-    return db.execute(
-        text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='healthcare' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
-    ).scalar_one_or_none()
 
 
 def _load_idempotency(

@@ -81,6 +81,6 @@ it examines at most 512 input characters and emits at most 160 location
 characters. These heuristics only propose semantic slots; authoritative place
 resolution remains a Gateway/domain responsibility.
 
-`xone_agent` may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The LLM never determines price, availability, payment, or booking/order success.
+Target Agent persistence may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The current MVP uses a process-local legacy workflow store and does not connect to `xone_agent`; Agent state is therefore not durable across an Agent restart. The LLM never determines price, availability, payment, or booking/order success.
 
 User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.

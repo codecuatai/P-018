@@ -295,7 +295,6 @@ class RestaurantRepository:
             rows = rows[offset : offset + limit]
             return [self.restaurant_dict(row) for row in rows]
 
-
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:
             row = db.scalar(self._active_restaurant_statement(db).where(RestaurantRow.id == restaurant_id))

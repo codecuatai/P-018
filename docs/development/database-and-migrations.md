@@ -10,15 +10,18 @@ volume. Apply deliberate migrations or role changes for an existing database;
 do not delete a user's volume automatically.
 
 Core owns additive migrations `001_core_vertical_slice.sql` through
-`011_core_multi_service_workflows.sql`. Migration 007 stores safe Assistant
+`013_core_admin_support_idempotency.sql`. Migration 007 stores safe Assistant
 action receipts for durable same-key replay, migration 008 adds retryable
 failures plus a bounded processing lease, migration 009 adds Core-owned users,
 Argon2id credentials, refresh-session generations and one-time reset-token
 hashes, migration 010 adds profile/saved-address/conversation context, and
-migration 011 persists multi-service workflow plans and step idempotency.
+migration 011 persists multi-service workflow plans and step idempotency;
+migration 012 adds Product/Ops records and migration 013 adds idempotency
+evidence for Admin support updates.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
-`0001` through `0005`; Healthcare owns SQL migrations `001` through `005`; and
-Ride owns its Alembic revisions through `20260812_0003_ride_lifecycle`. Each owner
+`0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
+`003a`, `004`, and `005`; and
+Ride owns its Alembic revisions through `20260814_0005_route_geometry`. Each owner
 controls its own data boundary.
 
 ## Migration policy
@@ -33,11 +36,11 @@ repair state.
 
 | Owner | Current baseline | Next migration convention |
 | --- | --- | --- |
-| Core/Gateway | `001` through `011` SQL | `012` or greater, additive SQL |
+| Core/Gateway | `001` through `013` SQL | `014` or greater, additive SQL |
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
-| Healthcare | `001` through `005` SQL | `006` or greater, additive SQL |
+| Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
 | Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
-| Ride | Alembic through `20260812_0003_ride_lifecycle` | a new Alembic revision from `head` |
+| Ride | Alembic through `20260814_0005_route_geometry` | a new Alembic revision from `head` |
 
 Run `python scripts/check-migration-parity.py` after changing migration helpers.
 The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`

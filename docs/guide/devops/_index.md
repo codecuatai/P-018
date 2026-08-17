@@ -10,4 +10,4 @@ Phần này hướng dẫn cách đóng gói và triển khai dự án AI Agent 
 
 - [Docker & CI/CD](docker-cicd.md) — Multi-stage Dockerfile, Docker commands, GitHub Actions CI, env vars và git workflow
 - [VPS Deployment Guide](vps-deployment-guide.md) — Hướng dẫn tạo máy ảo GCP, cấu hình môi trường bảo mật, phân tách cơ sở dữ liệu Postgres logic, và thiết lập luồng CI/CD chuẩn doanh nghiệp
-
+- [Domain Setup Guide](domain-setup-guide.md) — Hướng dẫn trỏ tên miền (domain), cấu hình Nginx Reverse Proxy và cài đặt SSL HTTPS bằng Certbot Let's Encrypt

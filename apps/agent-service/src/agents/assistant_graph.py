@@ -589,7 +589,7 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
 def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: list[int] | None = None) -> PlannedTask:
     missing: list[str] = []
     if domain == "restaurant":
-        for key in ("location",):
+        for key in ("location", "party_size", "start_at"):
             if not slots.get(key):
                 missing.append(key)
     if domain == "ride":
@@ -782,9 +782,9 @@ def _safe_slots(value: Any) -> dict[str, Any]:
         normalized = str(key).casefold()
         if normalized.endswith("_id") or normalized in FORBIDDEN_MODEL_FIELDS or normalized in {"price", "amount", "currency", "availability", "available", "status"}:
             continue
-        if isinstance(item, str | int | float | bool) or item is None:
+        if isinstance(item, (str, int, float, bool)) or item is None:
             safe[str(key)] = item
-        elif isinstance(item, list) and len(item) <= 8 and all(isinstance(entry, str | int | float | bool) for entry in item):
+        elif isinstance(item, list) and len(item) <= 8 and all(isinstance(entry, (str, int, float, bool)) for entry in item):
             safe[str(key)] = item
     return safe
 
@@ -857,7 +857,7 @@ def _safe_model_value(value: Any, depth: int = 0) -> Any:
         return result
     if isinstance(value, list):
         return [_safe_model_value(item, depth + 1) for item in value[:8]]
-    if isinstance(value, str | int | float | bool) or value is None:
+    if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return None
 

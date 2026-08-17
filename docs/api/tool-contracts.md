@@ -1,16 +1,20 @@
 # Tool Contracts
 
 A tool is a governed domain capability, not a raw REST endpoint. The Gateway
-owns the registry and public execution boundary. The Agent emits only the
-versioned JSON-schema request described by
-[`tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json);
-it cannot invoke a tool itself.
+owns the registry and public execution boundary. The target Agent contract is
+the versioned JSON-schema request described by
+[`tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json).
+The unified planner emits bounded semantic proposals only. Legacy Food and
+vertical workflow compatibility paths still ask the Gateway to execute a
+whitelisted read/draft/preview request; they do not call a domain directly or
+execute a final action. This is a migration exception, not an authority grant.
 
 The canonical inventory contains 46 entries with the explicit classifications
 `IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
 `IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, and `DEPRECATED`. The Gateway
-parity test and Agent policy parity test keep the JSON inventory, runtime
-registry, and policy names aligned.
+parity test and Agent policy parity test verify the checked canonical entries
+and policy names. The current runtime has additional compatibility entries, so
+the check is not yet bidirectional full-registry parity.
 
 | Risk | Example behavior | Confirmation |
 | --- | --- | --- |

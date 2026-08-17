@@ -45,7 +45,7 @@ flowchart TB
 
     subgraph DataLayer["5. Data Layer (Logical Isolation)"]
         CoreDB[("xone_core\n(Core DB)")]:::database
-        AgentDB[("xone_agent\n(Agent DB)")]:::database
+        AgentDB[("xone_agent\n(Provisioned target DB)")]:::database
         RideDB[("xone_ride\n(Ride DB)")]:::database
         RestDB[("xone_restaurant\n(Restaurant DB)")]:::database
         HealthDB[("xone_healthcare\n(Healthcare DB)")]:::database
@@ -63,11 +63,11 @@ flowchart TB
     Gateway -->|Typed Client Adapter| Food
 
     Gateway -.->|SQL Connection| CoreDB
-    Agent -.->|SQL Connection| AgentDB
+    Agent -.->|Not wired in current MVP| AgentDB
     Ride -.->|SQL Connection| RideDB
     Restaurant -.->|SQL Connection| RestDB
     Healthcare -.->|SQL Connection| HealthDB
     Food -.->|SQL Connection| FoodDB
 ```
 
-The current integrated local scope covers Food ordering, Ride booking/tracking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, Healthcare doctor/department/patient/slot/hold/payment acknowledgement/final confirmation/cancellation, Core profile/saved addresses/conversations/history, service browsing, real-catalog provenance, deterministic ranking, and durable multi-service workflow planning through Gateway orchestration and typed Agent requests. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. Production payment providers, queues, service mesh, Kubernetes, Redis and Phase 10 evaluation remain outside this scope. The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md).
+The current integrated local scope covers Food ordering, Ride booking/tracking simulation, Restaurant dine-in discovery/availability/holds/final confirmation, Healthcare doctor/department/patient/slot/hold/payment acknowledgement/final confirmation/cancellation, Core profile/saved addresses/conversations/history, service browsing, real-catalog provenance, deterministic ranking, and durable multi-service workflow planning through Gateway orchestration and typed Agent requests. The Agent workflow store is currently process-local; the provisioned `xone_agent` database is a target persistence seam, not a wired dependency. Final Restaurant and Healthcare actions still require explicit confirmation; Ride and Healthcare payment are local simulations/adapters. Production payment providers, queues, service mesh, Kubernetes and Redis remain outside this scope. Gate G2 manual evaluation evidence is maintained under [root eval](../../eval/README.md). The evidence-backed component matrix, ports, local commands, and environment-dependent limits live in the canonical [current architecture state](current-state.md).
