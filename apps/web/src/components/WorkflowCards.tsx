@@ -269,7 +269,7 @@ function actionForHealthcareOption(detail: AssistantOption | null, groups: Healt
 }
 
 function SimpleCard({ item }: { item: { title: string; question?: string; note?: string } }) {
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} />{item.question || item.note ? <p>{text(item.question ?? item.note)}</p> : null}</article>;
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} />{item.question || item.note ? <p>{text(item.question ?? item.note)}</p> : null}</article>;
 }
 
 function AddressOptionsCard({ item }: { item: AssistantAddressOptionsItem }) {
@@ -300,7 +300,7 @@ function taskErrorCopy(code?: string): { title: string; note: string } {
 }
 
 function FallbackCard({ item }: { item: { title: string; note?: string; question?: string } }) {
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} /><p>{text(item.note ?? item.question, "Mình đã nhận thông tin mới và sẽ cập nhật ở bước tiếp theo.")}</p></article>;
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} /><p>{text(item.note ?? item.question, "Mình đã nhận thông tin mới và sẽ cập nhật ở bước tiếp theo.")}</p></article>;
 }
 
 function assertNever(value: never): never {

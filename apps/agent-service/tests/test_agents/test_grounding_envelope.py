@@ -1,5 +1,4 @@
-﻿import pytest
-
+import pytest
 from src.agents.assistant.contracts import GroundingEnvelope
 from src.agents.healthcare_graph import compose_healthcare_response
 from src.agents.nodes.restaurant_node import compose_restaurant_response
