@@ -33,11 +33,9 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /workspace/apps/web/.next/standalone ./
 COPY --from=builder /workspace/apps/web/.next/static ./.next/static
 COPY --from=builder /workspace/apps/web/public ./public
-# Next's standalone trace keeps the pnpm link to this helper package; copy the
-# locked package target so the production runner does not depend on a build
-# workspace symlink that is absent from the image.
-COPY --from=builder /workspace/node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers ./node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers
-COPY --from=builder /workspace/node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers ./node_modules/.pnpm/next@16.3.1_@babel+core@7.29.7_supports-color@8.1.1__@playwright+test@1.51.1_@types+nod_e60c423f8bacfe264aab9444d4fa4228/node_modules/@swc/helpers
+# Next's standalone trace keeps pnpm symlinks to package targets; copy the
+# virtual store so the production runner resolves all symlinks cleanly.
+COPY --from=builder /workspace/node_modules/.pnpm ./node_modules/.pnpm
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
