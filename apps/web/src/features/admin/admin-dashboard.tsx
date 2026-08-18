@@ -214,4 +214,3 @@ function money(amount: unknown, currency: unknown): string { return typeof amoun
 function formatDate(value: unknown): string { if (!value) return "—"; const parsed = new Date(String(value)); return Number.isNaN(parsed.valueOf()) ? "—" : parsed.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }); }
 function compactCounts(value: unknown): string { if (!value || typeof value !== "object") return "Đã kết nối"; return Object.entries(value as Record<string, unknown>).map(([key, entry]) => `${key}: ${valueNumber(entry)}`).join(" · "); }
 function datasetDetail(value: Record<string, unknown>): string { return [valueText(value.dataset_name ?? value.dataset), valueText(value.version), value.row_count !== undefined ? `${valueNumber(value.row_count)} dòng` : undefined, valueText(value.freshness_status, "")].filter(Boolean).join(" · ") || "Đã kết nối"; }
-

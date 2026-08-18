@@ -18,6 +18,14 @@ class VehicleType(StrEnum):
     CAR_7 = "CAR_7"
 
 
+CAPACITY_POLICY_VERSION = "ride-capacity-v1"
+VEHICLE_CAPACITY: dict[VehicleType, int] = {
+    VehicleType.BIKE: 1,
+    VehicleType.CAR_4: 4,
+    VehicleType.CAR_7: 7,
+}
+
+
 class QuoteStatus(StrEnum):
     QUOTE_CREATED = "QUOTE_CREATED"
     AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
@@ -51,6 +59,7 @@ class QuoteCommand:
     vehicle_type: VehicleType
     promo_code: str | None
     pickup_time: datetime | None
+    passenger_count: int = 1
     pickup_latitude: float | None = None
     pickup_longitude: float | None = None
     dropoff_latitude: float | None = None
@@ -129,6 +138,8 @@ class Quote:
     route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
     tariff_snapshot: dict[str, Any] | None = None
+    passenger_count: int = 1
+    capacity_policy_version: str = CAPACITY_POLICY_VERSION
 
     def snapshot(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -150,6 +161,8 @@ class Booking:
     updated_at: datetime
     driver_id: str | None = None
     tracking_started_at: datetime | None = None
+    passenger_count: int = 1
+    capacity_policy_version: str = CAPACITY_POLICY_VERSION
 
     def snapshot(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -315,6 +328,8 @@ def prepare_confirmation_payload(quote: Quote, actor_id: str) -> dict[str, Any]:
         "quote_version": quote.quote_version,
         "amount": quote.amount,
         "currency": quote.currency,
+        "passenger_count": quote.passenger_count,
+        "capacity_policy_version": quote.capacity_policy_version,
     }
 
 
@@ -332,6 +347,8 @@ def confirm_confirmation_payload(
         "amount": booking.amount,
         "currency": booking.currency,
         "payment_reference": payment_reference,
+        "passenger_count": booking.passenger_count,
+        "capacity_policy_version": booking.capacity_policy_version,
     }
 
 
@@ -349,6 +366,7 @@ def cancel_confirmation_payload(booking: Booking, actor_id: str) -> dict[str, An
 
 def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime | None = None) -> Quote:
     now = now or utc_now()
+    validate_capacity(command.vehicle_type, command.passenger_count)
     route_geometry = _validated_real_route(command)
     distance_km = max(1, round((command.route_distance_meters or 0) / 1000))
     duration_minutes = max(1, round((command.route_duration_seconds or 0) / 60))
@@ -390,7 +408,7 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         amount=amount,
         currency="VND",
         tariff_version=tariff_version,
-        quote_version=f"{tariff_version}:{quote_id}",
+        quote_version=f"{tariff_version}:{CAPACITY_POLICY_VERSION}:{quote_id}",
         expires_at=now + QUOTE_TTL,
         created_at=now,
         pickup_latitude=command.pickup_latitude,
@@ -404,6 +422,26 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         route_geometry=route_geometry,
         route_snapshot_hash=command.route_snapshot_hash or normalized_hash(route_snapshot),
         tariff_snapshot={"version": tariff_version, **tariff},
+        passenger_count=command.passenger_count,
+        capacity_policy_version=CAPACITY_POLICY_VERSION,
+    )
+
+
+def validate_capacity(vehicle_type: VehicleType, passenger_count: int) -> None:
+    if isinstance(passenger_count, bool) or passenger_count < 1:
+        raise RideError(422, "INVALID_PASSENGER_COUNT", "Passenger count must be at least 1.")
+    maximum = VEHICLE_CAPACITY[vehicle_type]
+    if passenger_count <= maximum:
+        return
+    suitable = next(
+        (candidate.value for candidate, capacity in VEHICLE_CAPACITY.items() if capacity >= passenger_count),
+        None,
+    )
+    suggestion = f" Choose {suitable}." if suitable else " Request multiple vehicles."
+    raise RideError(
+        422,
+        "CAPACITY_EXCEEDED",
+        f"{vehicle_type.value} supports at most {maximum} passengers; requested {passenger_count}.{suggestion}",
     )
 
 

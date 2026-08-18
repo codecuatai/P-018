@@ -111,6 +111,7 @@ components:
     AssistantChatRequest:
       type: object
       required: [message, conversation_id, user_id]
+
       properties:
         message: {type: string, minLength: 1, maxLength: 5000}
         conversation_id: {type: string, minLength: 1, maxLength: 128}
@@ -119,15 +120,33 @@ components:
         messages: {type: array, items: {type: object, additionalProperties: true}}
         conversation_state: {type: object, additionalProperties: true}
         authoritative_results: {type: array, items: {type: object, additionalProperties: true}}
+        capability_snapshot: {type: [object, 'null'], additionalProperties: true}
         mode: {type: string, enum: [plan, compose]}
       additionalProperties: false
     AssistantEnvelope:
       type: object
       required: [data, meta]
-      properties:
-        data: {type: object, additionalProperties: true}
-        meta: {$ref: '#/components/schemas/ResponseMeta'}
       additionalProperties: false
+      properties:
+        data:
+          type: object
+          required: [conversation_id, assistant_message, plan, semantic_turn, planning_decision, decision_source]
+          additionalProperties: false
+          properties:
+            conversation_id: {type: string}
+            assistant_message: {type: string}
+            plan: {type: object, additionalProperties: true}
+            semantic_turn: {type: object, additionalProperties: true}
+            planning_decision:
+              type: object
+              description: >-
+                Typed Core A plan. Each step is a bounded capability request or
+                an explicit confirmation wait; the Agent never executes it.
+              additionalProperties: true
+            decision_source: {enum: [model, deterministic]}
+            model: {type: string}
+            fallback_model: {type: string}
+        meta: {$ref: '#/components/schemas/ResponseMeta'}
     ChatRequest:
       type: object
       required: [message, conversation_id, user_id]

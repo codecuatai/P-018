@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -13,6 +13,9 @@ class Base(DeclarativeBase):
 
 class QuoteRow(Base):
     __tablename__ = "ride_quotes"
+    __table_args__ = (
+        CheckConstraint("passenger_count BETWEEN 1 AND 20", name="ck_ride_quotes_passenger_count"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     actor_id: Mapped[str] = mapped_column(String(128), index=True)
@@ -20,6 +23,8 @@ class QuoteRow(Base):
     pickup_address: Mapped[str] = mapped_column(Text)
     dropoff_address: Mapped[str] = mapped_column(Text)
     vehicle_type: Mapped[str] = mapped_column(String(16))
+    passenger_count: Mapped[int] = mapped_column(Integer, default=1)
+    capacity_policy_version: Mapped[str] = mapped_column(String(40), default="ride-capacity-v1")
     distance_km: Mapped[int] = mapped_column(Integer)
     duration_minutes: Mapped[int] = mapped_column(Integer)
     base_fee: Mapped[int] = mapped_column(Integer)
@@ -48,11 +53,16 @@ class QuoteRow(Base):
 
 class BookingRow(Base):
     __tablename__ = "ride_bookings"
+    __table_args__ = (
+        CheckConstraint("passenger_count BETWEEN 1 AND 20", name="ck_ride_bookings_passenger_count"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     actor_id: Mapped[str] = mapped_column(String(128), index=True)
     quote_id: Mapped[str] = mapped_column(ForeignKey("ride_quotes.id"), index=True)
     quote_version: Mapped[str] = mapped_column(String(96))
+    passenger_count: Mapped[int] = mapped_column(Integer, default=1)
+    capacity_policy_version: Mapped[str] = mapped_column(String(40), default="ride-capacity-v1")
     amount: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
     status: Mapped[str] = mapped_column(String(48), index=True)

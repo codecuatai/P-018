@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Headers, Injectable, Module, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -26,6 +26,12 @@ class RideQuoteDto {
   @IsOptional()
   @IsIn(['BIKE', 'CAR_4', 'CAR_7'])
   vehicle_type?: 'BIKE' | 'CAR_4' | 'CAR_7';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  passenger_count?: number;
 
   @IsOptional()
   @IsNumber()
@@ -112,6 +118,7 @@ export class ServiceHubService {
       pickup_address: pickup.address,
       dropoff_address: dropoff.address,
       vehicle_type: body.vehicle_type ?? 'CAR_4',
+      passenger_count: body.passenger_count ?? 1,
       pickup_latitude: pickup.coordinate.latitude,
       pickup_longitude: pickup.coordinate.longitude,
       dropoff_latitude: dropoff.coordinate.latitude,

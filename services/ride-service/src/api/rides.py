@@ -85,6 +85,7 @@ def create_quote(
             vehicle_type=VehicleType(payload.vehicle_type),
             promo_code=payload.promo_code,
             pickup_time=payload.pickup_time,
+            passenger_count=payload.passenger_count,
             pickup_latitude=payload.pickup_latitude,
             pickup_longitude=payload.pickup_longitude,
             dropoff_latitude=payload.dropoff_latitude,

@@ -122,6 +122,28 @@ class ReconciliationGateway:
         raise AssertionError(f"Unexpected tool: {name}")
 
 
+class NearbyRecommendationGateway(ReconciliationGateway):
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        correlation_id: str,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(name)
+        if name != "search_food":
+            raise AssertionError(f"Unexpected tool: {name}")
+        if arguments.get("keyword"):
+            return {"items": []}
+        return {
+            "items": [{
+                "restaurant": {"id": "restaurant_nearby", "name": "Quán lân cận", "district": "North District"},
+                "item": {"id": "item_nearby", "name": "Bánh mì", "restaurant_id": "restaurant_gia_lam"},
+            }]
+        }
+
+
 def graph_input(query: str, llm: DisagreeingLLM, gateway: ReconciliationGateway, context: dict[str, Any]) -> Any:
     return build_graph(tool_client=gateway, llm=llm).ainvoke(
         {
@@ -132,6 +154,20 @@ def graph_input(query: str, llm: DisagreeingLLM, gateway: ReconciliationGateway,
             "workflow_context": context,
         }
     )
+
+
+@pytest.mark.asyncio
+async def test_empty_specific_food_search_returns_nearby_recommendations() -> None:
+    gateway = NearbyRecommendationGateway()
+    result = await graph_input(
+        "Đặt gà rán đến North Campus",
+        DisagreeingLLM("general_food_support"),
+        gateway,
+        {},
+    )
+    assert gateway.calls == ["search_food", "search_food"]
+    assert result["data"]["items"][0]["restaurant"]["district"] == "North District"
+    assert "thay thế" in result["response"]
 
 
 @pytest.mark.asyncio

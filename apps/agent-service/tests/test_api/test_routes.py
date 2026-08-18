@@ -53,6 +53,11 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
     assert data["decision_source"] == "deterministic"
     assert [task["domain"] for task in data["plan"]["tasks"]] == ["food", "healthcare"]
     assert all("price" not in task.get("extracted_slots", {}) for task in data["plan"]["tasks"])
+    assert all(
+        step["step_kind"] == "CAPABILITY"
+        for task in data["planning_decision"]["tasks"]
+        for step in task["steps"]
+    )
 
 
 @pytest.mark.asyncio
@@ -181,3 +186,21 @@ async def test_ride_chat_returns_typed_quote_request(client):
     assert data["intent"] == "request_ride_quote"
     assert data["tool_request"]["tool_name"] == "ride.quote.create"
     assert data["tool_request"]["risk_level"] == "READ"
+
+
+@pytest.mark.asyncio
+async def test_ride_chat_keeps_passenger_count_out_of_destination(client):
+    response = await client.post(
+        "/api/v1/ride-chat",
+        json={
+            "message": "Đặt xe 7 chỗ từ VinUni đến Hồ Gươm cho 4 người",
+            "workflow_id": "wf-ride-passengers-1",
+        },
+        headers={"X-Internal-Service-Token": "test-token"},
+    )
+
+    assert response.status_code == 200
+    arguments = response.json()["data"]["tool_request"]["arguments"]
+    assert arguments["dropoff_address"] == "Hồ Gươm"
+    assert arguments["vehicle_type"] == "CAR_7"
+    assert arguments["passenger_count"] == 4

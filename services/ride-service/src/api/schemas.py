@@ -14,6 +14,7 @@ class QuoteCreate(StrictModel):
     pickup_address: str = Field(min_length=3, max_length=300)
     dropoff_address: str = Field(min_length=3, max_length=300)
     vehicle_type: Literal["BIKE", "CAR_4", "CAR_7"] = "CAR_4"
+    passenger_count: int = Field(default=1, ge=1, le=20)
     promo_code: str | None = Field(default=None, min_length=1, max_length=50)
     pickup_time: datetime | None = None
     pickup_latitude: float = Field(ge=-90, le=90)
@@ -60,6 +61,8 @@ class QuoteOut(StrictModel):
     pickup_address: str
     dropoff_address: str
     vehicle_type: str
+    passenger_count: int
+    capacity_policy_version: str
     distance_km: int
     duration_minutes: int
     base_fee: int
@@ -91,6 +94,8 @@ class BookingOut(StrictModel):
     actor_id: str
     quote_id: str
     quote_version: str
+    passenger_count: int
+    capacity_policy_version: str
     amount: int
     currency: str
     status: str

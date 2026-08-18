@@ -29,9 +29,18 @@ function Invoke-Utf8PostgresSeed {
 
 Invoke-Utf8PostgresSeed 'services/food-service/seeds/001_demo_hanoi.sql'
 Write-Host 'Deterministic Food demo seed applied.'
+docker compose --env-file $envFile exec -T food-service python -m seeds.import_food_csv
+if ($LASTEXITCODE -ne 0) { throw 'Food CSV catalog import failed.' }
+Write-Host 'Food CSV catalog imported.'
 docker compose --env-file $envFile exec -T restaurant-service python -m seeds.seed
 if ($LASTEXITCODE -ne 0) { throw 'Restaurant Service seed failed.' }
 Write-Host 'Restaurant Service seeds applied.'
+docker compose --env-file $envFile exec -T restaurant-service python -m seeds.import_restaurant_csv
+if ($LASTEXITCODE -ne 0) { throw 'Restaurant CSV catalog import failed.' }
+Write-Host 'Restaurant CSV catalog imported.'
 docker compose --env-file $envFile exec -T healthcare-service python -m seeds.seed_medical
 if ($LASTEXITCODE -ne 0) { throw 'Healthcare Service seed failed.' }
 Write-Host 'Healthcare Service seeds applied.'
+docker compose --env-file $envFile exec -T healthcare-service python -m seeds.import_healthcare_csv
+if ($LASTEXITCODE -ne 0) { throw 'Healthcare CSV catalog import failed.' }
+Write-Host 'Healthcare CSV catalog imported.'

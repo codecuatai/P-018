@@ -286,6 +286,15 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         query = str(state.get("query", ""))
         deterministic_intent = classify(query)
         deterministic = extract_slots(query)
+        # A bare location is a valid follow-up only when an existing food
+        # search supplies the dish/category.  It must not start an unrelated
+        # food flow by itself.
+        if (
+            deterministic_intent == "general_food_support"
+            and deterministic.get("district")
+            and state.get("extracted_slots", {}).get("dish_query")
+        ):
+            deterministic_intent = "search_food"
         registry: list[dict[str, Any]] = []
         fallback = {
             "intent": deterministic_intent,
@@ -365,8 +374,21 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "ambiguity": "address",
                 "step_count": state.get("step_count", 0) + 1,
             }
+        missing = _missing_slots(str(intent), slots)
+        labels = {
+            "address_id": "địa chỉ giao hàng",
+            "cart_id": "giỏ hàng",
+            "restaurant_id": "nhà hàng",
+            "menu_item_id": "món ăn",
+            "cart_item_id": "món trong giỏ",
+        }
         return {
-            "missing_slots": _missing_slots(str(intent), slots),
+            "missing_slots": missing,
+            **({
+                "response_type": "options",
+                "response": "Mình cần bạn chọn rõ " + ", ".join(labels.get(value, value) for value in missing) + ".",
+                "data": {"missing_slots": missing},
+            } if missing else {}),
             "step_count": state.get("step_count", 0) + 1,
         }
 
@@ -411,6 +433,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         working_slots = dict(state.get("extracted_slots", {}))
         working_context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(exclude_none=True)
         pending_tools = list(state.get("selected_tools", []))
+        recommendation_fallback = False
         max_steps = get_settings().max_graph_steps
         max_tool_calls = get_settings().max_tool_calls
 
@@ -429,6 +452,21 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 result = await invoke(name, dict(tool.get("arguments", {})))
                 calls.append({"name": name, "status": "succeeded"})
                 results.append({"name": name, "data": result})
+                if (
+                    name == "search_food"
+                    and original_intent == "search_food"
+                    and tool.get("arguments", {}).get("keyword")
+                    and tool.get("arguments", {}).get("district")
+                    and not (result.get("items", []) if isinstance(result, dict) else [])
+                ):
+                    # The requested dish is unavailable in the selected area.
+                    # Make one bounded, read-only recommendation query instead
+                    # of claiming that the entire nearby catalog is empty.
+                    fallback_args: dict[str, Any] = {"district": tool["arguments"]["district"]}
+                    if tool["arguments"].get("max_price") is not None:
+                        fallback_args["max_price"] = tool["arguments"]["max_price"]
+                    pending_tools.append({"name": "search_food", "arguments": fallback_args})
+                    recommendation_fallback = True
                 if name == "list_food_delivery_addresses" and original_intent in {"quote_delivery", "preview_order", "place_order"}:
                     addresses = result.get("addresses", result.get("items", [])) if isinstance(result, dict) else []
                     working_context["address_candidates"] = addresses if isinstance(addresses, list) else []
@@ -521,7 +559,12 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             return {"error": exc.code, "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
         if pending_tools:
             return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
-        return {"tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+        return {
+            "tool_calls": calls,
+            "tool_results": results,
+            "extracted_slots": working_slots,
+            "recommendation_fallback": recommendation_fallback,
+        }
 
     async def evaluate_node(state: AgentState) -> AgentState:
         if state.get("error"):
@@ -603,7 +646,9 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "pending_confirmation": confirmation,
                 "state_updates": updates,
             }
-        if intent == "search_food" and results and not results[0].get("data", {}).get("items"):
+        if intent == "search_food" and results and not any(
+            result.get("data", {}).get("items") for result in results
+        ):
             return {
                 "response_type": "text",
                 "response": "Mình chưa tìm thấy món phù hợp.",
@@ -632,6 +677,8 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "select_menu_item": "Mình đã lấy món bạn chọn từ menu hiện tại.",
             "search_food": "Mình tìm được các món phù hợp.",
         }
+        if intent == "search_food" and state.get("recommendation_fallback"):
+            messages["search_food"] = "Mình chưa thấy đúng món bạn yêu cầu ở khu vực này. Đây là các món và quán gần đó để bạn chọn thay thế."
         return {
             "response_type": "options" if results else "text",
             "response": messages.get(intent, "Mình có thể giúp bạn tìm món, xem menu và tạo giỏ."),

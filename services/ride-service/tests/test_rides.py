@@ -7,7 +7,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from src.config import get_settings
-from src.domain.ride import Booking, BookingStatus, _haversine_km, normalized_hash, tracking_elapsed, tracking_progress
+from src.domain.ride import (
+    CAPACITY_POLICY_VERSION,
+    Booking,
+    BookingStatus,
+    VehicleType,
+    _haversine_km,
+    normalized_hash,
+    tracking_elapsed,
+    tracking_progress,
+    validate_capacity,
+)
 from src.infrastructure.models import BookingRow, QuoteRow, RideDriverRow, RideTrackingEventRow
 
 ACTOR = "user_ride_test"
@@ -41,11 +51,19 @@ def _headers(*, actor: str = ACTOR, key: str | None = None) -> dict[str, str]:
     return headers
 
 
-def _create_quote(client: TestClient, *, key: str = "quote-key", with_coordinates: bool = True) -> dict:
+def _create_quote(
+    client: TestClient,
+    *,
+    key: str = "quote-key",
+    with_coordinates: bool = True,
+    vehicle_type: str = "CAR_4",
+    passenger_count: int = 1,
+) -> dict:
     payload = {
         "pickup_address": "VinUni, Gia Lam",
         "dropoff_address": "Ho Guom, Hoan Kiem",
-        "vehicle_type": "CAR_4",
+        "vehicle_type": vehicle_type,
+        "passenger_count": passenger_count,
         "promo_code": "SAVE5000",
     }
     if with_coordinates:
@@ -96,6 +114,8 @@ def _prepare(client: TestClient, quote: dict) -> dict:
         "quote_version": quote["quote_version"],
         "amount": quote["amount"],
         "currency": quote["currency"],
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
     }
     response = client.post(
         "/v1/bookings:prepare",
@@ -120,6 +140,8 @@ def _confirm(client: TestClient, quote: dict, booking: dict, *, key: str = "conf
         "amount": quote["amount"],
         "currency": quote["currency"],
         "payment_reference": payment_reference,
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
     }
     response = client.post(
         f"/v1/bookings/{booking['id']}:confirm",
@@ -179,6 +201,8 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
     assert first["currency"] == "VND"
     assert first["status"] == "QUOTE_CREATED"
     assert first["tariff_version"] == "TEST_2026_V1"
+    assert first["passenger_count"] == 1
+    assert first["capacity_policy_version"] == CAPACITY_POLICY_VERSION
 
     conflict = client.post(
         "/v1/quotes",
@@ -202,6 +226,82 @@ def test_quote_is_deterministic_and_idempotent(client: TestClient) -> None:
     )
     assert conflict.status_code == 409
     assert conflict.json()["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+def test_capacity_policy_is_bound_to_quote_booking_and_idempotency(client: TestClient) -> None:
+    quote = _create_quote(client, key="capacity-four", passenger_count=4)
+    assert quote["passenger_count"] == 4
+    assert quote["capacity_policy_version"] == CAPACITY_POLICY_VERSION
+    assert CAPACITY_POLICY_VERSION in quote["quote_version"]
+
+    booking = _prepare(client, quote)
+    assert booking["passenger_count"] == 4
+    assert booking["capacity_policy_version"] == CAPACITY_POLICY_VERSION
+
+    changed_payload = {
+        "pickup_address": "VinUni, Gia Lam",
+        "dropoff_address": "Ho Guom, Hoan Kiem",
+        "vehicle_type": "CAR_4",
+        "passenger_count": 3,
+        "promo_code": "SAVE5000",
+        "pickup_latitude": 21.0285,
+        "pickup_longitude": 105.8048,
+        "dropoff_latitude": 21.0301,
+        "dropoff_longitude": 105.8122,
+        "route_provider": "geoapify",
+        "route_distance_meters": 1_250,
+        "route_duration_seconds": 420,
+        "route_geometry": [
+            {"latitude": 21.0285, "longitude": 105.8048},
+            {"latitude": 21.0301, "longitude": 105.8122},
+        ],
+        "route_snapshot_hash": "test-route-hash",
+    }
+    conflict = client.post("/v1/quotes", headers=_headers(key="capacity-four"), json=changed_payload)
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "IDEMPOTENCY_CONFLICT"
+
+
+@pytest.mark.parametrize(
+    ("vehicle_type", "passenger_count", "suggestion"),
+    [("BIKE", 2, "CAR_4"), ("CAR_4", 5, "CAR_7"), ("CAR_7", 8, "multiple vehicles")],
+)
+def test_quote_rejects_capacity_exceeded(
+    client: TestClient,
+    vehicle_type: str,
+    passenger_count: int,
+    suggestion: str,
+) -> None:
+    response = client.post(
+        "/v1/quotes",
+        headers=_headers(key=f"capacity-{vehicle_type}-{passenger_count}"),
+        json={
+            "pickup_address": "VinUni, Gia Lam",
+            "dropoff_address": "Ho Guom, Hoan Kiem",
+            "vehicle_type": vehicle_type,
+            "passenger_count": passenger_count,
+            "pickup_latitude": 21.0285,
+            "pickup_longitude": 105.8048,
+            "dropoff_latitude": 21.0301,
+            "dropoff_longitude": 105.8122,
+            "route_provider": "geoapify",
+            "route_distance_meters": 1_250,
+            "route_duration_seconds": 420,
+            "route_geometry": [
+                {"latitude": 21.0285, "longitude": 105.8048},
+                {"latitude": 21.0301, "longitude": 105.8122},
+            ],
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["code"] == "CAPACITY_EXCEEDED"
+    assert suggestion in response.json()["detail"]
+
+
+def test_capacity_domain_boundaries() -> None:
+    validate_capacity(VehicleType.BIKE, 1)
+    validate_capacity(VehicleType.CAR_4, 4)
+    validate_capacity(VehicleType.CAR_7, 7)
 
 
 def test_quote_rejects_coordinates_without_a_real_route(client: TestClient) -> None:
@@ -246,6 +346,8 @@ def test_two_confirmations_prepare_then_assign_driver(client: TestClient) -> Non
         "quote_version": quote["quote_version"],
         "amount": quote["amount"],
         "currency": quote["currency"],
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
         "payment_reference": payment_reference,
     }
     request = {
@@ -296,6 +398,8 @@ def test_confirmation_is_payload_bound_and_one_time(client: TestClient) -> None:
         "quote_version": quote["quote_version"],
         "amount": quote["amount"],
         "currency": quote["currency"],
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
     }
     evidence = _confirmation("ride.booking.prepare", expected, quote)
     first = client.post(
@@ -368,6 +472,8 @@ def test_new_route_expires_old_quote_and_old_confirmation_cannot_prepare(client:
         "quote_version": old_quote["quote_version"],
         "amount": old_quote["amount"],
         "currency": old_quote["currency"],
+        "passenger_count": old_quote["passenger_count"],
+        "capacity_policy_version": old_quote["capacity_policy_version"],
     }
     response = client.post(
         "/v1/bookings:prepare",
@@ -479,6 +585,8 @@ def test_tracking_spawns_driver_near_pickup_then_follows_two_legs(client: TestCl
         "amount": quote["amount"],
         "currency": quote["currency"],
         "payment_reference": payment_reference,
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
     }
     confirmed = client.post(
         f"/v1/bookings/{booking['id']}:confirm",

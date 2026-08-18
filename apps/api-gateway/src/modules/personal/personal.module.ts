@@ -23,7 +23,7 @@ import { HealthcareClient } from '../../clients/service.clients';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthService } from '../auth/auth.service';
 import { AuthUser } from '../auth/auth.types';
-import { CoreModule, CoreStore, SavedAddressRecord } from '../core/core.module';
+import { CoreModule, CoreStore, SavedAddressPatch, SavedAddressRecord } from '../core/core.module';
 import { AuthModule } from '../auth/auth.module';
 import { GeoapifyProvider } from './geoapify.provider';
 
@@ -432,7 +432,23 @@ export class SavedAddressController {
   @Patch(':id')
   async patch(@Param('id') id: string, @Body() body: SavedAddressPatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     assertCoordinatePair(body.latitude, body.longitude);
-    const updated = await this.store.updateSavedAddress(id, request.user.sub, { ...(body.label !== undefined ? { label: body.label.trim() } : {}), ...(body.address_text !== undefined ? { addressText: body.address_text.trim() } : {}), ...(body.city !== undefined ? { city: clean(body.city) } : {}), ...(body.district !== undefined ? { district: clean(body.district) } : {}), ...(body.ward !== undefined ? { ward: clean(body.ward) } : {}), ...(body.latitude !== undefined ? { latitude: body.latitude } : {}), ...(body.longitude !== undefined ? { longitude: body.longitude } : {}), ...(body.provider !== undefined ? { provider: clean(body.provider) } : {}), ...(body.source !== undefined ? { source: body.source } : {}), ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}) });
+    const current = await this.store.getSavedAddress(id, request.user.sub);
+    if (!current) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
+    const nextAddressText = body.address_text?.trim();
+    const addressChanged = nextAddressText !== undefined && nextAddressText !== current.addressText;
+    const patch: SavedAddressPatch = {
+      ...(body.label !== undefined ? { label: body.label.trim() } : {}),
+      ...(nextAddressText !== undefined ? { addressText: nextAddressText } : {}),
+      ...(body.city !== undefined ? { city: clean(body.city) ?? null } : addressChanged ? { city: null } : {}),
+      ...(body.district !== undefined ? { district: clean(body.district) ?? null } : addressChanged ? { district: null } : {}),
+      ...(body.ward !== undefined ? { ward: clean(body.ward) ?? null } : addressChanged ? { ward: null } : {}),
+      ...(body.latitude !== undefined ? { latitude: body.latitude } : addressChanged ? { latitude: null } : {}),
+      ...(body.longitude !== undefined ? { longitude: body.longitude } : addressChanged ? { longitude: null } : {}),
+      ...(body.provider !== undefined ? { provider: clean(body.provider) ?? null } : addressChanged ? { provider: null } : {}),
+      ...(body.source !== undefined ? { source: body.source } : addressChanged ? { source: body.latitude !== undefined ? 'geocoded' : 'manual' } : {}),
+      ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}),
+    };
+    const updated = await this.store.updateSavedAddress(id, request.user.sub, patch);
     if (!updated) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
     return { data: toPublicAddress(updated), meta: { request_id: request.correlationId } };
   }

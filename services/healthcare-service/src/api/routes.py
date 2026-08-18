@@ -81,6 +81,9 @@ def _idempotency_storage_key(actor_id: str, operation: str, key: str) -> str:
 
 
 def _active_catalog_version(db: Session) -> str | None:
+    # Unit-test and pre-migration schemas may not contain the registry. Check
+    # before issuing SQL so a missing optional read never aborts or rolls back
+    # the caller's write transaction.
     try:
         if not inspect(db.connection()).has_table("catalog_dataset_versions"):
             return None

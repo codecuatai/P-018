@@ -26,13 +26,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER" ]
       interval: 10s
       timeout: 5s
       retries: 10
     restart: unless-stopped
-    ports: ["${POSTGRES_PORT}:5432"]
-    networks: [xone_internal]
+    ports: [ "${POSTGRES_PORT}:5432" ]
+    networks: [ xone_internal ]
 
   api-gateway:
     build:
@@ -93,13 +93,13 @@ services:
       RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
       RESTAURANT_FORCE_RESULT: ${RESTAURANT_FORCE_RESULT:-}
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
       interval: 10s
       timeout: 5s
       retries: 10
-    ports: ["${API_GATEWAY_PORT}:3000"]
+    ports: [ "${API_GATEWAY_PORT}:3000" ]
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   web:
     build:
@@ -115,17 +115,17 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-    ports: ["${WEB_PORT}:3000"]
+    ports: [ "${WEB_PORT}:3000" ]
     depends_on:
       api-gateway:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
       interval: 10s
       timeout: 5s
       retries: 10
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   agent-service:
     build: ./apps/agent-service
@@ -141,14 +141,14 @@ services:
       AGENT_MODEL_MODE: ${AGENT_MODEL_MODE:-deterministic}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')"]
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s
       timeout: 5s
       retries: 10
-    expose: ["8001"]
+    expose: [ "8001" ]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   ride-service:
     build: ./services/ride-service
@@ -159,13 +159,13 @@ services:
       DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')"]
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s
       timeout: 5s
       retries: 10
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   restaurant-service:
     build: ./services/restaurant-service
@@ -175,13 +175,13 @@ services:
       DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')"]
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s
       timeout: 5s
       retries: 10
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   healthcare-service:
     build: ./services/healthcare-service
@@ -193,13 +193,13 @@ services:
       HEALTHCARE_FACILITY_NAME: ${HEALTHCARE_FACILITY_NAME:?HEALTHCARE_FACILITY_NAME is required}
       HEALTHCARE_FACILITY_ADDRESS: ${HEALTHCARE_FACILITY_ADDRESS:?HEALTHCARE_FACILITY_ADDRESS is required}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')"]
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s
       timeout: 5s
       retries: 10
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
   food-service:
     build: ./services/food-service
@@ -226,14 +226,14 @@ services:
       FOOD_WORKFLOW_POLL_INTERVAL_MS: ${FOOD_WORKFLOW_POLL_INTERVAL_MS:?FOOD_WORKFLOW_POLL_INTERVAL_MS is required}
       FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')"]
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s
       timeout: 5s
       retries: 10
-    expose: ["8104"]
+    expose: [ "8104" ]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
-    networks: [xone_internal]
+    networks: [ xone_internal ]
 
 volumes:
   postgres_data:

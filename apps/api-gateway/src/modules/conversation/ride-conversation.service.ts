@@ -125,6 +125,8 @@ export class RideConversationService {
       || booking.quote_version !== quote.quote_version
       || booking.amount !== quote.amount
       || booking.currency !== quote.currency
+      || booking.passenger_count !== quote.passenger_count
+      || booking.capacity_policy_version !== quote.capacity_policy_version
     )) {
       throw new ConflictException('Thông tin chuyến xe đã thay đổi. Bạn tạo lại báo giá trước khi tiếp tục nhé.');
     }
@@ -146,6 +148,7 @@ export class RideConversationService {
     workflow.context.ride.pickup_address = quote.pickup_address;
     workflow.context.ride.dropoff_address = quote.dropoff_address;
     workflow.context.ride.vehicle_type = quote.vehicle_type;
+    workflow.context.ride.passenger_count = quote.passenger_count;
     workflow.context.ride.latest_quote_id = quote.id;
     workflow.context.ride.latest_booking_id = booking?.id ?? null;
     workflow.context.ride.quote_version = quote.quote_version;
@@ -215,6 +218,7 @@ export class RideConversationService {
             pickup_address: pickup.address,
             dropoff_address: dropoff.address,
             vehicle_type: vehicleType,
+            passenger_count: Number(arguments_.passenger_count ?? workflow.context.ride.passenger_count ?? 1),
             ...(promoCode ? { promo_code: promoCode } : {}),
             pickup_latitude: pickup.coordinate.latitude,
             pickup_longitude: pickup.coordinate.longitude,
@@ -390,6 +394,8 @@ export class RideConversationService {
         quote_version: quote.quote_version,
         amount: quote.amount,
         currency: quote.currency,
+        passenger_count: quote.passenger_count,
+        capacity_policy_version: quote.capacity_policy_version,
       },
       quote,
     );
@@ -430,6 +436,8 @@ export class RideConversationService {
         amount: booking.amount,
         currency: booking.currency,
         payment_reference: paymentReference,
+        passenger_count: booking.passenger_count,
+        capacity_policy_version: booking.capacity_policy_version,
       },
       quote,
     );
@@ -551,6 +559,7 @@ export class RideConversationService {
     const previousPickup = workflow.context.ride.pickup_address;
     const previousDropoff = workflow.context.ride.dropoff_address;
     const previousVehicle = workflow.context.ride.vehicle_type;
+    const previousPassengerCount = workflow.context.ride.passenger_count ?? 1;
     const previousQuote = workflow.quote;
     workflow.context.active_domain = decision.state_patch.active_domain;
     for (const field of decision.state_patch.clear_fields) {
@@ -563,12 +572,14 @@ export class RideConversationService {
       normalizeAddress(previousPickup) !== normalizeAddress(workflow.context.ride.pickup_address)
       || normalizeAddress(previousDropoff) !== normalizeAddress(workflow.context.ride.dropoff_address)
       || previousVehicle !== workflow.context.ride.vehicle_type
+      || previousPassengerCount !== workflow.context.ride.passenger_count
       || coordinatesChanged(previousQuote, routeContext)
     );
     const patchChanged = (
       previousPickup !== workflow.context.ride.pickup_address
       || previousDropoff !== workflow.context.ride.dropoff_address
       || previousVehicle !== workflow.context.ride.vehicle_type
+      || previousPassengerCount !== workflow.context.ride.passenger_count
     );
     const requestedRevision = Number.isFinite(decision.state_patch.revision) ? decision.state_patch.revision : 0;
     workflow.context.ride.revision = Math.max(
@@ -672,6 +683,7 @@ function emptyContext(): AgentContext {
       pickup_address: null,
       dropoff_address: null,
       vehicle_type: 'CAR_4',
+      passenger_count: 1,
       promo_code: null,
       latest_quote_id: null,
       latest_booking_id: null,
@@ -696,6 +708,12 @@ function setRideField(context: AgentContext, field: string, value: string): void
     case 'vehicle_type':
       context.ride.vehicle_type = requiredVehicle(value);
       break;
+    case 'passenger_count': {
+      const count = Number(value);
+      if (!Number.isInteger(count) || count < 1 || count > 20) throw new BadGatewayException('Agent proposed an invalid passenger count.');
+      context.ride.passenger_count = count;
+      break;
+    }
     case 'promo_code':
       context.ride.promo_code = value;
       break;

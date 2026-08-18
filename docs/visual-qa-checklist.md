@@ -17,4 +17,3 @@ Use this checklist after UI changes. A browser screenshot or local Playwright ru
 - Keyboard tab order, visible focus, accessible names, `aria-live`, and reduced-motion mode.
 - Map container has an explicit size, real OpenStreetMap attribution, verified markers only, and an honest fallback when tiles fail.
 - Confirm network calls remain Gateway-only and no browser console error is introduced.
-

@@ -57,6 +57,7 @@ node_modules/
 .next/
 out/
 .nuxt/
+.expo/
 playwright-report/
 playwright-live-report/
 test-results/

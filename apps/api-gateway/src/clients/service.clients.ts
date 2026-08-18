@@ -24,6 +24,7 @@ export type AgentContext = {
     pickup_address: string | null;
     dropoff_address: string | null;
     vehicle_type: 'BIKE' | 'CAR_4' | 'CAR_7';
+    passenger_count: number;
     promo_code: string | null;
     latest_quote_id: string | null;
     latest_booking_id: string | null;
@@ -62,6 +63,8 @@ export type RideQuote = {
   pickup_address: string;
   dropoff_address: string;
   vehicle_type: 'BIKE' | 'CAR_4' | 'CAR_7';
+  passenger_count: number;
+  capacity_policy_version: string;
   distance_km: number;
   duration_minutes: number;
   amount: number;
@@ -86,6 +89,8 @@ export type RideBooking = {
   id: string;
   quote_id: string;
   quote_version: string;
+  passenger_count: number;
+  capacity_policy_version: string;
   amount: number;
   currency: string;
   status: 'AWAITING_CONFIRMATION' | 'AWAITING_PAYMENT_CONFIRMATION' | 'SEARCHING_DRIVER' | 'DRIVER_ASSIGNED' | 'DRIVER_TO_PICKUP' | 'DRIVER_ARRIVED' | 'IN_PROGRESS' | 'ARRIVED_DESTINATION' | 'COMPLETED' | 'NO_DRIVER' | 'FAILED' | 'PAYMENT_FAILED' | 'CANCELLED';
@@ -899,6 +904,8 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     || typeof data.pickup_address !== 'string'
     || typeof data.dropoff_address !== 'string'
     || !['BIKE', 'CAR_4', 'CAR_7'].includes(String(data.vehicle_type))
+    || typeof data.passenger_count !== 'number'
+    || typeof data.capacity_policy_version !== 'string'
     || typeof data.distance_km !== 'number'
     || typeof data.duration_minutes !== 'number'
     || typeof data.amount !== 'number'
@@ -918,6 +925,8 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     pickup_address: data.pickup_address,
     dropoff_address: data.dropoff_address,
     vehicle_type: data.vehicle_type as RideQuote['vehicle_type'],
+    passenger_count: data.passenger_count,
+    capacity_policy_version: data.capacity_policy_version,
     distance_km: data.distance_km,
     duration_minutes: data.duration_minutes,
     amount: data.amount,
@@ -944,6 +953,8 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     typeof data.id !== 'string'
     || typeof data.quote_id !== 'string'
     || typeof data.quote_version !== 'string'
+    || typeof data.passenger_count !== 'number'
+    || typeof data.capacity_policy_version !== 'string'
     || typeof data.amount !== 'number'
     || typeof data.currency !== 'string'
     || !['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION', 'SEARCHING_DRIVER', 'DRIVER_ASSIGNED', 'DRIVER_TO_PICKUP', 'DRIVER_ARRIVED', 'IN_PROGRESS', 'ARRIVED_DESTINATION', 'COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED'].includes(
@@ -961,6 +972,8 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     id: data.id,
     quote_id: data.quote_id,
     quote_version: data.quote_version,
+    passenger_count: data.passenger_count,
+    capacity_policy_version: data.capacity_policy_version,
     amount: data.amount,
     currency: data.currency,
     status: data.status as RideBooking['status'],

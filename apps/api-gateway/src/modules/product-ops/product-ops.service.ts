@@ -129,6 +129,7 @@ export class ProductOpsService {
       pickup_address: quote.pickup_address,
       dropoff_address: quote.dropoff_address,
       vehicle_type: quote.vehicle_type,
+      passenger_count: quote.passenger_count,
       ...(quote.pickup_latitude !== undefined ? { pickup_latitude: quote.pickup_latitude } : {}),
       ...(quote.pickup_longitude !== undefined ? { pickup_longitude: quote.pickup_longitude } : {}),
       ...(quote.dropoff_latitude !== undefined ? { dropoff_latitude: quote.dropoff_latitude } : {}),

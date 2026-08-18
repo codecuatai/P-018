@@ -29,6 +29,7 @@ class SlotStatus(StrEnum):
     HOLDING = "HOLDING"
     BOOKED = "BOOKED"
 
+
 class AppointmentStatus(StrEnum):
     DRAFT = "DRAFT"
     CONFIRMED = "CONFIRMED"

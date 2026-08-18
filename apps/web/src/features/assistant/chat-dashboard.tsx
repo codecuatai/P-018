@@ -16,6 +16,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [conversationLoadError, setConversationLoadError] = useState("");
+  const [conversationLoadNonce, setConversationLoadNonce] = useState(0);
   const [activeActionId, setActiveActionId] = useState<string>();
   const [activeItems, setActiveItems] = useState<HistoryItem[]>([]);
   const [activeRefreshNonce, setActiveRefreshNonce] = useState(0);
@@ -30,6 +32,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   useEffect(() => {
     let active = true;
     setLoadingHistory(true);
+    setConversationLoadError("");
     actionKeys.current = {};
     consumedActionIds.current = new Set();
     setConversationId(initialConversationId);
@@ -42,7 +45,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         if (!active) return;
         setConversationId(detail.conversationId);
         setMessages(toChatMessages(detail, consumedActionIds.current));
-      }).catch(() => undefined).finally(() => { if (active) setLoadingHistory(false); });
+      }).catch((reason) => { if (active) setConversationLoadError(errorText(reason)); }).finally(() => { if (active) setLoadingHistory(false); });
       return () => { active = false; };
     }
     if (entryContext) {
@@ -58,7 +61,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setMessages([]);
     setLoadingHistory(false);
     return () => { active = false; };
-  }, [initialConversationId, user.sub]);
+  }, [conversationLoadNonce, initialConversationId, user.sub]);
 
   useEffect(() => {
     const handleRideCancelled = (event: Event) => {
@@ -230,7 +233,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     } finally { setSending(false); setActiveActionId(undefined); }
   }
 
-  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
+  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
@@ -238,7 +241,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   return <section className="assistant-page" aria-labelledby="assistant-title">
     <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{messages.length === 0 && !loadingHistory ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards />}</ContextRail></div>
+    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}{messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards />}</ContextRail></div>
     <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
   </section>;
 }

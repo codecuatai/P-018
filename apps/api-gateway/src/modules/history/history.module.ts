@@ -265,7 +265,7 @@ function formatAmount(value: number): string {
 
 function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObject {
   const result = pickFields(resource, type === 'ride_booking'
-    ? ['status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
+    ? ['status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'passenger_count', 'capacity_policy_version', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
     : type === 'food_order'
       ? ['status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
       : type === 'restaurant_reservation'

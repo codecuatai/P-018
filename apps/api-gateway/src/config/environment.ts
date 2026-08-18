@@ -70,6 +70,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     'INTERNAL_SERVICE_TOKEN',
     'JWT_SECRET',
     'DEMO_AUTH_ENABLED',
+    'GATEWAY_CORS_ORIGINS',
   ];
   for (const name of requiredStrings) {
     if (typeof config[name] !== 'string' || config[name].trim() === '') {

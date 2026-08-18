@@ -258,6 +258,8 @@ def _quote_from_row(row: QuoteRow) -> Quote:
         route_geometry=row.route_geometry,
         route_snapshot_hash=row.route_snapshot_hash,
         tariff_snapshot=row.tariff_snapshot,
+        passenger_count=row.passenger_count,
+        capacity_policy_version=row.capacity_policy_version,
     )
 
 
@@ -277,6 +279,8 @@ def _booking_from_row(row: BookingRow) -> Booking:
         updated_at=row.updated_at,
         driver_id=row.driver_id,
         tracking_started_at=row.tracking_started_at,
+        passenger_count=row.passenger_count,
+        capacity_policy_version=row.capacity_policy_version,
     )
 
 

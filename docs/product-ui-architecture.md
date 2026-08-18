@@ -41,4 +41,3 @@ On tablet the rail becomes a top or bottom context section after the primary tas
 - Every form control has a visible label or an explicit accessible name. Every icon-only action has a label. Focus order follows the task order; `aria-live` is reserved for status updates.
 - Loading, empty, partial, error, and success states are designed as first-class content. Skeletons preserve the final layout and do not suggest data that has not arrived.
 - Visual QA checks the authenticated shell at 320, 390, 768, 1024, and 1440px, plus keyboard focus and reduced-motion behavior.
-

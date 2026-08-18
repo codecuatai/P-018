@@ -115,6 +115,8 @@ class RideApplication:
             actor_id=command.actor_id,
             quote_id=quote.id,
             quote_version=quote.quote_version,
+            passenger_count=quote.passenger_count,
+            capacity_policy_version=quote.capacity_policy_version,
             amount=quote.amount,
             currency=quote.currency,
             status=BookingStatus.AWAITING_CONFIRMATION.value,

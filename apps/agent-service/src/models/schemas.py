@@ -27,6 +27,7 @@ class AssistantChatRequest(BaseModel):
     messages: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     conversation_state: dict[str, Any] = Field(default_factory=dict)
     authoritative_results: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
+    capability_snapshot: dict[str, Any] | None = None
     mode: Literal["plan", "compose"] = "plan"
 
 

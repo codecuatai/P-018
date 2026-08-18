@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Headers, Post, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, HttpCode, Post, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -45,6 +45,7 @@ export class AssistantController {
   constructor(private readonly assistant: AssistantService) {}
 
   @Post('chat')
+  @HttpCode(200)
   async chat(@Body() body: AssistantChatBody, @Req() request: AuthenticatedRequest) {
     const result = await this.assistant.chat(
       request.user,
@@ -56,6 +57,7 @@ export class AssistantController {
   }
 
   @Post('actions')
+  @HttpCode(200)
   async action(
     @Body() body: AssistantActionBody,
     @Headers('idempotency-key') idempotencyKey: string | undefined,

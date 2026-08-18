@@ -17,9 +17,26 @@ describe('ToolRegistry', () => {
           pickup_address: 'VinUni',
           dropoff_address: 'Ho Guom',
           vehicle_type: 'CAR_4',
+          passenger_count: 4,
         },
       }),
     ).toMatchObject({ toolName: 'ride.quote.create', domain: 'ride' });
+  });
+
+  it('rejects an invalid Ride passenger count at the tool boundary', () => {
+    for (const passenger_count of [0, 1.5, 21, '4']) {
+      expect(() => registry.require({
+        tool_name: 'ride.quote.create',
+        risk_level: 'READ',
+        workflow_id: 'wf_passenger_count',
+        arguments: {
+          pickup_address: 'VinUni',
+          dropoff_address: 'Ho Guom',
+          vehicle_type: 'CAR_4',
+          passenger_count,
+        },
+      })).toThrow(BadGatewayException);
+    }
   });
 
   it('fails closed for risk mismatch and unexpected arguments', () => {

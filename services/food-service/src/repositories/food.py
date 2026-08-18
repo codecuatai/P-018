@@ -30,6 +30,22 @@ def _matches_keyword(text: str, keyword: str) -> bool:
     return all(re.search(rf"\b{re.escape(token)}\b", text) for token in keyword.split())
 
 
+def _search_district(value: object, location_aliases: list[dict]) -> str:
+    """Resolve a catalog-managed landmark alias to an administrative area.
+
+    Place coverage is data-owned: operators add aliases to the Food catalog
+    seed rather than modifying the search implementation.
+    """
+    location = _fold_text(value)
+    for alias in location_aliases:
+        aliases = alias.get("aliases", [])
+        if not isinstance(aliases, list):
+            continue
+        if location in {_fold_text(candidate) for candidate in aliases}:
+            return _fold_text(alias.get("district", "")) or location
+    return location
+
+
 AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime | None]]
 
 
@@ -127,6 +143,7 @@ class InMemoryFoodRepository:
         }
         self.addresses = {"addr_demo": {"id": "addr_demo", "user_id": "usr_demo_001", "label": "Nhà riêng", "address": "25 Lê Đại Hành, Hai Bà Trưng, Hà Nội", "district": "Hai Bà Trưng", "latitude": 21.0125, "longitude": 105.8480}}
         self.drivers = {"drv_001": {"id": "drv_001", "name": "Nguyễn Văn Minh", "phone": "090***1234", "vehicle_type": "Xe máy", "license_plate": "29A-123.45", "available": True}}
+        self.location_aliases: list[dict] = []
         self.carts: dict[str, dict] = {}
         self.orders: dict[str, dict] = {}
         self.order_events: dict[str, list[dict]] = {}

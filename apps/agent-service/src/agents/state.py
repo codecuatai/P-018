@@ -21,6 +21,13 @@ class MenuItemCandidate(BaseModel):
 
 
 class FoodWorkflowContext(BaseModel):
+    # These are user-supplied search preferences, not authoritative IDs. They
+    # persist through short location, category, and budget follow-ups.
+    dish_query: str | None = None
+    district: str | None = None
+    category: str | None = None
+    max_price: int | None = None
+    delivery_preference: str | None = None
     restaurant_id: str | None = None
     restaurant_candidates: list[RestaurantCandidate] = Field(default_factory=list)
     menu_item_id: str | None = None
@@ -74,5 +81,6 @@ class AgentState(TypedDict, total=False):
     slots: dict[str, Any]
     tool_request: dict[str, Any]
     tool_result: dict[str, Any]
+    recommendation_fallback: bool
     status: str
     unsupported: bool

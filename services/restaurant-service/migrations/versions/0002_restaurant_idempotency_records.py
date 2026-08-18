@@ -3,7 +3,6 @@
 import sqlalchemy as sa
 from alembic import op
 
-
 revision = "0002_restaurant_idempotency"
 down_revision = "0001_restaurant_booking"
 branch_labels = None

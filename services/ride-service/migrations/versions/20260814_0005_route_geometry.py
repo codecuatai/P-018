@@ -1,8 +1,7 @@
 """Persist normalized provider route geometry for Ride snapshots."""
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "20260814_0005"
 down_revision: str | None = "20260813_0004"

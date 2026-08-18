@@ -22,7 +22,7 @@ import {
 } from './orchestration';
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
-type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED';
+type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED';
 
 type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'healthcare_cancel' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm' | 'food_payment';
 
@@ -62,6 +62,8 @@ type StoredTask = {
   public_item?: JsonObject;
   latest_message?: string;
   failure_code?: string;
+  blocking_task_id?: string;
+  block_reason?: string;
 };
 
 type AssistantState = {
@@ -107,6 +109,55 @@ type AgentPlanTask = {
   normalized_request?: unknown;
   extracted_slots?: unknown;
   depends_on?: unknown;
+  disposition?: unknown;
+  missing_information?: unknown;
+};
+
+type CapabilityDefinition = {
+  name: string;
+  domain: Domain;
+  schema_version: string;
+  risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  confirmation_gate: 'NONE' | 'SERVICE_DETAILS' | 'FINAL_COMMIT' | 'PAYMENT' | 'CANCELLATION';
+  status: 'implemented' | 'skeleton';
+  input_fields: string[];
+};
+
+const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
+  ['search_food', 'food', 'READ', 'NONE'], ['view_menu', 'food', 'READ', 'NONE'],
+  ['view_menu_item', 'food', 'READ', 'NONE'], ['list_food_delivery_addresses', 'food', 'READ', 'NONE'],
+  ['get_food_cart', 'food', 'READ', 'NONE'], ['create_cart', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['add_to_cart', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['update_food_cart_item', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['remove_food_cart_item', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['apply_voucher', 'food', 'REVERSIBLE_WRITE', 'NONE'],
+  ['remove_food_voucher', 'food', 'REVERSIBLE_WRITE', 'NONE'], ['quote_delivery', 'food', 'READ', 'NONE'],
+  ['preview_order', 'food', 'READ', 'NONE'], ['get_food_order', 'food', 'READ', 'NONE'],
+  ['track_food_order', 'food', 'READ', 'NONE'], ['preview_food_order_cancellation', 'food', 'READ', 'NONE'],
+  ['restaurant.search', 'restaurant', 'READ', 'NONE'], ['restaurant.get', 'restaurant', 'READ', 'NONE'],
+  ['restaurant.check_availability', 'restaurant', 'READ', 'NONE'],
+  ['restaurant.create_hold', 'restaurant', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['restaurant.create_reservation', 'restaurant', 'FINANCIAL_OR_FINAL', 'FINAL_COMMIT'],
+  ['healthcare.list_departments', 'healthcare', 'READ', 'NONE'],
+  ['healthcare.list_slots', 'healthcare', 'READ', 'NONE'],
+  ['healthcare.hold_slot', 'healthcare', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['healthcare.confirm_appointment', 'healthcare', 'FINANCIAL_OR_FINAL', 'PAYMENT'],
+  ['healthcare.cancel_appointment', 'healthcare', 'REVERSIBLE_WRITE', 'CANCELLATION'],
+  ['ride.quote.create', 'ride', 'READ', 'NONE'],
+  ['ride.booking.prepare', 'ride', 'REVERSIBLE_WRITE', 'SERVICE_DETAILS'],
+  ['ride.booking.status.get', 'ride', 'READ', 'NONE'],
+  ['ride.booking.cancel.prepare', 'ride', 'REVERSIBLE_WRITE', 'CANCELLATION'],
+].map(([name, domain, risk_level, confirmation_gate]) => ({
+  name,
+  domain,
+  schema_version: '1',
+  risk_level,
+  confirmation_gate,
+  status: 'implemented',
+  input_fields: [],
+})) as CapabilityDefinition[];
+
+const CAPABILITY_SNAPSHOT = {
+  version: 'gateway-observed.v1',
+  capabilities: CAPABILITY_DEFINITIONS,
 };
 
 function isRecord(value: unknown): value is JsonObject {
@@ -179,6 +230,23 @@ function plainText(value: string): string {
 
 function textHasAny(value: string, candidates: string[]): boolean {
   return candidates.some((candidate) => value.includes(candidate));
+}
+
+const FINAL_SUCCESS_PATTERNS: Record<Domain, RegExp[]> = {
+  ride: [/(?:chuyen xe|cuoc xe|ride).*(?:da (?:duoc )?dat thanh cong|booked successfully|has been booked)/],
+  restaurant: [/(?:dat ban|reservation).*(?:thanh cong|confirmed)/],
+  healthcare: [/(?:lich kham|lich hen|appointment).*(?:da (?:duoc )?(?:xac nhan|tao thanh cong)|confirmed)/],
+  food: [/(?:don hang|don do an|food order).*(?:da (?:duoc )?(?:dat|tiep nhan) thanh cong|confirmed|succeeded)/],
+};
+
+function hasUnsupportedFinalSuccessClaim(message: string, tasks: StoredTask[]): boolean {
+  const folded = plainText(message);
+  const incompleteDomains = new Set(
+    tasks.filter((task) => task.phase !== 'COMPLETED').map((task) => task.domain),
+  );
+  return [...incompleteDomains].some((domain) => (
+    FINAL_SUCCESS_PATTERNS[domain].some((pattern) => pattern.test(folded))
+  ));
 }
 
 function selectionName(index: number): string {
@@ -257,6 +325,13 @@ function parseAuthoritativeDate(value: unknown): Date | undefined {
   const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : `${raw}+07:00`;
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function publicDateTime(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  if (!raw) return undefined;
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return parseAuthoritativeDate(raw) ? raw : undefined;
+  return parseAuthoritativeDate(raw)?.toISOString();
 }
 
 function healthcareDateKey(value: Date): string {
@@ -374,7 +449,7 @@ function sanitizedSlots(value: unknown): Record<string, unknown> {
 }
 
 function taskPhaseFrom(value: unknown): TaskPhase {
-  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'PLANNING'
+  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'BLOCKED' || value === 'PLANNING'
     ? value
     : 'PLANNING';
 }
@@ -395,6 +470,8 @@ function storedState(value: unknown): AssistantState {
     ...(isRecord(task.public_item) ? { public_item: task.public_item } : {}),
     ...(stringValue(task.latest_message) ? { latest_message: task.latest_message as string } : {}),
     ...(stringValue(task.failure_code) ? { failure_code: task.failure_code as string } : {}),
+    ...(stringValue(task.blocking_task_id) ? { blocking_task_id: task.blocking_task_id as string } : {}),
+    ...(stringValue(task.block_reason) ? { block_reason: task.block_reason as string } : {}),
   }));
   const actions: StoredAction[] = arrayValue(value.actions).filter(isRecord).map((action) => ({
     id: stringValue(action.id) ?? `action_${randomUUID().slice(0, 8)}`,
@@ -457,6 +534,190 @@ export class AssistantService {
     @Optional() private readonly food?: FoodClient,
   ) {}
 
+  private validateCoreAHandoff(planner: JsonObject): void {
+    if (planner.planning_decision === undefined) return;
+    const decision = planner.planning_decision;
+    if (!isRecord(decision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const tasks = arrayValue(decision.tasks);
+    if (tasks.length > 4 || tasks.some((task) => !isRecord(task))) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const definitions = new Map(CAPABILITY_DEFINITIONS.map((definition) => [definition.name, definition]));
+    const refs = new Set<number>();
+    for (const [index, value] of tasks.entries()) {
+      const task = value as JsonObject;
+      const taskRef = numberValue(task.task_ref);
+      const domain = stringValue(task.domain);
+      if (taskRef !== index || refs.has(taskRef) || !['ride', 'food', 'restaurant', 'healthcare'].includes(domain ?? '')) {
+        throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task reference or domain is invalid.' });
+      }
+      refs.add(taskRef);
+      const steps = arrayValue(task.steps);
+      if (steps.length > 16) {
+        throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task has too many steps.' });
+      }
+      for (const rawStep of steps) {
+        if (!isRecord(rawStep)) throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent step is invalid.' });
+        const stepKind = stringValue(rawStep.step_kind);
+        const capability = stringValue(rawStep.capability);
+        if (stepKind === 'WAIT_FOR_CONFIRMATION') {
+          const expectedGates: Record<string, string> = {
+            SERVICE_CONFIRMATION: 'SERVICE_DETAILS',
+            PAYMENT_CONFIRMATION: 'PAYMENT',
+            CANCELLATION_CONFIRMATION: 'CANCELLATION',
+          };
+          if (
+            capability
+            || rawStep.risk_ceiling !== 'FINANCIAL_OR_FINAL'
+            || expectedGates[stringValue(rawStep.phase) ?? ''] !== rawStep.confirmation_gate
+          ) {
+            throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent confirmation waiting step is invalid.' });
+          }
+          continue;
+        }
+        if (stepKind !== 'CAPABILITY' || !capability) {
+          throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent step must name a supported capability.' });
+        }
+        const definition = definitions.get(capability);
+        if (
+          !definition
+          || definition.domain !== domain
+          || definition.risk_level !== rawStep.risk_ceiling
+          || definition.confirmation_gate !== rawStep.confirmation_gate
+        ) {
+          throw new ServiceUnavailableException({ code: 'AGENT_CAPABILITY_REJECTED', detail: 'Agent capability metadata does not match the Gateway snapshot.' });
+        }
+      }
+    }
+    for (const value of tasks) {
+      const task = value as JsonObject;
+      const taskRef = numberValue(task.task_ref) as number;
+      const dependencies = arrayValue(task.depends_on);
+      if (dependencies.some((dependency) => typeof dependency !== 'number' || !refs.has(dependency) || dependency === taskRef)) {
+        throw new ServiceUnavailableException({ code: 'AGENT_DEPENDENCY_REJECTED', detail: 'Agent dependency reference is invalid.' });
+      }
+    }
+    const dependenciesByRef = new Map(tasks.map((value) => {
+      const task = value as JsonObject;
+      return [numberValue(task.task_ref) as number, arrayValue(task.depends_on) as number[]];
+    }));
+    const visiting = new Set<number>();
+    const visited = new Set<number>();
+    const visit = (taskRef: number): void => {
+      if (visiting.has(taskRef)) {
+        throw new ServiceUnavailableException({ code: 'AGENT_DEPENDENCY_REJECTED', detail: 'Agent dependency graph contains a cycle.' });
+      }
+      if (visited.has(taskRef)) return;
+      visiting.add(taskRef);
+      for (const dependency of dependenciesByRef.get(taskRef) ?? []) visit(dependency);
+      visiting.delete(taskRef);
+      visited.add(taskRef);
+    };
+    for (const taskRef of refs) visit(taskRef);
+  }
+
+  private typedPlan(planner: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } | undefined {
+    if (planner.planning_decision === undefined) return undefined;
+    const decision = planner.planning_decision;
+    if (!isRecord(decision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
+    }
+    const tasks = arrayValue(decision.tasks).filter(isRecord).map((task) => ({
+      domain: task.domain,
+      goal: task.goal,
+      normalized_request: task.normalized_request,
+      extracted_slots: this.semanticSlotValues(task.semantic_slots),
+      depends_on: arrayValue(task.depends_on),
+      disposition: task.disposition,
+      missing_information: arrayValue(task.missing_information),
+    }));
+    const compatibility = isRecord(planner.plan) ? planner.plan : {};
+    const clarification = isRecord(decision.clarification_need) ? decision.clarification_need : undefined;
+    const clarificationQuestion = clarification
+      ? stringValue(compatibility.clarification_question)
+        ?? this.typedClarification(arrayValue(clarification.missing_fields))
+      : undefined;
+    return { tasks, ...(clarificationQuestion ? { clarificationQuestion } : {}) };
+  }
+
+  private semanticSlotValues(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) return {};
+    const result: Record<string, unknown> = {};
+    for (const [field, raw] of Object.entries(value)) {
+      if (!isRecord(raw)) continue;
+      const slotValue = raw.value;
+      const source = stringValue(raw.source);
+      if (
+        ['USER_EXPLICIT', 'CONVERSATION_REFERENCE', 'INFERRED_PREFERENCE'].includes(source ?? '')
+        && (typeof slotValue === 'string' || typeof slotValue === 'number' || typeof slotValue === 'boolean')
+      ) {
+        result[field] = slotValue;
+      }
+    }
+    return sanitizedSlots(result);
+  }
+
+  private typedClarification(fields: unknown[]): string {
+    const labels: Record<string, string> = {
+      location: 'khu vực',
+      party_size: 'số người',
+      start_at: 'thời gian',
+      department: 'khoa khám',
+      pickup_address: 'điểm đón',
+      dropoff_address: 'điểm đến',
+      'query|dish_query': 'món bạn muốn tìm',
+    };
+    const values = fields
+      .filter((field): field is string => typeof field === 'string')
+      .map((field) => labels[field] ?? field)
+      .slice(0, 2);
+    return values.length
+      ? `Bạn cho mình biết thêm ${values.join(' và ')} nhé?`
+      : 'Bạn cho mình biết thêm một chút thông tin nhé?';
+  }
+
+  private propagateDependencyFailures(tasks: StoredTask[]): void {
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    if (byId.size !== tasks.length) {
+      throw new ServiceUnavailableException({ code: 'CONVERSATION_STATE_INVALID', detail: 'Conversation task state contains duplicate task identifiers.' });
+    }
+    const dependents = new Map<string, StoredTask[]>();
+    for (const task of tasks) {
+      for (const dependencyId of task.depends_on) {
+        if (dependencyId === task.id || !byId.has(dependencyId)) {
+          throw new ServiceUnavailableException({ code: 'CONVERSATION_STATE_INVALID', detail: 'Conversation task dependency is invalid.' });
+        }
+        const children = dependents.get(dependencyId) ?? [];
+        children.push(task);
+        dependents.set(dependencyId, children);
+      }
+    }
+
+    const queue = tasks.filter((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
+    for (let index = 0; index < queue.length; index += 1) {
+      const blocker = queue[index];
+      for (const task of dependents.get(blocker.id) ?? []) {
+        if (task.phase === 'COMPLETED' || task.phase === 'FAILED' || task.phase === 'BLOCKED') continue;
+        task.phase = 'BLOCKED';
+        task.blocking_task_id = blocker.id;
+        task.block_reason = 'DEPENDENCY_FAILED';
+        queue.push(task);
+      }
+    }
+  }
+
+  private workflowStatus(tasks: StoredTask[]): WorkflowStatus {
+    if (!tasks.length) return 'PENDING';
+    if (tasks.length > 0 && tasks.every((task) => task.phase === 'COMPLETED')) return 'COMPLETED';
+    const completed = tasks.some((task) => task.phase === 'COMPLETED');
+    const unsuccessful = tasks.some((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
+    if (completed && unsuccessful) return 'PARTIAL_SUCCESS';
+    if (!completed && tasks.length > 0 && tasks.every((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED')) return 'FAILED';
+    return 'RUNNING';
+  }
+
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
     return {
@@ -515,11 +776,11 @@ export class AssistantService {
   }
 
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
-    const active = current.filter((task) => task.phase !== 'COMPLETED');
+    const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED');
     if (!active.length) return { tasks: planned };
     const folded = plainText(message);
     const explicitDomains = new Set<Domain>();
-    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon'])) explicitDomains.add('food');
+    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day'])) explicitDomains.add('food');
     if (textHasAny(folded, ['dat ban', 'nha hang', 'an tai nha hang'])) explicitDomains.add('restaurant');
     if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
     if (textHasAny(folded, ['dat xe', 'goi xe', 'di tu', 'xe may', 'xe 4 cho', 'xe 7 cho'])) explicitDomains.add('ride');
@@ -597,7 +858,7 @@ export class AssistantService {
     if (textHasAny(folded, ['chon nha hang']) && available.has('restaurant') && hasCandidate('restaurant')) return ['restaurant'];
     if (textHasAny(folded, ['chon lich']) && available.has('healthcare') && hasCandidate('healthcare')) return ['healthcare'];
 
-    const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon']);
+    const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day']);
     if (foodSignal && available.has('food')) return ['food'];
     if (textHasAny(folded, ['lich kham', 'bac si', 'kham', 'than kinh']) && available.has('healthcare')) return ['healthcare'];
     if (textHasAny(folded, ['dat ban', 'nha hang', 'so nguoi']) && available.has('restaurant')) return ['restaurant'];
@@ -627,13 +888,16 @@ export class AssistantService {
         message,
         messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
         conversation_state: this.plannerSafeState(state),
+        capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
       correlationId,
     );
+    this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
+    const typed = this.typedPlan(planner);
     const rawPlanTasks = arrayValue(rawPlan.tasks).filter(isRecord) as AgentPlanTask[];
-    const resolution = this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
+    const resolution = typed ?? this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
     const plan = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
     const planTasks = resolution.tasks;
     const merge = this.mergeTasks(state.tasks, planTasks, message);
@@ -650,6 +914,23 @@ export class AssistantService {
       // Clarification is informational only: retain every task, revision,
       // authoritative choice, and public action exactly as persisted.
       return this.persistTurn(conversationId, user, message, safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'), state, [], state.actions);
+    }
+    if (stringValue(plan.clarification_question)) {
+      const clarificationState: AssistantState = {
+        ...state,
+        tasks: merged.slice(0, 8),
+        actions,
+        decision_source: stringValue(planner.decision_source) ?? 'deterministic',
+      };
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+        clarificationState,
+        [],
+        actions,
+      );
     }
 
     for (const task of merged) {
@@ -702,6 +983,7 @@ export class AssistantService {
         resultsForComposition.push(publicItem);
       }
     }
+    this.propagateDependencyFailures(merged);
 
     actions.sort((left, right) => {
       const leftIndex = merged.findIndex((task) => task.id === left.task_id);
@@ -1159,7 +1441,10 @@ export class AssistantService {
         },
         correlationId,
       );
-      return safeText(response.assistant_message, fallback);
+      const candidate = safeText(response.assistant_message, fallback);
+      return hasUnsupportedFinalSuccessClaim(candidate, tasks)
+        ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')
+        : candidate;
     } catch {
       return safeText(fallback, 'Mình đã cập nhật thông tin cho bạn.');
     }
@@ -1173,14 +1458,14 @@ export class AssistantService {
       const domain = candidate.domain;
       if (domain !== 'ride' && domain !== 'food' && domain !== 'restaurant' && domain !== 'healthcare') continue;
       const request = stringValue(candidate.normalized_request) ?? '';
-      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (!request || task.normalized_request === request));
+      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && (!request || task.normalized_request === request));
       // A new destination or pickup is an update to the active journey, not a
       // second ride request. Other domains retain their request-based merge.
       const activeRide = domain === 'ride'
-        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED')
+        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
         : undefined;
       const match = sameRequest ?? activeRide ?? (planned.length === 1
-        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED')
+        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
         : undefined);
       const slots = sanitizedSlots(candidate.extracted_slots);
       if (match) {
@@ -1206,7 +1491,7 @@ export class AssistantService {
         normalized_request: request,
         extracted_slots: slots,
         depends_on: [],
-        phase: 'PLANNING',
+        phase: candidate.disposition === 'NEEDS_INFO' || candidate.disposition === 'WAITING' ? 'NEEDS_INFO' : 'PLANNING',
         revision: 0,
         latest_message: latestMessage,
       };
@@ -1225,6 +1510,8 @@ export class AssistantService {
 
   private resetTaskForRevision(task: StoredTask, nextSlots: Record<string, unknown>): void {
     task.phase = 'PLANNING';
+    task.blocking_task_id = undefined;
+    task.block_reason = undefined;
     task.workflow_id = undefined;
     task.public_item = undefined;
     if (task.domain === 'food') {
@@ -1291,6 +1578,8 @@ export class AssistantService {
   private async processRestaurant(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
     const slots = task.extracted_slots;
     const location = stringValue(slots.location);
+    const cuisineType = stringValue(slots.cuisine_type);
+    const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
     if (!location || !partySize || !startAt) {
@@ -1300,7 +1589,7 @@ export class AssistantService {
         : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm thông tin để đặt bàn', question }] };
     }
-    const startAtMilliseconds = Date.parse(startAt);
+    const startAtMilliseconds = Date.parse(startAt ?? '');
     if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
@@ -1315,7 +1604,7 @@ export class AssistantService {
     if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
     if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
     if (!candidates.length) {
-      const cuisineQuery = stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
+      const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
@@ -1323,6 +1612,7 @@ export class AssistantService {
           location,
           limit: 20,
           ...(cuisineQuery ? { cuisine_type: cuisineQuery } : {}),
+          ...(budgetRange ? { budget_range: budgetRange } : {}),
         },
         workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
         tool_call_id: `call_${randomUUID()}`,
@@ -1436,6 +1726,11 @@ export class AssistantService {
       idempotency_key: `assistant:restaurant:hold:${conversationId}:${task.id}:${restaurantId}:${startAt}:${partySize}`,
     }, user.sub, correlationId);
     if (!isRecord(hold) || !stringValue(hold.id)) throw new ConflictException({ code: 'HOLD_NOT_CREATED', detail: 'Mình chưa thể giữ bàn tại nhà hàng này.' });
+    const holdExpiresAt = publicDateTime(hold.expires_at);
+    const publicStartAt = publicDateTime(startAt);
+    if (!holdExpiresAt || !publicStartAt) {
+      throw new ConflictException({ code: 'HOLD_RESULT_INVALID', detail: 'The restaurant hold did not include valid timestamps.' });
+    }
     const tool: RestaurantTool = {
       tool_name: 'restaurant.create_reservation',
       risk_level: 'FINANCIAL_OR_FINAL',
@@ -1446,7 +1741,7 @@ export class AssistantService {
       idempotency_key: `assistant:restaurant:reservation:${conversationId}:${task.id}`,
     };
     const pending = await this.confirmations.prepareDomainConfirmation(user, tool, hold, correlationId);
-    const publicItem = { kind: 'restaurant_confirmation', title: 'Mình đã tạm giữ bàn', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: startAt, expires_at: hold.expires_at, note: 'Bạn kiểm tra lại rồi xác nhận để hoàn tất đặt bàn.' };
+    const publicItem = { kind: 'restaurant_confirmation', title: 'Mình đã tạm giữ bàn', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: publicStartAt, expires_at: holdExpiresAt, note: 'Bạn kiểm tra lại rồi xác nhận để hoàn tất đặt bàn.' };
     const action = this.actionFor(task, 'restaurant_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id });
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { ...existing, selected, availability, hold, pending }, publicItem, items: [publicItem], actions: [action], workflowId: tool.workflow_id };
   }
@@ -1483,6 +1778,10 @@ export class AssistantService {
     }
     const pickup = stringValue(slots.pickup_address);
     const dropoff = stringValue(slots.dropoff_address);
+    const passengerCount = numberValue(slots.passenger_count) ?? 1;
+    if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 20) {
+      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Số hành khách chưa hợp lệ', question: 'Bạn cho mình biết số hành khách từ 1 đến 20 nhé?' }] };
+    }
     if (!pickup || !dropoff || dropoff.toLowerCase() === 'nhà hàng đó') {
       if (healthcareDependency) {
         const publicItem = {
@@ -1504,6 +1803,7 @@ export class AssistantService {
     const routeChanged = Boolean(previousQuote && (
       stringValue(previousQuote.pickup_address) !== pickup
       || stringValue(previousQuote.dropoff_address) !== dropoff
+      || numberValue(previousQuote.passenger_count) !== passengerCount
     ));
     const workflowId = routeChanged
       ? undefined
@@ -1515,7 +1815,7 @@ export class AssistantService {
     if (!routeChanged && task.workflow_id && references && typeof hydrate === 'function') {
       await hydrate.call(this.ride, user.sub, task.workflow_id, references, correlationId);
     }
-    const request = `Đặt xe từ ${pickup} đến ${dropoff}${slots.vehicle_type === 'BIKE' ? ' bằng xe máy' : slots.vehicle_type === 'CAR_4' ? ' bằng xe 4 chỗ' : slots.vehicle_type === 'CAR_7' ? ' bằng xe 7 chỗ' : ''}`;
+    const request = `Đặt xe từ ${pickup} đến ${dropoff}${slots.vehicle_type === 'BIKE' ? ' bằng xe máy' : slots.vehicle_type === 'CAR_4' ? ' bằng xe 4 chỗ' : slots.vehicle_type === 'CAR_7' ? ' bằng xe 7 chỗ' : ''} cho ${passengerCount} người`;
     const selectedRestaurant = dependency?.authoritative?.selected;
     const routeContext = this.authoritativeRideRouteContext(
       slots,
@@ -1669,16 +1969,26 @@ export class AssistantService {
       : isRecord(task.authoritative?.state_updates)
         ? task.authoritative.state_updates
         : {};
+    const semanticContext: JsonObject = {};
+    for (const name of ['dish_query', 'district', 'category', 'delivery_preference'] as const) {
+      const value = stringValue(task.extracted_slots[name]);
+      if (value) semanticContext[name] = value;
+    }
+    const maxPrice = numberValue(task.extracted_slots.max_price);
+    if (maxPrice !== undefined) semanticContext.max_price = maxPrice;
+    const location = stringValue(task.extracted_slots.location);
+    if (location && !semanticContext.district) semanticContext.district = location;
+    const baseContext = { ...storedContext, ...semanticContext };
     const storedCandidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
     const selectedIndex = foodSelectionIndex(task.latest_message ?? '', storedCandidates);
     const selectedCandidate = selectedIndex !== undefined
       ? storedCandidates[selectedIndex]
       : storedCandidates.find((candidate) => candidate.id === storedContext.menu_item_id);
     const previousContext = selectedIndex === undefined
-      ? storedContext
+      ? baseContext
       : (() => {
         return {
-          ...storedContext,
+          ...baseContext,
           menu_item_id: selectedCandidate?.id,
           restaurant_id: selectedCandidate?.restaurant_id ?? storedContext.restaurant_id,
         };
@@ -1835,15 +2145,16 @@ export class AssistantService {
     const cart = await this.food.getCart(user.sub, correlationId, cartId);
     let savedAddresses = await this.store.listSavedAddresses(user.sub);
     const requestedAddress = stringValue(context.address_query);
-    let addressId = stringValue(context.address_id)
-      ?? (requestedAddress ? savedAddresses.find((address) => {
+    // A saved/default profile address is reusable context, not permission to
+    // choose a delivery destination. Only resolve it after the user names an
+    // address or label in this Food workflow.
+    let addressId = requestedAddress
+      ? stringValue(context.address_id) ?? savedAddresses.find((address) => {
         const query = plainText(requestedAddress);
         const candidate = plainText(`${address.label} ${address.addressText}`);
         return query.includes(plainText(address.label)) || candidate.includes(query);
-      })?.id : undefined)
-      ?? savedAddresses.find((address) => address.isDefault)?.id
-      ?? savedAddresses[0]?.id
-      ?? (() => undefined)();
+      })?.id
+      : undefined;
     // The assistant can receive a concrete delivery address in chat before the
     // user has visited the profile page. Persist that user-provided address in
     // Core so ConfirmationService can build the Food-owned immutable snapshot.
@@ -1867,24 +2178,25 @@ export class AssistantService {
       savedAddresses = [...savedAddresses, savedAddress];
       addressId = savedAddress.id;
     }
-    const foodAddresses = addressId ? [] : arrayValue((await this.food.get('/api/v1/addresses', correlationId, user.sub)).items).filter(isRecord);
-    const fallbackAddress = foodAddresses[0];
-    const selectedAddressId = addressId ?? stringValue(fallbackAddress?.id);
-    if (!selectedAddressId) {
+    if (!addressId) {
+      const labels = savedAddresses.slice(0, 5).map((address) => address.label).filter(Boolean);
+      const addressHint = labels.length
+        ? `Bạn có thể trả lời bằng nhãn ${labels.map((label) => `“${label}”`).join(', ')} hoặc gửi một địa chỉ mới.`
+        : 'Bạn hãy gửi một địa chỉ cụ thể hoặc lưu địa chỉ trong Hồ sơ.';
       return {
         phase: 'NEEDS_INFO',
-        message: 'Mình cần địa chỉ giao hàng trước khi xác nhận đơn. Bạn hãy lưu hoặc gửi địa chỉ giao đến.',
-        publicItem: { kind: 'food_cart', title: 'Cần địa chỉ giao hàng', cart, note: 'Hãy thêm địa chỉ giao hàng vào Hồ sơ hoặc gửi địa chỉ cụ thể trong ô chat.' },
+        message: `Bạn muốn giao đơn hàng tới địa chỉ nào? ${addressHint}`,
+        publicItem: { kind: 'food_cart', title: 'Bạn muốn giao tới đâu?', cart, note: addressHint },
         authoritative: { ...(task.authoritative ?? {}), food_context: context },
       };
     }
-    const confirmation = await this.confirmations.prepare(user, { cart_id: cartId, address_id: selectedAddressId }, correlationId);
+    const confirmation = await this.confirmations.prepare(user, { cart_id: cartId, address_id: addressId }, correlationId);
     const preview = isRecord(confirmation.preview) ? confirmation.preview : {};
-    const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
+    const selectedAddress = savedAddresses.find((address) => address.id === addressId);
     const nextContext: JsonObject = {
       ...context,
-      address_id: selectedAddressId,
-      ...(selectedAddress ? { delivery_address: selectedAddress.addressText } : stringValue(fallbackAddress?.address) ? { delivery_address: stringValue(fallbackAddress?.address) } : {}),
+      address_id: addressId,
+      ...(selectedAddress ? { delivery_address: selectedAddress.addressText } : {}),
     };
     const publicItem = this.foodConfirmationItem(cart, preview, nextContext, 'PAYMENT_REQUIRED');
     return {
@@ -1956,14 +2268,20 @@ export class AssistantService {
       const restaurantName = stringValue(reservation.restaurant_name) ?? stringValue(selected?.name);
       if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'Mình chưa nhận được tên nhà hàng trong kết quả đặt bàn.' });
       const restaurantLocation = stringValue(reservation.restaurant_location) ?? stringValue(selected?.location);
+      const reservationCode = stringValue(reservation.reservation_code);
+      const reservationStartAt = publicDateTime(reservation.start_at);
+      const reservationPartySize = numberValue(reservation.party_size);
+      if (!reservationCode || !reservationStartAt || typeof reservationPartySize !== 'number' || !Number.isInteger(reservationPartySize) || reservationPartySize < 1) {
+        throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'The reservation response did not include valid confirmation details.' });
+      }
       const publicItem = {
         kind: 'reservation',
         title: 'Đặt bàn đã hoàn tất',
         ...(stringValue(reservation.id) ? { resource_id: reservation.id } : {}),
         restaurant: { name: restaurantName, ...(restaurantLocation ? { location: restaurantLocation } : {}) },
-        reservation_code: stringValue(reservation.reservation_code),
-        start_at: reservation.start_at,
-        party_size: reservation.party_size,
+        reservation_code: reservationCode,
+        start_at: reservationStartAt,
+        party_size: reservationPartySize,
         status: 'CONFIRMED',
       };
       return { phase: 'COMPLETED', message: 'Đã đặt bàn thành công. Mình sẽ giữ thông tin này trong cuộc trò chuyện.', publicItem, authoritative: { ...task.authoritative, reservation: result } };
@@ -2237,6 +2555,14 @@ export class AssistantService {
   }
 
   private restaurantOptions(candidates: JsonObject[]): JsonObject {
+    if (!candidates.length) {
+      return {
+        kind: 'restaurant_unavailable',
+        title: 'Chưa tìm thấy nhà hàng phù hợp',
+        options: [],
+        note: 'Bạn thử đổi khu vực, loại món hoặc khoảng giá để mình tìm lại nhé.',
+      };
+    }
     return { kind: 'restaurant_options', title: 'Nhà hàng phù hợp', options: candidates.map((candidate) => this.publicRestaurant(candidate)) };
   }
 
@@ -2316,12 +2642,13 @@ export class AssistantService {
         const targetIndex = selectionIndex++;
         if (slotId === undefined || slotId === excludedSlotId) return [];
         const startTime = stringValue(slot.start_time) ?? stringValue(slot.start_at);
-        if (!startTime) return [];
+        const publicStartTime = publicDateTime(startTime);
+        if (!publicStartTime) return [];
         return [{
-          facility,
+          ...(facility ? { facility: this.sanitizeFacility(facility) } : {}),
           doctor: doctor.name,
           department: department?.name ?? doctor.department,
-          start_time: startTime,
+          start_time: publicStartTime,
           target_index: targetIndex,
           ...(stringValue(slot.end_time) ? { end_time: stringValue(slot.end_time) } : {}),
           ...(typeof (slot.price ?? doctor.price) === 'number' ? { price: slot.price ?? doctor.price } : {}),
@@ -2364,6 +2691,7 @@ export class AssistantService {
       pickup: quote.pickup_address,
       dropoff: quote.dropoff_address,
       vehicle: this.vehicleLabel(quote.vehicle_type),
+      ...(typeof quote.passenger_count === 'number' ? { passenger_count: quote.passenger_count } : {}),
       amount: quote.amount,
       currency: quote.currency,
       ...(quote.duration_minutes !== undefined ? { duration_minutes: quote.duration_minutes } : {}),
@@ -2523,7 +2851,10 @@ export class AssistantService {
     const result: JsonObject = {};
     for (const key of ['name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'currency', 'category', 'rating', 'review_count', 'price_level', 'image_url', 'address', 'city', 'district', 'latitude', 'longitude', 'target_index']) {
       const item = value[key];
-      if (typeof item === 'string' || typeof item === 'number') result[key] = item;
+      if (key === 'start_time') {
+        const normalized = publicDateTime(item);
+        if (normalized) result[key] = normalized;
+      } else if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
     const openingHours = this.sanitizeOpeningHours(value.opening_hours);
     if (openingHours !== undefined) result.opening_hours = openingHours;
@@ -2624,14 +2955,17 @@ export class AssistantService {
     const result: JsonObject = {};
     for (const key of ['appointment_id', 'doctor_name', 'department', 'start_time', 'price', 'status']) {
       const item = value[key];
-      if (typeof item === 'string' || typeof item === 'number') result[key] = item;
+      if (key === 'start_time') {
+        const normalized = publicDateTime(item);
+        if (normalized) result[key] = normalized;
+      } else if (typeof item === 'string' || typeof item === 'number') result[key] = item;
     }
     if (isRecord(value.doctor)) {
       if (stringValue(value.doctor.name)) result.doctor_name = stringValue(value.doctor.name);
       if (typeof value.doctor.price === 'number') result.price = value.doctor.price;
     }
     if (isRecord(value.department) && stringValue(value.department.name)) result.department = stringValue(value.department.name);
-    if (isRecord(value.slot) && stringValue(value.slot.start_time)) result.start_time = stringValue(value.slot.start_time);
+    if (isRecord(value.slot) && publicDateTime(value.slot.start_time)) result.start_time = publicDateTime(value.slot.start_time);
     if (isRecord(value.facility)) result.facility = this.sanitizeFacility(value.facility);
     return result;
   }

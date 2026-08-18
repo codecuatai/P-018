@@ -993,7 +993,7 @@ components:
           additionalProperties: true
     AssistantResponse:
       type: object
-      required: [conversation_id, message, items, actions, completed]
+      required: [conversation_id, message, items, actions, completed, workflow_status]
       additionalProperties: false
       properties:
         conversation_id: {type: string}
@@ -1011,18 +1011,21 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
               label: {type: string}
               target_index: {type: integer, minimum: 0}
         completed:
           type: array
           maxItems: 8
           items: {$ref: '#/components/schemas/AssistantItem'}
+        workflow_status:
+          enum: [PENDING, RUNNING, COMPLETED, PARTIAL_SUCCESS, FAILED]
 
     AssistantItem:
       oneOf:
         - {$ref: '#/components/schemas/RestaurantOptionsItem'}
-        - {$ref: '#/components/schemas/RestaurantConfirmationItem'}
+        - {$ref: '#/components/schemas/RestaurantHoldItem'}
+        - {$ref: '#/components/schemas/RestaurantReservationItem'}
         - {$ref: '#/components/schemas/RideItem'}
         - {$ref: '#/components/schemas/RideTimingConflictItem'}
         - {$ref: '#/components/schemas/FoodItem'}
@@ -1048,19 +1051,30 @@ components:
         location: {type: string}
         cuisine: {type: string}
         rating: {type: number}
-    RestaurantConfirmationItem:
+    RestaurantHoldItem:
       type: object
-      required: [kind, title, restaurant, reservation_code, party_size, start_at]
+      required: [kind, title, restaurant, party_size, start_at, expires_at]
       additionalProperties: false
       properties:
-        kind: {type: string, enum: [restaurant_confirmation, reservation]}
+        kind: {type: string, enum: [restaurant_confirmation]}
+        title: {type: string}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        party_size: {type: integer}
+        start_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        note: {type: string}
+    RestaurantReservationItem:
+      type: object
+      required: [kind, title, restaurant, reservation_code, party_size, start_at, status]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [reservation]}
         title: {type: string}
         restaurant: {$ref: '#/components/schemas/RestaurantReference'}
         reservation_code: {type: string}
         party_size: {type: integer}
         start_at: {type: string, format: date-time}
-        status: {type: string}
-        note: {type: string}
+        status: {type: string, enum: [CONFIRMED]}
     RestaurantReference:
       type: object
       required: [name]
@@ -1160,6 +1174,7 @@ components:
         department: {type: string}
         start_time: {type: string, format: date-time}
         price: {type: [integer, 'null']}
+        facility: {$ref: '#/components/schemas/HealthcareFacility'}
         appointment_id: {type: integer}
         resource_id: {type: integer}
         status: {type: string}
@@ -1328,6 +1343,7 @@ components:
         pickup_address: {type: string, minLength: 3, maxLength: 500}
         dropoff_address: {type: string, minLength: 3, maxLength: 500}
         vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
+        passenger_count: {type: integer, minimum: 1, maximum: 20, default: 1}
         pickup_latitude: {type: number, minimum: -90, maximum: 90}
         pickup_longitude: {type: number, minimum: -180, maximum: 180}
         dropoff_latitude: {type: number, minimum: -90, maximum: 90}

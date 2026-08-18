@@ -277,6 +277,7 @@ class RestaurantRepository:
                     "ha noi": ("Hà Nội", "Hanoi"),
                     "hồ chí minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
                     "ho chi minh": ("Hồ Chí Minh", "Ho Chi Minh", "Saigon"),
+                    "vinuni": ("Gia Lâm", "Gia Lam", "Hà Nội", "Hanoi"),
                 }
                 candidates = aliases.get(location.strip().lower(), (location,))
                 stmt = stmt.where(or_(*(RestaurantRow.location.ilike(f"%{candidate}%") for candidate in candidates)))

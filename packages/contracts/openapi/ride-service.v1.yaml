@@ -346,6 +346,11 @@ components:
           type: string
           enum: [BIKE, CAR_4, CAR_7]
           default: CAR_4
+        passenger_count:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 1
         promo_code:
           type: [string, "null"]
           minLength: 1
@@ -465,6 +470,8 @@ components:
         - pickup_address
         - dropoff_address
         - vehicle_type
+        - passenger_count
+        - capacity_policy_version
         - distance_km
         - duration_minutes
         - base_fee
@@ -496,6 +503,8 @@ components:
         pickup_address: {type: string}
         dropoff_address: {type: string}
         vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
+        passenger_count: {type: integer, minimum: 1, maximum: 20}
+        capacity_policy_version: {type: string}
         distance_km: {type: integer}
         duration_minutes: {type: integer}
         base_fee: {type: integer}
@@ -536,6 +545,8 @@ components:
         - actor_id
         - quote_id
         - quote_version
+        - passenger_count
+        - capacity_policy_version
         - amount
         - currency
         - status
@@ -551,6 +562,8 @@ components:
         actor_id: {type: string}
         quote_id: {type: string}
         quote_version: {type: string}
+        passenger_count: {type: integer, minimum: 1, maximum: 20}
+        capacity_policy_version: {type: string}
         amount: {type: integer}
         currency: {type: string}
         status:

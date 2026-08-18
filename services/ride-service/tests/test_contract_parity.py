@@ -33,6 +33,10 @@ def test_ride_contract_exposes_route_snapshot_and_tracking_shapes() -> None:
     tracking = contract["components"]["schemas"]["Tracking"]["properties"]
 
     assert {"route_provider", "route_snapshot_hash", "tariff_snapshot"} <= quote.keys()
+    assert {"passenger_count", "capacity_policy_version"} <= quote.keys()
+    assert {"passenger_count", "capacity_policy_version"} <= booking.keys()
+    quote_create = contract["components"]["schemas"]["QuoteCreate"]["properties"]
+    assert quote_create["passenger_count"]["minimum"] == 1
     assert {"driver_id", "tracking_started_at"} <= booking.keys()
     assert {"driver_location", "current_location", "route", "updated_at"} <= tracking.keys()
     assert "#/components/parameters/IdempotencyKey" in str(contract["paths"]["/v1/quotes"]["post"])

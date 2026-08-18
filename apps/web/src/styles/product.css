@@ -568,7 +568,7 @@
   .food-product-grid,
   .transaction-grid,
   .healthcare-flow,
-  .history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-filters { grid-template-columns: minmax(0, 1fr); }
   .service-detail-heading { display: grid; }
   .service-detail-heading .xone-map { width: 100%; }
   .service-detail-heading > div:first-child > .authoritative-image { width: 100%; }

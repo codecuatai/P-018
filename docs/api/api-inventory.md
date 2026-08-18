@@ -124,10 +124,10 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | --- | --- | --- | --- |
 | GET | `/health/live` | none; liveness | `INTERNAL` |
 | GET | `/health/ready` | none; readiness | `INTERNAL` |
-| POST | `/v1/quotes` | Internal token, actor assertion, idempotency | `INTERNAL` |
+| POST | `/v1/quotes` | Internal token, actor assertion, idempotency; validates `passenger_count` against Ride-owned versioned capacity policy | `INTERNAL` |
 | GET | `/v1/quotes/{quote_id}` | Internal token plus actor assertion | `INTERNAL` |
-| POST | `/v1/bookings:prepare` | Internal token, actor assertion, idempotency, first confirmation evidence | `INTERNAL` |
-| POST | `/v1/bookings/{booking_id}:confirm` | Internal token, actor assertion, idempotency, final confirmation evidence | `INTERNAL` |
+| POST | `/v1/bookings:prepare` | Internal token, actor assertion, idempotency, first confirmation evidence bound to passenger/capacity snapshot | `INTERNAL` |
+| POST | `/v1/bookings/{booking_id}:confirm` | Internal token, actor assertion, idempotency, final confirmation evidence bound to passenger/capacity snapshot | `INTERNAL` |
 | POST | `/v1/bookings/{booking_id}:cancel` | Internal token, actor assertion, idempotency, cancellation evidence | `INTERNAL` |
 | GET | `/v1/bookings/{booking_id}` | Internal token plus actor assertion | `INTERNAL` |
 | GET | `/v1/bookings/{booking_id}/tracking` | Internal token plus actor assertion | `INTERNAL` |

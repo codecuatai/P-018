@@ -2,6 +2,25 @@ import { expect, test } from "@playwright/test";
 
 import { installAuthenticatedFixture } from "./support/mock-gateway";
 
+test("saved address can be updated manually without reusing stale coordinates", async ({ context, page }) => {
+  const gateway = await installAuthenticatedFixture(context, { email: "address-edit@example.test" });
+  gateway.seedAddress();
+
+  await page.goto("/app/addresses");
+  await expect(page.getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Sửa Nhà" }).click();
+  await page.getByRole("textbox", { name: "Địa chỉ" }).fill("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội");
+
+  await expect(page.getByText(/tọa độ cũ sẽ không được giữ lại/i)).toBeVisible();
+  const update = page.getByRole("button", { name: "Cập nhật địa chỉ" });
+  await expect(update).toBeEnabled();
+  await update.click();
+
+  await expect(page.getByText("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội")).toBeVisible();
+  expect(gateway.calls.filter((call) => call.path === "/api/v1/addresses/address-a" && call.method === "PATCH")).toHaveLength(1);
+});
+
 test("Food browse → menu → cart → preview → explicit order → receipt/history", async ({ context, page }) => {
   const gateway = await installAuthenticatedFixture(context, { email: "food@example.test" });
   const mock = gateway.seedAddress();
@@ -14,7 +33,7 @@ test("Food browse → menu → cart → preview → explicit order → receipt/h
   await page.getByRole("button", { name: "Xác nhận" }).last().click();
   await expect(page.getByText("Đơn đã được tiếp nhận")).toBeVisible();
   await page.goto("/app/history");
-  await expect(page.getByText("food order")).toBeVisible();
+  await expect(page.getByText("Đơn đồ ăn")).toBeVisible();
   expect(mock.id).toBe("address-a");
 });
 
@@ -29,9 +48,8 @@ test("Ride quote → two confirmations → persisted tracking lifecycle", async 
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await page.getByRole("checkbox", { name: /xác nhận thanh toán/i }).check();
   await page.getByRole("button", { name: "Xác nhận" }).click();
-  await expect(page.getByText("Booking đã ghi nhận")).toBeVisible();
-  for (let index = 0; index < 5; index += 1) await page.getByRole("button", { name: "Cập nhật trạng thái chuyến xe" }).click();
-  await expect(page.getByText("Đã hoàn tất")).toBeVisible();
+  await expect(page.getByText("Chuyến của bạn đã được ghi nhận")).toBeVisible();
+  await expect(page.locator(".tracking-summary strong").getByText("Đã hoàn tất")).toBeVisible({ timeout: 10_000 });
   expect(gateway.calls.filter((call) => call.path.endsWith("/tracking")).length).toBeGreaterThanOrEqual(1);
 });
 
@@ -53,11 +71,11 @@ test("Healthcare facility → doctor → patient → slot → payment → confir
   await page.getByRole("button", { name: "Bác sĩ E2E" }).click();
   await page.getByLabel("Nhu cầu khám").fill("Khám định kỳ trong fixture E2E");
   await page.getByRole("button", { name: "Giữ khung giờ" }).click();
-  await page.getByRole("button", { name: "Xác nhận thanh toán demo" }).click();
+  await page.getByRole("button", { name: "Xác nhận thanh toán" }).click();
   await page.getByRole("button", { name: "Xem xác nhận cuối" }).click();
   await page.getByRole("checkbox", { name: /Xác nhận hoàn tất lịch khám/ }).check();
   await page.getByRole("button", { name: "Xác nhận" }).click();
-  await expect(page.getByText("Lịch khám: CONFIRMED")).toBeVisible();
+  await expect(page.getByText("Lịch khám: Đã xác nhận")).toBeVisible();
 });
 
 test("Healthcare confirmed + Ride NO_DRIVER keeps partial success explicit", async ({ context, page }) => {
@@ -66,11 +84,11 @@ test("Healthcare confirmed + Ride NO_DRIVER keeps partial success explicit", asy
   await page.getByRole("button", { name: "Bác sĩ E2E" }).click();
   await page.getByLabel("Nhu cầu khám").fill("Lịch khám vẫn phải giữ nguyên");
   await page.getByRole("button", { name: "Giữ khung giờ" }).click();
-  await page.getByRole("button", { name: "Xác nhận thanh toán demo" }).click();
+  await page.getByRole("button", { name: "Xác nhận thanh toán" }).click();
   await page.getByRole("button", { name: "Xem xác nhận cuối" }).click();
   await page.getByRole("checkbox", { name: /Xác nhận hoàn tất lịch khám/ }).check();
   await page.getByRole("button", { name: "Xác nhận" }).click();
-  await expect(page.getByText("Lịch khám: CONFIRMED")).toBeVisible();
+  await expect(page.getByText("Lịch khám: Đã xác nhận")).toBeVisible();
   await page.goto("/app/services/ride");
   await page.getByLabel("Điểm đi").fill("Cơ sở X-One");
   await page.getByLabel("Điểm đến").fill("Nhà");
@@ -79,7 +97,7 @@ test("Healthcare confirmed + Ride NO_DRIVER keeps partial success explicit", asy
   await page.getByRole("button", { name: "Xác nhận" }).click();
   await page.getByRole("checkbox", { name: /xác nhận thanh toán/i }).check();
   await page.getByRole("button", { name: "Xác nhận" }).click();
-  await expect(page.getByText("Chưa tìm thấy tài xế phù hợp")).toBeVisible();
+  await expect(page.getByText("Chưa tìm được tài xế phù hợp")).toBeVisible();
 });
 
 test("cross-user resource access is denied by the Gateway boundary", async ({ browser }) => {
@@ -173,7 +191,9 @@ test("Active service rail keeps its content compact on mobile", async ({ context
   expect(railBox).not.toBeNull();
   expect(cardBox).not.toBeNull();
   expect(cardBox?.height ?? 0).toBeLessThan(260);
-  expect(railBox?.height ?? 0).toBeLessThan(430);
+  if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 768) {
+    expect(railBox?.height ?? 0).toBeLessThan(430);
+  }
 });
 
 test("Active Ride detail puts the map first and keeps confirmed trip data behind a button", async ({ context, page }) => {
