@@ -103,7 +103,20 @@ def extract_slots(query: str) -> dict[str, object]:
         slots.setdefault("option_preferences", []).append({"concept": "extra", "value": "nem"})
     if "nha rieng" in text or "dia chi" in text or "giao ve" in text or "giao toi" in text or "giao den" in text:
         delivery = re.search(r"\bgiao\s+(?:ve|toi|den)\s+(.+?)(?:[.!?,;:]|$)", text)
-        slots["address_query"] = "nha rieng" if "nha rieng" in text else (delivery.group(1).strip() if delivery else text)
+        declaration = re.search(
+            r"\bdia\s+chi(?:\s+(?:nha|cong\s+ty|giao\s+hang))?(?:\s+(?:cua\s+)?toi)?\s+la\s+(.+?)(?:[.!?,;:]|$)",
+            text,
+        )
+        normalized_address = (
+            declaration.group(1).strip()
+            if declaration
+            else "nha rieng"
+            if "nha rieng" in text
+            else delivery.group(1).strip()
+            if delivery
+            else text
+        )
+        slots["address_query"] = _restore_query_spelling(query, normalized_address)
     if "quan dau tien" in text or "nha hang dau tien" in text:
         slots["restaurant_alias"] = "first"
     elif "quan thu hai" in text or "nha hang thu hai" in text:

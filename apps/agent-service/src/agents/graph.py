@@ -374,8 +374,21 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "ambiguity": "address",
                 "step_count": state.get("step_count", 0) + 1,
             }
+        missing = _missing_slots(str(intent), slots)
+        labels = {
+            "address_id": "địa chỉ giao hàng",
+            "cart_id": "giỏ hàng",
+            "restaurant_id": "nhà hàng",
+            "menu_item_id": "món ăn",
+            "cart_item_id": "món trong giỏ",
+        }
         return {
-            "missing_slots": _missing_slots(str(intent), slots),
+            "missing_slots": missing,
+            **({
+                "response_type": "options",
+                "response": "Mình cần bạn chọn rõ " + ", ".join(labels.get(value, value) for value in missing) + ".",
+                "data": {"missing_slots": missing},
+            } if missing else {}),
             "step_count": state.get("step_count", 0) + 1,
         }
 

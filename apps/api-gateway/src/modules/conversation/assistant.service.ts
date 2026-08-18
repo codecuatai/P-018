@@ -2145,15 +2145,16 @@ export class AssistantService {
     const cart = await this.food.getCart(user.sub, correlationId, cartId);
     let savedAddresses = await this.store.listSavedAddresses(user.sub);
     const requestedAddress = stringValue(context.address_query);
-    let addressId = stringValue(context.address_id)
-      ?? (requestedAddress ? savedAddresses.find((address) => {
+    // A saved/default profile address is reusable context, not permission to
+    // choose a delivery destination. Only resolve it after the user names an
+    // address or label in this Food workflow.
+    let addressId = requestedAddress
+      ? stringValue(context.address_id) ?? savedAddresses.find((address) => {
         const query = plainText(requestedAddress);
         const candidate = plainText(`${address.label} ${address.addressText}`);
         return query.includes(plainText(address.label)) || candidate.includes(query);
-      })?.id : undefined)
-      ?? savedAddresses.find((address) => address.isDefault)?.id
-      ?? savedAddresses[0]?.id
-      ?? (() => undefined)();
+      })?.id
+      : undefined;
     // The assistant can receive a concrete delivery address in chat before the
     // user has visited the profile page. Persist that user-provided address in
     // Core so ConfirmationService can build the Food-owned immutable snapshot.
@@ -2177,24 +2178,25 @@ export class AssistantService {
       savedAddresses = [...savedAddresses, savedAddress];
       addressId = savedAddress.id;
     }
-    const foodAddresses = addressId ? [] : arrayValue((await this.food.get('/api/v1/addresses', correlationId, user.sub)).items).filter(isRecord);
-    const fallbackAddress = foodAddresses[0];
-    const selectedAddressId = addressId ?? stringValue(fallbackAddress?.id);
-    if (!selectedAddressId) {
+    if (!addressId) {
+      const labels = savedAddresses.slice(0, 5).map((address) => address.label).filter(Boolean);
+      const addressHint = labels.length
+        ? `Bạn có thể trả lời bằng nhãn ${labels.map((label) => `“${label}”`).join(', ')} hoặc gửi một địa chỉ mới.`
+        : 'Bạn hãy gửi một địa chỉ cụ thể hoặc lưu địa chỉ trong Hồ sơ.';
       return {
         phase: 'NEEDS_INFO',
-        message: 'Mình cần địa chỉ giao hàng trước khi xác nhận đơn. Bạn hãy lưu hoặc gửi địa chỉ giao đến.',
-        publicItem: { kind: 'food_cart', title: 'Cần địa chỉ giao hàng', cart, note: 'Hãy thêm địa chỉ giao hàng vào Hồ sơ hoặc gửi địa chỉ cụ thể trong ô chat.' },
+        message: `Bạn muốn giao đơn hàng tới địa chỉ nào? ${addressHint}`,
+        publicItem: { kind: 'food_cart', title: 'Bạn muốn giao tới đâu?', cart, note: addressHint },
         authoritative: { ...(task.authoritative ?? {}), food_context: context },
       };
     }
-    const confirmation = await this.confirmations.prepare(user, { cart_id: cartId, address_id: selectedAddressId }, correlationId);
+    const confirmation = await this.confirmations.prepare(user, { cart_id: cartId, address_id: addressId }, correlationId);
     const preview = isRecord(confirmation.preview) ? confirmation.preview : {};
-    const selectedAddress = savedAddresses.find((address) => address.id === selectedAddressId);
+    const selectedAddress = savedAddresses.find((address) => address.id === addressId);
     const nextContext: JsonObject = {
       ...context,
-      address_id: selectedAddressId,
-      ...(selectedAddress ? { delivery_address: selectedAddress.addressText } : stringValue(fallbackAddress?.address) ? { delivery_address: stringValue(fallbackAddress?.address) } : {}),
+      address_id: addressId,
+      ...(selectedAddress ? { delivery_address: selectedAddress.addressText } : {}),
     };
     const publicItem = this.foodConfirmationItem(cart, preview, nextContext, 'PAYMENT_REQUIRED');
     return {

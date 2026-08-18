@@ -62,7 +62,7 @@ export function AddressPage() {
     setCoordinates(item.latitude !== undefined && item.longitude !== undefined ? { latitude: item.latitude, longitude: item.longitude } : undefined);
     setProvider(item.provider);
     setCandidates([]);
-    setLocationNote("Nếu đổi nội dung địa chỉ, hãy xác nhận lại vị trí trước khi lưu.");
+    setLocationNote("Nếu đổi địa chỉ, bạn nên xác nhận lại vị trí để tính giao hàng chính xác. Lưu thủ công sẽ xóa tọa độ cũ.");
     setError("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -121,15 +121,11 @@ export function AddressPage() {
     }
     setCoordinates(undefined);
     setProvider(undefined);
-    setLocationNote(editingId ? "Địa chỉ đã đổi; hãy xác nhận lại vị trí trước khi lưu." : "");
+    setLocationNote(editingId ? "Địa chỉ đã đổi. Bạn có thể xác nhận vị trí mới hoặc lưu thủ công; tọa độ cũ sẽ không được giữ lại." : "");
   }
 
   async function save(): Promise<void> {
     if (!label.trim() || !addressText.trim() || saving) return;
-    if (editingId && addressText.trim() !== originalAddressText.trim() && !coordinates) {
-      setError("Hãy xác nhận lại vị trí cho địa chỉ mới trước khi lưu.");
-      return;
-    }
     setSaving(true);
     setError("");
     try {
@@ -173,8 +169,6 @@ export function AddressPage() {
     }
   }
 
-  const changedAddressNeedsLocation = Boolean(editingId && addressText.trim() !== originalAddressText.trim() && !coordinates);
-
   return <section className="route-shell" aria-labelledby="addresses-title">
     <header className="section-heading">
       <div><span className="eyebrow">ĐỊA CHỈ</span><h1 id="addresses-title">Địa chỉ đã lưu</h1><p>Địa chỉ thuộc tài khoản Core của bạn. Tọa độ chỉ xuất hiện khi đã được xác nhận bởi nguồn định vị.</p></div>
@@ -184,7 +178,7 @@ export function AddressPage() {
       <div className="address-form-heading"><div><strong>{editingId ? "Chỉnh sửa địa chỉ" : "Thêm địa chỉ"}</strong>{editingId ? <p className="inline-note">Đang sửa địa chỉ đã lưu.</p> : null}</div>{editingId ? <button className="text-button" type="button" onClick={resetForm}><X size={15} /> Hủy sửa</button> : null}</div>
       <label><span>Nhãn</span><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label>
       <label><span>Địa chỉ</span><input value={addressText} onChange={(event) => changeAddress(event.target.value)} placeholder="Số nhà, đường, quận, thành phố" /></label>
-      <div className="address-form-actions"><button className="button button-secondary" type="button" onClick={() => void resolve()} disabled={locating || !addressText.trim()}><MapPinned size={16} />{locating ? "Đang xác nhận…" : "Xác nhận vị trí"}</button><button className="button button-secondary" type="button" onClick={useBrowserLocation} disabled={locating}><LocateFixed size={16} />Vị trí hiện tại</button><button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !label.trim() || !addressText.trim() || changedAddressNeedsLocation}><Plus size={16} />{saving ? "Đang lưu…" : editingId ? "Cập nhật địa chỉ" : "Lưu địa chỉ"}</button></div>
+      <div className="address-form-actions"><button className="button button-secondary" type="button" onClick={() => void resolve()} disabled={locating || !addressText.trim()}><MapPinned size={16} />{locating ? "Đang xác nhận…" : "Xác nhận vị trí"}</button><button className="button button-secondary" type="button" onClick={useBrowserLocation} disabled={locating}><LocateFixed size={16} />Vị trí hiện tại</button><button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !label.trim() || !addressText.trim()}><Plus size={16} />{saving ? "Đang lưu…" : editingId ? "Cập nhật địa chỉ" : "Lưu địa chỉ"}</button></div>
     </div>
     {locationNote ? <p className="inline-note location-note" aria-live="polite">{locationNote}</p> : null}
     {candidates.length ? <div className="location-candidates" aria-label="Kết quả định vị">{candidates.map((candidate, index) => <button className="location-candidate" type="button" key={`${candidate.address_text}-${index}`} onClick={() => selectCandidate(candidate)}><strong>{candidate.address_text}</strong><small>{candidate.latitude !== null && candidate.longitude !== null ? `${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}` : "Chưa có tọa độ"}</small></button>)}</div> : null}

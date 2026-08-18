@@ -533,6 +533,8 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
             slots["delivery_preference"] = "home"
+        if "giao ve nha" in lowered or "giao toi nha" in lowered:
+            slots["address_reference"] = "home"
         dish_match = re.search(r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon)\s+[^,.;!?]+", lowered)
         if dish_match:
             dish_query = re.split(
@@ -589,7 +591,11 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
 def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: list[int] | None = None) -> PlannedTask:
     missing: list[str] = []
     if domain == "restaurant":
-        for key in ("location", "party_size", "start_at"):
+        # Discovery can begin with a location or cuisine alone. Booking details
+        # become mandatory only after the user asks to reserve/hold a table.
+        booking_intent = _has_any(_plain(text), ("dat ban", "giu ban", "dat cho", "an toi", "an trua"))
+        required = ("location", "party_size", "start_at") if booking_intent else ("location",)
+        for key in required:
             if not slots.get(key):
                 missing.append(key)
     if domain == "ride":
@@ -990,7 +996,7 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
             normalized["selection_index"] = selection_index
     elif domain == "food":
-        for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("district", 120), ("category", 120), ("delivery_preference", 80)):
+        for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("district", 120), ("category", 120), ("delivery_preference", 80), ("address_reference", 200)):
             text_slot(name, limit)
         max_price = slots.get("max_price")
         if isinstance(max_price, int) and not isinstance(max_price, bool) and 0 <= max_price <= 10_000_000:

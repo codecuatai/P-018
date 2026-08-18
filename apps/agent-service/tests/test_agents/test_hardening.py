@@ -31,6 +31,12 @@ def test_fallback_stops_food_query_before_delivery_and_another_domain() -> None:
     assert slots["dish_query"] == "phở"
 
 
+def test_explicit_delivery_address_declaration_extracts_only_the_address() -> None:
+    slots = extract_slots("Địa chỉ nhà tôi là 181 Đường Nguyễn Trãi.")
+
+    assert slots["address_query"] == "181 Đường Nguyễn Trãi"
+
+
 def test_initial_food_delivery_request_searches_by_dish_not_the_full_sentence() -> None:
     query = "tôi muốn đặt phở bò giao về nhà"
     slots = extract_slots(query)
@@ -149,6 +155,26 @@ async def test_address_discovery_reselects_original_prepare_tool() -> None:
     assert gateway.calls == ["list_food_delivery_addresses", "prepare_food_order_confirmation"]
     assert result["response_type"] == "confirmation_form"
     assert result["data"]["id"] == "confirmation_opaque_7"
+
+
+@pytest.mark.asyncio
+async def test_place_order_asks_for_address_before_reading_profile_addresses() -> None:
+    gateway = AddressDiscoveryGateway()
+    graph = build_graph(tool_client=gateway)
+
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt luôn",
+            "user_id": "user_opaque_9",
+            "conversation_id": "conversation_opaque_9",
+            "correlation_id": "correlation_opaque_9",
+            "workflow_context": {"restaurant_id": "restaurant_opaque_9", "cart_id": "cart_opaque_9"},
+        }
+    )
+
+    assert gateway.calls == []
+    assert result["missing_slots"] == ["address_id"]
+    assert "địa chỉ giao hàng" in result["response"]
 
 
 @pytest.mark.asyncio

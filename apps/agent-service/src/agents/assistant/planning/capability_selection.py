@@ -208,6 +208,9 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
         if not _has(facts, 'cart_id', version=True):
             return StepChoice('create_cart', PlanningPhase.DRAFT_WRITE, 'Tạo giỏ hàng nháp')
         if not _has(facts, 'address_id'):
+            address_reference = getattr(task.semantic_slots, 'address_reference', None)
+            if address_reference is None:
+                return StepChoice(None, PlanningPhase.SERVICE_CONFIRMATION, 'Hỏi người dùng muốn giao tới địa chỉ nào')
             return StepChoice('list_food_delivery_addresses', PlanningPhase.SELECTION, 'Chọn địa chỉ thuộc actor')
         if not _has(facts, 'preview_id', version=True, fresh=True):
             return StepChoice('preview_order', PlanningPhase.QUOTE_OR_PREVIEW, 'Tạo order preview authoritative')

@@ -220,15 +220,31 @@ describe('Unified assistant orchestration', () => {
       getCart: jest.fn().mockResolvedValue(cart),
       updateCartItem: jest.fn().mockResolvedValue(incrementedCart),
     };
+    const confirmations = {
+      execute: jest.fn(),
+      executeDomain: jest.fn(),
+      prepareDomainConfirmation: jest.fn(),
+      prepare: jest.fn().mockResolvedValue({ id: 'food-confirm-address', preview: { address: { address: '181 Đường Nguyễn Trãi' }, delivery: { fee: { amount: 15000, currency: 'VND' } }, total: { amount: 65000, currency: 'VND' } } }),
+    };
     const service = new AssistantService(
       store as never,
       agent as never,
       { executeTool: jest.fn() } as never,
       { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
       { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
-      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn(), prepare: jest.fn().mockResolvedValue({ id: 'food-confirm-address', preview: { address: { address: '181 Đường Nguyễn Trãi' }, delivery: { fee: { amount: 15000, currency: 'VND' } }, total: { amount: 65000, currency: 'VND' } } }) } as never,
+      confirmations as never,
       food as never,
     );
+    await store.createSavedAddress({
+      id: 'address-profile-default',
+      actorId: user.sub,
+      label: 'Nhà',
+      addressText: '12 Đường Láng',
+      source: 'manual',
+      isDefault: true,
+      createdAt: '2099-01-01T00:00:00.000Z',
+      updatedAt: '2099-01-01T00:00:00.000Z',
+    });
     const first = await service.chat(user, 'Tìm phở giao về nhà.', undefined, 'cor-food-cart-1');
     const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-food-cart-2', 'food-add-key');
 
@@ -252,13 +268,22 @@ describe('Unified assistant orchestration', () => {
     expect(JSON.stringify(incremented)).not.toContain('cart-secret');
     expect(JSON.stringify(incremented)).not.toContain('cart-item-secret');
 
+    const checkoutAction = incremented.actions.find((action) => action.kind === 'food_checkout');
+    expect(checkoutAction).toBeDefined();
+    const addressQuestion = await service.act(user, { conversation_id: first.conversation_id, action_id: checkoutAction!.id }, 'cor-food-checkout-address', 'food-checkout-address-key');
+    expect(addressQuestion.workflow_status).toBe('PENDING');
+    expect(addressQuestion.message).toContain('Bạn muốn giao đơn hàng tới địa chỉ nào?');
+    expect(addressQuestion.items[0]).toMatchObject({ kind: 'food_cart', title: 'Bạn muốn giao tới đâu?' });
+    expect(confirmations.prepare).not.toHaveBeenCalled();
+
     const addressed = await service.chat(user, 'Địa chỉ nhà tôi là 181 Đường Nguyễn Trãi.', first.conversation_id, 'cor-food-cart-address');
 
     expect(addressed.items[0]).toMatchObject({ kind: 'food_confirmation', delivery_address: '181 Đường Nguyễn Trãi', confirmation_state: 'PAYMENT_REQUIRED' });
     expect(addressed.actions.map((action) => action.kind)).toEqual(['food_payment']);
-    await expect(store.listSavedAddresses(user.sub)).resolves.toEqual([
-      expect.objectContaining({ addressText: '181 Đường Nguyễn Trãi', isDefault: true }),
-    ]);
+    await expect(store.listSavedAddresses(user.sub)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ addressText: '12 Đường Láng', isDefault: true }),
+      expect.objectContaining({ addressText: '181 Đường Nguyễn Trãi', isDefault: false }),
+    ]));
   });
 
   it('clarifies a generic Food and Healthcare selection, then advances only Food for a specific restaurant choice', async () => {
@@ -1281,6 +1306,8 @@ describe('Unified assistant orchestration', () => {
                 location: { value: 'VinUni', source: 'USER_EXPLICIT' },
                 cuisine_type: { value: 'korean', source: 'USER_EXPLICIT' },
                 budget_range: { value: '$$', source: 'USER_EXPLICIT' },
+                party_size: { value: 2, source: 'USER_EXPLICIT' },
+                start_at: { value: '2099-01-01T19:00:00+07:00', source: 'USER_EXPLICIT' },
               },
               depends_on: [],
               missing_information: [],

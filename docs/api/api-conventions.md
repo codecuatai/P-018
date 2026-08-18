@@ -16,6 +16,13 @@ The canonical route inventory is [api-inventory.md](api-inventory.md). Shared pr
 
 The shared `Address` contract requires `id`, `label`, `address_text`, `latitude`, `longitude`, and `city`; `ward` and `district` remain optional. The canonical actor-owned saved-address resource is Gateway `/api/v1/addresses`, persisted in Core migration `010_core_personal_context.sql`. Food still accepts an immutable `address_snapshot` on quote/preview/order calls and validates the actor before using it; its legacy `/api/v1/addresses` shape is not Core authority.
 
+A saved or default address is reusable context, not implicit permission to choose
+a Food delivery destination. Checkout asks where the order should be delivered
+before resolving a saved-address label or accepting a new concrete address. If
+`address_text` is changed without replacement coordinates, Core clears the old
+coordinates and location metadata instead of applying a delivery quote to a
+stale point; the updated manual address remains saved and can be geocoded later.
+
 The unified consumer conversation uses `POST /api/v1/assistant/chat` and
 `POST /api/v1/assistant/actions`, documented in
 [`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Its

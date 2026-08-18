@@ -2,6 +2,25 @@ import { expect, test } from "@playwright/test";
 
 import { installAuthenticatedFixture } from "./support/mock-gateway";
 
+test("saved address can be updated manually without reusing stale coordinates", async ({ context, page }) => {
+  const gateway = await installAuthenticatedFixture(context, { email: "address-edit@example.test" });
+  gateway.seedAddress();
+
+  await page.goto("/app/addresses");
+  await expect(page.getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
+
+  await page.getByRole("button", { name: "Sửa Nhà" }).click();
+  await page.getByRole("textbox", { name: "Địa chỉ" }).fill("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội");
+
+  await expect(page.getByText(/tọa độ cũ sẽ không được giữ lại/i)).toBeVisible();
+  const update = page.getByRole("button", { name: "Cập nhật địa chỉ" });
+  await expect(update).toBeEnabled();
+  await update.click();
+
+  await expect(page.getByText("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội")).toBeVisible();
+  expect(gateway.calls.filter((call) => call.path === "/api/v1/addresses/address-a" && call.method === "PATCH")).toHaveLength(1);
+});
+
 test("Food browse → menu → cart → preview → explicit order → receipt/history", async ({ context, page }) => {
   const gateway = await installAuthenticatedFixture(context, { email: "food@example.test" });
   const mock = gateway.seedAddress();

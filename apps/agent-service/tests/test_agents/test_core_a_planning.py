@@ -143,8 +143,36 @@ def test_food_missing_address_stops_before_preview() -> None:
         ]
     )
     decision = CoreAPlanner().plan(input_for(intent, context=context))
-    assert decision.tasks[0].steps[0].capability == 'list_food_delivery_addresses'
+    assert decision.tasks[0].steps[0].step_kind == StepKind.WAIT_FOR_CONFIRMATION
+    assert decision.tasks[0].steps[0].capability is None
+    assert decision.tasks[0].steps[0].purpose == 'Hỏi người dùng muốn giao tới địa chỉ nào'
     assert all(step.capability != 'preview_order' for step in decision.tasks[0].steps)
+
+
+def test_food_uses_saved_addresses_only_after_explicit_address_reference() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.CREATE,
+        goal='Đặt phở giao về nhà',
+        normalized_request='Đặt phở giao về nhà',
+        slots=FoodSemanticSlots(query=slot('phở'), address_reference=slot('home')),
+    )
+    context = PlannerContext(tasks=[PlannerTaskContext(
+        task_ref=0,
+        domain=Domain.FOOD,
+        phase='IN_PROGRESS',
+        facts=[
+            fact('restaurant_id', 'res-1'),
+            fact('menu_item_id', 'item-1'),
+            fact('cart_id', 'cart-1', version=2),
+        ],
+    )])
+
+    step = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0].steps[0]
+
+    assert step.step_kind == StepKind.CAPABILITY
+    assert step.capability == 'list_food_delivery_addresses'
 
 
 def test_restaurant_final_commit_requires_fresh_authoritative_hold() -> None:
