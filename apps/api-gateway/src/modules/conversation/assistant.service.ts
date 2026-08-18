@@ -945,8 +945,6 @@ export class AssistantService {
       if (hasFailedDependency(task, merged)) {
         const publicItem = {
           kind: 'task_error',
-          title: 'Bước tiếp theo chưa thể thực hiện',
-          note: 'Mình đã tạm dừng bước tiếp theo vì thông tin trước đó chưa hoàn tất.',
           error_code: 'DEPENDENCY_BLOCKED',
           retryable: false,
         };
@@ -971,8 +969,6 @@ export class AssistantService {
         const code = publicFailureCode(error);
         const publicItem = {
           kind: 'task_error',
-          title: 'Dịch vụ chưa hoàn tất',
-          note: 'Mình đã giữ nguyên các dịch vụ độc lập và ghi nhận bước này chưa hoàn tất an toàn.',
           error_code: code,
           retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE',
         };
@@ -1098,7 +1094,7 @@ export class AssistantService {
         if (hasFailedDependency(dependent, state.tasks)) {
           dependent.phase = 'FAILED';
           dependent.failure_code = 'DEPENDENCY_BLOCKED';
-          const publicItem = { kind: 'task_error', title: 'Bước tiếp theo chưa thể thực hiện', note: 'Mình đã tạm dừng bước tiếp theo vì thông tin trước đó chưa hoàn tất.', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
+          const publicItem = { kind: 'task_error', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
           continue;
@@ -1120,7 +1116,7 @@ export class AssistantService {
           const code = publicFailureCode(error);
           dependent.phase = 'FAILED';
           dependent.failure_code = code;
-          const publicItem = { kind: 'task_error', title: 'Chưa thể chuẩn bị bước tiếp theo', note: 'Bước trước đã hoàn tất nhưng mình chưa thể chuẩn bị phần tiếp theo.', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
+          const publicItem = { kind: 'task_error', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
         }
@@ -1175,8 +1171,6 @@ export class AssistantService {
         task.failure_code = code;
         const publicItem = {
           kind: 'task_error',
-          title: 'Chuyến xe chưa hoàn tất',
-          note: 'Các dịch vụ độc lập vẫn được giữ nguyên; hiện chưa thể hoàn tất chuyến xe này.',
           error_code: code,
           retryable: false,
         };
@@ -1287,7 +1281,6 @@ export class AssistantService {
         : 'Mình chưa thể hoàn tất lựa chọn này. Bạn thử lại với thông tin hiện tại nhé.';
     const item: JsonObject = {
       kind: 'task_error',
-      title: 'Lựa chọn không còn khả dụng',
       note: message,
       error_code: code,
       retryable: false,
@@ -1587,13 +1580,13 @@ export class AssistantService {
       const question = missing.length === 1 && missing[0] === 'thời gian'
         ? 'Bạn muốn đặt bàn lúc mấy giờ?'
         : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
-      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần thêm thông tin để đặt bàn', question }] };
+      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', question }] };
     }
     const startAtMilliseconds = Date.parse(startAt ?? '');
     if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{ kind: 'clarification', title: 'Thời gian này đã qua', question: 'Bạn hãy cho mình một thời gian muộn hơn để tiếp tục đặt bàn nhé?' }],
+        items: [{ kind: 'clarification'}],
       };
     }
     const existing = task.authoritative;
@@ -1703,7 +1696,7 @@ export class AssistantService {
         ...this.publicRestaurant(candidate),
         target_index: candidates.indexOf(candidate),
       }));
-      const publicItem = { kind: 'restaurant_unavailable', title: 'Khung giờ này chưa còn bàn', restaurant: this.publicRestaurant(selected), alternatives: alternatives.map((candidate) => this.publicRestaurant(candidate)) };
+      const publicItem = { kind: 'restaurant_unavailable', restaurant: this.publicRestaurant(selected), alternatives: alternatives.map((candidate) => this.publicRestaurant(candidate)) };
       (publicItem as JsonObject).options = alternativeOptions;
       (publicItem as JsonObject).note = alternatives.length
         ? 'Bạn có thể chọn một nhà hàng khác trong cùng khu vực để giữ nguyên thời gian và số khách.'
@@ -1741,7 +1734,7 @@ export class AssistantService {
       idempotency_key: `assistant:restaurant:reservation:${conversationId}:${task.id}`,
     };
     const pending = await this.confirmations.prepareDomainConfirmation(user, tool, hold, correlationId);
-    const publicItem = { kind: 'restaurant_confirmation', title: 'Mình đã tạm giữ bàn', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: publicStartAt, expires_at: holdExpiresAt, note: 'Bạn kiểm tra lại rồi xác nhận để hoàn tất đặt bàn.' };
+    const publicItem = { kind: 'restaurant_confirmation', restaurant: this.publicRestaurant(selected), party_size: partySize, start_at: publicStartAt, expires_at: holdExpiresAt};
     const action = this.actionFor(task, 'restaurant_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id });
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { ...existing, selected, availability, hold, pending }, publicItem, items: [publicItem], actions: [action], workflowId: tool.workflow_id };
   }
@@ -1757,7 +1750,7 @@ export class AssistantService {
       ? healthcareDependency.authoritative.appointment
       : undefined;
     if (dependency && !isRecord(dependency.authoritative?.selected)) {
-      return { phase: 'IN_PROGRESS' as TaskPhase, items: [{ kind: 'progress', title: 'Mình sẽ tìm chuyến xe sau khi bạn chọn nhà hàng.' }] };
+      return { phase: 'IN_PROGRESS' as TaskPhase, items: [{ kind: 'progress'}] };
     }
     if (dependency) {
       const selected = dependency.authoritative?.selected;
@@ -1766,7 +1759,7 @@ export class AssistantService {
     }
     if (healthcareDependency) {
       if (!dependentHealthcareAppointment) {
-        return { phase: 'IN_PROGRESS' as TaskPhase, items: [{ kind: 'progress', title: 'Mình sẽ tìm chuyến xe sau khi có khung giờ khám được giữ.' }] };
+        return { phase: 'IN_PROGRESS' as TaskPhase, items: [{ kind: 'progress'}] };
       }
       const facility = isRecord(dependentHealthcareAppointment.facility) ? dependentHealthcareAppointment.facility : undefined;
       // A model-proposed destination is never accepted for this dependency.
@@ -1780,18 +1773,16 @@ export class AssistantService {
     const dropoff = stringValue(slots.dropoff_address);
     const passengerCount = numberValue(slots.passenger_count) ?? 1;
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 20) {
-      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Số hành khách chưa hợp lệ', question: 'Bạn cho mình biết số hành khách từ 1 đến 20 nhé?' }] };
+      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };
     }
     if (!pickup || !dropoff || dropoff.toLowerCase() === 'nhà hàng đó') {
       if (healthcareDependency) {
         const publicItem = {
           kind: 'ride_timing_conflict',
-          title: 'Chưa thể xác định điểm đến chuyến xe',
-          note: 'Healthcare chưa trả về địa chỉ cơ sở hợp lệ nên mình chưa tạo báo giá hoặc đặt xe.',
-        };
+          };
         return { phase: 'FAILED' as TaskPhase, authoritative: { appointment: dependentHealthcareAppointment }, publicItem, items: [publicItem] };
       }
-      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification', title: 'Mình cần điểm đón và điểm đến', question: 'Bạn cho mình biết điểm đón và điểm đến cụ thể nhé?' }] };
+      return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };
     }
     // RideConversationService creates a workflow when no id is supplied. Do not
     // manufacture an id here: a generated id would be treated as an existing
@@ -1829,7 +1820,7 @@ export class AssistantService {
     if (healthcareDependency && quote) {
       const heldAppointment = dependentHealthcareAppointment;
       if (!heldAppointment) {
-        const publicItem = { kind: 'ride_timing_conflict', title: 'Chưa thể tính giờ khởi hành', note: 'Mình chưa nhận được lịch khám có thẩm quyền nên chưa tạo bước đặt xe.' };
+        const publicItem = { kind: 'ride_timing_conflict'};
         return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const appointmentStart = parseAuthoritativeDate(heldAppointment.start_time ?? (isRecord(heldAppointment.slot) ? heldAppointment.slot.start_time : undefined));
@@ -1837,16 +1828,13 @@ export class AssistantService {
       if (!appointmentStart || durationMinutes === undefined) {
         const publicItem = {
           kind: 'ride_timing_conflict',
-          title: 'Chưa thể tính giờ khởi hành',
-          note: 'Mình chưa nhận đủ giờ khám hoặc thời lượng báo giá có thẩm quyền nên chưa tạo bước đặt xe.',
-        };
+          };
         return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const recommendedDeparture = new Date(appointmentStart.getTime() - (durationMinutes + HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES) * 60_000);
       if (appointmentStart.getTime() <= Date.now() || recommendedDeparture.getTime() <= Date.now()) {
         const publicItem = {
           kind: 'ride_timing_conflict',
-          title: 'Giờ khởi hành không còn khả thi',
           appointment_start_time: appointmentStart.toISOString(),
           recommended_departure: recommendedDeparture.toISOString(),
           note: `Giờ nên rời đi đã qua hoặc không đủ thời gian đến lịch khám. Mình chưa đặt hoặc hủy chuyến xe; bạn hãy chọn lại lịch khám hoặc điểm đón.`,
@@ -1858,7 +1846,6 @@ export class AssistantService {
         recommended_departure: recommendedDeparture.toISOString(),
         departure_buffer_minutes: HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES,
         scheduled_pickup: false,
-        schedule_note: 'Đây là giờ khởi hành đề xuất; X-One chưa đặt lịch đón tự động.',
       };
       const publicItem = { ...this.rideItem({ quote }, task), duration_minutes: durationMinutes, ...timing };
       if (result.stage === 'SERVICE_CONFIRMATION') {
@@ -1870,7 +1857,7 @@ export class AssistantService {
       }
       return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
     }
-    const publicItem = quote ? this.rideItem({ quote }, task) : { kind: 'progress', title: safeText(result.response, 'Mình đang tìm chuyến xe phù hợp.') };
+    const publicItem = quote ? this.rideItem({ quote }, task) : { kind: 'progress'};
     if (result.stage === 'SERVICE_CONFIRMATION' && quote) {
       if (task.depends_on.length > 0 && !this.dependenciesCompleted(task, allTasks)) {
         return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
@@ -1888,7 +1875,7 @@ export class AssistantService {
     if (!department) {
       const result = await this.healthcare.executeTool({ tool_name: 'healthcare.list_departments', risk_level: 'READ', arguments: {}, workflow_id: workflowId, tool_call_id: `call_${randomUUID()}`, schema_version: '1' }, user.sub, correlationId);
       const departments = this.resultItems(result);
-      const publicItem = { kind: 'healthcare_options', title: 'Bạn có thể chọn khoa phù hợp', departments: departments.map((item) => ({ name: item.name, description: item.description })) };
+      const publicItem = { kind: 'healthcare_options', departments: departments.map((item) => ({ name: item.name, description: item.description })) };
       return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: { departments }, publicItem, items: [publicItem], workflowId };
     }
     const existing = task.authoritative;
@@ -1905,7 +1892,6 @@ export class AssistantService {
         ? this.healthcareOptions(requestedDoctors, task.id)
         : {
           kind: 'healthcare_no_availability',
-          title: requestedStart ? 'Giờ khám chính xác chưa còn lịch' : 'Khung giờ bạn muốn hiện chưa còn lịch',
           note: requestedStart
             ? 'Mình không tự đổi giờ bạn yêu cầu. Dưới đây là các khung giờ khác từ dữ liệu lịch hiện có để bạn chọn nếu phù hợp.'
             : 'Mình chưa thấy lịch phù hợp với buổi bạn muốn. Dưới đây là các khung giờ từ dữ liệu lịch hiện có để bạn chọn.',
@@ -1949,7 +1935,6 @@ export class AssistantService {
     const alternativeSlots = this.healthcareOptionRows(doctors, numberValue(selectedSlot.id));
     const publicItem = {
       kind: 'appointment',
-      title: 'Mình đã tạm giữ khung giờ',
       resource_id: appointmentId,
       ...publicAppointment,
       ...(alternativeSlots.length ? { alternative_slots: alternativeSlots } : {}),
@@ -2076,9 +2061,8 @@ export class AssistantService {
     }
     const publicItem: JsonObject = {
       kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
-      title: pending ? 'Đơn hàng đã sẵn sàng' : cartUpdated ? 'Món đã thêm vào giỏ' : arrayValue(foodData.options).length ? 'Món ăn phù hợp' : 'Chưa tìm thấy món phù hợp',
       ...foodData,
-      ...(cartUpdated ? { note: 'Đã cập nhật số lượng. Bạn có thể chọn thêm món từ nhà hàng khác hoặc xem tổng đơn bên trên ô chat.' } : {}),
+      ...(cartUpdated ? {} : {}),
       ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
     };
     const optionActions = !pending
@@ -2186,7 +2170,7 @@ export class AssistantService {
       return {
         phase: 'NEEDS_INFO',
         message: `Bạn muốn giao đơn hàng tới địa chỉ nào? ${addressHint}`,
-        publicItem: { kind: 'food_cart', title: 'Bạn muốn giao tới đâu?', cart, note: addressHint },
+        publicItem: { kind: 'food_cart', cart},
         authoritative: { ...(task.authoritative ?? {}), food_context: context },
       };
     }
@@ -2239,7 +2223,7 @@ export class AssistantService {
       cart_id: cartId,
       cart_items: arrayValue(refreshedCart.items).filter(isRecord),
     };
-    const publicItem = { kind: 'food_cart', title: 'Giỏ hàng đã được cập nhật', cart: refreshedCart };
+    const publicItem = { kind: 'food_cart', cart: refreshedCart };
     const authoritative = { ...(task.authoritative ?? {}), food_context: context, state_updates: context };
     return {
       phase: 'IN_PROGRESS',
@@ -2276,7 +2260,6 @@ export class AssistantService {
       }
       const publicItem = {
         kind: 'reservation',
-        title: 'Đặt bàn đã hoàn tất',
         ...(stringValue(reservation.id) ? { resource_id: reservation.id } : {}),
         restaurant: { name: restaurantName, ...(restaurantLocation ? { location: restaurantLocation } : {}) },
         reservation_code: reservationCode,
@@ -2352,7 +2335,7 @@ export class AssistantService {
       const publicAppointment = task.authoritative?.appointment && isRecord(task.authoritative.appointment)
         ? this.publicHealthcareAppointment(task.authoritative.appointment)
         : {};
-      const publicItem = { kind: 'healthcare_confirmation', title: 'Lịch khám đã sẵn sàng', resource_id: appointmentId, appointment_id: appointmentId, ...publicAppointment, payment_note: 'Thanh toán đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất.' };
+      const publicItem = { kind: 'healthcare_confirmation', resource_id: appointmentId, appointment_id: appointmentId, ...publicAppointment};
       return { phase: 'AWAITING_CONFIRMATION', message: 'Thanh toán đã được ghi nhận. Bạn xác nhận lần cuối để hoàn tất lịch khám nhé.', publicItem, authoritative: { ...task.authoritative, payment, pending }, nextAction: this.actionFor(task, 'healthcare_confirm', { confirmation_id: String(pending.id), workflow_id: tool.workflow_id }) };
     }
     if (action.kind === 'healthcare_cancel') {
@@ -2365,12 +2348,10 @@ export class AssistantService {
         message: 'Mình đã hủy giữ chỗ lịch khám. Chưa có thanh toán nào được thực hiện.',
         publicItem: {
           kind: 'appointment',
-          title: 'Đã hủy giữ chỗ',
           resource_id: appointmentId,
           ...this.publicHealthcareAppointment(appointment),
           status: 'CANCELLED',
-          note: 'Giữ chỗ đã được hủy trước thanh toán.',
-        },
+          },
         authoritative: { ...task.authoritative, cancellation },
       };
     }
@@ -2386,7 +2367,7 @@ export class AssistantService {
       const status = stringValue(appointment?.status);
       if (!appointment || !status) throw new ConflictException({ code: 'HEALTHCARE_RESULT_INVALID', detail: 'Mình chưa nhận được thông tin lịch khám hoàn tất.' });
       const publicAppointment = this.publicHealthcareAppointment(appointment);
-      return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', title: 'Lịch khám đã hoàn tất', resource_id: appointment.appointment_id, ...publicAppointment, status } as JsonObject, authoritative: { ...task.authoritative, result } };
+      return { phase: 'COMPLETED', message: 'Lịch khám đã được xác nhận thành công.', publicItem: { kind: 'appointment_confirmed', resource_id: appointment.appointment_id, ...publicAppointment, status } as JsonObject, authoritative: { ...task.authoritative, result } };
     }
     if (action.kind === 'food_cart_increment' || action.kind === 'food_cart_decrement' || action.kind === 'food_cart_remove') {
       return this.executeFoodCartAction(action, task, user, correlationId, idempotencyKey);
@@ -2434,7 +2415,7 @@ export class AssistantService {
       const result = await this.confirmations.execute(action.confirmation_id ?? '', user, { payment_method: 'card', conversation_id: conversationId }, correlationId, idempotencyKey);
       const payment = isRecord(result.payment) ? result.payment : undefined;
       const order = isRecord(result.order) ? result.order : undefined;
-      return { phase: 'IN_PROGRESS', message: 'Thanh toán đã được ghi nhận. Tài xế sẽ lấy món theo lộ trình đã xác nhận.', publicItem: { kind: 'food_order', title: 'Đơn đồ ăn đang được xử lý', ...(order?.id ? { resource_id: order.id } : {}), order: result.order, ...(payment ? { payment } : {}) }, authoritative: { result } };
+      return { phase: 'IN_PROGRESS', message: 'Thanh toán đã được ghi nhận. Tài xế sẽ lấy món theo lộ trình đã xác nhận.', publicItem: { kind: 'food_order', ...(order?.id ? { resource_id: order.id } : {}), order: result.order, ...(payment ? { payment } : {}) }, authoritative: { result } };
     }
     throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
   }
@@ -2508,9 +2489,17 @@ export class AssistantService {
   private messageFor(message: string, plan: JsonObject, tasks: StoredTask[], items: JsonObject[], actions: StoredAction[]): string {
     const clarification = stringValue(plan.clarification_question);
     if (clarification) return clarification;
-    if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
-    if (actions.length) return tasks.length > 1 ? 'Mình đã chuẩn bị các bước tiếp theo cho những việc bạn yêu cầu. Bạn kiểm tra rồi xác nhận từng bước nhé.' : 'Mình đã chuẩn bị xong. Bạn kiểm tra lại rồi xác nhận nhé.';
-    return message.trim() ? 'Mình đã tìm được thông tin phù hợp cho bạn.' : 'Mình đã cập nhật thông tin cho bạn.';
+    if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'M�nh s? ti?p t?c c�ng b?n nh�.');
+    if (actions.length) return tasks.length > 1
+      ? 'Mình đã chuẩn bị các bước tiếp theo cho những việc bạn yêu cầu. Bạn kiểm tra rồi xác nhận từng bước nhé.'
+      : 'Mình đã chuẩn bị xong. Bạn kiểm tra lại rồi xác nhận nhé.';
+    const kinds = new Set(items.map((item) => stringValue(item.kind)).filter((kind): kind is string => Boolean(kind)));
+    if (kinds.has('clarification')) return 'Mình cần thêm một vài thông tin để tiếp tục xử lý yêu cầu của bạn.';
+    if (kinds.has('task_error') || kinds.has('ride_timing_conflict')) return 'Một bước trong yêu cầu chưa thể hoàn tất an toàn. Bạn kiểm tra thông tin và thử lại nhé.';
+    if (kinds.has('restaurant_confirmation') || kinds.has('healthcare_confirmation') || kinds.has('food_confirmation')) return 'Thông tin đã sẵn sàng. Bạn kiểm tra lại các chi tiết rồi xác nhận bước tiếp theo nhé.';
+    if (kinds.has('restaurant_options') || kinds.has('healthcare_options') || kinds.has('food_options') || kinds.has('ride_quote')) return 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
+    if (kinds.has('reservation') || kinds.has('appointment_confirmed') || kinds.has('food_order')) return 'Yêu cầu của bạn đã được cập nhật theo kết quả xác thực từ dịch vụ.';
+    return message.trim() ? 'M�nh d� t�m du?c th�ng tin ph� h?p cho b?n.' : 'M�nh d� c?p nh?t th�ng tin cho b?n.';
   }
 
   private actionFor(task: StoredTask, kind: ActionKind, values: Partial<StoredAction>, cohortId?: string): StoredAction {
@@ -2558,12 +2547,10 @@ export class AssistantService {
     if (!candidates.length) {
       return {
         kind: 'restaurant_unavailable',
-        title: 'Chưa tìm thấy nhà hàng phù hợp',
         options: [],
-        note: 'Bạn thử đổi khu vực, loại món hoặc khoảng giá để mình tìm lại nhé.',
-      };
+        };
     }
-    return { kind: 'restaurant_options', title: 'Nhà hàng phù hợp', options: candidates.map((candidate) => this.publicRestaurant(candidate)) };
+    return { kind: 'restaurant_options', options: candidates.map((candidate) => this.publicRestaurant(candidate)) };
   }
 
   private resultItems(value: unknown): JsonObject[] {
@@ -2601,8 +2588,6 @@ export class AssistantService {
   private healthcareOptions(doctors: JsonObject[], _taskId: string): JsonObject {
     return {
       kind: 'healthcare_options',
-      title: 'Bác sĩ và lịch còn trống',
-      note: 'Bạn chọn một khung giờ phù hợp; X-One sẽ giữ lịch sau khi bạn xác nhận.',
       options: this.healthcareOptionRows(doctors),
     };
   }
@@ -2687,7 +2672,6 @@ export class AssistantService {
     };
     return quote ? {
       kind: booking ? 'ride_booking' : 'ride_quote',
-      title: booking ? 'Chuyến xe đã cập nhật' : 'Chuyến xe phù hợp',
       pickup: quote.pickup_address,
       dropoff: quote.dropoff_address,
       vehicle: this.vehicleLabel(quote.vehicle_type),
@@ -2705,7 +2689,7 @@ export class AssistantService {
       ...timing,
       ...(booking?.id ? { resource_id: booking.id } : {}),
       ...(booking ? { status: booking.status, driver: this.sanitizeDriver(booking.driver) } : {}),
-    } : { kind: 'progress', title: safeText(result.response, 'Mình đã cập nhật chuyến xe.') };
+    } : { kind: 'progress'};
   }
 
   private vehicleLabel(value: unknown): string {

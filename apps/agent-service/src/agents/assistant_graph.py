@@ -1181,11 +1181,6 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             return _typed_pipeline_result(plan, state, 'deterministic')
         try:
             message = str(state.get("query", ""))
-            deterministic = deterministic_plan(message, state.get("conversation_state", {}))
-            if _is_direct_healthcare_request(message) or (llm is None and len(deterministic.tasks) == 1):
-                plan = deterministic
-                logger.info("assistant.model_decision.fast_path tasks=%d", len(plan.tasks))
-                return _typed_pipeline_result(plan, state, "deterministic")
             plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
             plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
             plan = _enforce_reference_dependencies(plan, message)

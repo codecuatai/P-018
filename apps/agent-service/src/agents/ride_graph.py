@@ -122,9 +122,8 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
     patch = _patch(context, slots)
     missing = [field for field in ("pickup_address", "dropoff_address") if not slots.get(field)]
     if missing:
-        labels = {"pickup_address": "địa chỉ đón", "dropoff_address": "địa chỉ đến"}
         return {
-            "response": f"Bạn cho mình biết {labels[missing[0]]} để mình tính giá chuyến đi nhé.",
+            "response": "Bạn cho mình biết điểm đón và điểm đến còn thiếu để mình tính giá chuyến đi nhé.",
             "intent": "clarify_ride",
             "missing_fields": missing,
             "state_patch": patch,
