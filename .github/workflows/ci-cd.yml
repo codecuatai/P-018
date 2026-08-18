@@ -407,9 +407,11 @@ jobs:
             git reset --hard FETCH_HEAD
 
             docker compose --env-file .env config --quiet
-            docker compose --env-file .env up -d --build --remove-orphans
+            docker compose --env-file .env build --no-cache
+            docker compose --env-file .env up -d --remove-orphans
 
             docker image prune -f
+            docker builder prune -f
             echo "Develop deployment completed successfully."
 
   deploy-production:
@@ -471,7 +473,9 @@ jobs:
             git reset --hard FETCH_HEAD
 
             docker compose --env-file .env config --quiet
-            docker compose --env-file .env up -d --build --remove-orphans
+            docker compose --env-file .env build --no-cache
+            docker compose --env-file .env up -d --remove-orphans
 
             docker image prune -f
+            docker builder prune -f
             echo "Production deployment completed successfully."
