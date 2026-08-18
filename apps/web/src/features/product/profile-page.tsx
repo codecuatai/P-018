@@ -55,6 +55,7 @@ export function ProfilePage() {
     setSaving(true); setFeedback(""); setError("");
     try {
       await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim(), onboarding_completed: true });
+      if (newAddressText.trim()) { await handleAddAddress(); }
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
       setError(errorText(reason));

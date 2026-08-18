@@ -2103,7 +2103,7 @@ export class AssistantService {
     const publicItem: JsonObject = {
       kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
       ...foodData,
-      ...(cartUpdated ? {} : {}),
+      ...(cartUpdated ? { kind: 'food_cart' } : {}),
       ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
     };
     const optionActions = !pending
@@ -2530,7 +2530,7 @@ export class AssistantService {
   private messageFor(message: string, plan: JsonObject, tasks: StoredTask[], items: JsonObject[], actions: StoredAction[]): string {
     const clarification = stringValue(plan.clarification_question);
     if (clarification) return clarification;
-    if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'M�nh s? ti?p t?c c�ng b?n nh�.');
+    if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
     if (actions.length) return tasks.length > 1
       ? 'Mình đã chuẩn bị các bước tiếp theo cho những việc bạn yêu cầu. Bạn kiểm tra rồi xác nhận từng bước nhé.'
       : 'Mình đã chuẩn bị xong. Bạn kiểm tra lại rồi xác nhận nhé.';
@@ -2540,7 +2540,7 @@ export class AssistantService {
     if (kinds.has('restaurant_confirmation') || kinds.has('healthcare_confirmation') || kinds.has('food_confirmation')) return 'Thông tin đã sẵn sàng. Bạn kiểm tra lại các chi tiết rồi xác nhận bước tiếp theo nhé.';
     if (kinds.has('restaurant_options') || kinds.has('healthcare_options') || kinds.has('food_options') || kinds.has('ride_quote')) return 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
     if (kinds.has('reservation') || kinds.has('appointment_confirmed') || kinds.has('food_order')) return 'Yêu cầu của bạn đã được cập nhật theo kết quả xác thực từ dịch vụ.';
-    return message.trim() ? 'M�nh d� t�m du?c th�ng tin ph� h?p cho b?n.' : 'M�nh d� c?p nh?t th�ng tin cho b?n.';
+    return message.trim() ? 'Mình đã tìm được thông tin phù hợp cho bạn.' : 'Mình đã cập nhật thông tin cho bạn.';
   }
 
   private actionFor(task: StoredTask, kind: ActionKind, values: Partial<StoredAction>, cohortId?: string): StoredAction {
