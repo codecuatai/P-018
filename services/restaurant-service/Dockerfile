@@ -4,7 +4,6 @@ COPY pyproject.toml ./
 COPY src ./src
 COPY migrations ./migrations
 COPY seeds ./seeds
-COPY crawled_restaurants.csv ./import-data/restaurants.csv
 COPY alembic.ini ./alembic.ini
 RUN pip install --no-cache-dir .
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
