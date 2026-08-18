@@ -33,9 +33,8 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /workspace/apps/web/.next/standalone ./
 COPY --from=builder /workspace/apps/web/.next/static ./.next/static
 COPY --from=builder /workspace/apps/web/public ./public
-# Next's standalone trace keeps pnpm symlinks to package targets; copy the
-# virtual store so the production runner resolves all symlinks cleanly.
-COPY --from=builder /workspace/node_modules/.pnpm ./node_modules/.pnpm
+# Copy dependencies so Next standalone and all nested package symlinks resolve cleanly.
+COPY --from=builder /workspace/node_modules ./node_modules
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
