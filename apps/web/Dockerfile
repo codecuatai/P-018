@@ -35,6 +35,17 @@ COPY --from=builder /workspace/apps/web/.next/static ./.next/static
 COPY --from=builder /workspace/apps/web/public ./public
 # Copy dependencies so Next standalone and all nested package symlinks resolve cleanly.
 COPY --from=builder /workspace/node_modules ./node_modules
+# Replace broken pnpm relative symlinks to @swc/helpers with the actual physical files
+RUN for d in /app/node_modules/.pnpm/next@*/node_modules; do \
+      if [ -d "$d" ]; then \
+        mkdir -p "$d/@swc" && \
+        rm -rf "$d/@swc/helpers" && \
+        cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers "$d/@swc/helpers" 2>/dev/null || true; \
+      fi \
+    done && \
+    mkdir -p /app/node_modules/@swc && \
+    rm -rf /app/node_modules/@swc/helpers && \
+    cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers /app/node_modules/@swc/helpers 2>/dev/null || true
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
