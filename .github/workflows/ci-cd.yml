@@ -238,6 +238,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -313,6 +314,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -334,6 +336,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
+          dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: '22'

@@ -236,6 +236,11 @@ class AuthorityRequirement(StrictModel):
 
 
 class PlanningPhase(StrEnum):
+    PLANNING = 'PLANNING'
+    NEEDS_INFO = 'NEEDS_INFO'
+    IN_PROGRESS = 'IN_PROGRESS'
+    COMPLETED = 'COMPLETED'
+    FAILED = 'FAILED'
     DISCOVERY = 'DISCOVERY'
     SELECTION = 'SELECTION'
     AVAILABILITY = 'AVAILABILITY'
@@ -345,6 +350,7 @@ class PlanningDecision(StrictModel):
 
 class StepOutcomeKind(StrEnum):
     SUCCEEDED = 'SUCCEEDED'
+    EMPTY_RESULT = 'EMPTY_RESULT'
     REJECTED = 'REJECTED'
     RETRYABLE_FAILURE = 'RETRYABLE_FAILURE'
     UNKNOWN = 'UNKNOWN'
@@ -358,6 +364,36 @@ class StepOutcome(StrictModel):
     error_code: str | None = Field(default=None, max_length=120)
     retryable: bool = False
     authoritative_facts: list[AuthoritativeFact] = Field(default_factory=list, max_length=32)
+
+
+class UIAction(StrictModel):
+    id: str = Field(min_length=1, max_length=100)
+    kind: str = Field(min_length=1, max_length=100)
+    label: str = Field(min_length=1, max_length=200)
+    target_index: int | None = Field(default=None, ge=0)
+
+
+class UICard(StrictModel):
+    kind: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, max_length=200)
+    # The rest of the card is polymorphic and depends on the kind.
+    # We use extra='allow' or a dict for the payload in practice,
+    # but since this is StrictModel we might need a payload dict.
+    # Let's keep it simple: just allow extra fields for UICard.
+    model_config = ConfigDict(extra='allow')
+
+
+class GroundingEnvelope(StrictModel):
+    workflow_id: str | None = Field(default=None, max_length=100)
+    phase: PlanningPhase | None = None
+    outcome: StepOutcomeKind | None = None
+    error_code: str | None = Field(default=None, max_length=120)
+    authoritative_cards: list[UICard] = Field(default_factory=list, max_length=16)
+    missing_information: list[str] = Field(default_factory=list, max_length=16)
+    actions: list[UIAction] = Field(default_factory=list, max_length=16)
+    confirmation_gate: ConfirmationGate | None = None
+    next_step_capability: str | None = Field(default=None, max_length=160)
+    safe_source_refs: list[str] = Field(default_factory=list, max_length=16)
 
 
 class CoreAInput(StrictModel):

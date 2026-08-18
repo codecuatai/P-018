@@ -177,27 +177,12 @@ async def _select_department(query: str, departments: list[dict[str, Any]]) -> s
     return _deterministic_department(query, departments)
 
 
-def _tool_result_response(tool_name: str | None, result: Any) -> str:
+def _tool_outcome(tool_name: str | None, result: Any) -> str:
     if isinstance(result, dict) and result.get("error"):
-        return "Mình chưa thể lấy dữ liệu y tế lúc này. Bạn thử lại sau nhé."
-    if tool_name == "healthcare.hold_slot" and isinstance(result, dict):
-        return "Mình đã giữ khung giờ khám trong 10 phút. Bạn xác nhận lần cuối để hoàn tất đặt lịch nhé."
-    if tool_name == "healthcare.cancel_appointment":
-        return "Mình đã hủy lịch khám theo yêu cầu của bạn."
-    if isinstance(result, list):
-        if not result:
-            return "Mình chưa tìm thấy lựa chọn phù hợp. Bạn thử chuyên khoa khác nhé."
-        if isinstance(result[0], dict) and "available_slots" in result[0]:
-            candidates = []
-            for item in result:
-                doctor_name = str(item.get("name", "bác sĩ"))
-                actual_slots = item.get("available_slots", [])
-                slot_times = [str(slot.get("start_time")) for slot in actual_slots if isinstance(slot, dict) and slot.get("start_time")]
-                candidates.append(f"{doctor_name} ({', '.join(slot_times) or 'chưa có giờ trống'})")
-            return "Mình tìm thấy các bác sĩ: " + "; ".join(candidates) + ". Bạn chọn bác sĩ và khung giờ phù hợp nhé."
-        names = [str(item.get("name", "chuyên khoa")) for item in result if isinstance(item, dict)]
-        return "Các chuyên khoa hiện có: " + ", ".join(names) + "."
-    return "Mình đã nhận được kết quả khám."
+        return result["error"]
+    if isinstance(result, list) and not result:
+        return "EMPTY_RESULT"
+    return "SUCCEEDED"
 
 
 async def classify_and_extract(state: AgentState) -> dict[str, Any]:
@@ -223,7 +208,6 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
                     "intent": "healthcare_booking",
                     "slots": slots,
                     "status": "TOOL_REQUEST_READY",
-                    "response": "Mình đã chọn chuyên khoa phù hợp và sẽ lấy bác sĩ, khung giờ còn trống.",
                     "tool_request": _tool_request(
                         "healthcare.list_slots",
                         "READ",
@@ -236,7 +220,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             "intent": "healthcare_booking",
             "slots": slots,
             "status": "COMPLETED",
-            "response": _tool_result_response(context.get("tool_name"), tool_result),
+            "outcome": _tool_outcome(context.get("tool_name"), tool_result),
         }
 
     if slots.get("appointment_id") and (
@@ -321,21 +305,43 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
 
 
 def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
+    phase = "PLANNING"
+    outcome = "UNKNOWN"
+    missing = []
+    error_code = None
+
     if state.get("status") == "NEEDS_INPUT":
-        labels = {
-            "department": "chuyên khoa",
-            "slot_id": "khung giờ cần chọn",
-            "patient_id": "thông tin người bệnh trong hồ sơ",
-            "appointment_id": "mã lịch hẹn",
-            "confirmation": "xác nhận giữ lịch",
-        }
-        missing = state.get("missing_slots", ["thông tin cần thiết"])
-        return {"response": f"Bạn cho mình biết {labels.get(str(missing[0]), str(missing[0]))} nhé."}
-    if state.get("status") == "TOOL_REQUEST_READY":
-        return {"response": "Mình sẽ kiểm tra lựa chọn khám phù hợp cho bạn.", "tool_request": state.get("tool_request")}
-    if state.get("intent") == "general_chat":
-        return {"response": "Mình có thể hỗ trợ tìm chuyên khoa, bác sĩ và khung giờ khám."}
-    return {"response": state.get("response", "Mình đã xử lý yêu cầu Healthcare của bạn.")}
+        phase = "NEEDS_INFO"
+        missing = state.get("missing_slots", [])
+    elif state.get("status") == "TOOL_REQUEST_READY":
+        phase = "IN_PROGRESS"
+    elif state.get("intent") == "general_chat":
+        phase = "FAILED"
+        error_code = "GENERAL_CHAT"
+    else:
+        phase = "COMPLETED"
+        outcome = state.get("outcome", "SUCCEEDED")
+
+    envelope = {
+        "phase": phase,
+        "outcome": outcome,
+        "missing_information": missing,
+        "error_code": error_code,
+        "actions": [],
+        "authoritative_cards": []
+    }
+    response = "Mình đã cập nhật thông tin theo kết quả xác thực."
+    if phase == "NEEDS_INFO":
+        response = "Mình cần thêm thông tin cần thiết để tiếp tục xử lý yêu cầu của bạn."
+    elif phase == "IN_PROGRESS":
+        response = "Mình đang kiểm tra lựa chọn phù hợp dựa trên dữ liệu hiện có."
+    elif phase == "FAILED":
+        response = "Yêu cầu chưa thể hoàn tất an toàn với thông tin hiện tại."
+    return {
+        "response": response,
+        "grounding_envelope": envelope,
+        "tool_request": state.get("tool_request")
+    }
 
 
 def build_healthcare_graph():

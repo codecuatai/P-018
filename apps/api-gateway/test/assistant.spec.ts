@@ -250,7 +250,7 @@ describe('Unified assistant orchestration', () => {
 
     expect(food.getCart).toHaveBeenCalledWith(user.sub, 'cor-food-cart-2', 'cart-secret');
     expect(selected.items[0]).toMatchObject({
-      kind: 'food_options',
+      kind: 'food_cart',
       cart: { total: 50000, currency: 'VND', items: [{ name: 'Phở bò', quantity: 1, unit_price: 50000, description: 'Phở bò tái thơm nóng', image_url: 'https://cdn.example/pho-bo.jpg', restaurant: { name: 'Quán Phở' } }] },
     });
     expect(selected.actions.map((action) => action.kind)).toEqual(['food_cart_increment', 'food_cart_remove', 'food_checkout']);
@@ -273,7 +273,7 @@ describe('Unified assistant orchestration', () => {
     const addressQuestion = await service.act(user, { conversation_id: first.conversation_id, action_id: checkoutAction!.id }, 'cor-food-checkout-address', 'food-checkout-address-key');
     expect(addressQuestion.workflow_status).toBe('PENDING');
     expect(addressQuestion.message).toContain('Bạn muốn giao đơn hàng tới địa chỉ nào?');
-    expect(addressQuestion.items[0]).toMatchObject({ kind: 'food_cart', title: 'Bạn muốn giao tới đâu?' });
+    expect(addressQuestion.items[0]).toMatchObject({ kind: 'address_options', title: 'Chọn địa chỉ giao hàng', purpose: 'DELIVERY', allow_new: true });
     expect(confirmations.prepare).not.toHaveBeenCalled();
 
     const addressed = await service.chat(user, 'Địa chỉ nhà tôi là 181 Đường Nguyễn Trãi.', first.conversation_id, 'cor-food-cart-address');

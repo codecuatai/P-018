@@ -550,6 +550,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         if "fast food" in lowered or "do an nhanh" in lowered:
             slots["category"] = "fast food"
     if domain == "healthcare":
+        department_match = re.search(r"\bkhoa\s+([^,.!?;:]+)", lowered)
+        if department_match:
+            slots["department"] = department_match.group(1).strip()
         appointment_date = _healthcare_requested_date(text)
         if appointment_date:
             slots["appointment_date"] = appointment_date
@@ -645,7 +648,7 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "khong cay", "giao ve", "giao toi", "ship", "dia chi", "ap ma",
         "tong tien", "xem tong", "dat luon",
     )
-    healthcare_words = ("lich kham", "bac si", "kham", "than kinh", "chon lich", "trieu chung")
+    healthcare_words = ("lich kham", "bac si", "kham", "khoa", "than kinh", "tam ly", "chon lich", "trieu chung")
     # A bare "N người" follow-up keeps the established Restaurant flow when
     # both Restaurant and Ride are active. Ride passenger edits remain
     # unambiguous when the message names the ride/vehicle or Ride is the only
@@ -712,7 +715,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
         "doi diem den", "doi diem don", "thay diem den", "thay diem don", "chuyen diem den",
         "doi phuong tien", "thay phuong tien", "loai xe", "xe may",
-        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "ngay kia", "gio",
+        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "ngay kia", "gio", "khoa", "tam ly",
         "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
         "ga ran", "ga chien", "fast food", "do an nhanh", "goi y", "gan day",
     ))
@@ -1181,11 +1184,6 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             return _typed_pipeline_result(plan, state, 'deterministic')
         try:
             message = str(state.get("query", ""))
-            deterministic = deterministic_plan(message, state.get("conversation_state", {}))
-            if _is_direct_healthcare_request(message) or (llm is None and len(deterministic.tasks) == 1):
-                plan = deterministic
-                logger.info("assistant.model_decision.fast_path tasks=%d", len(plan.tasks))
-                return _typed_pipeline_result(plan, state, "deterministic")
             plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
             plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
             plan = _enforce_reference_dependencies(plan, message)

@@ -119,7 +119,7 @@ async def test_restaurant_gemini_adapter_uses_shared_generation_three_builder(
 
         async def ainvoke(self, _prompt: str) -> restaurant_adapter.GeminiExtraction:
             return restaurant_adapter.GeminiExtraction(
-                intent="restaurant_booking",
+                intent="restaurant",
                 slot_patch={},
                 confidence=1.0,
             )
@@ -132,7 +132,7 @@ async def test_restaurant_gemini_adapter_uses_shared_generation_three_builder(
 
     result = await restaurant_adapter.GeminiAdapter().extract("book a table", {})
 
-    assert result["intent"] == "restaurant_booking"
+    assert result["intent"] == "restaurant"
     assert captured == [{"model": "models/gemini-3.1-flash-lite", "google_api_key": "configured"}]
 
 
