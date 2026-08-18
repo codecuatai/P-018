@@ -11,11 +11,15 @@ build/
 venv/
 .venv/
 env/
+.ci-venv/
 
 # Environment variables
 .env
 .env.local
 .env.production
+.env.*.local
+!.env.example
+!**/.env.example
 
 # IDE
 .vscode/
@@ -30,6 +34,7 @@ Thumbs.db
 
 # Data (never commit large data)
 data/
+artifacts/dataops/
 *.db
 *.sqlite3
 
@@ -37,10 +42,12 @@ data/
 logs/
 *.log
 
-# Test coverage
+# Test coverage & Cache
 htmlcov/
 .coverage
 coverage.xml
+.pytest_cache/
+.ruff_cache/
 
 # Docker
 docker-compose.override.yml
@@ -50,6 +57,10 @@ node_modules/
 .next/
 out/
 .nuxt/
+.expo/
+playwright-report/
+playwright-live-report/
+test-results/
 
 # Build
 *.pyc
@@ -58,3 +69,12 @@ out/
 # AI logs — tracked structure, ignored content
 .ai-log/*.jsonl
 .ai-log/archive/
+
+# Local process metadata (PIDs and non-secret runtime state)
+.local-runtime/
+
+phong.md
+job.txt
+.pnpm-store/
+plan.md
+work.md

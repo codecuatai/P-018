@@ -1,0 +1,481 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # 01:00 Asia/Bangkok. Scheduled workflows use UTC.
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Let an in-flight develop/main deployment finish; newer runs may still cancel
+  # older CI runs on PR branches that never deploy from this workflow.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+  PIP_NO_INPUT: '1'
+
+jobs:
+  detect-changes:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      agent: ${{ steps.filter.outputs.agent }}
+      ride: ${{ steps.filter.outputs.ride }}
+      restaurant: ${{ steps.filter.outputs.restaurant }}
+      healthcare: ${{ steps.filter.outputs.healthcare }}
+      food: ${{ steps.filter.outputs.food }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      web: ${{ steps.filter.outputs.web }}
+      compose: ${{ steps.filter.outputs.compose }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 20
+
+      - name: Select CI scope
+        id: scope
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          full=false
+          if [[ "$EVENT_NAME" == "schedule" || \
+                "$EVENT_NAME" == "workflow_dispatch" || \
+                "$REF_NAME" == "main" ]]; then
+            full=true
+          fi
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+
+      - name: Detect path changes
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          # For pushes to a long-lived branch, compare with that branch's
+          # previous commit instead of comparing staging/develop with main.
+          base: ${{ github.ref }}
+          filters: |
+            agent:
+              - '.github/workflows/ci-cd.yml'
+              - 'ruff.toml'
+              - 'packages/**'
+              - 'apps/agent-service/**'
+            ride:
+              - '.github/workflows/ci-cd.yml'
+              - 'ruff.toml'
+              - 'packages/**'
+              - 'services/ride-service/**'
+            restaurant:
+              - '.github/workflows/ci-cd.yml'
+              - 'ruff.toml'
+              - 'packages/**'
+              - 'services/restaurant-service/**'
+            healthcare:
+              - '.github/workflows/ci-cd.yml'
+              - 'ruff.toml'
+              - 'packages/**'
+              - 'services/healthcare-service/**'
+            food:
+              - '.github/workflows/ci-cd.yml'
+              - 'ruff.toml'
+              - 'packages/**'
+              - 'services/food-service/**'
+            gateway:
+              - '.github/workflows/ci-cd.yml'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'packages/**'
+              - 'apps/api-gateway/**'
+            web:
+              - '.github/workflows/ci-cd.yml'
+              - 'packages/**'
+              - 'apps/web/**'
+            compose:
+              - '.github/workflows/ci-cd.yml'
+              - '.env.example'
+              - 'docker-compose.yml'
+              - 'infra/**'
+              - 'scripts/validate-env-config.py'
+              - 'scripts/check-migration-parity.py'
+              - 'scripts/migrate.sh'
+              - 'scripts/migrate.ps1'
+              - 'apps/api-gateway/migrations/**'
+              - 'services/**/migrations/**'
+
+  agent-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.agent == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "apps/agent-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "apps/agent-service/src" "apps/agent-service/tests"
+      - name: Test service
+        working-directory: apps/agent-service
+        run: ../../.ci-venv/bin/python -m pytest tests -q
+
+  ride-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.ride == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/ride-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/ride-service/src" "services/ride-service/tests"
+      - name: Test service
+        working-directory: services/ride-service
+        run: ../../.ci-venv/bin/python -m pytest tests -q
+
+  restaurant-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.restaurant == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/restaurant-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/restaurant-service/src" "services/restaurant-service/tests"
+      - name: Test service
+        working-directory: services/restaurant-service
+        run: ../../.ci-venv/bin/python -m pytest tests -q
+
+  healthcare-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.healthcare == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/healthcare-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/healthcare-service/src" "services/healthcare-service/tests"
+      - name: Test service
+        working-directory: services/healthcare-service
+        run: ../../.ci-venv/bin/python -m pytest tests -q
+
+  food-service:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.food == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/food-service[dev]"
+      - name: Lint service
+        run: .ci-venv/bin/python -m ruff check "services/food-service/src" "services/food-service/tests"
+      - name: Test service
+        working-directory: services/food-service
+        run: ../../.ci-venv/bin/python -m pytest tests -q --ignore=tests/test_postgres_integration.py
+
+  gateway:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.gateway == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install gateway dependencies
+        run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
+      - name: Lint, test, and build gateway
+        run: pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
+
+  food-postgres-integration:
+    needs: detect-changes
+    if: >-
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch') &&
+      (needs.detect-changes.outputs.food == 'true' ||
+       needs.detect-changes.outputs.full == 'true')
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: xone_food
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xone_food"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Create Python environment
+        run: python -m venv .ci-venv
+      - name: Install Food service dependencies
+        run: .ci-venv/bin/python -m pip install -e "services/food-service[dev]"
+      - name: Run Food PostgreSQL integration
+        working-directory: services/food-service
+        env:
+          FOOD_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_food
+        run: ../../.ci-venv/bin/python -m pytest tests/test_postgres_integration.py -q
+
+  gateway-postgres-integration:
+    needs: detect-changes
+    if: >-
+      (github.event_name == 'push' ||
+       github.event_name == 'schedule' ||
+       github.event_name == 'workflow_dispatch') &&
+      (needs.detect-changes.outputs.gateway == 'true' ||
+       needs.detect-changes.outputs.full == 'true')
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: xone_core
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xone_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install gateway dependencies
+        run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
+      - name: Run Gateway PostgreSQL integration
+        env:
+          CORE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_core
+        run: pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts
+
+  web:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.web == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Install web dependencies
+        run: pnpm install --filter p018-frontend-web... --frozen-lockfile
+      - name: Build web
+        working-directory: apps/web
+        run: pnpm run build
+
+  compose:
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.compose == 'true' || needs.detect-changes.outputs.full == 'true' }}
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Validate environment configuration
+        run: python scripts/validate-env-config.py
+      - name: Validate migration parity
+        run: python scripts/check-migration-parity.py
+      - name: Validate Docker Compose configuration
+        run: docker compose --env-file .env.example config --quiet
+
+  deploy-develop:
+    name: VPS Develop Deploy
+    needs:
+      - detect-changes
+      - agent-service
+      - ride-service
+      - restaurant-service
+      - healthcare-service
+      - food-service
+      - gateway
+      - food-postgres-integration
+      - gateway-postgres-integration
+      - web
+      - compose
+    if: >-
+      ${{
+        always() &&
+        !cancelled() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/develop' &&
+        needs.detect-changes.result == 'success' &&
+        !contains(needs.*.result, 'failure') &&
+        !contains(needs.*.result, 'cancelled')
+      }}
+    runs-on: [self-hosted, linux, x64, cohort3]
+    timeout-minutes: 35
+    environment: development
+    steps:
+      - name: SSH and deploy on Develop VPS
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_SERVER_URL: ${{ github.server_url }}
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DEV_HOST || secrets.DEVELOP_HOST || secrets.STAGING_HOST }}
+          username: ${{ secrets.DEV_USER || secrets.DEVELOP_USER || secrets.STAGING_USER }}
+          key: ${{ secrets.DEV_SSH_KEY || secrets.DEVELOP_SSH_KEY || secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
+          command_timeout: 30m
+          script: |
+            set -eu
+            cd /opt/xone
+
+            # Initialize only once. The VPS-owned .env remains untracked and
+            # is therefore preserved by the exact-commit reset below.
+            if [ ! -d .git ]; then
+              git init
+            fi
+
+            # GITHUB_TOKEN is job-scoped and is not saved as a VPS credential.
+            deploy_auth="$(printf 'x-access-token:%s' "$DEPLOY_GITHUB_TOKEN" | base64 -w 0)"
+            git -c http.extraheader="AUTHORIZATION: basic $deploy_auth" fetch \
+              --no-tags "$DEPLOY_SERVER_URL/$DEPLOY_REPOSITORY.git" "$DEPLOY_SHA"
+            unset DEPLOY_GITHUB_TOKEN deploy_auth
+            git reset --hard FETCH_HEAD
+
+            docker compose --env-file .env config --quiet
+            docker compose --env-file .env build --no-cache
+            docker compose --env-file .env up -d --remove-orphans
+
+            docker image prune -f
+            docker builder prune -f
+            echo "Develop deployment completed successfully."
+
+  deploy-production:
+    name: VPS Production Deploy
+    needs:
+      - detect-changes
+      - agent-service
+      - ride-service
+      - restaurant-service
+      - healthcare-service
+      - food-service
+      - gateway
+      - food-postgres-integration
+      - gateway-postgres-integration
+      - web
+      - compose
+    if: >-
+      ${{
+        always() &&
+        !cancelled() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        needs.detect-changes.result == 'success' &&
+        !contains(needs.*.result, 'failure') &&
+        !contains(needs.*.result, 'cancelled')
+      }}
+    runs-on: [self-hosted, linux, x64, cohort3]
+    timeout-minutes: 35
+    environment: production
+    steps:
+      - name: SSH and deploy on Production VPS
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_REPOSITORY: ${{ github.repository }}
+          DEPLOY_SERVER_URL: ${{ github.server_url }}
+          DEPLOY_SHA: ${{ github.sha }}
+        with:
+          host: ${{ secrets.PROD_HOST || secrets.MAIN_HOST || secrets.STAGING_HOST }}
+          username: ${{ secrets.PROD_USER || secrets.MAIN_USER || secrets.STAGING_USER }}
+          key: ${{ secrets.PROD_SSH_KEY || secrets.MAIN_SSH_KEY || secrets.STAGING_SSH_KEY }}
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
+          command_timeout: 30m
+          script: |
+            set -eu
+            cd /opt/xone
+
+            # Initialize only once. The VPS-owned .env remains untracked and
+            # is therefore preserved by the exact-commit reset below.
+            if [ ! -d .git ]; then
+              git init
+            fi
+
+            # GITHUB_TOKEN is job-scoped and is not saved as a VPS credential.
+            deploy_auth="$(printf 'x-access-token:%s' "$DEPLOY_GITHUB_TOKEN" | base64 -w 0)"
+            git -c http.extraheader="AUTHORIZATION: basic $deploy_auth" fetch \
+              --no-tags "$DEPLOY_SERVER_URL/$DEPLOY_REPOSITORY.git" "$DEPLOY_SHA"
+            unset DEPLOY_GITHUB_TOKEN deploy_auth
+            git reset --hard FETCH_HEAD
+
+            docker compose --env-file .env config --quiet
+            docker compose --env-file .env build --no-cache
+            docker compose --env-file .env up -d --remove-orphans
+
+            docker image prune -f
+            docker builder prune -f
+            echo "Production deployment completed successfully."

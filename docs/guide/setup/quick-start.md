@@ -4,6 +4,8 @@ description: "Khởi tạo project trong 5 phút"
 weight: 1
 ---
 
+> **Legacy reference only:** this template quick-start is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../../architecture/current-state.md). Do not execute publishing commands here without explicit approval.
+
 ## Quick Start Guide
 
 ### Bước 1: Clone Template

@@ -1,46 +1,8 @@
-# Evaluation Report
+# Evaluation report compatibility entry
 
-> Báo cáo đánh giá chất lượng sản phẩm theo tiêu chí BTC.
+The canonical Gate G2 MVP evaluation lives in
+[gate-g2-mvp-eval.md](gate-g2-mvp-eval.md).
 
----
-
-## 1. Metrics
-
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Response accuracy | >80% | — | ⏳ |
-| Response latency | <3s | — | ⏳ |
-| User satisfaction | >4/5 | — | ⏳ |
-| Test coverage | >60% | — | ⏳ |
-
-## 2. Test Results
-
-### Unit Tests
-```
-pytest tests/ -v
-# Paste output here
-```
-
-### Integration Tests
-```
-# Mô tả test scenarios và kết quả
-```
-
-## 3. User Feedback
-
-| User | Feedback | Rating |
-|------|----------|--------|
-| [User 1] | [feedback] | [1-5] |
-| [User 2] | [feedback] | [1-5] |
-
-## 4. Demo Results
-
-- Ngày demo: [YYYY-MM-DD]
-- Người tham gia: [số người]
-- Feedback chung: [tóm tắt]
-- Issues phát hiện: [danh sách]
-
-## 5. Action Items
-
-- [ ] [Cần cải thiện 1]
-- [ ] [Cần cải thiện 2]
+Use [eval README](../README.md) for manual cases,
+sanitization rules, the public-Gateway runner, and real-Gemini evidence policy.
+This compatibility file intentionally does not duplicate result claims.

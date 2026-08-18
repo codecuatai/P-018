@@ -1,0 +1,93 @@
+openapi: 3.0.3
+info:
+  title: X-One Gateway Food API
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Login'}}}}
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '401': {$ref: '#/components/responses/Error'}}
+  /auth/me:
+    get: {responses: {'200': {$ref: '#/components/responses/Envelope'}, '401': {$ref: '#/components/responses/Error'}}}
+  /conversations/{conversation_id}/messages:
+    post:
+      parameters: [{$ref: '#/components/parameters/ConversationId'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/Message'}}}}
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '401': {$ref: '#/components/responses/Error'}}
+  /conversations/{conversation_id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ConversationId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '401': {$ref: '#/components/responses/Error'}}
+  /confirmations/food-order:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/FoodConfirmationPrepare'}}}}
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /confirmations/food-order-cancellation:
+    post:
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CancellationPrepare'}}}}
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /confirmations/{confirmation_id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ConfirmationId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '404': {$ref: '#/components/responses/Error'}}
+  /confirmations/{confirmation_id}/execute:
+    post:
+      parameters: [{$ref: '#/components/parameters/ConfirmationId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExecuteOrder'}}}}
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}, '504': {$ref: '#/components/responses/Error'}}
+  /confirmations/{confirmation_id}/execute-cancellation:
+    post:
+      parameters: [{$ref: '#/components/parameters/ConfirmationId'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /food/orders/{order_id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '404': {$ref: '#/components/responses/Error'}}
+  /food/orders/{order_id}/tracking:
+    get:
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '404': {$ref: '#/components/responses/Error'}}
+  /food/orders/{order_id}/cancel-preview:
+    post:
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /food/orders/{order_id}/cancel-confirmation:
+    post:
+      parameters: [{$ref: '#/components/parameters/OrderId'}]
+      responses: {'201': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /payments/{payment_id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/PaymentId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '404': {$ref: '#/components/responses/Error'}}
+  /payments/{payment_id}/receipt:
+    get:
+      parameters: [{$ref: '#/components/parameters/PaymentId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '409': {$ref: '#/components/responses/Error'}}
+  /payments/{payment_id}/refunds:
+    get:
+      parameters: [{$ref: '#/components/parameters/PaymentId'}]
+      responses: {'200': {$ref: '#/components/responses/Envelope'}, '404': {$ref: '#/components/responses/Error'}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    ConversationId: {name: conversation_id, in: path, required: true, schema: {type: string}}
+    ConfirmationId: {name: confirmation_id, in: path, required: true, schema: {type: string}}
+    OrderId: {name: order_id, in: path, required: true, schema: {type: string}}
+    PaymentId: {name: payment_id, in: path, required: true, schema: {type: string}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 8, maxLength: 128}}
+  schemas:
+    Login: {type: object, additionalProperties: false, required: [email, password], properties: {email: {type: string, format: email}, password: {type: string, minLength: 1}}}
+    Message: {type: object, additionalProperties: false, required: [message], properties: {message: {type: string, minLength: 1, maxLength: 5000}}}
+    FoodConfirmationPrepare: {type: object, additionalProperties: false, required: [cart_id, address_id], properties: {cart_id: {type: string}, address_id: {type: string}}}
+    CancellationPrepare: {type: object, additionalProperties: false, required: [order_id], properties: {order_id: {type: string}}}
+    ExecuteOrder: {type: object, additionalProperties: false, required: [payment_method], properties: {payment_method: {type: string, enum: [bank_transfer, card, e_wallet]}, simulate_failure: {type: boolean}, simulate_timeout: {type: boolean}, conversation_id: {type: string}}}
+    Envelope: {type: object, required: [data], properties: {data: {type: object}, meta: {type: object}}}
+    Error: {type: object, required: [code, detail, status, retryable, request_id], properties: {code: {type: string}, detail: {type: string}, status: {type: integer}, retryable: {type: boolean}, request_id: {type: string}}}
+  responses:
+    Envelope: {description: Successful response, content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}}
+    Error: {description: Safe error response, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}

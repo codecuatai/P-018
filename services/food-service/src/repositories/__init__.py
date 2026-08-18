@@ -1,0 +1,1 @@
+"""Food persistence adapters."""

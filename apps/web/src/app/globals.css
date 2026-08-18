@@ -1,0 +1,99 @@
+@import "@fontsource/be-vietnam-pro/400.css";
+@import "@fontsource/be-vietnam-pro/500.css";
+@import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/be-vietnam-pro/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  font-family: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+
+  --color-canvas: #F5F7F8;
+  --color-surface: #FFFFFF;
+  --color-ink: #111827;
+  --color-muted: #667085;
+  --color-muted-soft: #7A8794;
+  --color-navy: #16324F;
+  --color-navy-deep: #08243D;
+  --color-primary: #315EF5;
+  --color-primary-strong: #274BC4;
+  --color-success: #0E8E83;
+  --color-success-ink: #0B625A;
+  --color-border: #D9E0E7;
+  --color-border-strong: #B8C7D1;
+  --color-danger: #B54237;
+  --color-danger-surface: #FFF5F3;
+  --color-ring: rgb(49 94 245 / 35%);
+
+  --surface-ice: #F1F4FF;
+  --surface-sand: #F7F2EC;
+  --surface-mist: #EEF8F6;
+  --surface-slate: #F1F5F8;
+
+  --accent-food: #B67A2D;
+  --accent-ride: #315EF5;
+  --accent-restaurant: #A65B70;
+  --accent-healthcare: #0E8E83;
+
+  --shadow-soft: 0 18px 48px rgb(22 50 79 / 10%);
+  --shadow-tight: 0 6px 20px rgb(22 50 79 / 8%);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--color-ink);
+  background: var(--color-canvas);
+}
+
+body,
+button,
+input,
+textarea { font: inherit; }
+
+button,
+input,
+textarea { -webkit-tap-highlight-color: transparent; }
+
+button { cursor: pointer; }
+
+button:disabled { cursor: not-allowed; opacity: 0.58; }
+
+a { color: inherit; text-decoration: none; }
+
+svg { display: block; }
+
+::selection { color: var(--color-surface); background: var(--color-primary); }
+
+:focus-visible {
+  outline: 3px solid rgb(49 94 245 / 45%);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  [data-motion-scene],
+  [data-motion-item],
+  [data-motion-line],
+  [data-scroll-focus] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

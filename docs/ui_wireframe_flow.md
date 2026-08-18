@@ -1,225 +1,192 @@
-# Wireframe & UI Flow - NaviGo Frontend Demo
+# X-One Web — Wireframe & UI Flow
 
-Tài liệu này mô tả wireframe và UI flow cho demo NaviGo trong `apps/web/`. Mục tiêu là giúp reviewer hiểu nhanh màn hình, navigation và các luồng đặt dịch vụ đang được mock trong frontend.
+Tài liệu này mô tả pre-demo frontend trong `apps/web/`. Web là một client mỏng
+gọi NestJS API Gateway tại `http://localhost:3000`; không gọi Agent, domain service
+hoặc database trực tiếp. Bốn capability hiển thị trong UI là Ride, Food,
+Restaurant và Healthcare.
 
-## Information Architecture
+## Information architecture
 
 ```mermaid
 flowchart TB
-    Auth["AuthPage\nĐăng nhập / Đăng ký"] --> App["App Shell"]
-
-    App --> Chat["Trợ lý đặt dịch vụ"]
-    App --> History["Lịch sử dịch vụ"]
-    App --> Profile["Hồ sơ cá nhân"]
-
-    Chat --> Scenario["Scenario cards"]
-    Chat --> Conversation["Chat messages"]
-    Chat --> Composer["Input + suggestions"]
-    Chat --> PaymentModal["Payment auth modal"]
-
-    History --> Filters["Search + filters + sort"]
-    History --> BookingList["Booking cards"]
-    History --> DetailModal["Detail / cancel / rating modals"]
-
-    Profile --> Completion["Profile completion summary"]
-    Profile --> Forms["Passenger, ID, address, emergency, payment forms"]
+    Auth[Auth thật qua Gateway] --> Assistant[X-One Assistant]
+    Assistant --> Ride[Ride card]
+    Assistant --> Food[Food card]
+    Assistant --> Restaurant[Restaurant card]
+    Assistant --> Healthcare[Healthcare card]
+    Ride --> Card[Authoritative response card]
+    Food --> Card
+    Restaurant --> Card
+    Healthcare --> Card
+    Card --> Confirm[Explicit confirmation]
+    Confirm --> Result[Backend-confirmed result]
+    Result --> Activity[Hoạt động trong phiên]
 ```
 
-## Screen 1 - Authentication
+App shell có tối đa bốn khu vực:
+
+1. **Trợ lý** — màn hình mặc định, chat-first, hiển thị các card trong cùng cuộc trò chuyện.
+2. **Dịch vụ** — các card Ride/Food/Restaurant/Healthcare xuất hiện theo yêu cầu, không có tab/service selector tách riêng.
+3. **Hoạt động** — chỉ các kết quả đã được Gateway xác nhận trong browser session hiện tại.
+4. **Tài khoản** — identity từ `/api/v1/auth/me`, trạng thái phiên và đăng xuất.
+
+## Authentication
 
 ```text
-+--------------------------------------------------------------+
-| NaviGo Admin                                                 |
-| Quản trị vận hành đặt dịch vụ                                |
-|                                                              |
-| +---------------- Auth Card ----------------+                 |
-| | [Đăng nhập] [Đăng ký]                    |                 |
-| | Email                                    |                 |
-| | Mật khẩu                                 |                 |
-| | [Đăng nhập]                              |                 |
-| | [Admin demo] [User demo]                 |                 |
-| +------------------------------------------+                 |
-+--------------------------------------------------------------+
++-------------------------------------------------------+
+| X-One                                               |
+| Một trợ lý. Mọi dịch vụ hằng ngày.                  |
+|                                                     |
+| +---------------- Login ---------------------------+ |
+| | Email                                             | |
+| | Mật khẩu                                          | |
+| | [Đăng nhập]                                       | |
+| +--------------------------------------------------+ |
++-------------------------------------------------------+
 ```
 
-**Purpose:** Cho phép reviewer vào demo nhanh bằng tài khoản mẫu hoặc tạo user local.  
-**Primary actions:** Đăng nhập, đăng ký, đăng nhập nhanh bằng Admin demo/User demo.  
-**State:** Loading khi xác thực, error nếu email/mật khẩu sai.
+Frontend gọi `POST /api/v1/auth/login`, lấy `access_token` và identity
+`user.sub/email/role`, sau đó xác nhận bằng `GET /api/v1/auth/me`. Token chỉ nằm
+trong memory và `sessionStorage`; không có tab đăng ký giả. Nếu Gateway trả 401,
+frontend xóa phiên và quay lại màn hình đăng nhập.
 
-## Screen 2 - App Shell
+## X-One Assistant
 
 ```text
-+----------------------+---------------------------------------+
-| NaviGo               | Topbar: tên tab + trạng thái hồ sơ    |
-|                      +---------------------------------------+
-| [Trợ lý đặt dịch vụ] |                                       |
-| [Lịch sử dịch vụ]    | Content area theo tab đang chọn       |
-| [Hồ sơ cá nhân]      |                                       |
-|                      |                                       |
-| User menu            |                                       |
-+----------------------+---------------------------------------+
++----------------------+-------------------------------------------+
+| X-One                | Backend ●       [Phiên mới]              |
+| [Trợ lý]             | Bạn muốn làm gì hôm nay?                  |
+| [Dịch vụ]            | Các card Ride/Food/Restaurant/Healthcare   |
+| [Hoạt động]          +-------------------------------------------+
+| [Tài khoản]          | Chat bubbles                              |
+|                      | Authoritative workflow card               |
+| identity + logout    |                                           |
+|                      +-------------------------------------------+
+|                      | Composer [Nhập yêu cầu…]          [Send]  |
++----------------------+-------------------------------------------+
 ```
 
-**Purpose:** Giữ navigation ổn định, tránh làm trôi sidebar/topbar khi chat dài.  
-**Primary actions:** Chuyển tab, mở hồ sơ, mở lịch sử, đăng xuất.
-
-## Screen 3 - Chat Dashboard
+Tin nhắn có role, domain, timestamp và payload cấu trúc tùy chọn. Text luôn được
+hiển thị trước; payload lạ chỉ rơi về summary an toàn. Workflow state và ID nội
+bộ do Gateway giữ; Web chỉ nhận response consumer và action id:
 
 ```text
-+--------------------------------------------------------------+
-| Scenario cards: Vé đơn | Combo | Đổi vé | Đặt xe             |
-+--------------------------------------------------------------+
-| Success/warning notice                                      |
-+--------------------------------------------------------------+
-| Chat list                                                    |
-|  Agent: Tôi có thể giúp bạn đặt vé...                       |
-|  User: Tôi muốn đặt vé máy bay...                           |
-|  Agent: TicketCard / ComboCard / RideOptions / HandoffCard  |
-|                                                              |
-|                              [Tin nhắn mới nhất]             |
-+--------------------------------------------------------------+
-| Suggestions chips                                           |
-| [Input yêu cầu đặt dịch vụ...]                       [Send]  |
-+--------------------------------------------------------------+
+conversation -> conversation_id
+action       -> action_id + stable Idempotency-Key per current session
+cards        -> authoritative consumer fields only
 ```
 
-**Purpose:** Demo agent hỗ trợ đặt dịch vụ đa nền tảng bằng hội thoại.  
-**Primary actions:** Chọn scenario, nhập prompt, chọn combo, chọn xe, xác nhận thanh toán, yêu cầu đổi phương án.  
-**State:** Loading bubble, warning khi thiếu hồ sơ, success notice sau khi tạo booking.
+Đổi yêu cầu không xóa kết quả đã hoàn tất của domain trước. Enter gửi, Shift+Enter
+xuống dòng; lỗi giữ lại nội dung để retry.
 
-## Screen 4 - Payment Authentication Modal
+## Domain cards trong Assistant
+
+Assistant không yêu cầu người dùng chọn domain trước. Agent/Gateway tách nhiệm vụ
+từ ngôn ngữ tự nhiên và trả card authoritative tương ứng:
+
+| Domain | Ví dụ prompt | Kết quả hiển thị |
+| --- | --- | --- |
+| Ride | Từ sân bay Nội Bài đến Hoàn Kiếm bằng xe 4 chỗ | quote, booking, tài xế |
+| Food | Tìm phở bò dưới 100 nghìn ở Hà Nội | quán, món, giỏ, preview, order |
+| Restaurant | Đặt bàn cho 2 người tối mai ở Hà Nội | candidate, availability, hold, reservation |
+| Healthcare | Tôi bị mệt và muốn đặt lịch khám | khoa, bác sĩ, slot, appointment |
+
+Các prompt gợi ý chỉ là nội dung khởi đầu; chúng không tạo giá, nhà hàng, món ăn,
+xe hay trạng thái đặt chỗ ở phía trình duyệt.
+
+## Workflow confirmation flows
+
+The current Web surface uses one conversation boundary:
+`POST /api/v1/assistant/chat` for planning/authoritative cards and
+`POST /api/v1/assistant/actions` for explicit actions. The domain-specific routes
+below remain documented service/legacy workflow surfaces; the Web does not call
+them directly.
+
+### Ride
 
 ```text
-+---------------- Payment Modal -------------------------------+
-| Xác thực Thanh toán Dịch vụ                            [X]   |
-| Booking summary: provider, route, amount                    |
-|                                                              |
-| Phương thức: [MoMo] [Thẻ] [VietQR]                           |
-|                                                              |
-| MoMo OTP / 3D-Secure OTP / VietQR placeholder                |
-|                                                              |
-| [Hủy bỏ]                         [Xác nhận OTP & Hoàn tất]  |
-+--------------------------------------------------------------+
+POST /api/v1/chat
+  -> quote card
+  -> Xác nhận chuyến
+POST /api/v1/workflows/{workflowId}/confirm-service
+  -> AWAITING_PAYMENT_CONFIRMATION
+  -> Xác nhận thanh toán demo
+POST /api/v1/workflows/{workflowId}/confirm-payment
+  -> COMPLETED / DRIVER_ASSIGNED
 ```
 
-**Purpose:** Minh họa bước xác thực thanh toán sandbox trước khi tạo booking.  
-**Primary actions:** Chọn phương thức thanh toán, nhập OTP demo, hoàn tất giao dịch.  
-**State:** Verifying, disabled khi thiếu OTP, success notice sau khi confirm.
+UI không tự tạo giá, booking ID hoặc trạng thái thành công. Chỉ response cuối của
+Gateway mới tạo activity Ride.
 
-## Screen 5 - Profile Settings
+### Food
 
 ```text
-+----------------------+---------------------------------------+
-| Profile summary      | Hồ sơ cá nhân                         |
-| Avatar, email        | [Điền dữ liệu demo]                   |
-| Completion progress  |                                       |
-| Checklist demo       | Thông tin liên hệ                     |
-|                      | Giấy tờ tùy thân                      |
-|                      | Địa chỉ liên hệ                       |
-|                      | Liên hệ khẩn cấp                      |
-|                      | Tùy chọn đặt dịch vụ                  |
-|                      | Cài đặt thông báo                     |
-|                      | [Hủy thay đổi] [Lưu thay đổi]         |
-+----------------------+---------------------------------------+
+POST /api/v1/conversations/{conversationId}/messages
+  -> tìm quán / chọn món / địa chỉ / xem tổng
+  -> pending_confirmation: PLACE_FOOD_ORDER
+  -> Xác nhận đặt món
+POST /api/v1/confirmations/{confirmationId}/execute
+  -> order + payment thật từ Gateway sandbox
+  -> bounded read của /api/v1/food/orders/{orderId}
 ```
 
-**Purpose:** Thu thập dữ liệu hành khách bắt buộc trước khi thanh toán.  
-**Primary actions:** Điền demo profile, sửa thông tin, lưu thay đổi, chọn phương thức thanh toán mặc định.  
-**Validation:** Email, số điện thoại, CCCD/CMND, ngày sinh, trường bắt buộc.
+Confirmation dùng card payment và một `Idempotency-Key` ổn định cho mỗi action;
+retry dùng lại đúng key.
 
-## Screen 6 - Booking History
+### Restaurant
 
 ```text
-+--------------------------------------------------------------+
-| Hero: Lịch sử đặt dịch vụ + doanh thu đã thanh toán          |
-+--------------------------------------------------------------+
-| Summary cards: Tổng booking | Sắp tới | Hoàn thành | Đã hủy  |
-+--------------------------------------------------------------+
-| Search input                                  Sort dropdown  |
-| Status filters                                                |
-| Service type filters                                          |
-+--------------------------------------------------------------+
-| Booking cards                                                 |
-| Icon | Provider | Route | Date/time | Payment | Status       |
-|                                      [Chi tiết] [Hủy/Đánh giá]|
-+--------------------------------------------------------------+
+POST /api/v1/restaurant-workflows/chat
+  -> search -> availability -> hold
+  -> CONFIRMATION_REQUIRED
+  -> Xác nhận đặt bàn
+POST /api/v1/restaurant-workflows/confirm
+  -> reservation CONFIRMED
 ```
 
-**Purpose:** Quản lý booking sau khi đặt thành công.  
-**Primary actions:** Tìm kiếm, lọc, sắp xếp, xem chi tiết, hủy booking, đánh giá dịch vụ.  
-**State:** Empty state khi filter không có kết quả, modal chi tiết/hủy/đánh giá.
+Card xác nhận hiển thị tên/địa điểm authoritative, mã đặt bàn, số khách và thời
+gian do Gateway trả về. Frontend không bypass trạng thái `CONFIRMATION_REQUIRED`.
 
-## Main User Flow
+### Healthcare
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as AuthPage
-    participant C as ChatDashboard
-    participant P as ProfileSettings
-    participant M as MockService
-    participant H as HistoryView
-
-    U->>A: Đăng nhập demo
-    A->>M: login()
-    M-->>A: AuthUser
-    A-->>U: Vào App Shell
-
-    U->>C: Chọn scenario hoặc nhập yêu cầu
-    C->>M: sendMessage(prompt)
-    M-->>C: Bot message + ticket/combo/ride
-    U->>C: Xác nhận dịch vụ
-    C->>M: getUserProfile()
-
-    alt Hồ sơ chưa đủ
-        C-->>P: Chuyển sang Hồ sơ cá nhân
-        U->>P: Điền dữ liệu demo hoặc lưu profile
-        P->>M: updateUserProfile()
-        M-->>P: Saved
-        U->>C: Quay lại chat
-    else Hồ sơ đã đủ
-        C-->>U: Mở payment modal
-    end
-
-    U->>C: Xác nhận OTP
-    C->>M: confirmBooking()
-    M-->>C: BookingHistory
-    C-->>U: Success notice
-    U->>H: Xem lịch sử
-    H->>M: getHistory()
-    M-->>H: Booking list
+```text
+POST /api/v1/healthcare-workflows/chat
+  -> departments -> doctors/slots -> hold
+  -> PAYMENT_REQUIRED
+  -> Thanh toán demo
+POST /api/v1/healthcare-workflows/payment
+  -> payment acknowledgement + appointment
+  -> lấy confirmation cuối qua chat
+  -> Xác nhận đặt lịch
+POST /api/v1/healthcare-workflows/confirm
+  -> appointment CONFIRMED
 ```
 
-## Demo Scenarios
+Payment được gắn nhãn sandbox. UI chỉ dùng doctor/slot/appointment ID đã nhận từ
+backend; không tự suy đoán availability hoặc giá.
 
-| Scenario | User intent | UI output | Completion path |
-|----------|-------------|-----------|-----------------|
-| Đặt vé máy bay | Tìm vé Hà Nội - Đà Nẵng | TicketCard | Xác nhận hồ sơ, OTP, tạo booking |
-| Combo trọn gói | Bay + khách sạn | Combo cards | Chọn combo, OTP, tạo hai booking liên kết |
-| Đổi vé & hoàn tiền | Đổi sang tàu hỏa | Reschedule comparison | Xác nhận đổi lịch, ghi nhận hoàn tiền mock |
-| Đặt xe & chọn xe | Xe đưa đón sân bay | Ride option cards | Chọn loại xe, xác nhận thanh toán |
-| Handoff CSKH | Giao dịch cần hỗ trợ | Handoff card | Operator mock tiếp quản phiên chat |
+## Loading, error và offline
 
-## UI States Checklist
+- Header gọi `GET /health/ready` và chỉ hiện xanh sau khi nhận response healthy.
+- Mỗi lượt gửi có typing state; nút confirmation bị khóa trong lúc request chạy.
+- Error hiển thị code/detail an toàn, không hiển thị stack trace hoặc object thô.
+- Retry giữ message và confirmation/idempotency key cần thiết.
+- Một lỗi không xóa các message hoặc kết quả trước đó.
 
-| Area | State | Expected behavior |
-|------|-------|-------------------|
-| Auth | Loading | Disable button, hiển thị spinner |
-| Auth | Error | Hiển thị lỗi đăng nhập/đăng ký |
-| Chat | Loading response | Hiển thị bubble "Đang xử lý..." |
-| Chat | Long conversation | Chỉ chat list scroll, sidebar/topbar giữ vị trí |
-| Chat | Missing profile | Hiển thị warning và chuyển sang hồ sơ |
-| Payment | Verifying | Disable confirm button, hiển thị spinner |
-| Payment | Success | Đóng modal, tạo booking, hiện CTA xem lịch sử |
-| Profile | Invalid form | Hiển thị lỗi từng trường |
-| Profile | Saved | Cập nhật pill "Hồ sơ sẵn sàng" |
-| History | Empty filters | Hiển thị empty state |
-| History | Modal open | Focus vào dialog chi tiết/hủy/đánh giá |
+## Hoạt động trong phiên
 
-## Documentation References
+Không có unified history endpoint trong public Gateway hiện tại. Vì vậy Activity
+chỉ chứa kết quả backend-confirmed trong tab hiện tại và không được gọi là lịch sử
+tài khoản đầy đủ. Không có booking/order giả từ local state.
 
-| Document | Location | Notes |
-|----------|----------|-------|
-| Project Build Phase PDF | `docs/Project Build Phase.docx.pdf` | Tài liệu yêu cầu/deliverable gốc của dự án |
-| Architecture diagram | `docs/architecture_diagram.md` | Sơ đồ hệ thống, component và deployment hiện tại |
-| UI wireframe & flow | `docs/ui_wireframe_flow.md` | Tài liệu màn hình, user flow và UI states |
+## Responsive direction
+
+- Desktop: sidebar, chat chính, context card bên phải.
+- Tablet/mobile: một cột, selector có thể cuộn ngang, composer ở cuối, navigation
+  chuyển thành bottom navigation.
+- UI dùng system font, nền slate trung tính, surface trắng, border 1px, radius
+  vừa phải và icon Lucide; không phụ thuộc font network hay ảnh minh họa.
+
+Đây là frontend demo tích hợp với local Gateway. Demo authentication và payment
+sandbox là development-only; production identity, provider payment và deployment
+không nằm trong phạm vi tài liệu này.

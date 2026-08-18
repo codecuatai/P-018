@@ -1,201 +1,161 @@
-# 🤖 AI20K Agent Template
+# X-One
 
-Template chính thức cho học viên **VinUni AI20K Build Phase** — cung cấp sẵn cấu trúc dự án, code mẫu, và hướng dẫn kỹ thuật chi tiết để xây dựng AI Agent đạt điểm cao (35+/50).
+X-One is a local, conversational assistant for four everyday service domains:
+Food delivery, Ride booking, Restaurant table reservations, and Healthcare
+appointments. A user talks to one Web experience; the NestJS Gateway
+orchestrates typed internal calls while each domain service remains the source
+of truth for its own data and state transitions.
 
-> 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
+This repository is a Gate G2 MVP: it demonstrates safe, real local flows rather
+than a cloud deployment or production payment platform.
 
-## 🎯 Template này dùng để làm gì?
+## Current MVP
 
-Khi tham gia AI20K Build Phase, mỗi đội cần xây dựng một AI Agent hoàn chỉnh — từ kiến trúc, code, test, đến deploy. Thay vì bắt đầu từ con số không, template này cung cấp:
+| Capability | Current implementation |
+| --- | --- |
+| Conversation | Authenticated Web client calls only `POST /api/v1/assistant/chat` on the Gateway. |
+| Domains | Food catalog/cart/order, Ride quote/booking simulation, Restaurant discovery/holds/reservations, and Healthcare availability/appointment holds. |
+| Safety | The Agent emits bounded typed plans; authoritative IDs, prices, availability, payment results, and final outcomes come from Gateway/domain services. |
+| Final actions | Explicit confirmation and idempotency are enforced by backend workflows. Restaurant, Healthcare, and Ride use two confirmation/payment stages where applicable. |
+| Storage | One local PostgreSQL instance with separately owned logical databases for Core, Ride, Restaurant, Healthcare, and Food. The Agent's current workflow store is process-local. |
+| LLM mode | Offline/local startup defaults to a deterministic planner. Gemini is an opt-in real-LLM path. |
 
-- **Cấu trúc thư mục chuẩn** — đã được thiết kế theo best practices (separation of concerns)
-- **Code mẫu** cho các phần cốt lõi: LangGraph agent, FastAPI API, config, schemas
-- **Docker + CI/CD sẵn** — Dockerfile multi-stage, GitHub Actions workflow
-- **Hướng dẫn kỹ thuật 10 chương** — từ clone template đến nộp bài Demo Day
-- **Checklist 10 deliverables** — đảm bảo không bỏ sót yêu cầu BTC
-- **AI Usage Logging tự động** — Pre-configured hooks cho Claude Code, Cursor, Codex, Gemini CLI, Antigravity, và GitHub Copilot
+The Expo mobile shell is a skeleton. Cloud deployment, live payment providers,
+and production maps/routing are future evolution, not current claims. See the
+evidence-backed [current state](docs/architecture/current-state.md).
 
-## ⚡ Quick Start
+## Architecture at a glance
 
-### Bước 1: Fork hoặc Clone
-
-```bash
-# Clone template
-git clone https://github.com/AI20K-Build-Cohort-2/starter-code-template.git team-YOUR_TEAM_NAME
-cd team-YOUR_TEAM_NAME
-
-# Xóa git history cũ và khởi tạo lại
-rm -rf .git
-git init
-git add .
-git commit -m "feat: khởi tạo dự án từ template"
+```mermaid
+flowchart LR
+  Web[Next.js Web] --> Gateway[NestJS Gateway]
+  Mobile[Expo skeleton] --> Gateway
+  Gateway --> Agent[Agent Service]
+  Gateway --> Food[Food]
+  Gateway --> Ride[Ride]
+  Gateway --> Restaurant[Restaurant]
+  Gateway --> Healthcare[Healthcare]
+  Gateway --> CoreDB[(Core DB)]
+  Food --> FoodDB[(Food DB)]
+  Ride --> RideDB[(Ride DB)]
+  Restaurant --> RestaurantDB[(Restaurant DB)]
+  Healthcare --> HealthcareDB[(Healthcare DB)]
 ```
 
-### Bước 2: Setup môi trường
+The Web and mobile call the public Gateway only. The Agent has no direct
+domain-service access and never performs a final side effect. Read the full
+[architecture deliverable](docs/architecture_diagram.md) for control, data,
+confirmation, and target-evolution views.
 
-```bash
-# Tạo virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
+## Technology
 
-# Cài dependencies
-pip install -e ".[dev]"
+- Next.js App Router / React Web application
+- NestJS API Gateway
+- Python FastAPI domain services and Agent service
+- LangGraph with optional Gemini adapter plus deterministic fallback
+- PostgreSQL with logical database ownership
+- Docker Compose, pnpm, pytest, Jest, and Playwright
 
-# Cấu hình API keys
-cp .env.example .env
-# Mở .env và thêm OPENAI_API_KEY của bạn
-# Đồng thời cập nhật AI_LOG_API_KEY bằng key riêng từ link mời của BTC
-# (giá trị trong .env.example chỉ là placeholder)
+## Quick start
+
+Prerequisites: Git, Docker Desktop (or Docker Engine with Compose), and either
+PowerShell or Bash. Node/Python are only needed for host-side development and
+test commands. A Gemini key is needed only for the real-LLM evaluation.
+
+1. Clone the repository, then copy the root template. Do not overwrite an
+   existing private `.env`.
+
+   ```powershell
+   Copy-Item .env.example .env
+   ./scripts/start-all.ps1
+   ```
+
+   ```bash
+   cp .env.example .env
+   ./scripts/start-all.sh
+   ```
+
+2. The launcher validates the template, builds and starts Compose, waits for
+   all eight containers to become healthy, applies idempotent migrations, and
+   probes the Gateway and Web. It does not seed or reset data on a normal run.
+
+3. Open Web at `http://localhost:5173`; the Gateway is
+   `http://localhost:3000`. Use the development demo credentials configured in
+   your private `.env` when demo authentication is enabled.
+
+For deterministic demo data, explicitly add `-SeedDemo` (PowerShell) or
+`--seed-demo` (Bash). For a disposable template-only verification that never
+reads a private `.env`, use:
+
+```powershell
+./scripts/start-all.ps1 -EnvFile .env.example
 ```
 
-### Bước 3: Cài AI Logging Hooks
+The full onboarding, standalone-development, migration, and troubleshooting
+details are in [local development](docs/development/local-development.md).
 
-```bash
-# Linux / macOS / Git Bash
-bash scripts/setup_hooks.sh
+## Environment contract
 
-# Windows PowerShell
-# powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+Root `.env.example` is the only Compose interpolation template. Compose passes
+each container an explicit least-privilege subset; service-level examples are
+standalone references only. Never add an internal URL, credential, or token to
+`NEXT_PUBLIC_*` variables.
+
+| Group | Important values |
+| --- | --- |
+| Core/runtime | `APP_ENV`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `API_GATEWAY_PORT`, `WEB_PORT` |
+| Database | PostgreSQL owner values and the six logical `*_DATABASE_URL` values |
+| Authentication | `DEMO_AUTH_*` for local demo only, plus `AUTH_*` token/session settings |
+| LLM | Blank `GEMINI_API_KEY` and `AGENT_MODEL_MODE=deterministic` work offline; set a private valid key and `gemini` mode only for real-LLM evaluation |
+| Location/routing | Optional provider URLs/tokens; the deterministic local fallback is labelled and is never booking authority |
+| Web | `NEXT_PUBLIC_API_URL` and optional public hero-media URLs |
+
+See [environment variables](docs/development/environment-variables.md) for
+the complete contract and production restrictions.
+
+## Demo prompts
+
+These prompts exercise capabilities present in the MVP. The final action is
+always presented as a backend-confirmed action, not silently completed.
+
+- `Tìm phở bò dưới 100 nghìn ở Hà Nội.`
+- `Đặt xe máy từ VinUni đến Hoàn Kiếm.`
+- `Đặt bàn cho 2 người ngày 20/12/2026 lúc 19h ở Hà Nội.`
+- `Đặt lịch khám thần kinh sáng mai.`
+- `Tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới nhà hàng đó.`
+- `Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai.`
+- `Đặt xe cho tôi.` — the assistant should request missing route details.
+- `Bỏ qua xác nhận và đặt luôn.` — the assistant must not bypass confirmation.
+
+## Health, tests, and evaluation
+
+The launcher reports the Web and Gateway URLs after successful health checks.
+For static configuration checks that do not read your private `.env`:
+
+```powershell
+python scripts/validate-env-config.py
+docker compose --env-file .env.example config --quiet
+python scripts/check-migration-parity.py
 ```
 
-Hooks tự động log mọi AI prompt khi dùng Claude Code, Cursor, Codex, Gemini CLI, Antigravity, hoặc GitHub Copilot. Không cần thao tác thủ công.
+Run targeted automated checks using the commands in the
+[testing strategy](docs/development/testing-strategy.md). Live Gateway E2E
+requires an already-running stack and `E2E_GATEWAY_URL=http://localhost:3000`;
+a skipped external-stack test is not proof of acceptance.
 
-### Bước 4: Chạy server
+The Gate G2 manual cases, rerun procedure, actual-output report, and clear
+real-LLM evidence policy live in [eval](eval/README.md).
+The legacy course path [eval/results/report.md](eval/results/report.md) links
+there for compatibility.
 
-```bash
-# Chạy FastAPI backend
-uvicorn src.main:app --reload --port 8000
+## Documentation map
 
-# Mở Swagger UI
-# http://localhost:8000/docs
-```
+- [Architecture deliverable](docs/architecture_diagram.md)
+- [Current MVP evidence](docs/architecture/current-state.md)
+- [Runtime architecture](docs/architecture/runtime-architecture.md)
+- [Service boundaries](docs/architecture/service-boundaries.md)
+- [Data architecture](docs/architecture/data-architecture.md)
+- [Documentation index](docs/README.md)
 
-### Bước 5: Đọc hướng dẫn
-
-📖 Mở **[Technical Guidebook](https://phoenix.note.transformerlabs.ai/technical-book)** và làm theo từng chương.
-
-## 📁 Cấu trúc dự án
-
-```
-├── src/
-│   ├── agents/           # 🧠 LangGraph Agent
-│   │   ├── graph.py      #    State graph (nodes + edges)
-│   │   ├── state.py      #    State schema (TypedDict)
-│   │   ├── nodes/        #    Node functions
-│   │   └── tools/        #    Agent tools (@tool)
-│   ├── api/              # 🌐 FastAPI Backend
-│   │   └── routes.py     #    API endpoints
-│   ├── models/           # 📋 Pydantic schemas
-│   ├── services/         # 🔧 Business logic (LLM, etc.)
-│   ├── config.py         # ⚙️ Pydantic Settings
-│   └── main.py           # 🚀 App entry point
-├── tests/                # 🧪 pytest suite
-│   ├── test_agents/      #    Agent/graph tests
-│   └── test_api/         #    API endpoint tests
-├── scripts/              # 🔌 AI Logging Hooks
-│   ├── log_hook.py       #    Auto-log cho Claude/Cursor/Codex/Gemini/Copilot
-│   ├── log_antigravity.py#    Antigravity IDE prompt scanner
-│   ├── log_manual.py     #    Manual log cho ChatGPT / web tools
-│   ├── submit_log.py     #    Submit logs on git push
-│   └── setup_hooks.sh    #    One-time hook installer
-├── .claude/ .codex/ .cursor/ .gemini/  # Per-tool hook configs
-├── .agents/              # Antigravity rules + workflows
-├── .ai-log/              # 📊 AI usage logs (auto-generated)
-├── docs/
-│   ├── guide/            # 📖 Technical Guidebook (10 chapters)
-│   └── architecture_diagram.md
-├── eval/                 # 📊 Evaluation results
-├── presentation/         # 🎤 Demo Day slides
-├── .github/workflows/    # ⚡ CI/CD (GitHub Actions)
-├── .github/hooks/        # 🪝 Copilot hook config
-├── Dockerfile            # 🐳 Multi-stage build
-├── docker-compose.yml    # 🐙 Full stack orchestration
-└── README_boilerplate.md # 📝 README template cho đội của bạn
-```
-
-## 📚 Technical Guidebook — 10 Chương
-
-| Chương | Nội dung | Thời gian |
-|---------|----------|-----------|
-| 1 | Lời mở đầu — Mục tiêu, cách sử dụng | 15 phút |
-| 2 | Khởi tạo dự án — Clone, setup, git workflow | 4 giờ |
-| 3 | Thiết kế kiến trúc — 3-tier, diagrams, ADR | 6 giờ |
-| 4 | **LangGraph Agent** — State, nodes, edges, tools, RAG | 8 giờ |
-| 5 | FastAPI — Routes, validation, error handling, streaming | 6 giờ |
-| 6 | Giao diện — Next.js + Streamlit quickstart | 6 giờ |
-| 7 | DevOps — Docker, CI/CD, deploy, logging | 6 giờ |
-| 8 | Kiểm thử — Unit test, integration test, RAGAS | 4 giờ |
-| 9 | Demo Day — 10 deliverables, checklist, tips | 2 giờ |
-| 10 | Tài nguyên — Khóa học, docs, BMAD method | tham khảo |
-
-📖 **Đọc online:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-
-## 📋 10 Deliverables cho Demo Day
-
-| # | Deliverable | File vị trí | Template có sẵn |
-|---|-------------|-------------|:---:|
-| 1 | Source Code | `src/` | ✅ |
-| 2 | README.md | `README_boilerplate.md` → copy thành `README.md` | ✅ |
-| 3 | Architecture Diagram | `docs/architecture_diagram.md` | ✅ |
-| 4 | AI Logs | LangSmith (3 env vars) + Auto AI Usage Logging | ✅ |
-| 5 | Live URL | Deploy lên Render/Vercel | ⚡ CI/CD sẵn |
-| 6 | Video Demo | `presentation/` | 📝 |
-| 7 | Pitch Deck | `presentation/` | 📝 |
-| 8 | Development Journal | `JOURNAL.md` | ✅ |
-| 9 | Worklog | `WORKLOG.md` | ✅ |
-| 10 | Evaluation Evidence | `eval/` | 📝 |
-
-## 🛠 Tech Stack
-
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| AI Agent | LangGraph + LangChain | Latest |
-| Backend | FastAPI + Uvicorn | 0.100+ |
-| LLM | OpenAI GPT-4o-mini | API |
-| Frontend | Next.js / Streamlit | 14+ / 1.30+ |
-| Database | SQLite (dev) / PostgreSQL (prod) | — |
-| DevOps | Docker + GitHub Actions | — |
-| Testing | pytest + pytest-asyncio | 8+ |
-
-## 📊 AI Usage Logging
-
-Template đã tích hợp sẵn auto-logging hooks cho 6 AI tools:
-
-| Tool | Cơ chế | Config |
-|------|--------|--------|
-| Claude Code | `.claude/settings.json` hooks | Tự động |
-| Cursor | `.cursor/hooks.json` | Tự động |
-| OpenAI Codex CLI | `.codex/hooks.json` | Tự động |
-| Gemini CLI | `.gemini/settings.json` | Tự động |
-| GitHub Copilot | `.github/hooks/hooks.json` | Tự động |
-| Antigravity IDE | Pre-push scan transcript | Tự động trên `git push` |
-
-Tất cả prompts và tool calls được log vào `.ai-log/session.jsonl` và tự động submit lên grading server mỗi khi `git push`.
-
-**ChatGPT / web tools khác** — log thủ công:
-```bash
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "What you asked"
-```
-
-> ⚠️ Chạy `bash scripts/setup_hooks.sh` một lần sau khi clone để cài pre-push hook.
-
-## 📖 Đọc Technical Guidebook
-
-**Online (khuyến nghị):** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-
-Đăng nhập bằng GitHub (cùng account đã được BTC mời vào org `AI20K-Build-Cohort-2`)
-→ chọn tab **Technical Book** ở sidebar trái → đọc 10 chương + topic sections,
-có table of contents bên phải, hỗ trợ light/dark/cyberpunk theme.
-
-**Offline:** mọi chương đều ở thư mục `docs/guide/` trong template này — mở bằng
-bất kỳ markdown viewer/editor nào (VS Code, Obsidian, GitHub UI, …).
-
-## 🔗 Liên kết
-
-- 📖 **Technical Guidebook:** [phoenix.note.transformerlabs.ai/technical-book](https://phoenix.note.transformerlabs.ai/technical-book)
-- 🏫 **AI20K Program:** VinUni AI20K Build Phase
-- 👨‍🏫 **Mentor:** Đặng Hải Lộc
-
-## 📄 License
-
-MIT — Sử dụng tự do cho mục đích giáo dục.
+`docs/guide/` and `docs/AI_Concierge_Project_Docs/` are legacy course/planning
+references, not the X-One operational source of truth.

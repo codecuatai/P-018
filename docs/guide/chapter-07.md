@@ -3,6 +3,8 @@ title: "DevOps và Triển khai"
 weight: 7
 ---
 
+> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../architecture/current-state.md). Do not execute destructive Docker, database, or publishing commands here without explicit approval.
+
 ## 7.1 Docker — Container hóa ứng dụng
 
 Docker là một nền tảng (platform) cho phép bạn đóng gói ứng dụng cùng toàn bộ dependencies (thư viện, cấu hình, biến môi trường) vào một đơn vị gọi là **container**. Container đảm bảo ứng dụng chạy đồng nhất trên mọi máy — từ laptop của bạn đến server production. Trong AI20K, 100% BTC chấm điểm DevOps, và Docker là công cụ nền tảng để đạt điểm cao.

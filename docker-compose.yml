@@ -1,29 +1,246 @@
-version: "3.8"
-
 services:
-  backend:
-    build:
-      context: ./apps/backend
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:?POSTGRES_ADMIN_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?POSTGRES_ADMIN_PASSWORD is required}
+      CORE_DB_NAME: ${CORE_DB_NAME:?CORE_DB_NAME is required}
+      CORE_DB_USER: ${CORE_DB_USER:?CORE_DB_USER is required}
+      CORE_DB_PASSWORD: ${CORE_DB_PASSWORD:?CORE_DB_PASSWORD is required}
+      AGENT_DB_NAME: ${AGENT_DB_NAME:?AGENT_DB_NAME is required}
+      AGENT_DB_USER: ${AGENT_DB_USER:?AGENT_DB_USER is required}
+      AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:?AGENT_DB_PASSWORD is required}
+      RIDE_DB_NAME: ${RIDE_DB_NAME:?RIDE_DB_NAME is required}
+      RIDE_DB_USER: ${RIDE_DB_USER:?RIDE_DB_USER is required}
+      RIDE_DB_PASSWORD: ${RIDE_DB_PASSWORD:?RIDE_DB_PASSWORD is required}
+      RESTAURANT_DB_NAME: ${RESTAURANT_DB_NAME:?RESTAURANT_DB_NAME is required}
+      RESTAURANT_DB_USER: ${RESTAURANT_DB_USER:?RESTAURANT_DB_USER is required}
+      RESTAURANT_DB_PASSWORD: ${RESTAURANT_DB_PASSWORD:?RESTAURANT_DB_PASSWORD is required}
+      HEALTHCARE_DB_NAME: ${HEALTHCARE_DB_NAME:?HEALTHCARE_DB_NAME is required}
+      HEALTHCARE_DB_USER: ${HEALTHCARE_DB_USER:?HEALTHCARE_DB_USER is required}
+      HEALTHCARE_DB_PASSWORD: ${HEALTHCARE_DB_PASSWORD:?HEALTHCARE_DB_PASSWORD is required}
+      FOOD_DB_NAME: ${FOOD_DB_NAME:?FOOD_DB_NAME is required}
+      FOOD_DB_USER: ${FOOD_DB_USER:?FOOD_DB_USER is required}
+      FOOD_DB_PASSWORD: ${FOOD_DB_PASSWORD:?FOOD_DB_PASSWORD is required}
     volumes:
-      - ./data:/app/data
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    ports: [ "${POSTGRES_PORT}:5432" ]
+    networks: [ xone_internal ]
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    environment:
+      NODE_ENV: ${APP_ENV:?APP_ENV is required}
+      # The Gateway listens on a fixed container port; API_GATEWAY_PORT is only
+      # the host binding, so a developer can safely choose a different host port.
+      PORT: 3000
+      GATEWAY_CORS_ORIGINS: ${GATEWAY_CORS_ORIGINS:?GATEWAY_CORS_ORIGINS is required}
+      LOCATION_PROVIDER_URL: ${LOCATION_PROVIDER_URL:-}
+      LOCATION_PROVIDER_TOKEN: ${LOCATION_PROVIDER_TOKEN:-}
+      GEOCODING_PROVIDER_URL: ${GEOCODING_PROVIDER_URL:-}
+      GEOCODING_PROVIDER_TOKEN: ${GEOCODING_PROVIDER_TOKEN:-}
+      ROUTING_PROVIDER_URL: ${ROUTING_PROVIDER_URL:-}
+      ROUTING_PROVIDER_TOKEN: ${ROUTING_PROVIDER_TOKEN:-}
+      LOCAL_DETERMINISTIC_LOCATION_FALLBACK: ${LOCAL_DETERMINISTIC_LOCATION_FALLBACK:-false}
+      GEOAPIFY_SERVER_API_KEY: ${GEOAPIFY_SERVER_API_KEY:-}
+      GEOAPIFY_API_BASE_URL: ${GEOAPIFY_API_BASE_URL:-https://api.geoapify.com/v1}
+      GEOAPIFY_REAL_MODE: ${GEOAPIFY_REAL_MODE:-false}
+      GEOAPIFY_COUNTRY_FILTER: ${GEOAPIFY_COUNTRY_FILTER:-vn}
+      GEOAPIFY_LANGUAGE: ${GEOAPIFY_LANGUAGE:-vi}
+      GEOAPIFY_LOCATION_BIAS: ${GEOAPIFY_LOCATION_BIAS:-}
+      GATEWAY_BODY_LIMIT_BYTES: ${GATEWAY_BODY_LIMIT_BYTES:?GATEWAY_BODY_LIMIT_BYTES is required}
+      GATEWAY_RATE_LIMIT_WINDOW_SECONDS: ${GATEWAY_RATE_LIMIT_WINDOW_SECONDS:?GATEWAY_RATE_LIMIT_WINDOW_SECONDS is required}
+      GATEWAY_AUTH_LOGIN_RATE_LIMIT: ${GATEWAY_AUTH_LOGIN_RATE_LIMIT:?GATEWAY_AUTH_LOGIN_RATE_LIMIT is required}
+      GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: ${GATEWAY_ASSISTANT_CHAT_RATE_LIMIT:?GATEWAY_ASSISTANT_CHAT_RATE_LIMIT is required}
+      GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: ${GATEWAY_ASSISTANT_ACTION_RATE_LIMIT:?GATEWAY_ASSISTANT_ACTION_RATE_LIMIT is required}
+      GATEWAY_FUTURE_AUTH_RATE_LIMIT: ${GATEWAY_FUTURE_AUTH_RATE_LIMIT:?GATEWAY_FUTURE_AUTH_RATE_LIMIT is required}
+      DATABASE_URL: ${CORE_DATABASE_URL:?CORE_DATABASE_URL is required}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:?AGENT_SERVICE_URL is required}
+      RIDE_SERVICE_URL: ${RIDE_SERVICE_URL:?RIDE_SERVICE_URL is required}
+      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL:?RESTAURANT_SERVICE_URL is required}
+      HEALTHCARE_SERVICE_URL: ${HEALTHCARE_SERVICE_URL:?HEALTHCARE_SERVICE_URL is required}
+      HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
+      FOOD_SERVICE_URL: ${FOOD_SERVICE_URL:?FOOD_SERVICE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:?DEMO_AUTH_ENABLED is required}
+      DEMO_AUTH_EMAIL: ${DEMO_AUTH_EMAIL:-}
+      DEMO_AUTH_PASSWORD: ${DEMO_AUTH_PASSWORD:-}
+      DEMO_AUTH_USER_ID: ${DEMO_AUTH_USER_ID:-}
+      AUTH_ACCESS_TOKEN_TTL_SECONDS: ${AUTH_ACCESS_TOKEN_TTL_SECONDS:?AUTH_ACCESS_TOKEN_TTL_SECONDS is required}
+      AUTH_REFRESH_TOKEN_TTL_SECONDS: ${AUTH_REFRESH_TOKEN_TTL_SECONDS:?AUTH_REFRESH_TOKEN_TTL_SECONDS is required}
+      AUTH_RESET_TOKEN_TTL_SECONDS: ${AUTH_RESET_TOKEN_TTL_SECONDS:?AUTH_RESET_TOKEN_TTL_SECONDS is required}
+      AUTH_ISSUER: ${AUTH_ISSUER:?AUTH_ISSUER is required}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:?AUTH_AUDIENCE is required}
+      AUTH_REFRESH_COOKIE_NAME: ${AUTH_REFRESH_COOKIE_NAME:?AUTH_REFRESH_COOKIE_NAME is required}
+      AUTH_DEV_RESET_TOKEN_CAPTURE: ${AUTH_DEV_RESET_TOKEN_CAPTURE:?AUTH_DEV_RESET_TOKEN_CAPTURE is required}
+      UPSTREAM_TIMEOUT_MS: ${UPSTREAM_TIMEOUT_MS:?UPSTREAM_TIMEOUT_MS is required}
+      CONFIRMATION_TTL_SECONDS: ${CONFIRMATION_TTL_SECONDS:?CONFIRMATION_TTL_SECONDS is required}
+      CONFIRMATION_PROCESSING_TIMEOUT_SECONDS: ${CONFIRMATION_PROCESSING_TIMEOUT_SECONDS:?CONFIRMATION_PROCESSING_TIMEOUT_SECONDS is required}
+      CONFIRMATION_RECOVERY_POLL_INTERVAL_MS: ${CONFIRMATION_RECOVERY_POLL_INTERVAL_MS:?CONFIRMATION_RECOVERY_POLL_INTERVAL_MS is required}
+      GATEWAY_WORKFLOW_WORKER_ENABLED: ${GATEWAY_WORKFLOW_WORKER_ENABLED:?GATEWAY_WORKFLOW_WORKER_ENABLED is required}
+      GATEWAY_WORKFLOW_POLL_INTERVAL_MS: ${GATEWAY_WORKFLOW_POLL_INTERVAL_MS:?GATEWAY_WORKFLOW_POLL_INTERVAL_MS is required}
+      RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
+      RESTAURANT_FORCE_RESULT: ${RESTAURANT_FORCE_RESULT:-}
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports: [ "${API_GATEWAY_PORT}:3000" ]
+    restart: unless-stopped
+    networks: [ xone_internal ]
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
-    ports:
-      - "3000:80"
-    restart: unless-stopped
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        NEXT_PUBLIC_HERO_VIDEO_URL: ${NEXT_PUBLIC_HERO_VIDEO_URL:-}
+        NEXT_PUBLIC_HERO_POSTER_URL: ${NEXT_PUBLIC_HERO_POSTER_URL:-}
+        NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY: ${NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY:-}
+        NEXT_PUBLIC_GEOAPIFY_MAP_STYLE: ${NEXT_PUBLIC_GEOAPIFY_MAP_STYLE:-osm-bright}
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+    ports: [ "${WEB_PORT}:3000" ]
     depends_on:
-      - backend
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+  agent-service:
+    build: ./apps/agent-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${AGENT_SERVICE_PORT:?AGENT_SERVICE_PORT is required}
+      DATABASE_URL: ${AGENT_DATABASE_URL:?AGENT_DATABASE_URL is required}
+      CORS_ORIGINS: ${AGENT_CORS_ORIGINS:?AGENT_CORS_ORIGINS is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:?GEMINI_MODEL is required}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:?GEMINI_FALLBACK_MODEL is required}
+      API_GATEWAY_INTERNAL_URL: ${API_GATEWAY_INTERNAL_URL:?API_GATEWAY_INTERNAL_URL is required}
+      AGENT_MODEL_MODE: ${AGENT_MODEL_MODE:-deterministic}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://us.cloud.langfuse.com}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    expose: [ "8001" ]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+  ride-service:
+    build: ./services/ride-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${RIDE_SERVICE_PORT:?RIDE_SERVICE_PORT is required}
+      TRACKING_TIME_SCALE: ${RIDE_TRACKING_TIME_SCALE:-1}
+      DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+  restaurant-service:
+    build: ./services/restaurant-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
+      DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+  healthcare-service:
+    build: ./services/healthcare-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${HEALTHCARE_SERVICE_PORT:?HEALTHCARE_SERVICE_PORT is required}
+      DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      HEALTHCARE_FACILITY_NAME: ${HEALTHCARE_FACILITY_NAME:?HEALTHCARE_FACILITY_NAME is required}
+      HEALTHCARE_FACILITY_ADDRESS: ${HEALTHCARE_FACILITY_ADDRESS:?HEALTHCARE_FACILITY_ADDRESS is required}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+  food-service:
+    build: ./services/food-service
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      SERVICE_PORT: ${FOOD_SERVICE_PORT:?FOOD_SERVICE_PORT is required}
+      DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      PERSISTENCE: ${FOOD_PERSISTENCE:?FOOD_PERSISTENCE is required}
+      RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
+      DELIVERY_BASE_FEE: ${DELIVERY_BASE_FEE:?DELIVERY_BASE_FEE is required}
+      DELIVERY_PER_KM_FEE: ${DELIVERY_PER_KM_FEE:?DELIVERY_PER_KM_FEE is required}
+      DELIVERY_MINIMUM_FEE: ${DELIVERY_MINIMUM_FEE:?DELIVERY_MINIMUM_FEE is required}
+      DELIVERY_MAX_DISTANCE_KM: ${DELIVERY_MAX_DISTANCE_KM:?DELIVERY_MAX_DISTANCE_KM is required}
+      DELIVERY_LONG_DISTANCE_THRESHOLD_KM: ${DELIVERY_LONG_DISTANCE_THRESHOLD_KM:?DELIVERY_LONG_DISTANCE_THRESHOLD_KM is required}
+      DELIVERY_LONG_DISTANCE_SURCHARGE: ${DELIVERY_LONG_DISTANCE_SURCHARGE:?DELIVERY_LONG_DISTANCE_SURCHARGE is required}
+      DELIVERY_ETA_MINUTES: ${DELIVERY_ETA_MINUTES:?DELIVERY_ETA_MINUTES is required}
+      FOOD_RESTAURANT_CONFIRM_DELAY_MS: ${FOOD_RESTAURANT_CONFIRM_DELAY_MS:?FOOD_RESTAURANT_CONFIRM_DELAY_MS is required}
+      FOOD_PREPARING_DELAY_MS: ${FOOD_PREPARING_DELAY_MS:?FOOD_PREPARING_DELAY_MS is required}
+      FOOD_READY_FOR_PICKUP_DELAY_MS: ${FOOD_READY_FOR_PICKUP_DELAY_MS:?FOOD_READY_FOR_PICKUP_DELAY_MS is required}
+      FOOD_DRIVER_ASSIGN_DELAY_MS: ${FOOD_DRIVER_ASSIGN_DELAY_MS:?FOOD_DRIVER_ASSIGN_DELAY_MS is required}
+      FOOD_PICKUP_DELAY_MS: ${FOOD_PICKUP_DELAY_MS:?FOOD_PICKUP_DELAY_MS is required}
+      FOOD_DELIVERY_DELAY_MS: ${FOOD_DELIVERY_DELAY_MS:?FOOD_DELIVERY_DELAY_MS is required}
+      FOOD_WORKFLOW_POLL_INTERVAL_MS: ${FOOD_WORKFLOW_POLL_INTERVAL_MS:?FOOD_WORKFLOW_POLL_INTERVAL_MS is required}
+      FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    expose: [ "8104" ]
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: unless-stopped
+    networks: [ xone_internal ]
+
+volumes:
+  postgres_data:
+
+networks:
+  xone_internal:
+    driver: bridge

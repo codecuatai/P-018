@@ -1,5 +1,7 @@
 # [Tên Dự Án]
 
+> **Boilerplate reference only:** this template does not describe the current X-One repository. Follow [README.md](README.md), [AGENTS.md](AGENTS.md), and [current architecture state](docs/architecture/current-state.md); do not use its setup, publishing, or API examples as an operational runbook.
+
 > Tóm tắt 1 câu: [Vấn đề] → [Giải pháp AI] cho [Target User]
 
 ## Vấn đề (Problem)

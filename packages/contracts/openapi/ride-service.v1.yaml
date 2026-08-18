@@ -1,0 +1,685 @@
+openapi: 3.1.0
+info:
+  title: X-One Ride Service Internal API
+  version: 1.0.0
+  description: >
+    Ride-owned deterministic simulation for quotes and booking state. The
+    Gateway remains responsible for public orchestration and payment.
+servers:
+  - url: http://ride-service:8101
+security:
+  - InternalServiceToken: []
+paths:
+  /v1/quotes:
+    post:
+      operationId: createRideQuote
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteCreate"
+      responses:
+        "201":
+          description: Quote created or an identical idempotent result replayed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listRideQuotes
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned quote history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteListEnvelope"
+  /v1/quotes/{quote_id}:
+    get:
+      operationId: getRideQuote
+      parameters:
+        - $ref: "#/components/parameters/QuoteId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned quote.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/bookings:prepare:
+    post:
+      operationId: prepareRideBooking
+      description: >
+        Consumes the first confirmation, bound to the selected service details
+        and quote, and creates a booking awaiting payment confirmation.
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PrepareBookingRequest"
+      responses:
+        "201":
+          description: Booking prepared.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+  /v1/bookings/{booking_id}:confirm:
+    post:
+      operationId: confirmRideBooking
+      description: >
+        Consumes the second confirmation, bound to the quote and opaque payment
+        reference, then places the booking into driver search. Ride does not
+        process payment; assignment and tracking progress are exposed separately.
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmBookingRequest"
+      responses:
+        "200":
+          description: Payment accepted and driver search started.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+  /v1/bookings/{booking_id}:cancel:
+    post:
+      operationId: cancelRideBooking
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelBookingRequest"
+      responses:
+        "200":
+          description: Booking cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+  /v1/bookings/{booking_id}:
+    get:
+      operationId: getRideBooking
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned booking.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/bookings:
+    get:
+      operationId: listRideBookings
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned booking history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingListEnvelope"
+  /v1/bookings/{booking_id}/tracking:
+    get:
+      operationId: getRideTracking
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Actor-owned deterministic tracking snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackingEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/summary:
+    get:
+      operationId: getRideOpsSummary
+      description: Internal operational counts. Requires the service token.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Ride operational summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/dataset-status:
+    get:
+      operationId: getRideOpsDatasetStatus
+      description: Internal synthetic-driver dataset status.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Dataset freshness and quality status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+  /v1/internal/ops/transactions:
+    get:
+      operationId: listRideOpsTransactions
+      description: Internal paged booking snapshots for operations.
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        - name: offset
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0, default: 0}
+      responses:
+        "200":
+          description: Paged ride booking snapshots.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpsEnvelope"
+        "401":
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    InternalServiceToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Token
+  parameters:
+    ActorId:
+      name: X-Actor-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    QuoteId:
+      name: quote_id
+      in: path
+      required: true
+      schema:
+        type: string
+    BookingId:
+      name: booking_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Problem:
+      description: Safe problem response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    QuoteCreate:
+      type: object
+      additionalProperties: false
+      required:
+        - pickup_address
+        - dropoff_address
+        - pickup_latitude
+        - pickup_longitude
+        - dropoff_latitude
+        - dropoff_longitude
+        - route_provider
+        - route_distance_meters
+        - route_duration_seconds
+        - route_geometry
+      properties:
+        pickup_address:
+          type: string
+          minLength: 3
+          maxLength: 300
+        dropoff_address:
+          type: string
+          minLength: 3
+          maxLength: 300
+        vehicle_type:
+          type: string
+          enum: [BIKE, CAR_4, CAR_7]
+          default: CAR_4
+        passenger_count:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 1
+        promo_code:
+          type: [string, "null"]
+          minLength: 1
+          maxLength: 50
+        pickup_time:
+          type: [string, "null"]
+        pickup_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        pickup_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        dropoff_latitude:
+          type: number
+          minimum: -90
+          maximum: 90
+        dropoff_longitude:
+          type: number
+          minimum: -180
+          maximum: 180
+        route_provider: {type: string, minLength: 1, maxLength: 80}
+        route_distance_meters: {type: integer, exclusiveMinimum: 0}
+        route_duration_seconds: {type: integer, exclusiveMinimum: 0}
+        route_geometry:
+          type: array
+          minItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
+    Confirmation:
+      type: object
+      additionalProperties: false
+      required:
+        - confirmation_id
+        - actor_id
+        - action
+        - payload_hash
+        - quote_version
+        - amount
+        - currency
+        - issued_at
+        - expires_at
+      properties:
+        confirmation_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        actor_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        action:
+          type: string
+          minLength: 1
+          maxLength: 64
+        payload_hash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        quote_version:
+          type: string
+          minLength: 1
+          maxLength: 96
+        amount:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+        issued_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    PrepareBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [quote_id, confirmation]
+      properties:
+        quote_id:
+          type: string
+          minLength: 1
+          maxLength: 40
+        confirmation:
+          $ref: "#/components/schemas/Confirmation"
+    ConfirmBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [payment_reference, confirmation]
+      properties:
+        payment_reference:
+          type: string
+          minLength: 1
+          maxLength: 128
+        confirmation:
+          $ref: "#/components/schemas/Confirmation"
+    CancelBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation]
+      properties:
+        confirmation:
+          $ref: "#/components/schemas/Confirmation"
+    Quote:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - actor_id
+        - status
+        - pickup_address
+        - dropoff_address
+        - vehicle_type
+        - passenger_count
+        - capacity_policy_version
+        - distance_km
+        - duration_minutes
+        - base_fee
+        - distance_fee
+        - time_fee
+        - peak_surcharge
+        - discount
+        - amount
+        - currency
+        - tariff_version
+        - quote_version
+        - expires_at
+        - created_at
+        - pickup_latitude
+        - pickup_longitude
+        - dropoff_latitude
+        - dropoff_longitude
+        - route_provider
+        - route_distance_meters
+        - route_duration_seconds
+        - route_polyline
+        - route_geometry
+        - route_snapshot_hash
+        - tariff_snapshot
+      properties:
+        id: {type: string}
+        actor_id: {type: string}
+        status: {type: string, enum: [QUOTE_CREATED, AWAITING_CONFIRMATION, CONSUMED, EXPIRED]}
+        pickup_address: {type: string}
+        dropoff_address: {type: string}
+        vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7]}
+        passenger_count: {type: integer, minimum: 1, maximum: 20}
+        capacity_policy_version: {type: string}
+        distance_km: {type: integer}
+        duration_minutes: {type: integer}
+        base_fee: {type: integer}
+        distance_fee: {type: integer}
+        time_fee: {type: integer}
+        peak_surcharge: {type: integer}
+        discount: {type: integer}
+        amount: {type: integer}
+        currency: {type: string}
+        tariff_version: {type: string}
+        quote_version: {type: string}
+        expires_at: {type: string, format: date-time}
+        pickup_latitude: {type: [number, "null"]}
+        pickup_longitude: {type: [number, "null"]}
+        dropoff_latitude: {type: [number, "null"]}
+        dropoff_longitude: {type: [number, "null"]}
+        route_provider: {type: string}
+        route_distance_meters: {type: [integer, "null"]}
+        route_duration_seconds: {type: [integer, "null"]}
+        route_polyline: {type: [string, "null"]}
+        route_geometry:
+          type: [array, "null"]
+          items:
+            type: object
+            additionalProperties: false
+            required: [latitude, longitude]
+            properties:
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
+        route_snapshot_hash: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        tariff_snapshot: {type: [object, "null"], additionalProperties: true}
+    Booking:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - actor_id
+        - quote_id
+        - quote_version
+        - passenger_count
+        - capacity_policy_version
+        - amount
+        - currency
+        - status
+        - resource_version
+        - payment_reference
+        - driver
+        - created_at
+        - updated_at
+        - driver_id
+        - tracking_started_at
+      properties:
+        id: {type: string}
+        actor_id: {type: string}
+        quote_id: {type: string}
+        quote_version: {type: string}
+        passenger_count: {type: integer, minimum: 1, maximum: 20}
+        capacity_policy_version: {type: string}
+        amount: {type: integer}
+        currency: {type: string}
+        status:
+          type: string
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
+        resource_version: {type: integer}
+        payment_reference:
+          type: [string, "null"]
+        driver:
+          type: [object, "null"]
+          additionalProperties: true
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        driver_id: {type: [string, "null"]}
+        tracking_started_at: {type: [string, "null"], format: date-time}
+    Tracking:
+      type: object
+      additionalProperties: false
+      required: [booking_id, status, progress, eta_seconds, driver, driver_location, current_location, route, route_provider, route_snapshot_hash, updated_at]
+      properties:
+        booking_id: {type: string}
+        status: {type: string, enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]}
+        progress: {type: number, minimum: 0, maximum: 1}
+        eta_seconds: {type: integer, minimum: 0}
+        driver: {type: [object, "null"], additionalProperties: true}
+        driver_location: {type: [object, "null"], additionalProperties: true}
+        current_location: {type: [object, "null"], additionalProperties: true}
+        route: {type: object, additionalProperties: true}
+        route_provider: {type: string}
+        route_snapshot_hash: {type: [string, "null"]}
+        updated_at: {type: [string, "null"], format: date-time}
+    ResponseMeta:
+      type: object
+      additionalProperties: false
+      required: [request_id, timestamp]
+      properties:
+        request_id: {type: string}
+        timestamp: {type: string, format: date-time}
+    QuoteEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Quote"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    QuoteListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Quote"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    BookingEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Booking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    BookingListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/Booking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    TrackingEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: "#/components/schemas/Tracking"
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    OpsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          $ref: "#/components/schemas/ResponseMeta"
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, detail, retryable, request_id]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        code: {type: string}
+        detail: {type: string}
+        retryable: {type: boolean}
+        request_id: {type: string}

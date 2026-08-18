@@ -1,0 +1,60 @@
+import { FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../src/clients/service.clients';
+import { InMemoryProductOpsStore } from '../src/modules/core/product-ops.store';
+import { ProductOpsService } from '../src/modules/product-ops/product-ops.service';
+
+function makeService() {
+  const store = new InMemoryProductOpsStore();
+  const food = { listOrders: jest.fn().mockResolvedValue({ items: [] }), getOrder: jest.fn() } as unknown as FoodClient;
+  const ride = { listBookings: jest.fn().mockResolvedValue({ items: [] }), getBooking: jest.fn() } as unknown as RideClient;
+  const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }), getRestaurant: jest.fn() } as unknown as RestaurantClient;
+  const healthcare = { listAppointments: jest.fn().mockResolvedValue({ items: [] }), getFacility: jest.fn(), getAppointment: jest.fn() } as unknown as HealthcareClient;
+  return { service: new ProductOpsService(store as never, food, ride, restaurant, healthcare), store, food, ride, restaurant, healthcare };
+}
+
+describe('ProductOpsService', () => {
+  it('synchronizes deterministic notifications idempotently', async () => {
+    const { service, store, ride } = makeService();
+    (ride.listBookings as jest.Mock).mockResolvedValue({ items: [{ id: 'ride-1', status: 'DRIVER_ASSIGNED' }] });
+
+    const first = await service.listNotifications('actor-1', 'cor-1');
+    const second = await service.listNotifications('actor-1', 'cor-2');
+
+    expect(first).toMatchObject({ unread_count: 1, partial: false, unavailable: [] });
+    expect(second.unread_count).toBe(1);
+    expect(await store.listNotifications('actor-1')).toHaveLength(1);
+  });
+
+  it('validates a favorite against the authoritative healthcare service and deduplicates it', async () => {
+    const { service, store, healthcare } = makeService();
+    (healthcare.getFacility as jest.Mock).mockResolvedValue({ source_id: 'facility-1', name: 'Clinic' });
+
+    const first = await service.createFavorite('actor-1', 'healthcare', 'facility-1', 'cor-1');
+    const second = await service.createFavorite('actor-1', 'healthcare', 'facility-1', 'cor-2');
+
+    expect(second.id).toBe(first.id);
+    expect(await store.listFavorites('actor-1')).toHaveLength(1);
+    expect(healthcare.getFacility).toHaveBeenCalledTimes(2);
+  });
+
+  it('requires a completed authoritative resource before accepting feedback', async () => {
+    const { service, ride } = makeService();
+    (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'IN_PROGRESS' });
+
+    await expect(service.createFeedback('actor-1', 'cor-1', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
+
+    (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'COMPLETED' });
+    await expect(service.createFeedback('actor-1', 'cor-2', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).resolves.toMatchObject({ resourceId: 'ride-1', rating: 5 });
+  });
+
+  it('returns the same support ticket for a retried idempotency key', async () => {
+    const { service, store } = makeService();
+    const input = { subject: 'Cần hỗ trợ', description: 'Kiểm tra đơn hàng', priority: 'HIGH' as const };
+
+    const first = await service.createSupportTicket('actor-1', 'cor-1', 'support-key-1', input);
+    const replay = await service.createSupportTicket('actor-1', 'cor-2', 'support-key-1', input);
+
+    expect(replay.id).toBe(first.id);
+    expect((await store.listSupportTickets('actor-1')).items).toHaveLength(1);
+    expect((await store.getSupportTicket(first.id))?.events).toHaveLength(1);
+  });
+});

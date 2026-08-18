@@ -1,0 +1,207 @@
+openapi: 3.1.0
+info:
+  title: X-One Healthcare Service
+  version: 1.2.0
+  description: Healthcare-owned appointment, facility, and slot state boundary. The Gateway is the only runtime caller.
+paths:
+  /api/v1/departments:
+    get:
+      summary: List authoritative departments, descriptions, and facility metadata
+      security: [{internalServiceToken: []}]
+      responses: {'200': {description: Department envelope}}
+  /api/v1/facilities/{facility_source_id}:
+    get:
+      summary: Read one active Healthcare-owned facility
+      security: [{internalServiceToken: []}]
+      parameters:
+        - in: path
+          name: facility_source_id
+          required: true
+          description: Imported source IDs may contain slashes; the FastAPI path converter preserves the full source ID.
+          schema: {type: string, minLength: 1, maxLength: 255}
+      responses:
+        '200': {description: Healthcare-owned facility envelope}
+        '404': {description: Facility not found}
+  /api/v1/patients:
+    get:
+      summary: List patients linked to the actor
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+      responses:
+        '200': {description: Actor-scoped patient profiles}
+    post:
+      summary: Create and link a patient profile
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreatePatientRequest'}}}
+      responses:
+        '200': {description: Created actor-linked patient profile}
+        '400': {description: Missing actor or Idempotency-Key}
+        '409': {description: Idempotency key conflict}
+  /api/v1/patients/{patient_id}/default:
+    post:
+      summary: Select the actor's default patient
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - {$ref: '#/components/parameters/PatientId'}
+      responses:
+        '200': {description: Updated default patient profile}
+        '404': {description: Patient is not linked to the actor}
+  /api/v1/doctors:
+    get:
+      summary: List doctors across matching facilities with actual available slot IDs
+      security: [{internalServiceToken: []}]
+      parameters:
+        - in: query
+          name: department
+          required: true
+          schema: {type: string, minLength: 1}
+      responses: {'200': {description: Doctor and slot candidates}}
+  /api/v1/slots/hold:
+    post:
+      summary: Hold one slot; the Healthcare Service owns the appointment draft
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/HoldRequest'}}}
+      responses:
+        '200': {description: Held appointment with Healthcare-owned facility identity}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key, request, or missing consultation price}
+        '409': {description: Slot unavailable}
+  /api/v1/appointments/{appointment_id}:
+    get:
+      summary: Read an actor-owned appointment
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+      responses: {'200': {description: Appointment state including Healthcare-owned facility identity}}
+  /api/v1/appointments:
+    get:
+      summary: List actor-owned appointments
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+      responses: {'200': {description: Actor-owned appointment history}}
+  /api/v1/payment/webhook:
+    post:
+      summary: Local payment acknowledgement boundary; it is not a provider refund
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PaymentRequest'}}}
+      responses:
+        '200': {description: Payment acknowledgement while the appointment hold is active}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Expired, cancelled, confirmed, or otherwise non-payable appointment}
+  /api/v1/appointments/{appointment_id}/confirm:
+    post:
+      summary: Confirm a paid appointment after Gateway confirmation evidence
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200': {description: Confirmed appointment}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Payment or state precondition failed}
+  /api/v1/appointments/{appointment_id}/cancel:
+    post:
+      summary: Cancel an actor-owned appointment and release its slot
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/AppointmentId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      responses:
+        '200': {description: Cancelled appointment and released slot}
+        '400': {description: Missing actor or Idempotency-Key}
+        '422': {description: Invalid Idempotency-Key or request}
+        '409': {description: Expired or non-cancellable appointment}
+  /api/v1/internal/ops/summary:
+    get:
+      summary: Read Healthcare operational counts
+      security: [{internalServiceToken: []}]
+      responses: {'200': {description: Operational summary}, '401': {description: Internal authentication is missing}}
+  /api/v1/internal/ops/dataset-status:
+    get:
+      summary: Read Healthcare dataset status
+      security: [{internalServiceToken: []}]
+      responses: {'200': {description: Dataset status}, '401': {description: Internal authentication is missing}}
+  /api/v1/internal/ops/transactions:
+    get:
+      summary: Read paged Healthcare appointments
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
+      responses: {'200': {description: Paged appointments}, '401': {description: Internal authentication is missing}}
+components:
+  securitySchemes:
+    internalServiceToken:
+      type: apiKey
+      in: header
+      name: X-Internal-Service-Token
+  parameters:
+    ActorId:
+      in: header
+      name: X-Actor-Id
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 255}
+    AppointmentId:
+      in: path
+      name: appointment_id
+      required: true
+      schema: {type: integer, minimum: 1}
+    PatientId:
+      in: path
+      name: patient_id
+      required: true
+      schema: {type: integer, minimum: 1}
+  schemas:
+    HoldRequest:
+      type: object
+      required: [slot_id, symptoms]
+      additionalProperties: false
+      properties:
+        slot_id: {type: integer, minimum: 1}
+        patient_id: {type: [integer, 'null'], minimum: 1}
+        symptoms: {type: string, minLength: 1, maxLength: 2000}
+    CreatePatientRequest:
+      type: object
+      additionalProperties: false
+      required: [name, phone]
+      properties:
+        name: {type: string, minLength: 2, maxLength: 255}
+        phone: {type: string, minLength: 6, maxLength: 64}
+        relationship: {type: string, enum: [self, child, parent, dependent], default: self}
+        blood_type: {type: [string, 'null'], maxLength: 16}
+        medical_history: {type: [string, 'null'], maxLength: 4000}
+    PaymentRequest:
+      type: object
+      required: [appointment_id]
+      additionalProperties: false
+      properties:
+        appointment_id: {type: integer, minimum: 1}
