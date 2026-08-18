@@ -33,11 +33,21 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /workspace/apps/web/.next/standalone ./
 COPY --from=builder /workspace/apps/web/.next/static ./.next/static
 COPY --from=builder /workspace/apps/web/public ./public
-# Next's standalone trace keeps the pnpm link to this helper package; copy the
-# locked package target so the production runner does not depend on a build
-# workspace symlink that is absent from the image.
-COPY --from=builder /workspace/node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers ./node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers
-COPY --from=builder /workspace/node_modules/.pnpm/@swc+helpers@0.5.15/node_modules/@swc/helpers ./node_modules/.pnpm/next@16.3.1_@babel+core@7.29.7_supports-color@8.1.1__@playwright+test@1.51.1_@types+nod_e60c423f8bacfe264aab9444d4fa4228/node_modules/@swc/helpers
+# Copy dependencies so Next standalone and all nested package symlinks resolve cleanly.
+COPY --from=builder /workspace/node_modules ./node_modules
+# Replace broken pnpm relative symlinks to @swc/helpers with the actual physical files
+RUN for d in /app/node_modules/.pnpm/next@*/node_modules; do \
+      if [ -d "$d" ]; then \
+        mkdir -p "$d/@swc" && \
+        rm -rf "$d/@swc/helpers" && \
+        cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers "$d/@swc/helpers" 2>/dev/null || true; \
+      fi \
+    done && \
+    mkdir -p /app/node_modules/@swc && \
+    rm -rf /app/node_modules/@swc/helpers && \
+    cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers /app/node_modules/@swc/helpers 2>/dev/null || true && \
+    mkdir -p /app/.next/cache && \
+    chown -R nextjs:nodejs /app
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"

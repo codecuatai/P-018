@@ -17,7 +17,6 @@ import { ChatScreen } from './src/screens/ChatScreen';
 import { ActivityScreen } from './src/screens/ActivityScreen';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { theme } from './src/theme';
-import type { SessionActivity } from './src/types';
 
 type Tab = 'chat' | 'activity' | 'account';
 
@@ -25,14 +24,6 @@ function MainApp() {
   const insets = useSafeAreaInsets();
   const { currentUser, authLoading, login, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('chat');
-  const [activities, setActivities] = useState<SessionActivity[]>([]);
-
-  const handleNewActivity = (activity: SessionActivity) => {
-    setActivities((current) => [
-      activity,
-      ...current.filter((item) => item.id !== activity.id),
-    ].slice(0, 40));
-  };
 
   if (authLoading) {
     return (
@@ -66,11 +57,10 @@ function MainApp() {
       {/* Main Tab Content */}
       <View style={styles.tabContent}>
         <View style={[styles.screen, activeTab !== 'chat' && styles.hiddenScreen]}>
-          <ChatScreen user={currentUser} onActivity={handleNewActivity} />
+          <ChatScreen user={currentUser} onActivity={() => {}} />
         </View>
         <View style={[styles.screen, activeTab !== 'activity' && styles.hiddenScreen]}>
           <ActivityScreen
-            activities={activities}
             onOpenChat={() => setActiveTab('chat')}
           />
         </View>
@@ -115,11 +105,6 @@ function MainApp() {
                 size={20}
                 color={activeTab === 'activity' ? theme.colors.primary : theme.colors.muted}
               />
-              {activities.length > 0 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{activities.length}</Text>
-                </View>
-              )}
             </View>
             <Text
               style={[

@@ -38,6 +38,7 @@ jobs:
       gateway: ${{ steps.filter.outputs.gateway }}
       web: ${{ steps.filter.outputs.web }}
       compose: ${{ steps.filter.outputs.compose }}
+      code_changed: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.code_changed == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -114,6 +115,18 @@ jobs:
               - 'scripts/migrate.ps1'
               - 'apps/api-gateway/migrations/**'
               - 'services/**/migrations/**'
+            code_changed:
+              - 'apps/**'
+              - 'services/**'
+              - 'packages/**'
+              - 'docker-compose.yml'
+              - '.env.example'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'ruff.toml'
+              - 'scripts/**'
+              - '.github/workflows/ci-cd.yml'
 
   agent-service:
     needs: detect-changes
@@ -383,11 +396,12 @@ jobs:
           DEPLOY_REPOSITORY: ${{ github.repository }}
           DEPLOY_SERVER_URL: ${{ github.server_url }}
           DEPLOY_SHA: ${{ github.sha }}
+          CODE_CHANGED: ${{ needs.detect-changes.outputs.code_changed }}
         with:
           host: ${{ secrets.DEV_HOST || secrets.DEVELOP_HOST || secrets.STAGING_HOST }}
           username: ${{ secrets.DEV_USER || secrets.DEVELOP_USER || secrets.STAGING_USER }}
           key: ${{ secrets.DEV_SSH_KEY || secrets.DEVELOP_SSH_KEY || secrets.STAGING_SSH_KEY }}
-          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA,CODE_CHANGED
           command_timeout: 30m
           script: |
             set -eu
@@ -406,11 +420,18 @@ jobs:
             unset DEPLOY_GITHUB_TOKEN deploy_auth
             git reset --hard FETCH_HEAD
 
-            docker compose --env-file .env config --quiet
-            docker compose --env-file .env up -d --build --remove-orphans
+            if [ "${CODE_CHANGED:-true}" = "true" ]; then
+              echo "Service or infrastructure changes detected. Rebuilding containers..."
+              docker compose --env-file .env config --quiet
+              docker compose --env-file .env build --no-cache
+              docker compose --env-file .env up -d --remove-orphans
 
-            docker image prune -f
-            echo "Develop deployment completed successfully."
+              docker image prune -f
+              docker builder prune -f
+              echo "Develop deployment completed successfully (full rebuild)."
+            else
+              echo "No service or container code changes detected. Repository synced cleanly in seconds."
+            fi
 
   deploy-production:
     name: VPS Production Deploy
@@ -447,11 +468,12 @@ jobs:
           DEPLOY_REPOSITORY: ${{ github.repository }}
           DEPLOY_SERVER_URL: ${{ github.server_url }}
           DEPLOY_SHA: ${{ github.sha }}
+          CODE_CHANGED: ${{ needs.detect-changes.outputs.code_changed }}
         with:
           host: ${{ secrets.PROD_HOST || secrets.MAIN_HOST || secrets.STAGING_HOST }}
           username: ${{ secrets.PROD_USER || secrets.MAIN_USER || secrets.STAGING_USER }}
           key: ${{ secrets.PROD_SSH_KEY || secrets.MAIN_SSH_KEY || secrets.STAGING_SSH_KEY }}
-          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA
+          envs: DEPLOY_GITHUB_TOKEN,DEPLOY_REPOSITORY,DEPLOY_SERVER_URL,DEPLOY_SHA,CODE_CHANGED
           command_timeout: 30m
           script: |
             set -eu
@@ -470,8 +492,15 @@ jobs:
             unset DEPLOY_GITHUB_TOKEN deploy_auth
             git reset --hard FETCH_HEAD
 
-            docker compose --env-file .env config --quiet
-            docker compose --env-file .env up -d --build --remove-orphans
+            if [ "${CODE_CHANGED:-true}" = "true" ]; then
+              echo "Service or infrastructure changes detected. Rebuilding production containers..."
+              docker compose --env-file .env config --quiet
+              docker compose --env-file .env build --no-cache
+              docker compose --env-file .env up -d --remove-orphans
 
-            docker image prune -f
-            echo "Production deployment completed successfully."
+              docker image prune -f
+              docker builder prune -f
+              echo "Production deployment completed successfully (full rebuild)."
+            else
+              echo "No service or container code changes detected. Repository synced cleanly in seconds."
+            fi

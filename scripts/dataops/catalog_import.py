@@ -103,7 +103,36 @@ class ImportPlan:
         return {"domain": self.domain, "dataset_version": self.dataset_version, "generated_at": self.generated_at, "import_status": self.import_status, "rows_total": sum(report.rows_total for report in self.reports), "rows_valid": sum(report.rows_valid for report in self.reports), "rows_rejected": sum(report.rows_rejected for report in self.reports), "reports": [report.as_dict() for report in self.reports]}
 
 
+def _load_dotenv() -> None:
+    env_file = ROOT / ".env"
+    if not env_file.is_file():
+        return
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = val
+    except Exception:
+        pass
+
+
+def normalize_database_url(url: str) -> str:
+    if "@postgres:" in url or "@postgres/" in url:
+        try:
+            import socket
+            socket.gethostbyname("postgres")
+        except socket.gaierror:
+            url = url.replace("@postgres:", "@localhost:").replace("@postgres/", "@localhost/")
+    return url
+
+
 def main(argv: list[str] | None = None) -> int:
+    _load_dotenv()
     parser = argparse.ArgumentParser(description="Validate and import X-One Hanoi catalog sources.")
     parser.add_argument("domain", choices=["food", "restaurant", "healthcare"])
     parser.add_argument("--dataset-version", default=DEFAULT_VERSION)
@@ -121,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
                 args.database_url = os.environ.get(database_env(args.domain))
             if not args.database_url:
                 raise ValueError("A database URL is required for dataset deactivation.")
-            asyncio.run(deactivate_version(args.domain, args.deactivate_version, args.database_url))
+            db_url = normalize_database_url(args.database_url)
+            asyncio.run(deactivate_version(args.domain, args.deactivate_version, db_url))
             print(json.dumps({"domain": args.domain, "deactivated_version": args.deactivate_version, "status": "DEACTIVATED"}, ensure_ascii=False))
             return 0
 
@@ -134,7 +164,8 @@ def main(argv: list[str] | None = None) -> int:
             database_url = args.database_url or os.environ.get(database_env(args.domain))
             if not database_url:
                 raise ValueError(f"{database_env(args.domain)} is required for --apply; the read-only validation plan was still written.")
-            asyncio.run(apply_plan(plan, database_url, allow_rejected=args.allow_rejected))
+            db_url = normalize_database_url(database_url)
+            asyncio.run(apply_plan(plan, db_url, allow_rejected=args.allow_rejected))
         print(json.dumps({"domain": plan.domain, "dataset_version": plan.dataset_version, "output_dir": str(output_dir), "status": "IMPORTED" if args.apply else "VALIDATED", "rows_valid": sum(report.rows_valid for report in plan.reports), "rows_rejected": sum(report.rows_rejected for report in plan.reports)}, ensure_ascii=False))
         return 0
     except (OSError, ValueError, csv.Error) as error:
