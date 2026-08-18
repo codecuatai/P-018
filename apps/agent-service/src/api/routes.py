@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 from uuid import uuid4
 
@@ -29,6 +30,40 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _langfuse_config(
+    user_id: str | None = None,
+    session_id: str | None = None,
+    trace_name: str = "assistant-chat",
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    settings = get_settings()
+    if not settings.langfuse_public_key or not settings.langfuse_secret_key:
+        return None
+    try:
+        try:
+            from langfuse.langchain import CallbackHandler
+        except ImportError:
+            try:
+                from langfuse.callback import CallbackHandler
+            except ImportError:
+                from langfuse import CallbackHandler
+
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", settings.langfuse_public_key)
+        os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
+        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse_base_url or "https://us.cloud.langfuse.com")
+        os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_base_url or "https://us.cloud.langfuse.com")
+
+        handler = CallbackHandler()
+        config_meta = {
+            "langfuse_user_id": user_id,
+            "langfuse_session_id": session_id,
+            "langfuse_tags": [trace_name],
+            **(metadata or {}),
+        }
+        return {"callbacks": [handler], "metadata": config_meta}
+    except Exception as exc:
+        logger.warning("Langfuse callback initialization deferred: %s", exc)
+        return None
 
 
 @router.post("/assistant-chat", response_model=None)
@@ -47,6 +82,12 @@ async def assistant_chat(
     ):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
     try:
+        config = _langfuse_config(
+            user_id=request.user_id,
+            session_id=request.conversation_id,
+            trace_name="assistant-chat",
+            metadata={"correlation_id": request.correlation_id, "mode": request.mode},
+        )
         result = await assistant_agent.ainvoke(
             {
                 "query": request.message,
@@ -56,7 +97,8 @@ async def assistant_chat(
                 "capability_snapshot": request.capability_snapshot,
                 "authoritative_results": request.authoritative_results,
                 "mode": request.mode,
-            }
+            },
+            config=config,
         )
         return {
             "data": {
@@ -92,6 +134,12 @@ async def chat(
     ):
         raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
     try:
+        config = _langfuse_config(
+            user_id=request.user_id,
+            session_id=request.conversation_id,
+            trace_name="food-chat",
+            metadata={"correlation_id": request.correlation_id},
+        )
         result = await food_agent.ainvoke(
             {
                 "query": request.message,
@@ -100,7 +148,8 @@ async def chat(
                 "messages": request.messages,
                 "workflow_context": request.workflow_context,
                 "correlation_id": request.correlation_id,
-            }
+            },
+            config=config,
         )
         state_updates = result.get("state_updates", {})
         if not state_updates and result.get("tool_results"):
@@ -146,6 +195,11 @@ async def restaurant_chat(
         # but it must not force the agent into result-only response mode.
         merged_context.pop("tool_result_only", None)
     try:
+        config = _langfuse_config(
+            user_id=actor_id,
+            session_id=workflow_id,
+            trace_name="restaurant-chat",
+        )
         result = await restaurant_agent.ainvoke(
             {
                 "query": request.message,
@@ -155,7 +209,8 @@ async def restaurant_chat(
                 "intent": previous.get("intent"),
                 "slots": previous.get("slots", {}),
                 "context": merged_context,
-            }
+            },
+            config=config,
         )
         workflow_store.save(actor_id, workflow_id, {**previous, **request.context, **result, "workflow_id": workflow_id, "actor_id": actor_id})
         response = ChatResponse(
@@ -194,6 +249,11 @@ async def healthcare_chat(
         # asking the user to repeat an internal ID.
         merged_context.pop("tool_result_only", None)
     try:
+        config = _langfuse_config(
+            user_id=actor_id,
+            session_id=workflow_id,
+            trace_name="healthcare-chat",
+        )
         result = await healthcare_agent.ainvoke(
             {
                 "query": request.message,
@@ -203,7 +263,8 @@ async def healthcare_chat(
                 "intent": previous.get("intent"),
                 "slots": previous.get("slots", {}),
                 "context": merged_context,
-            }
+            },
+            config=config,
         )
         workflow_store.save(
             actor_id,
@@ -232,13 +293,18 @@ async def ride_chat(
 ) -> dict[str, Any]:
     """Return a deterministic Ride state patch and typed tool request."""
     try:
+        config = _langfuse_config(
+            session_id=request.workflow_id,
+            trace_name="ride-chat",
+        )
         result = await ride_agent.ainvoke(
             {
                 "query": request.message,
                 "workflow_id": request.workflow_id,
                 "turn_id": request.client_turn_id or uuid4().hex,
                 "context": request.context,
-            }
+            },
+            config=config,
         )
         response = RideChatResponse(
             response=result.get("response", ""),

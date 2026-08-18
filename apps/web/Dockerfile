@@ -45,7 +45,9 @@ RUN for d in /app/node_modules/.pnpm/next@*/node_modules; do \
     done && \
     mkdir -p /app/node_modules/@swc && \
     rm -rf /app/node_modules/@swc/helpers && \
-    cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers /app/node_modules/@swc/helpers 2>/dev/null || true
+    cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers /app/node_modules/@swc/helpers 2>/dev/null || true && \
+    mkdir -p /app/.next/cache && \
+    chown -R nextjs:nodejs /app
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"

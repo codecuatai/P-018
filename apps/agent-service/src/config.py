@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # into deterministic mode without changing the production/demo default.
     agent_model_mode: Literal["deterministic", "gemini"] = "gemini"
 
+    # Langfuse Observability (Optional)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = "https://us.cloud.langfuse.com"
+
     # Database
     database_url: str = Field(min_length=1)
     internal_service_token: str = Field(min_length=1)
