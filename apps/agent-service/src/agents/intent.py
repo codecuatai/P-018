@@ -85,7 +85,7 @@ def _dish_query(text: str) -> str | None:
 def extract_slots(query: str) -> dict[str, object]:
     text = plain(query)
     slots: dict[str, object] = {}
-    quantity = re.search(r"\b([1-9][0-9]?)\b", text)
+    quantity = None if re.search(r"\b\d{1,2}\s*(?:h|:|gio|ruoi)\b", text) else re.search(r"\b([1-9][0-9]?)\b", text)
     if quantity:
         slots["quantity"] = int(quantity.group(1))
     else:
@@ -141,8 +141,19 @@ def extract_slots(query: str) -> dict[str, object]:
     district = re.search(r"\b(?:o|tai|khu vuc|den)\b\s+([a-z ]+?)(?:\s+(?:duoi|tren|gia)|[.!?,;:]?$)", text)
     if district:
         slots["district"] = district.group(1).strip()
-    if any(value in text for value in ("tim", "an gi", "mon", "lay", "chon", "cho toi", "toi muon", "mua", "them", "dat", "goi y", "ga ran", "ga chien", "fast food")):
+    ride_request = any(value in text for value in ("dat xe", "goi xe", "di tu", "xe tu"))
+    if not ride_request and any(value in text for value in ("tim", "an gi", "mon", "lay", "chon", "cho toi", "toi muon", "mua", "them", "dat", "goi y", "ga ran", "ga chien", "fast food")):
         dish = _dish_query(text)
         if dish:
             slots["dish_query"] = _restore_query_spelling(query, dish)
+
+    department_match = re.search(r"\bkhoa\s+([a-z ]+)(?:[.!?,;:]|$)", text)
+    if department_match:
+        slots["department"] = _restore_query_spelling(query, "khoa " + department_match.group(1).strip())
+
+    time_match = re.search(r"\b(\d{1,2}(?:\s*(?:h|:|gio|ruoi))(?:\s*\d{2})?(?:\s*(?:sang|trua|chieu|toi))?)\b", text)
+    if time_match:
+        slots["time"] = _restore_query_spelling(query, time_match.group(1).strip())
+
+
     return slots

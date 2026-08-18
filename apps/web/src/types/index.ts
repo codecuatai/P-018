@@ -619,6 +619,18 @@ export interface AssistantFoodItem extends AssistantItemBase<"food_options" | "f
 
 export interface AssistantProgressItem extends AssistantItemBase<"progress" | "clarification"> {}
 
+export interface AssistantAddressOption {
+  label: string;
+  address_text: string;
+  is_default?: boolean;
+}
+
+export interface AssistantAddressOptionsItem extends AssistantItemBase<"address_options"> {
+  purpose: "PICKUP" | "DROPOFF" | "DELIVERY" | string;
+  addresses: AssistantAddressOption[];
+  allow_new?: boolean;
+}
+
 export interface AssistantTaskErrorItem extends AssistantItemBase<"task_error"> {
   error_code?: string;
   retryable?: boolean;
@@ -633,7 +645,8 @@ export type KnownAssistantItem =
   | AssistantHealthcareItem
   | AssistantFoodItem
   | AssistantProgressItem
-  | AssistantTaskErrorItem;
+  | AssistantTaskErrorItem
+  | AssistantAddressOptionsItem;
 
 export type UnknownAssistantItem = {
   kind: string;
@@ -651,7 +664,7 @@ export function isKnownAssistantItem(item: AssistantItem): item is KnownAssistan
     "restaurant_options", "restaurant_unavailable", "restaurant_confirmation", "reservation",
     "ride_quote", "ride_booking", "ride_timing_conflict", "healthcare_options",
     "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed",
-    "food_options", "food_confirmation", "food_order", "food_empty", "food_cart", "progress", "clarification", "task_error",
+    "food_options", "food_confirmation", "food_order", "food_empty", "food_cart", "progress", "clarification", "task_error", "address_options",
   ].includes(item.kind as KnownAssistantItemKind);
 }
 

@@ -9,7 +9,7 @@ import { useRideTracking } from "../features/product/ride-tracking-cache";
 import { RideCancelButton } from "../features/product/ride-cancel-button";
 import { ServiceDetailDialog } from "./ServiceDetailDialog";
 import { FoodTrackingPanel } from "../features/product/food-tracking";
-import { isKnownAssistantItem, type AssistantAction, type AssistantHealthcareItem, type AssistantHealthcareOptionsItem, type AssistantItem, type AssistantRestaurantConfirmationItem, type AssistantRestaurantOptionsItem, type AssistantResponse, type AssistantRideItem, type AssistantRideTimingConflictItem, type AssistantFoodItem, type AssistantOption, type AssistantTaskErrorItem } from "../types";
+import { isKnownAssistantItem, type AssistantAction, type AssistantAddressOptionsItem, type AssistantHealthcareItem, type AssistantHealthcareOptionsItem, type AssistantItem, type AssistantRestaurantConfirmationItem, type AssistantRestaurantOptionsItem, type AssistantResponse, type AssistantRideItem, type AssistantRideTimingConflictItem, type AssistantFoodItem, type AssistantOption, type AssistantTaskErrorItem } from "../types";
 import { formatDateTime, formatMoney, optionalText, statusLabel } from "../lib/presentation";
 
 type ActionHandler = (action: AssistantAction, input?: { quantity?: number }) => void;
@@ -62,6 +62,8 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
       return <SimpleCard item={item} />;
     case "task_error":
       return <TaskErrorCard item={item} />;
+    case "address_options":
+      return <AddressOptionsCard item={item} />;
     default:
       return assertNever(item);
   }
@@ -267,19 +269,38 @@ function actionForHealthcareOption(detail: AssistantOption | null, groups: Healt
 }
 
 function SimpleCard({ item }: { item: { title: string; question?: string; note?: string } }) {
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} />{item.question || item.note ? <p>{text(item.question ?? item.note)}</p> : null}</article>;
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} />{item.question || item.note ? <p>{text(item.question ?? item.note)}</p> : null}</article>;
+}
+
+function AddressOptionsCard({ item }: { item: AssistantAddressOptionsItem }) {
+  const purpose = item.purpose === "PICKUP" ? "điểm đón" : item.purpose === "DROPOFF" ? "điểm đến" : "địa chỉ giao hàng";
+  return <article className="assistant-card card-simple"><CardHeading icon={<MapPin size={17} />} label="Địa chỉ" title={item.title || `Chọn ${purpose}`} />
+    <p>{text(item.note, `Bạn muốn dùng ${purpose} nào? Chọn một địa chỉ đã lưu hoặc nhập địa chỉ mới trong tin nhắn tiếp theo.`)}</p>
+    {item.addresses.length ? <div className="option-list">{item.addresses.map((address) => <div className="option-row" key={`${address.label}-${address.address_text}`}><div><strong>{address.label}</strong><span><MapPin size={13} /> {address.address_text}</span></div>{address.is_default ? <small>Mặc định</small> : null}</div>)}</div> : null}
+    {item.allow_new ? <p className="card-note">Bạn cũng có thể nhập một địa chỉ mới, cụ thể.</p> : null}
+  </article>;
 }
 
 function TaskErrorCard({ item }: { item: AssistantTaskErrorItem }) {
   const requiresPatientProfile = item.error_code === "PATIENT_LINK_REQUIRED";
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} />
+  const fallback = taskErrorCopy(item.error_code);
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} />
     <p>{text(item.note, "Mình chưa thể hoàn tất lựa chọn này. Bạn hãy kiểm tra lại thông tin rồi thử lại nhé.")}</p>
     {requiresPatientProfile ? <Link className="small-action task-error-action" href="/app/profile?section=patients">Liên kết hồ sơ người bệnh</Link> : null}
   </article>;
 }
 
+function taskErrorCopy(code?: string): { title: string; note: string } {
+  switch (code) {
+    case "NO_DRIVER": return { title: "Chưa tìm thấy tài xế", note: "Hiện chưa có tài xế phù hợp. Bạn có thể thử lại sau hoặc đổi thời gian/điểm đi." };
+    case "SLOT_UNAVAILABLE": return { title: "Khung giờ không còn trống", note: "Khung giờ này vừa được chọn hết. Hãy chọn một khung giờ khác để tiếp tục." };
+    case "ACTION_NOT_AVAILABLE": return { title: "Lựa chọn đã hết hiệu lực", note: "Lựa chọn cũ không còn dùng được. Hãy chọn phương án hiện tại trong cuộc trò chuyện." };
+    default: return { title: "Dịch vụ gặp sự cố", note: "Mình chưa thể hoàn tất bước này. Bạn hãy kiểm tra thông tin hoặc thử lại." };
+  }
+}
+
 function FallbackCard({ item }: { item: { title: string; note?: string; question?: string } }) {
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} /><p>{text(item.note ?? item.question, "Mình đã nhận thông tin mới và sẽ cập nhật ở bước tiếp theo.")}</p></article>;
+  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} /><p>{text(item.note ?? item.question, "Mình đã nhận thông tin mới và sẽ cập nhật ở bước tiếp theo.")}</p></article>;
 }
 
 function assertNever(value: never): never {

@@ -64,6 +64,7 @@ type StoredTask = {
   failure_code?: string;
   blocking_task_id?: string;
   block_reason?: string;
+  missing_information?: string[];
 };
 
 type AssistantState = {
@@ -312,6 +313,40 @@ function publicFailureCode(error: unknown): string {
   return candidate && /^[A-Z][A-Z0-9_]{2,63}$/.test(candidate) ? candidate : 'TASK_EXECUTION_FAILED';
 }
 
+function buildTaskErrorItem(code: string, retryable: boolean, context?: Record<string, unknown>) {
+  let title = 'Dịch vụ gặp sự cố';
+  let note = 'Mình chưa thể hoàn tất dịch vụ. Bạn hãy thử lại sau nhé.';
+
+  switch (code) {
+    case 'DEPENDENCY_BLOCKED':
+      title = 'Chưa đủ điều kiện';
+      note = 'Bạn cần hoàn tất thông tin khác trước khi thực hiện bước này.';
+      break;
+    case 'PATIENT_LINK_REQUIRED':
+      title = 'Cần hồ sơ người bệnh';
+      note = 'Bạn cần liên kết hồ sơ người bệnh trước khi đặt lịch khám.';
+      break;
+    case 'NOT_FOUND':
+      title = 'Không tìm thấy thông tin';
+      note = 'Dịch vụ hoặc thông tin bạn yêu cầu không khả dụng.';
+      break;
+    case 'INVALID_PAYLOAD':
+    case 'BAD_REQUEST':
+      title = 'Thông tin chưa hợp lệ';
+      note = 'Có vẻ thông tin cung cấp chưa chính xác, bạn hãy kiểm tra lại nhé.';
+      break;
+  }
+
+  return {
+    kind: 'task_error',
+    error_code: code,
+    retryable,
+    title,
+    note,
+    ...context
+  };
+}
+
 /**
  * Core persistence failures are kept separate from domain failures. Their
  * receipt remains PROCESSING so the same key can reclaim it after its lease;
@@ -472,6 +507,7 @@ function storedState(value: unknown): AssistantState {
     ...(stringValue(task.failure_code) ? { failure_code: task.failure_code as string } : {}),
     ...(stringValue(task.blocking_task_id) ? { blocking_task_id: task.blocking_task_id as string } : {}),
     ...(stringValue(task.block_reason) ? { block_reason: task.block_reason as string } : {}),
+    ...(Array.isArray(task.missing_information) ? { missing_information: task.missing_information.filter((i): i is string => typeof i === 'string') } : {}),
   }));
   const actions: StoredAction[] = arrayValue(value.actions).filter(isRecord).map((action) => ({
     id: stringValue(action.id) ?? `action_${randomUUID().slice(0, 8)}`,
@@ -782,7 +818,7 @@ export class AssistantService {
     const explicitDomains = new Set<Domain>();
     if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day'])) explicitDomains.add('food');
     if (textHasAny(folded, ['dat ban', 'nha hang', 'an tai nha hang'])) explicitDomains.add('restaurant');
-    if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
+    if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'khoa', 'tam ly', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
     if (textHasAny(folded, ['dat xe', 'goi xe', 'di tu', 'xe may', 'xe 4 cho', 'xe 7 cho'])) explicitDomains.add('ride');
 
     if (explicitDomains.size) {
@@ -820,6 +856,7 @@ export class AssistantService {
       goal: task.goal,
       normalized_request: task.normalized_request || task.goal,
       extracted_slots: sanitizedSlots(task.extracted_slots),
+      missing_information: task.missing_information,
     };
   }
 
@@ -939,15 +976,22 @@ export class AssistantService {
         continue;
       }
       if (!merge.touchedIds.has(task.id)) {
-        if (task.public_item) items.push(task.public_item);
+        if (task.public_item) {
+          if (task.phase === 'FAILED') {
+            const isActiveDomain = merged.some((candidate) => candidate.domain === task.domain && merge.touchedIds.has(candidate.id));
+            const isSoleTask = merged.length === 1;
+            const hasDependents = merged.some((candidate) => candidate.depends_on?.includes(task.id));
+            if (isActiveDomain || isSoleTask || hasDependents) {
+              items.push(task.public_item);
+            }
+          } else {
+            items.push(task.public_item);
+          }
+        }
         continue;
       }
       if (hasFailedDependency(task, merged)) {
-        const publicItem = {
-          kind: 'task_error',
-          error_code: 'DEPENDENCY_BLOCKED',
-          retryable: false,
-        };
+        const publicItem = buildTaskErrorItem('DEPENDENCY_BLOCKED', false);
         task.phase = 'FAILED';
         task.failure_code = 'DEPENDENCY_BLOCKED';
         task.public_item = publicItem;
@@ -967,11 +1011,7 @@ export class AssistantService {
         if (result.publicItem) resultsForComposition.push(result.publicItem);
       } catch (error: unknown) {
         const code = publicFailureCode(error);
-        const publicItem = {
-          kind: 'task_error',
-          error_code: code,
-          retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE',
-        };
+        const publicItem = buildTaskErrorItem(code, assistantActionFailureStatus(error) === 'FAILED_RETRYABLE');
         task.phase = 'FAILED';
         task.failure_code = code;
         task.public_item = publicItem;
@@ -1029,7 +1069,7 @@ export class AssistantService {
       if (previousExecution.requestHash !== requestHash) throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Mã yêu cầu đã được dùng cho một lựa chọn khác.' });
       if (previousExecution.status === 'SUCCEEDED') {
         if (previousExecution.idempotencyKey !== idempotencyKey) {
-          throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lá»±a chá»n nÃ y khÃ´ng cÃ²n hiá»‡u lá»±c.' });
+          throw new ConflictException({ code: 'ACTION_NOT_AVAILABLE', detail: 'Lựa chọn này không còn hiệu lực.' });
         }
         if (previousExecution.response) return previousExecution.response as unknown as AssistantResponse;
       }
@@ -1094,7 +1134,7 @@ export class AssistantService {
         if (hasFailedDependency(dependent, state.tasks)) {
           dependent.phase = 'FAILED';
           dependent.failure_code = 'DEPENDENCY_BLOCKED';
-          const publicItem = { kind: 'task_error', error_code: 'DEPENDENCY_BLOCKED', retryable: false };
+          const publicItem = buildTaskErrorItem('DEPENDENCY_BLOCKED', false);
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
           continue;
@@ -1116,7 +1156,7 @@ export class AssistantService {
           const code = publicFailureCode(error);
           dependent.phase = 'FAILED';
           dependent.failure_code = code;
-          const publicItem = { kind: 'task_error', error_code: code, retryable: assistantActionFailureStatus(error) === 'FAILED_RETRYABLE' };
+          const publicItem = buildTaskErrorItem(code, assistantActionFailureStatus(error) === 'FAILED_RETRYABLE');
           dependent.public_item = publicItem;
           remainingItems.push(publicItem);
         }
@@ -1169,11 +1209,7 @@ export class AssistantService {
         const code = publicFailureCode(error);
         task.phase = 'FAILED';
         task.failure_code = code;
-        const publicItem = {
-          kind: 'task_error',
-          error_code: code,
-          retryable: false,
-        };
+        const publicItem = buildTaskErrorItem(code, false);
         task.public_item = publicItem;
         state.actions = state.actions.filter((candidate) => candidate.task_id !== task.id);
         state.orchestration = buildOrchestrationSnapshot(
@@ -1279,12 +1315,7 @@ export class AssistantService {
       : ['APPOINTMENT_EXPIRED', 'SLOT_UNAVAILABLE', 'SLOT_ALREADY_HELD'].includes(code)
         ? 'Khung giờ này không còn trống. Mình đã cập nhật các lựa chọn để bạn chọn lại nhé.'
         : 'Mình chưa thể hoàn tất lựa chọn này. Bạn thử lại với thông tin hiện tại nhé.';
-    const item: JsonObject = {
-      kind: 'task_error',
-      note: message,
-      error_code: code,
-      retryable: false,
-    };
+    const item: JsonObject = buildTaskErrorItem(code, false, { note: message });
     state.orchestration = buildOrchestrationSnapshot(
       state.tasks,
       Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
@@ -1474,6 +1505,7 @@ export class AssistantService {
         }
         match.goal = stringValue(candidate.goal) ?? match.goal;
         match.normalized_request = request || match.normalized_request;
+        match.missing_information = arrayValue(candidate.missing_information) as string[];
         plannedIds.push(match.id);
         continue;
       }
@@ -1487,6 +1519,7 @@ export class AssistantService {
         phase: candidate.disposition === 'NEEDS_INFO' || candidate.disposition === 'WAITING' ? 'NEEDS_INFO' : 'PLANNING',
         revision: 0,
         latest_message: latestMessage,
+        missing_information: arrayValue(candidate.missing_information).filter((value): value is string => typeof value === 'string'),
       };
       next.push(created);
       plannedIds.push(created.id);
@@ -1739,6 +1772,12 @@ export class AssistantService {
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { ...existing, selected, availability, hold, pending }, publicItem, items: [publicItem], actions: [action], workflowId: tool.workflow_id };
   }
 
+  private async addressOptionsItem(userId: string, purpose: "PICKUP" | "DROPOFF" | "DELIVERY"): Promise<JsonObject> {
+    const addresses = (await this.store.listSavedAddresses(userId)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText, is_default: address.isDefault }));
+    const label = purpose === "PICKUP" ? "điểm đón" : purpose === "DROPOFF" ? "điểm đến" : "địa chỉ giao hàng";
+    return { kind: "address_options", title: `Chọn ${label}`, purpose, addresses, allow_new: true, note: `Bạn có thể chọn ${label} đã lưu hoặc nhập một địa chỉ mới cụ thể.` };
+  }
+
   private async processRide(task: StoredTask, allTasks: StoredTask[], user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
     const slots = { ...task.extracted_slots };
     let healthcareFacility: JsonObject | undefined;
@@ -1776,6 +1815,8 @@ export class AssistantService {
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };
     }
     if (!pickup || !dropoff || dropoff.toLowerCase() === 'nhà hàng đó') {
+      if (!pickup) return { phase: 'NEEDS_INFO' as TaskPhase, items: [await this.addressOptionsItem(user.sub, 'PICKUP')] };
+      if (!dropoff) return { phase: 'NEEDS_INFO' as TaskPhase, items: [await this.addressOptionsItem(user.sub, 'DROPOFF')] };
       if (healthcareDependency) {
         const publicItem = {
           kind: 'ride_timing_conflict',
@@ -2170,7 +2211,7 @@ export class AssistantService {
       return {
         phase: 'NEEDS_INFO',
         message: `Bạn muốn giao đơn hàng tới địa chỉ nào? ${addressHint}`,
-        publicItem: { kind: 'food_cart', cart},
+        publicItem: { kind: 'address_options', title: 'Chọn địa chỉ giao hàng', purpose: 'DELIVERY', addresses: savedAddresses.slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText, is_default: address.isDefault })), allow_new: true, note: `Bạn muốn giao đơn hàng tới địa chỉ nào? ${addressHint}` },
         authoritative: { ...(task.authoritative ?? {}), food_context: context },
       };
     }
@@ -2223,7 +2264,7 @@ export class AssistantService {
       cart_id: cartId,
       cart_items: arrayValue(refreshedCart.items).filter(isRecord),
     };
-    const publicItem = { kind: 'food_cart', cart: refreshedCart };
+    const publicItem = { kind: 'food_cart', title: 'Giỏ hàng đã được cập nhật', cart: refreshedCart };
     const authoritative = { ...(task.authoritative ?? {}), food_context: context, state_updates: context };
     return {
       phase: 'IN_PROGRESS',
@@ -2794,7 +2835,7 @@ export class AssistantService {
       'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note', 'cart', 'pickup_stops', 'delivery_address', 'confirmation_state',
       'resource_id',
       'appointment_id', 'appointment', 'facility', 'alternative_slots', 'order', 'payment', 'preview',
-      'error_code', 'retryable',
+      'error_code', 'retryable', 'purpose', 'addresses', 'allow_new',
     ]);
     const result: JsonObject = {};
     for (const [key, value] of Object.entries(item)) {
@@ -2817,6 +2858,12 @@ export class AssistantService {
         result[key] = this.sanitizeCart(value);
       } else if (key === 'pickup_stops') {
         result[key] = arrayValue(value).filter(isRecord).map((stop) => this.sanitizeRestaurant(stop));
+      } else if (key === 'addresses') {
+        result[key] = arrayValue(value).filter(isRecord).map((address) => ({
+          ...(stringValue(address.label) ? { label: stringValue(address.label) } : {}),
+          ...(stringValue(address.address_text) ? { address_text: stringValue(address.address_text) } : {}),
+          ...(typeof address.is_default === 'boolean' ? { is_default: address.is_default } : {}),
+        })).filter((address) => address.label && address.address_text);
       } else if (key === 'driver') {
         result[key] = this.sanitizeDriver(value);
       } else if (key === 'route_geometry') {
