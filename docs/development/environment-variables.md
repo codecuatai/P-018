@@ -14,4 +14,12 @@ Production is different: do not upload root `.env` wholesale. The deployment pla
 
 For a real-Gemini Gate G2 evaluation, set a valid `GEMINI_API_KEY` in a private root `.env` and set `AGENT_MODEL_MODE=gemini`. The key is optional for normal local startup but required for that evaluation path. `GEMINI_API_KEY` is mapped only to `agent-service`; status/health may report only whether it is configured, never its value.
 
+Langfuse tracing is optional and is consumed only by `agent-service`. Set
+`LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_BASE_URL` in the
+private root `.env`; Compose maps them only to that container. Traces record
+model/invocation/status metadata and intentionally omit raw prompts, model
+outputs, provider payloads, and user PII. Langfuse is inactive when either key
+is blank. Use `AGENT_MODEL_MODE=gemini` when testing generation traces; the
+deterministic planner does not call Gemini.
+
 Never commit/share `.env`, put live secrets in examples, pass database credentials across service boundaries, or expose Gemini/internal credentials to a browser client. If a credential was ever committed or copied into a template, revoke/rotate it outside the repository before relying on the replacement placeholder.

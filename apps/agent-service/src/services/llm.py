@@ -6,6 +6,7 @@ from typing import Any, Literal, Protocol
 from pydantic import BaseModel
 
 from src.config import get_settings
+from src.services.observability import langfuse_generation
 
 
 class LLMAdapter(Protocol):
@@ -240,7 +241,8 @@ class GeminiAdapter:
         fallback_attempted = False
         for index, model_name in enumerate(model_names):
             try:
-                response: Any = await self._model(model_name).ainvoke(prompt)
+                with langfuse_generation(model_name=model_name, invocation="raw", settings=settings):
+                    response: Any = await self._model(model_name).ainvoke(prompt)
                 _record_model_call(settings, model_name, "success", "raw", fallback_model_attempted=fallback_attempted)
                 return response
             except Exception as error:
@@ -263,7 +265,13 @@ class GeminiAdapter:
             try:
                 try:
                     structured = model.with_structured_output(schema, method="json_schema", include_raw=True)
-                    result = await structured.ainvoke(prompt)
+                    with langfuse_generation(
+                        model_name=model_name,
+                        invocation="structured",
+                        schema_name=schema.__name__,
+                        settings=settings,
+                    ):
+                        result = await structured.ainvoke(prompt)
                 except Exception as structured_error:
                     if not is_structured_schema_capability_error(structured_error):
                         raise
@@ -271,7 +279,13 @@ class GeminiAdapter:
                     # same model in raw mode; downstream parsers still validate
                     # the Assistant schema before accepting it.
                     invocation = "raw"
-                    result = await model.ainvoke(prompt)
+                    with langfuse_generation(
+                        model_name=model_name,
+                        invocation="raw",
+                        schema_name=schema.__name__,
+                        settings=settings,
+                    ):
+                        result = await model.ainvoke(prompt)
                     _record_model_call(
                         settings,
                         model_name,

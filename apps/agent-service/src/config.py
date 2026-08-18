@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
+    langfuse_base_url: str = "https://cloud.langfuse.com"
     api_gateway_internal_url: str = "http://localhost:3000"
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)
     max_graph_steps: int = Field(default=12, ge=1, le=20)

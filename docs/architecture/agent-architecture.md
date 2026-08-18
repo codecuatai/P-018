@@ -44,7 +44,11 @@ Slot normalization is domain-specific: Ride accepts only bounded addresses and
 bounded semantic preferences and explicit clock times remain exact; Food
 accepts bounded query, location, and delivery preference fields. The adapter records the configured
 primary/fallback, actual last model, fallback usage, call time, and safe status
-for `/api/v1/status`; it never reports keys or raw prompts.
+for `/api/v1/status`; it never reports keys or raw prompts. Optional Langfuse
+instrumentation is isolated at the Gemini adapter boundary and records only
+model, invocation type, schema name, success/failure, and safe exception type.
+It does not send prompt text, model output, provider payloads, or user PII, and
+telemetry failures never fail the model request.
 
 Target Agent persistence may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The current MVP uses a process-local legacy workflow store and does not connect to `xone_agent`; Agent state is therefore not durable across an Agent restart. The LLM never determines price, availability, payment, or booking/order success.
 

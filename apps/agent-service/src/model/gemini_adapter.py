@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from src.config import get_settings
 from src.services.llm import build_chat_model, gemini_model_names, should_attempt_fallback_model
+from src.services.observability import langfuse_generation
 
 
 class GeminiExtraction(BaseModel):
@@ -34,7 +35,13 @@ class GeminiAdapter:
         for index, model_name in enumerate(model_names):
             try:
                 model = build_chat_model(self._settings, model_name).with_structured_output(GeminiExtraction)
-                result = await model.ainvoke(prompt)
+                with langfuse_generation(
+                    model_name=model_name,
+                    invocation="structured",
+                    schema_name=GeminiExtraction.__name__,
+                    settings=self._settings,
+                ):
+                    result = await model.ainvoke(prompt)
                 return result.model_dump()
             except Exception as error:
                 last_error = error
