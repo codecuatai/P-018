@@ -22,7 +22,8 @@ import {
 } from './orchestration';
 
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
-type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED';
+type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'DISCARDED';
+type InteractionMode = 'service' | 'chitchat' | 'advisory' | 'unsupported';
 
 type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'healthcare_cancel' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm' | 'food_payment';
 
@@ -78,6 +79,18 @@ type AssistantState = {
 type MergeResult = {
   tasks: StoredTask[];
   touchedIds: Set<string>;
+};
+
+type PlanResolution = {
+  tasks: AgentPlanTask[];
+  clarificationQuestion?: string;
+  interactionMode: InteractionMode;
+  discardedTaskRefs: number[];
+};
+
+type DiscardResult = {
+  discardedIds: Set<string>;
+  domains: Domain[];
 };
 
 type TaskProcessResult = {
@@ -484,9 +497,24 @@ function sanitizedSlots(value: unknown): Record<string, unknown> {
 }
 
 function taskPhaseFrom(value: unknown): TaskPhase {
-  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'BLOCKED' || value === 'PLANNING'
+  return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'BLOCKED' || value === 'DISCARDED' || value === 'PLANNING'
     ? value
     : 'PLANNING';
+}
+
+function interactionModeFrom(value: unknown): InteractionMode {
+  return value === 'chitchat' || value === 'advisory' || value === 'unsupported'
+    ? value
+    : 'service';
+}
+
+function discardedTaskRefsFrom(value: unknown): number[] {
+  return [...new Set(arrayValue(value).filter((item): item is number => (
+    typeof item === 'number'
+    && Number.isInteger(item)
+    && item >= 0
+    && item < 8
+  )))];
 }
 
 function storedState(value: unknown): AssistantState {
@@ -580,6 +608,18 @@ export class AssistantService {
     if (tasks.length > 4 || tasks.some((task) => !isRecord(task))) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
+    const interactionMode = decision.interaction_mode;
+    if (interactionMode !== undefined && !['service', 'chitchat', 'advisory', 'unsupported'].includes(String(interactionMode))) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent interaction mode is invalid.' });
+    }
+    const discardedTaskRefs = arrayValue(decision.discarded_task_refs);
+    if (
+      discardedTaskRefs.length > 8
+      || discardedTaskRefs.some((value) => typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value >= 8)
+      || new Set(discardedTaskRefs).size !== discardedTaskRefs.length
+    ) {
+      throw new ServiceUnavailableException({ code: 'AGENT_CONTEXT_ACTION_REJECTED', detail: 'Agent context action is invalid.' });
+    }
     const definitions = new Map(CAPABILITY_DEFINITIONS.map((definition) => [definition.name, definition]));
     const refs = new Set<number>();
     for (const [index, value] of tasks.entries()) {
@@ -654,7 +694,7 @@ export class AssistantService {
     for (const taskRef of refs) visit(taskRef);
   }
 
-  private typedPlan(planner: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } | undefined {
+  private typedPlan(planner: JsonObject): PlanResolution | undefined {
     if (planner.planning_decision === undefined) return undefined;
     const decision = planner.planning_decision;
     if (!isRecord(decision)) {
@@ -675,7 +715,14 @@ export class AssistantService {
       ? stringValue(compatibility.clarification_question)
         ?? this.typedClarification(arrayValue(clarification.missing_fields))
       : undefined;
-    return { tasks, ...(clarificationQuestion ? { clarificationQuestion } : {}) };
+    return {
+      tasks,
+      ...(clarificationQuestion ? { clarificationQuestion } : {}),
+      interactionMode: interactionModeFrom(decision.interaction_mode ?? compatibility.interaction_mode),
+      discardedTaskRefs: discardedTaskRefsFrom(
+        decision.discarded_task_refs ?? compatibility.discarded_task_refs,
+      ),
+    };
   }
 
   private semanticSlotValues(value: unknown): Record<string, unknown> {
@@ -745,12 +792,13 @@ export class AssistantService {
   }
 
   private workflowStatus(tasks: StoredTask[]): WorkflowStatus {
-    if (!tasks.length) return 'PENDING';
-    if (tasks.length > 0 && tasks.every((task) => task.phase === 'COMPLETED')) return 'COMPLETED';
-    const completed = tasks.some((task) => task.phase === 'COMPLETED');
-    const unsuccessful = tasks.some((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
+    const active = tasks.filter((task) => task.phase !== 'DISCARDED');
+    if (!active.length) return 'PENDING';
+    if (active.every((task) => task.phase === 'COMPLETED')) return 'COMPLETED';
+    const completed = active.some((task) => task.phase === 'COMPLETED');
+    const unsuccessful = active.some((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED');
     if (completed && unsuccessful) return 'PARTIAL_SUCCESS';
-    if (!completed && tasks.length > 0 && tasks.every((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED')) return 'FAILED';
+    if (!completed && active.every((task) => task.phase === 'FAILED' || task.phase === 'BLOCKED')) return 'FAILED';
     return 'RUNNING';
   }
 
@@ -812,7 +860,7 @@ export class AssistantService {
   }
 
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
-    const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED');
+    const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
     const folded = plainText(message);
     const explicitDomains = new Set<Domain>();
@@ -934,10 +982,19 @@ export class AssistantService {
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
     const typed = this.typedPlan(planner);
     const rawPlanTasks = arrayValue(rawPlan.tasks).filter(isRecord) as AgentPlanTask[];
-    const resolution = typed ?? this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
-    const plan = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
+    const discardedTaskRefs = typed?.discardedTaskRefs
+      ?? discardedTaskRefsFrom(rawPlan.discarded_task_refs);
+    const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
+    const legacyResolution = this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
+    const resolution: PlanResolution = typed ?? {
+      ...legacyResolution,
+      interactionMode: interactionModeFrom(rawPlan.interaction_mode),
+      discardedTaskRefs,
+    };
+    const plan: JsonObject = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
     const planTasks = resolution.tasks;
     const merge = this.mergeTasks(state.tasks, planTasks, message);
+    for (const taskId of discardResult.discardedIds) merge.touchedIds.add(taskId);
     const merged = merge.tasks;
     const actions: StoredAction[] = state.actions.filter((action) => {
       const task = merged.find((candidate) => candidate.id === action.task_id);
@@ -947,7 +1004,34 @@ export class AssistantService {
     const completed: JsonObject[] = [];
     const resultsForComposition: JsonObject[] = [];
 
-    if (!planTasks.length && stringValue(plan.clarification_question)) {
+    if (resolution.interactionMode !== 'service' && !planTasks.length && !discardResult.discardedIds.size) {
+      const candidateMessage = safeText(
+        plan.assistant_message,
+        'Mình vẫn ở đây và sẵn sàng trò chuyện cùng bạn.',
+      );
+      const conversationalMessage = hasUnsupportedFinalSuccessClaim(candidateMessage, merged)
+        ? 'Mình vẫn ở đây và sẵn sàng trò chuyện cùng bạn.'
+        : candidateMessage;
+      const conversationalState: AssistantState = {
+        ...state,
+        tasks: merged.slice(0, 8),
+        actions,
+        decision_source: stringValue(planner.decision_source) ?? 'deterministic',
+      };
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        conversationalMessage,
+        conversationalState,
+        [],
+        actions,
+        [],
+        [],
+      );
+    }
+
+    if (!planTasks.length && !discardResult.discardedIds.size && stringValue(plan.clarification_question)) {
       // Clarification is informational only: retain every task, revision,
       // authoritative choice, and public action exactly as persisted.
       return this.persistTurn(conversationId, user, message, safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'), state, [], state.actions);
@@ -971,6 +1055,7 @@ export class AssistantService {
     }
 
     for (const task of merged) {
+      if (task.phase === 'DISCARDED') continue;
       if (task.phase === 'COMPLETED' && task.public_item) {
         completed.push(task.public_item);
         continue;
@@ -1027,7 +1112,7 @@ export class AssistantService {
       return leftIndex - rightIndex;
     });
 
-    const foodTask = merged.find((task) => task.domain === 'food');
+    const foodTask = merged.find((task) => task.domain === 'food' && task.phase !== 'DISCARDED');
     const foodContext = isRecord(foodTask?.authoritative?.food_context)
       ? foodTask.authoritative.food_context
       : isRecord(state.food_context)
@@ -1045,10 +1130,12 @@ export class AssistantService {
       Object.fromEntries(merged.flatMap((task) => task.failure_code ? [[task.id, task.failure_code]] : [])),
     );
     const baseMessage = this.messageFor(message, plan, merged, items, actions);
+    const activeTasks = merged.filter((task) => task.phase !== 'DISCARDED');
     const composed = planner.decision_source === 'deterministic'
       ? baseMessage
-      : await this.compose(message, conversationId, user.sub, merged, resultsForComposition, correlationId, baseMessage);
-    const response = await this.persistTurn(conversationId, user, message, composed, nextState, items, actions, completed);
+      : await this.compose(message, conversationId, user.sub, activeTasks, resultsForComposition, correlationId, baseMessage);
+    const finalMessage = this.withDiscardAcknowledgement(composed, discardResult.domains, planTasks.length > 0);
+    const response = await this.persistTurn(conversationId, user, message, finalMessage, nextState, items, actions, completed);
     return response;
   }
 
@@ -1474,6 +1561,72 @@ export class AssistantService {
     }
   }
 
+  private canDiscardConversationTask(task: StoredTask): boolean {
+    if (task.phase === 'PLANNING' || task.phase === 'NEEDS_INFO') return true;
+    if (task.phase !== 'IN_PROGRESS') return false;
+    if (task.domain === 'ride') {
+      const result = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
+      const booking = [task.authoritative?.booking, result?.booking].find(isRecord);
+      const status = stringValue(booking?.status);
+      return !status || ['AWAITING_CONFIRMATION', 'AWAITING_PAYMENT_CONFIRMATION'].includes(status);
+    }
+    if (task.domain === 'food') {
+      const result = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
+      const order = isRecord(result?.order) ? result.order : undefined;
+      return !order && stringValue(task.public_item?.kind) !== 'food_order';
+    }
+    return true;
+  }
+
+  private applyTaskDiscards(tasks: StoredTask[], taskRefs: number[]): DiscardResult {
+    if (taskRefs.some((taskRef) => taskRef < 0 || taskRef >= tasks.length)) {
+      throw new ServiceUnavailableException({
+        code: 'AGENT_CONTEXT_ACTION_REJECTED',
+        detail: 'Agent context action does not reference a current conversation task.',
+      });
+    }
+    const discardedIds = new Set<string>();
+    const domains = new Set<Domain>();
+    for (const taskRef of taskRefs) {
+      const root = tasks[taskRef];
+      if (!root || discardedIds.has(root.id)) continue;
+      const group = new Set<string>([root.id]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const candidate of tasks) {
+          if (
+            candidate.phase !== 'COMPLETED'
+            && candidate.phase !== 'FAILED'
+            && candidate.phase !== 'BLOCKED'
+            && candidate.phase !== 'DISCARDED'
+            && candidate.depends_on.some((dependency) => group.has(dependency))
+            && !group.has(candidate.id)
+          ) {
+            group.add(candidate.id);
+            changed = true;
+          }
+        }
+      }
+      const groupTasks = tasks.filter((task) => group.has(task.id));
+      if (!groupTasks.length || groupTasks.some((task) => !this.canDiscardConversationTask(task))) continue;
+      for (const task of groupTasks) {
+        task.phase = 'DISCARDED';
+        task.revision += 1;
+        task.missing_information = [];
+        task.failure_code = undefined;
+        task.blocking_task_id = undefined;
+        task.block_reason = undefined;
+        discardedIds.add(task.id);
+        domains.add(task.domain);
+      }
+    }
+    return {
+      discardedIds,
+      domains: (['food', 'restaurant', 'healthcare', 'ride'] as Domain[]).filter((domain) => domains.has(domain)),
+    };
+  }
+
   private mergeTasks(current: StoredTask[], planned: AgentPlanTask[], latestMessage: string): MergeResult {
     const next = current.map((task) => ({ ...task, extracted_slots: { ...task.extracted_slots } }));
     const touchedIds = new Set<string>();
@@ -1482,14 +1635,14 @@ export class AssistantService {
       const domain = candidate.domain;
       if (domain !== 'ride' && domain !== 'food' && domain !== 'restaurant' && domain !== 'healthcare') continue;
       const request = stringValue(candidate.normalized_request) ?? '';
-      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && (!request || task.normalized_request === request));
+      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED' && (!request || task.normalized_request === request));
       // A new destination or pickup is an update to the active journey, not a
       // second ride request. Other domains retain their request-based merge.
       const activeRide = domain === 'ride'
-        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
+        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined;
       const match = sameRequest ?? activeRide ?? (planned.length === 1
-        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED')
+        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined);
       const slots = sanitizedSlots(candidate.extracted_slots);
       if (match) {
@@ -2508,6 +2661,7 @@ export class AssistantService {
     items: JsonObject[] = [],
     actions: StoredAction[] = [],
     completed: JsonObject[] = [],
+    responseActions: StoredAction[] = actions,
   ): Promise<AssistantResponse> {
     const safeMessage = safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
     const orchestration = state.orchestration ?? buildOrchestrationSnapshot(state.tasks);
@@ -2516,7 +2670,7 @@ export class AssistantService {
       conversation_id: conversationId,
       message: safeMessage,
       items: items.map((item) => this.sanitizeConsumerItem(item)),
-      actions: actions.map((action) => this.publicAction(action)),
+      actions: responseActions.map((action) => this.publicAction(action)),
       completed: completed.map((item) => this.sanitizeConsumerItem(item)),
       workflow_status: orchestration.status,
     };
@@ -2530,11 +2684,30 @@ export class AssistantService {
     return response;
   }
 
+  private withDiscardAcknowledgement(message: string, domains: Domain[], hasNewWork: boolean): string {
+    if (!domains.length) return message;
+    const labels: Record<Domain, string> = {
+      food: 'tìm và đặt món',
+      restaurant: 'đặt bàn',
+      healthcare: 'tìm lịch khám',
+      ride: 'đặt xe',
+    };
+    const values = domains.map((domain) => labels[domain]);
+    const joined = values.length === 1
+      ? values[0]
+      : values.length === 2
+        ? values.join(' và ')
+        : `${values.slice(0, -1).join(', ')} và ${values[values.length - 1]}`;
+    const acknowledgement = `Được, mình đã bỏ phần ${joined} còn dang dở trong cuộc trò chuyện này.`;
+    return hasNewWork ? `${acknowledgement} ${message}` : acknowledgement;
+  }
+
   private messageFor(message: string, plan: JsonObject, tasks: StoredTask[], items: JsonObject[], actions: StoredAction[]): string {
     const clarification = stringValue(plan.clarification_question);
     if (clarification) return clarification;
     if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
-    if (actions.length) return tasks.length > 1
+    const activeTasks = tasks.filter((task) => task.phase !== 'DISCARDED');
+    if (actions.length) return activeTasks.length > 1
       ? 'Mình đã chuẩn bị các bước tiếp theo cho những việc bạn yêu cầu. Bạn kiểm tra rồi xác nhận từng bước nhé.'
       : 'Mình đã chuẩn bị xong. Bạn kiểm tra lại rồi xác nhận nhé.';
     const kinds = new Set(items.map((item) => stringValue(item.kind)).filter((kind): kind is string => Boolean(kind)));

@@ -15,6 +15,18 @@ The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`:
 
 ## Unified assistant planner
 
+`AssistantPlan`, `SemanticTurn`, and `PlanningDecision` carry a bounded
+`interaction_mode` plus `discarded_task_refs`. Chitchat and general advisory
+turns produce no service task, so Gateway can answer without replaying old
+cards while retaining pending state for a later turn. An explicit context
+switch can mark eligible unfinished conversation tasks as `DISCARDED`;
+dependent conversation tasks are discarded with their prerequisite.
+`DISCARDED` is orchestration attention state only, never evidence that a
+domain booking, order, reservation, appointment, hold, or payment was
+cancelled. Gateway refuses to discard a task backed by an active authoritative
+transaction; domain cancellation still uses its typed capability and required
+confirmation.
+
 `apps/agent-service/src/agents/assistant_graph.py` is the top-level X-One
 planner. It accepts one conversation turn and returns a Pydantic-validated
 compatibility `AssistantPlan` plus a typed `SemanticTurn` and
@@ -29,8 +41,8 @@ before a Ride destination, or Healthcare hold before a Ride destination, while
 the Gateway—not the Agent—executes typed service calls and confirmation
 actions. A Healthcare-dependent Ride contains only the user-provided pickup;
 the facility destination is resolved from the authoritative Healthcare result.
-Gemini is the demo primary when
-`AGENT_MODEL_MODE=gemini` and a key is configured; quota/rate-limit and
+Gemini is the primary reasoning path when
+`AGENT_MODEL_MODE=gemini` and a key is configured; missing-key, quota/rate-limit and
 validation failures use the conservative deterministic planner. The internal
 Agent status endpoint exposes only model mode/name, fallback name, key
 configured boolean, and last-call diagnostics.

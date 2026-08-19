@@ -129,6 +129,41 @@ def test_food_follow_up_targets_food_only_when_other_tasks_are_active() -> None:
     assert domains(follow_up) == ["food"]
 
 
+def test_context_switch_discards_unfinished_ride_and_plans_food() -> None:
+    state = {
+        "tasks": [{
+            "domain": "ride",
+            "phase": "NEEDS_INFO",
+            "goal": "Tìm chuyến xe",
+            "normalized_request": "Đặt xe đi Bờ Hồ",
+            "extracted_slots": {"dropoff_address": "Bờ Hồ"},
+            "missing_information": ["pickup_address"],
+        }],
+    }
+
+    plan = deterministic_plan("Thôi không đi xe nữa, tìm phở bò ăn ở nhà.", state)
+
+    assert plan.discarded_task_refs == [0]
+    assert domains(plan) == ["food"]
+    assert plan.interaction_mode == "service"
+
+
+def test_chitchat_and_advisory_do_not_force_a_service_task() -> None:
+    chitchat = deterministic_plan("Hôm nay bạn thế nào?")
+    advisory = deterministic_plan("Trời mưa lạnh thế này nên ăn gì ngon nhỉ?")
+    rainy_outing = deterministic_plan("Trời mưa đi đâu thì hợp?")
+
+    assert chitchat.tasks == []
+    assert chitchat.interaction_mode == "chitchat"
+    assert "gọi xe" in chitchat.assistant_message
+    assert advisory.tasks == []
+    assert advisory.interaction_mode == "advisory"
+    assert "phở" in advisory.assistant_message
+    assert rainy_outing.tasks == []
+    assert rainy_outing.interaction_mode == "advisory"
+    assert "không xem được thời tiết trực tiếp" in rainy_outing.assistant_message
+
+
 def test_ambiguous_generic_selection_requests_one_clarification() -> None:
     state = {
         "tasks": [
@@ -294,6 +329,22 @@ class IncorrectRideEditPlanner:
         )
 
 
+class SwitchingFoodPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình chuyển sang tìm món nhé.",
+            tasks=[
+                PlannedTask(
+                    domain="food",
+                    goal="Tìm phở bò",
+                    normalized_request="Tìm phở bò ăn ở nhà",
+                    extracted_slots={"dish_query": "phở bò"},
+                ),
+            ],
+        )
+
+
 class FailingPlanner:
     async def ainvoke_structured(self, _prompt: str, _schema: type[Any]) -> Any:
         raise AssertionError("direct healthcare requests should use the bounded fast path")
@@ -426,6 +477,40 @@ async def test_model_path_replaces_incorrect_combined_ride_edit_slots() -> None:
     assert slots["pickup_address"] == "đại học quốc gia hà nội"
     assert slots["dropoff_address"] == "công viên nghĩa đô"
     assert slots["vehicle_type"] == "BIKE"
+
+
+@pytest.mark.asyncio
+async def test_model_path_keeps_deterministic_context_discard_boundary() -> None:
+    graph = build_assistant_graph(llm=SwitchingFoodPlanner())
+    result = await graph.ainvoke({
+        "query": "Thôi không đi xe nữa, tìm phở bò ăn ở nhà.",
+        "conversation_state": {
+            "tasks": [{
+                "domain": "ride",
+                "phase": "NEEDS_INFO",
+                "goal": "Tìm chuyến xe",
+                "normalized_request": "Đặt xe đi Bờ Hồ",
+                "extracted_slots": {"dropoff_address": "Bờ Hồ"},
+            }],
+        },
+    })
+
+    assert result["decision_source"] == "model"
+    assert result["plan"]["discarded_task_refs"] == [0]
+    assert result["planning_decision"]["discarded_task_refs"] == [0]
+    assert result["planning_decision"]["tasks"][0]["domain"] == "food"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_composer_describes_available_options() -> None:
+    message, source = await compose_response(
+        "",
+        [{"domain": "food", "phase": "IN_PROGRESS"}],
+        [{"kind": "food_options"}],
+    )
+
+    assert source == "deterministic"
+    assert "lựa chọn" in message
 
 
 def test_model_prompt_contains_only_planner_safe_state() -> None:

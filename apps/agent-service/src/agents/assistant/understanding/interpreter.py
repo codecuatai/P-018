@@ -7,6 +7,7 @@ from ..contracts import (
     Domain,
     FoodSemanticSlots,
     HealthcareSemanticSlots,
+    InteractionMode,
     Operation,
     ReferenceResolution,
     RestaurantSemanticSlots,
@@ -54,7 +55,13 @@ def _slots(domain: Domain, raw: Any):
     return schema.model_validate(projected)
 
 
-def semantic_turn_from_plan(tasks: Sequence[Any], *, language: str = 'vi') -> SemanticTurn:
+def semantic_turn_from_plan(
+    tasks: Sequence[Any],
+    *,
+    language: str = 'vi',
+    interaction_mode: str = 'service',
+    discarded_task_refs: Sequence[int] = (),
+) -> SemanticTurn:
     '''Project the bounded legacy understanding result onto the Core B contract.'''
     intents: list[SemanticIntent] = []
     for intent_ref, raw in enumerate(tasks[:4]):
@@ -102,4 +109,17 @@ def semantic_turn_from_plan(tasks: Sequence[Any], *, language: str = 'vi') -> Se
             )
         )
     safe_language = language if language in {'vi', 'en', 'mixed', 'unknown'} else 'unknown'
-    return SemanticTurn(intents=intents, language=safe_language)
+    try:
+        safe_mode = InteractionMode(interaction_mode)
+    except ValueError:
+        safe_mode = InteractionMode.SERVICE
+    safe_discarded_refs = sorted({
+        value for value in discarded_task_refs
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
+    })
+    return SemanticTurn(
+        intents=intents,
+        language=safe_language,
+        interaction_mode=safe_mode,
+        discarded_task_refs=safe_discarded_refs,
+    )

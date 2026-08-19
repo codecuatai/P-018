@@ -18,7 +18,7 @@ than a cloud deployment or production payment platform.
 | Safety | The Agent emits bounded typed plans; authoritative IDs, prices, availability, payment results, and final outcomes come from Gateway/domain services. |
 | Final actions | Explicit confirmation and idempotency are enforced by backend workflows. Restaurant, Healthcare, and Ride use two confirmation/payment stages where applicable. |
 | Storage | One local PostgreSQL instance with separately owned logical databases for Core, Ride, Restaurant, Healthcare, and Food. The Agent's current workflow store is process-local. |
-| LLM mode | Offline/local startup defaults to a deterministic planner. Gemini is an opt-in real-LLM path. |
+| LLM mode | The checked-in environment selects Gemini, but it is used only when a private key is configured; a blank key or provider failure safely falls back to the deterministic planner. |
 
 The Expo mobile shell is a skeleton. Cloud deployment, live payment providers,
 and production maps/routing are future evolution, not current claims. See the
@@ -106,7 +106,7 @@ standalone references only. Never add an internal URL, credential, or token to
 | Core/runtime | `APP_ENV`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `API_GATEWAY_PORT`, `WEB_PORT` |
 | Database | PostgreSQL owner values and the six logical `*_DATABASE_URL` values |
 | Authentication | `DEMO_AUTH_*` for local demo only, plus `AUTH_*` token/session settings |
-| LLM | Blank `GEMINI_API_KEY` and `AGENT_MODEL_MODE=deterministic` work offline; set a private valid key and `gemini` mode only for real-LLM evaluation |
+| LLM | `AGENT_MODEL_MODE=gemini` with a blank `GEMINI_API_KEY` works offline through deterministic fallback; a private valid key enables real-LLM reasoning |
 | Location/routing | Optional provider URLs/tokens; the deterministic local fallback is labelled and is never booking authority |
 | Web | `NEXT_PUBLIC_API_URL` and optional public hero-media URLs |
 

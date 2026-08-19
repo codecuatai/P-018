@@ -43,6 +43,14 @@ The Gateway validates required reservation confirmation fields and normalizes
 legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
 domain timezone before exposing an ISO 8601 value.
 
+Conversation-only chitchat/advisory turns return safe assistant text without
+replaying prior cards or actions, while pending workflow state remains
+available for a later service turn. A context switch may retire eligible
+unfinished orchestration tasks as `DISCARDED`; this is not a public claim
+that any domain resource was cancelled. Active bookings/orders and final or
+financial state still require the domain-owned cancellation workflow and its
+explicit confirmation policy.
+
 Successful responses use:
 
 ```json

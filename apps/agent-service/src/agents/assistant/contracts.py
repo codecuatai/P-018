@@ -26,6 +26,13 @@ class Operation(StrEnum):
     CANCEL = 'CANCEL'
 
 
+class InteractionMode(StrEnum):
+    SERVICE = 'service'
+    CHITCHAT = 'chitchat'
+    ADVISORY = 'advisory'
+    UNSUPPORTED = 'unsupported'
+
+
 class SlotSource(StrEnum):
     USER_EXPLICIT = 'USER_EXPLICIT'
     CONVERSATION_REFERENCE = 'CONVERSATION_REFERENCE'
@@ -148,12 +155,16 @@ class SemanticTurn(StrictModel):
     ambiguity: list[SemanticAmbiguity] = Field(default_factory=list, max_length=8)
     unsupported_requests: list[str] = Field(default_factory=list, max_length=8)
     language: Literal['vi', 'en', 'mixed', 'unknown'] = 'unknown'
+    interaction_mode: InteractionMode = InteractionMode.SERVICE
+    discarded_task_refs: list[int] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode='after')
     def intent_refs_are_unique(self) -> SemanticTurn:
         refs = [intent.intent_ref for intent in self.intents]
         if len(refs) != len(set(refs)):
             raise ValueError('intent_ref values must be unique')
+        if len(self.discarded_task_refs) != len(set(self.discarded_task_refs)):
+            raise ValueError('discarded_task_refs values must be unique')
         return self
 
 
@@ -346,6 +357,8 @@ class PlanningDecision(StrictModel):
     replan_directive: ReplanDirective | None = None
     confirmation_invalidated: bool = False
     blocked_task_refs: list[int] = Field(default_factory=list, max_length=4)
+    interaction_mode: InteractionMode = InteractionMode.SERVICE
+    discarded_task_refs: list[int] = Field(default_factory=list, max_length=8)
 
 
 class StepOutcomeKind(StrEnum):

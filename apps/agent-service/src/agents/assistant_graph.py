@@ -50,6 +50,13 @@ FORBIDDEN_MODEL_FIELDS = {
     "reservation_code",
 }
 TIMEZONE = "Asia/Bangkok"
+STRUCTURED_CONVERSATION_RULES = """
+Structured conversation rules:
+- Use interaction_mode=chitchat for social turns and interaction_mode=advisory for general advice without a concrete service request; both return tasks=[].
+- When the user explicitly switches away from unfinished conversation work, add the prior safe task_ref to discarded_task_refs and plan only the newly requested work.
+- discarded_task_refs only abandons conversation work. It never cancels or claims to cancel a real booking, order, reservation, appointment, hold, or payment; those require the typed cancellation workflow and confirmation policy.
+- Never claim access to live weather or other real-time facts unless trusted context supplies them.
+""".strip()
 
 XONE_SYSTEM_PROMPT = """Bạn là X-One — Trợ lý ảo đa dịch vụ thông minh, thân thiện và linh hoạt tại Việt Nam.
 
@@ -85,6 +92,8 @@ class AssistantPlan(BaseModel):
 
     assistant_message: str = Field(default="Mình sẽ giúp bạn xử lý yêu cầu này.", max_length=1000)
     tasks: list[PlannedTask] = Field(default_factory=list, max_length=4)
+    interaction_mode: Literal["service", "chitchat", "advisory", "unsupported"] = "service"
+    discarded_task_refs: list[int] = Field(default_factory=list, max_length=8)
     needs_clarification: bool = False
     clarification_question: str | None = Field(default=None, max_length=500)
 
@@ -133,7 +142,11 @@ def plan_core_a(input_: CoreAInput) -> PlanningDecision:
 
 
 def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
-    semantic_turn = semantic_turn_from_plan(plan.tasks)
+    semantic_turn = semantic_turn_from_plan(
+        plan.tasks,
+        interaction_mode=plan.interaction_mode,
+        discarded_task_refs=plan.discarded_task_refs,
+    )
     raw_context = state.get('conversation_state', {})
     context_tasks: list[PlannerTaskContext] = []
     raw_tasks = raw_context.get('tasks', []) if isinstance(raw_context, dict) else []
@@ -625,7 +638,7 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
             continue
         if str(value.get("domain", "")) not in SUPPORTED_DOMAINS:
             continue
-        if str(value.get("phase", "")) in {"COMPLETED", "FAILED", "BLOCKED"}:
+        if str(value.get("phase", "")) in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}:
             continue
         active.append((index, value))
     if not active:
@@ -686,6 +699,135 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     return sorted(set(matches))
 
 
+def _discard_targets(message: str, previous_tasks: list[Any]) -> list[int]:
+    """Recognize abandonment of conversation work, never domain cancellation."""
+    lowered = _plain(message)
+    abandonment = (
+        _has_any(
+            lowered,
+            (
+                "thoi khong",
+                "khong can",
+                "bo yeu cau",
+                "bo qua yeu cau",
+                "dung yeu cau",
+                "dung tim",
+                "chuyen sang",
+                "doi sang",
+            ),
+        )
+        or bool(re.search(r"\bkhong\b.{0,80}\bnua\b", lowered))
+    )
+    if not abandonment:
+        return []
+
+    active: list[tuple[int, dict[str, Any]]] = []
+    for index, value in enumerate(previous_tasks[:8]):
+        if not isinstance(value, dict):
+            continue
+        if value.get("domain") not in SUPPORTED_DOMAINS:
+            continue
+        if str(value.get("phase", "")) in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}:
+            continue
+        active.append((index, value))
+    if not active:
+        return []
+
+    direct_patterns = {
+        "ride": (
+            r"\bkhong\b.{0,30}\b(?:di|dat|goi)?\s*xe\b",
+            r"\b(?:bo|dung)\b.{0,30}\bxe\b",
+            r"\bkhong di nua\b",
+        ),
+        "food": (
+            r"\bkhong\b.{0,30}\b(?:dat mon|do an|giao do an)\b",
+            r"\b(?:bo|dung)\b.{0,30}\b(?:mon|do an)\b",
+        ),
+        "restaurant": (
+            r"\bkhong\b.{0,30}\b(?:dat ban|nha hang)\b",
+            r"\b(?:bo|dung)\b.{0,30}\b(?:dat ban|nha hang)\b",
+        ),
+        "healthcare": (
+            r"\bkhong\b.{0,30}\b(?:kham|lich kham|bac si)\b",
+            r"\b(?:bo|dung)\b.{0,30}\b(?:kham|lich kham)\b",
+        ),
+    }
+    targeted_domains = {
+        domain
+        for domain, patterns in direct_patterns.items()
+        if any(re.search(pattern, lowered) for pattern in patterns)
+    }
+    if targeted_domains:
+        return [index for index, task in active if task.get("domain") in targeted_domains]
+    if len(active) == 1:
+        return [active[0][0]]
+    return []
+
+
+def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
+    identity = _has_any(lowered, ("ban la ai", "ban lam duoc gi", "ban co the lam gi", "x-one la gi"))
+    greeting = bool(re.fullmatch(r"\s*(?:xin chao|chao|chao ban|hello|hi|hey)[!.?\s]*", lowered))
+    wellbeing = _has_any(lowered, ("hom nay ban the nao", "ban khoe khong", "ban dang lam gi"))
+    thanks = bool(re.fullmatch(r"\s*(?:cam on|cam on ban|thank you|thanks)[!.?\s]*", lowered))
+    if identity:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message=(
+                "Mình là X-One, trợ lý giúp bạn tìm món giao tận nơi, đặt xe, đặt bàn "
+                "và tìm lịch khám. Bạn cứ nói điều mình đang cần theo cách tự nhiên nhé."
+            ),
+        )
+    if greeting or wellbeing:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message=(
+                "Chào bạn! Mình đang rất ổn và sẵn sàng đồng hành cùng bạn. "
+                "Hôm nay bạn muốn tìm món ngon, gọi xe, đặt bàn hay xem lịch khám?"
+            ),
+        )
+    if thanks:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message="Rất vui vì giúp được bạn. Khi cần thêm gì, cứ gọi mình nhé!",
+        )
+
+    if _has_any(lowered, ("troi mua di dau", "nen di dau", "di dau khi mua")):
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=(
+                "Nếu trời đang mưa, bạn có thể ưu tiên một quán ăn ấm cúng, cà phê có chỗ ngồi trong nhà "
+                "hoặc địa điểm gần để đỡ di chuyển. Mình không xem được thời tiết trực tiếp, nhưng có thể "
+                "giúp bạn tìm nhà hàng hoặc gọi xe khi bạn cho mình khu vực nhé."
+            ),
+        )
+
+    advisory = _has_any(
+        lowered,
+        (
+            "nen an gi",
+            "an gi ngon",
+            "troi mua lanh",
+            "troi lanh",
+            "goi y mon an",
+            "tu van mon",
+        ),
+    )
+    if advisory:
+        weather_note = (
+            "Nếu đúng là trời đang mưa lạnh, "
+            if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh"))
+            else ""
+        )
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=(
+                f"{weather_note}một bát phở, bún bò, cháo nóng hoặc món lẩu nhỏ sẽ khá hợp. "
+                "Bạn thích món nước, món cay hay món nhẹ để mình gợi ý sát khẩu vị hơn?"
+            ),
+        )
+    return None
+
+
 def deterministic_plan(message: str, conversation_state: dict[str, Any] | None = None) -> AssistantPlan:
     """Conservative offline fallback used only when the provider is unavailable."""
     text = message.strip()
@@ -697,6 +839,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         return AssistantPlan(
             assistant_message="Mình chưa hỗ trợ đặt vé máy bay, phòng khách sạn hoặc vé tàu trong các dịch vụ hiện có.",
             tasks=[],
+            interaction_mode="unsupported",
         )
 
     follow_up = _has_any(lowered, (
@@ -734,8 +877,9 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         ]
         tasks.append(_task("ride", text, "Tìm chuyến xe phù hợp", ride_slots, dependencies))
 
+    discarded_task_refs = _discard_targets(text, previous_tasks)
     concise_location_reply = _looks_like_short_location_reply(text)
-    if not tasks and previous_tasks and (follow_up or concise_location_reply):
+    if not tasks and not discarded_task_refs and previous_tasks and (follow_up or concise_location_reply):
         targets = _follow_up_targets(text, previous_tasks)
         if len(targets) > 1:
             question = "Bạn muốn tiếp tục với yêu cầu nào: món ăn, đặt bàn hay lịch khám?"
@@ -761,14 +905,31 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
                             slots["party_size"] = party_size
                     tasks.append(_task(domain, str(item.get("normalized_request", text)), str(item.get("goal", "Tiếp tục yêu cầu")), slots))
 
+    if not tasks and discarded_task_refs:
+        return AssistantPlan(
+            assistant_message="Được, mình sẽ dừng phần yêu cầu đang dang dở này.",
+            discarded_task_refs=discarded_task_refs,
+        )
     if not tasks:
+        conversation_plan = _conversation_only_plan(text, lowered)
+        if conversation_plan is not None:
+            return conversation_plan
         return AssistantPlan(assistant_message="Mình có thể giúp bạn đặt xe, tìm đồ ăn, đặt bàn hoặc tìm lịch khám. Bạn muốn bắt đầu từ việc nào?")
     if len(tasks) == 1 and tasks[0].needs_clarification:
         missing = tasks[0].missing_information
         labels = {"location": "khu vực", "party_size": "số người", "start_at": "thời gian", "pickup_address": "điểm đón", "dropoff_address": "điểm đến"}
         question = "Bạn cho mình biết thêm " + " và ".join(labels.get(value, value) for value in missing[:2]) + " nhé?"
         return AssistantPlan(assistant_message=question, tasks=tasks, needs_clarification=True, clarification_question=question)
-    return AssistantPlan(assistant_message=f"Mình sẽ giúp bạn xử lý {len(tasks)} việc trong cùng cuộc trò chuyện.", tasks=tasks)
+    assistant_message = (
+        "Được, mình sẽ bỏ phần yêu cầu cũ đang dang dở và chuyển sang việc bạn vừa nhờ."
+        if discarded_task_refs
+        else f"Mình sẽ giúp bạn xử lý {len(tasks)} việc trong cùng cuộc trò chuyện."
+    )
+    return AssistantPlan(
+        assistant_message=assistant_message,
+        tasks=tasks,
+        discarded_task_refs=discarded_task_refs,
+    )
 
 
 def _safe_slots(value: Any) -> dict[str, Any]:
@@ -1004,7 +1165,41 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
     clarification = plan.clarification_question
     if clarification and len(clarification) > 500:
         clarification = clarification[:500]
-    return plan.model_copy(update={"tasks": tasks, "clarification_question": clarification})
+    discarded_task_refs = sorted({
+        value for value in plan.discarded_task_refs
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
+    })
+    return plan.model_copy(update={
+        "tasks": tasks,
+        "clarification_question": clarification,
+        "discarded_task_refs": discarded_task_refs,
+    })
+
+
+def _merge_explicit_context_actions(
+    plan: AssistantPlan,
+    message: str,
+    conversation_state: dict[str, Any] | None,
+) -> AssistantPlan:
+    raw_tasks = (
+        conversation_state.get("tasks", [])
+        if isinstance(conversation_state, dict)
+        and isinstance(conversation_state.get("tasks", []), list)
+        else []
+    )
+    deterministic_refs = _discard_targets(message, raw_tasks)
+    discarded_refs = sorted(set(plan.discarded_task_refs).union(deterministic_refs))
+    interaction_mode = plan.interaction_mode
+    if plan.tasks:
+        interaction_mode = "service"
+    elif interaction_mode == "service":
+        conversation_plan = _conversation_only_plan(message, _plain(message))
+        if conversation_plan is not None:
+            interaction_mode = conversation_plan.interaction_mode
+    return plan.model_copy(update={
+        "discarded_task_refs": discarded_refs,
+        "interaction_mode": interaction_mode,
+    })
 
 
 def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPlan:
@@ -1091,7 +1286,7 @@ def _model_prompt(state: AssistantState) -> str:
         if role in {"user", "assistant"} and content:
             recent_messages.append({"role": role, "content": content})
     payload = {
-        "system_prompt": XONE_SYSTEM_PROMPT,
+        "system_prompt": f"{STRUCTURED_CONVERSATION_RULES}\n\n{XONE_SYSTEM_PROMPT}",
         "current_time": _now().isoformat(),
         "timezone": TIMEZONE,
         "message": state.get("query", ""),
@@ -1110,6 +1305,30 @@ async def _invoke_structured(model: LLMAdapter, prompt: str, schema: type[BaseMo
     return _parse_model(raw, schema)
 
 
+def _deterministic_composition(
+    tasks: list[dict[str, Any]],
+    authoritative_results: list[dict[str, Any]],
+) -> str:
+    kinds = {
+        str(item.get("kind"))
+        for item in authoritative_results
+        if isinstance(item, dict) and isinstance(item.get("kind"), str)
+    }
+    if kinds.intersection({"task_error", "ride_timing_conflict"}):
+        return "Một bước chưa thể tiếp tục an toàn. Bạn xem lại thông tin mình vừa hiển thị rồi thử lại nhé."
+    if kinds.intersection({"restaurant_confirmation", "healthcare_confirmation", "food_confirmation"}):
+        return "Các chi tiết đã sẵn sàng để bạn kiểm tra. Khi thấy mọi thứ đúng ý, bạn xác nhận bước tiếp theo nhé."
+    if kinds.intersection({"restaurant_options", "healthcare_options", "food_options", "ride_quote"}):
+        return "Mình đã tìm được vài lựa chọn phù hợp từ dữ liệu hiện có. Bạn xem danh sách rồi chọn phương án hợp ý nhất nhé."
+    if kinds.intersection({"reservation", "appointment_confirmed", "food_order"}):
+        return "Mình đã cập nhật yêu cầu theo kết quả xác thực từ dịch vụ; các chi tiết mới nhất đang ở ngay bên dưới."
+    if authoritative_results:
+        return "Mình đã cập nhật thông tin mới nhất và sắp xếp bước tiếp theo để bạn dễ kiểm tra."
+    if tasks:
+        return "Mình đã ghi nhận việc bạn đang làm. Bạn cho mình thêm chi tiết còn thiếu để tiếp tục nhé."
+    return "Mình vẫn ở đây. Bạn muốn cùng mình bắt đầu từ món ăn, chuyến xe, bàn ăn hay lịch khám?"
+
+
 async def compose_response(
     _message: str,
     tasks: list[dict[str, Any]],
@@ -1119,7 +1338,7 @@ async def compose_response(
     """Compose a warm, helpful explanation around authoritative values."""
     settings = get_settings()
     use_model = llm is not None or (settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key))
-    fallback = "Mình đã cập nhật các lựa chọn và bước tiếp theo cho bạn."
+    fallback = _deterministic_composition(tasks, authoritative_results)
     if not use_model:
         return fallback, "deterministic"
     model = llm or GeminiAdapter()
@@ -1127,7 +1346,7 @@ async def compose_response(
     safe_results = _safe_model_value(authoritative_results[:8])
     prompt = json.dumps(
         {
-            "system_prompt": XONE_SYSTEM_PROMPT,
+            "system_prompt": f"{STRUCTURED_CONVERSATION_RULES}\n\n{XONE_SYSTEM_PROMPT}",
             "instruction": (
                 "Viết phản hồi tiếng Việt tự nhiên, thân thiện và chu đáo cho người dùng dựa trên danh sách tác vụ và kết quả thực tế từ hệ thống. "
                 "Tuyệt đối không lặp lại các ID kỹ thuật ẩn, không tự bịa số liệu, giá tiền, trạng thái, tên hay địa chỉ. "
@@ -1172,6 +1391,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
         try:
             message = str(state.get("query", ""))
             plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
+            plan = _merge_explicit_context_actions(plan, message, state.get("conversation_state"))
             plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
             plan = _enforce_reference_dependencies(plan, message)
             MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "succeeded", "last_model_call_error": None})

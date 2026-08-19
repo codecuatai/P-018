@@ -1,6 +1,6 @@
 export type WorkflowStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'PARTIAL_SUCCESS' | 'FAILED';
 export type DependencyPolicy = 'STOP_DEPENDENTS' | 'CONTINUE_INDEPENDENT';
-export type OrchestrationTaskStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+export type OrchestrationTaskStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'DISCARDED';
 
 export type OrchestrationTaskInput = {
   id: string;
@@ -23,6 +23,7 @@ export type OrchestrationSnapshot = {
 };
 
 function taskStatus(phase: string): OrchestrationTaskStatus {
+  if (phase === 'DISCARDED') return 'DISCARDED';
   if (phase === 'COMPLETED') return 'COMPLETED';
   if (phase === 'FAILED') return 'FAILED';
   if (phase === 'IN_PROGRESS' || phase === 'AWAITING_CONFIRMATION') return 'RUNNING';
@@ -31,7 +32,8 @@ function taskStatus(phase: string): OrchestrationTaskStatus {
 
 export function deriveWorkflowStatus(tasks: OrchestrationTaskInput[]): WorkflowStatus {
   if (!tasks.length) return 'PENDING';
-  const statuses = tasks.map((task) => taskStatus(task.phase));
+  const statuses = tasks.map((task) => taskStatus(task.phase)).filter((status) => status !== 'DISCARDED');
+  if (!statuses.length) return 'PENDING';
   if (statuses.every((status) => status === 'COMPLETED')) return 'COMPLETED';
   const failed = statuses.filter((status) => status === 'FAILED').length;
   const completed = statuses.filter((status) => status === 'COMPLETED').length;
