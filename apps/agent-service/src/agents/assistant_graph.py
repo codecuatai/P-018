@@ -1008,15 +1008,14 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
 
 
 def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPlan:
-    """Keep explicit user slots when a model response omits them."""
+    """Keep explicit user slots when a model response omits or misclassifies direct vehicle/time tokens."""
     tasks: list[PlannedTask] = []
     for task in plan.tasks:
         explicit = _semantic_slots(message, task.domain)
         if not explicit:
             tasks.append(task)
             continue
-        # Model-extracted slots take priority; deterministic regex fills in gaps only
-        slots = {**explicit, **task.extracted_slots}
+        slots = {**task.extracted_slots, **explicit}
         if task.domain == "healthcare" and "appointment_date" in explicit and "start_at" not in explicit:
             # The deterministic extraction is authoritative for explicit
             # relative dates; do not retain an older exact clock from the
