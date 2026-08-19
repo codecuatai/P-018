@@ -424,17 +424,21 @@ jobs:
             git reset --hard FETCH_HEAD
 
             if [ "${CODE_CHANGED:-true}" = "true" ]; then
-              echo "Service or infrastructure changes detected. Rebuilding containers..."
+              echo "Service or infrastructure changes detected. Building containers with BuildKit and layer caching..."
               docker compose --env-file .env config --quiet
-              docker compose --env-file .env build --no-cache
+              DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               docker compose --env-file .env up -d --remove-orphans
 
               echo "Applying database migrations..."
               sh scripts/migrate.sh .env
 
+              echo "Verifying container status..."
+              sleep 5
+              docker compose --env-file .env ps
+
               docker image prune -f
-              docker builder prune -f
-              echo "Develop deployment completed successfully (full rebuild and migrations applied)."
+              docker builder prune -f --filter "until=72h"
+              echo "Develop deployment completed successfully."
             else
               echo "No service or container code changes detected. Repository synced cleanly in seconds."
             fi
@@ -499,17 +503,21 @@ jobs:
             git reset --hard FETCH_HEAD
 
             if [ "${CODE_CHANGED:-true}" = "true" ]; then
-              echo "Service or infrastructure changes detected. Rebuilding production containers..."
+              echo "Service or infrastructure changes detected. Building production containers with BuildKit and layer caching..."
               docker compose --env-file .env config --quiet
-              docker compose --env-file .env build --no-cache
+              DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               docker compose --env-file .env up -d --remove-orphans
 
               echo "Applying database migrations..."
               sh scripts/migrate.sh .env
 
+              echo "Verifying container status..."
+              sleep 5
+              docker compose --env-file .env ps
+
               docker image prune -f
-              docker builder prune -f
-              echo "Production deployment completed successfully (full rebuild and migrations applied)."
+              docker builder prune -f --filter "until=72h"
+              echo "Production deployment completed successfully."
             else
               echo "No service or container code changes detected. Repository synced cleanly in seconds."
             fi
