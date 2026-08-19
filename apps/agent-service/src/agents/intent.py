@@ -25,6 +25,9 @@ def _restore_query_spelling(original: str, normalized_query: str) -> str:
 
 def classify(query: str) -> str:
     text = plain(query)
+    # Health intent detection
+    if any(value in text for value in ("đau bụng", "đau dạ dày", "đau đầu", "cảm lạnh", "đau lưng")):
+        return "healthcare"
     if any(value in text for value in ("bo qua xac nhan", "goi execute", "khiếu nại", "chuyen bay", "dat ban")):
         return "out_of_scope"
     if any(value in text for value in ("theo doi", "tracking", "don hang dang")):
