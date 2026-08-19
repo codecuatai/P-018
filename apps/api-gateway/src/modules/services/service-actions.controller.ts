@@ -1,11 +1,31 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsArray, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
+
+enum FoodOrderStatus {
+  PAYMENT_PENDING = 'PAYMENT_PENDING',
+  PAYMENT_FAILED = 'PAYMENT_FAILED',
+  RESTAURANT_CONFIRMING = 'RESTAURANT_CONFIRMING',
+  RESTAURANT_REJECTED = 'RESTAURANT_REJECTED',
+  RESTAURANT_ACCEPTED = 'RESTAURANT_ACCEPTED',
+  PREPARING = 'PREPARING',
+  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
+  DRIVER_ASSIGNED = 'DRIVER_ASSIGNED',
+  PICKED_UP = 'PICKED_UP',
+  DELIVERING = 'DELIVERING',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED'
+}
+
+class UpdateFoodStatusDto {
+  @IsEnum(FoodOrderStatus)
+  status!: string;
+}
 
 class FoodCartDto {
   @IsString()
@@ -114,6 +134,14 @@ function requiredIdempotency(value: string | undefined): string {
 @UseGuards(AuthGuard)
 export class ServiceActionsController {
   constructor(private readonly food: FoodClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient) {}
+
+
+  @Patch('food/orders/:orderId/status')
+  async updateFoodStatus(@Param('orderId') orderId: string, @Body() body: UpdateFoodStatusDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const key = requiredIdempotency(idempotencyKey);
+    const updated = await this.food.updateOrderStatus(request.user.sub, correlation(request), orderId, { status: body.status }, key);
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
 
   @Get('food/restaurants/:restaurantId')
   async foodRestaurant(@Param('restaurantId') restaurantId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {

@@ -96,3 +96,6 @@ class HealthStatus(BaseModel):
 
 class ApiResponse(BaseModel):
     data: Any
+
+class UpdateOrderStatusRequest(BaseModel):
+    status: str

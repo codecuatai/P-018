@@ -15,6 +15,7 @@ from src.models.schemas import (
     TransitionOrderRequest,
     UpdateCartItemRequest,
     VoucherRequest,
+    UpdateOrderStatusRequest,
 )
 
 router = APIRouter(prefix="/api/v1", tags=["food"])
@@ -152,6 +153,20 @@ async def create_order(payload: CreateOrderRequest, actor_id: str = Depends(requ
     if actor_id != payload.user_id:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "detail": "Actor does not match order owner."})
     return {"data": await food.create_order(payload.model_dump())}
+
+
+
+@router.patch("/orders/{order_id}:status", dependencies=[Depends(require_internal)])
+async def update_order_status(
+    order_id: str,
+    payload: UpdateOrderStatusRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    actor_id: str = Depends(require_actor),
+    food: FoodApplicationService = Depends(service)
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail={"code": "IDEMPOTENCY_KEY_REQUIRED", "detail": "Idempotency-Key is required."})
+    return {"data": await food.update_status(order_id, actor_id, payload.status, idempotency_key)}
 
 
 @router.get("/orders/{order_id}")

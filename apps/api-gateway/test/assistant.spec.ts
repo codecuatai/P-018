@@ -1447,4 +1447,150 @@ describe('Unified assistant orchestration', () => {
       'cor-health-third',
     );
   });
+
+  it('discards an unfinished Ride task and switches to a typed Food task', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-context-switch';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'ride-needs-info',
+        domain: 'ride',
+        goal: 'Tìm chuyến xe',
+        normalized_request: 'Đặt xe đi Bờ Hồ',
+        extracted_slots: { dropoff_address: 'Bờ Hồ' },
+        depends_on: [],
+        phase: 'NEEDS_INFO',
+        revision: 0,
+        missing_information: ['pickup_address'],
+      }],
+      actions: [],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: 'Mình chuyển sang tìm món nhé.',
+        decision_source: 'deterministic',
+        plan: { assistant_message: 'Mình chuyển sang tìm món nhé.', interaction_mode: 'service', discarded_task_refs: [0], tasks: [] },
+        planning_decision: {
+          interaction_mode: 'service',
+          discarded_task_refs: [0],
+          tasks: [{
+            task_ref: 0,
+            domain: 'food',
+            goal: 'Tìm phở bò',
+            normalized_request: 'Tìm phở bò ăn ở nhà',
+            semantic_slots: { dish_query: { value: 'phở bò', source: 'USER_EXPLICIT' } },
+            depends_on: [],
+            disposition: 'READY',
+            missing_information: [],
+            steps: [],
+          }],
+        },
+      }),
+      chat: jest.fn().mockResolvedValue({
+        response_type: 'options',
+        message: 'Có món phù hợp.',
+        data: { items: [{ name: 'Phở bò', price: 50000 }] },
+        state_updates: {},
+      }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(
+      user,
+      'Thôi không đi xe nữa, tìm phở bò ăn ở nhà.',
+      conversationId,
+      'cor-context-switch',
+    );
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+
+    expect(response.message).toContain('bỏ phần đặt xe');
+    expect(response.items.map((item) => item.kind)).toEqual(['food_options']);
+    expect(tasks[0].phase).toBe('DISCARDED');
+    expect(tasks[1].domain).toBe('food');
+    expect(agent.chat).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps pending service state while returning a card-free chitchat turn', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-chitchat';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'ride-quote',
+        domain: 'ride',
+        goal: 'Tìm chuyến xe',
+        normalized_request: 'Đặt xe từ VinUni đến Hồ Gươm',
+        extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm' },
+        depends_on: [],
+        phase: 'IN_PROGRESS',
+        revision: 0,
+        public_item: { kind: 'ride_quote', title: 'Báo giá chuyến xe' },
+      }],
+      actions: [{
+        id: 'ride-service-action',
+        kind: 'ride_service',
+        task_id: 'ride-quote',
+        task_revision: 0,
+        cohort_id: 'ride-cohort',
+        workflow_id: 'ride-workflow',
+      }],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: 'Mình khỏe, cảm ơn bạn đã hỏi!',
+        decision_source: 'deterministic',
+        plan: { assistant_message: 'Mình khỏe, cảm ơn bạn đã hỏi!', interaction_mode: 'chitchat', tasks: [] },
+        planning_decision: { interaction_mode: 'chitchat', discarded_task_refs: [], tasks: [] },
+      }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const response = await service.chat(user, 'Hôm nay bạn thế nào?', conversationId, 'cor-chitchat');
+    const stored = await store.getConversation(conversationId, user.sub);
+
+    expect(response.message).toBe('Mình khỏe, cảm ơn bạn đã hỏi!');
+    expect(response.items).toEqual([]);
+    expect(response.actions).toEqual([]);
+    expect((stored?.state.tasks as Array<Record<string, unknown>>)[0].phase).toBe('IN_PROGRESS');
+    expect(stored?.state.actions).toHaveLength(1);
+  });
+
+  it('does not discard an active authoritative Ride booking', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      applyTaskDiscards: (tasks: Array<Record<string, unknown>>, refs: number[]) => { discardedIds: Set<string> };
+    };
+    const tasks = [{
+      id: 'active-ride',
+      domain: 'ride',
+      goal: 'Chuyến xe đang chạy',
+      normalized_request: 'Đặt xe',
+      extracted_slots: {},
+      depends_on: [],
+      phase: 'IN_PROGRESS',
+      revision: 1,
+      authoritative: { booking: { status: 'SEARCHING_DRIVER' } },
+    }];
+
+    const result = internal.applyTaskDiscards(tasks, [0]);
+
+    expect(result.discardedIds.size).toBe(0);
+    expect(tasks[0].phase).toBe('IN_PROGRESS');
+  });
 });

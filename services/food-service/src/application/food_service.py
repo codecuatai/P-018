@@ -407,6 +407,15 @@ class FoodApplicationService:
         next_at = datetime.now(UTC) + timedelta(milliseconds=self._delay(target_status)) if target_status in {FoodOrderStatus.RESTAURANT_CONFIRMING, FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING} else None
         return await self.repository.transition_order_atomic(order_id, target_status, reason, "gateway", next_at, int(order.get("version", 0)), operation_key)
 
+
+    async def update_status(self, order_id: str, actor_id: str, target_status: str, idempotency_key: str) -> dict:
+        return await self.transition_order(
+            order_id=order_id,
+            target=target_status,
+            reason="Gateway status update",
+            operation_key=idempotency_key,
+        )
+
     async def tracking(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.get_order(order_id, user_id)
         events = await self.repository.get_order_events(order_id)

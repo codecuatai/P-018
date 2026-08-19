@@ -1,11 +1,32 @@
-import { BadRequestException, Body, Controller, Headers, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { IsString, MinLength } from 'class-validator';
+import { BadRequestException, Body, Controller, Headers, Param, Post, Patch, Req, UseGuards } from '@nestjs/common';
+import { IsString, MinLength, IsEnum } from 'class-validator';
 import { createHash } from 'crypto';
 
 import { ConfirmationEvidence, RideClient, RideQuote } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
+
+enum RideBookingStatus {
+  AWAITING_CONFIRMATION = 'AWAITING_CONFIRMATION',
+  AWAITING_PAYMENT_CONFIRMATION = 'AWAITING_PAYMENT_CONFIRMATION',
+  SEARCHING_DRIVER = 'SEARCHING_DRIVER',
+  DRIVER_ASSIGNED = 'DRIVER_ASSIGNED',
+  DRIVER_TO_PICKUP = 'DRIVER_TO_PICKUP',
+  DRIVER_ARRIVED = 'DRIVER_ARRIVED',
+  IN_PROGRESS = 'IN_PROGRESS',
+  ARRIVED_DESTINATION = 'ARRIVED_DESTINATION',
+  COMPLETED = 'COMPLETED',
+  NO_DRIVER = 'NO_DRIVER',
+  FAILED = 'FAILED',
+  PAYMENT_FAILED = 'PAYMENT_FAILED',
+  CANCELLED = 'CANCELLED'
+}
+
+class UpdateRideStatusDto {
+  @IsEnum(RideBookingStatus)
+  status!: string;
+}
 
 class RideQuoteReferenceDto {
   @IsString()
@@ -56,6 +77,19 @@ export class RideActionsController {
     const payload = { action: 'ride.booking.prepare', actor_id: request.user.sub, quote_id: quote.id, quote_version: quote.quote_version, amount: quote.amount, currency: quote.currency, passenger_count: quote.passenger_count, capacity_policy_version: quote.capacity_policy_version };
     const booking = await this.ride.prepareBooking(request.user.sub, key, { correlationId: request.correlationId ?? 'cor_unknown', workflowId: `web_ride_${quote.id}`, toolCallId: 'web_prepare' }, JSON.stringify({ quote_id: quote.id, confirmation: evidence(request.user.sub, key, 'ride.booking.prepare', payload, quote) }));
     return { data: booking, meta: { request_id: request.correlationId } };
+  }
+
+
+  @Patch(':bookingId/status')
+  async updateStatus(@Param('bookingId') bookingId: string, @Body() body: UpdateRideStatusDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const key = requiredKey(idempotencyKey);
+    const payload = { status: body.status };
+    const updated = await this.ride.updateBookingStatus(request.user.sub, key, {
+      correlationId: request.correlationId ?? 'cor_unknown',
+      workflowId: `web_ride_${bookingId}`,
+      toolCallId: 'web_status_update',
+    }, bookingId, payload);
+    return { data: updated, meta: { request_id: request.correlationId } };
   }
 
   @Post(':bookingId/confirm')

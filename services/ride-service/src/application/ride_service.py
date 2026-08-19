@@ -288,6 +288,36 @@ class RideApplication:
             self.repository.rollback()
             raise
 
+    def update_status(self, booking_id: str, actor_id: str, target_status: str, idempotency_key: str) -> dict:
+        operation = "ride.booking.status.update"
+        request_hash = normalized_hash(
+            {
+                "actor_id": actor_id,
+                "booking_id": booking_id,
+                "target_status": target_status,
+            }
+        )
+        if replay := self._replay(actor_id, operation, idempotency_key, request_hash):
+            return replay
+
+        booking = self._owned_booking(booking_id, actor_id)
+        try:
+            transition_booking(booking, target_status)
+            self.repository.save_booking(booking)
+            self.repository.record_tracking_event(
+                booking.id,
+                booking.status,
+                0.0 if target_status != BookingStatus.COMPLETED.value else 1.0,
+                None,
+            )
+            payload = booking.snapshot()
+            self._save_idempotency(actor_id, operation, idempotency_key, request_hash, payload)
+            self.repository.commit()
+            return payload
+        except Exception:
+            self.repository.rollback()
+            raise
+
     def get_booking(self, booking_id: str, actor_id: str) -> dict:
         return self._owned_booking(booking_id, actor_id).snapshot()
 

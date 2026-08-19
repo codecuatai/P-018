@@ -434,6 +434,24 @@ export class RideClient extends InternalServiceClient {
     );
   }
 
+
+  async updateBookingStatus(
+    actorId: string,
+    idempotencyKey: string,
+    callContext: ServiceCallContext,
+    bookingId: string,
+    payload: JsonObject,
+  ): Promise<RideBooking> {
+    return this.request(
+      '/v1/bookings/' + encodeURIComponent(bookingId) + ':status',
+      callContext,
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      writeHeaders(actorId, idempotencyKey),
+      operationProfile('ride.booking.status.update'),
+      (value) => parseBooking(envelopeData(value)),
+    );
+  }
+
   async getBooking(
     actorId: string,
     callContext: ServiceCallContext,
@@ -791,6 +809,11 @@ export class FoodClient extends InternalServiceClient {
 
   async getOrder(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
     return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}`, correlationId, actorId);
+  }
+
+
+  async updateOrderStatus(actorId: string, correlationId: string, orderId: string, payload: JsonObject, idempotencyKey?: string): Promise<JsonObject> {
+    return this.patch(`/api/v1/orders/${encodeURIComponent(orderId)}:status`, payload, correlationId, actorId, idempotencyKey);
   }
 
   async getOrderTracking(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {

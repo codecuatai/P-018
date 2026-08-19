@@ -142,6 +142,10 @@ components:
               description: >-
                 Typed Core A plan. Each step is a bounded capability request or
                 an explicit confirmation wait; the Agent never executes it.
+                The plan may also carry a bounded interaction_mode and
+                discarded_task_refs for conversation-only context retirement.
+                Discarding conversation work is not domain-resource
+                cancellation.
               additionalProperties: true
             decision_source: {enum: [model, deterministic]}
             model: {type: string}

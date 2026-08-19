@@ -10,7 +10,7 @@ from ..contracts import (
 from ..policy.plan_policy import PlanPolicyError, validate_plan
 from .capability_selection import select_step
 from .dependencies import attach_dependencies, enforce_destination_authority
-from .fallback import safe_skeleton
+from .fallback import safe_skeleton, validated_discarded_task_refs
 from .requirements import apply_requirements
 from .task_decomposition import decompose
 
@@ -34,10 +34,15 @@ class CoreAPlanner:
                 tasks=tasks,
                 clarification_need=clarification,
                 workflow_relation=relation,
+                interaction_mode=input_.semantic_turn.interaction_mode,
+                discarded_task_refs=validated_discarded_task_refs(
+                    input_.semantic_turn,
+                    input_.planner_context,
+                ),
             )
             return validate_plan(decision, input_.capability_snapshot)
         except (ValueError, PlanPolicyError):
-            fallback = safe_skeleton(input_.semantic_turn)
+            fallback = safe_skeleton(input_.semantic_turn, input_.planner_context)
             return validate_plan(fallback, input_.capability_snapshot)
 
     @staticmethod
