@@ -18,20 +18,51 @@ def test_canonical_inventory_covers_all_four_domains_and_expected_surface() -> N
     tools = _contract()
     names = {str(tool["name"]) for tool in tools}
     expected = {
-        "food.search", "food.get_restaurant", "food.list_menu", "food.get_menu_item",
-        "food.create_cart", "food.add_cart_item", "food.update_cart_item", "food.remove_cart_item",
-        "food.quote_delivery", "food.apply_voucher", "food.remove_voucher", "food.preview_order",
-        "food.prepare_order", "food.get_order", "food.list_orders", "food.track_order",
-        "food.prepare_cancel_order", "food.cancel_order",
-        "ride.quote.create", "ride.quote.get", "ride.booking.prepare", "ride.booking.confirm",
-        "ride.booking.get", "ride.booking.list", "ride.booking.status.get", "ride.tracking.get",
-        "ride.booking.cancel.prepare", "ride.booking.cancel",
-        "restaurant.search", "restaurant.get", "restaurant.check_availability", "restaurant.create_hold",
-        "restaurant.create_reservation", "restaurant.get_reservation", "restaurant.list_reservations",
+        "food.search",
+        "food.get_restaurant",
+        "food.list_menu",
+        "food.get_menu_item",
+        "food.create_cart",
+        "food.add_cart_item",
+        "food.update_cart_item",
+        "food.remove_cart_item",
+        "food.quote_delivery",
+        "food.apply_voucher",
+        "food.remove_voucher",
+        "food.preview_order",
+        "food.prepare_order",
+        "food.get_order",
+        "food.list_orders",
+        "food.track_order",
+        "food.prepare_cancel_order",
+        "food.cancel_order",
+        "ride.quote.create",
+        "ride.quote.get",
+        "ride.booking.prepare",
+        "ride.booking.confirm",
+        "ride.booking.get",
+        "ride.booking.list",
+        "ride.booking.status.get",
+        "ride.tracking.get",
+        "ride.booking.cancel.prepare",
+        "ride.booking.cancel",
+        "restaurant.search",
+        "restaurant.get",
+        "restaurant.check_availability",
+        "restaurant.create_hold",
+        "restaurant.create_reservation",
+        "restaurant.get_reservation",
+        "restaurant.list_reservations",
         "restaurant.cancel_reservation",
-        "healthcare.search_facilities", "healthcare.get_facility", "healthcare.list_departments",
-        "healthcare.list_doctors", "healthcare.list_slots", "healthcare.hold_slot",
-        "healthcare.get_appointment", "healthcare.list_appointments", "healthcare.confirm_appointment",
+        "healthcare.search_facilities",
+        "healthcare.get_facility",
+        "healthcare.list_departments",
+        "healthcare.list_doctors",
+        "healthcare.list_slots",
+        "healthcare.hold_slot",
+        "healthcare.get_appointment",
+        "healthcare.list_appointments",
+        "healthcare.confirm_appointment",
         "healthcare.cancel_appointment",
     }
     assert names == expected
@@ -50,7 +81,14 @@ def test_agent_policies_reference_only_registered_tools_and_final_tools_are_boun
 
 
 def test_agent_tool_classification_has_a_legacy_adapter_or_policy_owner() -> None:
-    policy_names = RESTAURANT_READ_TOOLS | RESTAURANT_WRITE_TOOLS | READ_TOOLS | REVERSIBLE_TOOLS | FINAL_TOOLS | {"ride.quote.create"}
+    policy_names = (
+        RESTAURANT_READ_TOOLS
+        | RESTAURANT_WRITE_TOOLS
+        | READ_TOOLS
+        | REVERSIBLE_TOOLS
+        | FINAL_TOOLS
+        | {"ride.quote.create"}
+    )
     for tool in _contract():
         if tool["classification"] != "IMPLEMENTED_AGENT_TOOL":
             continue

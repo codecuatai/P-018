@@ -5,8 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 from src.config import get_settings
-
-
 from src.infrastructure.database import close_pools, init_db_schema
 
 

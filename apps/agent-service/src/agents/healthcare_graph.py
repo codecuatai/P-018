@@ -61,7 +61,20 @@ def _healthcare_message(query: str, previous_intent: str | None) -> bool:
     folded = _fold(query)
     if previous_intent == "healthcare_booking":
         return True
-    return any(term in folded for term in ("suc khoe", "bac si", "kham", "benh vien", "chuyen khoa", "dat lich y te", "huy lich", "huy cuoc hen", *SYMPTOM_MARKERS))
+    return any(
+        term in folded
+        for term in (
+            "suc khoe",
+            "bac si",
+            "kham",
+            "benh vien",
+            "chuyen khoa",
+            "dat lich y te",
+            "huy lich",
+            "huy cuoc hen",
+            *SYMPTOM_MARKERS,
+        )
+    )
 
 
 def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dict[str, Any]:
@@ -94,7 +107,9 @@ def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dic
 
     if isinstance(tool_result, list) and tool_result and isinstance(tool_result[0], dict):
         if "available_slots" in tool_result[0]:
-            slots.setdefault("department", previous_slots.get("department") if isinstance(previous_slots, dict) else None)
+            slots.setdefault(
+                "department", previous_slots.get("department") if isinstance(previous_slots, dict) else None
+            )
     if isinstance(tool_result, dict):
         for key in ("appointment_id", "slot_id"):
             if tool_result.get(key) is not None:
@@ -104,7 +119,10 @@ def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dic
 
 def _is_confirmation(query: str) -> bool:
     folded = _fold(query).strip()
-    return any(term in folded for term in ("xac nhan", "x ac nhan", "dong y", "dat lich", "giu khung", "giu slot", "tiep tuc", "ok", "duoc"))
+    return any(
+        term in folded
+        for term in ("xac nhan", "x ac nhan", "dong y", "dat lich", "giu khung", "giu slot", "tiep tuc", "ok", "duoc")
+    )
 
 
 def _tool_request(
@@ -168,7 +186,11 @@ async def _select_department(query: str, departments: list[dict[str, Any]]) -> s
             if isinstance(raw, dict) and raw.get("parsed") is not None:
                 raw = raw["parsed"]
             parsed = raw if isinstance(raw, DepartmentSelection) else DepartmentSelection.model_validate(raw)
-            if parsed.department and parsed.confidence >= 0.55 and any(parsed.department == item.get("name") for item in departments):
+            if (
+                parsed.department
+                and parsed.confidence >= 0.55
+                and any(parsed.department == item.get("name") for item in departments)
+            ):
                 return parsed.department
         except Exception:
             # Candidate presentation remains the safe fallback when provider
@@ -224,8 +246,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
         }
 
     if slots.get("appointment_id") and (
-        any(term in folded for term in ("xac nhan lich", "xac nhan dat", "hoan tat lich"))
-        or "xac nhan" in folded
+        any(term in folded for term in ("xac nhan lich", "xac nhan dat", "hoan tat lich")) or "xac nhan" in folded
     ):
         return {
             "intent": "healthcare_booking",
@@ -243,7 +264,12 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
 
     if any(term in folded for term in ("huy lich", "huy cuoc hen")):
         if not slots.get("appointment_id"):
-            return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["appointment_id"], "status": "NEEDS_INPUT"}
+            return {
+                "intent": "healthcare_booking",
+                "slots": slots,
+                "missing_slots": ["appointment_id"],
+                "status": "NEEDS_INPUT",
+            }
         return {
             "intent": "healthcare_booking",
             "slots": slots,
@@ -281,9 +307,19 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
         }
 
     if not slots.get("patient_id"):
-        return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["patient_id"], "status": "NEEDS_INPUT"}
+        return {
+            "intent": "healthcare_booking",
+            "slots": slots,
+            "missing_slots": ["patient_id"],
+            "status": "NEEDS_INPUT",
+        }
     if not _is_confirmation(query):
-        return {"intent": "healthcare_booking", "slots": slots, "status": "NEEDS_INPUT", "missing_slots": ["confirmation"]}
+        return {
+            "intent": "healthcare_booking",
+            "slots": slots,
+            "status": "NEEDS_INPUT",
+            "missing_slots": ["confirmation"],
+        }
 
     return {
         "intent": "healthcare_booking",
@@ -328,7 +364,7 @@ def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
         "missing_information": missing,
         "error_code": error_code,
         "actions": [],
-        "authoritative_cards": []
+        "authoritative_cards": [],
     }
     response = "Mình đã cập nhật thông tin theo kết quả xác thực."
     if phase == "NEEDS_INFO":
@@ -337,11 +373,7 @@ def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
         response = "Mình đang kiểm tra lựa chọn phù hợp dựa trên dữ liệu hiện có."
     elif phase == "FAILED":
         response = "Yêu cầu chưa thể hoàn tất an toàn với thông tin hiện tại."
-    return {
-        "response": response,
-        "grounding_envelope": envelope,
-        "tool_request": state.get("tool_request")
-    }
+    return {"response": response, "grounding_envelope": envelope, "tool_request": state.get("tool_request")}
 
 
 def build_healthcare_graph():

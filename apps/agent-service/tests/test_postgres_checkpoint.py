@@ -1,6 +1,5 @@
-import pytest
 from src.application.workflow_store import WorkflowStore
-from src.infrastructure.database import get_sync_pool, init_db_schema
+from src.infrastructure.database import init_db_schema
 
 
 def test_workflow_store_memory_fallback():

@@ -14,54 +14,43 @@ from ..contracts import (
 )
 
 SEMANTIC_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[str, ...]] = {
-    (Domain.FOOD, Operation.DISCOVER): ('query|dish_query',),
-    (Domain.FOOD, Operation.CREATE): ('query|dish_query',),
+    (Domain.FOOD, Operation.DISCOVER): ("query|dish_query",),
+    (Domain.FOOD, Operation.CREATE): ("query|dish_query",),
     (Domain.FOOD, Operation.CANCEL): (),
     (Domain.FOOD, Operation.STATUS): (),
-    (Domain.RESTAURANT, Operation.DISCOVER): ('location',),
-    (Domain.RESTAURANT, Operation.CREATE): ('location', 'party_size', 'start_at'),
+    (Domain.RESTAURANT, Operation.DISCOVER): ("location",),
+    (Domain.RESTAURANT, Operation.CREATE): ("location", "party_size", "start_at"),
     (Domain.RESTAURANT, Operation.UPDATE): (),
     (Domain.RESTAURANT, Operation.CANCEL): (),
     (Domain.RESTAURANT, Operation.STATUS): (),
-    (Domain.HEALTHCARE, Operation.DISCOVER): ('department',),
-    (Domain.HEALTHCARE, Operation.CREATE): ('department',),
+    (Domain.HEALTHCARE, Operation.DISCOVER): ("department",),
+    (Domain.HEALTHCARE, Operation.CREATE): ("department",),
     (Domain.HEALTHCARE, Operation.CANCEL): (),
     (Domain.HEALTHCARE, Operation.STATUS): (),
-    (Domain.RIDE, Operation.DISCOVER): ('pickup_address', 'dropoff_address'),
-    (Domain.RIDE, Operation.CREATE): ('pickup_address', 'dropoff_address'),
+    (Domain.RIDE, Operation.DISCOVER): ("pickup_address", "dropoff_address"),
+    (Domain.RIDE, Operation.CREATE): ("pickup_address", "dropoff_address"),
     (Domain.RIDE, Operation.CANCEL): (),
     (Domain.RIDE, Operation.STATUS): (),
 }
 
 
 AUTHORITY_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[AuthorityRequirement, ...]] = {
-    (Domain.FOOD, Operation.CANCEL): (AuthorityRequirement(fact='order_id', required_version=True),),
-    (Domain.FOOD, Operation.UPDATE): (AuthorityRequirement(fact='cart_id', required_version=True),),
-    (Domain.FOOD, Operation.STATUS): (AuthorityRequirement(fact='order_id'),),
-    (Domain.RESTAURANT, Operation.UPDATE): (
-        AuthorityRequirement(fact='reservation_id', required_version=True),
-    ),
-    (Domain.RESTAURANT, Operation.CANCEL): (
-        AuthorityRequirement(fact='reservation_id', required_version=True),
-    ),
-    (Domain.RESTAURANT, Operation.STATUS): (AuthorityRequirement(fact='reservation_id'),),
-    (Domain.HEALTHCARE, Operation.CANCEL): (
-        AuthorityRequirement(fact='appointment_id', required_version=True),
-    ),
-    (Domain.HEALTHCARE, Operation.STATUS): (AuthorityRequirement(fact='appointment_id'),),
-    (Domain.RIDE, Operation.CANCEL): (
-        AuthorityRequirement(fact='booking_id', required_version=True),
-    ),
-    (Domain.RIDE, Operation.STATUS): (AuthorityRequirement(fact='booking_id'),),
+    (Domain.FOOD, Operation.CANCEL): (AuthorityRequirement(fact="order_id", required_version=True),),
+    (Domain.FOOD, Operation.UPDATE): (AuthorityRequirement(fact="cart_id", required_version=True),),
+    (Domain.FOOD, Operation.STATUS): (AuthorityRequirement(fact="order_id"),),
+    (Domain.RESTAURANT, Operation.UPDATE): (AuthorityRequirement(fact="reservation_id", required_version=True),),
+    (Domain.RESTAURANT, Operation.CANCEL): (AuthorityRequirement(fact="reservation_id", required_version=True),),
+    (Domain.RESTAURANT, Operation.STATUS): (AuthorityRequirement(fact="reservation_id"),),
+    (Domain.HEALTHCARE, Operation.CANCEL): (AuthorityRequirement(fact="appointment_id", required_version=True),),
+    (Domain.HEALTHCARE, Operation.STATUS): (AuthorityRequirement(fact="appointment_id"),),
+    (Domain.RIDE, Operation.CANCEL): (AuthorityRequirement(fact="booking_id", required_version=True),),
+    (Domain.RIDE, Operation.STATUS): (AuthorityRequirement(fact="booking_id"),),
 }
 
 
 def semantic_values(task: CoreAPlannedTask) -> dict[str, object]:
     raw = task.semantic_slots.model_dump(exclude_none=True)
-    return {
-        key: value.value if isinstance(value, SemanticSlot) else value
-        for key, value in raw.items()
-    }
+    return {key: value.value if isinstance(value, SemanticSlot) else value for key, value in raw.items()}
 
 
 def task_facts(context: PlannerContext, task_ref: int) -> list[AuthoritativeFact]:
@@ -95,14 +84,10 @@ def apply_requirements(task: CoreAPlannedTask, context: PlannerContext) -> CoreA
     values = semantic_values(task)
     missing_semantic: list[str] = []
     for expression in SEMANTIC_REQUIREMENTS.get((task.domain, task.operation), ()):
-        alternatives = expression.split('|')
-        if (
-            task.domain == Domain.RIDE
-            and expression == 'dropoff_address'
-            and task.depends_on
-        ):
+        alternatives = expression.split("|")
+        if task.domain == Domain.RIDE and expression == "dropoff_address" and task.depends_on:
             continue
-        if not any(values.get(name) not in (None, '') for name in alternatives):
+        if not any(values.get(name) not in (None, "") for name in alternatives):
             missing_semantic.append(expression)
 
     facts = task_facts(context, task.task_ref)
@@ -120,8 +105,8 @@ def apply_requirements(task: CoreAPlannedTask, context: PlannerContext) -> CoreA
     )
     return task.model_copy(
         update={
-            'missing_information': missing_semantic,
-            'missing_authority': missing_authority,
-            'disposition': disposition,
+            "missing_information": missing_semantic,
+            "missing_authority": missing_authority,
+            "disposition": disposition,
         }
     )

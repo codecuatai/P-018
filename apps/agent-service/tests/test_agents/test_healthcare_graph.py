@@ -13,7 +13,9 @@ async def test_slot_selection_does_not_hold_without_explicit_confirmation() -> N
             "context": {
                 "slots": {"department": "Khoa Nội Thần kinh", "patient_id": 1},
                 "tool_name": "healthcare.list_slots",
-                "tool_result": [{"id": 7, "name": "Bác sĩ A", "available_slots": [{"id": 42, "start_time": "2099-01-01T08:00:00"}]}],
+                "tool_result": [
+                    {"id": 7, "name": "Bác sĩ A", "available_slots": [{"id": 42, "start_time": "2099-01-01T08:00:00"}]}
+                ],
             },
         }
     )

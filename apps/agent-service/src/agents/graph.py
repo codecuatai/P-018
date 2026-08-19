@@ -104,7 +104,7 @@ def _candidate_snapshot(value: Any) -> dict[str, Any]:
     result = {
         key: value[key]
         for key in _CANDIDATE_SCALAR_FIELDS
-        if key in value and isinstance(value[key], (str, int, float, bool))
+        if key in value and isinstance(value[key], str | int | float | bool)
     }
     for key in ("option_groups", "options"):
         if isinstance(value.get(key), list):
@@ -236,7 +236,11 @@ def _missing_slots(intent: str, slots: dict[str, Any]) -> list[str]:
     required: list[str] = []
     if intent == "create_cart":
         required.append("restaurant_id")
-    if intent in {"quote_delivery", "preview_order", "place_order"} and not slots.get("address_id") and not slots.get("address_query"):
+    if (
+        intent in {"quote_delivery", "preview_order", "place_order"}
+        and not slots.get("address_id")
+        and not slots.get("address_query")
+    ):
         required.append("address_id")
     if intent in {"preview_order", "place_order"}:
         required.append("cart_id")
@@ -331,7 +335,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 ensure_ascii=False,
             )
             structured_invoke = getattr(model, "ainvoke_structured", None)
-            raw = await structured_invoke(prompt, StructuredDecision) if callable(structured_invoke) else await model.ainvoke(prompt)
+            raw = (
+                await structured_invoke(prompt, StructuredDecision)
+                if callable(structured_invoke)
+                else await model.ainvoke(prompt)
+            )
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
@@ -384,11 +392,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         }
         return {
             "missing_slots": missing,
-            **({
-                "response_type": "options",
-                "response": "Mình cần bạn chọn rõ " + ", ".join(labels.get(value, value) for value in missing) + ".",
-                "data": {"missing_slots": missing},
-            } if missing else {}),
+            **(
+                {
+                    "response_type": "options",
+                    "response": "Mình cần bạn chọn rõ "
+                    + ", ".join(labels.get(value, value) for value in missing)
+                    + ".",
+                    "data": {"missing_slots": missing},
+                }
+                if missing
+                else {}
+            ),
             "step_count": state.get("step_count", 0) + 1,
         }
 
@@ -431,7 +445,9 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         calls: list[dict[str, Any]] = []
         original_intent = str(state.get("intent", "general_food_support"))
         working_slots = dict(state.get("extracted_slots", {}))
-        working_context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(exclude_none=True)
+        working_context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(
+            exclude_none=True
+        )
         pending_tools = list(state.get("selected_tools", []))
         recommendation_fallback = False
         max_steps = get_settings().max_graph_steps
@@ -467,7 +483,11 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         fallback_args["max_price"] = tool["arguments"]["max_price"]
                     pending_tools.append({"name": "search_food", "arguments": fallback_args})
                     recommendation_fallback = True
-                if name == "list_food_delivery_addresses" and original_intent in {"quote_delivery", "preview_order", "place_order"}:
+                if name == "list_food_delivery_addresses" and original_intent in {
+                    "quote_delivery",
+                    "preview_order",
+                    "place_order",
+                }:
                     addresses = result.get("addresses", result.get("items", [])) if isinstance(result, dict) else []
                     working_context["address_candidates"] = addresses if isinstance(addresses, list) else []
                     working_slots = resolve_references(working_slots, working_context)
@@ -498,9 +518,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         defaults = [
                             {"group_id": str(group["id"]), "option_id": str(group["options"][0]["id"])}
                             for group in item.get("option_groups", [])
-                            if group.get("required") and str(group.get("id")) not in selected_groups and group.get("options")
+                            if group.get("required")
+                            and str(group.get("id")) not in selected_groups
+                            and group.get("options")
                         ]
-                        if len(defaults) != len([group for group in item.get("option_groups", []) if group.get("required") and str(group.get("id")) not in selected_groups]):
+                        if len(defaults) != len(
+                            [
+                                group
+                                for group in item.get("option_groups", [])
+                                if group.get("required") and str(group.get("id")) not in selected_groups
+                            ]
+                        ):
                             return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
                         selected.extend(defaults)
                     slots = state.get("extracted_slots", {})
@@ -530,11 +558,23 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         item_id = item.get("id")
                         required_options = [group for group in item.get("option_groups", []) if group.get("required")]
                         if required_options:
-                            return {"tool_calls": calls, "tool_results": results, "missing_options": [str(group.get("name", "option")) for group in required_options]}
+                            return {
+                                "tool_calls": calls,
+                                "tool_results": results,
+                                "missing_options": [str(group.get("name", "option")) for group in required_options],
+                            }
                         slots = state.get("extracted_slots", {})
                         cart_id = slots.get("cart_id")
                         if cart_id and item_id:
-                            added = await invoke("add_to_cart", {"cart_id": cart_id, "menu_item_id": item_id, "quantity": slots.get("quantity", 1), "selected_options": []})
+                            added = await invoke(
+                                "add_to_cart",
+                                {
+                                    "cart_id": cart_id,
+                                    "menu_item_id": item_id,
+                                    "quantity": slots.get("quantity", 1),
+                                    "selected_options": [],
+                                },
+                            )
                             calls.append({"name": "add_to_cart", "status": "succeeded"})
                             results.append({"name": "add_to_cart", "data": added})
                 elif name == "create_cart" and state.get("intent") == "add_to_cart":
@@ -553,12 +593,22 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                         calls.append({"name": "add_to_cart", "status": "succeeded"})
                         results.append({"name": "add_to_cart", "data": added})
         except ToolCallLimitError:
-            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+            return {
+                "error": "TOOL_CALL_LIMIT",
+                "tool_calls": calls,
+                "tool_results": results,
+                "extracted_slots": working_slots,
+            }
         except GatewayToolError as exc:
             calls.append({"name": name, "status": "failed", "code": exc.code})
             return {"error": exc.code, "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
         if pending_tools:
-            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+            return {
+                "error": "TOOL_CALL_LIMIT",
+                "tool_calls": calls,
+                "tool_results": results,
+                "extracted_slots": working_slots,
+            }
         return {
             "tool_calls": calls,
             "tool_results": results,
@@ -611,9 +661,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 updates.update({"restaurant_candidates": restaurants, "menu_item_candidates": items})
             if name == "view_menu" and isinstance(data, dict) and isinstance(data.get("items"), list):
                 updates["menu_item_candidates"] = [
-                    _candidate_snapshot(item)
-                    for item in data["items"]
-                    if isinstance(item, dict) and item.get("id")
+                    _candidate_snapshot(item) for item in data["items"] if isinstance(item, dict) and item.get("id")
                 ]
                 if data.get("restaurant", {}).get("id"):
                     updates["restaurant_id"] = data["restaurant"]["id"]
@@ -646,9 +694,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "pending_confirmation": confirmation,
                 "state_updates": updates,
             }
-        if intent == "search_food" and results and not any(
-            result.get("data", {}).get("items") for result in results
-        ):
+        if intent == "search_food" and results and not any(result.get("data", {}).get("items") for result in results):
             return {
                 "response_type": "text",
                 "response": "Mình chưa tìm thấy món phù hợp.",
@@ -678,7 +724,9 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "search_food": "Mình tìm được các món phù hợp.",
         }
         if intent == "search_food" and state.get("recommendation_fallback"):
-            messages["search_food"] = "Mình chưa thấy đúng món bạn yêu cầu ở khu vực này. Đây là các món và quán gần đó để bạn chọn thay thế."
+            messages["search_food"] = (
+                "Mình chưa thấy đúng món bạn yêu cầu ở khu vực này. Đây là các món và quán gần đó để bạn chọn thay thế."
+            )
         return {
             "response_type": "options" if results else "text",
             "response": messages.get(intent, "Mình có thể giúp bạn tìm món, xem menu và tạo giỏ."),

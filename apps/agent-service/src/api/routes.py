@@ -80,7 +80,9 @@ async def assistant_chat(
         or not x_actor_id
         or x_actor_id != request.user_id
     ):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
     try:
         config = _langfuse_config(
             user_id=request.user_id,
@@ -133,7 +135,9 @@ async def assistant_chat_stream(
         or not x_actor_id
         or x_actor_id != request.user_id
     ):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
 
     async def event_generator():
         try:
@@ -172,7 +176,7 @@ async def assistant_chat_stream(
             message = result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này.")
             words = message.split(" ")
             for i in range(0, len(words), 3):
-                chunk = " ".join(words[i:i + 3]) + (" " if i + 3 < len(words) else "")
+                chunk = " ".join(words[i : i + 3]) + (" " if i + 3 < len(words) else "")
                 yield f"event: delta\ndata: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
 
             finish_payload = {
@@ -203,7 +207,9 @@ async def chat(
         or not x_actor_id
         or x_actor_id != request.user_id
     ):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
     try:
         config = _langfuse_config(
             user_id=request.user_id,
@@ -227,10 +233,17 @@ async def chat(
             first = result["tool_results"][0].get("data", {})
             if result.get("intent") == "create_cart" and isinstance(first, dict) and first.get("id"):
                 state_updates = {"cart_id": first["id"]}
-            elif result.get("intent") == "search_food" and isinstance(first, dict) and isinstance(first.get("items"), list) and first["items"]:
+            elif (
+                result.get("intent") == "search_food"
+                and isinstance(first, dict)
+                and isinstance(first.get("items"), list)
+                and first["items"]
+            ):
                 item = first["items"][0]
                 if isinstance(item, dict):
-                    state_updates = {"restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")}
+                    state_updates = {
+                        "restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")
+                    }
         if result.get("pending_confirmation") is not None:
             state_updates = {**state_updates, "pending_confirmation_id": result["pending_confirmation"].get("id")}
         response = AgentResponse(
@@ -240,7 +253,11 @@ async def chat(
             data=result.get("data", {}),
             pending_confirmation=result.get("pending_confirmation"),
             state_updates=state_updates,
-            meta={"conversation_id": request.conversation_id, "request_id": request.correlation_id, "tool_calls": result.get("tool_calls", [])},
+            meta={
+                "conversation_id": request.conversation_id,
+                "request_id": request.correlation_id,
+                "tool_calls": result.get("tool_calls", []),
+            },
         )
         return {"data": response.model_dump(), "meta": {"request_id": request.correlation_id}}
     except HTTPException:
@@ -283,7 +300,11 @@ async def restaurant_chat(
             },
             config=config,
         )
-        workflow_store.save(actor_id, workflow_id, {**previous, **request.context, **result, "workflow_id": workflow_id, "actor_id": actor_id})
+        workflow_store.save(
+            actor_id,
+            workflow_id,
+            {**previous, **request.context, **result, "workflow_id": workflow_id, "actor_id": actor_id},
+        )
         response = ChatResponse(
             response=result.get("response", ""),
             workflow_id=workflow_id,

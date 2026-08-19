@@ -92,13 +92,15 @@ def test_build_chat_model_keeps_sampling_kwargs_for_older_configured_model(monke
 
     llm_module.build_chat_model(configured, "gemini-2.5-flash-lite")
 
-    assert captured == [{
-        "model": "gemini-2.5-flash-lite",
-        "google_api_key": "configured",
-        "temperature": 0.2,
-        "top_p": 0.8,
-        "top_k": 20,
-    }]
+    assert captured == [
+        {
+            "model": "gemini-2.5-flash-lite",
+            "google_api_key": "configured",
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "top_k": 20,
+        }
+    ]
 
 
 @pytest.mark.asyncio

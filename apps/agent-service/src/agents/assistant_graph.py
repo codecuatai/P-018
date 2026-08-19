@@ -81,7 +81,6 @@ Quy tắc ứng xử và bóc tách tác vụ:
 - Trả về tiếng Việt gãy gọn, tự nhiên."""
 
 
-
 class PlannedTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -140,12 +139,12 @@ _CORE_A_PLANNER = CoreAPlanner()
 
 
 def plan_core_a(input_: CoreAInput) -> PlanningDecision:
-    '''Typed Core A seam.
+    """Typed Core A seam.
 
     The compatibility understanding path currently projects `AssistantPlan`
     into `SemanticTurn`. Keep this seam free of dispatch and domain side
     effects while Core B extraction is completed.
-    '''
+    """
     return _CORE_A_PLANNER.plan(input_)
 
 
@@ -155,28 +154,25 @@ def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
         interaction_mode=plan.interaction_mode,
         discarded_task_refs=plan.discarded_task_refs,
     )
-    raw_context = state.get('conversation_state', {})
+    raw_context = state.get("conversation_state", {})
     context_tasks: list[PlannerTaskContext] = []
-    raw_tasks = raw_context.get('tasks', []) if isinstance(raw_context, dict) else []
+    raw_tasks = raw_context.get("tasks", []) if isinstance(raw_context, dict) else []
     for index, raw in enumerate(raw_tasks):
         if not isinstance(raw, dict):
             continue
         try:
             context_tasks.append(
                 PlannerTaskContext(
-                    task_ref=int(raw.get('task_ref', index)),
-                    domain=Domain(str(raw.get('domain'))),
-                    phase=str(raw.get('phase') or 'PLANNING'),
-                    revision=max(0, int(raw.get('revision', 0))),
-                    depends_on=[
-                        item for item in raw.get('depends_on', [])
-                        if isinstance(item, int)
-                    ],
+                    task_ref=int(raw.get("task_ref", index)),
+                    domain=Domain(str(raw.get("domain"))),
+                    phase=str(raw.get("phase") or "PLANNING"),
+                    revision=max(0, int(raw.get("revision", 0))),
+                    depends_on=[item for item in raw.get("depends_on", []) if isinstance(item, int)],
                 )
             )
         except (TypeError, ValueError):
             continue
-    raw_snapshot = state.get('capability_snapshot')
+    raw_snapshot = state.get("capability_snapshot")
     snapshot = (
         CapabilitySnapshot.model_validate(raw_snapshot)
         if isinstance(raw_snapshot, dict)
@@ -197,11 +193,11 @@ def _typed_pipeline_result(
     input_ = _core_a_input(plan, state)
     decision = plan_core_a(input_)
     return {
-        'plan': plan.model_dump(),
-        'semantic_turn': input_.semantic_turn.model_dump(mode='json'),
-        'planning_decision': decision.model_dump(mode='json'),
-        'assistant_message': plan.assistant_message,
-        'decision_source': source,
+        "plan": plan.model_dump(),
+        "semantic_turn": input_.semantic_turn.model_dump(mode="json"),
+        "planning_decision": decision.model_dump(mode="json"),
+        "assistant_message": plan.assistant_message,
+        "decision_source": source,
     }
 
 
@@ -246,8 +242,12 @@ def _has_any(text: str, values: tuple[str, ...]) -> bool:
 
 def _is_direct_healthcare_request(text: str) -> bool:
     lowered = _plain(text)
-    healthcare = _has_any(lowered, ("dat lich kham", "lich kham", "bac si", "kham", "chuyen khoa", "khoa", "dau dau", "trieu chung"))
-    other_service = _has_any(lowered, ("goi xe", "dat xe", "nha hang", "dat ban", "dat mon", "giao do an", "ship do an"))
+    healthcare = _has_any(
+        lowered, ("dat lich kham", "lich kham", "bac si", "kham", "chuyen khoa", "khoa", "dau dau", "trieu chung")
+    )
+    other_service = _has_any(
+        lowered, ("goi xe", "dat xe", "nha hang", "dat ban", "dat mon", "giao do an", "ship do an")
+    )
     return healthcare and not other_service
 
 
@@ -342,8 +342,7 @@ def _strip_vehicle_suffix(value: str) -> str:
 def _clean_changed_route_value(value: str) -> str | None:
     value = re.sub(r"^(?:qua|sang|thành|thanh|là|la|tới|toi)\s+", "", value, flags=re.IGNORECASE)
     value = re.sub(
-        r"\s+(?:và\s+)?(?:đổi|doi|thay|chuyển|chuyen)?\s*"
-        r"(?:phương tiện|phuong tien|loại xe|loai xe).*$",
+        r"\s+(?:và\s+)?(?:đổi|doi|thay|chuyển|chuyen)?\s*" r"(?:phương tiện|phuong tien|loại xe|loai xe).*$",
         "",
         value,
         flags=re.IGNORECASE,
@@ -544,7 +543,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["delivery_preference"] = "home"
         if "giao ve nha" in lowered or "giao toi nha" in lowered:
             slots["address_reference"] = "home"
-        dish_match = re.search(r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon)\s+[^,.;!?]+", lowered)
+        dish_match = re.search(
+            r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon)\s+[^,.;!?]+", lowered
+        )
         if dish_match:
             dish_query = re.split(
                 r"\b(?:giao\s+(?:ve|toi)|ship|den\s+|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b",
@@ -583,7 +584,12 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["time_preference"] = "evening"
         if _has_any(lowered, ("dau", "met", "trieu chung", "symptom")):
             slots["symptoms"] = text[:500]
-    if "chon cai dau tien" in lowered or "chon quan dau tien" in lowered or "chon nha hang dau tien" in lowered or "mon so mot" in lowered:
+    if (
+        "chon cai dau tien" in lowered
+        or "chon quan dau tien" in lowered
+        or "chon nha hang dau tien" in lowered
+        or "mon so mot" in lowered
+    ):
         slots["selection"] = "first"
     elif "chon cai thu hai" in lowered or "chon quan thu hai" in lowered or "mon so hai" in lowered:
         slots["selection"] = "second"
@@ -619,8 +625,13 @@ def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: 
         if not slots.get("dropoff_address") and not depends_on:
             missing.append("dropoff_address")
     return PlannedTask(
-        domain=domain, goal=goal, normalized_request=text[:2000], extracted_slots=slots,
-        depends_on=depends_on or [], needs_clarification=bool(missing), missing_information=missing,
+        domain=domain,
+        goal=goal,
+        normalized_request=text[:2000],
+        extracted_slots=slots,
+        depends_on=depends_on or [],
+        needs_clarification=bool(missing),
+        missing_information=missing,
     )
 
 
@@ -653,9 +664,28 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         return []
 
     food_words = (
-        "chon quan", "chon mon", "pho", "bun", "com", "bat", "co lon", "ga ran", "ga chien", "fast food", "do an nhanh", "goi y", "gan day",
-        "khong cay", "giao ve", "giao toi", "ship", "dia chi", "ap ma",
-        "tong tien", "xem tong", "dat luon",
+        "chon quan",
+        "chon mon",
+        "pho",
+        "bun",
+        "com",
+        "bat",
+        "co lon",
+        "ga ran",
+        "ga chien",
+        "fast food",
+        "do an nhanh",
+        "goi y",
+        "gan day",
+        "khong cay",
+        "giao ve",
+        "giao toi",
+        "ship",
+        "dia chi",
+        "ap ma",
+        "tong tien",
+        "xem tong",
+        "dat luon",
     )
     healthcare_words = ("lich kham", "bac si", "kham", "khoa", "than kinh", "tam ly", "chon lich", "trieu chung")
     # A bare "N người" follow-up keeps the established Restaurant flow when
@@ -664,8 +694,15 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     # active task.
     restaurant_words = ("dat ban", "nha hang", "chon nha hang", "so nguoi", "nguoi", "khach")
     ride_words = (
-        "dat xe", "goi xe", "di tu", "xe may", "xe 4 cho", "xe 7 cho",
-        "doi phuong tien", "thay phuong tien", "loai xe",
+        "dat xe",
+        "goi xe",
+        "di tu",
+        "xe may",
+        "xe 4 cho",
+        "xe 7 cho",
+        "doi phuong tien",
+        "thay phuong tien",
+        "loai xe",
     )
 
     matches: list[int] = []
@@ -694,7 +731,9 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         for index, task in active:
             domain = str(task.get("domain"))
             semantic = _semantic_slots(message, domain)
-            if semantic or (domain == "restaurant" and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh"))):
+            if semantic or (
+                domain == "restaurant" and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh"))
+            ):
                 matches.append(index)
                 missing = task.get("missing_information", [])
                 if isinstance(missing, list) and any(field in missing for field in semantic):
@@ -710,22 +749,19 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
 def _discard_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     """Recognize abandonment of conversation work, never domain cancellation."""
     lowered = _plain(message)
-    abandonment = (
-        _has_any(
-            lowered,
-            (
-                "thoi khong",
-                "khong can",
-                "bo yeu cau",
-                "bo qua yeu cau",
-                "dung yeu cau",
-                "dung tim",
-                "chuyen sang",
-                "doi sang",
-            ),
-        )
-        or bool(re.search(r"\bkhong\b.{0,80}\bnua\b", lowered))
-    )
+    abandonment = _has_any(
+        lowered,
+        (
+            "thoi khong",
+            "khong can",
+            "bo yeu cau",
+            "bo qua yeu cau",
+            "dung yeu cau",
+            "dung tim",
+            "chuyen sang",
+            "doi sang",
+        ),
+    ) or bool(re.search(r"\bkhong\b.{0,80}\bnua\b", lowered))
     if not abandonment:
         return []
 
@@ -822,9 +858,7 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
     )
     if advisory:
         weather_note = (
-            "Nếu đúng là trời đang mưa lạnh, "
-            if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh"))
-            else ""
+            "Nếu đúng là trời đang mưa lạnh, " if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh")) else ""
         )
         return AssistantPlan(
             interaction_mode="advisory",
@@ -850,26 +884,87 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             interaction_mode="unsupported",
         )
 
-    follow_up = _has_any(lowered, (
-        "chon cai", "chon quan", "chon mon", "nguoi", "hoan kiem", "dong y",
-        "doi diem den", "doi diem don", "thay diem den", "thay diem don", "chuyen diem den",
-        "doi phuong tien", "thay phuong tien", "loai xe", "xe may",
-        "xac nhan", "xe 4 cho", "xe 7 cho", "sang mai", "toi nay", "ngay mai", "ngay kia", "gio", "khoa", "tam ly",
-        "co lon", "khong cay", "giao ve", "ap ma", "tong tien", "dat luon",
-        "ga ran", "ga chien", "fast food", "do an nhanh", "goi y", "gan day",
-    ))
-    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(lowered, ("giao ve", "ship", "dat mon"))
-    explicit_food = _has_any(lowered, ("giao ve", "giao toi", "ship", "dat mon", "pho", "bun", "com", "do an", "ga ran", "ga chien", "fast food", "goi y", "gan day")) and not (explicit_restaurant and "giao" not in lowered)
-    explicit_healthcare = _has_any(lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung"))
-    explicit_ride = _has_any(lowered, ("dat xe", "goi xe", "di tu", "tu ")) and (_route(text)[0] is not None or "xe" in lowered)
+    follow_up = _has_any(
+        lowered,
+        (
+            "chon cai",
+            "chon quan",
+            "chon mon",
+            "nguoi",
+            "hoan kiem",
+            "dong y",
+            "doi diem den",
+            "doi diem don",
+            "thay diem den",
+            "thay diem don",
+            "chuyen diem den",
+            "doi phuong tien",
+            "thay phuong tien",
+            "loai xe",
+            "xe may",
+            "xac nhan",
+            "xe 4 cho",
+            "xe 7 cho",
+            "sang mai",
+            "toi nay",
+            "ngay mai",
+            "ngay kia",
+            "gio",
+            "khoa",
+            "tam ly",
+            "co lon",
+            "khong cay",
+            "giao ve",
+            "ap ma",
+            "tong tien",
+            "dat luon",
+            "ga ran",
+            "ga chien",
+            "fast food",
+            "do an nhanh",
+            "goi y",
+            "gan day",
+        ),
+    )
+    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(
+        lowered, ("giao ve", "ship", "dat mon")
+    )
+    explicit_food = _has_any(
+        lowered,
+        (
+            "giao ve",
+            "giao toi",
+            "ship",
+            "dat mon",
+            "pho",
+            "bun",
+            "com",
+            "do an",
+            "ga ran",
+            "ga chien",
+            "fast food",
+            "goi y",
+            "gan day",
+        ),
+    ) and not (explicit_restaurant and "giao" not in lowered)
+    explicit_healthcare = _has_any(
+        lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung")
+    )
+    explicit_ride = _has_any(lowered, ("dat xe", "goi xe", "di tu", "tu ")) and (
+        _route(text)[0] is not None or "xe" in lowered
+    )
 
     tasks: list[PlannedTask] = []
     if explicit_restaurant:
-        tasks.append(_task("restaurant", text, "Tìm và đặt bàn tại nhà hàng phù hợp", _semantic_slots(text, "restaurant")))
+        tasks.append(
+            _task("restaurant", text, "Tìm và đặt bàn tại nhà hàng phù hợp", _semantic_slots(text, "restaurant"))
+        )
     if explicit_food:
         tasks.append(_task("food", text, "Tìm món và chuẩn bị đơn giao tận nơi", _semantic_slots(text, "food")))
     if explicit_healthcare:
-        tasks.append(_task("healthcare", text, "Tìm khoa, bác sĩ và lịch khám phù hợp", _semantic_slots(text, "healthcare")))
+        tasks.append(
+            _task("healthcare", text, "Tìm khoa, bác sĩ và lịch khám phù hợp", _semantic_slots(text, "healthcare"))
+        )
     if explicit_ride:
         ride_slots = _semantic_slots(text, "ride")
         dropoff = str(ride_slots.get("dropoff_address", ""))
@@ -891,27 +986,46 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         targets = _follow_up_targets(text, previous_tasks)
         if len(targets) > 1:
             question = "Bạn muốn tiếp tục với yêu cầu nào: món ăn, đặt bàn hay lịch khám?"
-            return AssistantPlan(assistant_message=question, tasks=[], needs_clarification=True, clarification_question=question)
+            return AssistantPlan(
+                assistant_message=question, tasks=[], needs_clarification=True, clarification_question=question
+            )
         if targets:
             item = previous_tasks[targets[0]]
             if isinstance(item, dict):
                 domain = str(item.get("domain", ""))
                 if domain in SUPPORTED_DOMAINS:
-                    slots = dict(item.get("extracted_slots", {})) if isinstance(item.get("extracted_slots"), dict) else {}
+                    slots = (
+                        dict(item.get("extracted_slots", {})) if isinstance(item.get("extracted_slots"), dict) else {}
+                    )
                     explicit_slots = _semantic_slots(text, domain)
                     # A new day without a clock supersedes an old exact clock.
                     # Keeping it would incorrectly constrain the new day to the
                     # prior appointment time.
-                    if domain == "healthcare" and "appointment_date" in explicit_slots and "start_at" not in explicit_slots:
+                    if (
+                        domain == "healthcare"
+                        and "appointment_date" in explicit_slots
+                        and "start_at" not in explicit_slots
+                    ):
                         slots.pop("start_at", None)
                     slots.update(explicit_slots)
-                    if domain == "restaurant" and not slots.get("location") and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh")):
+                    if (
+                        domain == "restaurant"
+                        and not slots.get("location")
+                        and _has_any(lowered, ("hoan kiem", "ha noi", "cau giay", "tay ho", "ba dinh"))
+                    ):
                         slots["location"] = text
                     if domain == "restaurant":
                         party_size = _number(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4)))
                         if party_size is not None and _has_any(lowered, ("nguoi", "khach", "ban")):
                             slots["party_size"] = party_size
-                    tasks.append(_task(domain, str(item.get("normalized_request", text)), str(item.get("goal", "Tiếp tục yêu cầu")), slots))
+                    tasks.append(
+                        _task(
+                            domain,
+                            str(item.get("normalized_request", text)),
+                            str(item.get("goal", "Tiếp tục yêu cầu")),
+                            slots,
+                        )
+                    )
 
     if not tasks and discarded_task_refs:
         return AssistantPlan(
@@ -922,12 +1036,22 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         conversation_plan = _conversation_only_plan(text, lowered)
         if conversation_plan is not None:
             return conversation_plan
-        return AssistantPlan(assistant_message="Mình có thể giúp bạn đặt xe, tìm đồ ăn, đặt bàn hoặc tìm lịch khám. Bạn muốn bắt đầu từ việc nào?")
+        return AssistantPlan(
+            assistant_message="Mình có thể giúp bạn đặt xe, tìm đồ ăn, đặt bàn hoặc tìm lịch khám. Bạn muốn bắt đầu từ việc nào?"
+        )
     if len(tasks) == 1 and tasks[0].needs_clarification:
         missing = tasks[0].missing_information
-        labels = {"location": "khu vực", "party_size": "số người", "start_at": "thời gian", "pickup_address": "điểm đón", "dropoff_address": "điểm đến"}
+        labels = {
+            "location": "khu vực",
+            "party_size": "số người",
+            "start_at": "thời gian",
+            "pickup_address": "điểm đón",
+            "dropoff_address": "điểm đến",
+        }
         question = "Bạn cho mình biết thêm " + " và ".join(labels.get(value, value) for value in missing[:2]) + " nhé?"
-        return AssistantPlan(assistant_message=question, tasks=tasks, needs_clarification=True, clarification_question=question)
+        return AssistantPlan(
+            assistant_message=question, tasks=tasks, needs_clarification=True, clarification_question=question
+        )
     assistant_message = (
         "Được, mình sẽ bỏ phần yêu cầu cũ đang dang dở và chuyển sang việc bạn vừa nhờ."
         if discarded_task_refs
@@ -946,11 +1070,19 @@ def _safe_slots(value: Any) -> dict[str, Any]:
     safe: dict[str, Any] = {}
     for key, item in value.items():
         normalized = str(key).casefold()
-        if normalized.endswith("_id") or normalized in FORBIDDEN_MODEL_FIELDS or normalized in {"price", "amount", "currency", "availability", "available", "status"}:
+        if (
+            normalized.endswith("_id")
+            or normalized in FORBIDDEN_MODEL_FIELDS
+            or normalized in {"price", "amount", "currency", "availability", "available", "status"}
+        ):
             continue
-        if isinstance(item, (str, int, float, bool)) or item is None:
+        if isinstance(item, str | int | float | bool) or item is None:
             safe[str(key)] = item
-        elif isinstance(item, list) and len(item) <= 8 and all(isinstance(entry, (str, int, float, bool)) for entry in item):
+        elif (
+            isinstance(item, list)
+            and len(item) <= 8
+            and all(isinstance(entry, str | int | float | bool) for entry in item)
+        ):
             safe[str(key)] = item
     return safe
 
@@ -959,7 +1091,11 @@ def _safe_model_text(value: Any, limit: int) -> str:
     if not isinstance(value, str):
         return ""
     text = value.strip()[:limit]
-    if re.search(r"(?:confirmation|workflow|tool[_ -]?call|reservation|appointment|booking|order)[_: -][a-z0-9-]+", text, flags=re.IGNORECASE):
+    if re.search(
+        r"(?:confirmation|workflow|tool[_ -]?call|reservation|appointment|booking|order)[_: -][a-z0-9-]+",
+        text,
+        flags=re.IGNORECASE,
+    ):
         return ""
     return text
 
@@ -990,10 +1126,23 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
             safe_task["depends_on"] = [item for item in dependencies if isinstance(item, int) and 0 <= item < 8]
         pending_actions = raw_task.get("pending_actions", [])
         if isinstance(pending_actions, list):
-            safe_actions = [str(item) for item in pending_actions if str(item) in {
-                "select_restaurant", "restaurant_confirm", "ride_service", "ride_payment",
-                "select_healthcare_slot", "healthcare_payment", "healthcare_confirm", "select_food_item", "food_confirm", "food_payment",
-            }]
+            safe_actions = [
+                str(item)
+                for item in pending_actions
+                if str(item)
+                in {
+                    "select_restaurant",
+                    "restaurant_confirm",
+                    "ride_service",
+                    "ride_payment",
+                    "select_healthcare_slot",
+                    "healthcare_payment",
+                    "healthcare_confirm",
+                    "select_food_item",
+                    "food_confirm",
+                    "food_payment",
+                }
+            ]
             if safe_actions:
                 safe_task["pending_actions"] = safe_actions
         pending_choice = raw_task.get("pending_choice")
@@ -1013,9 +1162,17 @@ def _safe_model_value(value: Any, depth: int = 0) -> Any:
         result: dict[str, Any] = {}
         for key, item in value.items():
             normalized = str(key).casefold()
-            if normalized.endswith("_id") or normalized in FORBIDDEN_MODEL_FIELDS or normalized in {
-                "workflow_id", "tool_call_id", "provider_reference", "resource_version",
-            }:
+            if (
+                normalized.endswith("_id")
+                or normalized in FORBIDDEN_MODEL_FIELDS
+                or normalized
+                in {
+                    "workflow_id",
+                    "tool_call_id",
+                    "provider_reference",
+                    "resource_version",
+                }
+            ):
                 continue
             safe = _safe_model_value(item, depth + 1)
             if safe is not None:
@@ -1023,7 +1180,7 @@ def _safe_model_value(value: Any, depth: int = 0) -> Any:
         return result
     if isinstance(value, list):
         return [_safe_model_value(item, depth + 1) for item in value[:8]]
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str | int | float | bool) or value is None:
         return value
     return None
 
@@ -1066,9 +1223,7 @@ def _canonical_model_slots(value: Any) -> dict[str, Any]:
             clock_match = re.fullmatch(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", clock.strip())
             if clock_match:
                 hours, minutes, seconds = clock_match.groups()
-                canonical["start_at"] = (
-                    f"{date.strip()}T{int(hours):02d}:{minutes}:{seconds or '00'}+07:00"
-                )
+                canonical["start_at"] = f"{date.strip()}T{int(hours):02d}:{minutes}:{seconds or '00'}+07:00"
     return canonical
 
 
@@ -1146,7 +1301,12 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
             normalized["start_at"] = start_at
         preference = slots.get("time_preference")
         if isinstance(preference, str) and preference in {
-        "morning", "afternoon", "evening", "tomorrow_morning", "tomorrow_afternoon", "tomorrow_evening"
+            "morning",
+            "afternoon",
+            "evening",
+            "tomorrow_morning",
+            "tomorrow_afternoon",
+            "tomorrow_evening",
         }:
             normalized["time_preference"] = preference
         selection = slots.get("selection")
@@ -1156,7 +1316,15 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         if isinstance(selection_index, int) and not isinstance(selection_index, bool) and 0 <= selection_index <= 99:
             normalized["selection_index"] = selection_index
     elif domain == "food":
-        for name, limit in (("query", 300), ("dish_query", 300), ("location", 300), ("district", 120), ("category", 120), ("delivery_preference", 80), ("address_reference", 200)):
+        for name, limit in (
+            ("query", 300),
+            ("dish_query", 300),
+            ("location", 300),
+            ("district", 120),
+            ("category", 120),
+            ("delivery_preference", 80),
+            ("address_reference", 200),
+        ):
             text_slot(name, limit)
         max_price = slots.get("max_price")
         if isinstance(max_price, int) and not isinstance(max_price, bool) and 0 <= max_price <= 10_000_000:
@@ -1173,15 +1341,20 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
     clarification = plan.clarification_question
     if clarification and len(clarification) > 500:
         clarification = clarification[:500]
-    discarded_task_refs = sorted({
-        value for value in plan.discarded_task_refs
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
-    })
-    return plan.model_copy(update={
-        "tasks": tasks,
-        "clarification_question": clarification,
-        "discarded_task_refs": discarded_task_refs,
-    })
+    discarded_task_refs = sorted(
+        {
+            value
+            for value in plan.discarded_task_refs
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
+        }
+    )
+    return plan.model_copy(
+        update={
+            "tasks": tasks,
+            "clarification_question": clarification,
+            "discarded_task_refs": discarded_task_refs,
+        }
+    )
 
 
 def _merge_explicit_context_actions(
@@ -1191,8 +1364,7 @@ def _merge_explicit_context_actions(
 ) -> AssistantPlan:
     raw_tasks = (
         conversation_state.get("tasks", [])
-        if isinstance(conversation_state, dict)
-        and isinstance(conversation_state.get("tasks", []), list)
+        if isinstance(conversation_state, dict) and isinstance(conversation_state.get("tasks", []), list)
         else []
     )
     deterministic_refs = _discard_targets(message, raw_tasks)
@@ -1204,10 +1376,12 @@ def _merge_explicit_context_actions(
         conversation_plan = _conversation_only_plan(message, _plain(message))
         if conversation_plan is not None:
             interaction_mode = conversation_plan.interaction_mode
-    return plan.model_copy(update={
-        "discarded_task_refs": discarded_refs,
-        "interaction_mode": interaction_mode,
-    })
+    return plan.model_copy(
+        update={
+            "discarded_task_refs": discarded_refs,
+            "interaction_mode": interaction_mode,
+        }
+    )
 
 
 def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPlan:
@@ -1236,7 +1410,9 @@ def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> Assist
     Restaurant, Gateway will resolve the address from the domain result.
     """
     lowered = _plain(message)
-    reference = _has_any(lowered, ("nha hang do", "toi do", "dua toi toi do", "den do", "sau do", "roi dat xe", "sau do dat xe"))
+    reference = _has_any(
+        lowered, ("nha hang do", "toi do", "dua toi toi do", "den do", "sau do", "roi dat xe", "sau do dat xe")
+    )
     if not reference:
         return plan
 
@@ -1246,7 +1422,11 @@ def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> Assist
             tasks.append(task)
             continue
         dependencies = list(task.depends_on)
-        prior = [candidate_index for candidate_index, candidate in enumerate(plan.tasks[:index]) if candidate.domain in {"healthcare", "restaurant"}]
+        prior = [
+            candidate_index
+            for candidate_index, candidate in enumerate(plan.tasks[:index])
+            if candidate.domain in {"healthcare", "restaurant"}
+        ]
         if prior:
             dependencies = sorted(set(dependencies).union(prior))
         slots = dict(task.extracted_slots)
@@ -1370,11 +1550,23 @@ async def compose_response(
     )
     try:
         result = await _invoke_structured(model, prompt, AssistantComposition)
-        MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "succeeded", "last_model_call_error": None})
+        MODEL_DIAGNOSTICS.update(
+            {
+                "last_model_call_at": _now().isoformat(),
+                "last_model_call_status": "succeeded",
+                "last_model_call_error": None,
+            }
+        )
         logger.info("assistant.composition.accepted model=%s", llm_diagnostics(settings)["last_model_used"])
         return str(result.message), "model"
     except Exception as error:  # provider errors are intentionally reduced to a safe fallback
-        MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "failed", "last_model_call_error": type(error).__name__})
+        MODEL_DIAGNOSTICS.update(
+            {
+                "last_model_call_at": _now().isoformat(),
+                "last_model_call_status": "failed",
+                "last_model_call_error": type(error).__name__,
+            }
+        )
         logger.warning("Assistant composition unavailable; deterministic fallback: %s", type(error).__name__)
         return fallback, "deterministic"
 
@@ -1396,26 +1588,40 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
-            return _typed_pipeline_result(plan, state, 'deterministic')
+            return _typed_pipeline_result(plan, state, "deterministic")
         try:
             message = str(state.get("query", ""))
             plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
             plan = _merge_explicit_context_actions(plan, message, state.get("conversation_state"))
             plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
             plan = _enforce_reference_dependencies(plan, message)
-            MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "succeeded", "last_model_call_error": None})
+            MODEL_DIAGNOSTICS.update(
+                {
+                    "last_model_call_at": _now().isoformat(),
+                    "last_model_call_status": "succeeded",
+                    "last_model_call_error": None,
+                }
+            )
             runtime = llm_diagnostics(settings)
-            logger.info("assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks))
+            logger.info(
+                "assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks)
+            )
             return {
-                **_typed_pipeline_result(plan, state, 'model'),
+                **_typed_pipeline_result(plan, state, "model"),
                 "model": runtime["last_model_used"] or settings.gemini_model,
                 "fallback_model": settings.gemini_fallback_model,
             }
         except Exception as error:  # validation/provider errors use the bounded semantic fallback
-            MODEL_DIAGNOSTICS.update({"last_model_call_at": _now().isoformat(), "last_model_call_status": "failed", "last_model_call_error": type(error).__name__})
+            MODEL_DIAGNOSTICS.update(
+                {
+                    "last_model_call_at": _now().isoformat(),
+                    "last_model_call_status": "failed",
+                    "last_model_call_error": type(error).__name__,
+                }
+            )
             logger.warning("Assistant planner unavailable; deterministic fallback: %s", type(error).__name__)
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
-            return _typed_pipeline_result(plan, state, 'deterministic')
+            return _typed_pipeline_result(plan, state, "deterministic")
 
     graph = StateGraph(AssistantState)
     graph.add_node("decide", decide)

@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import logging
-from contextlib import asynccontextmanager
-from typing import Any
 
 from psycopg_pool import AsyncConnectionPool, ConnectionPool
 
@@ -76,7 +73,7 @@ def init_db_schema() -> bool:
                         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         PRIMARY KEY (actor_id, workflow_id)
                     );
-                    CREATE INDEX IF NOT EXISTS idx_agent_wf_updated_at 
+                    CREATE INDEX IF NOT EXISTS idx_agent_wf_updated_at
                     ON agent_workflow_states(updated_at);
                     """
                 )
