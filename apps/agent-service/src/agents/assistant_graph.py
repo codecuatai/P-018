@@ -552,8 +552,20 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
                 dish_match.group(0),
                 maxsplit=1,
             )[0].strip()
+            dish_query = re.sub(r"^(?:cho toi|cho minh|giup toi|giup minh)\s+", "", dish_query).strip()
             if dish_query:
                 slots["dish_query"] = dish_query
+        elif _has_any(lowered, ("an trua", "bua trua")):
+            slots["dish_query"] = "cơm, phở, bún"
+            slots["category"] = "ăn trưa"
+        elif _has_any(lowered, ("an sang", "bua sang")):
+            slots["dish_query"] = "phở, bún, bánh mì"
+            slots["category"] = "ăn sáng"
+        elif _has_any(lowered, ("an toi", "bua toi")):
+            slots["dish_query"] = "cơm, lẩu, nướng"
+            slots["category"] = "ăn tối"
+        elif _has_any(lowered, ("goi y", "an gi", "mon ngon")):
+            slots["dish_query"] = "phở, bún, cơm"
         location = _location(text)
         if location:
             slots["location"] = location
@@ -835,7 +847,7 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             assistant_message="Rất vui vì giúp được bạn. Khi cần thêm gì, cứ gọi mình nhé!",
         )
 
-    if _has_any(lowered, ("troi mua di dau", "nen di dau", "di dau khi mua")):
+    if _has_any(lowered, ("troi mua di dau", "nen di dau khi mua", "mua gio di dau")):
         return AssistantPlan(
             interaction_mode="advisory",
             assistant_message=(
@@ -848,14 +860,12 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
     advisory = _has_any(
         lowered,
         (
-            "nen an gi",
-            "an gi ngon",
+            "troi mua lanh the nay nen an gi",
             "troi mua lanh",
-            "troi lanh",
-            "goi y mon an",
-            "tu van mon",
+            "troi lanh the nay",
+            "mua lanh the nay",
         ),
-    )
+    ) and not _has_any(lowered, ("giao ve", "ship", "dat mon", "cho toi", "tim mon", "an trua", "an sang", "an toi", "goi y cho toi"))
     if advisory:
         weather_note = (
             "Nếu đúng là trời đang mưa lạnh, " if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh")) else ""
@@ -867,6 +877,7 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
                 "Bạn thích món nước, món cay hay món nhẹ để mình gợi ý sát khẩu vị hơn?"
             ),
         )
+
     return None
 
 
@@ -884,15 +895,29 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             interaction_mode="unsupported",
         )
 
+    conversation_plan = _conversation_only_plan(text, lowered)
+    if conversation_plan is not None:
+        return conversation_plan
+
     follow_up = _has_any(
         lowered,
         (
+            "oke",
+            "ok",
+            "uh",
+            "ừ",
+            "duoc",
+            "được",
+            "dong y",
+            "đồng ý",
+            "goi y di",
+            "gợi ý đi",
+            "tim di",
             "chon cai",
             "chon quan",
             "chon mon",
             "nguoi",
             "hoan kiem",
-            "dong y",
             "doi diem den",
             "doi diem don",
             "thay diem den",
@@ -926,7 +951,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "gan day",
         ),
     )
-    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi")) and not _has_any(
+    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi tai")) and not _has_any(
         lowered, ("giao ve", "ship", "dat mon")
     )
     explicit_food = _has_any(
@@ -945,6 +970,16 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "fast food",
             "goi y",
             "gan day",
+            "an trua",
+            "bua trua",
+            "an toi",
+            "bua toi",
+            "an sang",
+            "bua sang",
+            "mon an",
+            "mon ngon",
+            "an gi",
+            "thich an",
         ),
     ) and not (explicit_restaurant and "giao" not in lowered)
     explicit_healthcare = _has_any(

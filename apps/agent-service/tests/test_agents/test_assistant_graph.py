@@ -577,3 +577,17 @@ def test_model_prompt_contains_only_planner_safe_state() -> None:
         assert forbidden not in serialized
     assert state["tasks"][0]["task_ref"] == 0
     assert state["tasks"][0]["extracted_slots"] == {"query": "phở"}
+
+
+def test_deterministic_plan_handles_food_lunch_recommendation_and_followup() -> None:
+    plan = deterministic_plan("gợi ý cho tôi món ăn trưa đi")
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].domain == "food"
+    assert plan.interaction_mode == "service"
+    dish = plan.tasks[0].extracted_slots.get("dish_query", "")
+    assert any(k in dish for k in ("mon", "trua", "cơm", "phở", "bún"))
+
+    # Follow up with "oke" continues the food task
+    followup = deterministic_plan("oke", conversation_state={"tasks": [plan.tasks[0].model_dump()]})
+    assert len(followup.tasks) == 1
+    assert followup.tasks[0].domain == "food"
