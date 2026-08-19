@@ -10,10 +10,24 @@ logger = logging.getLogger(__name__)
 
 _SYNC_POOL: ConnectionPool | None = None
 _ASYNC_POOL: AsyncConnectionPool | None = None
+_DB_AVAILABLE: bool | None = None
+
+
+def is_db_available() -> bool:
+    global _DB_AVAILABLE
+    if _DB_AVAILABLE is not None:
+        return _DB_AVAILABLE
+    settings = get_settings()
+    if not settings.database_url or settings.app_env == "test":
+        _DB_AVAILABLE = False
+        return False
+    return True
 
 
 def get_sync_pool() -> ConnectionPool | None:
-    global _SYNC_POOL
+    global _SYNC_POOL, _DB_AVAILABLE
+    if not is_db_available():
+        return None
     settings = get_settings()
     if not settings.database_url:
         return None
@@ -24,16 +38,20 @@ def get_sync_pool() -> ConnectionPool | None:
                 min_size=1,
                 max_size=10,
                 open=False,
+                kwargs={"connect_timeout": 1},
             )
             _SYNC_POOL.open(wait=False)
         except Exception as exc:
-            logger.warning("Could not initialize PostgreSQL sync connection pool: %s", exc)
+            logger.debug("Could not initialize PostgreSQL sync connection pool: %s", exc)
             _SYNC_POOL = None
+            _DB_AVAILABLE = False
     return _SYNC_POOL
 
 
 async def get_async_pool() -> AsyncConnectionPool | None:
-    global _ASYNC_POOL
+    global _ASYNC_POOL, _DB_AVAILABLE
+    if not is_db_available():
+        return None
     settings = get_settings()
     if not settings.database_url:
         return None
@@ -44,24 +62,29 @@ async def get_async_pool() -> AsyncConnectionPool | None:
                 min_size=1,
                 max_size=10,
                 open=False,
+                kwargs={"connect_timeout": 1},
             )
             await _ASYNC_POOL.open(wait=False)
         except Exception as exc:
-            logger.warning("Could not initialize PostgreSQL async connection pool: %s", exc)
+            logger.debug("Could not initialize PostgreSQL async connection pool: %s", exc)
             _ASYNC_POOL = None
+            _DB_AVAILABLE = False
     return _ASYNC_POOL
 
 
 def init_db_schema() -> bool:
     """Initialize database tables for agent workflow states and checkpoints."""
+    global _DB_AVAILABLE
     settings = get_settings()
-    if not settings.database_url:
+    if not settings.database_url or settings.app_env == "test":
+        _DB_AVAILABLE = False
         return False
     try:
         pool = get_sync_pool()
         if pool is None:
+            _DB_AVAILABLE = False
             return False
-        with pool.connection() as conn:
+        with pool.connection(timeout=1.0) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -79,14 +102,16 @@ def init_db_schema() -> bool:
                 )
                 conn.commit()
         logger.info("Successfully initialized agent_workflow_states table in xone_agent.")
+        _DB_AVAILABLE = True
         return True
     except Exception as exc:
-        logger.warning("Database schema initialization deferred or skipped: %s", exc)
+        logger.debug("Database schema initialization deferred: %s", exc)
+        _DB_AVAILABLE = False
         return False
 
 
 def close_pools() -> None:
-    global _SYNC_POOL, _ASYNC_POOL
+    global _SYNC_POOL, _ASYNC_POOL, _DB_AVAILABLE
     if _SYNC_POOL is not None:
         try:
             _SYNC_POOL.close()
@@ -99,3 +124,4 @@ def close_pools() -> None:
         except Exception:
             pass
         _ASYNC_POOL = None
+    _DB_AVAILABLE = None

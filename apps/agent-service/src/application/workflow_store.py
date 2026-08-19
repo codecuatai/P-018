@@ -26,7 +26,7 @@ class WorkflowStore:
         pool = get_sync_pool()
         if pool is not None:
             try:
-                with pool.connection() as conn:
+                with pool.connection(timeout=0.1) as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             "SELECT state FROM agent_workflow_states WHERE actor_id = %s AND workflow_id = %s",
@@ -52,7 +52,7 @@ class WorkflowStore:
         if pool is not None:
             try:
                 state_json = json.dumps(state, ensure_ascii=False)
-                with pool.connection() as conn:
+                with pool.connection(timeout=0.1) as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             """
@@ -74,7 +74,7 @@ class WorkflowStore:
         pool = get_sync_pool()
         if pool is not None:
             try:
-                with pool.connection() as conn:
+                with pool.connection(timeout=0.1) as conn:
                     with conn.cursor() as cur:
                         cur.execute(
                             "DELETE FROM agent_workflow_states WHERE actor_id = %s AND workflow_id = %s",
