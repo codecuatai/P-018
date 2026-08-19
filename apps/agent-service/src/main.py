@@ -7,12 +7,17 @@ from src.api.routes import router
 from src.config import get_settings
 
 
+from src.infrastructure.database import close_pools, init_db_schema
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
+    init_db_schema()
     yield
     print("Shutting down...")
+    close_pools()
 
 
 app = FastAPI(

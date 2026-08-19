@@ -61,6 +61,30 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
 
 
 @pytest.mark.asyncio
+async def test_assistant_chat_stream_returns_sse_events(client):
+    response = await client.post(
+        "/api/v1/assistant-chat/stream",
+        json={
+            "message": "Tim pho giao ve nha va dat lich kham than kinh sang mai",
+            "conversation_id": "conv-assistant-stream-1",
+            "user_id": "actor-assistant-stream-1",
+            "correlation_id": "corr-assistant-stream-1",
+        },
+        headers={
+            "X-Internal-Service-Token": "test-token",
+            "X-Actor-Id": "actor-assistant-stream-1",
+        },
+    )
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers.get("content-type", "")
+    content = response.text
+    assert "event: status" in content
+    assert "event: plan" in content
+    assert "event: delta" in content
+    assert "event: finish" in content
+
+
+@pytest.mark.asyncio
 async def test_assistant_chat_requires_gateway_auth(client):
     response = await client.post(
         "/api/v1/assistant-chat",
