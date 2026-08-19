@@ -429,9 +429,12 @@ jobs:
               docker compose --env-file .env build --no-cache
               docker compose --env-file .env up -d --remove-orphans
 
+              echo "Applying database migrations..."
+              sh scripts/migrate.sh .env
+
               docker image prune -f
               docker builder prune -f
-              echo "Develop deployment completed successfully (full rebuild)."
+              echo "Develop deployment completed successfully (full rebuild and migrations applied)."
             else
               echo "No service or container code changes detected. Repository synced cleanly in seconds."
             fi
@@ -501,9 +504,12 @@ jobs:
               docker compose --env-file .env build --no-cache
               docker compose --env-file .env up -d --remove-orphans
 
+              echo "Applying database migrations..."
+              sh scripts/migrate.sh .env
+
               docker image prune -f
               docker builder prune -f
-              echo "Production deployment completed successfully (full rebuild)."
+              echo "Production deployment completed successfully (full rebuild and migrations applied)."
             else
               echo "No service or container code changes detected. Repository synced cleanly in seconds."
             fi
