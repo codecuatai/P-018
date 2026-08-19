@@ -215,17 +215,21 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         delete actionKeys.current[action.id];
       }
       const checkout = response?.actions.find((action) => action.kind === "food_checkout");
-      if (!checkout) throw new Error("FOOD_CHECKOUT_UNAVAILABLE");
-      const checkoutKey = actionKeys.current[checkout.id] ?? createIdempotencyKey("assistant-food_checkout");
-      actionKeys.current[checkout.id] = checkoutKey;
-      const finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey);
-      consumedActionIds.current.add(checkout.id);
-      delete actionKeys.current[checkout.id];
+      let finalResponse = response;
+      if (checkout) {
+        const checkoutKey = actionKeys.current[checkout.id] ?? createIdempotencyKey("assistant-food_checkout");
+        actionKeys.current[checkout.id] = checkoutKey;
+        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey);
+        consumedActionIds.current.add(checkout.id);
+        delete actionKeys.current[checkout.id];
+      }
+      if (!finalResponse) throw new Error("FOOD_RESPONSE_EMPTY");
       setFoodSelections({});
       setFoodSelectionSubmitted(true);
       setMessages((current) => current.map((message) => message.id === pendingId
         ? { ...message, text: finalResponse.message, response: finalResponse, requestStatus: "sent" as const }
         : message));
+      void syncConversation(finalResponse.conversation_id);
       emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
