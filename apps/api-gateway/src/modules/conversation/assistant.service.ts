@@ -2048,10 +2048,13 @@ export class AssistantService {
     // A user may supply the delivery address after choosing quantities locally.
     // At that point the cart is already authoritative, so continue to the
     // checkout form instead of re-rendering the old menu candidates.
-    const addressContinuation = /(?:địa\s*chỉ|giao\s+(?:đến|tới|về))/iu.test(task.latest_message ?? '');
-    if (!pending && cartUpdated && addressContinuation && stringValue(nextContext.address_query)) {
+    const addressContinuation = /(?:địa\s*chỉ|giao\s+(?:đến|tới|về)|nhà|tại)/iu.test(task.latest_message ?? '')
+      || Boolean(stringValue(nextContext.address_query));
+    const effectiveAddressQuery = stringValue(nextContext.address_query)
+      || (addressContinuation ? stringValue(task.latest_message) : undefined);
+    if (!pending && cartUpdated && addressContinuation && effectiveAddressQuery) {
       const checkout = await this.prepareFoodCheckout(
-        { ...task, authoritative: { ...(task.authoritative ?? {}), food_context: nextContext } },
+        { ...task, authoritative: { ...(task.authoritative ?? {}), food_context: { ...nextContext, address_query: effectiveAddressQuery } } },
         user,
         correlationId,
       );

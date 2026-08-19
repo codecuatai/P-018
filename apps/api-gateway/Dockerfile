@@ -3,8 +3,8 @@ WORKDIR /workspace
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api-gateway/package.json ./apps/api-gateway/package.json
-COPY apps/api-gateway ./apps/api-gateway
 RUN pnpm install --filter @x-one/api-gateway --frozen-lockfile
+COPY apps/api-gateway ./apps/api-gateway
 RUN pnpm --dir apps/api-gateway run build
 
 FROM node:22-alpine
