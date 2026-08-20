@@ -806,17 +806,22 @@ export class AssistantService {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
     
     const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
-    const activeDomain = activeTasks.length > 0 ? activeTasks[0].domain : undefined;
+    const activeDomains = Array.from(new Set(activeTasks.map((t) => t.domain)));
+    const focusTask = activeTasks.find((t) => t.phase === 'NEEDS_INFO' || t.phase === 'AWAITING_CONFIRMATION') ?? activeTasks[0];
+    const activeDomain = focusTask ? focusTask.domain : undefined;
+    const workflowPhase = focusTask ? focusTask.phase : undefined;
     
     const workingMemory = {
       active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
       active_domain: activeDomain,
-      workflow_phase: activeTasks.length > 0 ? activeTasks[0].phase : undefined,
+      active_domains: activeDomains,
+      workflow_phase: workflowPhase,
     };
 
     const conversationSummary = {
       conversation_goal: state.tasks.length > 0 ? state.tasks[0].goal : undefined,
       active_domain: activeDomain,
+      active_domains: activeDomains,
     };
 
     return {
@@ -1982,12 +1987,13 @@ export class AssistantService {
     let pickup = stringValue(slots.pickup_address);
     let dropoff = stringValue(slots.dropoff_address);
     const savedAddresses = await this.store.listSavedAddresses(user.sub);
+    const sortedAddresses = [...savedAddresses].sort((a, b) => (b.label?.length ?? 0) - (a.label?.length ?? 0));
     if (pickup) {
-      const match = savedAddresses.find(a => plainText(pickup!).includes(plainText(a.label)));
+      const match = sortedAddresses.find((a) => plainText(pickup!).includes(plainText(a.label)));
       if (match) pickup = match.addressText;
     }
     if (dropoff) {
-      const match = savedAddresses.find(a => plainText(dropoff!).includes(plainText(a.label)));
+      const match = sortedAddresses.find((a) => plainText(dropoff!).includes(plainText(a.label)));
       if (match) dropoff = match.addressText;
     }
     // Update slots so the resolved address persists

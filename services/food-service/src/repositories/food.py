@@ -540,7 +540,11 @@ class InMemoryFoodRepository:
                     for restaurant in order.get("restaurants", [order["restaurant"]])
                 ):
                     raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
-                current["used_count"] = int(current.get("used_count", 0)) + 1
+                used = int(current.get("used_count", 0))
+                limit = int(current.get("usage_limit", 0))
+                if used >= limit or key in self.redeemed_vouchers:
+                    raise DomainError("VOUCHER_USAGE_LIMIT", "Voucher đã hết lượt sử dụng.")
+                current["used_count"] = used + 1
                 self.vouchers[code] = deepcopy(current)
                 self.redeemed_vouchers.add(key)
                 voucher_copy = current
