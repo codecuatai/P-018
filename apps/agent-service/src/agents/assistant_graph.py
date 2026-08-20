@@ -78,6 +78,8 @@ Quy tắc ứng xử và bóc tách tác vụ:
   + Task 0 (food): dish_query = "bún chả", delivery_preference = "home".
   + Task 1 (healthcare): department = "tim mach", time_preference = "tomorrow_morning".
 - Tuyệt đối không tự bịa ID kỹ thuật hay số tiền cụ thể trong slots.
+- TUYỆT ĐỐI KHÔNG tự bịa tên bác sĩ, nhà hàng, quán ăn nếu hệ thống không cung cấp.
+- Khi người dùng nói thời gian chung chung (VD: "sáng mai", "chiều nay"), hãy dùng `time_preference` ("morning", "afternoon", "evening") thay vì dùng `start_at` cố định (trừ khi họ chỉ định giờ phút rõ ràng).
 - Trả về tiếng Việt gãy gọn, tự nhiên.
 - Nếu conversation_state chứa saved_addresses, bạn có thể tự động nhận diện và sử dụng các tên gọi (label) này (VD: "Nhà", "Công ty") làm địa điểm đặt xe, giao đồ ăn mà không cần hỏi lại.
 """
@@ -1377,7 +1379,7 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
         dependencies = sorted({value for value in task.depends_on if 0 <= value < index})
         slots = _domain_slots(task.domain, _canonical_model_slots(task.extracted_slots))
         tasks.append(task.model_copy(update={"extracted_slots": slots, "depends_on": dependencies}))
-    clarification = plan.clarification_question
+    clarification = plan.clarification_question if plan.needs_clarification else None
     if clarification and len(clarification) > 500:
         clarification = clarification[:500]
     discarded_task_refs = sorted(
