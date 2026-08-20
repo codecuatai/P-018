@@ -1,11 +1,11 @@
-from __future__ import annotations
-
+import json
 import logging
 import os
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import StreamingResponse
 
 from src.agents.assistant_graph import assistant_agent, model_diagnostics
 from src.agents.graph import agent as food_agent
@@ -80,7 +80,9 @@ async def assistant_chat(
         or not x_actor_id
         or x_actor_id != request.user_id
     ):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
     try:
         config = _langfuse_config(
             user_id=request.user_id,
@@ -96,6 +98,7 @@ async def assistant_chat(
                 "conversation_state": request.conversation_state,
                 "capability_snapshot": request.capability_snapshot,
                 "authoritative_results": request.authoritative_results,
+                "user_profile": request.user_profile,
                 "mode": request.mode,
             },
             config=config,
@@ -118,6 +121,78 @@ async def assistant_chat(
         raise HTTPException(status_code=500, detail="Unable to process the assistant request.") from None
 
 
+@router.post("/assistant-chat/stream")
+async def assistant_chat_stream(
+    request: AssistantChatRequest,
+    x_internal_service_token: str | None = Header(default=None),
+    x_actor_id: str | None = Header(default=None),
+) -> StreamingResponse:
+    """Stream assistant planning and token deltas via Server-Sent Events (SSE)."""
+    settings = get_settings()
+    if (
+        not x_internal_service_token
+        or x_internal_service_token != settings.internal_service_token
+        or not x_actor_id
+        or x_actor_id != request.user_id
+    ):
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
+
+    async def event_generator():
+        try:
+            status_payload = {"phase": "planning", "conversation_id": request.conversation_id}
+            yield f"event: status\ndata: {json.dumps(status_payload, ensure_ascii=False)}\n\n"
+
+            config = _langfuse_config(
+                user_id=request.user_id,
+                session_id=request.conversation_id,
+                trace_name="assistant-chat-stream",
+                metadata={"correlation_id": request.correlation_id, "mode": request.mode},
+            )
+            result = await assistant_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "conversation_id": request.conversation_id,
+                    "messages": request.messages,
+                    "conversation_state": request.conversation_state,
+                    "capability_snapshot": request.capability_snapshot,
+                    "authoritative_results": request.authoritative_results,
+                    "user_profile": request.user_profile,
+                    "mode": request.mode,
+                },
+                config=config,
+            )
+
+            plan_payload = {
+                "conversation_id": request.conversation_id,
+                "plan": result.get("plan", {}),
+                "semantic_turn": result.get("semantic_turn", {}),
+                "planning_decision": result.get("planning_decision", {}),
+                "decision_source": result.get("decision_source", "deterministic"),
+            }
+            yield f"event: plan\ndata: {json.dumps(plan_payload, ensure_ascii=False)}\n\n"
+
+            message = result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này.")
+            words = message.split(" ")
+            for i in range(0, len(words), 3):
+                chunk = " ".join(words[i : i + 3]) + (" " if i + 3 < len(words) else "")
+                yield f"event: delta\ndata: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
+
+            finish_payload = {
+                "conversation_id": request.conversation_id,
+                "assistant_message": message,
+                "model": result.get("model", settings.gemini_model),
+                "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),
+            }
+            yield f"event: finish\ndata: {json.dumps(finish_payload, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            logger.exception("Assistant stream execution failed: %s", exc)
+            yield f"event: error\ndata: {json.dumps({'error': 'Unable to process streaming request.'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @router.post("/chat", response_model=None)
 async def chat(
     request: ChatRequest,
@@ -132,7 +207,9 @@ async def chat(
         or not x_actor_id
         or x_actor_id != request.user_id
     ):
-        raise HTTPException(status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."})
+        raise HTTPException(
+            status_code=401, detail={"code": "UNAUTHORIZED", "detail": "Gateway authentication required."}
+        )
     try:
         config = _langfuse_config(
             user_id=request.user_id,
@@ -156,10 +233,17 @@ async def chat(
             first = result["tool_results"][0].get("data", {})
             if result.get("intent") == "create_cart" and isinstance(first, dict) and first.get("id"):
                 state_updates = {"cart_id": first["id"]}
-            elif result.get("intent") == "search_food" and isinstance(first, dict) and isinstance(first.get("items"), list) and first["items"]:
+            elif (
+                result.get("intent") == "search_food"
+                and isinstance(first, dict)
+                and isinstance(first.get("items"), list)
+                and first["items"]
+            ):
                 item = first["items"][0]
                 if isinstance(item, dict):
-                    state_updates = {"restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")}
+                    state_updates = {
+                        "restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")
+                    }
         if result.get("pending_confirmation") is not None:
             state_updates = {**state_updates, "pending_confirmation_id": result["pending_confirmation"].get("id")}
         response = AgentResponse(
@@ -169,7 +253,11 @@ async def chat(
             data=result.get("data", {}),
             pending_confirmation=result.get("pending_confirmation"),
             state_updates=state_updates,
-            meta={"conversation_id": request.conversation_id, "request_id": request.correlation_id, "tool_calls": result.get("tool_calls", [])},
+            meta={
+                "conversation_id": request.conversation_id,
+                "request_id": request.correlation_id,
+                "tool_calls": result.get("tool_calls", []),
+            },
         )
         return {"data": response.model_dump(), "meta": {"request_id": request.correlation_id}}
     except HTTPException:
@@ -212,7 +300,11 @@ async def restaurant_chat(
             },
             config=config,
         )
-        workflow_store.save(actor_id, workflow_id, {**previous, **request.context, **result, "workflow_id": workflow_id, "actor_id": actor_id})
+        workflow_store.save(
+            actor_id,
+            workflow_id,
+            {**previous, **request.context, **result, "workflow_id": workflow_id, "actor_id": actor_id},
+        )
         response = ChatResponse(
             response=result.get("response", ""),
             workflow_id=workflow_id,

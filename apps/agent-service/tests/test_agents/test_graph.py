@@ -44,7 +44,9 @@ async def test_restaurant_booking_emits_read_tool_request():
 
 @pytest.mark.asyncio
 async def test_complete_restaurant_request_emits_read_tool_request():
-    result = await agent.ainvoke({"query": "Dat ban cho 2 nguoi ngay mai luc 19h o Ha Noi", "workflow_id": "wf-test-3", "context": {}})
+    result = await agent.ainvoke(
+        {"query": "Dat ban cho 2 nguoi ngay mai luc 19h o Ha Noi", "workflow_id": "wf-test-3", "context": {}}
+    )
     assert result["status"] == "TOOL_REQUEST_READY"
     assert result["tool_request"]["tool_name"] == "restaurant.search"
     assert result["tool_request"]["risk_level"] == "READ"

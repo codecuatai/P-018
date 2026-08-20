@@ -16,7 +16,7 @@ from .task_decomposition import decompose
 
 
 class CoreAPlanner:
-    '''Deterministic Core A kernel; it never dispatches a capability.'''
+    """Deterministic Core A kernel; it never dispatches a capability."""
 
     def plan(self, input_: CoreAInput) -> PlanningDecision:
         try:
@@ -24,10 +24,7 @@ class CoreAPlanner:
             tasks = attach_dependencies(tasks, input_.semantic_turn)
             tasks = enforce_destination_authority(tasks)
             tasks = [apply_requirements(task, input_.planner_context) for task in tasks]
-            tasks = [
-                select_step(task, input_.planner_context, input_.capability_snapshot)
-                for task in tasks
-            ]
+            tasks = [select_step(task, input_.planner_context, input_.capability_snapshot) for task in tasks]
             relation = self._relation(tasks)
             clarification = self._clarification(tasks, input_)
             decision = PlanningDecision(
@@ -76,7 +73,7 @@ class CoreAPlanner:
         missing.extend(item.fact for item in target.missing_authority)
         return ClarificationNeed(
             task_ref=target.task_ref,
-            code='CORE_A_REQUIREMENT_MISSING',
+            code="CORE_A_REQUIREMENT_MISSING",
             missing_fields=missing,
-            reason='Planner requires semantic input or authoritative context before continuing.',
+            reason="Planner requires semantic input or authoritative context before continuing.",
         )

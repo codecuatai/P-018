@@ -15,7 +15,9 @@ class GatewayToolError(RuntimeError):
 
 
 class GatewayToolClient:
-    def __init__(self, base_url: str | None = None, token: str | None = None, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self, base_url: str | None = None, token: str | None = None, client: httpx.AsyncClient | None = None
+    ) -> None:
         settings = get_settings()
         self.base_url = (base_url or settings.api_gateway_internal_url).rstrip("/")
         self.token = token or settings.internal_service_token
@@ -69,11 +71,24 @@ class GatewayToolClient:
         self._registry_loaded_at = time.monotonic()
         return self._registry
 
-    async def execute(self, name: str, arguments: dict[str, Any], user_id: str, correlation_id: str, conversation_id: str | None = None) -> dict[str, Any]:
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        correlation_id: str,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
         tools = await self.registry(correlation_id)
         definition = next((tool for tool in tools if tool.get("name") == name), None)
         if definition is None:
             raise GatewayToolError("TOOL_NOT_FOUND")
         if definition.get("permission") not in {"read", "draft_write", "preview", "confirmation_prepare"}:
             raise GatewayToolError("TOOL_NOT_ALLOWED")
-        return await self._request("POST", "/internal/tools/execute", {"name": name, "arguments": arguments, "actor_id": user_id, "conversation_id": conversation_id}, correlation_id, user_id)
+        return await self._request(
+            "POST",
+            "/internal/tools/execute",
+            {"name": name, "arguments": arguments, "actor_id": user_id, "conversation_id": conversation_id},
+            correlation_id,
+            user_id,
+        )

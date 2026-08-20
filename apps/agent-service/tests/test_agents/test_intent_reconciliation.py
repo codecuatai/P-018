@@ -13,7 +13,10 @@ def test_reconcile_intent_keeps_explicit_workflow_actions_authoritative() -> Non
     assert reconcile_intent("out_of_scope", "place_order", {}) == "out_of_scope"
     assert reconcile_intent("add_to_cart", "select_menu_item", {}) == "add_to_cart"
     assert reconcile_intent("quote_delivery", "list_addresses", {"restaurant_id": "res_opaque"}) == "quote_delivery"
-    assert reconcile_intent("place_order", "quote_delivery", {"cart_id": "cart_opaque", "address_id": "addr_opaque"}) == "place_order"
+    assert (
+        reconcile_intent("place_order", "quote_delivery", {"cart_id": "cart_opaque", "address_id": "addr_opaque"})
+        == "place_order"
+    )
 
 
 def test_selected_food_action_does_not_turn_cart_language_into_a_dish_query() -> None:
@@ -116,7 +119,12 @@ class ReconciliationGateway:
         if name == "quote_delivery":
             return {"restaurant": {"id": arguments["restaurant_id"]}, "address": {"id": arguments["address_id"]}}
         if name == "preview_order":
-            return {"subtotal": 130000, "discount": 0, "total": {"amount": 130000, "currency": "VND"}, "snapshot_hash": "snapshot_opaque"}
+            return {
+                "subtotal": 130000,
+                "discount": 0,
+                "total": {"amount": 130000, "currency": "VND"},
+                "snapshot_hash": "snapshot_opaque",
+            }
         if name == "prepare_food_order_confirmation":
             return {"id": "confirmation_opaque_1", "action": "PLACE_FOOD_ORDER"}
         raise AssertionError(f"Unexpected tool: {name}")
@@ -137,10 +145,12 @@ class NearbyRecommendationGateway(ReconciliationGateway):
         if arguments.get("keyword"):
             return {"items": []}
         return {
-            "items": [{
-                "restaurant": {"id": "restaurant_nearby", "name": "Quán lân cận", "district": "North District"},
-                "item": {"id": "item_nearby", "name": "Bánh mì", "restaurant_id": "restaurant_gia_lam"},
-            }]
+            "items": [
+                {
+                    "restaurant": {"id": "restaurant_nearby", "name": "Quán lân cận", "district": "North District"},
+                    "item": {"id": "item_nearby", "name": "Bánh mì", "restaurant_id": "restaurant_gia_lam"},
+                }
+            ]
         }
 
 
@@ -179,7 +189,9 @@ async def test_add_to_cart_reconciles_model_downgrade_and_persists_cart() -> Non
         gateway,
         {
             "restaurant_id": "restaurant_opaque_1",
-            "menu_item_candidates": [{"id": "item_opaque_1", "name": "burger bò", "restaurant_id": "restaurant_opaque_1"}],
+            "menu_item_candidates": [
+                {"id": "item_opaque_1", "name": "burger bò", "restaurant_id": "restaurant_opaque_1"}
+            ],
         },
     )
 
@@ -256,12 +268,18 @@ async def test_deterministic_intent_still_uses_model_semantic_slots() -> None:
         "Cho tôi hai burger bò cỡ lớn",
         DisagreeingLLM(
             "select_menu_item",
-            {"dish_query": "burger bò", "max_price": 90000, "option_preferences": [{"concept": "size", "value": "lon"}]},
+            {
+                "dish_query": "burger bò",
+                "max_price": 90000,
+                "option_preferences": [{"concept": "size", "value": "lon"}],
+            },
         ),
         gateway,
         {
             "restaurant_id": "restaurant_opaque_1",
-            "menu_item_candidates": [{"id": "item_opaque_1", "name": "burger bò", "restaurant_id": "restaurant_opaque_1"}],
+            "menu_item_candidates": [
+                {"id": "item_opaque_1", "name": "burger bò", "restaurant_id": "restaurant_opaque_1"}
+            ],
         },
     )
 

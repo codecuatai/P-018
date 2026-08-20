@@ -10,7 +10,9 @@ async def test_health(client):
 
 @pytest.mark.asyncio
 async def test_chat_empty_message(client):
-    response = await client.post("/api/v1/chat", json={"message": ""}, headers={"X-Internal-Service-Token": "test-token"})
+    response = await client.post(
+        "/api/v1/chat", json={"message": ""}, headers={"X-Internal-Service-Token": "test-token"}
+    )
     assert response.status_code == 422
 
 
@@ -18,7 +20,9 @@ async def test_chat_empty_message(client):
 async def test_chat_requires_real_actor_and_conversation(client):
     response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn"})
     assert response.status_code == 422
-    response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn", "user_id": "actor", "conversation_id": "conversation"})
+    response = await client.post(
+        "/api/v1/chat", json={"message": "Tìm món ăn", "user_id": "actor", "conversation_id": "conversation"}
+    )
     assert response.status_code == 401
 
 
@@ -54,10 +58,32 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
     assert [task["domain"] for task in data["plan"]["tasks"]] == ["food", "healthcare"]
     assert all("price" not in task.get("extracted_slots", {}) for task in data["plan"]["tasks"])
     assert all(
-        step["step_kind"] == "CAPABILITY"
-        for task in data["planning_decision"]["tasks"]
-        for step in task["steps"]
+        step["step_kind"] == "CAPABILITY" for task in data["planning_decision"]["tasks"] for step in task["steps"]
     )
+
+
+@pytest.mark.asyncio
+async def test_assistant_chat_stream_returns_sse_events(client):
+    response = await client.post(
+        "/api/v1/assistant-chat/stream",
+        json={
+            "message": "Tim pho giao ve nha va dat lich kham than kinh sang mai",
+            "conversation_id": "conv-assistant-stream-1",
+            "user_id": "actor-assistant-stream-1",
+            "correlation_id": "corr-assistant-stream-1",
+        },
+        headers={
+            "X-Internal-Service-Token": "test-token",
+            "X-Actor-Id": "actor-assistant-stream-1",
+        },
+    )
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers.get("content-type", "")
+    content = response.text
+    assert "event: status" in content
+    assert "event: plan" in content
+    assert "event: delta" in content
+    assert "event: finish" in content
 
 
 @pytest.mark.asyncio
@@ -94,15 +120,25 @@ async def test_restaurant_chat_requires_internal_auth(client):
 async def test_restaurant_chat_merges_follow_up_turns(client):
     headers = {"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-test"}
     workflow_id = "wf-multi-turn"
-    first = await client.post("/api/v1/restaurant-chat", json={"message": "đặt bàn", "workflow_id": workflow_id}, headers=headers)
+    first = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "đặt bàn", "workflow_id": workflow_id}, headers=headers
+    )
     assert first.json()["data"]["missing_slots"][0] == "party_size"
-    second = await client.post("/api/v1/restaurant-chat", json={"message": "1 người", "workflow_id": workflow_id}, headers=headers)
+    second = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "1 người", "workflow_id": workflow_id}, headers=headers
+    )
     assert second.json()["data"]["missing_slots"][0] == "local_date"
-    third = await client.post("/api/v1/restaurant-chat", json={"message": "9h30", "workflow_id": workflow_id}, headers=headers)
+    third = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "9h30", "workflow_id": workflow_id}, headers=headers
+    )
     assert third.json()["data"]["missing_slots"][0] == "local_date"
-    fourth = await client.post("/api/v1/restaurant-chat", json={"message": "ngày mai", "workflow_id": workflow_id}, headers=headers)
+    fourth = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "ngày mai", "workflow_id": workflow_id}, headers=headers
+    )
     assert fourth.json()["data"]["missing_slots"][0] == "location"
-    fifth = await client.post("/api/v1/restaurant-chat", json={"message": "Hà Nội", "workflow_id": workflow_id}, headers=headers)
+    fifth = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "Hà Nội", "workflow_id": workflow_id}, headers=headers
+    )
     assert fifth.json()["data"]["status"] == "TOOL_REQUEST_READY"
     assert fifth.json()["data"]["tool_request"]["tool_name"] == "restaurant.search"
 

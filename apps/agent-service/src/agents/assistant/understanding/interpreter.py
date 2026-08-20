@@ -46,7 +46,7 @@ def _slots(domain: Domain, raw: Any):
     projected = {
         key: SemanticSlot(value=value, source=SlotSource.USER_EXPLICIT)
         for key, value in values.items()
-        if key in allowed and isinstance(value, (str, int, bool))
+        if key in allowed and isinstance(value, str | int | bool)
     }
     schema = {
         Domain.FOOD: FoodSemanticSlots,
@@ -60,40 +60,37 @@ def _slots(domain: Domain, raw: Any):
 def semantic_turn_from_plan(
     tasks: Sequence[Any],
     *,
-    language: str = 'vi',
-    interaction_mode: str = 'service',
+    language: str = "vi",
+    interaction_mode: str = "service",
     discarded_task_refs: Sequence[int] = (),
 ) -> SemanticTurn:
-    '''Project the bounded legacy understanding result onto the Core B contract.'''
+    """Project the bounded legacy understanding result onto the Core B contract."""
     intents: list[SemanticIntent] = []
     for intent_ref, raw in enumerate(tasks[:4]):
-        value = raw.model_dump() if hasattr(raw, 'model_dump') else raw
+        value = raw.model_dump() if hasattr(raw, "model_dump") else raw
         if not isinstance(value, Mapping):
             continue
         try:
-            domain = Domain(str(value.get('domain', '')))
+            domain = Domain(str(value.get("domain", "")))
         except ValueError:
             continue
-        normalized = str(value.get('normalized_request') or value.get('goal') or '').strip()
-        goal = str(value.get('goal') or normalized).strip()
+        normalized = str(value.get("normalized_request") or value.get("goal") or "").strip()
+        goal = str(value.get("goal") or normalized).strip()
         if not normalized or not goal:
             continue
         dependencies = [
-            item for item in value.get('depends_on', [])
-            if isinstance(item, int) and 0 <= item < intent_ref
+            item for item in value.get("depends_on", []) if isinstance(item, int) and 0 <= item < intent_ref
         ]
         references = []
         for dependency in dependencies:
             dependency_value = tasks[dependency]
             dependency_domain = (
-                dependency_value.domain
-                if hasattr(dependency_value, 'domain')
-                else dependency_value.get('domain')
+                dependency_value.domain if hasattr(dependency_value, "domain") else dependency_value.get("domain")
             )
             references.append(
                 SemanticReference(
-                    expression='previous authoritative result',
-                    reference_type='previous_result',
+                    expression="previous authoritative result",
+                    reference_type="previous_result",
                     target_task_ref=dependency,
                     target_domain=Domain(str(dependency_domain)),
                     resolution=ReferenceResolution.RESOLVED,
@@ -106,19 +103,22 @@ def semantic_turn_from_plan(
                 operation=_operation(normalized),
                 goal=goal,
                 normalized_request=normalized,
-                slots=_slots(domain, value.get('extracted_slots')),
+                slots=_slots(domain, value.get("extracted_slots")),
                 references=references,
             )
         )
-    safe_language = language if language in {'vi', 'en', 'mixed', 'unknown'} else 'unknown'
+    safe_language = language if language in {"vi", "en", "mixed", "unknown"} else "unknown"
     try:
         safe_mode = InteractionMode(interaction_mode)
     except ValueError:
         safe_mode = InteractionMode.SERVICE
-    safe_discarded_refs = sorted({
-        value for value in discarded_task_refs
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
-    })
+    safe_discarded_refs = sorted(
+        {
+            value
+            for value in discarded_task_refs
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 8
+        }
+    )
     return SemanticTurn(
         intents=intents,
         language=safe_language,

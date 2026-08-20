@@ -23,9 +23,23 @@ class SearchGateway:
             {"name": "execute_food_order", "permission": "transaction"},
         ]
 
-    async def execute(self, name: str, arguments: dict[str, Any], user_id: str, correlation_id: str, conversation_id: str | None = None) -> dict[str, Any]:
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        correlation_id: str,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
         self.calls.append((name, arguments))
-        return {"items": [{"restaurant": {"id": "restaurant_authoritative"}, "item": {"id": "item_authoritative", "restaurant_id": "restaurant_authoritative"}}]}
+        return {
+            "items": [
+                {
+                    "restaurant": {"id": "restaurant_authoritative"},
+                    "item": {"id": "item_authoritative", "restaurant_id": "restaurant_authoritative"},
+                }
+            ]
+        }
 
 
 class NativeStructuredLLM:
@@ -86,14 +100,20 @@ async def test_gemini_adapter_requests_native_json_schema(monkeypatch: pytest.Mo
             self.method: str | None = None
             self.schema: type[StructuredDecision] | None = None
 
-        def with_structured_output(self, schema: type[StructuredDecision], method: str, include_raw: bool) -> StructuredRunnable:
+        def with_structured_output(
+            self, schema: type[StructuredDecision], method: str, include_raw: bool
+        ) -> StructuredRunnable:
             self.schema = schema
             self.method = method
             assert include_raw is True
             return StructuredRunnable()
 
     model = Model()
-    monkeypatch.setattr(llm_module, "get_settings", lambda: SimpleNamespace(gemini_api_key="configured", gemini_model="test-model", llm_temperature=0.0))
+    monkeypatch.setattr(
+        llm_module,
+        "get_settings",
+        lambda: SimpleNamespace(gemini_api_key="configured", gemini_model="test-model", llm_temperature=0.0),
+    )
     with patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=model):
         result = await llm_module.GeminiAdapter().ainvoke_structured("schema prompt", StructuredDecision)
 

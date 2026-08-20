@@ -49,7 +49,9 @@ class GeminiAdapter:
             raise last_error
         raise RuntimeError("Gemini model invocation did not produce a result.")
 
-    async def compose(self, message: str, tasks: list[dict[str, Any]], authoritative_results: list[dict[str, Any]]) -> str:
+    async def compose(
+        self, message: str, tasks: list[dict[str, Any]], authoritative_results: list[dict[str, Any]]
+    ) -> str:
         prompt = (
             "Viết một tin nhắn trả lời bằng tiếng Việt cho người dùng dựa trên thông tin authoritative được cung cấp. "
             "Không bao giờ bịa đặt thành công của dịch vụ nếu kết quả không xác nhận."

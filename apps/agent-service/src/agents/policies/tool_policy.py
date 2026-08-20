@@ -1,4 +1,3 @@
-
 from src.models.schemas import ToolRequest
 
 READ_TOOLS = {

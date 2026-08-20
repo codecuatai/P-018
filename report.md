@@ -112,3 +112,48 @@ Dựa trên các đánh giá và phản hồi trong phần phân tích trước 
    - Trạng thái: **Verified**.
 
 Với các thay đổi này, toàn bộ các hạng mục đánh giá liên quan đến phần luồng trạng thái, lỗi từ vựng, và tích hợp Gateway đã được xử lý triệt để và được chứng minh bằng các bài kiểm tra tự động.
+
+
+### Working Memory & Conversation Summary (Sprint 1 & 2)
+
+Dựa trên tài liệu 	huchien.md, tôi đã bổ sung working_memory (chứa active_task_ids, active_domain, workflow_phase) và conversation_summary (chứa conversation_goal, active_domain) vào hàm plannerSafeState() của AssistantService.
+Sự thay đổi này giúp Agent nhận được thông tin state rõ ràng hơn thay vì chỉ nhận danh sách các tasks đơn thuần.
+
+**Kết quả kiểm thử:**
+- Biên dịch (build/type-check) TypeScript cho API Gateway thành công:
+  \  corepack pnpm --dir apps/aAPI Gateway build (Passed)
+  \- Trạng thái: **In progress / Một phần hoàn thành** (Đã bổ sung bộ khung Working memory và Summary vào Payload API Gateway).
+---
+
+## 7. Tổng hợp các cập nhật từ nhánh vừa Merge
+
+Quá trình merge nhánh cập nhật gần đây (từ nhánh của team thành viên) đã đem lại các thay đổi lớn về mặt kiến trúc cho `agent-service`, đồng thời các xung đột (conflict) sinh ra đã được tôi phân tích và giải quyết triệt để.
+
+### Các thay đổi chính được cập nhật vào dự án:
+
+1. **Cấu trúc Planning Core-A mới (Chitchat & Context Switching)**: 
+   - Nhánh mới đã refactor toàn bộ thư mục `planning/` và `understanding/`, bổ sung khả năng xử lý multi-task, chitchat và chuyển đổi ngữ cảnh an toàn (`capability_selection.py`, `task_decomposition.py`, `dependencies.py`, `plan_policy.py`).
+   - Mở rộng prompt hệ thống để hỗ trợ lên kế hoạch đa bước.
+   
+2. **Durable Workflow Checkpoint (PostgreSQL)**:
+   - Thêm module `infrastructure/database.py` để kết nối PostgreSQL Pool.
+   - Cập nhật `workflow_store.py` lưu trữ state của Agent Workflow vào DB (thay vì chỉ lưu in-memory), đảm bảo khôi phục tiến trình khi agent bị crash hoặc scale, hoàn thành giai đoạn 3 của kế hoạch nâng cấp (`core-agent-production-upgrade-plan.md`).
+
+3. **Cải tiến & Sửa đổi API Gateway Working Memory**:
+   - (Do tôi thực hiện) Bổ sung `working_memory` (chứa `aactive_task_ids`, `aactive_domain`, `workflow_phase`) và `conversation_summary` vào dữ liệu gửi qua API Gateway (`assistant.service.ts`) để hỗ trợ Core-A nhận dạng ngữ cảnh tốt hơn.
+
+4. **Dọn dẹp mã nguồn**:
+   - Xóa các file nháp sinh ra trong quá trình làm việc trước đó (`db.md`, `h.json`, `implementation_plan.md`, v.v.) để giữ cho repo sạch sẽ.
+   - Theo yêu cầu, vẫn giữ lại các file theo dõi công việc của team (`WORKLOG.md`, `JOURNAL.md`, `README_boilerplate.md`).
+
+### Giải quyết xung đột (Merge Conflict Resolution):
+
+- **Tại `interpreter.py` (Understanding)**: Nhánh merge vào có cấu trúc mới nhưng lại ghi đè logic nhận diện ý định. Tôi đã **giữ lại bản vá lỗi của nhánh hiện tại (HEAD)** để không làm mất đoạn fix lỗi từ khoá "thủy lợi" (chống bị hiểu nhầm thành lệnh "Hủy").
+- **Tại `assistant_graph.py`**: Xung đột xảy ra tại `XONE_SYSTEM_PROMPT`. Tôi đã **hợp nhất (merge) cả hai nội dung**: giữ lại các hướng dẫn về xử lý đa nhiệm/chitchat của nhánh mới, và tích hợp thêm cấu trúc `saved_addresses` mà chúng ta vừa mới phát triển vào, giúp Agent vừa thông minh hơn vừa tận dụng được sổ địa chỉ của khách hàng.
+
+
+### Sửa các lỗi sau Audit (Update mới nhất):
+- **Agent SyntaxError:** Đã sửa lỗi xuống dòng sai vị trí trong ssistant_graph.py phá vỡ chuỗi XONE_SYSTEM_PROMPT. pytest cho Agent Service hiện đã vượt qua toàn bộ 156 bài kiểm tra (156 passed).
+- **Gateway TypeError:** Đã mock listSavedAddresses trong các tập test API Gateway. Toàn bộ test Gateway đã passed (corepack pnpm --dir apps/aAPI Gateway test).
+- **Durable Checkpoint DDL:** Đã gỡ bỏ runtime CREATE TABLE trong infrastructure/database.py và tạo script SQL Migration chuẩn tại pps/agent-service/migrations/001_agent_workflow_states.sql tuân thủ quy tắc quản lý Database.
+- **Dọn dẹp Báo Cáo:** Đã gỡ bỏ các ký tự BEL (ASCII 7) làm hỏng hiển thị Markdown trong file báo cáo, cập nhật lại lệnh dùng để build Gateway là corepack pnpm --dir apps/aAPI Gateway build.

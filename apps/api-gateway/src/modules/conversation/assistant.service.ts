@@ -804,7 +804,24 @@ export class AssistantService {
 
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
+    
+    const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
+    const activeDomain = activeTasks.length > 0 ? activeTasks[0].domain : undefined;
+    
+    const workingMemory = {
+      active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
+      active_domain: activeDomain,
+      workflow_phase: activeTasks.length > 0 ? activeTasks[0].phase : undefined,
+    };
+
+    const conversationSummary = {
+      conversation_goal: state.tasks.length > 0 ? state.tasks[0].goal : undefined,
+      active_domain: activeDomain,
+    };
+
     return {
+      working_memory: workingMemory,
+      conversation_summary: conversationSummary,
       tasks: state.tasks.slice(0, 8).map((task, index) => {
         const pendingActions = state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind);
         const pendingChoice = this.plannerPendingChoice(task);

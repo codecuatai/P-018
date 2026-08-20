@@ -13,10 +13,7 @@ def attach_dependencies(
     tasks: list[CoreAPlannedTask],
     turn: SemanticTurn,
 ) -> list[CoreAPlannedTask]:
-    intent_to_task = {
-        intent.intent_ref: task.task_ref
-        for intent, task in zip(turn.intents, tasks, strict=False)
-    }
+    intent_to_task = {intent.intent_ref: task.task_ref for intent, task in zip(turn.intents, tasks, strict=False)}
     result: list[CoreAPlannedTask] = []
     for intent, task in zip(turn.intents, tasks, strict=False):
         dependencies: set[int] = set()
@@ -29,18 +26,18 @@ def attach_dependencies(
                 target = intent_to_task[reference.target_task_ref]
                 if target < task.task_ref:
                     dependencies.add(target)
-        result.append(task.model_copy(update={'depends_on': sorted(dependencies)}))
+        result.append(task.model_copy(update={"depends_on": sorted(dependencies)}))
     validate_dag(result)
     return result
 
 
 def enforce_destination_authority(tasks: list[CoreAPlannedTask]) -> list[CoreAPlannedTask]:
-    '''A dependent Ride destination must come from the prerequisite result.'''
+    """A dependent Ride destination must come from the prerequisite result."""
     result: list[CoreAPlannedTask] = []
     for task in tasks:
         if task.domain == Domain.RIDE and task.depends_on:
-            slots = task.semantic_slots.model_copy(update={'dropoff_address': None})
-            result.append(task.model_copy(update={'semantic_slots': slots}))
+            slots = task.semantic_slots.model_copy(update={"dropoff_address": None})
+            result.append(task.model_copy(update={"semantic_slots": slots}))
         else:
             result.append(task)
     return result
@@ -51,14 +48,14 @@ def validate_dag(tasks: list[CoreAPlannedTask]) -> None:
     graph = {task.task_ref: list(task.depends_on) for task in tasks}
     for task_ref, dependencies in graph.items():
         if any(value not in refs or value == task_ref for value in dependencies):
-            raise ValueError('dependency must reference another existing task')
+            raise ValueError("dependency must reference another existing task")
 
     visiting: set[int] = set()
     visited: set[int] = set()
 
     def visit(node: int) -> None:
         if node in visiting:
-            raise ValueError('dependency graph must be acyclic')
+            raise ValueError("dependency graph must be acyclic")
         if node in visited:
             return
         visiting.add(node)
@@ -84,9 +81,9 @@ def block_dependents(
             result.append(
                 task.model_copy(
                     update={
-                        'disposition': TaskDisposition.BLOCKED,
-                        'blocking_task_ref': blocker,
-                        'steps': [],
+                        "disposition": TaskDisposition.BLOCKED,
+                        "blocking_task_ref": blocker,
+                        "steps": [],
                     }
                 )
             )
