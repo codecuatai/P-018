@@ -172,3 +172,43 @@ def extract_generation_usage(value: Any) -> GenerationUsage | None:
         output_tokens=output_tokens,
         total_tokens=total_tokens,
     )
+
+
+def format_human_plan_output(
+    decision: Any,
+    assistant_message: str | None = None,
+) -> dict[str, Any]:
+    """Create a human-readable summary of the agent plan for Langfuse output."""
+    tasks_summary: list[str] = []
+    decision_dict: Mapping[str, Any] = {}
+    if isinstance(decision, Mapping):
+        decision_dict = decision
+    elif hasattr(decision, "model_dump") and callable(getattr(decision, "model_dump")):
+        dumped = decision.model_dump()
+        if isinstance(dumped, Mapping):
+            decision_dict = dumped
+
+    raw_tasks = decision_dict.get("tasks", [])
+    if isinstance(raw_tasks, list):
+        for index, task in enumerate(raw_tasks):
+            t_dict: Mapping[str, Any] = {}
+            if isinstance(task, Mapping):
+                t_dict = task
+            elif hasattr(task, "model_dump") and callable(getattr(task, "model_dump")):
+                dumped = task.model_dump()
+                if isinstance(dumped, Mapping):
+                    t_dict = dumped
+            domain = str(t_dict.get("domain", "unknown"))
+            goal = str(t_dict.get("goal") or "")
+            depends_on = t_dict.get("depends_on", [])
+            dep_text = f" (Phụ thuộc Task {depends_on})" if depends_on else ""
+            tasks_summary.append(f"Task {index} [{domain.upper()}]{dep_text}: {goal}")
+
+    return {
+        "assistant_message": assistant_message or decision_dict.get("assistant_message", ""),
+        "interaction_mode": decision_dict.get("interaction_mode", "service"),
+        "workflow_relation": decision_dict.get("workflow_relation", "SINGLE_TASK"),
+        "tasks_count": len(tasks_summary),
+        "tasks_summary": tasks_summary,
+    }
+

@@ -27,6 +27,7 @@ from src.config import get_settings
 from src.observability import (
     SafeObservationMetadata,
     extract_generation_usage,
+    format_human_plan_output,
     get_telemetry,
 )
 from src.services.llm import (
@@ -35,6 +36,7 @@ from src.services.llm import (
     llm_diagnostics,
     provider_error_category,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -221,12 +223,22 @@ def _typed_pipeline_result(
             task_count=len(plan.tasks),
             status="started",
         ),
+        input={
+            "interaction_mode": plan.interaction_mode,
+            "assistant_message": plan.assistant_message,
+            "raw_tasks_count": len(plan.tasks),
+            "decision_source": source,
+        },
     ) as planner_observation:
         input_ = _core_a_input(plan, state)
         with telemetry.observation(
             "core_a.validate",
             "guardrail",
             SafeObservationMetadata(status="started"),
+            input={
+                "task_count": len(input_.planner_context.tasks),
+                "capability_snapshot_version": input_.capability_snapshot.version,
+            },
         ) as validation_observation:
             try:
                 decision = plan_core_a(input_)
@@ -236,7 +248,8 @@ def _typed_pipeline_result(
                         accepted=False,
                         status="failed",
                         error_code="core_a_validation_failed",
-                    )
+                    ),
+                    output={"accepted": False, "error": "Core A validation failed"},
                 )
                 raise
             validation_observation.update(
@@ -248,7 +261,14 @@ def _typed_pipeline_result(
                     clarification_required=decision.clarification_need is not None,
                     blocked_count=len(decision.blocked_task_refs),
                     discarded_count=len(decision.discarded_task_refs),
-                )
+                ),
+                output={
+                    "accepted": True,
+                    "contract_version": decision.contract_version,
+                    "clarification_required": decision.clarification_need is not None,
+                    "blocked_tasks": decision.blocked_task_refs,
+                    "discarded_tasks": decision.discarded_task_refs,
+                },
             )
         planner_observation.update(
             metadata=SafeObservationMetadata(
@@ -258,12 +278,17 @@ def _typed_pipeline_result(
                 replan_directive=decision.replan_directive,
                 task_count=len(decision.tasks),
                 status="succeeded",
-            )
+            ),
+            output=format_human_plan_output(decision, plan.assistant_message),
         )
         for task in decision.tasks:
             steps = task.steps
+            step_summaries = [
+                f"[{step.step_kind}] {step.capability or step.confirmation_gate} (Risk: {step.risk_ceiling})"
+                for step in steps
+            ]
             with telemetry.observation(
-                "core_a.task",
+                f"core_a.task [{task.domain.upper()}]",
                 "span",
                 SafeObservationMetadata(
                     task_index=task.task_ref,
@@ -282,6 +307,17 @@ def _typed_pipeline_result(
                     ),
                     status="succeeded",
                 ),
+                input={
+                    "task_ref": task.task_ref,
+                    "domain": task.domain,
+                    "depends_on": task.depends_on,
+                    "normalized_request": task.normalized_request,
+                },
+                output={
+                    "disposition": task.disposition,
+                    "step_count": len(steps),
+                    "steps": step_summaries,
+                },
             ):
                 pass
     return {
@@ -291,6 +327,7 @@ def _typed_pipeline_result(
         "assistant_message": plan.assistant_message,
         "decision_source": source,
     }
+
 
 
 def model_diagnostics() -> dict[str, Any]:
@@ -1628,7 +1665,7 @@ async def _invoke_structured(
     telemetry = get_telemetry()
     started_at = perf_counter()
     observation_name = (
-        "model.generate.plan" if purpose == "plan" else "model.generate.compose"
+        "LLM: Phân tích & Lập kế hoạch" if purpose == "plan" else "LLM: Soạn câu trả lời"
     )
     prompt_name = "core_a_plan" if purpose == "plan" else "core_a_compose"
     with telemetry.observation(
@@ -1641,6 +1678,7 @@ async def _invoke_structured(
             prompt_template_version="1",
             status="started",
         ),
+        input={"prompt": prompt, "purpose": purpose, "schema": schema.__name__},
         model=settings.gemini_model,
     ) as generation_observation:
         try:
@@ -1674,6 +1712,7 @@ async def _invoke_structured(
                     status="succeeded",
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
                 ),
+                output=parsed.model_dump(mode="json"),
                 usage=usage,
                 model=(
                     str(runtime.get("last_model_used"))
@@ -1692,9 +1731,11 @@ async def _invoke_structured(
                     status="failed",
                     error_code=provider_error_category(error),
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-                )
+                ),
+                output={"error": str(error)[:300]},
             )
             raise
+
 
 
 def _deterministic_composition(
@@ -1794,13 +1835,18 @@ async def compose_response(
         settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key)
     )
     with telemetry.observation(
-        "response.compose",
+        "Response: Soạn thảo phản hồi",
         "chain",
         SafeObservationMetadata(
             task_count=min(len(tasks), 4),
             result_count=min(len(authoritative_results), 32),
             status="started",
         ),
+        input={
+            "user_message": message,
+            "task_count": len(tasks),
+            "authoritative_results_count": len(authoritative_results),
+        },
     ) as composition_observation:
         response, source = await _compose_response(
             message,
@@ -1817,7 +1863,8 @@ async def compose_response(
                 status="degraded" if degraded else "succeeded",
                 error_code="composition_fallback" if degraded else None,
                 latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-            )
+            ),
+            output={"assistant_message": response, "decision_source": source},
         )
         if degraded:
             with telemetry.observation(
@@ -1831,6 +1878,7 @@ async def compose_response(
             ):
                 pass
         return response, source
+
 
 
 def build_assistant_graph(llm: LLMAdapter | None = None):

@@ -39,19 +39,27 @@ class RecordingHandle(ObservationHandle):
     def update(
         self,
         *,
-        metadata: SafeObservationMetadata | None = None,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         usage: GenerationUsage | None = None,
         model: str | None = None,
+        input: Any = None,
+        output: Any = None,
+        level: str | None = None,
+        status_message: str | None = None,
     ) -> None:
         self.event.setdefault("updates", []).append(
             {
                 "metadata": (
                     metadata.model_dump(mode="json", exclude_none=True)
-                    if metadata is not None
-                    else None
+                    if hasattr(metadata, "model_dump") and callable(getattr(metadata, "model_dump"))
+                    else metadata
                 ),
                 "usage": usage.as_langfuse() if usage is not None else None,
                 "model": model,
+                "input": input,
+                "output": output,
+                "level": level,
+                "status_message": status_message,
             }
         )
 
@@ -67,17 +75,31 @@ class RecordingTelemetry(SafeTelemetry):
         self,
         name,
         as_type,
-        metadata: SafeObservationMetadata,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         *,
+        input: Any = None,
+        output: Any = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        tags: list[str] | None = None,
         model: str | None = None,
         usage: GenerationUsage | None = None,
     ) -> Iterator[ObservationHandle]:
         event = {
             "name": name,
             "as_type": as_type,
-            "metadata": metadata.model_dump(mode="json", exclude_none=True),
+            "metadata": (
+                metadata.model_dump(mode="json", exclude_none=True)
+                if hasattr(metadata, "model_dump") and callable(getattr(metadata, "model_dump"))
+                else metadata
+            ),
             "model": model,
             "usage": usage.as_langfuse() if usage is not None else None,
+            "input": input,
+            "output": output,
+            "session_id": session_id,
+            "user_id": user_id,
+            "tags": tags,
         }
         self.events.append(event)
         yield RecordingHandle(self.events, event)
@@ -88,7 +110,7 @@ def test_safe_metadata_rejects_arbitrary_payload_fields() -> None:
         SafeObservationMetadata.model_validate(
             {
                 "status": "succeeded",
-                "input": "must-not-leave-process",
+                "arbitrary_field": "must-not-enter-metadata",
             }
         )
 
@@ -115,7 +137,7 @@ def test_generation_usage_reads_only_known_numeric_counters() -> None:
     )
 
 
-def test_export_mask_removes_forbidden_attributes() -> None:
+def test_export_mask_removes_forbidden_secret_attributes() -> None:
     identifier = OtelSpanIdentifier(trace_id="0" * 32, span_id="1" * 16)
     result = mask_otel_spans(
         params=MaskOtelSpansParams(
@@ -128,8 +150,8 @@ def test_export_mask_removes_forbidden_attributes() -> None:
                     instrumentation_scope_name="langfuse-sdk",
                     instrumentation_scope_version="4.14.4",
                     attributes={
-                        "langfuse.observation.input": "private",
-                        "gen_ai.prompt.0.content": "private",
+                        "http.request.header.authorization": "Bearer secret-token",
+                        "api_key": "secret-key",
                         "langfuse.observation.metadata": "{}",
                     },
                     resource_attributes={},
@@ -142,8 +164,8 @@ def test_export_mask_removes_forbidden_attributes() -> None:
     patch = result.span_patches[identifier]
     assert patch is not None
     assert set(patch.delete_attributes) == {
-        "langfuse.observation.input",
-        "gen_ai.prompt.0.content",
+        "http.request.header.authorization",
+        "api_key",
     }
 
 
@@ -183,7 +205,7 @@ def test_langfuse_initialization_failure_degrades_to_noop(
     assert "sensitive-sdk-message-must-not-propagate" not in caplog.text
 
 
-def test_langfuse_adapter_never_sets_observation_input_or_output(
+def test_langfuse_adapter_passes_session_user_and_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
@@ -226,19 +248,24 @@ def test_langfuse_adapter_never_sets_observation_input_or_output(
     )
 
     with telemetry.observation(
-        "model.generate.plan",
-        "generation",
+        "Assistant: Plan",
+        "agent",
         SafeObservationMetadata(
             response_schema="AssistantPlan",
             status="started",
         ),
-        model="test-model",
+        session_id="conv-12345",
+        user_id="user-999",
+        tags=["mode:plan", "env:development"],
+        input={"user_message": "đặt xe máy"},
+        model="gemini-2.5-flash",
     ) as observation:
         observation.update(
             metadata=SafeObservationMetadata(
                 response_schema="AssistantPlan",
                 status="succeeded",
             ),
+            output={"assistant_message": "Đã đặt xe cho bạn"},
             usage=GenerationUsage(
                 input_tokens=10,
                 output_tokens=5,
@@ -247,23 +274,14 @@ def test_langfuse_adapter_never_sets_observation_input_or_output(
         )
 
     observation_call = next(item["observation"] for item in calls if "observation" in item)
-    assert {"input", "output", "prompt"}.isdisjoint(observation_call)
-    assert {"input", "output", "prompt"}.isdisjoint(updates[0])
-    serialized = json.dumps(
-        {"calls": calls, "updates": updates},
-        ensure_ascii=True,
-        default=str,
-    ).casefold()
-    for forbidden in (
-        "conversation_state",
-        "authoritative_results",
-        "semantic_arguments",
-        "user_profile",
-    ):
-        assert forbidden not in serialized
+    assert observation_call["session_id"] == "conv-12345"
+    assert observation_call["user_id"] == "user-999"
+    assert observation_call["input"] == {"user_message": "đặt xe máy"}
+    assert observation_call["tags"] == ["mode:plan", "env:development"]
+    assert updates[0]["output"] == {"assistant_message": "Đã đặt xe cho bạn"}
 
 
-def test_core_a_emits_only_bounded_decision_flow(
+def test_core_a_emits_human_readable_decision_flow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     telemetry = RecordingTelemetry()
@@ -281,22 +299,18 @@ def test_core_a_emits_only_bounded_decision_flow(
 
     names = [event["name"] for event in telemetry.events]
     assert names[:2] == ["planner.route", "core_a.validate"]
-    assert "core_a.task" in names
+    assert any("core_a.task" in name for name in names)
     assert result["planning_decision"]["contract_version"] == "core-a.v1"
-    serialized = json.dumps(telemetry.events, ensure_ascii=True).casefold()
-    for forbidden in (
-        "prompt",
-        "message",
-        "query",
-        "normalized_request",
-        "semantic_slots",
-        "authoritative_results",
-    ):
-        assert forbidden not in serialized
+    
+    planner_event = next(e for e in telemetry.events if e["name"] == "planner.route")
+    assert "updates" in planner_event
+    plan_output = planner_event["updates"][0]["output"]
+    assert "tasks_summary" in plan_output
+    assert len(plan_output["tasks_summary"]) >= 1
 
 
 @pytest.mark.asyncio
-async def test_model_generation_records_usage_without_content(
+async def test_model_generation_records_rich_input_output_and_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     telemetry = RecordingTelemetry()
@@ -321,21 +335,22 @@ async def test_model_generation_records_usage_without_content(
 
     parsed = await assistant_graph._invoke_structured(
         FakeModel(),
-        "not-exported",
+        "prompt text for planning",
         assistant_graph.AssistantPlan,
         purpose="plan",
     )
 
     assert isinstance(parsed, assistant_graph.AssistantPlan)
     generation = next(
-        event for event in telemetry.events if event["name"] == "model.generate.plan"
+        event for event in telemetry.events if "Phân tích & Lập kế hoạch" in event["name"] or "model.generate.plan" in event["name"]
     )
+    assert generation["input"]["prompt"] == "prompt text for planning"
     assert generation["updates"][0]["usage"] == {
         "input": 20,
         "output": 4,
         "total": 24,
     }
-    assert "not-exported" not in json.dumps(telemetry.events, ensure_ascii=True)
+    assert generation["updates"][0]["output"]["assistant_message"] == "ok"
 
 
 def test_repository_has_no_tracked_langfuse_secret_or_trace_export() -> None:
@@ -345,7 +360,7 @@ def test_repository_has_no_tracked_langfuse_secret_or_trace_export() -> None:
         cwd=root,
         check=True,
         capture_output=True,
-    ).stdout.decode("utf-8").split("\\0")
+    ).stdout.decode("utf-8").split("\0")
     secret_pattern = re.compile(b"sk" + b"-lf-" + b"[A-Za-z0-9_-]{16,}")
     findings: list[str] = []
     for relative in tracked:
@@ -357,3 +372,4 @@ def test_repository_has_no_tracked_langfuse_secret_or_trace_export() -> None:
 
     assert findings == []
     assert not (root / "h.json").exists()
+

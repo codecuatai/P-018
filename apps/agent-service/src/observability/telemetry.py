@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any, Literal
 
-from langfuse import Langfuse
+from langfuse import Langfuse, propagate_attributes
 from langfuse.types import (
     MaskOtelSpansParams,
     MaskOtelSpansResult,
@@ -18,18 +18,7 @@ from src.observability.contracts import GenerationUsage, SafeObservationMetadata
 
 logger = logging.getLogger(__name__)
 
-ObservationName = Literal[
-    "agent.core_a.run",
-    "request.validate",
-    "planner.route",
-    "model.generate.plan",
-    "core_a.validate",
-    "core_a.task",
-    "response.compose",
-    "model.generate.compose",
-    "run_metadata.persist",
-    "fallback",
-]
+ObservationName = str
 ObservationType = Literal[
     "span",
     "agent",
@@ -38,26 +27,18 @@ ObservationType = Literal[
     "guardrail",
 ]
 
+
 _FORBIDDEN_ATTRIBUTE_MARKERS = (
-    "prompt",
-    "message",
-    "query",
-    "input",
-    "output",
-    "completion",
-    "response_body",
-    "reasoning",
     "authorization",
     "cookie",
     "secret",
     "api_key",
     "password",
-    "semantic_argument",
-    "slots",
-    "authoritative_result",
-    "conversation_state",
-    "user_profile",
-    "tool_result",
+    "bearer",
+    "token",
+    "credential",
+    "cvv",
+    "card_number",
 )
 
 
@@ -65,7 +46,7 @@ def mask_otel_spans(
     *,
     params: MaskOtelSpansParams,
 ) -> MaskOtelSpansResult | None:
-    """Delete any forbidden attribute before it leaves the process."""
+    """Delete any secret credentials before they leave the process."""
 
     patches = {}
     for identifier, span in params.spans.items():
@@ -99,9 +80,13 @@ class ObservationHandle:
     def update(
         self,
         *,
-        metadata: SafeObservationMetadata | None = None,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         usage: GenerationUsage | None = None,
         model: str | None = None,
+        input: Any = None,
+        output: Any = None,
+        level: str | None = None,
+        status_message: str | None = None,
     ) -> None:
         return None
 
@@ -113,18 +98,33 @@ class _LangfuseObservationHandle(ObservationHandle):
     def update(
         self,
         *,
-        metadata: SafeObservationMetadata | None = None,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         usage: GenerationUsage | None = None,
         model: str | None = None,
+        input: Any = None,
+        output: Any = None,
+        level: str | None = None,
+        status_message: str | None = None,
     ) -> None:
         update: dict[str, Any] = {}
         if metadata is not None:
-            update["metadata"] = metadata.model_dump(mode="json", exclude_none=True)
+            if hasattr(metadata, "model_dump") and callable(getattr(metadata, "model_dump")):
+                update["metadata"] = metadata.model_dump(mode="json", exclude_none=True)
+            elif isinstance(metadata, dict):
+                update["metadata"] = metadata
         if usage is not None and usage.as_langfuse():
             update["usage_details"] = usage.as_langfuse()
         safe_model = _safe_model(model)
         if safe_model is not None:
             update["model"] = safe_model
+        if input is not None:
+            update["input"] = input
+        if output is not None:
+            update["output"] = output
+        if level is not None:
+            update["level"] = level
+        if status_message is not None:
+            update["status_message"] = status_message
         if not update:
             return
         try:
@@ -141,8 +141,13 @@ class SafeTelemetry:
         self,
         name: ObservationName,
         as_type: ObservationType,
-        metadata: SafeObservationMetadata,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         *,
+        input: Any = None,
+        output: Any = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        tags: list[str] | None = None,
         model: str | None = None,
         usage: GenerationUsage | None = None,
     ) -> Iterator[ObservationHandle]:
@@ -180,37 +185,86 @@ class LangfuseTelemetry(SafeTelemetry):
         self,
         name: ObservationName,
         as_type: ObservationType,
-        metadata: SafeObservationMetadata,
+        metadata: SafeObservationMetadata | dict[str, Any] | None = None,
         *,
+        input: Any = None,
+        output: Any = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        tags: list[str] | None = None,
         model: str | None = None,
         usage: GenerationUsage | None = None,
     ) -> Iterator[ObservationHandle]:
+        meta_dict: dict[str, Any] = {}
+        version = "1"
+        if metadata is not None:
+            if hasattr(metadata, "model_dump") and callable(getattr(metadata, "model_dump")):
+                meta_dict = metadata.model_dump(mode="json", exclude_none=True)
+                version = str(getattr(metadata, "schema_version", "1"))
+            elif isinstance(metadata, dict):
+                meta_dict = metadata
+
         kwargs: dict[str, Any] = {
             "name": name,
             "as_type": as_type,
-            "metadata": metadata.model_dump(mode="json", exclude_none=True),
-            "version": metadata.schema_version,
+            "metadata": meta_dict,
+            "version": version,
         }
+        if input is not None:
+            kwargs["input"] = input
+        if output is not None:
+            kwargs["output"] = output
+
         safe_model = _safe_model(model)
         if safe_model is not None:
             kwargs["model"] = safe_model
         if usage is not None and usage.as_langfuse():
             kwargs["usage_details"] = usage.as_langfuse()
+
+        prop_kwargs: dict[str, Any] = {}
+        if session_id is not None:
+            prop_kwargs["session_id"] = session_id
+        if user_id is not None:
+            prop_kwargs["user_id"] = user_id
+        if tags is not None:
+            prop_kwargs["tags"] = tags
+
+        prop_cm = propagate_attributes(**prop_kwargs) if prop_kwargs else None
+        if prop_cm is not None:
+            try:
+                prop_cm.__enter__()
+            except Exception:
+                prop_cm = None
+
         try:
             context = self._client.start_as_current_observation(**kwargs)
             observation = context.__enter__()
         except Exception:
+            if prop_cm is not None:
+                try:
+                    prop_cm.__exit__(None, None, None)
+                except Exception:
+                    pass
             yield ObservationHandle()
             return
+
         try:
             yield _LangfuseObservationHandle(observation)
         finally:
             try:
-                # Never pass a business exception to the SDK; exception text may
-                # contain provider/user data. Callers emit a bounded error code.
                 context.__exit__(None, None, None)
             except Exception:
                 pass
+            if prop_cm is not None:
+                try:
+                    prop_cm.__exit__(None, None, None)
+                except Exception:
+                    pass
+            if as_type == "agent":
+                self.flush()
+
+
+
 
     def flush(self) -> None:
         try:

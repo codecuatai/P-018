@@ -29,9 +29,15 @@ from src.models.schemas import (
     RideChatRequest,
     RideChatResponse,
 )
-from src.observability import SafeObservationMetadata, get_telemetry, safe_code
+from src.observability import (
+    SafeObservationMetadata,
+    format_human_plan_output,
+    get_telemetry,
+    safe_code,
+)
 
 router = APIRouter()
+
 logger = logging.getLogger(__name__)
 
 
@@ -187,6 +193,7 @@ async def assistant_chat(
     trace_correlation_id = request.correlation_id or run_id
     started_at = perf_counter()
     telemetry = get_telemetry()
+    trace_name = "Assistant: Plan" if request.mode == "plan" else "Assistant: Compose"
     root_metadata = SafeObservationMetadata(
         correlation_id=safe_code(trace_correlation_id, max_length=128),
         route="assistant-chat",
@@ -196,9 +203,17 @@ async def assistant_chat(
         status="started",
     )
     with telemetry.observation(
-        "agent.core_a.run",
+        trace_name,
         "agent",
         root_metadata,
+        session_id=request.conversation_id,
+        user_id=safe_code(request.user_id),
+        tags=[f"mode:{request.mode}", f"env:{settings.app_env}"],
+        input={
+            "user_message": request.message,
+            "mode": request.mode,
+            "conversation_id": request.conversation_id,
+        },
     ) as root_observation:
         try:
             with telemetry.observation(
@@ -210,6 +225,7 @@ async def assistant_chat(
                     actor_assertion_valid=actor_id == request.user_id,
                     status="started",
                 ),
+                input={"actor_id": actor_id, "user_id": request.user_id},
             ) as validation_observation:
                 if actor_id != request.user_id:
                     validation_observation.update(
@@ -220,7 +236,8 @@ async def assistant_chat(
                             accepted=False,
                             status="failed",
                             error_code="ACTOR_MISMATCH",
-                        )
+                        ),
+                        output={"accepted": False, "error": "Actor assertion does not match request body."},
                     )
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
@@ -236,7 +253,8 @@ async def assistant_chat(
                         actor_assertion_valid=True,
                         accepted=True,
                         status="succeeded",
-                    )
+                    ),
+                    output={"accepted": True, "actor_id": actor_id},
                 )
 
             result = await assistant_agent.ainvoke(
@@ -286,6 +304,7 @@ async def assistant_chat(
                 "MIXED",
             }:
                 workflow_relation = None
+            output_summary = format_human_plan_output(decision, result.get("assistant_message"))
             root_observation.update(
                 metadata=SafeObservationMetadata(
                     correlation_id=safe_code(trace_correlation_id, max_length=128),
@@ -303,7 +322,8 @@ async def assistant_chat(
                     task_count=task_count,
                     status="degraded" if degraded else "succeeded",
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-                )
+                ),
+                output=output_summary,
             )
             return {
                 "data": {
@@ -329,7 +349,8 @@ async def assistant_chat(
                     status="failed",
                     error_code=_http_error_code(error),
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-                )
+                ),
+                output={"error": _http_error_code(error)},
             )
             raise
         except Exception:
@@ -343,7 +364,8 @@ async def assistant_chat(
                     status="failed",
                     error_code="agent_execution_failed",
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-                )
+                ),
+                output={"error": "agent_execution_failed"},
             )
             logger.exception("Assistant planner execution failed")
             raise HTTPException(status_code=500, detail="Unable to process the assistant request.") from None
@@ -355,6 +377,8 @@ async def chat(
     actor_id: str = Depends(require_actor),
 ) -> dict[str, Any]:
     """Run the canonical Food conversation graph for the Gateway."""
+    settings = get_settings()
+    telemetry = get_telemetry()
     if actor_id != request.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -362,62 +386,77 @@ async def chat(
         )
     run_id = _scoped_run_id(request.correlation_id, "food")
     started_at = perf_counter()
-    try:
-        result = await food_agent.ainvoke(
-            {
-                "query": request.message,
-                "user_id": request.user_id,
-                "conversation_id": request.conversation_id,
-                "messages": request.messages,
-                "workflow_context": request.workflow_context,
-                "correlation_id": request.correlation_id,
-            }
-        )
-        state_updates = result.get("state_updates", {})
-        if not state_updates and result.get("tool_results"):
-            first = result["tool_results"][0].get("data", {})
-            if result.get("intent") == "create_cart" and isinstance(first, dict) and first.get("id"):
-                state_updates = {"cart_id": first["id"]}
-            elif (
-                result.get("intent") == "search_food"
-                and isinstance(first, dict)
-                and isinstance(first.get("items"), list)
-                and first["items"]
-            ):
-                item = first["items"][0]
-                if isinstance(item, dict):
-                    state_updates = {
-                        "restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")
-                    }
-        if result.get("pending_confirmation") is not None:
-            state_updates = {**state_updates, "pending_confirmation_id": result["pending_confirmation"].get("id")}
-        response = AgentResponse(
-            response_type=result.get("response_type", "text"),
-            message=result.get("response", ""),
-            response=result.get("response", ""),
-            data=result.get("data", {}),
-            pending_confirmation=result.get("pending_confirmation"),
-            state_updates=state_updates,
-            meta={
-                "conversation_id": request.conversation_id,
-                "request_id": request.correlation_id,
-                "tool_calls": result.get("tool_calls", []),
-            },
-        )
-        await _record_run(
-            actor_id=request.user_id,
-            workflow_id=request.conversation_id,
-            run_id=run_id,
-            phase=str(result.get("status", "COMPLETED")),
-            result=result,
-            started_at=started_at,
-        )
-        return {"data": response.model_dump(), "meta": {"request_id": request.correlation_id}}
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Agent chat execution failed")
-        raise HTTPException(status_code=500, detail="Unable to process the chat request.") from None
+    with telemetry.observation(
+        "Food Agent: Chat",
+        "agent",
+        session_id=request.conversation_id,
+        user_id=safe_code(request.user_id),
+        tags=["domain:food", f"env:{settings.app_env}"],
+        input={"user_message": request.message, "conversation_id": request.conversation_id},
+    ) as food_observation:
+        try:
+            result = await food_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "user_id": request.user_id,
+                    "conversation_id": request.conversation_id,
+                    "messages": request.messages,
+                    "workflow_context": request.workflow_context,
+                    "correlation_id": request.correlation_id,
+                }
+            )
+            state_updates = result.get("state_updates", {})
+            if not state_updates and result.get("tool_results"):
+                first = result["tool_results"][0].get("data", {})
+                if result.get("intent") == "create_cart" and isinstance(first, dict) and first.get("id"):
+                    state_updates = {"cart_id": first["id"]}
+                elif (
+                    result.get("intent") == "search_food"
+                    and isinstance(first, dict)
+                    and isinstance(first.get("items"), list)
+                    and first["items"]
+                ):
+                    item = first["items"][0]
+                    if isinstance(item, dict):
+                        state_updates = {
+                            "restaurant_id": (item.get("restaurant") or {}).get("id") or item.get("restaurant_id")
+                        }
+            if result.get("pending_confirmation") is not None:
+                state_updates = {**state_updates, "pending_confirmation_id": result["pending_confirmation"].get("id")}
+            response = AgentResponse(
+                response_type=result.get("response_type", "text"),
+                message=result.get("response", ""),
+                response=result.get("response", ""),
+                data=result.get("data", {}),
+                pending_confirmation=result.get("pending_confirmation"),
+                state_updates=state_updates,
+                meta={
+                    "conversation_id": request.conversation_id,
+                    "request_id": request.correlation_id,
+                    "tool_calls": result.get("tool_calls", []),
+                },
+            )
+            await _record_run(
+                actor_id=request.user_id,
+                workflow_id=request.conversation_id,
+                run_id=run_id,
+                phase=str(result.get("status", "COMPLETED")),
+                result=result,
+                started_at=started_at,
+            )
+            food_observation.update(
+                output={
+                    "response": result.get("response", ""),
+                    "intent": result.get("intent"),
+                    "status": result.get("status", "COMPLETED"),
+                }
+            )
+            return {"data": response.model_dump(), "meta": {"request_id": request.correlation_id}}
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Agent chat execution failed")
+            raise HTTPException(status_code=500, detail="Unable to process the chat request.") from None
 
 
 @router.post("/restaurant-chat", response_model=None)
@@ -426,45 +465,62 @@ async def restaurant_chat(
     actor_id: str = Depends(require_actor),
 ) -> dict[str, Any]:
     """Return typed Restaurant tool requests through a separate agent contract."""
+    settings = get_settings()
+    telemetry = get_telemetry()
     workflow_id = request.workflow_id or f"wf-{uuid4().hex}"
     run_id = request.client_turn_id or uuid4().hex
     started_at = perf_counter()
     context = dict(request.context)
-    try:
-        result = await restaurant_agent.ainvoke(
-            {
-                "query": request.message,
-                "workflow_id": workflow_id,
-                "turn_id": run_id,
-                "actor_id": actor_id,
-                "intent": context.get("intent"),
-                "slots": context.get("slots", {}),
-                "context": context,
-            }
-        )
-        await _record_run(
-            actor_id=actor_id,
-            workflow_id=workflow_id,
-            run_id=run_id,
-            phase=str(result.get("status", "COMPLETED")),
-            result=result,
-            started_at=started_at,
-        )
-        response = ChatResponse(
-            response=result.get("response", ""),
-            workflow_id=workflow_id,
-            intent=result.get("intent"),
-            slots=result.get("slots", {}),
-            missing_slots=result.get("missing_slots", []),
-            tool_request=result.get("tool_request"),
-            status=result.get("status", "COMPLETED"),
-        )
-        return {"data": response.model_dump(), "meta": {"request_id": None}}
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Restaurant agent execution failed")
-        raise HTTPException(status_code=500, detail="Unable to process the restaurant workflow.") from None
+    with telemetry.observation(
+        "Restaurant Agent: Chat",
+        "agent",
+        session_id=workflow_id,
+        user_id=safe_code(actor_id),
+        tags=["domain:restaurant", f"env:{settings.app_env}"],
+        input={"user_message": request.message, "workflow_id": workflow_id},
+    ) as rest_observation:
+        try:
+            result = await restaurant_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "workflow_id": workflow_id,
+                    "turn_id": run_id,
+                    "actor_id": actor_id,
+                    "intent": context.get("intent"),
+                    "slots": context.get("slots", {}),
+                    "context": context,
+                }
+            )
+            await _record_run(
+                actor_id=actor_id,
+                workflow_id=workflow_id,
+                run_id=run_id,
+                phase=str(result.get("status", "COMPLETED")),
+                result=result,
+                started_at=started_at,
+            )
+            response = ChatResponse(
+                response=result.get("response", ""),
+                workflow_id=workflow_id,
+                intent=result.get("intent"),
+                slots=result.get("slots", {}),
+                missing_slots=result.get("missing_slots", []),
+                tool_request=result.get("tool_request"),
+                status=result.get("status", "COMPLETED"),
+            )
+            rest_observation.update(
+                output={
+                    "response": result.get("response", ""),
+                    "intent": result.get("intent"),
+                    "status": result.get("status", "COMPLETED"),
+                }
+            )
+            return {"data": response.model_dump(), "meta": {"request_id": None}}
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Restaurant agent execution failed")
+            raise HTTPException(status_code=500, detail="Unable to process the restaurant workflow.") from None
 
 
 @router.post("/healthcare-chat", response_model=None)
@@ -473,45 +529,62 @@ async def healthcare_chat(
     actor_id: str = Depends(require_actor),
 ) -> dict[str, Any]:
     """Return typed Healthcare tool requests without calling the Healthcare service."""
+    settings = get_settings()
+    telemetry = get_telemetry()
     workflow_id = request.workflow_id or f"wf-{uuid4().hex}"
     run_id = request.client_turn_id or uuid4().hex
     started_at = perf_counter()
     context = dict(request.context)
-    try:
-        result = await healthcare_agent.ainvoke(
-            {
-                "query": request.message,
-                "workflow_id": workflow_id,
-                "turn_id": run_id,
-                "actor_id": actor_id,
-                "intent": context.get("intent"),
-                "slots": context.get("slots", {}),
-                "context": context,
-            }
-        )
-        await _record_run(
-            actor_id=actor_id,
-            workflow_id=workflow_id,
-            run_id=run_id,
-            phase=str(result.get("status", "COMPLETED")),
-            result=result,
-            started_at=started_at,
-        )
-        response = ChatResponse(
-            response=result.get("response", ""),
-            workflow_id=workflow_id,
-            intent=result.get("intent"),
-            slots=result.get("slots", {}),
-            missing_slots=result.get("missing_slots", []),
-            tool_request=result.get("tool_request"),
-            status=result.get("status", "COMPLETED"),
-        )
-        return {"data": response.model_dump(), "meta": {"request_id": None}}
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Healthcare agent execution failed")
-        raise HTTPException(status_code=500, detail="Unable to process the healthcare workflow.") from None
+    with telemetry.observation(
+        "Healthcare Agent: Chat",
+        "agent",
+        session_id=workflow_id,
+        user_id=safe_code(actor_id),
+        tags=["domain:healthcare", f"env:{settings.app_env}"],
+        input={"user_message": request.message, "workflow_id": workflow_id},
+    ) as health_observation:
+        try:
+            result = await healthcare_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "workflow_id": workflow_id,
+                    "turn_id": run_id,
+                    "actor_id": actor_id,
+                    "intent": context.get("intent"),
+                    "slots": context.get("slots", {}),
+                    "context": context,
+                }
+            )
+            await _record_run(
+                actor_id=actor_id,
+                workflow_id=workflow_id,
+                run_id=run_id,
+                phase=str(result.get("status", "COMPLETED")),
+                result=result,
+                started_at=started_at,
+            )
+            response = ChatResponse(
+                response=result.get("response", ""),
+                workflow_id=workflow_id,
+                intent=result.get("intent"),
+                slots=result.get("slots", {}),
+                missing_slots=result.get("missing_slots", []),
+                tool_request=result.get("tool_request"),
+                status=result.get("status", "COMPLETED"),
+            )
+            health_observation.update(
+                output={
+                    "response": result.get("response", ""),
+                    "intent": result.get("intent"),
+                    "status": result.get("status", "COMPLETED"),
+                }
+            )
+            return {"data": response.model_dump(), "meta": {"request_id": None}}
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Healthcare agent execution failed")
+            raise HTTPException(status_code=500, detail="Unable to process the healthcare workflow.") from None
 
 
 @router.post("/ride-chat", response_model=None)
@@ -520,42 +593,60 @@ async def ride_chat(
     actor_id: str = Depends(require_actor),
 ) -> dict[str, Any]:
     """Return a deterministic Ride state patch and typed tool request."""
+    settings = get_settings()
+    telemetry = get_telemetry()
     run_id = request.client_turn_id or uuid4().hex
     started_at = perf_counter()
-    try:
-        result = await ride_agent.ainvoke(
-            {
-                "query": request.message,
-                "workflow_id": request.workflow_id,
-                "turn_id": run_id,
-                "context": request.context,
-            }
-        )
-        await _record_run(
-            actor_id=actor_id,
-            workflow_id=request.workflow_id,
-            run_id=run_id,
-            phase="IN_PROGRESS" if result.get("tool_request") else "NEEDS_INFO",
-            result=result,
-            started_at=started_at,
-        )
-        response = RideChatResponse(
-            response=result.get("response", ""),
-            workflow_id=request.workflow_id,
-            intent=result.get("intent", "help"),
-            missing_fields=result.get("missing_fields", []),
-            state_patch=result.get("state_patch", {}),
-            tool_request=result.get("tool_request"),
-        )
-        return {"data": response.model_dump(), "meta": {"request_id": None}}
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Ride agent execution failed")
-        raise HTTPException(status_code=500, detail="Unable to process the ride workflow.") from None
+    with telemetry.observation(
+        "Ride Agent: Chat",
+        "agent",
+        session_id=request.workflow_id,
+        user_id=safe_code(actor_id),
+        tags=["domain:ride", f"env:{settings.app_env}"],
+        input={"user_message": request.message, "workflow_id": request.workflow_id},
+    ) as ride_observation:
+        try:
+            result = await ride_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "workflow_id": request.workflow_id,
+                    "turn_id": run_id,
+                    "context": request.context,
+                }
+            )
+            await _record_run(
+                actor_id=actor_id,
+                workflow_id=request.workflow_id,
+                run_id=run_id,
+                phase="IN_PROGRESS" if result.get("tool_request") else "NEEDS_INFO",
+                result=result,
+                started_at=started_at,
+            )
+            response = RideChatResponse(
+                response=result.get("response", ""),
+                workflow_id=request.workflow_id,
+                intent=result.get("intent", "help"),
+                missing_fields=result.get("missing_fields", []),
+                state_patch=result.get("state_patch", {}),
+                tool_request=result.get("tool_request"),
+            )
+            ride_observation.update(
+                output={
+                    "response": result.get("response", ""),
+                    "intent": result.get("intent", "help"),
+                    "has_tool_request": bool(result.get("tool_request")),
+                }
+            )
+            return {"data": response.model_dump(), "meta": {"request_id": None}}
+        except HTTPException:
+            raise
+        except Exception:
+            logger.exception("Ride agent execution failed")
+            raise HTTPException(status_code=500, detail="Unable to process the ride workflow.") from None
 
 
 @router.get("/status")
 async def agent_status(_auth: None = Depends(require_internal_auth)) -> dict[str, Any]:
     """Check agent readiness without exposing provider details."""
     return {"status": "ready", "agent": "LangGraph Agent v1.0", **model_diagnostics()}
+
