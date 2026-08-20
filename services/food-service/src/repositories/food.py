@@ -322,7 +322,8 @@ class InMemoryFoodRepository:
         raw_keyword = str(filters.get("keyword", "")).strip().casefold()
         keyword = _fold_text(raw_keyword)
         preserve_diacritics = any(ord(char) > 127 for char in raw_keyword)
-        district = _fold_text(filters.get("district", ""))
+        raw_district = filters.get("district", "")
+        district = "" if str(raw_district).strip().casefold() in ("hà nội", "ha noi", "hồ chí minh", "ho chi minh", "tp hcm", "đà nẵng", "da nang") else _fold_text(raw_district)
         category = _fold_text(filters.get("category", ""))
         restaurant_id = str(filters.get("restaurant_id", ""))
         result = []

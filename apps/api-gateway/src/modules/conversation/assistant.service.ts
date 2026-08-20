@@ -828,7 +828,7 @@ export class AssistantService {
       working_memory: workingMemory,
       conversation_summary: conversationSummary,
       tasks: state.tasks.slice(0, 8).map((task, index) => {
-        const pendingActions = state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind);
+        const pendingActions = Array.from(new Set(state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind)));
         const pendingChoice = this.plannerPendingChoice(task);
         return {
           task_ref: index,
@@ -989,6 +989,28 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
+    const foldedMessage = plainText(message);
+    if (textHasAny(foldedMessage, ['huy chuyen', 'huy dat xe', 'huy cuoc', 'huy xe', 'dung dat xe'])) {
+      const activeRideIndex = state.tasks.findIndex((t) => t.domain === 'ride' && t.phase !== 'COMPLETED' && t.phase !== 'FAILED' && t.phase !== 'DISCARDED');
+      if (activeRideIndex >= 0) {
+        const activeRide = state.tasks[activeRideIndex];
+        const result = isRecord(activeRide.authoritative?.result) ? activeRide.authoritative.result : undefined;
+        const booking = [activeRide.authoritative?.booking, result?.booking].find(isRecord);
+        const bookingId = stringValue(booking?.id);
+        if (bookingId) {
+          const cancelResult = await this.ride.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
+          activeRide.phase = 'COMPLETED';
+          activeRide.revision += 1;
+          activeRide.authoritative = rideAuthority(cancelResult);
+          activeRide.public_item = this.rideItem(cancelResult, activeRide);
+          return this.persistTurn(conversationId, user, message, 'Đã hủy chuyến xe thành công.', state, [], state.actions);
+        } else {
+          activeRide.phase = 'DISCARDED';
+          activeRide.revision += 1;
+          return this.persistTurn(conversationId, user, message, 'Đã hủy yêu cầu đặt xe.', state, [], state.actions);
+        }
+      }
+    }
     const planner = await this.agent.assistantChat(
       {
         conversation_id: conversationId,
@@ -1955,6 +1977,19 @@ export class AssistantService {
   }
 
   private async processRide(task: StoredTask, allTasks: StoredTask[], user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
+    const result = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
+    const existingBooking = [task.authoritative?.booking, result?.booking].find(isRecord);
+    const existingBookingId = stringValue(existingBooking?.id);
+    if (existingBookingId) {
+      try {
+        const liveBooking = await this.ride.getBooking(user.sub, { correlationId }, existingBookingId);
+        if (isTerminalRideBookingStatus(liveBooking.status)) {
+          return { phase: 'COMPLETED' as TaskPhase, publicItem: this.rideItem({ booking: liveBooking }, task), authoritative: rideAuthority({ booking: liveBooking }) };
+        }
+      } catch (error) {
+        // Ignore errors and proceed
+      }
+    }
     const slots = { ...task.extracted_slots };
     let healthcareFacility: JsonObject | undefined;
     const dependency = task.depends_on.map((id) => allTasks.find((candidate) => candidate.id === id)).find((candidate) => candidate?.domain === 'restaurant');
@@ -2118,8 +2153,8 @@ export class AssistantService {
       const requestedDate = requestedHealthcareDate(slots);
       const exactRequested = hasExactHealthcareSlot(requestedDoctors, requestedStart);
       const doctorsForSelection = requestedDoctors.length ? requestedDoctors : availableDoctors;
-      const publicItem = requestedDoctors.length && (!requestedStart || exactRequested)
-        ? this.healthcareOptions(requestedDoctors, task.id)
+      const publicItem = doctorsForSelection.length > 0
+        ? this.healthcareOptions(doctorsForSelection, task.id)
         : {
           kind: 'healthcare_no_availability',
           note: requestedStart
