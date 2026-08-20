@@ -80,3 +80,16 @@ They omit raw credentials, raw tokens, provider secrets, raw prompts and
 chain-of-thought. The Agent accepts untrusted content only as validated typed
 tool requests; it cannot authenticate a user, call a domain database or make a
 side effect.
+
+Every actor-scoped Agent route uses the same constant-time internal-service
+token dependency and requires `X-Actor-Id`. Compatibility bodies that contain
+`user_id` must match the asserted actor or return `403`; a missing token or
+actor returns `401`. Model slot patches are domain-specific and reject extra
+or authoritative fields. Confirmation text is Unicode-normalized and must
+match an explicit bounded phrase; negation, questions, correction and
+ambiguity never count as confirmation.
+
+Agent observability persists only allowlisted run metadata. Full graph state,
+raw prompts and provider responses are not attached to third-party callbacks.
+The earlier synthetic-delta SSE endpoint was removed rather than represented
+as real streaming.

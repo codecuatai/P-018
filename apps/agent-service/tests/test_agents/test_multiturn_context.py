@@ -89,7 +89,8 @@ async def test_structured_prompt_contains_messages_context_and_schema() -> None:
     )
     assert "recent_messages" in llm.prompt
     assert "response_schema" in llm.prompt
-    assert result["state_updates"]["restaurant_candidates"][0]["id"] == "res_pho_hanoi"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio
@@ -126,5 +127,9 @@ async def test_add_item_creates_cart_and_adds_item_in_same_turn() -> None:
             },
         }
     )
-    assert gateway.calls == ["view_menu_item", "create_cart", "add_to_cart"]
-    assert result["state_updates"]["cart_id"] == "cart_test"
+    assert gateway.calls == []
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "view_menu_item",
+        "create_cart",
+        "add_to_cart",
+    ]

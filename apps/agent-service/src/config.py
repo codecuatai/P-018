@@ -23,7 +23,6 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    api_gateway_internal_url: str = "http://localhost:3000"
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)
     max_graph_steps: int = Field(default=12, ge=1, le=20)
     max_tool_calls: int = Field(default=6, ge=1, le=10)
@@ -31,13 +30,9 @@ class Settings(BaseSettings):
     # into deterministic mode without changing the production/demo default.
     agent_model_mode: Literal["deterministic", "gemini"] = "gemini"
 
-    # Langfuse Observability (Optional)
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
-    langfuse_base_url: str = "https://us.cloud.langfuse.com"
-
     # Database
     database_url: str = Field(min_length=1)
+    agent_persistence_mode: Literal["required_postgres", "memory"] = "required_postgres"
     internal_service_token: str = Field(min_length=1)
 
 

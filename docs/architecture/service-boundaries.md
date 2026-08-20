@@ -15,7 +15,8 @@ Gateway may orchestrate multiple services, but a domain service remains authorit
 
 Core/Gateway owns X-One user identity, credentials, session, audit evidence, profile context, saved addresses, conversations, and orchestration state; it does not own a domain booking/order invariant. Food/Ride persist immutable transaction snapshots of Core addresses and never query Core directly. Healthcare owns patient identity, medical data, and actor-to-patient links; the Gateway exposes an actor-scoped public proxy. The current Food address endpoint and development-only Healthcare default patient are compatibility boundaries, not second authorities.
 
-The Agent's current legacy workflow store is process-local. `xone_agent` is
-provisioned for its eventual checkpoint/run-metadata boundary, but no Agent
-persistence client or migration is wired in the current MVP; Agent state is not
-durable across an Agent restart.
+Agent uses `xone_agent` only for allowlisted run metadata through its owned
+`002_agent_run_metadata.sql` migration. It does not persist conversation or
+authoritative domain state. Agent emits typed proposals only; the internal
+Gateway HTTP execution route has been removed, and Gateway's in-process typed
+dispatcher resolves actor-scoped references and owns all domain calls.

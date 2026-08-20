@@ -11,7 +11,18 @@ flowchart LR
   ToolResult --> Resume --> Response
 ```
 
-The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`: configured Gemini uses LangChain's native Pydantic JSON-Schema structured-output path with `include_raw=True`; the graph accepts the validated native object and can recover the provider's raw fenced/plain JSON through a schema-validated decoder. Invalid output safely uses deterministic semantic fallback. `intent.py`, `reference_resolution.py`, `option_resolution.py`, and `tool_selection.py` are pure/testable boundaries; model-supplied resource IDs and model tool calls are discarded, and database IDs are resolved only from persisted candidates or authoritative tool results. Address labels are resolved through `list_food_delivery_addresses`, and menu options are resolved from `view_menu_item`. The graph has bounded step/tool-call limits, including nested calls. `src/services/gateway.py` discovers and executes only non-transaction tools through the Gateway with internal token and actor assertion. The public response contains no analysis, prompt, or chain-of-thought.
+The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`: configured Gemini uses LangChain's native Pydantic JSON-Schema structured-output path with `include_raw=True`; the graph accepts the validated native object and can recover the provider's raw fenced/plain JSON through a schema-validated decoder. Invalid output safely uses deterministic semantic fallback. `intent.py`, `reference_resolution.py`, and `tool_selection.py` are pure/testable boundaries. Model-supplied resource IDs and model tool calls are discarded. The graph emits bounded, versioned semantic proposals containing capability, workflow/tool-call reference, risk ceiling, and confirmation gate. Authoritative IDs are stripped from proposal arguments. Agent has no Gateway execution or domain client. Gateway validates every proposal, resolves IDs from actor-scoped Core/domain state, and is the only dispatcher. The public response contains no analysis, prompt, or chain-of-thought.
+
+The Core A handoff is versioned as `core-a.v1` and carries the observed
+capability-catalog version. Gateway rejects mismatched versions, invalid DAGs,
+risk/gate drift, unsupported re-plan directives, and invalid blocked-task
+references. `WAIT_AND_RETRY_SAME_KEY` reuses the unchanged task revision;
+changed terms advance the revision. `confirmation_invalidated` removes pending
+evidence, the public confirmation card, and its action before re-planning.
+For the bounded rollout only, Gateway accepts a handoff missing both version
+fields until `2026-12-31T00:00:00Z`; the compatibility owner is
+`gateway-conversation`. A partially versioned handoff is always rejected, and
+the unversioned form is rejected automatically after expiry.
 
 ## Unified assistant planner
 
@@ -93,6 +104,6 @@ it examines at most 512 input characters and emits at most 160 location
 characters. These heuristics only propose semantic slots; authoritative place
 resolution remains a Gateway/domain responsibility.
 
-Target Agent persistence may store thread identifiers, approved checkpoint/checkpoint-write metadata, run metadata, diagnostics such as run ID/tool names/latency/error code, and no raw chain-of-thought, raw prompt, or authoritative transaction facts. The current MVP uses a process-local legacy workflow store and does not connect to `xone_agent`; Agent state is therefore not durable across an Agent restart. The LLM never determines price, availability, payment, or booking/order success.
+Agent migration `002_agent_run_metadata.sql` stores only actor/workflow/run identifiers, phase, schema version, bounded capability names, latency/retry/safe-error diagnostics, payload hash, optimistic version, and timestamps. Migration `001_agent_workflow_states.sql` is retained as immutable develop-branch history, but no runtime component writes its broad JSON table. Required PostgreSQL mode has no memory fallback and readiness checks the allowlisted metadata schema. Explicit memory mode exists only for tests/standalone use. Raw chain-of-thought, prompts, messages, provider bodies, authoritative transaction facts, payment data, and confirmation evidence are rejected by the metadata schema. Conversation and domain workflow state is reconstructed from Gateway/Core and domain authority; it is not Agent-owned.
 
 User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.

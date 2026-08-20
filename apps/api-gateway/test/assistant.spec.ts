@@ -1,6 +1,6 @@
 import { ServiceCallError } from '../src/resilience/service-call-error';
 import { InMemoryCoreRepository } from '../src/modules/core/core.module';
-import { AssistantService } from '../src/modules/conversation/assistant.service';
+import { AssistantService, CORE_A_LEGACY_HANDOFF_COMPATIBILITY } from '../src/modules/conversation/assistant.service';
 
 describe('Unified assistant orchestration', () => {
   const user = { sub: 'actor-assistant', email: 'demo@xone.vn', role: 'USER' };
@@ -1054,6 +1054,7 @@ describe('Unified assistant orchestration', () => {
         tasks: [{
           task_ref: 0,
           domain: 'ride',
+          disposition: 'READY',
           depends_on: [],
           steps: [{
             step_kind: 'CAPABILITY',
@@ -1076,6 +1077,7 @@ describe('Unified assistant orchestration', () => {
         tasks: [{
           task_ref: 0,
           domain: 'ride',
+          disposition: 'READY',
           depends_on: [],
           steps: [{
             phase: 'DISCOVERY',
@@ -1097,6 +1099,7 @@ describe('Unified assistant orchestration', () => {
         tasks: [{
           task_ref: 0,
           domain: 'food',
+          disposition: 'READY',
           depends_on: [],
           steps: [{
             step_kind: 'WAIT_FOR_CONFIRMATION',
@@ -1109,6 +1112,95 @@ describe('Unified assistant orchestration', () => {
     })).not.toThrow();
   });
 
+  it('rejects an unknown Core A re-plan directive', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: { tasks: [], replan_directive: 'RETRY_WITHOUT_POLICY' },
+    })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_REPLAN_REJECTED' }) }));
+  });
+
+  it('rejects a mismatched Core A contract or capability catalog version', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+
+    for (const planning_decision of [
+      { tasks: [], contract_version: 'core-a.v2' },
+      { tasks: [], contract_version: 'core-a.v1', capability_catalog_version: 'stale-catalog.v0' },
+    ]) {
+      expect(() => internal.validateCoreAHandoff({ planning_decision }))
+        .toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+    }
+  });
+
+  it('bounds the legacy Core A handoff compatibility window', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+
+    expect(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.owner).toBe('gateway-conversation');
+    expect(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.expiresAt).toBe('2026-12-31T00:00:00Z');
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: { tasks: [], contract_version: 'core-a.v1' },
+    })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+
+    const legacyValidation = () => internal.validateCoreAHandoff({ planning_decision: { tasks: [] } });
+    if (Date.now() < Date.parse(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.expiresAt)) {
+      expect(legacyValidation).not.toThrow();
+    } else {
+      expect(legacyValidation).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+    }
+  });
+
+  it('retries an unchanged failed task without changing the idempotency revision', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      mergeTasks: (current: Array<Record<string, unknown>>, planned: Array<Record<string, unknown>>, message: string, directive: string) => { tasks: Array<Record<string, unknown>>; touchedIds: Set<string> };
+    };
+    const plannedStep = {
+      step_kind: 'CAPABILITY', capability: 'ride.quote.create', schema_version: '1',
+      risk_ceiling: 'READ', confirmation_gate: 'NONE', phase: 'DISCOVERY', requires_authority: [],
+    };
+
+    const result = internal.mergeTasks([{
+      id: 'task-retry', domain: 'ride', goal: 'Quote ride', normalized_request: 'Quote ride',
+      extracted_slots: { pickup_address: 'A', dropoff_address: 'B' }, depends_on: [], phase: 'FAILED',
+      revision: 3, failure_code: 'UPSTREAM_TIMEOUT', planned_step: plannedStep,
+    }], [{
+      domain: 'ride', goal: 'Quote ride', normalized_request: 'Quote ride',
+      extracted_slots: { pickup_address: 'A', dropoff_address: 'B' }, depends_on: [],
+      disposition: 'READY', missing_information: [], planned_step: plannedStep,
+    }], 'retry', 'WAIT_AND_RETRY_SAME_KEY');
+
+    expect(result.tasks[0]).toEqual(expect.objectContaining({ phase: 'PLANNING', revision: 3 }));
+    expect(result.touchedIds.has('task-retry')).toBe(true);
+  });
+
+  it('invalidates stale pending confirmation state and its public card', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      invalidateCoreAConfirmations: (tasks: Array<Record<string, unknown>>, planned: Array<Record<string, unknown>>, touched: Set<string>) => void;
+    };
+    const tasks = [{
+      id: 'task-confirm', domain: 'restaurant', phase: 'AWAITING_CONFIRMATION', revision: 2,
+      authoritative: { selected: { name: 'Safe display' }, pending: { id: 'confirmation-evidence' } },
+      public_item: { kind: 'restaurant_confirmation' },
+    }];
+    const touched = new Set<string>();
+
+    internal.invalidateCoreAConfirmations(tasks, [{ domain: 'restaurant' }], touched);
+
+    expect(tasks[0]).toEqual(expect.objectContaining({ phase: 'PLANNING', revision: 3, public_item: undefined }));
+    expect(tasks[0].authoritative).toEqual({ selected: { name: 'Safe display' } });
+    expect(touched.has('task-confirm')).toBe(true);
+  });
+
   it('rejects a cyclic typed Agent dependency graph', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {
@@ -1117,8 +1209,8 @@ describe('Unified assistant orchestration', () => {
     expect(() => internal.validateCoreAHandoff({
       planning_decision: {
         tasks: [
-          { task_ref: 0, domain: 'restaurant', depends_on: [1], steps: [] },
-          { task_ref: 1, domain: 'ride', depends_on: [0], steps: [] },
+          { task_ref: 0, domain: 'restaurant', disposition: 'READY', depends_on: [1], steps: [] },
+          { task_ref: 1, domain: 'ride', disposition: 'READY', depends_on: [0], steps: [] },
         ],
       },
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_DEPENDENCY_REJECTED' }) }));
@@ -1220,10 +1312,21 @@ describe('Unified assistant orchestration', () => {
       chat: jest.fn().mockResolvedValue({
         response_type: 'text',
         message: 'Đã tìm món.',
-        data: {},
+        data: {
+          proposals: [{
+            schema_version: '1',
+            capability_name: 'search_food',
+            semantic_arguments: { keyword: 'phở' },
+            workflow_id: 'conv-typed',
+            tool_call_id: 'call-core-a-search',
+            risk_ceiling: 'READ',
+            confirmation_gate: 'none',
+          }],
+        },
         state_updates: {},
       }),
     };
+    const tools = { executeProposal: jest.fn().mockResolvedValue({ items: [] }) };
     const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
     const service = new AssistantService(
       store as never,
@@ -1232,15 +1335,94 @@ describe('Unified assistant orchestration', () => {
       { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
       ride as never,
       { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+      undefined,
+      tools as never,
     );
 
-    const response = await service.chat(user, 'Tìm phở', undefined, 'cor-typed');
+    const response = await service.chat(user, 'Tìm phở', 'conv-typed', 'cor-typed');
 
     expect(agent.chat).toHaveBeenCalledWith(expect.objectContaining({
       message: 'Tìm phở',
     }), 'cor-typed');
     expect(ride.chat).not.toHaveBeenCalled();
+    expect(tools.executeProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ capability_name: 'search_food' }),
+      { keyword: 'phở' },
+      user,
+      'cor-typed',
+      'conv-typed',
+    );
     expect(response.workflow_status).toBe('RUNNING');
+  });
+
+  it('projects the persisted authoritative Food cart version into Core A facts', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      authoritativeFacts: (task: Record<string, unknown>, taskRef: number) => Array<Record<string, unknown>>;
+    };
+
+    const facts = internal.authoritativeFacts({
+      domain: 'food',
+      authoritative: {
+        food_context: { restaurant_id: 'restaurant-1', cart_id: 'cart-1', menu_item_id: 'item-1' },
+        response: { data: { proposals: [] } },
+        cart: { id: 'cart-1', version: 7 },
+      },
+    }, 0);
+
+    expect(facts).toContainEqual(expect.objectContaining({
+      fact_type: 'resource_snapshot',
+      field: 'cart_id',
+      value: 'cart-1',
+      resource_version: 7,
+      source_task_ref: 0,
+    }));
+  });
+
+  it('traces Restaurant, Healthcare, and Ride dispatch to the validated Core A capability', async () => {
+    const store = { listSavedAddresses: jest.fn().mockResolvedValue([]) };
+    const restaurant = { executeTool: jest.fn().mockResolvedValue({ restaurants: [] }) };
+    const healthcare = { executeTool: jest.fn().mockResolvedValue({ departments: [] }), defaultPatientId: 1 };
+    const ride = {
+      chat: jest.fn().mockResolvedValue({
+        workflow_id: 'ride-core-a', stage: 'SERVICE_CONFIRMATION',
+        quote: { pickup_address: 'A', dropoff_address: 'B', vehicle_type: 'CAR_4', amount: 100000, currency: 'VND', duration_minutes: 20, expires_at: '2099-01-01T00:00:00Z' },
+      }),
+      confirmService: jest.fn(), confirmPayment: jest.fn(),
+    };
+    const service = new AssistantService(
+      store as never, {} as never, restaurant as never, healthcare as never, ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+    const internal = service as unknown as {
+      processTask: (task: Record<string, unknown>, all: Array<Record<string, unknown>>, actor: typeof user, conversationId: string, correlationId: string) => Promise<Record<string, unknown>>;
+    };
+    const base = { goal: 'goal', normalized_request: 'request', depends_on: [], phase: 'PLANNING', revision: 0 };
+    const tasks = [
+      {
+        ...base, id: 'restaurant-core-a', domain: 'restaurant',
+        extracted_slots: { location: 'HĂ  Ná»™i', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+        planned_step: { step_kind: 'CAPABILITY', capability: 'restaurant.search', schema_version: '1', risk_ceiling: 'READ', confirmation_gate: 'NONE', phase: 'DISCOVERY', requires_authority: [] },
+      },
+      {
+        ...base, id: 'healthcare-core-a', domain: 'healthcare', extracted_slots: {},
+        planned_step: { step_kind: 'CAPABILITY', capability: 'healthcare.list_departments', schema_version: '1', risk_ceiling: 'READ', confirmation_gate: 'NONE', phase: 'DISCOVERY', requires_authority: [] },
+      },
+      {
+        ...base, id: 'ride-core-a', domain: 'ride',
+        extracted_slots: { pickup_address: 'A', dropoff_address: 'B', vehicle_type: 'CAR_4' },
+        planned_step: { step_kind: 'CAPABILITY', capability: 'ride.quote.create', schema_version: '1', risk_ceiling: 'READ', confirmation_gate: 'NONE', phase: 'DISCOVERY', requires_authority: [] },
+      },
+    ];
+
+    const results = [];
+    for (const task of tasks) results.push(await internal.processTask(task, [task], user, 'conv-core-a', 'cor-core-a'));
+
+    expect(restaurant.executeTool).toHaveBeenCalledWith(expect.objectContaining({ tool_name: 'restaurant.search' }), user.sub, 'cor-core-a');
+    expect(healthcare.executeTool).toHaveBeenCalledWith(expect.objectContaining({ tool_name: 'healthcare.list_departments' }), user.sub, 'cor-core-a');
+    expect(ride.chat).toHaveBeenCalled();
+    expect(results.map((result) => ((result.authoritative as Record<string, unknown>).core_a_dispatch as Record<string, unknown>).capability))
+      .toEqual(['restaurant.search', 'healthcare.list_departments', 'ride.quote.create']);
   });
 
   it('rejects a composed final-success claim while the Ride still needs confirmation', async () => {

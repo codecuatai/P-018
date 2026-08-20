@@ -3,14 +3,42 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
 from src.models.schemas import ToolRequest
 
 TZ = timezone(timedelta(hours=7))
+
+
+class RestaurantSlotPatch(BaseModel):
+    """User-expressible Restaurant values; authoritative fields are impossible."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    location: str | None = Field(default=None, min_length=1, max_length=300)
+    cuisine_type: str | None = Field(default=None, min_length=1, max_length=200)
+    budget_range: str | None = Field(default=None, min_length=1, max_length=120)
+    party_size: int | None = Field(default=None, ge=1, le=20)
+    local_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    local_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    duration_minutes: int | None = Field(default=None, ge=15, le=480)
+    seating_type: str | None = Field(default=None, min_length=1, max_length=80)
+    special_requests: str | None = Field(default=None, min_length=1, max_length=500)
+    selection: Literal["first", "second", "third", "fourth", "fifth"] | None = None
+
+
+class RestaurantExtraction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["ride", "food", "restaurant", "healthcare", "general_support"]
+    slot_patch: RestaurantSlotPatch = Field(default_factory=RestaurantSlotPatch)
+    confidence: float = Field(default=0.0, ge=0, le=1)
 
 
 def _fold(value: str) -> str:
@@ -123,14 +151,6 @@ def _is_restaurant_message(query: str, previous_intent: str | None) -> bool:
     return any(term in folded for term in ("dat ban", "nha hang", "ban an", "ban co the di"))
 
 
-def _is_confirmation(query: str) -> bool:
-    folded = _fold(query).strip()
-    return any(
-        term in folded
-        for term in ("co", "dong y", "x ac nhan", "xac nhan", "dat di", "giu ban", "tiep tuc", "ok", "duoc")
-    )
-
-
 def _tool_outcome(result: dict[str, Any], tool_name: str | None = None) -> str:
     if result.get("error"):
         return result["error"]
@@ -176,7 +196,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
                 "tool_request": tool_request.model_dump(),
                 "status": "TOOL_REQUEST_READY",
             }
-        elif tool_name == "restaurant.check_availability" and _is_confirmation(query):
+        elif tool_name == "restaurant.check_availability" and is_explicit_confirmation(query):
             tool_request = validate_tool_request(
                 ToolRequest(
                     tool_name="restaurant.create_hold",
@@ -197,7 +217,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
                 "tool_request": tool_request.model_dump(),
                 "status": "TOOL_REQUEST_READY",
             }
-        elif tool_name == "restaurant.create_hold" and _is_confirmation(query):
+        elif tool_name == "restaurant.create_hold" and is_explicit_confirmation(query):
             hold_result = context.get("tool_result", {})
             hold_data = (
                 hold_result.get("data")
@@ -245,19 +265,30 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
         from src.config import get_settings
 
         if get_settings().agent_model_mode == "gemini":
-            from src.model.gemini_adapter import GeminiAdapter
+            from src.services.llm import GeminiAdapter
 
-            model_result = await GeminiAdapter().extract(query, context)
-            if model_result.get("intent") in {"healthcare_request", "general_chat"}:
+            safe_previous = RestaurantSlotPatch.model_validate(
+                {key: value for key, value in slots.items() if key in RestaurantSlotPatch.model_fields}
+            )
+            prompt = (
+                "Phân loại intent và trích xuất duy nhất các trường semantic theo schema. "
+                "Không tạo ID, giá, currency, version, availability, status, confirmation hay tool result.\n"
+                f"Semantic context: {safe_previous.model_dump(exclude_none=True)}\n"
+                f"Tin nhắn: {query}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantExtraction)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            model_result = raw if isinstance(raw, RestaurantExtraction) else RestaurantExtraction.model_validate(raw)
+            if model_result.intent in {"healthcare", "general_support"}:
                 return {
-                    "intent": model_result["intent"],
+                    "intent": "healthcare_request" if model_result.intent == "healthcare" else "general_chat",
                     "slots": slots,
                     "status": "COMPLETED",
-                    "unsupported": model_result["intent"] == "healthcare_request",
+                    "unsupported": model_result.intent == "healthcare",
                 }
-            slots.update(
-                {key: value for key, value in model_result.get("slot_patch", {}).items() if value not in (None, "")}
-            )
+            if model_result.intent == "restaurant":
+                slots.update(model_result.slot_patch.model_dump(exclude_none=True))
     except Exception:
         # Deterministic extraction remains a safe availability-only fallback.
         pass

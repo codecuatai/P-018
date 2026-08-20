@@ -175,9 +175,8 @@ async def test_empty_specific_food_search_returns_nearby_recommendations() -> No
         gateway,
         {},
     )
-    assert gateway.calls == ["search_food", "search_food"]
-    assert result["data"]["items"][0]["restaurant"]["district"] == "North District"
-    assert "thay thế" in result["response"]
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio
@@ -196,8 +195,12 @@ async def test_add_to_cart_reconciles_model_downgrade_and_persists_cart() -> Non
     )
 
     assert result["intent"] == "add_to_cart"
-    assert gateway.calls == ["view_menu_item", "create_cart", "add_to_cart"]
-    assert result["state_updates"]["cart_id"] == "cart_opaque_1"
+    assert gateway.calls == []
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "view_menu_item",
+        "create_cart",
+        "add_to_cart",
+    ]
     assert result["extracted_slots"]["quantity"] == 2
 
 
@@ -212,8 +215,11 @@ async def test_quote_delivery_reconciles_model_address_routing() -> None:
     )
 
     assert result["intent"] == "quote_delivery"
-    assert gateway.calls == ["list_food_delivery_addresses", "quote_delivery"]
-    assert result["state_updates"]["address_id"] == "address_opaque_1"
+    assert gateway.calls == []
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "list_food_delivery_addresses",
+        "quote_delivery",
+    ]
 
 
 @pytest.mark.asyncio
@@ -227,9 +233,9 @@ async def test_place_order_reconciles_model_quote_and_prepares_confirmation() ->
     )
 
     assert result["intent"] == "place_order"
-    assert gateway.calls == ["prepare_food_order_confirmation"]
-    assert result["response_type"] == "confirmation_form"
-    assert result["pending_confirmation"]["action"] == "PLACE_FOOD_ORDER"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "prepare_food_order_confirmation"
+    assert result["tool_calls"][0]["confirmation_gate"] == "explicit_gateway_confirmation"
 
 
 @pytest.mark.asyncio
@@ -242,8 +248,8 @@ async def test_preview_order_wraps_authoritative_quote_for_gateway_consumers() -
         {"cart_id": "cart_opaque_1", "address_id": "address_opaque_1"},
     )
 
-    assert result["response_type"] == "order_preview"
-    assert result["data"]["preview"]["total"] == {"amount": 130000, "currency": "VND"}
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "preview_order"
 
 
 @pytest.mark.asyncio
@@ -330,8 +336,7 @@ async def test_deterministic_multiturn_flow_merges_context_to_confirmation() -> 
         )
         context.update(result.get("state_updates", {}))
 
-    assert context.get("cart_id")
-    assert context.get("address_id")
-    assert context.get("pending_confirmation_id")
-    assert result["response_type"] == "confirmation_form"
-    assert result["tool_calls"][-1]["name"] == "prepare_food_order_confirmation"
+    assert gateway.calls == []
+    assert "cart_id" not in context
+    assert "address_id" not in context
+    assert "pending_confirmation_id" not in context

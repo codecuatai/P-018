@@ -38,7 +38,7 @@ class FakeLLM:
 
 
 @pytest.mark.asyncio
-async def test_agent_uses_correlation_id_and_returns_state_update() -> None:
+async def test_agent_uses_correlation_id_for_stable_proposal() -> None:
     gateway = FakeGateway()
     graph = build_graph(tool_client=gateway, llm=FakeLLM())
     result = await graph.ainvoke(
@@ -50,5 +50,6 @@ async def test_agent_uses_correlation_id_and_returns_state_update() -> None:
             "workflow_context": {},
         }
     )
-    assert gateway.calls[-1] == ("search_food", "cor_test_1")
-    assert result["state_updates"]["restaurant_candidates"][0]["id"] == "restaurant_A_93f"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
+    assert result["tool_calls"][0]["tool_call_id"].startswith("call_")

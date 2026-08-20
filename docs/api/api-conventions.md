@@ -86,6 +86,13 @@ reset capture is forbidden in production and is not a browser feature.
 
 Every write that may be retried or cause a side effect receives `Idempotency-Key` from its first request, not only after a failure. The domain scopes it to the authenticated actor, operation, and retention window; the same key and normalized payload return the same logical result, while a changed payload is rejected with a safe conflict. Gateway propagation does not replace the domain guarantee. Do not log raw sensitive payloads solely to implement idempotency.
 
+Food create-cart, add/update/remove cart-item, and apply/remove-voucher routes
+require `Idempotency-Key` (8–128 characters). Food migration
+`007_food_cart_write_idempotency.sql` owns the operation ledger and commits
+the claimed key, normalized payload hash, cart mutation, authoritative version
+and replay result atomically. Exact replay returns the stored logical result;
+changed payload, operation or target under the same actor/key returns `409`.
+
 Final/financial confirmation is not a boolean. The contract binds it to the actor, action, normalized payload or hash, quote/resource version, price/currency, expiry, issuance/consumption time, and one-time audit evidence. The Food slice implements this through Gateway confirmation and Payment Sandbox modules. Core persistence is PostgreSQL at runtime with an in-memory adapter only for deterministic tests; additive claim/idempotency/payment/refund/recovery/provider fields are in `apps/api-gateway/migrations/003_core_atomicity.sql`, `004_core_recovery.sql`, `005_core_payment_provider_saga.sql`, and `006_core_payment_recovery_claims.sql`. Assistant action receipts are additive in `apps/api-gateway/migrations/007_core_assistant_action_executions.sql` and `008_core_assistant_action_recovery.sql`; successful retries return the stored sanitized response, retryable failures and stale processing leases can be reclaimed with the same key, and a different key cannot consume the same action. Multi-service plan state and step idempotency are additive in `apps/api-gateway/migrations/011_core_multi_service_workflows.sql`. Food order creation requires `expected_snapshot_hash`, `expected_cart_version`, `expected_amount`, `expected_currency`, and `expected_quote_version`; Food recomputes the quote under row locks before inserting an order.
 
 ## Phase 2–9 public additions

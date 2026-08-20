@@ -135,7 +135,7 @@ def test_native_wrapper_recovers_from_raw_message_when_parser_did_not() -> None:
 
 
 @pytest.mark.asyncio
-async def test_native_structured_response_is_used_and_authoritative_tools_run() -> None:
+async def test_native_structured_response_is_used_for_safe_proposal() -> None:
     gateway = SearchGateway()
     llm = NativeStructuredLLM(decision(dish_query="pho bo", max_price=100000))
     graph = build_graph(tool_client=gateway, llm=llm)
@@ -151,9 +151,12 @@ async def test_native_structured_response_is_used_and_authoritative_tools_run() 
     )
 
     assert llm.schema is StructuredDecision
-    assert gateway.calls == [("search_food", {"keyword": "pho bo", "max_price": 100000})]
+    assert gateway.calls == []
     assert result["decision_source"] == "model"
-    assert result["state_updates"]["restaurant_candidates"][0]["id"] == "restaurant_authoritative"
+    assert result["tool_calls"][0]["semantic_arguments"] == {
+        "keyword": "pho bo",
+        "max_price": 100000,
+    }
 
 
 @pytest.mark.parametrize(
@@ -182,7 +185,8 @@ async def test_malformed_semantic_slots_fall_back_without_unsafe_values(field: s
 
     assert result["decision_source"] == "deterministic"
     assert result["extracted_slots"].get(field) != value
-    assert gateway.calls[0][0] == "search_food"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio
@@ -220,7 +224,8 @@ async def test_malformed_model_output_falls_back_without_crashing() -> None:
     )
 
     assert result["decision_source"] == "deterministic"
-    assert gateway.calls[0][0] == "search_food"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio

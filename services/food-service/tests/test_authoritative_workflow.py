@@ -33,6 +33,8 @@ async def test_authoritative_create_order_rejects_catalog_change_without_order_o
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-authoritative-key",
     )
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     repository.items["item_pho_bo"]["price"] = 70000
@@ -65,8 +67,10 @@ async def test_voucher_reload_and_quote_are_deterministic_without_usage_counter(
             "quantity": 2,
             "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
         },
+        "usr_demo_001",
+        "add-voucher-reload-key",
     )
-    cart = await food.apply_voucher(cart["id"], "XONE50")
+    cart = await food.apply_voucher(cart["id"], "XONE50", "usr_demo_001", "apply-voucher-reload-key")
     first = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     second = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert first["snapshot_hash"] == second["snapshot_hash"]
@@ -86,6 +90,8 @@ async def test_transition_operation_key_is_idempotent_and_rejects_target_reuse()
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-transition-key",
     )
     order = await food.create_order(
         {
@@ -114,6 +120,8 @@ async def test_driver_is_released_and_timeline_is_event_backed() -> None:
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-driver-key",
     )
     order = await food.create_order(
         {
@@ -157,8 +165,10 @@ async def test_preview_rejects_redeemed_voucher_and_cart_creation_is_idempotent(
             "quantity": 2,
             "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
         },
+        "usr_demo_001",
+        "add-create-key",
     )
-    await food.apply_voucher(cart["id"], "XONE50")
+    await food.apply_voucher(cart["id"], "XONE50", "usr_demo_001", "apply-create-key")
     order = await food.create_order(
         {
             "cart_id": cart["id"],

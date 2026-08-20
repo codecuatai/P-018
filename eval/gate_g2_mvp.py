@@ -13,11 +13,11 @@ import os
 import sys
 import time
 from datetime import date, timedelta
+from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, build_opener, HTTPCookieProcessor
-from http.cookiejar import CookieJar
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 DEFAULT_GATEWAY_URL = "http://localhost:3000"
 DEFAULT_OUTPUT = Path("eval/results/gate-g2-mvp-eval.json")
