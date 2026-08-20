@@ -8,6 +8,7 @@ import {
   JsonObject,
   RestaurantClient,
   RestaurantTool,
+  RideClient,
 } from '../../clients/service.clients';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
@@ -595,6 +596,7 @@ export class AssistantService {
     private readonly healthcare: HealthcareClient,
     private readonly ride: RideWorkflowService,
     private readonly confirmations: ConfirmationService,
+    private readonly rideClient: RideClient,
     @Optional() private readonly food?: FoodClient,
   ) {}
 
@@ -998,7 +1000,7 @@ export class AssistantService {
         const booking = [activeRide.authoritative?.booking, result?.booking].find(isRecord);
         const bookingId = stringValue(booking?.id);
         if (bookingId) {
-          const cancelResult = await this.ride.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
+          const cancelResult = await this.rideClient.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
           activeRide.phase = 'COMPLETED';
           activeRide.revision += 1;
           activeRide.authoritative = rideAuthority(cancelResult);
@@ -1977,12 +1979,12 @@ export class AssistantService {
   }
 
   private async processRide(task: StoredTask, allTasks: StoredTask[], user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
-    const result = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
-    const existingBooking = [task.authoritative?.booking, result?.booking].find(isRecord);
+    const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
+    const existingBooking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
     const existingBookingId = stringValue(existingBooking?.id);
     if (existingBookingId) {
       try {
-        const liveBooking = await this.ride.getBooking(user.sub, { correlationId }, existingBookingId);
+        const liveBooking = await this.rideClient.getBooking(user.sub, { correlationId }, existingBookingId);
         if (isTerminalRideBookingStatus(liveBooking.status)) {
           return { phase: 'COMPLETED' as TaskPhase, publicItem: this.rideItem({ booking: liveBooking }, task), authoritative: rideAuthority({ booking: liveBooking }) };
         }
