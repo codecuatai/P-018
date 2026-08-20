@@ -1,7 +1,39 @@
 from pathlib import Path
 
 import pytest
-from src.agents.graph import build_graph
+from src.agents.graph import _proposal, build_graph
+
+
+def test_proposal_identity_is_stable_and_distinguishes_payload_and_index() -> None:
+    first = _proposal(
+        {"name": "add_to_cart", "arguments": {"quantity": 1}},
+        workflow_id="conv_one",
+        correlation_id="cor_one",
+        call_index=0,
+    )
+    replay = _proposal(
+        {"name": "add_to_cart", "arguments": {"quantity": 1}},
+        workflow_id="conv_one",
+        correlation_id="cor_one",
+        call_index=0,
+    )
+    changed_payload = _proposal(
+        {"name": "add_to_cart", "arguments": {"quantity": 2}},
+        workflow_id="conv_one",
+        correlation_id="cor_one",
+        call_index=0,
+    )
+    changed_index = _proposal(
+        {"name": "add_to_cart", "arguments": {"quantity": 1}},
+        workflow_id="conv_one",
+        correlation_id="cor_one",
+        call_index=1,
+    )
+
+    assert first["tool_call_id"] == replay["tool_call_id"]
+    assert first["tool_call_id"] != changed_payload["tool_call_id"]
+    assert first["tool_call_id"] != changed_index["tool_call_id"]
+    assert len(first["tool_call_id"]) == len("call_") + 32
 
 
 @pytest.mark.asyncio

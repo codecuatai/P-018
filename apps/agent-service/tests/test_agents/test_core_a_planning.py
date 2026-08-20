@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 from src.agents.assistant.contracts import (
     AuthoritativeFact,
+    AuthorityRequirement,
     CapabilitySnapshot,
     ConfirmationGate,
     CoreAInput,
@@ -33,6 +34,7 @@ from src.agents.assistant.contracts import (
 )
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot
 from src.agents.assistant.planning.replan import replan
+from src.agents.assistant.planning.requirements import usable_fact
 from src.agents.assistant_graph import plan_core_a
 
 
@@ -66,6 +68,25 @@ def fact(
         resource_version=version,
         expires_at=datetime.now(UTC) + timedelta(minutes=10) if fresh else None,
     )
+
+
+def test_fresh_authority_requires_an_explicit_future_expiry() -> None:
+    now = datetime.now(UTC)
+    requirement = AuthorityRequirement(
+        fact="availability_version",
+        must_be_unexpired=True,
+    )
+    missing_expiry = fact("availability_version", "availability-1", version=1)
+    expired = missing_expiry.model_copy(
+        update={"expires_at": now - timedelta(seconds=1)}
+    )
+    fresh = missing_expiry.model_copy(
+        update={"expires_at": now + timedelta(seconds=30)}
+    )
+
+    assert usable_fact([missing_expiry], requirement, now=now) is None
+    assert usable_fact([expired], requirement, now=now) is None
+    assert usable_fact([fresh], requirement, now=now) == fresh
 
 
 def test_contract_rejects_fabricated_authoritative_food_field() -> None:

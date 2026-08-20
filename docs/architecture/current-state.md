@@ -81,8 +81,9 @@ business logic are prohibited.
   scope and one logical mutation.
 - The Agent-side Gateway execution client and the HTTP
   `/internal/tools/execute` endpoint were removed. Food execution now crosses
-  the typed Gateway proposal validator and binds write idempotency to the
-  proposal call ID.
+  the typed Gateway proposal validator. Agent `tool_call_id` values are trace
+  references only; Gateway derives the write idempotency key from the trusted
+  actor, persisted task revision, capability, and bounded proposal index.
 - Gateway consumes Core A capability metadata and authoritative fact
   projections, rejects schema/risk/gate/authority mismatch, and records the
   validated capability used for dispatch. Model-visible projections exclude
@@ -91,9 +92,13 @@ business logic are prohibited.
   consumes blocked/failed dispositions and bounded re-plan directives, keeps
   unchanged same-key retries on the same revision, and removes stale pending
   confirmation evidence/actions/cards when terms change. Dispatch trace tests
-  cover all four domains. The legacy handoff without either version field is
-  owned by `gateway-conversation`, expires at `2026-12-31T00:00:00Z`, rejects
-  partial versioning immediately, and fails closed after expiry.
+  cover all four domains. Gateway now requires `planning_decision`,
+  `core-a.v1`, and the exact observed capability-catalog version on every turn;
+  absent, partially versioned, unversioned, or mismatched handoffs fail closed.
+- Restaurant availability returns a 30-second authoritative snapshot with a
+  distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
+  Core A does not treat freshness-required authority without a future expiry as
+  usable.
 - Restaurant model extraction uses an `extra=forbid` semantic schema.
   Vietnamese confirmation parsing rejects negation, questions, correction and
   ambiguous substring matches. Actor-scoped Agent routes require constant-time
@@ -102,9 +107,10 @@ business logic are prohibited.
   Observability is limited to the allowlisted Agent run-metadata envelope until
   a real streaming and privacy-reviewed telemetry contract is implemented.
 
-Local remediation verification passed Agent `181` tests (`1` PostgreSQL test
-skipped), Gateway `172` tests (`7` PostgreSQL/integration tests skipped), and
-Food `38` tests (`3` PostgreSQL tests skipped), plus Ride `31` tests. Gateway lint/build, Ruff,
+Local remediation verification passed Agent `183` tests (`1` PostgreSQL test
+skipped), Gateway `175` tests (`7` PostgreSQL/integration tests skipped),
+Restaurant `22` tests (`1` skipped), Food `38` tests (`3` PostgreSQL tests
+skipped), plus Ride `31` tests. Gateway lint/build, Ruff,
 environment validation (`120` root / `112` Compose variables), migration parity
 (`28` files), Compose rendering, contract parity, and OpenAPI YAML parsing
 passed. The sanitized evidence report is

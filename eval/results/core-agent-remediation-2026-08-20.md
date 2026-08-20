@@ -2,7 +2,7 @@
 
 Status: **implementation complete; 10/10 release certification blocked by live gates**.
 
-This report covers the implementation pass rebased onto develop commit `212c263` plus the
+This report covers the implementation pass rebased onto develop commit `58447b1` plus the
 uncommitted remediation worktree. It records only synthetic/aggregate evidence.
 No private environment file, token, prompt, provider body, internal resource
 identifier, production record, or chain-of-thought was read into this report.
@@ -23,9 +23,15 @@ identifier, production record, or chain-of-thought was read into this report.
   capability, DAG, authority/freshness, risk/gate, blocked disposition,
   re-plan directive, and confirmation invalidation. Same-key retry preserves
   the task revision. Dispatch trace tests cover Food, Restaurant, Healthcare,
-  and Ride. The temporary unversioned handoff is owned by
-  `gateway-conversation`, expires at `2026-12-31T00:00:00Z`, and fails closed
-  for partial versioning or after expiry.
+  and Ride. Gateway requires `planning_decision`, `core-a.v1`, and the exact
+  capability-catalog version; absent, unversioned, partial, or mismatched
+  handoffs fail closed immediately.
+- Gateway derives Food proposal execution identity from trusted actor/task
+  state, task revision, capability, and proposal index. Agent `tool_call_id`
+  remains validated trace metadata and is not a downstream idempotency key.
+- Restaurant availability now carries a distinct snapshot identity/version,
+  observation time, and 30-second expiry. Freshness-required Core A authority
+  rejects missing, naive, or expired timestamps.
 - Restaurant structured extraction forbids extra/authoritative fields. The
   centralized Vietnamese confirmation parser rejects negation, questions,
   corrections, and substring ambiguity. Actor-scoped Agent routes require
@@ -43,12 +49,13 @@ identifier, production record, or chain-of-thought was read into this report.
 
 | Gate | Result |
 | --- | --- |
-| Agent tests | `181 passed, 1 skipped` |
+| Agent tests | `183 passed, 1 skipped` |
 | Agent/eval Ruff | pass |
-| Gateway Jest | `172 passed, 7 skipped`; `34` suites passed, `2` skipped |
+| Gateway Jest | `175 passed, 7 skipped`; `34` suites passed, `2` skipped |
 | Gateway lint/build | pass / pass |
 | Food tests | `38 passed, 3 skipped` |
 | Ride tests | `31 passed` |
+| Restaurant tests | `22 passed, 1 skipped` |
 | Additional shared/service contract parity | pass |
 | Environment validation | `120` root variables / `112` Compose variables |
 | Migration parity | pass, `28` files |
@@ -58,7 +65,7 @@ identifier, production record, or chain-of-thought was read into this report.
 
 The deterministic compatibility runner loaded all 200 frozen synthetic cases:
 tool exactness was `107/200`, domain exactness `65/109`, and planner p95 was
-`0.560 ms`. This exposes the conservative fallback's compatibility limit; it is
+`0.446 ms`. This exposes the conservative fallback's compatibility limit; it is
 not labeled as the Core B provider score and does not satisfy the provider gate.
 
 ## Blocked release gates

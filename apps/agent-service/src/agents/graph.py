@@ -182,7 +182,11 @@ _CONFIRMATION_PROPOSALS = {
 
 
 def _proposal(
-    tool: dict[str, Any], *, workflow_id: str, correlation_id: str
+    tool: dict[str, Any],
+    *,
+    workflow_id: str,
+    correlation_id: str,
+    call_index: int,
 ) -> dict[str, Any]:
     """Project a selected tool to a non-executable, versioned Gateway proposal."""
     name = str(tool.get("name", ""))
@@ -201,9 +205,20 @@ def _proposal(
         if name in _REVERSIBLE_WRITE_PROPOSALS
         else "READ"
     )
-    digest = hashlib.sha256(
-        f"{workflow_id}:{correlation_id}:{name}".encode()
-    ).hexdigest()[:20]
+    identity = json.dumps(
+        {
+            "workflow_id": workflow_id,
+            "correlation_id": correlation_id,
+            "capability_name": name,
+            "semantic_arguments": semantic_arguments,
+            "call_index": call_index,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:32]
     return {
         "schema_version": "1",
         "capability_name": name,
@@ -547,8 +562,9 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
                 tool,
                 workflow_id=str(workflow_id),
                 correlation_id=str(correlation_id),
+                call_index=index,
             )
-            for tool in selected
+            for index, tool in enumerate(selected)
         ]
         return {
             "tool_calls": proposals,

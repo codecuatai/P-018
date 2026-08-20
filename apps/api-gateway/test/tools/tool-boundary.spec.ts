@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'crypto';
 
 import { ToolProposal, ToolService } from '../../src/modules/tools/tool.module';
 import { AssistantService } from '../../src/modules/conversation/assistant.service';
@@ -39,6 +40,7 @@ describe('Gateway-only tool execution boundary', () => {
       { sub: 'usr_one', email: 'one@example.test', role: 'customer' },
       'cor_one',
       'conv_one',
+      'food:test-read:r0:p0',
     );
 
     expect(food.get).toHaveBeenCalledWith(
@@ -58,13 +60,14 @@ describe('Gateway-only tool execution boundary', () => {
       { sub: 'usr_one', email: 'one@example.test', role: 'customer' },
       'cor_one',
       'conv_one',
+      'food:test-invalid:r0:p0',
     )).rejects.toMatchObject({
       response: { code: 'INVALID_TOOL_PROPOSAL' },
     });
     expect(food.get).not.toHaveBeenCalled();
   });
 
-  it('binds Food write idempotency to the validated tool-call ID', async () => {
+  it('binds Food write idempotency to the Gateway-owned execution ID', async () => {
     const service = new ToolService(food as never, confirmations as never, store as never);
 
     await service.executeProposal(
@@ -83,15 +86,55 @@ describe('Gateway-only tool execution boundary', () => {
       { sub: 'usr_one', email: 'one@example.test', role: 'customer' },
       'cor_one',
       'conv_one',
+      'food:test-write:r0:p0',
     );
 
     expect(food.post).toHaveBeenCalledWith(
       '/api/v1/carts/cart_trusted/items',
       expect.objectContaining({ menu_item_id: 'item_trusted' }),
       'cor_one',
-      'tool:usr_one:call_add_one:add_to_cart',
+      `tool:${createHash('sha256').update(JSON.stringify({
+        actor_id: 'usr_one',
+        execution_id: 'food:test-write:r0:p0',
+        capability_name: 'add_to_cart',
+      })).digest('hex')}:add_to_cart`,
       'usr_one',
     );
+  });
+
+  it('rejects malformed Agent and Gateway execution identifiers', async () => {
+    const service = new ToolService(food as never, confirmations as never, store as never);
+    const actor = { sub: 'usr_one', email: 'one@example.test', role: 'customer' };
+
+    await expect(service.executeProposal(
+      proposal({ tool_call_id: 'invalid call id' }),
+      { keyword: 'pho bo' },
+      actor,
+      'cor_one',
+      'conv_one',
+      'food:test:r0:p0',
+    )).rejects.toMatchObject({ response: { code: 'INVALID_TOOL_PROPOSAL' } });
+    await expect(service.executeProposal(
+      proposal(),
+      { keyword: 'pho bo' },
+      actor,
+      'cor_one',
+      'conv_one',
+      'invalid execution id',
+    )).rejects.toMatchObject({ response: { code: 'INVALID_TOOL_PROPOSAL' } });
+  });
+
+  it('keeps Gateway write keys stable, actor-scoped, capability-scoped, and bounded', () => {
+    const service = new ToolService(food as never, confirmations as never, store as never);
+    const internal = service as unknown as {
+      writeKey(name: string, actorId: string, correlationId: string, conversationId?: string, executionId?: string): string;
+    };
+    const first = internal.writeKey('add_to_cart', 'usr_one', 'cor_one', 'conv_one', 'food:task:r0:p0');
+
+    expect(internal.writeKey('add_to_cart', 'usr_one', 'cor_changed', 'conv_one', 'food:task:r0:p0')).toBe(first);
+    expect(internal.writeKey('add_to_cart', 'usr_two', 'cor_one', 'conv_one', 'food:task:r0:p0')).not.toBe(first);
+    expect(internal.writeKey('remove_cart_item', 'usr_one', 'cor_one', 'conv_one', 'food:task:r0:p0')).not.toBe(first);
+    expect(first.length).toBeLessThanOrEqual(128);
   });
 
   it('does not expose an HTTP execution route', () => {
@@ -111,6 +154,7 @@ describe('Gateway-only tool execution boundary', () => {
       _actor: unknown,
       _correlationId: string,
       _workflowId: string,
+      _trustedExecutionId: string,
     ) => {
       if (value.capability_name === 'view_menu_item') {
         return {
@@ -155,6 +199,7 @@ describe('Gateway-only tool execution boundary', () => {
         user: { sub: string; email: string; role: 'customer' },
         correlationId: string,
         workflowId: string,
+        trustedExecutionScope: string,
       ): Promise<{ stateUpdates: Record<string, unknown> }>;
     };
 
@@ -165,6 +210,7 @@ describe('Gateway-only tool execution boundary', () => {
       { sub: 'usr_one', email: 'one@example.test', role: 'customer' },
       'cor_one',
       'conv_one',
+      'food:task-one:r0',
     );
 
     expect(executeProposal.mock.calls.map((call) => call[1])).toEqual([
@@ -176,6 +222,11 @@ describe('Gateway-only tool execution boundary', () => {
         quantity: 1,
         selected_options: [{ group_id: 'size', option_id: 'regular' }],
       },
+    ]);
+    expect(executeProposal.mock.calls.map((call) => call[5])).toEqual([
+      'food:task-one:r0:p0',
+      'food:task-one:r0:p1',
+      'food:task-one:r0:p2',
     ]);
     expect(result.stateUpdates.cart_id).toBe('cart_trusted');
   });

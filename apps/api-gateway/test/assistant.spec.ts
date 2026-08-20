@@ -1,6 +1,105 @@
 import { ServiceCallError } from '../src/resilience/service-call-error';
 import { InMemoryCoreRepository } from '../src/modules/core/core.module';
-import { AssistantService, CORE_A_LEGACY_HANDOFF_COMPATIBILITY } from '../src/modules/conversation/assistant.service';
+import { AssistantService as ProductionAssistantService } from '../src/modules/conversation/assistant.service';
+
+function versionedDecision(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    contract_version: 'core-a.v1',
+    capability_catalog_version: 'gateway-observed.v1',
+    tasks: [],
+    workflow_relation: 'SINGLE_TASK',
+    confirmation_invalidated: false,
+    blocked_task_refs: [],
+    interaction_mode: 'service',
+    discarded_task_refs: [],
+    ...overrides,
+  };
+}
+
+function fixtureRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function coreATaskFixture(value: unknown, taskRef: number): Record<string, unknown> {
+  const task = fixtureRecord(value) ? value : {};
+  const extractedSlots = fixtureRecord(task.extracted_slots) ? task.extracted_slots : {};
+  const semanticSlots = fixtureRecord(task.semantic_slots)
+    ? task.semantic_slots
+    : Object.fromEntries(Object.entries(extractedSlots).map(([field, slotValue]) => [
+      field,
+      { value: slotValue, source: 'USER_EXPLICIT' },
+    ]));
+  return {
+    operation: 'DISCOVER',
+    goal: 'Test task',
+    normalized_request: 'Test request',
+    depends_on: [],
+    missing_information: [],
+    missing_authority: [],
+    steps: [],
+    disposition: 'READY',
+    ...task,
+    task_ref: typeof task.task_ref === 'number' ? task.task_ref : taskRef,
+    semantic_slots: semanticSlots,
+  };
+}
+
+type AssistantChatFixture = (...args: unknown[]) => unknown;
+
+function coreAAgentFixture<T>(agent: T): T {
+  if (!fixtureRecord(agent) || typeof agent.assistantChat !== 'function') return agent;
+  const assistantChat = agent.assistantChat as AssistantChatFixture;
+  return {
+    ...agent,
+    assistantChat: async (...args: unknown[]) => {
+      const response = await assistantChat(...args);
+      if (!fixtureRecord(response) || !fixtureRecord(args[0]) || args[0].mode === 'compose') return response;
+      const legacyPlan = fixtureRecord(response.plan) ? response.plan : {};
+      const decision = fixtureRecord(response.planning_decision) ? response.planning_decision : {};
+      const rawTasks = Array.isArray(decision.tasks)
+        ? decision.tasks
+        : Array.isArray(legacyPlan.tasks)
+          ? legacyPlan.tasks
+          : [];
+      const tasks = rawTasks.map(coreATaskFixture);
+      return {
+        ...response,
+        planning_decision: versionedDecision({
+          workflow_relation: tasks.some((task) => Array.isArray(task.depends_on) && task.depends_on.length > 0)
+            ? 'DEPENDENT_TASKS'
+            : tasks.length > 1
+              ? 'INDEPENDENT_TASKS'
+              : 'SINGLE_TASK',
+          interaction_mode: legacyPlan.interaction_mode ?? 'service',
+          discarded_task_refs: legacyPlan.discarded_task_refs ?? [],
+          ...decision,
+          tasks,
+        }),
+      };
+    },
+  } as T;
+}
+
+type ProductionAssistantInstance = InstanceType<typeof ProductionAssistantService>;
+type AssistantServiceInstance = ProductionAssistantInstance & {
+  act(
+    user: { sub: string; email: string; role: string },
+    request: { conversation_id: string; action_id: string; quantity?: number },
+    correlationId: string,
+    idempotencyKey: string,
+  ): ReturnType<ProductionAssistantInstance['chat']>;
+};
+type AssistantServiceConstructor = new (
+  ...args: ConstructorParameters<typeof ProductionAssistantService>
+) => AssistantServiceInstance;
+
+const AssistantService: AssistantServiceConstructor = new Proxy(ProductionAssistantService, {
+  construct(target, args) {
+    const dependencies = [...args];
+    dependencies[1] = coreAAgentFixture(dependencies[1]);
+    return Reflect.construct(target, dependencies);
+  },
+});
 
 describe('Unified assistant orchestration', () => {
   const user = { sub: 'actor-assistant', email: 'demo@xone.vn', role: 'USER' };
@@ -305,9 +404,18 @@ describe('Unified assistant orchestration', () => {
             },
           };
         }
-        // Deliberately suggest the wrong active task. Gateway follow-up
-        // resolution must use the persisted candidate metadata instead.
-        return { plan: { tasks: [{ domain: 'healthcare', goal: 'Đặt lịch khám thần kinh', normalized_request: 'Đặt lịch khám thần kinh sáng mai', extracted_slots: { department: 'thần kinh' } }] } };
+        if (planningCalls === 2) {
+          return {
+            planning_decision: versionedDecision({
+              tasks: [],
+              clarification_need: {
+                reason: 'The selection target is ambiguous across active tasks.',
+                missing_fields: ['selection_domain'],
+              },
+            }),
+          };
+        }
+        return { plan: { tasks: [{ domain: 'food', goal: 'Chọn quán phở đầu tiên', normalized_request: 'Chọn quán phở đầu tiên', extracted_slots: { selection_index: 0 } }] } };
       }),
       chat: jest.fn()
         .mockResolvedValueOnce({ response_type: 'options', message: 'Có quán phở phù hợp.', data: { items: [{ name: 'Phở bò', price: 50000, restaurant: { name: 'Quán Phở Thật' } }] }, state_updates: { restaurant_candidates: [{ id: 'food-candidate-1' }, { id: 'food-candidate-2' }] } })
@@ -1050,7 +1158,7 @@ describe('Unified assistant orchestration', () => {
       validateCoreAHandoff: (planner: Record<string, unknown>) => void;
     };
     expect(() => internal.validateCoreAHandoff({
-      planning_decision: {
+      planning_decision: versionedDecision({
         tasks: [{
           task_ref: 0,
           domain: 'ride',
@@ -1063,7 +1171,7 @@ describe('Unified assistant orchestration', () => {
             confirmation_gate: 'SERVICE_DETAILS',
           }],
         }],
-      },
+      }),
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_CAPABILITY_REJECTED' }) }));
   });
 
@@ -1073,7 +1181,7 @@ describe('Unified assistant orchestration', () => {
       validateCoreAHandoff: (planner: Record<string, unknown>) => void;
     };
     expect(() => internal.validateCoreAHandoff({
-      planning_decision: {
+      planning_decision: versionedDecision({
         tasks: [{
           task_ref: 0,
           domain: 'ride',
@@ -1085,7 +1193,7 @@ describe('Unified assistant orchestration', () => {
             confirmation_gate: 'PAYMENT',
           }],
         }],
-      },
+      }),
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_CAPABILITY_REJECTED' }) }));
   });
 
@@ -1095,7 +1203,7 @@ describe('Unified assistant orchestration', () => {
       validateCoreAHandoff: (planner: Record<string, unknown>) => void;
     };
     expect(() => internal.validateCoreAHandoff({
-      planning_decision: {
+      planning_decision: versionedDecision({
         tasks: [{
           task_ref: 0,
           domain: 'food',
@@ -1108,7 +1216,7 @@ describe('Unified assistant orchestration', () => {
             confirmation_gate: 'SERVICE_DETAILS',
           }],
         }],
-      },
+      }),
     })).not.toThrow();
   });
 
@@ -1119,7 +1227,7 @@ describe('Unified assistant orchestration', () => {
     };
 
     expect(() => internal.validateCoreAHandoff({
-      planning_decision: { tasks: [], replan_directive: 'RETRY_WITHOUT_POLICY' },
+      planning_decision: versionedDecision({ replan_directive: 'RETRY_WITHOUT_POLICY' }),
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_REPLAN_REJECTED' }) }));
   });
 
@@ -1138,23 +1246,46 @@ describe('Unified assistant orchestration', () => {
     }
   });
 
-  it('bounds the legacy Core A handoff compatibility window', () => {
+  it('fails closed when the versioned Core A handoff is absent or unversioned', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {
       validateCoreAHandoff: (planner: Record<string, unknown>) => void;
     };
 
-    expect(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.owner).toBe('gateway-conversation');
-    expect(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.expiresAt).toBe('2026-12-31T00:00:00Z');
-    expect(() => internal.validateCoreAHandoff({
-      planning_decision: { tasks: [], contract_version: 'core-a.v1' },
-    })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+    for (const planner of [
+      {},
+      { plan: { tasks: [] } },
+      { planning_decision: { tasks: [] } },
+      { planning_decision: { tasks: [], contract_version: 'core-a.v1' } },
+    ]) {
+      expect(() => internal.validateCoreAHandoff(planner))
+        .toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+    }
 
-    const legacyValidation = () => internal.validateCoreAHandoff({ planning_decision: { tasks: [] } });
-    if (Date.now() < Date.parse(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.expiresAt)) {
-      expect(legacyValidation).not.toThrow();
-    } else {
-      expect(legacyValidation).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_PLAN_VERSION_REJECTED' }) }));
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: versionedDecision(),
+    })).not.toThrow();
+  });
+
+  it('rejects a versioned Core A handoff with missing required decision fields', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+    const requiredFields = [
+      'tasks',
+      'workflow_relation',
+      'confirmation_invalidated',
+      'blocked_task_refs',
+      'interaction_mode',
+      'discarded_task_refs',
+    ];
+
+    for (const field of requiredFields) {
+      const decision = versionedDecision();
+      delete decision[field];
+      expect(() => internal.validateCoreAHandoff({ planning_decision: decision }))
+        .toThrow(expect.objectContaining({ response: expect.objectContaining({ code: expect.stringMatching(/^AGENT_(?:PLAN|REPLAN)_/) }) }));
     }
   });
 
@@ -1207,12 +1338,12 @@ describe('Unified assistant orchestration', () => {
       validateCoreAHandoff: (planner: Record<string, unknown>) => void;
     };
     expect(() => internal.validateCoreAHandoff({
-      planning_decision: {
+      planning_decision: versionedDecision({
         tasks: [
           { task_ref: 0, domain: 'restaurant', disposition: 'READY', depends_on: [1], steps: [] },
           { task_ref: 1, domain: 'ride', disposition: 'READY', depends_on: [0], steps: [] },
         ],
-      },
+      }),
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_DEPENDENCY_REJECTED' }) }));
   });
 
@@ -1351,11 +1482,12 @@ describe('Unified assistant orchestration', () => {
       user,
       'cor-typed',
       'conv-typed',
+      expect.any(String),
     );
     expect(response.workflow_status).toBe('RUNNING');
   });
 
-  it('projects the persisted authoritative Food cart version into Core A facts', () => {
+  it('projects distinct Food and Restaurant snapshot identities and versions into Core A facts', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {
       authoritativeFacts: (task: Record<string, unknown>, taskRef: number) => Array<Record<string, unknown>>;
@@ -1377,6 +1509,27 @@ describe('Unified assistant orchestration', () => {
       resource_version: 7,
       source_task_ref: 0,
     }));
+
+    const restaurantFacts = internal.authoritativeFacts({
+      domain: 'restaurant',
+      authoritative: {
+        selected: { id: 'restaurant-1' },
+        availability: {
+          snapshot_id: 'availability:restaurant-1:snapshot-1',
+          resource_version: 'availability-v1:1',
+          expires_at: '2099-01-01T00:00:00Z',
+        },
+      },
+    }, 1);
+
+    expect(restaurantFacts).toContainEqual({
+      fact_type: 'resource_snapshot',
+      field: 'availability_version',
+      value: 'availability:restaurant-1:snapshot-1',
+      resource_version: 'availability-v1:1',
+      expires_at: '2099-01-01T00:00:00Z',
+      source_task_ref: 1,
+    });
   });
 
   it('traces Restaurant, Healthcare, and Ride dispatch to the validated Core A capability', async () => {

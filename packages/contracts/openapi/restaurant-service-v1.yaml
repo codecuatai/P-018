@@ -51,7 +51,7 @@ paths:
       responses:
         '200':
           description: Availability envelope
-          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/AvailabilityEnvelope'}}}
         '404': {description: Restaurant not found}
   /v1/reservation-holds:
     post:
@@ -216,6 +216,28 @@ components:
         start_at: {type: string, format: date-time}
         duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
         seating_type: {type: [string, 'null']}
+    AvailabilitySnapshot:
+      type: object
+      additionalProperties: false
+      required: [restaurant_id, start_at, end_at, party_size, available, table_code, snapshot_id, resource_version, observed_at, expires_at]
+      properties:
+        restaurant_id: {type: string}
+        start_at: {type: string, format: date-time}
+        end_at: {type: string, format: date-time}
+        party_size: {type: integer, minimum: 1}
+        available: {type: boolean}
+        table_code: {type: [string, 'null']}
+        snapshot_id: {type: string, minLength: 1, maxLength: 200}
+        resource_version: {type: string, minLength: 1, maxLength: 80}
+        observed_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+    AvailabilityEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: {$ref: '#/components/schemas/AvailabilitySnapshot'}
+        meta: {type: object, additionalProperties: true}
     HoldRequest:
       type: object
       required: [restaurant_id, party_size, start_at]

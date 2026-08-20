@@ -6,10 +6,34 @@ describe('Phase 9 assistant runtime acceptance', () => {
   const user = { sub: 'actor-phase9', email: 'phase9@xone.vn', role: 'USER' };
 
   function planner(tasks: Array<Record<string, unknown>>) {
+    const typedTasks = tasks.map((task, taskRef) => ({
+      task_ref: taskRef,
+      domain: task.domain,
+      operation: 'DISCOVER',
+      goal: task.goal,
+      normalized_request: task.normalized_request,
+      semantic_slots: Object.fromEntries(Object.entries(task.extracted_slots as Record<string, unknown>).map(([field, value]) => [field, { value, source: 'USER_EXPLICIT' }])),
+      depends_on: task.depends_on ?? [],
+      missing_information: [],
+      missing_authority: [],
+      steps: [],
+      disposition: 'READY',
+    }));
     return {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
         ? { assistant_message: 'Mình đã cập nhật trạng thái các dịch vụ.' }
-        : { plan: { tasks } }),
+        : {
+          planning_decision: {
+            contract_version: 'core-a.v1',
+            capability_catalog_version: 'gateway-observed.v1',
+            tasks: typedTasks,
+            workflow_relation: typedTasks.some((task) => (task.depends_on as unknown[]).length > 0) ? 'DEPENDENT_TASKS' : 'INDEPENDENT_TASKS',
+            confirmation_invalidated: false,
+            blocked_task_refs: [],
+            interaction_mode: 'service',
+            discarded_task_refs: [],
+          },
+        }),
     };
   }
 

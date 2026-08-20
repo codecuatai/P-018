@@ -70,7 +70,33 @@ describe('Unified Assistant Ride receipt recovery', () => {
     const agent = {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
         ? { assistant_message: 'Đã cập nhật chuyến xe.' }
-        : { plan: { tasks: [{ domain: 'ride', goal: 'Đặt xe', normalized_request: 'Đặt xe VinUni Ho Guom', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Ho Guom' } }] } }),
+        : {
+          planning_decision: {
+            contract_version: 'core-a.v1',
+            capability_catalog_version: 'gateway-observed.v1',
+            tasks: [{
+              task_ref: 0,
+              domain: 'ride',
+              operation: 'DISCOVER',
+              goal: 'Đặt xe',
+              normalized_request: 'Đặt xe VinUni Ho Guom',
+              semantic_slots: {
+                pickup_address: { value: 'VinUni', source: 'USER_EXPLICIT' },
+                dropoff_address: { value: 'Ho Guom', source: 'USER_EXPLICIT' },
+              },
+              depends_on: [],
+              missing_information: [],
+              missing_authority: [],
+              steps: [],
+              disposition: 'READY',
+            }],
+            workflow_relation: 'SINGLE_TASK',
+            confirmation_invalidated: false,
+            blocked_task_refs: [],
+            interaction_mode: 'service',
+            discarded_task_refs: [],
+          },
+        }),
       interpret: jest.fn().mockImplementation(async (_message: string, workflowId: string) => ({
         response: 'Đã đủ dữ liệu.',
         workflow_id: workflowId,

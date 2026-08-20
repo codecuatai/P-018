@@ -19,10 +19,10 @@ risk/gate drift, unsupported re-plan directives, and invalid blocked-task
 references. `WAIT_AND_RETRY_SAME_KEY` reuses the unchanged task revision;
 changed terms advance the revision. `confirmation_invalidated` removes pending
 evidence, the public confirmation card, and its action before re-planning.
-For the bounded rollout only, Gateway accepts a handoff missing both version
-fields until `2026-12-31T00:00:00Z`; the compatibility owner is
-`gateway-conversation`. A partially versioned handoff is always rejected, and
-the unversioned form is rejected automatically after expiry.
+Gateway requires `planning_decision`, `core-a.v1`, and the exact observed
+capability-catalog version on every service turn. Missing, partially versioned,
+unversioned, and mismatched handoffs are rejected immediately; there is no
+date-based validation bypass or legacy execution fallback.
 
 ## Unified assistant planner
 
@@ -42,9 +42,10 @@ confirmation.
 planner. It accepts one conversation turn and returns a Pydantic-validated
 compatibility `AssistantPlan` plus a typed `SemanticTurn` and
 `PlanningDecision`, each bounded to at most four tasks for Ride, Food,
-Restaurant, and Healthcare. The compatibility projection remains during the
-Gateway rollout; the typed path is executed for both Gemini output and the
-deterministic fallback. Core A is a deterministic kernel split across
+Restaurant, and Healthcare. The compatibility projection may remain for
+non-executing consumers, but Gateway orchestration consumes only the versioned
+`PlanningDecision`; both Gemini output and deterministic fallback traverse that
+typed path. Core A is a deterministic kernel split across
 `assistant/contracts.py`, `assistant/understanding/`,
 `assistant/planning/`, and `assistant/policy/`; it proposes capabilities but
 never dispatches them. It can express a bounded dependency such as Restaurant selection
@@ -82,6 +83,12 @@ Gateway treats its persisted task graph as untrusted runtime state too. It
 rejects duplicate, self-referential, and dangling task dependencies before
 propagating a failure through a bounded worklist of dependents. This preserves
 the one-way `BLOCKED` transition without relying on an open-ended retry loop.
+
+Agent proposal IDs are deterministic trace references over workflow,
+correlation, capability, semantic arguments, and proposal index. They are not
+trusted idempotency keys. Gateway derives the downstream execution identity
+from actor-scoped persisted task state, its revision, and the proposal index;
+the domain still enforces exact replay and changed-payload conflict.
 
 Slot normalization is domain-specific: Ride accepts only bounded addresses and
 `BIKE`/`CAR_4`/`CAR_7`; Restaurant and Healthcare require timezone-aware

@@ -24,10 +24,11 @@ the check is not yet bidirectional full-registry parity.
 
 The canonical `ToolRequest` requires `tool_name`, `risk_level`, `arguments`,
 `workflow_id`, `tool_call_id`, and `schema_version`; write-capable requests
-also carry an idempotency key. The registry owns risk and confirmation
-metadata, so a model cannot elevate a read into a write or supply authoritative
-IDs, prices, availability, coordinates, status, payment, or final-success
-claims.
+receive their idempotency key from the Gateway execution boundary, never from
+Agent output. `tool_call_id` is a validated trace reference only. The registry
+owns risk and confirmation metadata, so a model cannot elevate a read into a
+write or supply authoritative IDs, prices, availability, coordinates, status,
+payment, or final-success claims.
 
 ## Domain execution boundaries
 

@@ -66,7 +66,6 @@ Source: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, and t
 | Gateway | POST | `/api/v1/healthcare-workflows/payment` | Web/mobile/demo tests | Bearer demo token, idempotency, actor-scoped Healthcare call | `LEGACY_COMPAT` | Migrate to the `healthcare_payment` assistant action. |
 | Gateway | POST | `/api/v1/healthcare-workflows/confirm` | Web/mobile/demo tests | Bearer demo token, confirmation, idempotency | `LEGACY_COMPAT` | Migrate to the `healthcare_confirm` assistant action. |
 | Gateway | GET | `/internal/tools` | Agent service | `X-Internal-Service-Token` | `INTERNAL` | Agent capability discovery only; never expose to browsers. |
-| Gateway | POST | `/internal/tools/execute` | Agent service | Internal token plus actor assertion; transaction tools are blocked | `INTERNAL` | Agent continues to emit proposals; final actions go through public Gateway confirmation. |
 
 The checked-in `gateway-v1.yaml` documents the Phase 2–9 Gateway additions above. A route may still be runtime-dependent on a domain service or external location provider; that is reported as a degraded/partial response or an explicit unverified runtime check, not as fabricated data. The current live acceptance exercised the public Food, Ride, Restaurant and Healthcare transactions, including idempotent replay and actor-scoped history.
 
@@ -140,7 +139,7 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | GET | `/health/ready` | none; readiness | `INTERNAL` |
 | GET | `/v1/restaurants` | Internal token plus actor assertion | `INTERNAL` |
 | GET | `/v1/restaurants/{restaurant_id}` | Internal token plus actor assertion | `INTERNAL` |
-| POST | `/v1/restaurants/{restaurant_id}/availability` | Internal token plus actor assertion | `INTERNAL` |
+| POST | `/v1/restaurants/{restaurant_id}/availability` | Internal token plus actor assertion; 30-second snapshot identity/version/expiry | `INTERNAL` |
 | POST | `/v1/reservation-holds` | Internal token, actor assertion, idempotency | `INTERNAL` |
 | POST | `/v1/reservations` | Internal token, actor assertion, idempotency, Gateway confirmation | `INTERNAL` |
 | GET | `/v1/reservations/{reservation_id}` | Internal token plus actor assertion | `INTERNAL` |
