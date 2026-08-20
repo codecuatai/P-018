@@ -1,0 +1,47 @@
+{
+  "schema_version": "1",
+  "date": "2026-08-20",
+  "base_commit": "212c263",
+  "worktree_state": "uncommitted remediation changes",
+  "environment": {
+    "python": "3.12.10",
+    "node": "22.14.0",
+    "docker": "29.4.0"
+  },
+  "local_gates": {
+    "agent": {"passed": 181, "skipped": 1},
+    "gateway": {"passed": 172, "skipped": 7, "suites_passed": 34, "suites_skipped": 2},
+    "food": {"passed": 38, "skipped": 3},
+    "ride": {"passed": 31, "skipped": 0},
+    "environment_variables": {"root": 120, "compose": 112, "status": "PASS"},
+    "migration_files": {"count": 28, "status": "PASS"},
+    "compose_render": "PASS",
+    "gateway_build": "PASS",
+    "ruff": "PASS",
+    "openapi_yaml_parse": "PASS"
+  },
+  "deterministic_compatibility": {
+    "dataset_cases": 200,
+    "tool_exact": 107,
+    "tool_exact_rate": 0.535,
+    "domain_cases": 109,
+    "domain_correct": 65,
+    "domain_rate": 0.5963,
+    "planner_p95_ms": 0.56,
+    "classification": "compatibility baseline only; not provider release evidence"
+  },
+  "core_a_legacy_handoff": {
+    "owner": "gateway-conversation",
+    "expires_at": "2026-12-31T00:00:00Z",
+    "partial_versioning": "REJECTED",
+    "post_expiry": "REJECTED"
+  },
+  "release_status": "BLOCKED_LIVE_GATES",
+  "blocked_gates": [
+    "Agent PostgreSQL restart/outage/reconnect test requires AGENT_TEST_DATABASE_URL for an empty disposable database.",
+    "Food and Gateway PostgreSQL integration suites require disposable databases.",
+    "The repeated 20-case provider release runner requires a live Gemini-mode Agent and a private internal token.",
+    "Compose services were healthy when inspected, but their images predate the patch and the PostgreSQL stack was not established as disposable; no rebuild, write E2E, restart, or rollback exercise was run."
+  ],
+  "privacy": "No prompt, provider response, token, cookie, private identifier, production data, or chain-of-thought is present."
+}

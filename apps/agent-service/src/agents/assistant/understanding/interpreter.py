@@ -4,6 +4,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from src.agents.confirmation import is_explicit_confirmation
+
 from ..contracts import (
     Domain,
     FoodSemanticSlots,
@@ -105,6 +107,7 @@ def semantic_turn_from_plan(
                 normalized_request=normalized,
                 slots=_slots(domain, value.get("extracted_slots")),
                 references=references,
+                explicit_confirmation_language=is_explicit_confirmation(normalized),
             )
         )
     safe_language = language if language in {"vi", "en", "mixed", "unknown"} else "unknown"

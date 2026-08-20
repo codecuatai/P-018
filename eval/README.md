@@ -10,6 +10,16 @@ accuracy, satisfaction, or latency claims.
   available.
 - `eval/gate_g2_mvp.py` runs the public-Gateway cases and writes only
   sanitized user-visible summaries.
+- `eval/core_agent_deterministic.py` reports aggregate compatibility and p95
+  latency over the 200 checked-in synthetic cases. It never prints case
+  prompts and does not count as the required provider-backed release set.
+- `eval/core_agent_provider_release.py` runs a versioned 20-case set twice at
+  the typed Agent boundary and enforces provider use, classification/DAG,
+  semantic-slot, risk/gate, fallback, and p95 thresholds. Its artifact contains
+  synthetic case IDs and aggregate flags only.
+- [Core Agent remediation report](results/core-agent-remediation-2026-08-20.md)
+  records the deterministic, contract, security, and currently blocked live
+  gates for the 2026-08-20 implementation pass.
 
 ## Prerequisites and safe rerun
 
@@ -28,14 +38,25 @@ accuracy, satisfaction, or latency claims.
    ```
 
 4. For a real-Gemini attempt, put the key only in private root `.env`, set
-   `AGENT_MODEL_MODE=gemini`, restart Agent, and use E01 or E02. Those
-   multi-domain prompts avoid the ordinary one-task deterministic fast path.
+   `AGENT_MODEL_MODE=gemini`, and restart Agent. The current Agent uses the
+   configured provider for planning whenever Gemini mode and a key are both
+   present; provider failure falls back conservatively and is reported by the
+   safe `decision_source` field.
    Verify the internal Agent status from the Compose network without printing
    the internal token, then record only safe fields:
    `model_mode`, `api_key_configured`, `last_model_used`, `fallback_used`, and
    `last_model_call_status`. A case counts as real-LLM evidence only when its
    public result is paired with `decision_source=model` or equivalent safe
    diagnostics showing a successful model call without fallback.
+
+5. Run the required repeated 20-case provider set with the private internal
+   token supplied only through the process environment:
+
+   ```powershell
+   $env:E2E_AGENT_URL = 'http://localhost:8100'
+   $env:E2E_INTERNAL_SERVICE_TOKEN = '<private local internal token>'
+   python eval/core_agent_provider_release.py --repetitions 2
+   ```
 
 The public Gateway intentionally hides planner diagnostics; do not add
 debug-only fields to its public response for evaluation. Do not record tokens,

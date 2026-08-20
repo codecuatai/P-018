@@ -2,7 +2,7 @@ import { BadGatewayException } from '@nestjs/common';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-import { ToolRegistry } from '../../src/modules/tools/tool-registry';
+import { TOOL_REGISTRY_COMPATIBILITY, ToolRegistry } from '../../src/modules/tools/tool-registry';
 
 describe('ToolRegistry', () => {
   const registry = new ToolRegistry();
@@ -97,6 +97,13 @@ describe('ToolRegistry', () => {
         classification: expected.classification,
       });
     }
+    const canonicalNames = new Set(contract.tools.map((tool) => String(tool.name)));
+    const runtimeOnly = new Set(
+      [...runtime.keys()].filter((name) => !canonicalNames.has(name)),
+    );
+    expect(runtimeOnly).toEqual(TOOL_REGISTRY_COMPATIBILITY.names);
+    expect(TOOL_REGISTRY_COMPATIBILITY.owner).toBeTruthy();
+    expect(Date.parse(TOOL_REGISTRY_COMPATIBILITY.expiresOn)).toBeGreaterThan(Date.now());
   });
 
   it('recognizes canonical Food, Ride, Restaurant, and Healthcare names', () => {

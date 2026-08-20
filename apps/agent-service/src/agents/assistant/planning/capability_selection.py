@@ -212,6 +212,8 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
             ),
         }[task.domain]
     if task.domain == Domain.FOOD:
+        if getattr(task.semantic_slots, "selection", None) is not None:
+            return StepChoice("add_to_cart", PlanningPhase.DRAFT_WRITE, "Thêm lựa chọn authoritative vào giỏ")
         if not _has(facts, "restaurant_id"):
             return StepChoice("search_food", PlanningPhase.DISCOVERY, "Tìm món hoặc nhà hàng")
         if not _has(facts, "menu_item_id"):
@@ -227,6 +229,8 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
             return StepChoice("preview_order", PlanningPhase.QUOTE_OR_PREVIEW, "Tạo order preview authoritative")
         return StepChoice(None, PlanningPhase.SERVICE_CONFIRMATION, "Chờ xác nhận chi tiết đơn")
     if task.domain == Domain.RESTAURANT:
+        if getattr(task.semantic_slots, "selection", None) is not None:
+            return StepChoice("restaurant.create_hold", PlanningPhase.DRAFT_WRITE, "Kiểm tra và giữ bàn đã chọn")
         if not _has(facts, "restaurant_id"):
             return StepChoice("restaurant.search", PlanningPhase.DISCOVERY, "Tìm nhà hàng")
         if not _has(facts, "availability_version", fresh=True):
@@ -235,6 +239,8 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
             return StepChoice("restaurant.create_hold", PlanningPhase.DRAFT_WRITE, "Giữ bàn")
         return StepChoice("restaurant.create_reservation", PlanningPhase.FINAL_COMMIT, "Tạo reservation")
     if task.domain == Domain.HEALTHCARE:
+        if getattr(task.semantic_slots, "selection", None) is not None:
+            return StepChoice("healthcare.hold_slot", PlanningPhase.DRAFT_WRITE, "Giữ slot khám đã chọn")
         if not _has(facts, "department_id"):
             return StepChoice("healthcare.list_departments", PlanningPhase.DISCOVERY, "Tìm khoa")
         if not _has(facts, "slot_id", fresh=True):

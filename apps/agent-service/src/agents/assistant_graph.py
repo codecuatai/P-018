@@ -11,6 +11,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.agents.assistant.contracts import (
+    AuthoritativeFact,
     CapabilitySnapshot,
     CoreAInput,
     Domain,
@@ -172,6 +173,11 @@ def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
                     phase=str(raw.get("phase") or "PLANNING"),
                     revision=max(0, int(raw.get("revision", 0))),
                     depends_on=[item for item in raw.get("depends_on", []) if isinstance(item, int)],
+                    facts=[
+                        AuthoritativeFact.model_validate(item)
+                        for item in raw.get("facts", [])
+                        if isinstance(item, dict)
+                    ][:32],
                 )
             )
         except (TypeError, ValueError):

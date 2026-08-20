@@ -29,9 +29,11 @@ async def test_cart_total_and_multi_restaurant_pickup_route() -> None:
             "quantity": 2,
             "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
         },
+        "usr_demo_001",
+        "add-total-pho",
     )
     assert cart["total"] == (65_000 + 15_000) * 2
-    cart = await food.add_item(cart["id"], {"menu_item_id": "item_bun_cha", "quantity": 1, "selected_options": []})
+    cart = await food.add_item(cart["id"], {"menu_item_id": "item_bun_cha", "quantity": 1, "selected_options": []}, "usr_demo_001", "add-total-bun")
     assert {item["restaurant"]["id"] for item in cart["items"]} == {"res_pho_hanoi", "res_bun_cha"}
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert [stop["id"] for stop in preview["delivery"]["pickup_stops"]] == ["res_pho_hanoi", "res_bun_cha"]
@@ -67,6 +69,8 @@ async def test_cart_items_retain_rich_catalog_fields_through_update_and_reprice(
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-rich",
     )
     cart_item = cart["items"][0]
     assert cart_item["description"] == repository.items["item_pho_bo"]["description"]
@@ -91,7 +95,7 @@ async def test_cart_items_retain_rich_catalog_fields_through_update_and_reprice(
             "price": 70000,
         }
     )
-    updated = await food.update_item(cart["id"], cart_item["id"], {"quantity": 2})
+    updated = await food.update_item(cart["id"], cart_item["id"], {"quantity": 2}, "usr_demo_001", "update-rich")
     updated_item = updated["items"][0]
     assert updated_item["quantity"] == 2
     assert updated_item["selected_options"] == cart_item["selected_options"]
@@ -127,6 +131,7 @@ async def test_rich_cart_fields_do_not_bypass_actor_scoping_or_cart_idempotency(
                 "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
             },
             "usr_two",
+            "add-wrong-actor",
         )
 
     retry = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-actor-key")
@@ -140,7 +145,12 @@ async def test_required_option_and_preview() -> None:
     food = make_service()
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-required-option-key")
     with pytest.raises(DomainError, match="Kích thước"):
-        await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": []})
+        await food.add_item(
+            cart["id"],
+            {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": []},
+            "usr_demo_001",
+            "add-missing-option",
+        )
     await food.add_item(
         cart["id"],
         {
@@ -148,6 +158,8 @@ async def test_required_option_and_preview() -> None:
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-valid-option",
     )
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert preview["snapshot_hash"]
@@ -165,6 +177,8 @@ async def test_core_saved_address_is_received_as_an_immutable_food_snapshot() ->
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-core-address",
     )
     snapshot = {
         "user_id": "usr_demo_001",
@@ -218,6 +232,8 @@ async def test_quote_hash_ignores_catalog_provenance_but_keeps_commercial_terms(
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-provenance",
     )
 
     first = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
@@ -252,8 +268,10 @@ async def test_order_and_voucher_are_atomic_and_idempotent() -> None:
             "quantity": 2,
             "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
         },
+        "usr_demo_001",
+        "add-order",
     )
-    cart = await food.apply_voucher(cart["id"], "XONE50")
+    cart = await food.apply_voucher(cart["id"], "XONE50", "usr_demo_001", "voucher-order")
     order = await food.create_order(
         {
             "cart_id": cart["id"],
@@ -302,9 +320,11 @@ async def test_concurrent_voucher_redemption_has_one_winner() -> None:
                     "quantity": 2,
                     "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
                 },
+                user,
+                f"add-concurrent-{user}",
             )
         )
-        await first.apply_voucher(carts[-1]["id"], "XONE50")
+        await first.apply_voucher(carts[-1]["id"], "XONE50", user, f"voucher-concurrent-{user}")
 
     async def place(service: FoodApplicationService, cart: dict, user: str, address: str, key: str) -> str:
         try:
@@ -351,6 +371,8 @@ async def test_preview_reprices_current_catalog_after_cart_creation() -> None:
             "quantity": 1,
             "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
         },
+        "usr_demo_001",
+        "add-reprice",
     )
     repository.items["item_pho_bo"]["price"] = 70000
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")

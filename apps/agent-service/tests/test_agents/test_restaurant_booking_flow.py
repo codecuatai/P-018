@@ -76,7 +76,7 @@ async def test_availability_confirmation_creates_hold_then_reservation():
     }
     hold_request = await classify_and_extract(
         {
-            "query": "co",
+            "query": "đồng ý",
             "workflow_id": "wf-flow",
             "turn_id": "3",
             "intent": "restaurant_booking",

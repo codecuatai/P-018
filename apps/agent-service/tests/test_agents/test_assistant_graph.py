@@ -470,6 +470,39 @@ async def test_deterministic_graph_runs_the_same_typed_core_a_pipeline() -> None
 
 
 @pytest.mark.asyncio
+async def test_gateway_facts_advance_core_a_without_entering_model_input() -> None:
+    graph = build_assistant_graph()
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe từ VinUni đến Hồ Gươm",
+            "conversation_state": {
+                "tasks": [
+                    {
+                        "task_ref": 0,
+                        "domain": "ride",
+                        "phase": "IN_PROGRESS",
+                        "facts": [
+                            {
+                                "fact_type": "quote",
+                                "field": "quote_id",
+                                "value": "quote_trusted",
+                                "source_task_ref": 0,
+                                "resource_version": "quote-v1",
+                                "expires_at": "2099-01-01T00:00:00+07:00",
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+
+    step = result["planning_decision"]["tasks"][0]["steps"][0]
+    assert step["capability"] == "ride.booking.prepare"
+    assert "quote_trusted" not in result["plan"]["tasks"][0]["extracted_slots"].values()
+
+
+@pytest.mark.asyncio
 async def test_model_path_restores_explicit_route_and_vehicle_slots() -> None:
     graph = build_assistant_graph(llm=PartialRidePlanner())
     result = await graph.ainvoke({"query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ", "conversation_state": {}})

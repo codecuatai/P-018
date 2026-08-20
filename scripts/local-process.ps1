@@ -30,7 +30,7 @@ function Import-LocalEnvironment {
 
 function Set-LocalServiceEnvironment {
     if ($LocalHostMode) {
-        foreach ($name in @("AGENT_SERVICE_URL", "RIDE_SERVICE_URL", "RESTAURANT_SERVICE_URL", "HEALTHCARE_SERVICE_URL", "FOOD_SERVICE_URL", "API_GATEWAY_INTERNAL_URL", "CORE_DATABASE_URL", "AGENT_DATABASE_URL", "RIDE_DATABASE_URL", "RESTAURANT_DATABASE_URL", "HEALTHCARE_DATABASE_URL", "FOOD_DATABASE_URL")) {
+        foreach ($name in @("AGENT_SERVICE_URL", "RIDE_SERVICE_URL", "RESTAURANT_SERVICE_URL", "HEALTHCARE_SERVICE_URL", "FOOD_SERVICE_URL", "CORE_DATABASE_URL", "AGENT_DATABASE_URL", "RIDE_DATABASE_URL", "RESTAURANT_DATABASE_URL", "HEALTHCARE_DATABASE_URL", "FOOD_DATABASE_URL")) {
             $current = [Environment]::GetEnvironmentVariable($name, "Process")
             if ($current) {
                 $current = $current -replace "(?<=://)(postgres|api-gateway|agent-service|ride-service|restaurant-service|healthcare-service|food-service)(?=[:/])", "localhost"
@@ -38,7 +38,6 @@ function Set-LocalServiceEnvironment {
                 [Environment]::SetEnvironmentVariable($name, $current, "Process")
             }
         }
-        [Environment]::SetEnvironmentVariable("API_GATEWAY_INTERNAL_URL", "http://localhost:3000", "Process")
     }
     if ($DatabaseKey) {
         $databaseUrl = [Environment]::GetEnvironmentVariable($DatabaseKey, "Process")

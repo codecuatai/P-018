@@ -46,6 +46,14 @@ def require_actor(
     return x_actor_id
 
 
+def require_idempotency_key(
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=8, max_length=128
+    ),
+) -> str:
+    return idempotency_key
+
+
 @router.get("/internal/ops/summary", dependencies=[Depends(require_internal)])
 async def ops_summary(food: FoodApplicationService = Depends(service)):
     return {"data": await food.ops_summary()}
@@ -105,16 +113,12 @@ async def search(query: SearchQuery = Depends(), food: FoodApplicationService = 
 @router.post("/carts")
 async def create_cart(
     payload: CreateCartRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    idempotency_key: str = Depends(require_idempotency_key),
     actor_id: str = Depends(require_actor),
     food: FoodApplicationService = Depends(service),
 ):
     if actor_id != payload.user_id:
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "detail": "Actor does not match cart owner."})
-    if not idempotency_key:
-        raise HTTPException(
-            status_code=422, detail={"code": "IDEMPOTENCY_KEY_REQUIRED", "detail": "Idempotency-Key is required."}
-        )
     return {"data": await food.create_cart(actor_id, payload.restaurant_id, idempotency_key)}
 
 
@@ -134,10 +138,11 @@ async def get_cart(
 async def add_item(
     cart_id: str,
     payload: AddCartItemRequest,
+    idempotency_key: str = Depends(require_idempotency_key),
     actor_id: str = Depends(require_actor),
     food: FoodApplicationService = Depends(service),
 ):
-    return {"data": await food.add_item(cart_id, payload.model_dump(), actor_id)}
+    return {"data": await food.add_item(cart_id, payload.model_dump(), actor_id, idempotency_key)}
 
 
 @router.patch("/carts/{cart_id}/items/{cart_item_id}")
@@ -145,37 +150,51 @@ async def update_item(
     cart_id: str,
     cart_item_id: str,
     payload: UpdateCartItemRequest,
+    idempotency_key: str = Depends(require_idempotency_key),
     actor_id: str = Depends(require_actor),
     food: FoodApplicationService = Depends(service),
 ):
-    return {"data": await food.update_item(cart_id, cart_item_id, payload.model_dump(exclude_none=True), actor_id)}
+    return {
+        "data": await food.update_item(
+            cart_id,
+            cart_item_id,
+            payload.model_dump(exclude_none=True),
+            actor_id,
+            idempotency_key,
+        )
+    }
 
 
 @router.delete("/carts/{cart_id}/items/{cart_item_id}")
 async def remove_item(
     cart_id: str,
     cart_item_id: str,
+    idempotency_key: str = Depends(require_idempotency_key),
     actor_id: str = Depends(require_actor),
     food: FoodApplicationService = Depends(service),
 ):
-    return {"data": await food.remove_item(cart_id, cart_item_id, actor_id)}
+    return {"data": await food.remove_item(cart_id, cart_item_id, actor_id, idempotency_key)}
 
 
 @router.post("/carts/{cart_id}/voucher")
 async def apply_voucher(
     cart_id: str,
     payload: VoucherRequest,
+    idempotency_key: str = Depends(require_idempotency_key),
     actor_id: str = Depends(require_actor),
     food: FoodApplicationService = Depends(service),
 ):
-    return {"data": await food.apply_voucher(cart_id, payload.code, actor_id)}
+    return {"data": await food.apply_voucher(cart_id, payload.code, actor_id, idempotency_key)}
 
 
 @router.delete("/carts/{cart_id}/voucher")
 async def remove_voucher(
-    cart_id: str, actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)
+    cart_id: str,
+    idempotency_key: str = Depends(require_idempotency_key),
+    actor_id: str = Depends(require_actor),
+    food: FoodApplicationService = Depends(service),
 ):
-    return {"data": await food.remove_voucher(cart_id, actor_id)}
+    return {"data": await food.remove_voucher(cart_id, actor_id, idempotency_key)}
 
 
 @router.post("/delivery/quote")

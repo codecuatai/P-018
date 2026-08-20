@@ -172,9 +172,11 @@ async def test_address_discovery_reselects_original_quote_tool() -> None:
             "workflow_context": {"restaurant_id": "restaurant_opaque_7"},
         }
     )
-    assert gateway.calls == ["list_food_delivery_addresses", "quote_delivery"]
-    assert result["response_type"] == "options"
-    assert result["data"]["address"]["id"] == "address_opaque_7"
+    assert gateway.calls == []
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "list_food_delivery_addresses",
+        "quote_delivery",
+    ]
 
 
 @pytest.mark.asyncio
@@ -190,9 +192,11 @@ async def test_address_discovery_reselects_original_prepare_tool() -> None:
             "workflow_context": {"restaurant_id": "restaurant_opaque_8", "cart_id": "cart_opaque_8"},
         }
     )
-    assert gateway.calls == ["list_food_delivery_addresses", "prepare_food_order_confirmation"]
-    assert result["response_type"] == "confirmation_form"
-    assert result["data"]["id"] == "confirmation_opaque_7"
+    assert gateway.calls == []
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "list_food_delivery_addresses",
+        "prepare_food_order_confirmation",
+    ]
 
 
 @pytest.mark.asyncio
@@ -233,5 +237,5 @@ async def test_nested_tool_calls_enforce_the_hard_maximum(monkeypatch: pytest.Mo
         }
     )
 
-    assert gateway.calls == ["view_menu_item", "create_cart"]
+    assert gateway.calls == []
     assert result["data"]["code"] == "TOOL_CALL_LIMIT"

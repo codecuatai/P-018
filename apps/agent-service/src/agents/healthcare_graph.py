@@ -7,6 +7,7 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
+from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.healthcare_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
@@ -115,14 +116,6 @@ def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dic
             if tool_result.get(key) is not None:
                 slots[key] = tool_result[key]
     return {key: value for key, value in slots.items() if value not in (None, "")}
-
-
-def _is_confirmation(query: str) -> bool:
-    folded = _fold(query).strip()
-    return any(
-        term in folded
-        for term in ("xac nhan", "x ac nhan", "dong y", "dat lich", "giu khung", "giu slot", "tiep tuc", "ok", "duoc")
-    )
 
 
 def _tool_request(
@@ -245,9 +238,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             "outcome": _tool_outcome(context.get("tool_name"), tool_result),
         }
 
-    if slots.get("appointment_id") and (
-        any(term in folded for term in ("xac nhan lich", "xac nhan dat", "hoan tat lich")) or "xac nhan" in folded
-    ):
+    if slots.get("appointment_id") and is_explicit_confirmation(query):
         return {
             "intent": "healthcare_booking",
             "slots": slots,
@@ -313,7 +304,7 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
             "missing_slots": ["patient_id"],
             "status": "NEEDS_INPUT",
         }
-    if not _is_confirmation(query):
+    if not is_explicit_confirmation(query):
         return {
             "intent": "healthcare_booking",
             "slots": slots,

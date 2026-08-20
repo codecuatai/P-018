@@ -21,7 +21,9 @@ docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/004_food_authoritative_operations.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/005_food_idempotency_eligibility.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/006_food_catalog_provenance.sql
-docker compose --env-file $env_file exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/001_agent_workflow_states.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/007_food_cart_write_idempotency.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/001_agent_workflow_states.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/002_agent_run_metadata.sql
 echo 'Core, Agent and Food migrations applied.'
 docker compose --env-file "$env_file" exec -T restaurant-service alembic upgrade head
 echo 'Restaurant Service migrations applied.'

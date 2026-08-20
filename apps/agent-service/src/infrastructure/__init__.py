@@ -1,3 +1,15 @@
-from src.infrastructure.database import close_pools, get_async_pool, get_sync_pool, init_db_schema
+from src.infrastructure.database import (
+    AgentPersistenceUnavailableError,
+    close_pool,
+    get_async_pool,
+    persistence_ready,
+    reset_pool,
+)
 
-__all__ = ["get_sync_pool", "get_async_pool", "init_db_schema", "close_pools"]
+__all__ = [
+    "AgentPersistenceUnavailableError",
+    "close_pool",
+    "get_async_pool",
+    "persistence_ready",
+    "reset_pool",
+]

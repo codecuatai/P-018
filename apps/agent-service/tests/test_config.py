@@ -8,6 +8,7 @@ def test_service_config_reads_process_environment() -> None:
     settings = get_settings()
     assert settings.service_port == 8001
     assert settings.database_url.endswith("/xone_agent")
+    assert settings.agent_persistence_mode == "memory"
 
 
 def test_service_config_fails_when_token_missing(monkeypatch: pytest.MonkeyPatch) -> None:
