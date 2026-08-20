@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from collections.abc import Iterator
@@ -210,6 +209,7 @@ def test_langfuse_adapter_passes_session_user_and_io(
 ) -> None:
     calls: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
+    prop_calls: list[dict[str, Any]] = []
 
     class FakeObservation:
         def update(self, **kwargs: Any) -> None:
@@ -218,6 +218,13 @@ def test_langfuse_adapter_passes_session_user_and_io(
     class FakeContext:
         def __enter__(self) -> FakeObservation:
             return FakeObservation()
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+    class FakePropagateContext:
+        def __enter__(self) -> None:
+            return None
 
         def __exit__(self, *_args: Any) -> None:
             return None
@@ -239,6 +246,10 @@ def test_langfuse_adapter_passes_session_user_and_io(
     monkeypatch.setattr(
         "src.observability.telemetry.Langfuse",
         FakeLangfuse,
+    )
+    monkeypatch.setattr(
+        "src.observability.telemetry.propagate_attributes",
+        lambda **kwargs: FakePropagateContext() if not prop_calls.append(kwargs) else None,
     )
     telemetry = LangfuseTelemetry(
         public_key="test-public",
@@ -274,10 +285,11 @@ def test_langfuse_adapter_passes_session_user_and_io(
         )
 
     observation_call = next(item["observation"] for item in calls if "observation" in item)
-    assert observation_call["session_id"] == "conv-12345"
-    assert observation_call["user_id"] == "user-999"
+    assert len(prop_calls) == 1
+    assert prop_calls[0]["session_id"] == "conv-12345"
+    assert prop_calls[0]["user_id"] == "user-999"
+    assert prop_calls[0]["tags"] == ["mode:plan", "env:development"]
     assert observation_call["input"] == {"user_message": "đặt xe máy"}
-    assert observation_call["tags"] == ["mode:plan", "env:development"]
     assert updates[0]["output"] == {"assistant_message": "Đã đặt xe cho bạn"}
 
 
@@ -301,7 +313,7 @@ def test_core_a_emits_human_readable_decision_flow(
     assert names[:2] == ["planner.route", "core_a.validate"]
     assert any("core_a.task" in name for name in names)
     assert result["planning_decision"]["contract_version"] == "core-a.v1"
-    
+
     planner_event = next(e for e in telemetry.events if e["name"] == "planner.route")
     assert "updates" in planner_event
     plan_output = planner_event["updates"][0]["output"]

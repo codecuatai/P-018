@@ -37,7 +37,6 @@ from src.services.llm import (
     provider_error_category,
 )
 
-
 logger = logging.getLogger(__name__)
 
 SUPPORTED_DOMAINS = ("ride", "food", "restaurant", "healthcare")
