@@ -27,10 +27,44 @@ def test_delivery_quote_rounds_and_rejects_out_of_range() -> None:
 
 def test_voucher_fixed_percentage_and_expired() -> None:
     now = datetime.now(UTC)
-    assert calculate_discount({"discount_type": "fixed", "discount_value": 20_000, "minimum_order_amount": 1, "expires_at": now + timedelta(days=1)}, 100_000, now) == 20_000
-    assert calculate_discount({"discount_type": "percentage", "discount_value": 20, "maximum_discount": 30_000, "minimum_order_amount": 1, "expires_at": now + timedelta(days=1)}, 200_000, now) == 30_000
+    assert (
+        calculate_discount(
+            {
+                "discount_type": "fixed",
+                "discount_value": 20_000,
+                "minimum_order_amount": 1,
+                "expires_at": now + timedelta(days=1),
+            },
+            100_000,
+            now,
+        )
+        == 20_000
+    )
+    assert (
+        calculate_discount(
+            {
+                "discount_type": "percentage",
+                "discount_value": 20,
+                "maximum_discount": 30_000,
+                "minimum_order_amount": 1,
+                "expires_at": now + timedelta(days=1),
+            },
+            200_000,
+            now,
+        )
+        == 30_000
+    )
     with pytest.raises(DomainError, match="hết hạn"):
-        calculate_discount({"discount_type": "fixed", "discount_value": 20_000, "minimum_order_amount": 1, "expires_at": now - timedelta(seconds=1)}, 100_000, now)
+        calculate_discount(
+            {
+                "discount_type": "fixed",
+                "discount_value": 20_000,
+                "minimum_order_amount": 1,
+                "expires_at": now - timedelta(seconds=1),
+            },
+            100_000,
+            now,
+        )
 
 
 def test_order_transition_policy() -> None:

@@ -867,7 +867,9 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             "troi lanh the nay",
             "mua lanh the nay",
         ),
-    ) and not _has_any(lowered, ("giao ve", "ship", "dat mon", "cho toi", "tim mon", "an trua", "an sang", "an toi", "goi y cho toi"))
+    ) and not _has_any(
+        lowered, ("giao ve", "ship", "dat mon", "cho toi", "tim mon", "an trua", "an sang", "an toi", "goi y cho toi")
+    )
     if advisory:
         weather_note = (
             "Nếu đúng là trời đang mưa lạnh, " if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh")) else ""

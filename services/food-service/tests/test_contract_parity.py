@@ -19,7 +19,9 @@ def runtime_business_operations() -> set[tuple[str, str]]:
 
 
 def contract_operations() -> set[tuple[str, str]]:
-    contract = (Path(__file__).resolve().parents[3] / "packages/contracts/openapi/food-vertical-slice.yaml").read_text(encoding="utf-8")
+    contract = (Path(__file__).resolve().parents[3] / "packages/contracts/openapi/food-vertical-slice.yaml").read_text(
+        encoding="utf-8"
+    )
     operations: set[tuple[str, str]] = set()
     current_path: str | None = None
     for line in contract.splitlines():

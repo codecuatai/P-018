@@ -1,15 +1,15 @@
+from datetime import UTC, datetime
 from uuid import uuid4
-import pytest
-from datetime import datetime, UTC
+
 from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
-from src.infrastructure.models import BookingRow
 from src.infrastructure.database import get_session
+from src.infrastructure.models import BookingRow
+
 
 def test_update_status_transitions(client: TestClient):
     booking_id = "test_booking_status"
     actor_id = "test_actor_1"
-    
+
     get_sess = client.app.dependency_overrides.get(get_session, get_session)
     with next(get_sess()) as session:
         session.add(BookingRow(
@@ -30,7 +30,7 @@ def test_update_status_transitions(client: TestClient):
 
     idempotency_key = str(uuid4())
     headers = {"X-Internal-Service-Token": "test-token", "X-Actor-Id": actor_id, "Idempotency-Key": idempotency_key}
-    
+
     response = client.patch(
         f"/v1/bookings/{booking_id}:status",
         json={"status": "DRIVER_ARRIVED"},
@@ -52,7 +52,7 @@ def test_update_status_transitions(client: TestClient):
         headers=headers,
     )
     assert response.status_code == 200
-    
+
     # Check actor ownership
     headers["X-Actor-Id"] = "another_actor"
     response = client.patch(

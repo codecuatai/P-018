@@ -15,7 +15,9 @@ async def ready(request: Request, response: Response) -> dict:
     worker_healthy = bool(getattr(request.app.state, "worker_healthy", True))
     repository = getattr(request.app.state, "food_service", None)
     persistence = getattr(getattr(repository, "repository", None), "pool", None)
-    database_ready = repository is None or getattr(getattr(repository, "settings", None), "persistence", "memory") == "memory"
+    database_ready = (
+        repository is None or getattr(getattr(repository, "settings", None), "persistence", "memory") == "memory"
+    )
     if persistence is not None:
         try:
             await persistence.fetchval("SELECT 1")
@@ -25,4 +27,11 @@ async def ready(request: Request, response: Response) -> dict:
     ready_state = database_ready and worker_healthy
     if not ready_state:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return {"data": {"status": "ready" if ready_state else "not_ready", "service": "food-service", "database": "connected" if database_ready else "unavailable", "workflow_worker": "healthy" if worker_healthy else "unhealthy"}}
+    return {
+        "data": {
+            "status": "ready" if ready_state else "not_ready",
+            "service": "food-service",
+            "database": "connected" if database_ready else "unavailable",
+            "workflow_worker": "healthy" if worker_healthy else "unhealthy",
+        }
+    }

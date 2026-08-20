@@ -96,7 +96,19 @@ class FoodApplicationService:
         restaurant = await self.restaurant(restaurant_id)
         if not restaurant.get("is_open", False):
             raise DomainError("RESTAURANT_CLOSED", "Nhà hàng hiện đã đóng cửa.")
-        cart = {"id": ident("cart"), "user_id": user_id, "restaurant_id": restaurant_id, "restaurant_ids": [restaurant_id], "items": [], "voucher": None, "subtotal": 0, "discount": 0, "total": 0, "currency": "VND", "version": 0}
+        cart = {
+            "id": ident("cart"),
+            "user_id": user_id,
+            "restaurant_id": restaurant_id,
+            "restaurant_ids": [restaurant_id],
+            "items": [],
+            "voucher": None,
+            "subtotal": 0,
+            "discount": 0,
+            "total": 0,
+            "currency": "VND",
+            "version": 0,
+        }
         return await self.repository.create_cart_idempotent(cart, idempotency_key)
 
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
@@ -158,17 +170,25 @@ class FoodApplicationService:
 
     async def _recalculate(self, cart: dict, expected_version: int | None = None, persist: bool = True) -> dict:
         subtotal = sum(item["unit_price"] * item["quantity"] for item in cart["items"])
-        restaurant_ids = list(dict.fromkeys(
-            str((item.get("restaurant") or {}).get("id", ""))
-            for item in cart["items"]
-            if str((item.get("restaurant") or {}).get("id", ""))
-        ))
-        cart["restaurant_ids"] = restaurant_ids or list(dict.fromkeys(str(value) for value in cart.get("restaurant_ids", []) if str(value))) or [cart["restaurant_id"]]
+        restaurant_ids = list(
+            dict.fromkeys(
+                str((item.get("restaurant") or {}).get("id", ""))
+                for item in cart["items"]
+                if str((item.get("restaurant") or {}).get("id", ""))
+            )
+        )
+        cart["restaurant_ids"] = (
+            restaurant_ids
+            or list(dict.fromkeys(str(value) for value in cart.get("restaurant_ids", []) if str(value)))
+            or [cart["restaurant_id"]]
+        )
         discount = 0
         voucher_code = str((cart.get("voucher") or {}).get("code", "")) or None
         voucher = await self.repository.get_voucher(voucher_code) if voucher_code else None
         if voucher:
-            if voucher.get("restaurant_id") and any(voucher["restaurant_id"] != restaurant_id for restaurant_id in cart["restaurant_ids"]):
+            if voucher.get("restaurant_id") and any(
+                voucher["restaurant_id"] != restaurant_id for restaurant_id in cart["restaurant_ids"]
+            ):
                 raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
             discount = calculate_discount(voucher, subtotal, datetime.now(UTC))
         cart["subtotal"] = subtotal
@@ -261,7 +281,9 @@ class FoodApplicationService:
         if voucher is None:
             raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
         restaurant_ids = {str((item.get("restaurant") or {}).get("id", "")) for item in cart.get("items", [])}
-        if voucher.get("restaurant_id") and any(voucher["restaurant_id"] != restaurant_id for restaurant_id in restaurant_ids if restaurant_id):
+        if voucher.get("restaurant_id") and any(
+            voucher["restaurant_id"] != restaurant_id for restaurant_id in restaurant_ids if restaurant_id
+        ):
             raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
         cart["voucher"] = {"code": str(voucher["code"]).upper()}
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
@@ -273,14 +295,24 @@ class FoodApplicationService:
         cart["voucher"] = None
         return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
 
-    async def delivery_quote(self, restaurant_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
+    async def delivery_quote(
+        self, restaurant_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None
+    ) -> dict:
         restaurant = await self.restaurant(restaurant_id)
-        address = self._delivery_address(address_id, user_id, address_snapshot) if address_snapshot is not None else await self.repository.get_address(address_id)
+        address = (
+            self._delivery_address(address_id, user_id, address_snapshot)
+            if address_snapshot is not None
+            else await self.repository.get_address(address_id)
+        )
         if address is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy địa chỉ giao hàng.")
         if address.get("user_id") != user_id:
             raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
-        return {"restaurant": restaurant, "address": address, **quote_delivery(restaurant, address, self.delivery_config)}
+        return {
+            "restaurant": restaurant,
+            "address": address,
+            **quote_delivery(restaurant, address, self.delivery_config),
+        }
 
     async def _reprice_cart(self, cart: dict, persist: bool = False) -> dict:
         for cart_item in cart["items"]:
@@ -290,7 +322,13 @@ class FoodApplicationService:
                 raise DomainError("RESTAURANT_CLOSED", "Một nhà hàng trong đơn hiện đã đóng cửa.")
             if not item.get("available", False):
                 raise DomainError("MENU_ITEM_UNAVAILABLE", "Món ăn hiện không phục vụ.")
-            unit_price, options = await self._price_item(item, [{"group_id": option["group_id"], "option_id": option["option_id"]} for option in cart_item.get("selected_options", [])])
+            unit_price, options = await self._price_item(
+                item,
+                [
+                    {"group_id": option["group_id"], "option_id": option["option_id"]}
+                    for option in cart_item.get("selected_options", [])
+                ],
+            )
             item_id = str(cart_item["id"])
             quantity = int(cart_item["quantity"])
             note = cart_item.get("note")
@@ -306,15 +344,23 @@ class FoodApplicationService:
                     note=note,
                 )
             )
-        return await self._recalculate(cart, persist=persist, expected_version=int(cart.get("version", 0)) if persist else None)
+        return await self._recalculate(
+            cart, persist=persist, expected_version=int(cart.get("version", 0)) if persist else None
+        )
 
-    async def preview_order(self, cart_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None) -> dict:
+    async def preview_order(
+        self, cart_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None
+    ) -> dict:
         cart = await self._cart(cart_id)
         if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
         if not cart["items"]:
             raise DomainError("CART_EMPTY", "Giỏ hàng đang trống.")
-        address = self._delivery_address(address_id, user_id, address_snapshot) if address_snapshot is not None else await self.repository.get_address(address_id)
+        address = (
+            self._delivery_address(address_id, user_id, address_snapshot)
+            if address_snapshot is not None
+            else await self.repository.get_address(address_id)
+        )
         if address is None or address.get("user_id") != user_id:
             raise DomainError("FORBIDDEN", "Địa chỉ giao hàng không thuộc user hiện tại.")
         items = {item["menu_item_id"]: await self.menu_item(item["menu_item_id"]) for item in cart["items"]}
@@ -329,7 +375,11 @@ class FoodApplicationService:
     async def create_order(self, payload: dict) -> dict:
         existing = await self.repository.get_order_by_idempotency(payload["user_id"], payload["idempotency_key"])
         if existing:
-            if existing.get("cart_id") != payload.get("cart_id") or existing.get("address", {}).get("id") != payload.get("address_id") or existing.get("payment_method") != payload.get("payment_method"):
+            if (
+                existing.get("cart_id") != payload.get("cart_id")
+                or existing.get("address", {}).get("id") != payload.get("address_id")
+                or existing.get("payment_method") != payload.get("payment_method")
+            ):
                 raise DomainError("IDEMPOTENCY_KEY_REUSED", "Idempotency key đã được dùng cho payload khác.")
             return existing
         if payload.get("address_snapshot") is not None:
@@ -342,14 +392,63 @@ class FoodApplicationService:
                 ),
             }
         if "expected_snapshot_hash" not in payload:
-            preview = await self.preview_order(payload["cart_id"], payload["address_id"], payload["user_id"], payload.get("address_snapshot"))
-            payload = {**payload, "expected_snapshot_hash": preview["snapshot_hash"], "expected_cart_version": preview["cart_version"], "expected_amount": preview["total"]["amount"], "expected_currency": preview["total"]["currency"], "expected_quote_version": preview["quote_version"]}
-        expected = {"snapshot_hash": payload["expected_snapshot_hash"], "cart_version": payload["expected_cart_version"], "amount": payload["expected_amount"], "currency": payload["expected_currency"], "quote_version": payload["expected_quote_version"]}
+            preview = await self.preview_order(
+                payload["cart_id"], payload["address_id"], payload["user_id"], payload.get("address_snapshot")
+            )
+            payload = {
+                **payload,
+                "expected_snapshot_hash": preview["snapshot_hash"],
+                "expected_cart_version": preview["cart_version"],
+                "expected_amount": preview["total"]["amount"],
+                "expected_currency": preview["total"]["currency"],
+                "expected_quote_version": preview["quote_version"],
+            }
+        expected = {
+            "snapshot_hash": payload["expected_snapshot_hash"],
+            "cart_version": payload["expected_cart_version"],
+            "amount": payload["expected_amount"],
+            "currency": payload["expected_currency"],
+            "quote_version": payload["expected_quote_version"],
+        }
         created_at = datetime.now(UTC).isoformat()
         cart = await self._cart(payload["cart_id"])
-        multi_pickup = len({str((item.get("restaurant") or {}).get("id", "")) for item in cart.get("items", []) if str((item.get("restaurant") or {}).get("id", ""))}) > 1
-        order = {"id": ident("ord"), "user_id": payload["user_id"], "cart_id": payload["cart_id"], "idempotency_key": payload["idempotency_key"], "payment_method": payload["payment_method"], "status": FoodOrderStatus.PAYMENT_PENDING.value, "workflow_scenario": "multi_pickup_demo" if multi_pickup else "standard", "next_transition_at": None, "restaurant_decision": None, "workflow_completed_at": None, "version": 0, "created_at": created_at, "updated_at": created_at, "timeline": [{"from_status": None, "to_status": FoodOrderStatus.PAYMENT_PENDING.value, "occurred_at": created_at, "reason": "Order created", "actor_type": "gateway"}]}
-        return await self.repository.create_order_with_optional_voucher(order, None, expected, self.delivery_config, payload["address_id"], payload.get("address_snapshot"))
+        multi_pickup = (
+            len(
+                {
+                    str((item.get("restaurant") or {}).get("id", ""))
+                    for item in cart.get("items", [])
+                    if str((item.get("restaurant") or {}).get("id", ""))
+                }
+            )
+            > 1
+        )
+        order = {
+            "id": ident("ord"),
+            "user_id": payload["user_id"],
+            "cart_id": payload["cart_id"],
+            "idempotency_key": payload["idempotency_key"],
+            "payment_method": payload["payment_method"],
+            "status": FoodOrderStatus.PAYMENT_PENDING.value,
+            "workflow_scenario": "multi_pickup_demo" if multi_pickup else "standard",
+            "next_transition_at": None,
+            "restaurant_decision": None,
+            "workflow_completed_at": None,
+            "version": 0,
+            "created_at": created_at,
+            "updated_at": created_at,
+            "timeline": [
+                {
+                    "from_status": None,
+                    "to_status": FoodOrderStatus.PAYMENT_PENDING.value,
+                    "occurred_at": created_at,
+                    "reason": "Order created",
+                    "actor_type": "gateway",
+                }
+            ],
+        }
+        return await self.repository.create_order_with_optional_voucher(
+            order, None, expected, self.delivery_config, payload["address_id"], payload.get("address_snapshot")
+        )
 
     async def get_order(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.repository.get_order(order_id)
@@ -361,7 +460,11 @@ class FoodApplicationService:
 
     async def list_orders(self, user_id: str) -> list[dict]:
         orders = await self.repository.list_orders()
-        return sorted((order for order in orders if order.get("user_id") == user_id), key=lambda order: str(order.get("created_at", "")), reverse=True)
+        return sorted(
+            (order for order in orders if order.get("user_id") == user_id),
+            key=lambda order: str(order.get("created_at", "")),
+            reverse=True,
+        )
 
     async def ops_summary(self) -> dict:
         orders = await self.repository.list_orders()
@@ -372,8 +475,10 @@ class FoodApplicationService:
         return {"domain": "food", "counts": {"orders": len(orders), "orders_by_status": counts}}
 
     async def ops_transactions(self, limit: int, offset: int) -> dict:
-        orders = sorted(await self.repository.list_orders(), key=lambda value: str(value.get("created_at", "")), reverse=True)
-        return {"items": orders[offset:offset + limit], "total": len(orders), "limit": limit, "offset": offset}
+        orders = sorted(
+            await self.repository.list_orders(), key=lambda value: str(value.get("created_at", "")), reverse=True
+        )
+        return {"items": orders[offset : offset + limit], "total": len(orders), "limit": limit, "offset": offset}
 
     async def ops_dataset_status(self) -> dict:
         return await self.repository.dataset_status()
@@ -388,12 +493,35 @@ class FoodApplicationService:
                 target = FoodOrderStatus.RESTAURANT_ACCEPTED if accepted else FoodOrderStatus.RESTAURANT_REJECTED
                 decision = "accept" if accepted else "reject"
             else:
-                target = {FoodOrderStatus.RESTAURANT_ACCEPTED: FoodOrderStatus.PREPARING, FoodOrderStatus.PREPARING: FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.READY_FOR_PICKUP: FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.DRIVER_ASSIGNED: FoodOrderStatus.PICKED_UP, FoodOrderStatus.PICKED_UP: FoodOrderStatus.DELIVERING, FoodOrderStatus.DELIVERING: FoodOrderStatus.DELIVERED}.get(current)
+                target = {
+                    FoodOrderStatus.RESTAURANT_ACCEPTED: FoodOrderStatus.PREPARING,
+                    FoodOrderStatus.PREPARING: FoodOrderStatus.READY_FOR_PICKUP,
+                    FoodOrderStatus.READY_FOR_PICKUP: FoodOrderStatus.DRIVER_ASSIGNED,
+                    FoodOrderStatus.DRIVER_ASSIGNED: FoodOrderStatus.PICKED_UP,
+                    FoodOrderStatus.PICKED_UP: FoodOrderStatus.DELIVERING,
+                    FoodOrderStatus.DELIVERING: FoodOrderStatus.DELIVERED,
+                }.get(current)
                 if target is None:
                     raise DomainError("INVALID_ORDER_TRANSITION", "Đơn hàng không có transition timed hợp lệ.")
                 decision = None
-            hold_multi_pickup_demo = order.get("workflow_scenario") == "multi_pickup_demo" and target == FoodOrderStatus.PICKED_UP
-            next_at = None if hold_multi_pickup_demo else datetime.now(UTC) + timedelta(milliseconds=self._delay(target)) if target in {FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING} else None
+            hold_multi_pickup_demo = (
+                order.get("workflow_scenario") == "multi_pickup_demo" and target == FoodOrderStatus.PICKED_UP
+            )
+            next_at = (
+                None
+                if hold_multi_pickup_demo
+                else datetime.now(UTC) + timedelta(milliseconds=self._delay(target))
+                if target
+                in {
+                    FoodOrderStatus.RESTAURANT_ACCEPTED,
+                    FoodOrderStatus.PREPARING,
+                    FoodOrderStatus.READY_FOR_PICKUP,
+                    FoodOrderStatus.DRIVER_ASSIGNED,
+                    FoodOrderStatus.PICKED_UP,
+                    FoodOrderStatus.DELIVERING,
+                }
+                else None
+            )
             return target, decision, next_at
 
         return len(await self.repository.claim_and_advance_due_orders(now, 1, decide))
@@ -404,9 +532,23 @@ class FoodApplicationService:
             target_status = FoodOrderStatus(target)
         except ValueError as exc:
             raise DomainError("INVALID_ORDER_TRANSITION", "Trạng thái đích không hợp lệ.") from exc
-        next_at = datetime.now(UTC) + timedelta(milliseconds=self._delay(target_status)) if target_status in {FoodOrderStatus.RESTAURANT_CONFIRMING, FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.PREPARING, FoodOrderStatus.READY_FOR_PICKUP, FoodOrderStatus.DRIVER_ASSIGNED, FoodOrderStatus.PICKED_UP, FoodOrderStatus.DELIVERING} else None
-        return await self.repository.transition_order_atomic(order_id, target_status, reason, "gateway", next_at, int(order.get("version", 0)), operation_key)
-
+        next_at = (
+            datetime.now(UTC) + timedelta(milliseconds=self._delay(target_status))
+            if target_status
+            in {
+                FoodOrderStatus.RESTAURANT_CONFIRMING,
+                FoodOrderStatus.RESTAURANT_ACCEPTED,
+                FoodOrderStatus.PREPARING,
+                FoodOrderStatus.READY_FOR_PICKUP,
+                FoodOrderStatus.DRIVER_ASSIGNED,
+                FoodOrderStatus.PICKED_UP,
+                FoodOrderStatus.DELIVERING,
+            }
+            else None
+        )
+        return await self.repository.transition_order_atomic(
+            order_id, target_status, reason, "gateway", next_at, int(order.get("version", 0)), operation_key
+        )
 
     async def update_status(self, order_id: str, actor_id: str, target_status: str, idempotency_key: str) -> dict:
         return await self.transition_order(
@@ -420,11 +562,19 @@ class FoodApplicationService:
         order = await self.get_order(order_id, user_id)
         events = await self.repository.get_order_events(order_id)
         delivery = order.get("delivery") or {}
-        pickup_stops = delivery.get("pickup_stops") if isinstance(delivery.get("pickup_stops"), list) else [order.get("restaurant")] if order.get("restaurant") else []
+        pickup_stops = (
+            delivery.get("pickup_stops")
+            if isinstance(delivery.get("pickup_stops"), list)
+            else [order.get("restaurant")]
+            if order.get("restaurant")
+            else []
+        )
         points = [
             {"latitude": stop["latitude"], "longitude": stop["longitude"]}
             for stop in pickup_stops
-            if isinstance(stop, dict) and isinstance(stop.get("latitude"), (int, float)) and isinstance(stop.get("longitude"), (int, float))
+            if isinstance(stop, dict)
+            and isinstance(stop.get("latitude"), (int, float))
+            and isinstance(stop.get("longitude"), (int, float))
         ]
         address = order.get("address") if isinstance(order.get("address"), dict) else {}
         if isinstance(address.get("latitude"), (int, float)) and isinstance(address.get("longitude"), (int, float)):
@@ -434,8 +584,12 @@ class FoodApplicationService:
             "origin": points[0] if points else None,
             "destination": points[-1] if points else None,
             "geometry": points,
-            "distance_meters": int(float(delivery.get("distance_km") or 0) * 1000) if delivery.get("distance_km") is not None else None,
-            "duration_seconds": int(float(delivery.get("eta_minutes") or 0) * 60) if delivery.get("eta_minutes") is not None else None,
+            "distance_meters": int(float(delivery.get("distance_km") or 0) * 1000)
+            if delivery.get("distance_km") is not None
+            else None,
+            "duration_seconds": int(float(delivery.get("eta_minutes") or 0) * 60)
+            if delivery.get("eta_minutes") is not None
+            else None,
         }
         return {
             "order_id": order["id"],
@@ -453,7 +607,15 @@ class FoodApplicationService:
     async def cancel_preview(self, order_id: str, user_id: str | None = None) -> dict:
         order = await self.get_order(order_id, user_id)
         policy = cancellation_policy(FoodOrderStatus(order["status"]))
-        result = {"order_id": order_id, "current_status": order["status"], **policy, "refund_amount": {"amount": order["amount"] if FoodOrderStatus(order["status"]) != FoodOrderStatus.PAYMENT_FAILED else 0, "currency": order["currency"]}}
+        result = {
+            "order_id": order_id,
+            "current_status": order["status"],
+            **policy,
+            "refund_amount": {
+                "amount": order["amount"] if FoodOrderStatus(order["status"]) != FoodOrderStatus.PAYMENT_FAILED else 0,
+                "currency": order["currency"],
+            },
+        }
         result["snapshot_hash"] = hashlib.sha256(json.dumps(result, sort_keys=True, default=str).encode()).hexdigest()
         return result
 
@@ -462,4 +624,12 @@ class FoodApplicationService:
         policy = cancellation_policy(FoodOrderStatus(order["status"]))
         if not policy["allowed"]:
             raise DomainError("ORDER_NOT_CANCELLABLE", policy["reason"])
-        return await self.repository.transition_order_atomic(order_id, FoodOrderStatus.CANCELLED, "Customer cancellation", "gateway", None, int(order.get("version", 0)), idempotency_key)
+        return await self.repository.transition_order_atomic(
+            order_id,
+            FoodOrderStatus.CANCELLED,
+            "Customer cancellation",
+            "gateway",
+            None,
+            int(order.get("version", 0)),
+            idempotency_key,
+        )

@@ -4,7 +4,6 @@ import os
 from uuid import uuid4
 
 import pytest
-
 from src.application.workflow_store import WorkflowStore
 from src.config import get_settings
 from src.infrastructure import database

@@ -24,13 +24,13 @@ from ..contracts import (
 def _operation(text: str) -> Operation:
     folded = text.casefold()
     padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
-    if any(f" {value} " in padded for value in ('hủy', 'huỷ', 'cancel')):
+    if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
         return Operation.CANCEL
-    if any(f" {value} " in padded for value in ('đổi', 'cập nhật', 'update')):
+    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")):
         return Operation.UPDATE
-    if any(f" {value} " in padded for value in ('trạng thái', 'theo dõi', 'status', 'track')):
+    if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
         return Operation.STATUS
-    if any(f" {value} " in padded for value in ('đặt', 'gọi xe', 'giữ', 'book', 'order')):
+    if any(f" {value} " in padded for value in ("đặt", "gọi xe", "giữ", "book", "order")):
         return Operation.CREATE
     return Operation.DISCOVER
 
