@@ -190,11 +190,6 @@ const CAPABILITY_SNAPSHOT = {
   capabilities: CAPABILITY_DEFINITIONS,
 };
 
-export const CORE_A_LEGACY_HANDOFF_COMPATIBILITY = {
-  owner: 'gateway-conversation',
-  expiresAt: '2026-12-31T00:00:00Z',
-} as const;
-
 function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -627,35 +622,35 @@ export class AssistantService {
     private readonly healthcare: HealthcareClient,
     private readonly ride: RideWorkflowService,
     private readonly confirmations: ConfirmationService,
-    private readonly rideClient: RideClient,
     @Optional() private readonly food?: FoodClient,
     @Optional() private readonly tools?: ToolService,
+    @Optional() private readonly rideClient?: RideClient,
   ) {}
 
   private validateCoreAHandoff(planner: JsonObject): void {
-    if (planner.planning_decision === undefined) return;
-    const decision = planner.planning_decision;
-    if (!isRecord(decision)) {
+    const rawDecision = planner.planning_decision;
+    if (!isRecord(rawDecision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'A versioned Core A planning decision is required.' });
+    }
+    const decision: JsonObject = rawDecision;
+    if (decision.contract_version !== 'core-a.v1') {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent planning contract version is unsupported.' });
+    }
+    if (decision.capability_catalog_version !== CAPABILITY_SNAPSHOT.version) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent capability catalog version does not match Gateway.' });
+    }
+    if (!Array.isArray(decision.tasks)) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
     const tasks = arrayValue(decision.tasks);
     if (tasks.length > 4 || tasks.some((task) => !isRecord(task))) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
-    const contractVersionMissing = decision.contract_version === undefined;
-    const catalogVersionMissing = decision.capability_catalog_version === undefined;
-    const legacyHandoffExpired = Date.now() >= Date.parse(CORE_A_LEGACY_HANDOFF_COMPATIBILITY.expiresAt);
-    if (contractVersionMissing !== catalogVersionMissing || (contractVersionMissing && legacyHandoffExpired)) {
-      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent planning contract version is required.' });
-    }
-    if (!contractVersionMissing && decision.contract_version !== 'core-a.v1') {
-      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent planning contract version is unsupported.' });
-    }
-    if (!catalogVersionMissing && decision.capability_catalog_version !== CAPABILITY_SNAPSHOT.version) {
-      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent capability catalog version does not match Gateway.' });
+    if (!['SINGLE_TASK', 'INDEPENDENT_TASKS', 'DEPENDENT_TASKS', 'MIXED'].includes(String(decision.workflow_relation))) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent workflow relation is invalid.' });
     }
     const interactionMode = decision.interaction_mode;
-    if (interactionMode !== undefined && !['service', 'chitchat', 'advisory', 'unsupported'].includes(String(interactionMode))) {
+    if (!['service', 'chitchat', 'advisory', 'unsupported'].includes(String(interactionMode))) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent interaction mode is invalid.' });
     }
     const replanDirective = decision.replan_directive;
@@ -663,8 +658,11 @@ export class AssistantService {
     if (replanDirective !== undefined && !validReplanDirectives.includes(String(replanDirective) as ReplanDirective)) {
       throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent re-plan directive is invalid.' });
     }
-    if (decision.confirmation_invalidated !== undefined && typeof decision.confirmation_invalidated !== 'boolean') {
+    if (typeof decision.confirmation_invalidated !== 'boolean') {
       throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent confirmation invalidation flag is invalid.' });
+    }
+    if (!Array.isArray(decision.discarded_task_refs) || !Array.isArray(decision.blocked_task_refs)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task-reference lists are invalid.' });
     }
     const discardedTaskRefs = arrayValue(decision.discarded_task_refs);
     if (
@@ -759,12 +757,12 @@ export class AssistantService {
     for (const taskRef of refs) visit(taskRef);
   }
 
-  private typedPlan(planner: JsonObject): PlanResolution | undefined {
-    if (planner.planning_decision === undefined) return undefined;
-    const decision = planner.planning_decision;
-    if (!isRecord(decision)) {
+  private typedPlan(planner: JsonObject): PlanResolution {
+    const rawDecision = planner.planning_decision;
+    if (!isRecord(rawDecision)) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
+    const decision: JsonObject = rawDecision;
     const blockedTaskRefs = new Set(arrayValue(decision.blocked_task_refs).filter((value): value is number => typeof value === 'number'));
     const tasks = arrayValue(decision.tasks).filter(isRecord).map((task) => {
       const rawStep = arrayValue(task.steps).find(isRecord);
@@ -790,11 +788,9 @@ export class AssistantService {
         ...(plannedStep ? { planned_step: plannedStep } : {}),
       };
     });
-    const compatibility = isRecord(planner.plan) ? planner.plan : {};
     const clarification = isRecord(decision.clarification_need) ? decision.clarification_need : undefined;
     const requestedClarification = clarification
-      ? stringValue(compatibility.clarification_question)
-        ?? this.typedClarification(arrayValue(clarification.missing_fields))
+      ? this.typedClarification(arrayValue(clarification.missing_fields))
       : undefined;
     const directive = stringValue(decision.replan_directive) as ReplanDirective | undefined;
     const clarificationQuestion = requestedClarification
@@ -806,10 +802,8 @@ export class AssistantService {
     return {
       tasks,
       ...(clarificationQuestion ? { clarificationQuestion } : {}),
-      interactionMode: interactionModeFrom(decision.interaction_mode ?? compatibility.interaction_mode),
-      discardedTaskRefs: discardedTaskRefsFrom(
-        decision.discarded_task_refs ?? compatibility.discarded_task_refs,
-      ),
+      interactionMode: interactionModeFrom(decision.interaction_mode),
+      discardedTaskRefs: discardedTaskRefsFrom(decision.discarded_task_refs),
       ...(directive ? { replanDirective: directive } : {}),
       confirmationInvalidated: decision.confirmation_invalidated === true,
     };
@@ -841,6 +835,7 @@ export class AssistantService {
       pickup_address: 'điểm đón',
       dropoff_address: 'điểm đến',
       'query|dish_query': 'món bạn muốn tìm',
+      selection_domain: 'bạn muốn chọn đồ ăn hay lịch khám',
     };
     const values = fields
       .filter((field): field is string => typeof field === 'string')
@@ -972,7 +967,7 @@ export class AssistantService {
       const availability = isRecord(authoritative.availability) ? authoritative.availability : {};
       const reservation = isRecord(authoritative.reservation) ? authoritative.reservation : {};
       add('selected_candidate', 'restaurant_id', selected.id);
-      add('resource_snapshot', 'availability_version', availability.resource_version ?? availability.version, availability.resource_version ?? availability.version, availability.expires_at);
+      add('resource_snapshot', 'availability_version', availability.snapshot_id, availability.resource_version ?? availability.version, availability.expires_at);
       add('resource_snapshot', 'hold_id', hold.id, hold.resource_version ?? hold.version, hold.expires_at);
       add('booking_state', 'reservation_id', reservation.id, reservation.resource_version ?? reservation.version);
     } else if (task.domain === 'healthcare') {
@@ -1144,7 +1139,10 @@ export class AssistantService {
         const result = isRecord(activeRide.authoritative?.result) ? activeRide.authoritative.result : undefined;
         const booking = [activeRide.authoritative?.booking, result?.booking].find(isRecord);
         const bookingId = stringValue(booking?.id);
-        if (bookingId) {
+        if (bookingId && !this.rideClient) {
+          throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride cancellation is temporarily unavailable.' });
+        }
+        if (bookingId && this.rideClient) {
           const cancelResult = await this.rideClient.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
           activeRide.phase = 'COMPLETED';
           activeRide.revision += 1;
@@ -1172,18 +1170,9 @@ export class AssistantService {
     );
     this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
-    const typed = this.typedPlan(planner);
-    const rawPlanTasks = arrayValue(rawPlan.tasks).filter(isRecord) as AgentPlanTask[];
-    const discardedTaskRefs = typed?.discardedTaskRefs
-      ?? discardedTaskRefsFrom(rawPlan.discarded_task_refs);
+    const resolution = this.typedPlan(planner);
+    const discardedTaskRefs = resolution.discardedTaskRefs;
     const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
-    const legacyResolution = this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
-    const resolution: PlanResolution = typed ?? {
-      ...legacyResolution,
-      interactionMode: interactionModeFrom(rawPlan.interaction_mode),
-      discardedTaskRefs,
-      confirmationInvalidated: false,
-    };
     const plan: JsonObject = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
     const planTasks = resolution.tasks;
     const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
@@ -2219,7 +2208,10 @@ export class AssistantService {
     const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
     const existingBooking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
     const existingBookingId = stringValue(existingBooking?.id);
-    if (existingBookingId) {
+    if (existingBookingId && !this.rideClient) {
+      throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride status verification is temporarily unavailable.' });
+    }
+    if (existingBookingId && this.rideClient) {
       try {
         const liveBooking = await this.rideClient.getBooking(user.sub, { correlationId }, existingBookingId);
         if (isTerminalRideBookingStatus(liveBooking.status)) {
@@ -2459,6 +2451,7 @@ export class AssistantService {
     user: AuthUser,
     correlationId: string,
     workflowId: string,
+    trustedExecutionScope: string,
     expectedCapability?: string,
   ): Promise<{ data: JsonObject; stateUpdates: JsonObject; pending?: JsonObject }> {
     if (!this.tools) throw new ServiceUnavailableException({ code: 'GATEWAY_DISPATCH_UNAVAILABLE', detail: 'Gateway proposal dispatcher is unavailable.' });
@@ -2477,7 +2470,7 @@ export class AssistantService {
     let addressId = stringValue(context.address_id);
     let selectedOptions: JsonObject[] = [];
 
-    for (const value of values) {
+    for (const [proposalIndex, value] of values.entries()) {
       const proposal = value as unknown as ToolProposal;
       const semantic = isRecord(value.semantic_arguments) ? value.semantic_arguments : {};
       const name = stringValue(value.capability_name) ?? '';
@@ -2508,7 +2501,14 @@ export class AssistantService {
         throw new UnprocessableEntityException({ code: 'UNSUPPORTED_TOOL_PROPOSAL', detail: 'The proposed Food capability is not supported by this flow.' });
       }
 
-      const executed = await this.tools.executeProposal(proposal, args, user, correlationId, workflowId);
+      const executed = await this.tools.executeProposal(
+        proposal,
+        args,
+        user,
+        correlationId,
+        workflowId,
+        `${trustedExecutionScope}:p${proposalIndex}`,
+      );
       if (name === 'search_food') {
         const rows = (Array.isArray(executed) ? executed : arrayValue(executed.items)).filter(isRecord);
         const restaurants: JsonObject[] = [];
@@ -2610,6 +2610,7 @@ export class AssistantService {
         user,
         correlationId,
         conversationId,
+        `food:${task.id}:r${task.revision}`,
         expectedCapability,
       );
       stateUpdates = { ...stateUpdates, ...dispatched.stateUpdates };

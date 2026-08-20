@@ -2,6 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 from src.repositories.restaurant_repository import RestaurantRepository
 
+AVAILABILITY_SNAPSHOT_TTL = timedelta(seconds=30)
+
 
 def normalized_interval(start_at: datetime, duration_minutes: int):
     if start_at.tzinfo is None or start_at.utcoffset() is None:
@@ -35,7 +37,15 @@ class RestaurantApplicationService:
         result = self.repo.availability(restaurant_id, party_size, start, end, seating_type)
         if result is None:
             raise ValueError("RESTAURANT_NOT_FOUND")
-        return result
+        observed_at = datetime.now(UTC)
+        snapshot_token = observed_at.strftime("%Y%m%dT%H%M%S%fZ")
+        return {
+            **result,
+            "snapshot_id": f"availability:{restaurant_id}:{snapshot_token}",
+            "resource_version": f"availability-v1:{snapshot_token}",
+            "observed_at": observed_at,
+            "expires_at": observed_at + AVAILABILITY_SNAPSHOT_TTL,
+        }
 
     def create_hold(self, actor_id, restaurant_id, party_size, start_at, duration_minutes, key):
         start, end = normalized_interval(start_at, duration_minutes)

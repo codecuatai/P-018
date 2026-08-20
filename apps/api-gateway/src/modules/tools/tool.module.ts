@@ -1,5 +1,6 @@
 import { Controller, Get, Headers, Injectable, Module, Req, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 
 import { FoodClient, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -24,6 +25,8 @@ const objectSchema = (required: string[], properties: JsonObject): JsonObject =>
 const string = { type: 'string' };
 const selectedOption = objectSchema(['group_id', 'option_id'], { group_id: string, option_id: string });
 const selectedOptions = { type: 'array', items: selectedOption };
+const TOOL_CALL_ID_PATTERN = /^call_[A-Za-z0-9_-]{3,123}$/;
+const TRUSTED_EXECUTION_ID_PATTERN = /^[A-Za-z0-9:_-]{1,160}$/;
 
 const definitions: ToolDefinition[] = [
   { name: 'search_food', description: 'Search food and restaurants.', input_schema: objectSchema([], { keyword: string, district: string, category: string, max_price: { type: 'integer' } }), output_schema: objectSchema([], { items: { type: 'array' } }), permission: 'read', confirmation_required: false, version: '1.0' },
@@ -91,6 +94,7 @@ export class ToolService {
     actor: AuthUser,
     correlationId: string,
     workflowId: string,
+    trustedExecutionId: string,
   ): Promise<JsonObject> {
     const definition = definitions.find((tool) => tool.name === proposal.capability_name);
     const expectedRisk = definition?.permission === 'draft_write'
@@ -105,7 +109,8 @@ export class ToolService {
       || proposal.workflow_id !== workflowId
       || proposal.risk_ceiling !== expectedRisk
       || proposal.confirmation_gate !== expectedGate
-      || !proposal.tool_call_id
+      || !TOOL_CALL_ID_PATTERN.test(proposal.tool_call_id)
+      || !TRUSTED_EXECUTION_ID_PATTERN.test(trustedExecutionId)
       || Object.keys(proposal.semantic_arguments).some((key) => key.endsWith('_id'))
     ) {
       throw new UnprocessableEntityException({ code: 'INVALID_TOOL_PROPOSAL', detail: 'Agent proposal failed Gateway validation.' });
@@ -116,14 +121,19 @@ export class ToolService {
       actor,
       correlationId,
       workflowId,
-      proposal.tool_call_id,
+      trustedExecutionId,
     );
   }
 
   private resourceIds(args: JsonObject): string[] { return Object.entries(args).filter(([key, value]) => key.endsWith('_id') && typeof value === 'string').map(([, value]) => String(value)); }
   private errorCode(error: unknown): string { const response = error instanceof Error && 'getResponse' in error && typeof (error as { getResponse?: unknown }).getResponse === 'function' ? (error as { getResponse: () => unknown }).getResponse() : undefined; return typeof response === 'object' && response !== null && 'code' in response ? String((response as { code: unknown }).code) : error instanceof Error ? error.name : 'UNKNOWN'; }
   private writeKey(name: string, actorId: string, correlationId: string, conversationId?: string, executionId?: string): string {
-    return `tool:${actorId}:${executionId ?? conversationId ?? correlationId}:${name}`;
+    const digest = createHash('sha256').update(JSON.stringify({
+      actor_id: actorId,
+      execution_id: executionId ?? conversationId ?? correlationId,
+      capability_name: name,
+    })).digest('hex');
+    return `tool:${digest}:${name}`;
   }
 
   private addressSnapshot(address: Awaited<ReturnType<CoreStore['getSavedAddress']>>): JsonObject | undefined {

@@ -70,9 +70,9 @@ def usable_fact(
             continue
         if requirement.required_version and fact.resource_version is None:
             continue
-        if requirement.must_be_unexpired and fact.expires_at is not None:
+        if requirement.must_be_unexpired:
             expiry = fact.expires_at
-            if expiry.tzinfo is None:
+            if expiry is None or expiry.tzinfo is None:
                 continue
             if expiry <= current:
                 continue

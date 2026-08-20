@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Injectable, Module, NotFoundException, P
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 
-import { AgentClient, FoodClient, JsonObject } from '../../clients/service.clients';
+import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthModule } from '../auth/auth.module';
 import { AuthGuard } from '../auth/auth.guard';
@@ -11,7 +11,6 @@ import { CoreModule, CoreStore } from '../core/core.module';
 import { ConfirmationModule } from '../confirmation/confirmation.module';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { ToolModule } from '../tools/tool.module';
-import { HealthcareClient, RestaurantClient } from '../../clients/service.clients';
 import { PersonalModule } from '../personal/personal.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
@@ -113,7 +112,7 @@ export class FoodConversationController {
 @Module({
   imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule, PersonalModule],
   controllers: [FoodConversationController, RideConversationController, AssistantController],
-  providers: [ConversationService, AgentClient, FoodClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
+  providers: [ConversationService, AgentClient, FoodClient, RideClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
   exports: [ConversationService, RideConversationService, AssistantService],
 })
 export class ConversationModule {}

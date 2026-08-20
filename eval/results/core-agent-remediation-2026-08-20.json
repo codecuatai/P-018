@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "date": "2026-08-20",
-  "base_commit": "212c263",
+  "base_commit": "58447b1e21133922c09a2a8f9ee4c83c89683b2b",
   "worktree_state": "uncommitted remediation changes",
   "environment": {
     "python": "3.12.10",
@@ -9,10 +9,11 @@
     "docker": "29.4.0"
   },
   "local_gates": {
-    "agent": {"passed": 181, "skipped": 1},
-    "gateway": {"passed": 172, "skipped": 7, "suites_passed": 34, "suites_skipped": 2},
+    "agent": {"passed": 183, "skipped": 1},
+    "gateway": {"passed": 175, "skipped": 7, "suites_passed": 34, "suites_skipped": 2},
     "food": {"passed": 38, "skipped": 3},
     "ride": {"passed": 31, "skipped": 0},
+    "restaurant": {"passed": 22, "skipped": 1},
     "environment_variables": {"root": 120, "compose": 112, "status": "PASS"},
     "migration_files": {"count": 28, "status": "PASS"},
     "compose_render": "PASS",
@@ -27,14 +28,14 @@
     "domain_cases": 109,
     "domain_correct": 65,
     "domain_rate": 0.5963,
-    "planner_p95_ms": 0.56,
+    "planner_p95_ms": 0.446,
     "classification": "compatibility baseline only; not provider release evidence"
   },
-  "core_a_legacy_handoff": {
-    "owner": "gateway-conversation",
-    "expires_at": "2026-12-31T00:00:00Z",
-    "partial_versioning": "REJECTED",
-    "post_expiry": "REJECTED"
+  "core_a_handoff": {
+    "planning_decision": "REQUIRED",
+    "contract_version": "core-a.v1",
+    "capability_catalog_version": "EXACT_MATCH_REQUIRED",
+    "missing_or_unversioned": "REJECTED"
   },
   "release_status": "BLOCKED_LIVE_GATES",
   "blocked_gates": [
