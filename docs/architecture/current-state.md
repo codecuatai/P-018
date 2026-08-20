@@ -103,21 +103,38 @@ business logic are prohibited.
   Vietnamese confirmation parsing rejects negation, questions, correction and
   ambiguous substring matches. Actor-scoped Agent routes require constant-time
   internal authentication plus `X-Actor-Id`.
-- The fake SSE endpoint and full-graph third-party callback were removed.
-  Observability is limited to the allowlisted Agent run-metadata envelope until
-  a real streaming and privacy-reviewed telemetry contract is implemented.
+- The fake SSE endpoint and full-graph third-party callback remain removed.
+  A privacy-reviewed Langfuse v4 adapter now emits manual, metadata-only spans
+  for the Assistant run, validation, planner/model/Core A/task decisions,
+  composition, fallback and run-metadata persistence. Strict Pydantic
+  envelopes, SDK-only export filtering and export-stage masking exclude
+  input/output, prompts, messages, graph state, slots, authoritative data,
+  identities, secrets and hidden reasoning. Missing keys select a no-op
+  adapter; exporter failure is non-authoritative.
+- Agent run metadata now uses stable route/phase-scoped run identifiers, so a
+  single Gateway correlation chain can plan, execute Food, and compose without
+  a false `RUN_METADATA_CONFLICT`. Ride interpretation also receives the
+  required actor assertion through the typed Agent client.
 
-Local remediation verification passed Agent `183` tests (`1` PostgreSQL test
-skipped), Gateway `175` tests (`7` PostgreSQL/integration tests skipped),
+Local remediation verification passed Agent `196` tests (`1` PostgreSQL test
+skipped), Gateway `176` tests (`7` PostgreSQL/integration tests skipped),
 Restaurant `22` tests (`1` skipped), Food `38` tests (`3` PostgreSQL tests
 skipped), plus Ride `31` tests. Gateway lint/build, Ruff,
-environment validation (`120` root / `112` Compose variables), migration parity
+environment validation (`123` root / `115` Compose variables), migration parity
 (`28` files), Compose rendering, contract parity, and OpenAPI YAML parsing
 passed. The sanitized evidence report is
 [`eval/results/core-agent-remediation-2026-08-20.md`](../../eval/results/core-agent-remediation-2026-08-20.md).
-An existing healthy Compose stack was observed, but its images predate this
-patch and its PostgreSQL data was not established as disposable, so it was not
-rebuilt, restarted, or used as release evidence.
+Langfuse tracing also passed a live synthetic Agent run against the configured
+US endpoint: the private trace contained the six expected run, validation,
+model, planner, Core A and task observations, recorded provider token usage,
+and exposed no input/output, prompt, user/session identity or raw error text.
+See
+[`eval/results/core-agent-langfuse-tracing-2026-08-20.md`](../../eval/results/core-agent-langfuse-tracing-2026-08-20.md).
+The Agent image was rebuilt with Langfuse `4.14.4`, and the Gateway image was
+rebuilt with the null re-plan directive compatibility fix. Only
+`agent-service` and `api-gateway` were recreated with `--no-deps`; no database,
+domain service, or volume was restarted or removed. The live synthetic trace
+used the rebuilt Agent container.
 Live PostgreSQL restart/outage, provider 20-case, cross-service E2E, and rollback
 exercise remain explicitly blocked; this worktree is not certified 10/10 until
 those gates run successfully.

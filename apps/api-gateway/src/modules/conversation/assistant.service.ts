@@ -655,7 +655,11 @@ export class AssistantService {
     }
     const replanDirective = decision.replan_directive;
     const validReplanDirectives: ReplanDirective[] = ['CONTINUE', 'ASK_USER', 'REFRESH_AUTHORITY', 'REQUOTE_OR_REPREVIEW', 'WAIT_AND_RETRY_SAME_KEY', 'BLOCK_DEPENDENTS', 'TERMINAL_FAILURE', 'RECONCILIATION_REQUIRED'];
-    if (replanDirective !== undefined && !validReplanDirectives.includes(String(replanDirective) as ReplanDirective)) {
+    if (
+      replanDirective !== undefined
+      && replanDirective !== null
+      && !validReplanDirectives.includes(String(replanDirective) as ReplanDirective)
+    ) {
       throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent re-plan directive is invalid.' });
     }
     if (typeof decision.confirmation_invalidated !== 'boolean') {

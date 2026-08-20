@@ -298,6 +298,7 @@ export class AgentClient extends InternalServiceClient {
     workflowId: string,
     context: AgentContext,
     callContext: ServiceCallContext,
+    actorId: string,
   ): Promise<AgentDecision> {
     const payload = await this.request(
       '/api/v1/ride-chat',
@@ -306,7 +307,7 @@ export class AgentClient extends InternalServiceClient {
         method: 'POST',
         body: JSON.stringify({ message, workflow_id: workflowId, context }),
       },
-      {},
+      actorHeaders(actorId),
       operationProfile('agent.interpret'),
       (value) => parseAgentDecision(envelopeData(value)),
     );

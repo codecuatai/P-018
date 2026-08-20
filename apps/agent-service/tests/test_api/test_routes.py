@@ -71,6 +71,44 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
 
 
 @pytest.mark.asyncio
+async def test_one_correlation_chain_can_plan_execute_food_and_compose(client):
+    headers = {
+        "X-Internal-Service-Token": "test-token",
+        "X-Actor-Id": "actor-shared-correlation",
+    }
+    common = {
+        "conversation_id": "conv-shared-correlation",
+        "user_id": "actor-shared-correlation",
+        "correlation_id": "corr-shared-correlation",
+    }
+
+    planned = await client.post(
+        "/api/v1/assistant-chat",
+        json={**common, "message": "Tim pho giao ve nha"},
+        headers=headers,
+    )
+    food = await client.post(
+        "/api/v1/chat",
+        json={**common, "message": "Tim pho giao ve nha"},
+        headers=headers,
+    )
+    composed = await client.post(
+        "/api/v1/assistant-chat",
+        json={
+            **common,
+            "message": "Tim pho giao ve nha",
+            "mode": "compose",
+            "authoritative_results": [],
+        },
+        headers=headers,
+    )
+
+    assert planned.status_code == 200
+    assert food.status_code == 200
+    assert composed.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_fake_assistant_chat_stream_endpoint_is_removed(client):
     response = await client.post(
         "/api/v1/assistant-chat/stream",

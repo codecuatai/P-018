@@ -1231,6 +1231,17 @@ describe('Unified assistant orchestration', () => {
     })).toThrow(expect.objectContaining({ response: expect.objectContaining({ code: 'AGENT_REPLAN_REJECTED' }) }));
   });
 
+  it('accepts a null Core A re-plan directive emitted by Agent JSON', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      validateCoreAHandoff: (planner: Record<string, unknown>) => void;
+    };
+
+    expect(() => internal.validateCoreAHandoff({
+      planning_decision: versionedDecision({ replan_directive: null }),
+    })).not.toThrow();
+  });
+
   it('rejects a mismatched Core A contract or capability catalog version', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {

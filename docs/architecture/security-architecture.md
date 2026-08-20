@@ -89,7 +89,14 @@ or authoritative fields. Confirmation text is Unicode-normalized and must
 match an explicit bounded phrase; negation, questions, correction and
 ambiguity never count as confirmation.
 
-Agent observability persists only allowlisted run metadata. Full graph state,
-raw prompts and provider responses are not attached to third-party callbacks.
-The earlier synthetic-delta SSE endpoint was removed rather than represented
-as real streaming.
+Agent observability persists only allowlisted run metadata. Optional Langfuse
+v4 tracing receives a stricter typed projection containing correlation ID,
+contract/catalog versions, decision/task/capability enums, numeric token
+usage, latency, fallback and safe error categories. It receives no actor or
+workflow identity, input/output, raw prompts, messages, model/provider
+responses, semantic slots, authoritative results, credentials, payment data,
+confirmation evidence, or hidden reasoning. Only manually created SDK spans
+are exported; full graph callbacks are forbidden and an export-stage denylist
+removes forbidden OpenTelemetry attributes. Traces remain private and
+telemetry failure cannot decide workflow success. The earlier synthetic-delta
+SSE endpoint was removed rather than represented as real streaming.

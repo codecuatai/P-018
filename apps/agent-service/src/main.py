@@ -6,15 +6,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
 from src.config import get_settings
 from src.infrastructure.database import close_pool, persistence_ready
+from src.observability import initialize_telemetry, shutdown_telemetry
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    initialize_telemetry(settings)
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    yield
-    print("Shutting down...")
-    await close_pool()
+    try:
+        yield
+    finally:
+        print("Shutting down...")
+        await shutdown_telemetry()
+        await close_pool()
 
 
 app = FastAPI(

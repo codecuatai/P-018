@@ -178,6 +178,7 @@ export class RideConversationService {
       workflow.id,
       workflow.context,
       this.callContext(correlationId, workflow, 'agent_' + workflow.context.ride.revision),
+      actorId,
     );
     this.applyStatePatch(workflow, decision, normalizedRouteContext);
 

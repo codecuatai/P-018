@@ -111,6 +111,20 @@ it examines at most 512 input characters and emits at most 160 location
 characters. These heuristics only propose semantic slots; authoritative place
 resolution remains a Gateway/domain responsibility.
 
-Agent migration `002_agent_run_metadata.sql` stores only actor/workflow/run identifiers, phase, schema version, bounded capability names, latency/retry/safe-error diagnostics, payload hash, optimistic version, and timestamps. Migration `001_agent_workflow_states.sql` is retained as immutable develop-branch history, but no runtime component writes its broad JSON table. Required PostgreSQL mode has no memory fallback and readiness checks the allowlisted metadata schema. Explicit memory mode exists only for tests/standalone use. Raw chain-of-thought, prompts, messages, provider bodies, authoritative transaction facts, payment data, and confirmation evidence are rejected by the metadata schema. Conversation and domain workflow state is reconstructed from Gateway/Core and domain authority; it is not Agent-owned.
+Agent migration `002_agent_run_metadata.sql` stores only actor/workflow/run identifiers, phase, schema version, bounded capability names, latency/retry/safe-error diagnostics, payload hash, optimistic version, and timestamps. A single Gateway correlation chain may invoke planning, a vertical agent, and composition; Agent derives a stable route/phase-scoped run identifier for each invocation so those distinct records cannot collide while the original correlation identifier remains unchanged in tracing. Migration `001_agent_workflow_states.sql` is retained as immutable develop-branch history, but no runtime component writes its broad JSON table. Required PostgreSQL mode has no memory fallback and readiness checks the allowlisted metadata schema. Explicit memory mode exists only for tests/standalone use. Raw chain-of-thought, prompts, messages, provider bodies, authoritative transaction facts, payment data, and confirmation evidence are rejected by the metadata schema. Conversation and domain workflow state is reconstructed from Gateway/Core and domain authority; it is not Agent-owned.
+
+Optional Langfuse v4 tracing uses an Agent-owned, metadata-only adapter. It
+auto-enables only when both `LANGFUSE_SECRET_KEY` and
+`LANGFUSE_PUBLIC_KEY` are present; `LANGFUSE_BASE_URL` selects the
+credential-free HTTPS endpoint. Manual observations cover the Assistant run,
+request validation, planner route, model generation, Core A validation,
+bounded task/capability decisions, composition, fallback, and run-metadata
+persistence. The adapter never sets observation input/output, user/session
+identity, prompt, completion, graph state, semantic slots, authoritative
+results, or arbitrary exception text. It exports only SDK-owned spans through
+an isolated tracer provider and applies a second export-stage denylist before
+delivery. LangChain/LangGraph callbacks are not attached. Export failure is
+non-authoritative and does not change an Agent response; FastAPI shutdown
+performs a bounded telemetry flush.
 
 User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.

@@ -1,3 +1,4 @@
+import hashlib
 import logging
 from time import perf_counter
 from typing import Any
@@ -28,9 +29,20 @@ from src.models.schemas import (
     RideChatRequest,
     RideChatResponse,
 )
+from src.observability import SafeObservationMetadata, get_telemetry, safe_code
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _scoped_run_id(correlation_id: str | None, scope: str) -> str:
+    """Give each Agent invocation a stable run ID within one correlation chain."""
+    base = correlation_id or uuid4().hex
+    candidate = f"{base}:{scope}"
+    if len(candidate) <= 128:
+        return candidate
+    digest = hashlib.sha256(base.encode("utf-8")).hexdigest()
+    return f"{digest}:{scope}"[:128]
 
 
 def _capability_names(result: dict[str, Any]) -> list[str]:
@@ -58,7 +70,7 @@ def _capability_names(result: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(names))[:16]
 
 
-async def _record_run(
+async def _record_run_untraced(
     *,
     actor_id: str,
     workflow_id: str,
@@ -98,6 +110,72 @@ async def _record_run(
         ) from exc
 
 
+def _http_error_code(error: HTTPException) -> str:
+    detail = error.detail
+    if isinstance(detail, dict):
+        code = safe_code(detail.get("code"))
+        if code is not None:
+            return code
+    return "http_error"
+
+
+async def _record_run(
+    *,
+    actor_id: str,
+    workflow_id: str,
+    run_id: str,
+    phase: str,
+    result: dict[str, Any],
+    started_at: float,
+) -> None:
+    telemetry = get_telemetry()
+    capabilities = _capability_names(result)
+    persistence_started_at = perf_counter()
+    with telemetry.observation(
+        "run_metadata.persist",
+        "span",
+        SafeObservationMetadata(
+            phase=safe_code(phase),
+            capability_count=len(capabilities),
+            status="started",
+        ),
+    ) as persistence_observation:
+        try:
+            await _record_run_untraced(
+                actor_id=actor_id,
+                workflow_id=workflow_id,
+                run_id=run_id,
+                phase=phase,
+                result=result,
+                started_at=started_at,
+            )
+        except HTTPException as error:
+            persistence_observation.update(
+                metadata=SafeObservationMetadata(
+                    phase=safe_code(phase),
+                    capability_count=len(capabilities),
+                    status="failed",
+                    error_code=_http_error_code(error),
+                    latency_ms=max(
+                        0,
+                        int((perf_counter() - persistence_started_at) * 1000),
+                    ),
+                )
+            )
+            raise
+        persistence_observation.update(
+            metadata=SafeObservationMetadata(
+                phase=safe_code(phase),
+                capability_count=len(capabilities),
+                status="succeeded",
+                latency_ms=max(
+                    0,
+                    int((perf_counter() - persistence_started_at) * 1000),
+                ),
+            )
+        )
+
+
 @router.post("/assistant-chat", response_model=None)
 async def assistant_chat(
     request: AssistantChatRequest,
@@ -105,52 +183,170 @@ async def assistant_chat(
 ) -> dict[str, Any]:
     """Plan one or more X-One tasks; the Gateway remains the side-effect owner."""
     settings = get_settings()
-    if actor_id != request.user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"code": "ACTOR_MISMATCH", "detail": "Actor assertion does not match the request body."},
-        )
-    run_id = request.correlation_id or uuid4().hex
+    run_id = _scoped_run_id(request.correlation_id, f"assistant-{request.mode}")
+    trace_correlation_id = request.correlation_id or run_id
     started_at = perf_counter()
-    try:
-        result = await assistant_agent.ainvoke(
-            {
-                "query": request.message,
-                "conversation_id": request.conversation_id,
-                "messages": request.messages,
-                "conversation_state": request.conversation_state,
-                "capability_snapshot": request.capability_snapshot,
-                "authoritative_results": request.authoritative_results,
-                "user_profile": request.user_profile,
-                "mode": request.mode,
+    telemetry = get_telemetry()
+    root_metadata = SafeObservationMetadata(
+        correlation_id=safe_code(trace_correlation_id, max_length=128),
+        route="assistant-chat",
+        mode=request.mode,
+        app_env=settings.app_env,
+        tracing_enabled=telemetry.enabled,
+        status="started",
+    )
+    with telemetry.observation(
+        "agent.core_a.run",
+        "agent",
+        root_metadata,
+    ) as root_observation:
+        try:
+            with telemetry.observation(
+                "request.validate",
+                "guardrail",
+                SafeObservationMetadata(
+                    route="assistant-chat",
+                    mode=request.mode,
+                    actor_assertion_valid=actor_id == request.user_id,
+                    status="started",
+                ),
+            ) as validation_observation:
+                if actor_id != request.user_id:
+                    validation_observation.update(
+                        metadata=SafeObservationMetadata(
+                            route="assistant-chat",
+                            mode=request.mode,
+                            actor_assertion_valid=False,
+                            accepted=False,
+                            status="failed",
+                            error_code="ACTOR_MISMATCH",
+                        )
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail={
+                            "code": "ACTOR_MISMATCH",
+                            "detail": "Actor assertion does not match the request body.",
+                        },
+                    )
+                validation_observation.update(
+                    metadata=SafeObservationMetadata(
+                        route="assistant-chat",
+                        mode=request.mode,
+                        actor_assertion_valid=True,
+                        accepted=True,
+                        status="succeeded",
+                    )
+                )
+
+            result = await assistant_agent.ainvoke(
+                {
+                    "query": request.message,
+                    "conversation_id": request.conversation_id,
+                    "messages": request.messages,
+                    "conversation_state": request.conversation_state,
+                    "capability_snapshot": request.capability_snapshot,
+                    "authoritative_results": request.authoritative_results,
+                    "user_profile": request.user_profile,
+                    "mode": request.mode,
+                }
+            )
+            await _record_run(
+                actor_id=request.user_id,
+                workflow_id=request.conversation_id,
+                run_id=run_id,
+                phase="COMPOSED" if request.mode == "compose" else "PLANNED",
+                result=result,
+                started_at=started_at,
+            )
+            decision = (
+                result.get("planning_decision")
+                if isinstance(result.get("planning_decision"), dict)
+                else {}
+            )
+            tasks = decision.get("tasks") if isinstance(decision, dict) else []
+            task_count = min(len(tasks), 4) if isinstance(tasks, list) else 0
+            source = (
+                result.get("decision_source")
+                if result.get("decision_source") in {"model", "deterministic"}
+                else "deterministic"
+            )
+            degraded = (
+                settings.agent_model_mode == "gemini"
+                and source == "deterministic"
+            )
+            interaction_mode = decision.get("interaction_mode")
+            if interaction_mode not in {"service", "chitchat", "advisory", "unsupported"}:
+                interaction_mode = None
+            workflow_relation = decision.get("workflow_relation")
+            if workflow_relation not in {
+                "SINGLE_TASK",
+                "INDEPENDENT_TASKS",
+                "DEPENDENT_TASKS",
+                "MIXED",
+            }:
+                workflow_relation = None
+            root_observation.update(
+                metadata=SafeObservationMetadata(
+                    correlation_id=safe_code(trace_correlation_id, max_length=128),
+                    route="assistant-chat",
+                    mode=request.mode,
+                    app_env=settings.app_env,
+                    tracing_enabled=telemetry.enabled,
+                    decision_source=source,
+                    interaction_mode=interaction_mode,
+                    workflow_relation=workflow_relation,
+                    contract_version=safe_code(decision.get("contract_version")),
+                    capability_catalog_version=safe_code(
+                        decision.get("capability_catalog_version")
+                    ),
+                    task_count=task_count,
+                    status="degraded" if degraded else "succeeded",
+                    latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+                )
+            )
+            return {
+                "data": {
+                    "conversation_id": request.conversation_id,
+                    "assistant_message": result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này."),
+                    "plan": result.get("plan", {}),
+                    "semantic_turn": result.get("semantic_turn", {}),
+                    "planning_decision": result.get("planning_decision", {}),
+                    "decision_source": result.get("decision_source", "deterministic"),
+                    "model": result.get("model", settings.gemini_model),
+                    "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),
+                },
+                "meta": {"request_id": request.correlation_id},
             }
-        )
-        await _record_run(
-            actor_id=request.user_id,
-            workflow_id=request.conversation_id,
-            run_id=run_id,
-            phase="COMPOSED" if request.mode == "compose" else "PLANNED",
-            result=result,
-            started_at=started_at,
-        )
-        return {
-            "data": {
-                "conversation_id": request.conversation_id,
-                "assistant_message": result.get("assistant_message", "Mình sẽ giúp bạn xử lý yêu cầu này."),
-                "plan": result.get("plan", {}),
-                "semantic_turn": result.get("semantic_turn", {}),
-                "planning_decision": result.get("planning_decision", {}),
-                "decision_source": result.get("decision_source", "deterministic"),
-                "model": result.get("model", settings.gemini_model),
-                "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),
-            },
-            "meta": {"request_id": request.correlation_id},
-        }
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Assistant planner execution failed")
-        raise HTTPException(status_code=500, detail="Unable to process the assistant request.") from None
+        except HTTPException as error:
+            root_observation.update(
+                metadata=SafeObservationMetadata(
+                    correlation_id=safe_code(trace_correlation_id, max_length=128),
+                    route="assistant-chat",
+                    mode=request.mode,
+                    app_env=settings.app_env,
+                    tracing_enabled=telemetry.enabled,
+                    status="failed",
+                    error_code=_http_error_code(error),
+                    latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+                )
+            )
+            raise
+        except Exception:
+            root_observation.update(
+                metadata=SafeObservationMetadata(
+                    correlation_id=safe_code(trace_correlation_id, max_length=128),
+                    route="assistant-chat",
+                    mode=request.mode,
+                    app_env=settings.app_env,
+                    tracing_enabled=telemetry.enabled,
+                    status="failed",
+                    error_code="agent_execution_failed",
+                    latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+                )
+            )
+            logger.exception("Assistant planner execution failed")
+            raise HTTPException(status_code=500, detail="Unable to process the assistant request.") from None
 
 
 @router.post("/chat", response_model=None)
@@ -164,7 +360,7 @@ async def chat(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACTOR_MISMATCH", "detail": "Actor assertion does not match the request body."},
         )
-    run_id = request.correlation_id or uuid4().hex
+    run_id = _scoped_run_id(request.correlation_id, "food")
     started_at = perf_counter()
     try:
         result = await food_agent.ainvoke(
