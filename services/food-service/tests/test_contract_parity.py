@@ -3,7 +3,7 @@ from pathlib import Path
 
 from src.main import app
 
-CONTRACT_PATH_PATTERN = re.compile(r"^  (?P<path>/[^:]+):$")
+CONTRACT_PATH_PATTERN = re.compile(r"^  (?P<path>/.*):$")
 CONTRACT_METHOD_PATTERN = re.compile(r"^    (?P<method>get|post|patch|put|delete|options|head):$")
 
 
