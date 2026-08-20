@@ -114,6 +114,7 @@ jobs:
               - 'scripts/migrate.sh'
               - 'scripts/migrate.ps1'
               - 'apps/api-gateway/migrations/**'
+              - 'apps/agent-service/migrations/**'
               - 'services/**/migrations/**'
             code_changed:
               - 'apps/**'
@@ -133,6 +134,19 @@ jobs:
     if: ${{ needs.detect-changes.outputs.agent == 'true' || needs.detect-changes.outputs.full == 'true' }}
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: xone_agent
+        ports: ['5432/tcp']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d xone_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -144,8 +158,14 @@ jobs:
         run: .ci-venv/bin/python -m pip install -e "apps/agent-service[dev]"
       - name: Lint service
         run: .ci-venv/bin/python -m ruff check "apps/agent-service/src" "apps/agent-service/tests"
+      - name: Apply Agent migration
+        env:
+          AGENT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent
+        run: .ci-venv/bin/python -c "import psycopg; conn = psycopg.connect('postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent', autocommit=True); conn.execute(open('apps/agent-service/migrations/001_agent_workflow_states.sql').read()); conn.close()"
       - name: Test service
         working-directory: apps/agent-service
+        env:
+          AGENT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent
         run: ../../.ci-venv/bin/python -m pytest tests -q
 
   ride-service:
@@ -427,10 +447,10 @@ jobs:
               echo "Service or infrastructure changes detected. Building containers with BuildKit and layer caching..."
               docker compose --env-file .env config --quiet
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
-              docker compose --env-file .env up -d --remove-orphans
-
               echo "Applying database migrations..."
+              docker compose --env-file .env up -d postgres
               sh scripts/migrate.sh .env
+              docker compose --env-file .env up -d --remove-orphans
 
               echo "Verifying container status..."
               sleep 5
@@ -506,10 +526,10 @@ jobs:
               echo "Service or infrastructure changes detected. Building production containers with BuildKit and layer caching..."
               docker compose --env-file .env config --quiet
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
-              docker compose --env-file .env up -d --remove-orphans
-
               echo "Applying database migrations..."
+              docker compose --env-file .env up -d postgres
               sh scripts/migrate.sh .env
+              docker compose --env-file .env up -d --remove-orphans
 
               echo "Verifying container status..."
               sleep 5

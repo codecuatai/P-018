@@ -124,7 +124,8 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/004_food_authoritative_operations.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Write-Host 'Core and Food migrations applied.'
+    Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
+    Write-Host 'Core, Agent and Food migrations applied.'
 
     Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -DatabaseKey 'RESTAURANT_DATABASE_URL' -EnvFile $envFile
     Write-Host 'Restaurant Service migrations applied.'

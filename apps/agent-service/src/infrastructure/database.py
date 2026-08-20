@@ -73,7 +73,7 @@ async def get_async_pool() -> AsyncConnectionPool | None:
 
 
 def init_db_schema() -> bool:
-    """Initialize database tables for agent workflow states and checkpoints."""
+    """Verify that the owned Agent migration has been applied."""
     global _DB_AVAILABLE
     settings = get_settings()
     if not settings.database_url or settings.app_env == "test":
@@ -86,22 +86,13 @@ def init_db_schema() -> bool:
             return False
         with pool.connection(timeout=1.0) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS agent_workflow_states (
-                        actor_id VARCHAR(128) NOT NULL,
-                        workflow_id VARCHAR(128) NOT NULL,
-                        state JSONB NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        PRIMARY KEY (actor_id, workflow_id)
-                    );
-                    CREATE INDEX IF NOT EXISTS idx_agent_wf_updated_at
-                    ON agent_workflow_states(updated_at);
-                    """
-                )
-                conn.commit()
-        logger.info("Successfully initialized agent_workflow_states table in xone_agent.")
+                cur.execute("SELECT to_regclass('public.agent_workflow_states')")
+                row = cur.fetchone()
+                if not row or row[0] is None:
+                    logger.error("Agent database migration is missing: agent_workflow_states was not found.")
+                    _DB_AVAILABLE = False
+                    return False
+        logger.info("Agent workflow persistence schema is available.")
         _DB_AVAILABLE = True
         return True
     except Exception as exc:

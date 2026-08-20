@@ -78,7 +78,9 @@ Quy tắc ứng xử và bóc tách tác vụ:
   + Task 0 (food): dish_query = "bún chả", delivery_preference = "home".
   + Task 1 (healthcare): department = "tim mach", time_preference = "tomorrow_morning".
 - Tuyệt đối không tự bịa ID kỹ thuật hay số tiền cụ thể trong slots.
-- Trả về tiếng Việt gãy gọn, tự nhiên."""
+- Trả về tiếng Việt gãy gọn, tự nhiên.
+- Nếu conversation_state chứa saved_addresses, bạn có thể tự động nhận diện và sử dụng các tên gọi (label) này (VD: "Nhà", "Công ty") làm địa điểm đặt xe, giao đồ ăn mà không cần hỏi lại.
+"""
 
 
 class PlannedTask(BaseModel):
@@ -865,7 +867,9 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             "troi lanh the nay",
             "mua lanh the nay",
         ),
-    ) and not _has_any(lowered, ("giao ve", "ship", "dat mon", "cho toi", "tim mon", "an trua", "an sang", "an toi", "goi y cho toi"))
+    ) and not _has_any(
+        lowered, ("giao ve", "ship", "dat mon", "cho toi", "tim mon", "an trua", "an sang", "an toi", "goi y cho toi")
+    )
     if advisory:
         weather_note = (
             "Nếu đúng là trời đang mưa lạnh, " if _has_any(lowered, ("troi mua", "troi lanh", "mua lanh")) else ""

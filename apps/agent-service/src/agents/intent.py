@@ -25,11 +25,14 @@ def _restore_query_spelling(original: str, normalized_query: str) -> str:
 
 def classify(query: str) -> str:
     text = plain(query)
-    if any(value in text for value in ("bo qua xac nhan", "goi execute", "khiếu nại", "chuyen bay", "dat ban")):
+    # Health intent detection
+    if any(value in text for value in ("dau bung", "dau da day", "dau dau", "cam lanh", "dau lung")):
+        return "healthcare"
+    if any(value in text for value in ("bo qua xac nhan", "goi execute", "khieu nai", "chuyen bay", "dat ban")):
         return "out_of_scope"
     if any(value in text for value in ("theo doi", "tracking", "don hang dang")):
         return "track_order"
-    if any(value in text for value in ("huy", "huỷ")):
+    if any(value in text for value in ("huy", "huy")):
         return "cancel_order"
     if any(value in text for value in ("dat luon", "thanh toan di", "toi dong y", "dat mon")):
         return "place_order"

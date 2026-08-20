@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -22,13 +23,14 @@ from ..contracts import (
 
 def _operation(text: str) -> Operation:
     folded = text.casefold()
-    if any(value in folded for value in ("hủy", "huỷ", "cancel")):
+    padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
+    if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
         return Operation.CANCEL
-    if any(value in folded for value in ("đổi", "cập nhật", "update")):
+    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")):
         return Operation.UPDATE
-    if any(value in folded for value in ("trạng thái", "theo dõi", "status", "track")):
+    if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
         return Operation.STATUS
-    if any(value in folded for value in ("đặt", "gọi xe", "giữ", "book", "order")):
+    if any(f" {value} " in padded for value in ("đặt", "gọi xe", "giữ", "book", "order")):
         return Operation.CREATE
     return Operation.DISCOVER
 

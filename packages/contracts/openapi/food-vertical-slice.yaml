@@ -317,6 +317,23 @@ paths:
         '404': {$ref: '#/components/responses/Error404'}
         '409': {$ref: '#/components/responses/Error409'}
         '422': {$ref: '#/components/responses/Error422'}
+  /orders/{order_id}:status:
+    patch:
+      tags: [order]
+      summary: Update order status for internal testing or simulation
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UpdateOrderStatus'}}}}
+      responses:
+        '200': {description: Updated order}
+        '401': {$ref: '#/components/responses/Error401'}
+        '403': {$ref: '#/components/responses/Error403'}
+        '404': {$ref: '#/components/responses/Error404'}
+        '409': {$ref: '#/components/responses/Error409'}
+        '422': {$ref: '#/components/responses/Error422'}
   /internal/orders/{order_id}/transition:
     post:
       tags: [internal]
@@ -459,6 +476,7 @@ components:
         - {type: object, required: [idempotency_key, payment_method, expected_snapshot_hash, expected_cart_version, expected_amount, expected_currency, expected_quote_version], properties: {idempotency_key: {type: string, minLength: 8, maxLength: 128}, payment_method: {type: string, enum: [bank_transfer, card, e_wallet]}, expected_snapshot_hash: {type: string, minLength: 1}, expected_cart_version: {type: integer, minimum: 0}, expected_amount: {type: integer, minimum: 0}, expected_currency: {type: string, minLength: 3, maxLength: 3}, expected_quote_version: {type: string, minLength: 1}}}
     CancelOrder: {type: object, additionalProperties: false, required: [user_id, idempotency_key], properties: {user_id: {type: string}, idempotency_key: {type: string, minLength: 8, maxLength: 128}}}
     TransitionOrder: {type: object, additionalProperties: false, required: [target_status, reason], properties: {target_status: {type: string}, reason: {type: string, minLength: 1, maxLength: 200}, operation_key: {type: [string, 'null'], minLength: 8, maxLength: 200}}}
+    UpdateOrderStatus: {type: object, additionalProperties: false, required: [status], properties: {status: {type: string}}}
   responses:
     Error401: {description: Internal authentication or actor assertion missing}
     Error403: {description: Actor is not the resource owner}

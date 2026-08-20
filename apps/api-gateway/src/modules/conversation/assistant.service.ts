@@ -804,7 +804,29 @@ export class AssistantService {
 
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
+    
+    const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
+    const activeDomains = Array.from(new Set(activeTasks.map((t) => t.domain)));
+    const focusTask = activeTasks.find((t) => t.phase === 'NEEDS_INFO' || t.phase === 'AWAITING_CONFIRMATION') ?? activeTasks[0];
+    const activeDomain = focusTask ? focusTask.domain : undefined;
+    const workflowPhase = focusTask ? focusTask.phase : undefined;
+    
+    const workingMemory = {
+      active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
+      active_domain: activeDomain,
+      active_domains: activeDomains,
+      workflow_phase: workflowPhase,
+    };
+
+    const conversationSummary = {
+      conversation_goal: state.tasks.length > 0 ? state.tasks[0].goal : undefined,
+      active_domain: activeDomain,
+      active_domains: activeDomains,
+    };
+
     return {
+      working_memory: workingMemory,
+      conversation_summary: conversationSummary,
       tasks: state.tasks.slice(0, 8).map((task, index) => {
         const pendingActions = state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind);
         const pendingChoice = this.plannerPendingChoice(task);
@@ -966,13 +988,14 @@ export class AssistantService {
     const conversationId = requestedConversationId ?? `conv_${randomUUID()}`;
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
+    const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
     const planner = await this.agent.assistantChat(
       {
         conversation_id: conversationId,
         user_id: user.sub,
         message,
         messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: this.plannerSafeState(state),
+        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses },
         capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
@@ -1961,8 +1984,21 @@ export class AssistantService {
       healthcareFacility = facility;
       if (facilityAddress) slots.dropoff_address = facilityAddress;
     }
-    const pickup = stringValue(slots.pickup_address);
-    const dropoff = stringValue(slots.dropoff_address);
+    let pickup = stringValue(slots.pickup_address);
+    let dropoff = stringValue(slots.dropoff_address);
+    const savedAddresses = await this.store.listSavedAddresses(user.sub);
+    const sortedAddresses = [...savedAddresses].sort((a, b) => (b.label?.length ?? 0) - (a.label?.length ?? 0));
+    if (pickup) {
+      const match = sortedAddresses.find((a) => plainText(pickup!).includes(plainText(a.label)));
+      if (match) pickup = match.addressText;
+    }
+    if (dropoff) {
+      const match = sortedAddresses.find((a) => plainText(dropoff!).includes(plainText(a.label)));
+      if (match) dropoff = match.addressText;
+    }
+    // Update slots so the resolved address persists
+    if (pickup) slots.pickup_address = pickup;
+    if (dropoff) slots.dropoff_address = dropoff;
     const passengerCount = numberValue(slots.passenger_count) ?? 1;
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 20) {
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };

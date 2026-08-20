@@ -21,7 +21,13 @@ def test_service_config_fails_when_token_missing(monkeypatch: pytest.MonkeyPatch
 
 
 def test_invalid_persistence_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key, value in {"APP_ENV": "development", "SERVICE_PORT": "8104", "DATABASE_URL": "postgresql://food_user:test-password@postgres:5432/xone_food", "INTERNAL_SERVICE_TOKEN": "test-token", "PERSISTENCE": "postgress"}.items():
+    for key, value in {
+        "APP_ENV": "development",
+        "SERVICE_PORT": "8104",
+        "DATABASE_URL": "postgresql://food_user:test-password@postgres:5432/xone_food",
+        "INTERNAL_SERVICE_TOKEN": "test-token",
+        "PERSISTENCE": "postgress",
+    }.items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     with pytest.raises(ValidationError):
@@ -29,7 +35,13 @@ def test_invalid_persistence_fails_closed(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_production_memory_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key, value in {"APP_ENV": "production", "SERVICE_PORT": "8104", "DATABASE_URL": "postgresql://food_user:test-password@postgres:5432/xone_food", "INTERNAL_SERVICE_TOKEN": "test-token", "PERSISTENCE": "memory"}.items():
+    for key, value in {
+        "APP_ENV": "production",
+        "SERVICE_PORT": "8104",
+        "DATABASE_URL": "postgresql://food_user:test-password@postgres:5432/xone_food",
+        "INTERNAL_SERVICE_TOKEN": "test-token",
+        "PERSISTENCE": "memory",
+    }.items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     with pytest.raises(ValidationError):

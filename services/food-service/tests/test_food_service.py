@@ -8,7 +8,13 @@ from src.repositories.food import InMemoryFoodRepository
 
 
 def make_service() -> FoodApplicationService:
-    settings = Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token")
+    settings = Settings(
+        app_env="test",
+        persistence="memory",
+        service_port=8104,
+        database_url="postgresql://test",
+        internal_service_token="token",
+    )
     return FoodApplicationService(InMemoryFoodRepository(), settings)
 
 
@@ -16,7 +22,14 @@ def make_service() -> FoodApplicationService:
 async def test_cart_total_and_multi_restaurant_pickup_route() -> None:
     food = make_service()
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-total-key")
-    cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
+    cart = await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 2,
+            "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
+        },
+    )
     assert cart["total"] == (65_000 + 15_000) * 2
     cart = await food.add_item(cart["id"], {"menu_item_id": "item_bun_cha", "quantity": 1, "selected_options": []})
     assert {item["restaurant"]["id"] for item in cart["items"]} == {"res_pho_hanoi", "res_bun_cha"}
@@ -28,18 +41,33 @@ async def test_cart_total_and_multi_restaurant_pickup_route() -> None:
 @pytest.mark.asyncio
 async def test_cart_items_retain_rich_catalog_fields_through_update_and_reprice() -> None:
     repository = InMemoryFoodRepository()
-    repository.items["item_pho_bo"].update({
-        "image_url": "https://cdn.example.test/pho-bo.jpg",
-        "currency": "VND",
-        "category": "Pho",
-    })
+    repository.items["item_pho_bo"].update(
+        {
+            "image_url": "https://cdn.example.test/pho-bo.jpg",
+            "currency": "VND",
+            "category": "Pho",
+        }
+    )
     food = FoodApplicationService(
         repository,
-        Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"),
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
     )
 
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-fields-key")
-    cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    cart = await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 1,
+            "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+        },
+    )
     cart_item = cart["items"][0]
     assert cart_item["description"] == repository.items["item_pho_bo"]["description"]
     assert cart_item["image_url"] == "https://cdn.example.test/pho-bo.jpg"
@@ -56,11 +84,13 @@ async def test_cart_items_retain_rich_catalog_fields_through_update_and_reprice(
         "is_open": True,
     }
 
-    repository.items["item_pho_bo"].update({
-        "description": "Pho bo tai cap nhat.",
-        "image_url": "https://cdn.example.test/pho-bo-v2.jpg",
-        "price": 70000,
-    })
+    repository.items["item_pho_bo"].update(
+        {
+            "description": "Pho bo tai cap nhat.",
+            "image_url": "https://cdn.example.test/pho-bo-v2.jpg",
+            "price": 70000,
+        }
+    )
     updated = await food.update_item(cart["id"], cart_item["id"], {"quantity": 2})
     updated_item = updated["items"][0]
     assert updated_item["quantity"] == 2
@@ -79,11 +109,25 @@ async def test_rich_cart_fields_do_not_bypass_actor_scoping_or_cart_idempotency(
     repository = InMemoryFoodRepository()
     food = FoodApplicationService(
         repository,
-        Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"),
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
     )
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-actor-key")
     with pytest.raises(DomainError, match="user hiện tại"):
-        await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]}, "usr_two")
+        await food.add_item(
+            cart["id"],
+            {
+                "menu_item_id": "item_pho_bo",
+                "quantity": 1,
+                "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+            },
+            "usr_two",
+        )
 
     retry = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-rich-actor-key")
     assert retry["id"] == cart["id"]
@@ -97,7 +141,14 @@ async def test_required_option_and_preview() -> None:
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-required-option-key")
     with pytest.raises(DomainError, match="Kích thước"):
         await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": []})
-    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 1,
+            "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+        },
+    )
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert preview["snapshot_hash"]
     assert preview["total"]["amount"] > preview["subtotal"]
@@ -107,7 +158,14 @@ async def test_required_option_and_preview() -> None:
 async def test_core_saved_address_is_received_as_an_immutable_food_snapshot() -> None:
     food = make_service()
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-core-address-key")
-    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 1,
+            "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+        },
+    )
     snapshot = {
         "user_id": "usr_demo_001",
         "address_text": "25 Le Dai Hanh, Hai Ba Trung, Ha Noi",
@@ -121,28 +179,46 @@ async def test_core_saved_address_is_received_as_an_immutable_food_snapshot() ->
     assert preview["address"]["id"] == "core_addr_home"
     assert preview["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
     assert preview["address"]["latitude"] == 21.0125
-    order = await food.create_order({
-        "cart_id": cart["id"],
-        "address_id": "core_addr_home",
-        "address_snapshot": snapshot,
-        "user_id": "usr_demo_001",
-        "idempotency_key": "order-core-address-key",
-        "payment_method": "card",
-        "expected_snapshot_hash": preview["snapshot_hash"],
-        "expected_cart_version": preview["cart_version"],
-        "expected_amount": preview["total"]["amount"],
-        "expected_currency": preview["total"]["currency"],
-        "expected_quote_version": preview["quote_version"],
-    })
+    order = await food.create_order(
+        {
+            "cart_id": cart["id"],
+            "address_id": "core_addr_home",
+            "address_snapshot": snapshot,
+            "user_id": "usr_demo_001",
+            "idempotency_key": "order-core-address-key",
+            "payment_method": "card",
+            "expected_snapshot_hash": preview["snapshot_hash"],
+            "expected_cart_version": preview["cart_version"],
+            "expected_amount": preview["total"]["amount"],
+            "expected_currency": preview["total"]["currency"],
+            "expected_quote_version": preview["quote_version"],
+        }
+    )
     assert order["address"]["address"] == "25 Le Dai Hanh, Hai Ba Trung, Ha Noi"
 
 
 @pytest.mark.asyncio
 async def test_quote_hash_ignores_catalog_provenance_but_keeps_commercial_terms() -> None:
     repository = InMemoryFoodRepository()
-    food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-provenance-key")
-    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 1,
+            "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+        },
+    )
 
     first = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     repository.restaurants["res_pho_hanoi"]["source_metadata"] = {"imported_at": "changed"}
@@ -158,12 +234,44 @@ async def test_quote_hash_ignores_catalog_provenance_but_keeps_commercial_terms(
 @pytest.mark.asyncio
 async def test_order_and_voucher_are_atomic_and_idempotent() -> None:
     repository = InMemoryFoodRepository()
-    food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-voucher-key")
-    cart = await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]})
+    cart = await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 2,
+            "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
+        },
+    )
     cart = await food.apply_voucher(cart["id"], "XONE50")
-    order = await food.create_order({"cart_id": cart["id"], "address_id": "addr_demo", "user_id": "usr_demo_001", "idempotency_key": "order-key-001", "payment_method": "card"})
-    retry = await food.create_order({"cart_id": cart["id"], "address_id": "addr_demo", "user_id": "usr_demo_001", "idempotency_key": "order-key-001", "payment_method": "card"})
+    order = await food.create_order(
+        {
+            "cart_id": cart["id"],
+            "address_id": "addr_demo",
+            "user_id": "usr_demo_001",
+            "idempotency_key": "order-key-001",
+            "payment_method": "card",
+        }
+    )
+    retry = await food.create_order(
+        {
+            "cart_id": cart["id"],
+            "address_id": "addr_demo",
+            "user_id": "usr_demo_001",
+            "idempotency_key": "order-key-001",
+            "payment_method": "card",
+        }
+    )
     assert retry["id"] == order["id"]
     assert repository.vouchers["XONE50"]["used_count"] == 1
     assert len(repository.order_events[order["id"]]) == 1
@@ -174,23 +282,49 @@ async def test_concurrent_voucher_redemption_has_one_winner() -> None:
     repository = InMemoryFoodRepository()
     repository.vouchers["XONE50"]["usage_limit"] = 1
     repository.addresses["addr_two"] = {**repository.addresses["addr_demo"], "id": "addr_two", "user_id": "usr_two"}
-    settings = Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token")
+    settings = Settings(
+        app_env="test",
+        persistence="memory",
+        service_port=8104,
+        database_url="postgresql://test",
+        internal_service_token="token",
+    )
     first = FoodApplicationService(repository, settings)
     second = FoodApplicationService(repository, settings)
     carts = []
     for user in ("usr_demo_001", "usr_two"):
         cart = await first.create_cart(user, "res_pho_hanoi", f"cart-concurrent-{user}")
-        carts.append(await first.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 2, "selected_options": [{"group_id": "opt_size", "option_id": "large"}]}))
+        carts.append(
+            await first.add_item(
+                cart["id"],
+                {
+                    "menu_item_id": "item_pho_bo",
+                    "quantity": 2,
+                    "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
+                },
+            )
+        )
         await first.apply_voucher(carts[-1]["id"], "XONE50")
 
     async def place(service: FoodApplicationService, cart: dict, user: str, address: str, key: str) -> str:
         try:
-            await service.create_order({"cart_id": cart["id"], "address_id": address, "user_id": user, "idempotency_key": key, "payment_method": "card"})
+            await service.create_order(
+                {
+                    "cart_id": cart["id"],
+                    "address_id": address,
+                    "user_id": user,
+                    "idempotency_key": key,
+                    "payment_method": "card",
+                }
+            )
             return "ok"
         except Exception as exc:
             return getattr(exc, "code", type(exc).__name__)
 
-    result = await asyncio.gather(place(first, carts[0], "usr_demo_001", "addr_demo", "order-key-a"), place(second, carts[1], "usr_two", "addr_two", "order-key-b"))
+    result = await asyncio.gather(
+        place(first, carts[0], "usr_demo_001", "addr_demo", "order-key-a"),
+        place(second, carts[1], "usr_two", "addr_two", "order-key-b"),
+    )
     assert result.count("ok") == 1
     assert repository.vouchers["XONE50"]["used_count"] == 1
     assert len(repository.orders) == 1
@@ -199,9 +333,25 @@ async def test_concurrent_voucher_redemption_has_one_winner() -> None:
 @pytest.mark.asyncio
 async def test_preview_reprices_current_catalog_after_cart_creation() -> None:
     repository = InMemoryFoodRepository()
-    food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-reprice-key")
-    await food.add_item(cart["id"], {"menu_item_id": "item_pho_bo", "quantity": 1, "selected_options": [{"group_id": "opt_size", "option_id": "regular"}]})
+    await food.add_item(
+        cart["id"],
+        {
+            "menu_item_id": "item_pho_bo",
+            "quantity": 1,
+            "selected_options": [{"group_id": "opt_size", "option_id": "regular"}],
+        },
+    )
     repository.items["item_pho_bo"]["price"] = 70000
     preview = await food.preview_order(cart["id"], "addr_demo", "usr_demo_001")
     assert preview["subtotal"] == 70000
@@ -210,8 +360,19 @@ async def test_preview_reprices_current_catalog_after_cart_creation() -> None:
 @pytest.mark.asyncio
 async def test_addresses_are_actor_scoped_and_cart_creation_is_idempotent_under_concurrency() -> None:
     repository = InMemoryFoodRepository()
-    food = FoodApplicationService(repository, Settings(app_env="test", persistence="memory", service_port=8104, database_url="postgresql://test", internal_service_token="token"))
-    results = await asyncio.gather(*[food.create_cart("usr_demo_001", "res_pho_hanoi", "same-cart-key") for _ in range(20)])
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
+    results = await asyncio.gather(
+        *[food.create_cart("usr_demo_001", "res_pho_hanoi", "same-cart-key") for _ in range(20)]
+    )
     assert len({value["id"] for value in results}) == 1
     assert len(repository.carts) == 1
     assert len(await food.list_addresses("usr_demo_001", "Nhà riêng")) == 1

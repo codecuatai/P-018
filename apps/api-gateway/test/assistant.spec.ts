@@ -92,6 +92,7 @@ describe('Unified assistant orchestration', () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     const store = {
       getConversation: jest.fn(async () => conversation),
+        listSavedAddresses: jest.fn().mockResolvedValue([]),
       appendConversationTurn: jest.fn(async (value: { conversationId: string; actorId: string; userMessage: unknown; assistantMessage: unknown; stateUpdates: Record<string, unknown> }) => {
         conversation = { conversationId: value.conversationId, actorId: value.actorId, messages: [value.userMessage, value.assistantMessage], state: value.stateUpdates };
         return conversation;
@@ -138,6 +139,7 @@ describe('Unified assistant orchestration', () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     const store = {
       getConversation: jest.fn(async () => conversation),
+        listSavedAddresses: jest.fn().mockResolvedValue([]),
       appendConversationTurn: jest.fn(async (value: { conversationId: string; actorId: string; userMessage: unknown; assistantMessage: unknown; stateUpdates: Record<string, unknown> }) => {
         conversation = { conversationId: value.conversationId, actorId: value.actorId, messages: [value.userMessage, value.assistantMessage], state: value.stateUpdates };
         return conversation;
@@ -481,6 +483,7 @@ describe('Unified assistant orchestration', () => {
     };
     const store = {
       getConversation: jest.fn(async () => conversation),
+        listSavedAddresses: jest.fn().mockResolvedValue([]),
       appendConversationTurn: jest.fn(async () => conversation),
     };
     const agent = { assistantChat: jest.fn().mockResolvedValue({ plan: { tasks: [] } }) };
@@ -506,6 +509,7 @@ describe('Unified assistant orchestration', () => {
     let planningTurn = 0;
     const store = {
       getConversation: jest.fn(async () => conversation),
+        listSavedAddresses: jest.fn().mockResolvedValue([]),
       appendConversationTurn: jest.fn(async (value: { conversationId: string; actorId: string; userMessage: unknown; assistantMessage: unknown; stateUpdates: Record<string, unknown> }) => {
         conversation = { conversationId: value.conversationId, actorId: value.actorId, messages: [value.userMessage, value.assistantMessage], state: value.stateUpdates };
         return conversation;
@@ -1008,6 +1012,7 @@ describe('Unified assistant orchestration', () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     const store = {
       getConversation: jest.fn(async () => conversation),
+        listSavedAddresses: jest.fn().mockResolvedValue([]),
       appendConversationTurn: jest.fn(async (value: { conversationId: string; actorId: string; userMessage: unknown; assistantMessage: unknown; stateUpdates: Record<string, unknown> }) => {
         conversation = { conversationId: value.conversationId, actorId: value.actorId, messages: [value.userMessage, value.assistantMessage], state: value.stateUpdates };
         return conversation;
