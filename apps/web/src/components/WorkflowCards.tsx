@@ -92,7 +92,85 @@ function RideCard({ item, children }: { item: AssistantRideItem; children?: Reac
   const [detailOpen, setDetailOpen] = useState(false);
   const bookingId = item.booking_id ?? item.resource_id;
   const { data: tracking } = useRideTracking(bookingId);
-  return <><article className="assistant-card card-ride"><CardHeading icon={<CarFront size={17} />} label="Chuyến xe" title={item.title} /><div className="route-line"><div><span>Điểm đón</span><strong>{text(item.pickup)}</strong></div><div className="route-arrow">→</div><div><span>Điểm đến</span><strong>{text(item.dropoff)}</strong></div></div><div className="metric-row"><Metric label="Loại xe" value={text(item.vehicle, "Theo lựa chọn")} /><Metric label="Khoảng cách" value={item.distance_km !== undefined ? item.distance_km + " km" : item.route_distance_meters ? (item.route_distance_meters / 1000).toFixed(1) + " km" : "Đang cập nhật"} /><Metric label="Thời gian dự kiến" value={item.duration_minutes ? String(item.duration_minutes) + " phút" : item.route_duration_seconds ? Math.ceil(item.route_duration_seconds / 60) + " phút" : "Đang cập nhật"} /></div><div className="detail-list"><Detail label="Giá dự kiến" value={formatMoney(item.amount, text(item.currency, "VND"))} />{tracking?.status || item.status ? <Detail label="Trạng thái" value={statusLabel(tracking?.status ?? item.status)} /> : null}{item.recommended_departure ? <Detail label="Nên rời đi lúc" value={formatDateTime(item.recommended_departure)} /> : null}</div>{tracking ? <RideLiveStatus tracking={tracking} /> : null}<button className="small-action ride-detail-action" type="button" onClick={() => setDetailOpen(true)}>Xem bản đồ và hành trình</button>{item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}{children}</article><ServiceDetailDialog open={detailOpen} onOpenChange={setDetailOpen} kind="ride" option={null} ride={item} /></>;
+  const distance = item.distance_km !== undefined ? `${item.distance_km} km` : item.route_distance_meters ? `${(item.route_distance_meters / 1000).toFixed(1)} km` : undefined;
+  const duration = item.duration_minutes ? `${item.duration_minutes} phút` : item.route_duration_seconds ? `${Math.ceil(item.route_duration_seconds / 60)} phút` : undefined;
+  const price = formatMoney(item.amount, text(item.currency, "VND"));
+  const vehicle = text(item.vehicle, "Xe 4 chỗ");
+
+  return (
+    <>
+      <article className="assistant-card card-ride">
+        <div className="ride-ticket-header">
+          <div className="ride-ticket-badge">
+            <span className="ride-ticket-icon"><CarFront size={17} /></span>
+            <div>
+              <span className="ride-ticket-label">CHUYẾN XE</span>
+              <h3 className="ride-ticket-title">{text(item.title, "Ước tính chuyến đi")}</h3>
+            </div>
+          </div>
+          {item.amount !== undefined && (
+            <div className="ride-ticket-price">
+              <span className="ride-price-label">Giá dự kiến</span>
+              <strong className="ride-price-value">{price}</strong>
+            </div>
+          )}
+        </div>
+
+        <div className="ride-ticket-route">
+          <div className="route-stop pickup-stop">
+            <span className="route-dot pickup-dot" />
+            <div className="route-stop-copy">
+              <span className="route-stop-label">Điểm đón</span>
+              <strong className="route-stop-address">{text(item.pickup, "Điểm đón chưa rõ")}</strong>
+            </div>
+          </div>
+          <div className="route-connector" />
+          <div className="route-stop dropoff-stop">
+            <span className="route-dot dropoff-dot" />
+            <div className="route-stop-copy">
+              <span className="route-stop-label">Điểm đến</span>
+              <strong className="route-stop-address">{text(item.dropoff, "Điểm đến chưa rõ")}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="ride-ticket-specs">
+          <div className="ride-spec-item">
+            <span className="spec-label">Loại xe</span>
+            <strong className="spec-value">{vehicle}</strong>
+          </div>
+          {distance && (
+            <div className="ride-spec-item">
+              <span className="spec-label">Quãng đường</span>
+              <strong className="spec-value">{distance}</strong>
+            </div>
+          )}
+          {duration && (
+            <div className="ride-spec-item">
+              <span className="spec-label">Thời gian dự kiến</span>
+              <strong className="spec-value">{duration}</strong>
+            </div>
+          )}
+          {tracking?.status || item.status ? (
+            <div className="ride-spec-item">
+              <span className="spec-label">Trạng thái</span>
+              <strong className="spec-value">{statusLabel(tracking?.status ?? item.status)}</strong>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="ride-ticket-footer">
+          <button className="small-action ride-detail-action" type="button" onClick={() => setDetailOpen(true)}>
+            Xem bản đồ và hành trình
+          </button>
+          {tracking ? <RideLiveStatus tracking={tracking} /> : null}
+          {item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}
+          {children}
+        </div>
+      </article>
+      <ServiceDetailDialog open={detailOpen} onOpenChange={setDetailOpen} kind="ride" option={null} ride={item} />
+    </>
+  );
 }
 
 function RideCardWithCancel({ item }: { item: AssistantRideItem }) {

@@ -135,15 +135,54 @@
 
 /* ─── Assistant workflow cards ───────────────────────────── */
 .assistant-cards { display: grid; gap: 8px; margin-top: 11px; text-align: left; }
-.assistant-card { width: min(100%, 670px); padding: 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; box-shadow: 0 4px 14px rgb(10 37 64 / 5%); }
+.assistant-card { width: min(100%, 670px); padding: 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 4px solid var(--color-primary); border-radius: 14px; box-shadow: 0 4px 14px rgb(10 37 64 / 5%); }
 .card-restaurant { border-left-color: #249A6A; }
 .card-ride { border-left-color: var(--color-primary); }
 .card-food { border-left-color: var(--accent-food, #D97706); }
 .card-healthcare { border-left-color: #8061BD; }
 .card-heading { display: flex; align-items: center; gap: 9px; padding-bottom: 11px; border-bottom: 1px solid #E6EDF1; }
-.card-icon { display: grid; width: 31px; height: 31px; place-items: center; color: var(--color-primary-strong); background: #EAF4FA; border-radius: 8px; }
+.card-icon { display: grid; width: 32px; height: 32px; place-items: center; color: var(--color-primary-strong); background: #EAF4FA; border-radius: 8px; }
 .card-heading > div:last-child span { display: block; color: var(--color-muted-soft); font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: 0.08em; }
 .card-heading h3 { margin: 3px 0 0; color: var(--color-navy); font-size: var(--text-base); font-weight: 700; letter-spacing: -0.02em; }
+
+/* ─── Ride Ticket Card ─────────────────────────────────────── */
+.card-ride { padding: 16px; background: var(--color-surface); border: 1px solid #D6E4FF; border-left: 4px solid var(--color-primary); border-radius: 14px; box-shadow: 0 4px 16px rgb(49 94 245 / 8%); display: grid; gap: 13px; }
+.ride-ticket-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid #EEF2F6; }
+.ride-ticket-badge { display: flex; align-items: center; gap: 10px; }
+.ride-ticket-icon { display: grid; width: 36px; height: 36px; place-items: center; color: var(--color-primary); background: var(--surface-ice); border: 1px solid #DBE6FD; border-radius: 10px; flex: 0 0 auto; }
+.ride-ticket-label { display: block; color: var(--color-primary-strong); font-family: var(--font-mono); font-size: var(--text-micro); font-weight: 700; letter-spacing: 0.08em; }
+.ride-ticket-title { margin: 2px 0 0; color: var(--color-navy); font-size: var(--text-base); font-weight: 700; letter-spacing: -0.02em; }
+.ride-ticket-price { display: grid; justify-items: end; gap: 1px; text-align: right; }
+.ride-price-label { color: var(--color-muted); font-size: var(--text-micro); font-weight: 600; }
+.ride-price-value { color: var(--color-primary-strong); font-size: var(--text-lg); font-weight: 800; letter-spacing: -0.02em; }
+
+.ride-ticket-route { position: relative; display: grid; gap: 10px; padding: 12px 14px; background: #F8FAFD; border: 1px solid #E6EEF8; border-radius: 12px; }
+.route-stop { display: flex; align-items: flex-start; gap: 10px; position: relative; z-index: 1; }
+.route-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; margin-top: 4px; }
+.pickup-dot { background: #10B981; border: 2px solid #D1FAE5; }
+.dropoff-dot { background: #EF4444; border: 2px solid #FEE2E2; }
+.route-connector { position: absolute; top: 20px; bottom: 20px; left: 18px; width: 2px; border-left: 2px dashed #B8CADB; }
+.route-stop-copy { display: grid; gap: 2px; min-width: 0; }
+.route-stop-label { color: var(--color-muted-soft); font-size: var(--text-micro); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.route-stop-address { color: var(--color-ink); font-size: var(--text-sm); font-weight: 700; line-height: 1.35; }
+
+.ride-ticket-specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.ride-spec-item { display: grid; gap: 3px; padding: 8px 10px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.spec-label { color: var(--color-muted); font-size: var(--text-micro); }
+.spec-value { color: var(--color-navy); font-size: var(--text-sm); font-weight: 700; }
+.ride-ticket-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+/* ─── Metric & Detail List Rows ─────────────────────────── */
+.metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-top: 10px; padding: 10px; background: #F8FAFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.metric-row > div { display: grid; gap: 2px; min-width: 0; }
+.metric-row span { color: var(--color-muted); font-size: var(--text-micro); }
+.metric-row strong { color: var(--color-navy); font-size: var(--text-sm); font-weight: 700; }
+
+.detail-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 10px; }
+.detail-item { display: grid; gap: 2px; padding: 8px 10px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
+.detail-item span { color: var(--color-muted); font-size: var(--text-micro); }
+.detail-item strong { color: var(--color-navy); font-size: var(--text-sm); font-weight: 700; }
+
 .option-list { display: grid; gap: 7px; margin-top: 12px; }
 .option-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 9px 10px; background: #FBFCFD; border: 1px solid #E3EBF0; border-radius: 8px; }
 .option-row > div { display: grid; min-width: 0; gap: 4px; }
