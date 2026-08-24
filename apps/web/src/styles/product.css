@@ -315,8 +315,8 @@
 .payment-summary dd { margin: 0; color: var(--color-ink); font-size: 0.71rem; font-weight: 700; text-align: right; }
 .payment-refunds { display: grid; gap: 4px; color: var(--color-muted); font-size: 0.68rem; }
 .payment-refunds strong { color: var(--color-navy); }
-.service-hub,
-.service-browse { width: min(1050px, 100%); margin: 0 auto; }
+.service-hub { width: min(1050px, 100%); margin: 0 auto; }
+.service-browse { width: min(1050px, 100%); margin: -12px auto 0; }
 .service-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .service-card { display: grid; gap: 14px; padding: 20px; background: var(--color-surface); border: 1px solid var(--color-border); border-top: 3px solid var(--color-primary); border-radius: 12px; }
 .service-card-food { border-top-color: var(--accent-food); }
@@ -340,20 +340,27 @@
 .service-card-actions .text-link { font-size: 0.72rem; }
 .service-loading { display: grid; justify-items: center; gap: 10px; padding: 70px 20px; background: var(--color-surface); border: 1px dashed var(--color-border-strong); border-radius: 12px; }
 .service-loading p { margin: 0; color: var(--color-muted); font-size: 0.78rem; }
-.service-browse-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 23px; }
-.service-browse-heading { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 24px; }
+.service-browse-top { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 14px; }
+.service-browse-heading { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 16px; }
 .service-browse-icon { display: grid; width: 42px; height: 42px; place-items: center; flex: 0 0 auto; color: var(--color-primary-strong); background: var(--surface-ice); border-radius: 10px; }
 .service-browse-heading h1 { margin: 7px 0 0; color: var(--color-navy); font-size: clamp(1.6rem, 3vw, 2.2rem); letter-spacing: -0.05em; }
 .service-browse-heading p { max-width: 620px; margin: 8px 0 0; color: var(--color-muted); font-size: 0.82rem; line-height: 1.6; }
-.service-search { max-width: 690px; padding: 14px; margin-bottom: 16px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; }
+.service-search { max-width: 690px; padding: 11px 14px; margin-bottom: 12px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; }
 .service-search > div { display: flex; align-items: center; gap: 8px; }
 .service-search > div input { flex: 1; }
 .service-search .button { min-height: 43px; }
 .browse-results { display: grid; gap: 9px; }
-.browse-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; }
+.browse-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; text-align: left; }
 .browse-result h2 { margin: 0; color: var(--color-navy); font-size: 0.85rem; }
 .browse-result p { margin: 5px 0 0; color: var(--color-muted); font-size: 0.73rem; }
 .browse-result small { display: block; margin-top: 7px; color: var(--color-success-ink); font-size: 0.65rem; }
+.browse-result-copy { min-width: 0; flex: 1 1 auto; text-align: left; }
+.browse-result-copy h2,
+.browse-result-copy p,
+.browse-result-copy small { text-align: left; }
+.browse-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.browse-pagination > span { color: var(--color-muted); font-size: 0.7rem; font-weight: 700; }
+.browse-pagination .button { margin-top: 0; }
 .authoritative-image { width: min(100%, 260px); overflow: hidden; background: #EAF1F3; border: 1px solid var(--color-border); border-radius: 9px; }
 .authoritative-image.compact { flex: 0 0 72px; width: 72px; height: 72px; }
 .authoritative-image img { display: block; width: 100%; height: 100%; min-height: 110px; object-fit: cover; }
