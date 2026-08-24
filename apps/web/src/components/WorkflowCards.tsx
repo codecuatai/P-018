@@ -41,7 +41,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
       return <RestaurantConfirmation item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "ride_quote":
     case "ride_booking":
-      return <RideCardWithCancel item={item} />;
+      return <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "ride_timing_conflict":
       return <RideTimingConflictCard item={item} />;
     case "healthcare_options":
@@ -88,7 +88,7 @@ function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: {
   return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} /><Detail label="Thời gian" value={formatDateTime(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action ? <section className="restaurant-confirmation-form" aria-label="Xác nhận đặt bàn"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận thông tin đặt bàn ở trên.</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> Xác nhận đặt bàn</button></section> : null}</article>;
 }
 
-function RideCard({ item, children }: { item: AssistantRideItem; children?: ReactNode }) {
+function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const bookingId = item.booking_id ?? item.resource_id;
   const { data: tracking } = useRideTracking(bookingId);
@@ -96,13 +96,14 @@ function RideCard({ item, children }: { item: AssistantRideItem; children?: Reac
   const duration = item.duration_minutes ? `${item.duration_minutes} phút` : item.route_duration_seconds ? `${Math.ceil(item.route_duration_seconds / 60)} phút` : undefined;
   const price = formatMoney(item.amount, text(item.currency, "VND"));
   const vehicle = text(item.vehicle, "Xe 4 chỗ");
+  const confirmAction = actions?.find((a) => a.kind === "ride_service" || a.kind === "ride_payment" || a.label?.includes("Xác nhận"));
 
   return (
     <>
       <article className="assistant-card card-ride">
         <div className="ride-ticket-header">
           <div className="ride-ticket-badge">
-            <span className="ride-ticket-icon"><CarFront size={17} /></span>
+            <span className="ride-ticket-icon"><CarFront size={18} /></span>
             <div>
               <span className="ride-ticket-label">CHUYẾN XE</span>
               <h3 className="ride-ticket-title">{text(item.title, "Ước tính chuyến đi")}</h3>
@@ -120,7 +121,7 @@ function RideCard({ item, children }: { item: AssistantRideItem; children?: Reac
           <div className="route-stop pickup-stop">
             <span className="route-dot pickup-dot" />
             <div className="route-stop-copy">
-              <span className="route-stop-label">Điểm đón</span>
+              <span className="route-stop-label">ĐIỂM ĐÓN</span>
               <strong className="route-stop-address">{text(item.pickup, "Điểm đón chưa rõ")}</strong>
             </div>
           </div>
@@ -128,7 +129,7 @@ function RideCard({ item, children }: { item: AssistantRideItem; children?: Reac
           <div className="route-stop dropoff-stop">
             <span className="route-dot dropoff-dot" />
             <div className="route-stop-copy">
-              <span className="route-stop-label">Điểm đến</span>
+              <span className="route-stop-label">ĐIỂM ĐẾN</span>
               <strong className="route-stop-address">{text(item.dropoff, "Điểm đến chưa rõ")}</strong>
             </div>
           </div>
@@ -159,24 +160,42 @@ function RideCard({ item, children }: { item: AssistantRideItem; children?: Reac
           ) : null}
         </div>
 
-        <div className="ride-ticket-footer">
-          <button className="small-action ride-detail-action" type="button" onClick={() => setDetailOpen(true)}>
+        <div className="ride-ticket-actions">
+          {confirmAction && onAction ? (
+            <button
+              className="ride-action-confirm"
+              type="button"
+              onClick={() => onAction(confirmAction)}
+              disabled={Boolean(disabledActionId)}
+            >
+              <Check size={16} /> {confirmAction.label || "Xác nhận chuyến xe"}
+            </button>
+          ) : (
+            <button
+              className="ride-action-confirm"
+              type="button"
+              onClick={() => {}}
+            >
+              <Check size={16} /> Xác nhận chuyến xe
+            </button>
+          )}
+          <button className="ride-action-map" type="button" onClick={() => setDetailOpen(true)}>
             Xem bản đồ và hành trình
           </button>
-          {tracking ? <RideLiveStatus tracking={tracking} /> : null}
-          {item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}
-          {children}
         </div>
+        {tracking ? <RideLiveStatus tracking={tracking} /> : null}
+        {item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}
+        {children}
       </article>
       <ServiceDetailDialog open={detailOpen} onOpenChange={setDetailOpen} kind="ride" option={null} ride={item} />
     </>
   );
 }
 
-function RideCardWithCancel({ item }: { item: AssistantRideItem }) {
+function RideCardWithCancel({ item, actions, onAction, disabledActionId }: { item: AssistantRideItem; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const bookingId = item.kind === "ride_booking" ? item.booking_id ?? item.resource_id : undefined;
   const { data: tracking } = useRideTracking(bookingId);
-  return <RideCard item={item}><RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /></RideCard>;
+  return <RideCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId}>{item.kind === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /> : null}</RideCard>;
 }
 
 function RideTimingConflictCard({ item }: { item: AssistantRideTimingConflictItem }) {

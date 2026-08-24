@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Loader2, PanelRightOpen, Plus, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
+import { ArrowUp, Bot, Loader2, Mic, PanelRightOpen, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -302,9 +302,33 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
         <div className="composer-wrap">
           <div className="composer-box">
-            <span className="composer-prefix" aria-hidden="true"><Sparkles size={15} /></span>
-            <textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} />
-            <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button>
+            <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+              <PlusCircle size={20} />
+            </button>
+            <textarea
+              ref={inputRef}
+              aria-label="Nhập yêu cầu"
+              disabled={sending}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
+              rows={1}
+              value={composer}
+            />
+            <div className="composer-actions">
+              <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
+                <Mic size={18} />
+              </button>
+              <button
+                className="send-button"
+                type="button"
+                onClick={() => void send()}
+                disabled={sending || !composer.trim()}
+                aria-label="Gửi yêu cầu"
+              >
+                {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
+              </button>
+            </div>
           </div>
           <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
         </div>
@@ -414,7 +438,7 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
 
 function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
   const assistant = message.role === "assistant";
-  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Sparkles size={15} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-meta"><strong>{assistant ? "X-One" : "Bạn"}</strong><time>{formatTime(message.timestamp)}</time></div><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
+  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
 }
 
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {

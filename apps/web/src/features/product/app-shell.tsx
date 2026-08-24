@@ -3,6 +3,7 @@
 import {
   Bell,
   BookmarkCheck,
+  Bot,
   CarFront,
   History,
   LifeBuoy,
@@ -13,6 +14,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  Plus,
   Settings,
   ShieldCheck,
   Stethoscope,
@@ -35,7 +37,7 @@ import { useAuth } from "@/providers/auth-provider";
 
 // Core navigation — only the 3 most frequently used destinations
 const navigation = [
-  { href: "/app", label: "Trợ lý", icon: MessageSquareText },
+  { href: "/app", label: "Trợ lý AI", icon: Bot },
   { href: "/app/history", label: "Lịch sử", icon: History },
   { href: "/app/favorites", label: "Đã lưu", icon: BookmarkCheck },
 ];
@@ -101,54 +103,61 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
-      <aside className="app-sidebar">
-        <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} onToggleCollapse={toggleSidebar} />
-      </aside>
-      <header className="app-mobile-header">
-        <Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
-        <div className="app-mobile-actions">
+      <header className="app-global-header">
+        <div className="app-global-header-left">
+          <button
+            className="icon-button header-toggle-btn"
+            type="button"
+            aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
+            title={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
+            onClick={toggleSidebar}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          </button>
+          <Link className="brand-link header-brand" href="/app">
+            <XOneMark size={26} />
+            <span>X-One</span>
+          </Link>
+        </div>
+        <div className="app-global-header-right">
           <NotificationBell />
-          <Sheet>
-            <SheetTrigger asChild>
-              <button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button>
-            </SheetTrigger>
-            <SheetContent title="Không gian X-One">
-              <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact />
-            </SheetContent>
-          </Sheet>
+          <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+          {assistantWorkspace && (
+            <button
+              className={`icon-button header-toggle-btn${railCollapsed ? " is-active-toggle" : ""}`}
+              type="button"
+              aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+              title={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+              onClick={toggleRail}
+            >
+              {railCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+            </button>
+          )}
         </div>
       </header>
-      <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">
-        {assistantWorkspace && (
-          <div className="app-topbar">
-            <div className="app-topbar-left">
-              <button
-                className={`icon-button topbar-toggle-btn${sidebarCollapsed ? " is-active-toggle" : ""}`}
-                type="button"
-                aria-label={sidebarCollapsed ? "Mở rộng thanh điều hướng bên trái (Ctrl+B)" : "Thu gọn thanh điều hướng bên trái (Ctrl+B)"}
-                title={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
-                onClick={toggleSidebar}
-              >
-                {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-              </button>
-            </div>
-            <div className="app-topbar-right">
-              <NotificationBell />
-              <button
-                className={`icon-button topbar-toggle-btn${railCollapsed ? " is-active-toggle" : ""}`}
-                type="button"
-                aria-label={railCollapsed ? "Mở rộng tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-                title={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-                onClick={toggleRail}
-              >
-                {railCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
-              </button>
-              <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
-            </div>
+
+      <div className="app-body">
+        <aside className="app-sidebar">
+          <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} onToggleCollapse={toggleSidebar} />
+        </aside>
+        <header className="app-mobile-header">
+          <Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
+          <div className="app-mobile-actions">
+            <NotificationBell />
+            <Sheet>
+              <SheetTrigger asChild>
+                <button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button>
+              </SheetTrigger>
+              <SheetContent title="Không gian X-One">
+                <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact />
+              </SheetContent>
+            </Sheet>
           </div>
-        )}
-        {children}
-      </main>
+        </header>
+        <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
@@ -156,23 +165,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 function Sidebar({ userEmail, pathname, onLogout, onToggleCollapse, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; onToggleCollapse?: () => void; compact?: boolean }) {
   return (
     <div className="sidebar-content">
-      <div className="sidebar-header">
-        <Link className="brand-link sidebar-brand" href="/app"><XOneMark size={28} /><span>X-One</span></Link>
-        <div className="sidebar-header-actions">
-          <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation} title="Cuộc trò chuyện mới">+ Mới</Link>
-          {!compact && onToggleCollapse && (
-            <button
-              className="icon-button sidebar-collapse-btn"
-              type="button"
-              aria-label="Thu gọn thanh điều hướng (Ctrl+B)"
-              title="Thu gọn menu (Ctrl+B)"
-              onClick={onToggleCollapse}
-            >
-              <PanelLeftClose size={16} />
-            </button>
-          )}
-        </div>
-      </div>
+      <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Cuộc trò chuyện mới">
+        <Plus size={16} />
+        <span>Mới</span>
+      </Link>
       <nav className="app-nav" aria-label="Không gian X-One">
         {navigation.map(({ href, label, icon: Icon }) => {
           const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`);
@@ -186,7 +182,7 @@ function Sidebar({ userEmail, pathname, onLogout, onToggleCollapse, compact = fa
         <div className="sidebar-identity">
           <span className="identity-initials">{initials(userEmail)}</span>
           <span className="sidebar-identity-copy">
-            <strong>{userEmail || "Tài khoản X-One"}</strong>
+            <strong>{userEmail || "user1@gmail.com"}</strong>
             <small><ShieldCheck size={12} /> Phiên bảo mật</small>
           </span>
         </div>
@@ -312,7 +308,10 @@ function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => 
 
   return <div className="user-menu-wrap" ref={ref}>
     <button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((v) => !v)}>
-      <span className="identity-initials identity-initials-sm">{initials(userEmail)}</span>
+      <span className="user-pill-badge">
+        <span className="user-avatar-circle">{initials(userEmail)}</span>
+        <span className="user-avatar-label">{userEmail ? userEmail.slice(0, 2).toUpperCase() : "US"}</span>
+      </span>
     </button>
     {open && <div className="user-dropdown" role="menu">
       <div className="user-dropdown-header">
