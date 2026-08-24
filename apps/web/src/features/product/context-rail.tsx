@@ -1,6 +1,7 @@
+// filepath: apps/web/src/features/product/context-rail.tsx
 "use client";
 
-import { ArrowRight, CalendarDays, CarFront, PanelRightClose, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, CalendarDays, CarFront, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { resolveAddress } from "@/lib/api-client";
@@ -34,16 +35,18 @@ export function ContextRail({
   children: ReactNode;
 }) {
   return (
-    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra" style={style}>
+    <aside className="flex flex-col h-full bg-slate-50/50 border-l border-slate-200/60 overflow-hidden relative shrink-0 transition-all duration-300 ease-in-out" aria-label="Dịch vụ đang diễn ra" style={style}>
       {resizer}
-      <div className="context-rail-heading">
-        <div className="context-rail-heading-copy">
-          {mode !== "idle" ? <span className="eyebrow">ĐANG DIỄN RA</span> : <span className="eyebrow">TIỆN ÍCH</span>}
-          <h2>{title}</h2>
-          {description ? <p>{description}</p> : null}
+      <div className="px-5 pt-6 pb-4 shrink-0">
+        <div className="grid gap-1">
+          {mode !== "idle" ? <span className="text-[10px] font-extrabold text-blue-600 tracking-widest uppercase">ĐANG DIỄN RA</span> : <span className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase">TIỆN ÍCH</span>}
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">{title}</h2>
+          {description ? <p className="text-xs text-slate-500 font-medium leading-relaxed">{description}</p> : null}
         </div>
       </div>
-      {children}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-slate-200">
+        {children}
+      </div>
     </aside>
   );
 }
@@ -59,21 +62,31 @@ export function ActiveWorkRailCard({ item, onDetails, children }: { item: Histor
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
   const detail = tracking?.driver ? driver.name + (driver.vehicle ? " · " + driver.vehicle : "") : item.detail || summaryFor(item);
-  const typeAccent = item.type === "ride_booking" ? "active-card-ride" : item.type === "food_order" ? "active-card-food" : item.type === "restaurant_reservation" ? "active-card-restaurant" : "active-card-healthcare";
-  return <article className={`active-ride-rail-card ${typeAccent}`}>
-    <div className="active-card-top-row">
-      <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={16} /></div>
-      <div className="active-card-header-copy">
-        <strong>{item.title || titleFor(item.type)}</strong>
-        <span className="active-card-pulse-badge"><span className="pulse-dot" aria-hidden="true" />{statusLabel(status)}</span>
+
+  return (
+    <article className="group flex flex-col p-4 bg-white border border-slate-200/60 rounded-2xl shadow-sm hover:shadow-md hover:border-blue-200 hover:-translate-y-0.5 transition-all duration-300">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="grid place-items-center w-10 h-10 rounded-xl bg-slate-50 text-slate-600 border border-slate-100 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 group-hover:shadow-md group-hover:shadow-blue-600/20 transition-all duration-300 shrink-0">
+          <Icon size={18} strokeWidth={2} />
+        </div>
+        <div className="flex-1 min-w-0 grid gap-1 mt-0.5">
+          <strong className="text-sm font-bold text-slate-900 truncate">{item.title || titleFor(item.type)}</strong>
+          <span className="inline-flex items-center gap-1.5 w-fit px-2 py-0.5 rounded-full bg-slate-50 border border-slate-100 text-[10px] font-bold text-slate-600 tracking-wide uppercase">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" aria-hidden="true" />
+            {statusLabel(status)}
+          </span>
+        </div>
       </div>
-    </div>
-    {detail && <div className="active-card-detail-line">{detail}</div>}
-    <div className="active-card-actions-row">
-      <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={13} /></button>
-      {children}
-    </div>
-  </article>;
+      {detail && <div className="text-xs text-slate-500 leading-relaxed mb-3 line-clamp-2">{detail}</div>}
+      <div className="flex items-center justify-between mt-auto pt-3 border-t border-slate-100">
+        <button className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 transition-colors" type="button" onClick={() => onDetails?.(item)}>
+          <span>Xem chi tiết</span>
+          <ArrowRight size={14} strokeWidth={2.5} />
+        </button>
+        {children}
+      </div>
+    </article>
+  );
 }
 
 export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; onCancelled?: () => void }) {
@@ -81,8 +94,21 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
   const { data: tracking } = useRideTracking(bookingId);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
+
   if (cancelled) return null;
-  return <ActiveWorkRailCard item={item} onDetails={onDetails}>{item.type === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" /> : null}</ActiveWorkRailCard>;
+
+  return (
+    <ActiveWorkRailCard item={item} onDetails={onDetails}>
+      {item.type === "ride_booking" ? (
+        <RideCancelButton
+          bookingId={bookingId}
+          status={status}
+          onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }}
+          className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors ml-3"
+        />
+      ) : null}
+    </ActiveWorkRailCard>
+  );
 }
 
 export function ConversationContextCards({ onServiceShortcut }: { onServiceShortcut?: (prompt: string) => void }) {
@@ -90,49 +116,47 @@ export function ConversationContextCards({ onServiceShortcut }: { onServiceShort
     {
       icon: CarFront,
       label: "Đi xe",
-      accent: "service-shortcut-ride",
       prompt: "Đặt xe từ ",
-      description: "Xe 4 chỗ, 7 chỗ, nhanh chóng",
+      description: "Xe 4, 7 chỗ, gọi xe nhanh chóng",
     },
     {
       icon: Utensils,
       label: "Đồ ăn",
-      accent: "service-shortcut-food",
       prompt: "Tìm ",
-      description: "Giao hàng tận nơi",
+      description: "Giao đồ ăn tận cửa",
     },
     {
       icon: UtensilsCrossed,
       label: "Nhà hàng",
-      accent: "service-shortcut-restaurant",
       prompt: "Đặt bàn nhà hàng ",
-      description: "Ăn tối, tiệc, sự kiện",
+      description: "Đặt bàn hẹn hò, đối tác",
     },
     {
       icon: Stethoscope,
       label: "Khám bệnh",
-      accent: "service-shortcut-healthcare",
       prompt: "Đặt lịch khám ",
-      description: "Đặt hẹn bác sĩ nhanh",
+      description: "Đặt khám bác sĩ chuyên khoa",
     },
   ];
 
   return (
-    <div className="service-shortcuts">
-      <span className="service-shortcuts-label">Bắt đầu từ đây</span>
-      <div className="service-shortcuts-grid">
-        {services.map(({ icon: Icon, label, accent, prompt, description }) => (
+    <div className="px-4 pb-6">
+      <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3 px-1">Lối tắt dịch vụ</span>
+      <div className="grid gap-3">
+        {services.map(({ icon: Icon, label, prompt, description }) => (
           <button
             key={label}
             type="button"
-            className={`service-shortcut-card ${accent}`}
+            className="group flex flex-col p-4 bg-white border border-slate-200/60 rounded-2xl shadow-sm hover:shadow-md hover:border-blue-200 hover:-translate-y-0.5 transition-all duration-300 text-left active:scale-[0.98]"
             onClick={() => onServiceShortcut?.(prompt)}
           >
-            <span className="service-shortcut-icon"><Icon size={16} aria-hidden="true" /></span>
-            <div className="service-shortcut-info">
-              <span className="service-shortcut-name">{label}</span>
-              <span className="service-shortcut-desc">{description}</span>
+            <div className="flex items-center gap-3 mb-2">
+              <div className="grid place-items-center w-8 h-8 rounded-lg bg-slate-50 text-slate-600 border border-slate-100 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-colors duration-300">
+                <Icon size={16} strokeWidth={2} />
+              </div>
+              <span className="text-[13px] font-bold text-slate-900">{label}</span>
             </div>
+            <span className="text-[11px] text-slate-500 leading-relaxed block pl-11">{description}</span>
           </button>
         ))}
       </div>
@@ -152,26 +176,32 @@ export function ActiveWorkDetailDialog({ item, open, onOpenChange }: { item: His
   const destination = ride ? pointFrom(resource.dropoff_latitude, resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination") : pointFrom(resource.latitude, resource.longitude) ?? pointFromRecord(restaurant || food ? resource.restaurant : resource.facility) ?? pointFromRecord(resource.location);
   const route = ride ? routeFrom(resource.route ?? resource) : undefined;
   const routePolyline = typeof resource.route_polyline === "string" ? resource.route_polyline : undefined;
-  const address = optionalText(resource.address ?? resource.location);
 
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className={`service-detail-dialog active-work-detail-dialog${ride ? " active-ride-detail-dialog" : ""}${restaurant ? " service-detail-dialog-restaurant active-restaurant-detail-dialog" : ""}${healthcare ? " service-detail-dialog-healthcare active-healthcare-detail-dialog" : ""}`}>
-      <DialogTitle className={ride || restaurant || healthcare ? "visually-hidden" : undefined}>{title}</DialogTitle>
-      <DialogDescription className={ride || restaurant || healthcare ? "visually-hidden" : undefined}>{statusLabel(resource.status ?? item.status)}</DialogDescription>
-      {ride ? <ActiveRideDetail item={item} /> : restaurant ? <ActiveRestaurantDetail item={item} /> : healthcare ? <ActiveHealthcareDetail item={item} destination={destination} /> : food ? <ActiveFoodDetail item={item} /> : <div className="service-detail-dialog-body">
-        <div className="consumer-detail-grid">
-          <>
-            <Fact label="Cơ sở" value={nestedName(resource.facility) || optionalText(resource.facility_name)} />
-            <Fact label="Chuyên khoa" value={optionalText(resource.department)} />
-            <Fact label="Bác sĩ" value={optionalText(resource.doctor_name ?? resource.doctor)} />
-            <Fact label="Thời gian" value={formatDateTime(resource.start_time ?? resource.appointment_time)} />
-            <Fact label="Chi phí" value={formatMoney(resource.price ?? resource.amount, String(resource.currency ?? "VND"))} />
-          </>
-        </div>
-        {destination || origin ? <XOneMap origin={origin} destination={destination} routeGeometry={route} routePolyline={routePolyline} label={`${title}: vị trí`} /> : null}
-      </div>}
-    </DialogContent>
-  </Dialog>;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl w-[95vw] p-0 overflow-hidden bg-white rounded-3xl sm:rounded-[2rem] border-slate-200/60 shadow-2xl focus:outline-none">
+        <DialogTitle className="sr-only">{title}</DialogTitle>
+        <DialogDescription className="sr-only">{statusLabel(resource.status ?? item.status)}</DialogDescription>
+
+        {ride ? <ActiveRideDetail item={item} /> : restaurant ? <ActiveRestaurantDetail item={item} /> : healthcare ? <ActiveHealthcareDetail item={item} destination={destination} /> : food ? <ActiveFoodDetail item={item} /> : (
+          <div className="flex flex-col md:flex-row h-[600px] max-h-[85vh] bg-white">
+            <div className="w-full md:w-[360px] flex-shrink-0 bg-slate-50/50 border-r border-slate-200/60 p-6 overflow-y-auto">
+              <div className="grid gap-2">
+                <Fact label="Cơ sở" value={nestedName(resource.facility) || optionalText(resource.facility_name)} />
+                <Fact label="Chuyên khoa" value={optionalText(resource.department)} />
+                <Fact label="Bác sĩ" value={optionalText(resource.doctor_name ?? resource.doctor)} />
+                <Fact label="Thời gian" value={formatDateTime(resource.start_time ?? resource.appointment_time)} />
+                <Fact label="Chi phí" value={formatMoney(resource.price ?? resource.amount, String(resource.currency ?? "VND"))} />
+              </div>
+            </div>
+            <div className="flex-1 relative bg-slate-100 min-h-[300px]">
+              {destination || origin ? <XOneMap origin={origin} destination={destination} routeGeometry={route} routePolyline={routePolyline} label={`${title}: vị trí`} /> : <div className="absolute inset-0 grid place-items-center text-slate-500 font-medium text-sm">Chưa có thông tin vị trí</div>}
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function ActiveFoodDetail({ item }: { item: HistoryItem }) {
@@ -179,7 +209,27 @@ function ActiveFoodDetail({ item }: { item: HistoryItem }) {
   const orderId = optionalText(resource.id ?? resource.order_id ?? resource.resource_id, item.id);
   const pickupStops = Array.isArray(resource.pickup_stops) ? resource.pickup_stops.filter(isRecord) : [];
   const pickupNames = pickupStops.map((stop) => nestedName(stop)).filter(Boolean);
-  return <div className="service-detail-dialog-body food-active-detail"><div className="consumer-detail-grid"><Fact label="Điểm lấy hàng" value={pickupNames.length ? pickupNames.join(" → ") : nestedName(resource.restaurant) || optionalText(resource.restaurant_name)} /><Fact label="Địa chỉ giao" value={optionalText(resource.delivery_address ?? resource.address)} /><Fact label="Món đã chọn" value={itemsText(resource.items)} /><Fact label="Tổng đơn" value={formatMoney(resource.total ?? resource.amount, String(resource.currency ?? "VND"))} /><Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} /></div>{orderId ? <FoodTrackingPanel orderId={orderId} /> : null}</div>;
+
+  return (
+    <div className="flex flex-col md:flex-row h-[600px] max-h-[85vh] bg-white">
+      <div className="w-full md:w-[360px] flex-shrink-0 border-r border-slate-200/60 flex flex-col bg-slate-50/50">
+        <div className="p-6 border-b border-slate-200/60 bg-white">
+          <span className="text-[10px] font-extrabold text-blue-600 tracking-widest uppercase mb-1 block">Chi tiết đơn hàng</span>
+          <h3 className="text-xl font-bold text-slate-900">{pickupNames.length ? pickupNames.join(" → ") : nestedName(resource.restaurant) || optionalText(resource.restaurant_name)}</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-0.5">
+          <Fact label="Điểm lấy hàng" value={pickupNames.length ? pickupNames.join(" → ") : nestedName(resource.restaurant) || optionalText(resource.restaurant_name)} />
+          <Fact label="Địa chỉ giao" value={optionalText(resource.delivery_address ?? resource.address)} />
+          <Fact label="Món đã chọn" value={itemsText(resource.items)} />
+          <Fact label="Tổng đơn" value={formatMoney(resource.total ?? resource.amount, String(resource.currency ?? "VND"))} />
+          <Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} />
+        </div>
+      </div>
+      <div className="flex-1 relative bg-slate-100 min-h-[300px]">
+        {orderId ? <FoodTrackingPanel orderId={orderId} /> : <div className="absolute inset-0 grid place-items-center text-slate-400 font-medium text-sm">Chưa có thông tin theo dõi</div>}
+      </div>
+    </div>
+  );
 }
 
 function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
@@ -206,14 +256,31 @@ function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
   }, [address, canResolve, directPoint?.latitude, directPoint?.longitude]);
 
   const location = resolvedPoint ? { ...resolvedPoint, label: name } : undefined;
-  return <div className="restaurant-map-detail">
-    <section className="restaurant-map-stage" aria-label="Bản đồ và thông tin đặt bàn">
-      <div className="restaurant-map-canvas">
-        {location ? <XOneMap restaurant={location} density="active" label={`Vị trí ${name}`} /> : resolving ? <p className="inline-note restaurant-map-empty">Đang xác định vị trí từ địa chỉ nhà hàng…</p> : <p className="inline-note restaurant-map-empty">{address}</p>}
-        <aside className="restaurant-map-info-panel" aria-label="Thông tin đặt bàn"><span className="eyebrow">ĐẶT BÀN ĐÃ XÁC NHẬN</span><h3>{name}</h3><p>{address}</p><div className="consumer-detail-grid"><Fact label="Thời gian" value={formatDateTime(resource.start_at ?? resource.reservation_time)} /><Fact label="Số khách" value={resource.party_size ? `${String(resource.party_size)} người` : "Chưa có"} /><Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} /><Fact label="Bàn" value={optionalText(resource.table_code, "Đã sắp xếp")} /><Fact label="Ẩm thực" value={optionalText(restaurant?.cuisine, "Theo thực đơn nhà hàng")} /><Fact label="Đánh giá" value={typeof restaurant?.rating === "number" ? `${String(restaurant.rating)} ★` : "Chưa có"} /><Fact label="Mức giá" value={optionalText(restaurant?.price_level, "Chưa có")} /><Fact label="Giờ mở cửa" value="Hằng ngày: 08:00–22:00" /></div></aside>
+
+  return (
+    <div className="flex flex-col md:flex-row h-[600px] max-h-[85vh] bg-white">
+      <div className="w-full md:w-[360px] flex-shrink-0 border-r border-slate-200/60 flex flex-col bg-slate-50/50">
+        <div className="p-6 border-b border-slate-200/60 bg-white">
+          <span className="text-[10px] font-extrabold text-blue-600 tracking-widest uppercase mb-1 block">Đặt bàn nhà hàng</span>
+          <h3 className="text-xl font-bold text-slate-900">{name}</h3>
+          <p className="text-sm text-slate-500 mt-1 line-clamp-2">{address}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-0.5">
+          <Fact label="Thời gian" value={formatDateTime(resource.start_at ?? resource.reservation_time)} />
+          <Fact label="Số khách" value={resource.party_size ? `${String(resource.party_size)} người` : "Chưa có"} />
+          <Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} />
+          <Fact label="Bàn" value={optionalText(resource.table_code, "Đã sắp xếp")} />
+          <Fact label="Ẩm thực" value={optionalText(restaurant?.cuisine, "Theo thực đơn nhà hàng")} />
+          <Fact label="Đánh giá" value={typeof restaurant?.rating === "number" ? `${String(restaurant.rating)} ★` : "Chưa có"} />
+          <Fact label="Mức giá" value={optionalText(restaurant?.price_level, "Chưa có")} />
+          <Fact label="Giờ mở cửa" value="Hằng ngày: 08:00–22:00" />
+        </div>
       </div>
-    </section>
-  </div>;
+      <div className="flex-1 relative bg-slate-100 min-h-[300px]">
+        {location ? <XOneMap restaurant={location} density="active" label={`Vị trí ${name}`} /> : resolving ? <div className="absolute inset-0 grid place-items-center text-slate-500 font-medium text-sm">Đang xác định vị trí từ địa chỉ nhà hàng…</div> : <div className="absolute inset-0 grid place-items-center text-slate-500 font-medium text-sm px-6 text-center">{address}</div>}
+      </div>
+    </div>
+  );
 }
 
 function ActiveHealthcareDetail({ item, destination }: { item: HistoryItem; destination?: XOnePoint }) {
@@ -226,11 +293,30 @@ function ActiveHealthcareDetail({ item, destination }: { item: HistoryItem; dest
   const department = optionalText(resource.department_name ?? nestedName(resource.department) ?? (typeof resource.department === "string" ? resource.department : undefined), "Thông tin khoa chưa có");
   const startTime = resource.start_time ?? resource.appointment_time;
   const location = destination ? { ...destination, label: facilityName } : undefined;
-  return <div className="healthcare-map-detail active-healthcare-map-detail"><section className="healthcare-map-stage" aria-label="Bản đồ và thông tin lịch khám"><div className="healthcare-map-canvas">
-    {location ? <XOneMap healthcare={location} density="active" label={`Vị trí ${facilityName}`} /> : <p className="inline-note">Cơ sở chưa có tọa độ đã xác minh nên X-One không hiển thị vị trí ước lượng.</p>}
-    <button className="detail-info-button healthcare-map-info-button" type="button" aria-expanded={showInfo} onClick={() => setShowInfo((value) => !value)}>{showInfo ? "Ẩn thông tin" : "Thông tin lịch"}</button>
-    {showInfo ? <aside className="healthcare-map-info-panel" aria-label="Thông tin lịch khám"><span className="eyebrow">LỊCH KHÁM</span><h3>{item.title || "Lịch khám"}</h3><p>{facilityName}</p><div className="consumer-detail-grid"><Fact label="Bác sĩ" value={doctor} /><Fact label="Chuyên khoa" value={department} /><Fact label="Ngày giờ" value={formatDateTime(startTime)} /><Fact label="Địa chỉ" value={address} /><Fact label="Chi phí" value={formatMoney(resource.price ?? resource.amount, String(resource.currency ?? "VND"))} /><Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} /></div></aside> : null}
-  </div></section></div>;
+
+  return (
+    <div className="flex flex-col md:flex-row h-[600px] max-h-[85vh] bg-white">
+      <div className={`w-full md:w-[360px] flex-shrink-0 border-r border-slate-200/60 flex flex-col bg-slate-50/50 transition-all ${showInfo ? "block" : "hidden md:flex"}`}>
+        <div className="p-6 border-b border-slate-200/60 bg-white">
+          <span className="text-[10px] font-extrabold text-blue-600 tracking-widest uppercase mb-1 block">Lịch khám bệnh</span>
+          <h3 className="text-xl font-bold text-slate-900">{item.title || "Lịch khám"}</h3>
+          <p className="text-sm text-slate-500 mt-1 line-clamp-2">{facilityName}</p>
+        </div>
+        <div className="flex-1 overflow-y-auto p-6 space-y-0.5">
+          <Fact label="Bác sĩ" value={doctor} />
+          <Fact label="Chuyên khoa" value={department} />
+          <Fact label="Ngày giờ" value={formatDateTime(startTime)} />
+          <Fact label="Địa chỉ" value={address} />
+          <Fact label="Chi phí" value={formatMoney(resource.price ?? resource.amount, String(resource.currency ?? "VND"))} />
+          <Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} />
+        </div>
+      </div>
+      <div className="flex-1 relative bg-slate-100 min-h-[300px]">
+        {location ? <XOneMap healthcare={location} density="active" label={`Vị trí ${facilityName}`} /> : <div className="absolute inset-0 grid place-items-center text-slate-500 font-medium text-sm text-center px-6">Cơ sở chưa có tọa độ đã xác minh nên X-One không hiển thị vị trí ước lượng.</div>}
+        <button className="md:hidden absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-white rounded-full shadow-md text-sm font-semibold text-slate-700 transition-all active:scale-95" type="button" aria-expanded={showInfo} onClick={() => setShowInfo((value) => !value)}>{showInfo ? "Xem bản đồ" : "Thông tin lịch"}</button>
+      </div>
+    </div>
+  );
 }
 
 function ActiveRideDetail({ item }: { item: HistoryItem }) {
@@ -251,7 +337,12 @@ function ActiveRideDetail({ item }: { item: HistoryItem }) {
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
-  return <div className="consumer-detail-fact"><span>{label}</span><strong>{value}</strong></div>;
+  return (
+    <div className="flex flex-col gap-1 py-3 border-b border-slate-100 last:border-0">
+      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+      <strong className="text-sm font-semibold text-slate-800">{value}</strong>
+    </div>
+  );
 }
 
 function titleFor(type: HistoryItem["type"]): string {

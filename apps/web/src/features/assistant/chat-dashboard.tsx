@@ -1,3 +1,4 @@
+// filepath: apps/web/src/features/assistant/chat-dashboard.tsx
 "use client";
 
 import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, Mic, PanelRightOpen, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
@@ -45,12 +46,12 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         const parsed = parseInt(savedWidth, 10);
         if (!isNaN(parsed) && parsed >= 220 && parsed <= 500) setRailWidth(parsed);
       }
-    } catch {}
+    } catch { }
 
     const handleToggleEvent = () => {
       setRailCollapsed((prev) => {
         const next = !prev;
-        try { localStorage.setItem("xone_rail_collapsed", String(next)); } catch {}
+        try { localStorage.setItem("xone_rail_collapsed", String(next)); } catch { }
         window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: next } }));
         return next;
       });
@@ -75,7 +76,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       setIsResizingRail(false);
       try {
         localStorage.setItem("xone_rail_width", String(railWidth));
-      } catch {}
+      } catch { }
     };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
@@ -87,7 +88,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
   function toggleRail(collapsed: boolean) {
     setRailCollapsed(collapsed);
-    try { localStorage.setItem("xone_rail_collapsed", String(collapsed)); } catch {}
+    try { localStorage.setItem("xone_rail_collapsed", String(collapsed)); } catch { }
     window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed } }));
   }
 
@@ -148,7 +149,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         if (active) setActiveItems((current) => sameHistoryItems(current, result.items) ? current : result.items);
         if (active && result.items.length && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
       } catch {
-        // Keep the last known active work visible during a transient network failure.
         if (active && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
       }
       finally { request = undefined; }
@@ -305,109 +305,142 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
 
   return (
-    <section className="assistant-page" aria-labelledby="assistant-title">
-    <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
-    <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div
-      className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
-      style={{
-        gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px`,
-      }}
-    >
-      <div className="chat-column">
-        <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
-          {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
-          {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
-          {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
-          {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
-        </div>
-        {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
-        <div className="composer-wrap">
-          <div className="composer-box">
-            <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
-              <PlusCircle size={20} />
-            </button>
-            <textarea
-              ref={inputRef}
-              aria-label="Nhập yêu cầu"
-              disabled={sending}
-              onChange={(event) => setComposer(event.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
-              rows={1}
-              value={composer}
-            />
-            <div className="composer-actions">
-              <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
-                <Mic size={18} />
-              </button>
-              <button
-                className="send-button"
-                type="button"
-                onClick={() => void send()}
-                disabled={sending || !composer.trim()}
-                aria-label="Gửi yêu cầu"
-              >
-                {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
-              </button>
-            </div>
-          </div>
-          <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
-        </div>
-      </div>
+    <section className="flex flex-col h-full w-full overflow-hidden bg-slate-50/50" aria-labelledby="assistant-title">
+      <h1 id="assistant-title" className="sr-only">Trợ lý X-One</h1>
 
-      {/* Center Vertical Edge Toggle Button for Right Rail */}
-      <button
-        className={`rail-edge-toggle${railCollapsed ? " is-collapsed" : ""}`}
-        type="button"
-        aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-        title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
-        onClick={() => toggleRail(!railCollapsed)}
+      {/* Header */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-6 py-5 md:px-10 shrink-0 border-b border-slate-200/60 bg-white">
+        <div className="grid gap-1">
+          <span className="text-[10px] font-extrabold text-slate-400 tracking-widest uppercase">Trợ lý cá nhân</span>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Xin chào, {user?.full_name || "bạn"}!</h2>
+          <p className="text-sm text-slate-500 font-medium">Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p>
+        </div>
+        <button className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 border border-slate-200/60 rounded-xl text-sm font-semibold text-slate-700 transition-all duration-200 hover:bg-white hover:border-slate-300 hover:shadow-sm active:scale-95 self-start md:self-auto" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới">
+          <Plus size={16} strokeWidth={2.5} />
+          <span>Hội thoại mới</span>
+        </button>
+      </header>
+
+      {/* Layout Grid */}
+      <div
+        className={`relative flex-1 grid min-h-0 overflow-hidden ${isResizingRail ? "select-none cursor-col-resize" : ""}`}
         style={{
-          right: railCollapsed ? "10px" : `${railWidth}px`,
+          gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px`,
         }}
       >
-        {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-      </button>
 
-      <ContextRail
-        mode={activeItems.length ? "active" : "idle"}
-        title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
-        description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
-        onCollapse={() => toggleRail(true)}
-        style={{ width: railCollapsed ? 0 : railWidth }}
-        resizer={
-          !railCollapsed ? (
-            <div
-              className="rail-resizer"
-              onMouseDown={handleRailMouseDown}
-              onDoubleClick={() => toggleRail(true)}
-              title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn"
-            />
-          ) : undefined
-        }
-      >
-        {activeItems.length ? (
-          <div className="active-work-list">
-            {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
+        {/* Main Chat Column */}
+        <div className="flex flex-col h-full min-w-0 bg-white md:rounded-tl-2xl md:border-t md:border-l border-slate-200/60 shadow-sm relative overflow-hidden md:ml-4">
+
+          {/* Feed */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 lg:p-8 space-y-8 scrollbar-thin scrollbar-thumb-slate-200 hover:scrollbar-thumb-slate-300" ref={feedRef} aria-busy={loadingHistory}>
+            {loadingHistory && messages.length === 0 ? <div className="text-center text-sm text-slate-400 font-medium my-10">Đang tải cuộc trò chuyện…</div> : null}
+            {conversationLoadError && !loadingHistory ? (
+              <div className="mx-auto max-w-md p-4 bg-red-50 border border-red-100 rounded-2xl text-center grid gap-3" role="alert">
+                <p className="text-sm text-red-600 font-medium">{conversationLoadError}</p>
+                <button className="mx-auto px-4 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-semibold hover:bg-red-200 active:scale-95 transition-all" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button>
+              </div>
+            ) : null}
+            {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
+            {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
           </div>
-        ) : (
-          <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
-        )}
-      </ContextRail>
-    </div>
-    <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
-  </section>
+
+          {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
+
+          {/* Composer */}
+          <div className="p-4 md:p-6 bg-white/90 backdrop-blur-md border-t border-slate-100 shrink-0 sticky bottom-0 z-10">
+            <div className="relative flex items-end gap-2 max-w-4xl mx-auto bg-slate-50 border border-slate-200/80 rounded-2xl shadow-sm focus-within:bg-white focus-within:shadow-md focus-within:border-blue-300 transition-all duration-300 px-3 py-2.5">
+              <button className="p-2 -ml-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 rounded-xl transition-colors active:scale-95 shrink-0" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+                <PlusCircle size={20} strokeWidth={2} />
+              </button>
+
+              <textarea
+                ref={inputRef}
+                aria-label="Nhập yêu cầu"
+                disabled={sending}
+                onChange={(event) => setComposer(event.target.value)}
+                onKeyDown={onKeyDown}
+                placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
+                rows={1}
+                value={composer}
+                className="flex-1 max-h-32 min-h-[24px] bg-transparent border-0 outline-none resize-none py-2 text-slate-900 text-[15px] placeholder:text-slate-400 scrollbar-thin"
+              />
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 rounded-xl transition-colors active:scale-95" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
+                  <Mic size={18} strokeWidth={2} />
+                </button>
+                <button
+                  className="grid place-items-center w-10 h-10 rounded-xl bg-blue-600 text-white font-bold transition-all duration-200 hover:bg-blue-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-600/20"
+                  type="button"
+                  onClick={() => void send()}
+                  disabled={sending || !composer.trim()}
+                  aria-label="Gửi yêu cầu"
+                >
+                  {sending ? <Loader2 className="animate-spin" size={18} strokeWidth={2.5} /> : <ArrowUp size={18} strokeWidth={2.5} />}
+                </button>
+              </div>
+            </div>
+            <p className="text-center text-[10px] text-slate-400 mt-2 font-medium uppercase tracking-wider">Nhấn Enter để gửi · Shift + Enter để xuống dòng</p>
+          </div>
+
+        </div>
+
+        {/* Rail edge toggle */}
+        <button
+          className={`absolute top-1/2 -translate-y-1/2 z-40 grid w-7 h-7 place-items-center bg-white border border-slate-200/80 rounded-full text-slate-500 cursor-pointer shadow-sm shadow-slate-200/50 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:shadow-md hover:scale-110 active:scale-95 ${railCollapsed ? "shadow-md" : ""}`}
+          type="button"
+          aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+          title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
+          onClick={() => toggleRail(!railCollapsed)}
+          style={{
+            right: railCollapsed ? "10px" : `${railWidth}px`,
+            transform: "translate(50%, -50%)"
+          }}
+        >
+          {railCollapsed ? <ChevronLeft size={14} strokeWidth={2.5} /> : <ChevronRight size={14} strokeWidth={2.5} />}
+        </button>
+
+        {/* Rail Content */}
+        <ContextRail
+          mode={activeItems.length ? "active" : "idle"}
+          title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
+          description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
+          onCollapse={() => toggleRail(true)}
+          style={{ width: railCollapsed ? 0 : railWidth }}
+          resizer={
+            !railCollapsed ? (
+              <div
+                className="absolute top-0 -left-[3px] bottom-0 w-[6px] z-[35] cursor-col-resize transition-colors duration-200 hover:bg-blue-500/60"
+                onMouseDown={handleRailMouseDown}
+                onDoubleClick={() => toggleRail(true)}
+                title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn"
+              />
+            ) : undefined
+          }
+        >
+          {activeItems.length ? (
+            <div className="grid gap-3 p-4">
+              {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
+            </div>
+          ) : (
+            <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
+          )}
+        </ContextRail>
+      </div>
+
+      <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
+    </section>
   );
 }
 
 type ServiceCard = {
-  icon: React.ComponentType<{ size: number }>;
+  icon: React.ComponentType<{ size: number, strokeWidth?: number, className?: string }>;
   service: string;
   desc: string;
-  accent: string;
   prompt: string;
   example: string;
+  accent?: string;
 };
 
 function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
@@ -416,7 +449,6 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
       icon: Car,
       service: "Đặt xe di chuyển",
       desc: "Xe 4 chỗ, 7 chỗ đón tận nơi",
-      accent: "welcome-card-ride",
       prompt: "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
       example: "VinUni → Hồ Gươm (4 chỗ)",
     },
@@ -424,7 +456,6 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
       icon: Utensils,
       service: "Giao đồ ăn ngon",
       desc: "Tìm quán ngon và đặt món nóng",
-      accent: "welcome-card-food",
       prompt: "Tìm phở bò giao về nhà",
       example: "Tìm phở bò giao tận nơi",
     },
@@ -432,7 +463,6 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
       icon: UtensilsCrossed,
       service: "Đặt bàn nhà hàng",
       desc: "Hẹn hò, tiệc gia đình, tiếp khách",
-      accent: "welcome-card-restaurant",
       prompt: "Tối nay tìm nhà hàng cho 2 người ở Hà Nội",
       example: "Bàn 2 người tối nay ở Hà Nội",
     },
@@ -440,41 +470,47 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
       icon: Stethoscope,
       service: "Đặt lịch khám bệnh",
       desc: "Bác sĩ chuyên khoa, đặt hẹn nhanh",
-      accent: "welcome-card-healthcare",
       prompt: "Giúp tôi đặt lịch khám thần kinh sáng mai",
       example: "Khám chuyên khoa thần kinh",
     },
   ];
 
   return (
-    <div className="welcome-state">
-      <div className="welcome-hero-badge">
-        <span className="welcome-sparkle"><Sparkles size={14} /></span>
-        <span>X-ONE CONCIERGE</span>
+    <div className="grid gap-6 max-w-4xl mx-auto w-full pt-8 pb-16 md:pt-16 md:pb-24 px-4 md:px-8">
+      <div className="flex flex-col items-center md:items-start text-center md:text-left gap-4">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-blue-50/80 to-indigo-50/80 border border-blue-100/80 text-blue-700 text-[10px] font-extrabold rounded-full uppercase tracking-widest shadow-sm">
+          <Sparkles size={13} strokeWidth={2.5} className="text-blue-600" />
+          <span>X-ONE ASSISTANT</span>
+        </div>
+        <h2 className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">Bạn cần hỗ trợ gì hôm nay?</h2>
+        <p className="text-slate-500 text-sm md:text-[15px] max-w-xl leading-relaxed">
+          Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
+        </p>
       </div>
-      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
-      <p className="welcome-sub">
-        Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
-      </p>
-      <div className="welcome-services-grid">
-        {services.map(({ icon: Icon, service, desc, accent, prompt, example }) => (
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+        {services.map(({ icon: Icon, service, desc, prompt, example }) => (
           <button
             key={service}
             type="button"
-            className={`welcome-service-card ${accent}`}
+            className="group flex flex-col text-left p-5 rounded-2xl border border-slate-200/60 bg-white transition-all duration-300 hover:shadow-lg hover:shadow-slate-200/40 hover:border-blue-200 hover:-translate-y-1 active:scale-[0.98]"
             onClick={() => onStart(prompt)}
           >
-            <div className="welcome-card-icon-wrap">
-              <Icon size={20} aria-hidden="true" />
-            </div>
-            <div className="welcome-card-body">
-              <div className="welcome-card-title-row">
-                <strong>{service}</strong>
-                <span className="welcome-card-arrow" aria-hidden="true">↗</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className="grid place-items-center w-11 h-11 rounded-xl bg-slate-50 border border-slate-100 text-slate-600 transition-all duration-300 group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 group-hover:shadow-md group-hover:shadow-blue-600/20">
+                <Icon size={20} strokeWidth={2} />
               </div>
-              <p className="welcome-card-desc">{desc}</p>
-              <div className="welcome-card-prompt-pill">
-                <span>Ví dụ:</span> &ldquo;{example}&rdquo;
+              <span className="text-slate-300 transition-all duration-300 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 group-hover:text-blue-600" aria-hidden="true">
+                <ArrowUp size={18} strokeWidth={2.5} className="rotate-45" />
+              </span>
+            </div>
+
+            <div className="grid gap-1">
+              <strong className="text-slate-900 font-bold text-[15px]">{service}</strong>
+              <p className="text-slate-500 text-[13px] leading-relaxed mb-3">{desc}</p>
+
+              <div className="inline-block mt-auto w-fit px-2.5 py-1.5 bg-slate-50 rounded-lg text-xs text-slate-500 border border-slate-100/80 font-medium transition-colors duration-300 group-hover:bg-blue-50/60 group-hover:border-blue-100 group-hover:text-blue-700">
+                <span className="opacity-70">Ví dụ:</span> &ldquo;{example}&rdquo;
               </div>
             </div>
           </button>
@@ -486,7 +522,54 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
 
 function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
   const assistant = message.role === "assistant";
-  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
+
+  return (
+    <article className={`flex gap-3 md:gap-4 w-full max-w-4xl mx-auto group ${assistant ? "items-start" : "items-start flex-row-reverse"} ${message.requestStatus === "error" ? "opacity-90" : ""}`}>
+      {/* Avatar */}
+      <div className={`grid place-items-center w-8 h-8 rounded-full shrink-0 mt-1 shadow-sm ${assistant ? "bg-blue-600 text-white shadow-blue-600/20" : "bg-white text-slate-600 font-extrabold text-[10px] border border-slate-200"}`}>
+        {assistant ? <Bot size={16} strokeWidth={2.5} /> : <span>YOU</span>}
+      </div>
+
+      {/* Content */}
+      <div className={`grid gap-2 min-w-0 flex-1 ${assistant ? "max-w-[90%] md:max-w-[85%]" : "max-w-[85%] md:max-w-[75%]"}`}>
+
+        {/* Text */}
+        {message.text && (
+          <div className={`${assistant ? "text-slate-700 text-[15px] leading-relaxed mt-1" : "bg-slate-100 text-slate-900 px-4 py-2.5 rounded-2xl rounded-tr-sm text-[15px] leading-relaxed shadow-sm border border-slate-200/50 w-fit ml-auto break-words"}`}>
+            {message.text}
+          </div>
+        )}
+
+        {/* Typing indicator */}
+        {message.requestStatus === "sending" && (
+          <div className="flex items-center gap-1.5 px-4 py-3 bg-slate-50 w-fit rounded-2xl rounded-tl-sm border border-slate-100 shadow-sm mt-1">
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+        )}
+
+        {/* Cards */}
+        {message.response ? (
+          <div className="mt-2 w-full overflow-hidden rounded-xl border border-slate-100 shadow-sm bg-white">
+            <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} />
+          </div>
+        ) : null}
+
+        {/* Errors / Retries */}
+        {message.requestStatus === "error" && message.retryText && (
+          <button className="inline-flex items-center justify-center gap-2 w-fit mt-1 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold border border-red-100 transition-all hover:bg-red-100 active:scale-95 shadow-sm" type="button" onClick={() => onRetry(message.retryText ?? "")}>
+            <RefreshCw size={14} strokeWidth={2.5} /> Thử lại
+          </button>
+        )}
+        {message.requestStatus === "error" && message.retryAction && (
+          <button className="inline-flex items-center justify-center gap-2 w-fit mt-1 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-semibold border border-red-100 transition-all hover:bg-red-100 active:scale-95 shadow-sm" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}>
+            <RefreshCw size={14} strokeWidth={2.5} /> Thử lại
+          </button>
+        )}
+      </div>
+    </article>
+  );
 }
 
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {
