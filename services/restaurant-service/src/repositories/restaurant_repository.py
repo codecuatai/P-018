@@ -21,14 +21,6 @@ from src.infrastructure.database import (
     utc_now,
 )
 
-RESTAURANT_SEEDS = (
-    ("rest-001", "Le Petit Bistro", "District 1, Ho Chi Minh City", "French", "$$$", 4.8),
-    ("rest-002", "Sakura Sushi House", "District 3, Ho Chi Minh City", "Japanese", "$$", 4.6),
-    ("rest-003", "Phở & Trà Heritage", "Hoan Kiem, Hanoi", "Vietnamese", "$", 4.9),
-    ("rest-004", "Trattoria Bella Italia", "Tay Ho, Hanoi", "Italian", "$$$", 4.7),
-)
-
-
 class RestaurantRepository:
     _IDEMPOTENCY_PENDING = '{"status":"PENDING"}'
 
@@ -57,23 +49,6 @@ class RestaurantRepository:
             restaurants = list(
                 db.scalars(self._active_restaurant_statement(db).order_by(RestaurantRow.id))
             )
-            if not restaurants:
-                for rid, name, location, cuisine, budget, rating in RESTAURANT_SEEDS:
-                    restaurants.append(
-                        RestaurantRow(
-                            id=rid,
-                            name=name,
-                            location=location,
-                            cuisine_type=cuisine,
-                            budget_range=budget,
-                            rating=rating,
-                            timezone="Asia/Ho_Chi_Minh",
-                            active=True,
-                        )
-                    )
-                    db.add(restaurants[-1])
-                db.flush()
-
             # Imported catalog rows are authoritative.  Add only the minimal
             # deterministic booking resources that an imported row may lack.
             # This keeps seed idempotent and makes real catalog records bookable
