@@ -5,13 +5,13 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
-import { emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
+import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail } from "@/features/product/context-rail";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
-  const [conversationId, setConversationId] = useState<string>();
+  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
@@ -112,6 +112,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   }, [activeRefreshNonce, user.sub]);
 
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
+
+  useEffect(() => {
+    emitActiveConversationChanged(conversationId);
+  }, [conversationId]);
 
   useEffect(() => {
     const handleNewConversation = () => newConversation();

@@ -8,7 +8,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { getUnreadNotificationCount, listConversations } from "@/lib/api-client";
-import { CONVERSATIONS_CHANGED_EVENT, emitNewConversation } from "@/lib/conversation-events";
+import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
@@ -27,21 +27,45 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [activeConversationId, setActiveConversationId] = useState<string>();
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
+  const assistantHref = activeConversationId ? `/app/conversations/${encodeURIComponent(activeConversationId)}` : "/app";
+
+  // AppShell remains mounted while users move between product pages. Seed the
+  // resume target from the URL so a direct conversation load is available even
+  // if the dashboard's browser event fires before this listener is attached.
+  useEffect(() => {
+    const match = pathname?.match(/^\/app\/conversations\/([^/]+)/);
+    if (match) setActiveConversationId(decodeURIComponent(match[1]));
+  }, [pathname]);
+
+  useEffect(() => {
+    const handleActiveConversation = (event: Event) => {
+      const conversationId = (event as CustomEvent<{ conversationId?: string }>).detail?.conversationId;
+      setActiveConversationId(typeof conversationId === "string" && conversationId ? conversationId : undefined);
+    };
+    const handleNewConversation = () => setActiveConversationId(undefined);
+    window.addEventListener(ACTIVE_CONVERSATION_EVENT, handleActiveConversation);
+    window.addEventListener(NEW_CONVERSATION_EVENT, handleNewConversation);
+    return () => {
+      window.removeEventListener(ACTIVE_CONVERSATION_EVENT, handleActiveConversation);
+      window.removeEventListener(NEW_CONVERSATION_EVENT, handleNewConversation);
+    };
+  }, []);
 
   async function handleLogout() {
     try { await logout(); } finally { router.replace("/"); }
   }
 
   return <div className="app-shell"><a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
-    <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} /></aside>
-    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link><Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact /></SheetContent></Sheet></header>
+    <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} /></aside>
+    <header className="app-mobile-header"><Link className="brand-link" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={27} /><span>X-One</span></Link><Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} compact /></SheetContent></Sheet></header>
     <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">{children}</main>
   </div>;
 }
 
-function Sidebar({ userEmail, pathname, onLogout, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; compact?: boolean }) {
-  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => { const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`); const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>; return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>; })}</nav><RecentConversations pathname={pathname} compact={compact} /><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
+function Sidebar({ userEmail, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
+  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => { const isAssistant = href === "/app"; const targetHref = isAssistant ? assistantHref : href; const current = isAssistant ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`); const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={targetHref} aria-current={current ? "page" : undefined} onClick={isAssistant && assistantWorkspace ? (event) => event.preventDefault() : undefined}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>; return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>; })}</nav><RecentConversations pathname={pathname} compact={compact} /><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
   return contents;
 }
 

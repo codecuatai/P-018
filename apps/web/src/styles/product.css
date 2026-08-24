@@ -288,7 +288,7 @@
 .history-row p { display: -webkit-box; min-width: 0; margin: 5px 0; overflow: hidden; color: var(--color-muted); font-size: 0.74rem; line-height: 1.45; text-overflow: ellipsis; white-space: normal; word-break: break-word; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .history-row time { color: var(--color-muted-soft); font-size: 0.65rem; }
 .history-row-actions { min-width: 0; flex: 0 0 auto; }
-.history-resource-row { display: flex; align-items: center; gap: 11px; padding: 13px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; }
+.history-resource-row { display: flex; width: 100%; max-width: 100%; min-width: 0; align-items: center; gap: 11px; padding: 13px; box-sizing: border-box; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; }
 .history-resource-row:hover { border-color: #B5D1E0; background: #FBFDFF; }
 .history-resource-mark { display: grid; width: 34px; height: 34px; place-items: center; flex: 0 0 auto; color: var(--color-primary-strong); background: var(--surface-ice); border-radius: 8px; }
 .history-resource-mark.food { color: var(--accent-food); background: #FBF5EC; }
@@ -296,8 +296,8 @@
 .history-resource-mark.restaurant { color: var(--accent-restaurant); background: #FBF0F4; }
 .history-resource-mark.healthcare { color: var(--accent-healthcare); background: var(--surface-mist); }
 .history-resource-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
-.history-resource-copy strong { color: var(--color-navy); font-size: 0.78rem; }
-.history-resource-copy > span { overflow: hidden; color: var(--color-muted); font-size: 0.71rem; text-overflow: ellipsis; white-space: nowrap; }
+.history-resource-copy strong { min-width: 0; color: var(--color-navy); font-size: 0.78rem; overflow-wrap: anywhere; }
+.history-resource-copy > span { display: -webkit-box; overflow: hidden; color: var(--color-muted); font-size: 0.71rem; line-height: 1.4; text-overflow: ellipsis; white-space: normal; word-break: break-word; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .history-resource-copy small { color: var(--color-muted-soft); font-size: 0.65rem; }
 .history-resource-arrow { color: var(--color-primary); font-size: 1.1rem; }
 .history-detail-heading { margin-top: 22px; }
