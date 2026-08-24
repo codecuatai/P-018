@@ -23,6 +23,39 @@ paths:
         '409': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
         '429': {$ref: '#/components/responses/Error'}
+  /api/v1/auth/google/url:
+    get:
+      summary: Get Google OAuth 2.0 authorization URL
+      security: []
+      responses:
+        '200':
+          description: Google consent screen authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: object
+                    required: [url]
+                    properties:
+                      url: {type: string, format: uri}
+                  meta: {$ref: '#/components/schemas/MetaEnvelope'}
+  /api/v1/auth/google:
+    post:
+      summary: Authenticate with Google OAuth 2.0 authorization code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GoogleAuthRequest'}
+      responses:
+        '201': {$ref: '#/components/responses/AuthIssued'}
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
   /api/v1/auth/login:
     post:
       summary: Create a session for valid credentials
@@ -213,6 +246,13 @@ components:
         full_name: {type: string, minLength: 1, maxLength: 160}
         email: {type: string, format: email, maxLength: 320}
         password: {type: string, minLength: 8, maxLength: 128, format: password}
+    GoogleAuthRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: {type: string, minLength: 1, maxLength: 2048}
+        redirect_uri: {type: string, format: uri, maxLength: 512}
     LoginRequest:
       type: object
       additionalProperties: false

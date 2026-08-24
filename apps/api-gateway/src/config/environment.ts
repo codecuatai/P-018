@@ -189,6 +189,9 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     LOCAL_DETERMINISTIC_LOCATION_FALLBACK: localDeterministicLocationFallback === 'true',
     GEOAPIFY_REAL_MODE: geoapifyRealMode === 'true',
     ...(config.GEOAPIFY_SERVER_API_KEY !== undefined ? { GEOAPIFY_SERVER_API_KEY: normalizeConfiguredSecret(config.GEOAPIFY_SERVER_API_KEY) } : {}),
+    ...(config.GOOGLE_CLIENT_ID !== undefined && String(config.GOOGLE_CLIENT_ID).trim() !== '' ? { GOOGLE_CLIENT_ID: normalizeConfiguredSecret(config.GOOGLE_CLIENT_ID) } : {}),
+    ...(config.GOOGLE_CLIENT_SECRET !== undefined && String(config.GOOGLE_CLIENT_SECRET).trim() !== '' ? { GOOGLE_CLIENT_SECRET: normalizeConfiguredSecret(config.GOOGLE_CLIENT_SECRET) } : {}),
+    ...(config.GOOGLE_CALLBACK_URL !== undefined && String(config.GOOGLE_CALLBACK_URL).trim() !== '' ? { GOOGLE_CALLBACK_URL: normalizeConfiguredSecret(config.GOOGLE_CALLBACK_URL) } : {}),
   };
 }
 
@@ -208,6 +211,7 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
     bodyLimitBytes: Number(validated.GATEWAY_BODY_LIMIT_BYTES),
     rateLimitProfiles: [
       { name: 'auth.login', method: 'POST', path: '/api/v1/auth/login', maxRequests: Number(validated.GATEWAY_AUTH_LOGIN_RATE_LIMIT), windowMs },
+      { name: 'auth.google', method: 'POST', path: '/api/v1/auth/google', maxRequests: Number(validated.GATEWAY_AUTH_LOGIN_RATE_LIMIT), windowMs },
       { name: 'assistant.chat', method: 'POST', path: '/api/v1/assistant/chat', maxRequests: Number(validated.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT), windowMs },
       { name: 'assistant.actions', method: 'POST', path: '/api/v1/assistant/actions', maxRequests: Number(validated.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT), windowMs },
       { name: 'auth.register', method: 'POST', path: '/api/v1/auth/register', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
