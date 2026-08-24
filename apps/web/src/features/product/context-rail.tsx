@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, CarFront, Stethoscope, Utensils } from "lucide-react";
+import { ArrowRight, CalendarDays, CarFront, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { resolveAddress } from "@/lib/api-client";
@@ -51,8 +51,57 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   return <ActiveWorkRailCard item={item} onDetails={onDetails}>{item.type === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" /> : null}</ActiveWorkRailCard>;
 }
 
-export function ConversationContextCards() {
-  return <p className="context-empty-state">Chưa có dịch vụ đang diễn ra.</p>;
+export function ConversationContextCards({ onServiceShortcut }: { onServiceShortcut?: (prompt: string) => void }) {
+  const services = [
+    {
+      icon: CarFront,
+      label: "Đi xe",
+      accent: "service-shortcut-ride",
+      prompt: "Đặt xe từ ",
+      description: "Xe 4 chỗ, 7 chỗ, nhanh chóng",
+    },
+    {
+      icon: Utensils,
+      label: "Đồ ăn",
+      accent: "service-shortcut-food",
+      prompt: "Tìm ",
+      description: "Giao hàng tận nơi",
+    },
+    {
+      icon: UtensilsCrossed,
+      label: "Nhà hàng",
+      accent: "service-shortcut-restaurant",
+      prompt: "Đặt bàn nhà hàng ",
+      description: "Ăn tối, tiệc, sự kiện",
+    },
+    {
+      icon: Stethoscope,
+      label: "Khám bệnh",
+      accent: "service-shortcut-healthcare",
+      prompt: "Đặt lịch khám ",
+      description: "Đặt hẹn bác sĩ nhanh",
+    },
+  ];
+
+  return (
+    <div className="service-shortcuts">
+      <span className="service-shortcuts-label">Bắt đầu từ đây</span>
+      <div className="service-shortcuts-grid">
+        {services.map(({ icon: Icon, label, accent, prompt, description }) => (
+          <button
+            key={label}
+            type="button"
+            className={`service-shortcut-card ${accent}`}
+            onClick={() => onServiceShortcut?.(prompt)}
+          >
+            <span className="service-shortcut-icon"><Icon size={16} aria-hidden="true" /></span>
+            <span className="service-shortcut-name">{label}</span>
+            <span className="service-shortcut-desc">{description}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function ActiveWorkDetailDialog({ item, open, onOpenChange }: { item: HistoryItem | null; open: boolean; onOpenChange: (open: boolean) => void }) {
