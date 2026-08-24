@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { statusLabel } from "@/lib/presentation";
@@ -96,14 +96,17 @@ export function XOneMap({
     return { route: parsedRoute, markers, points };
   }, [current, destination, driver, healthcare, origin, restaurant, routeGeometry, routePolyline, user]);
 
-  const mapTargetAvailable = !providerUnavailable && mapData.points.length > 0 && mapState !== "error";
+  const hasTargetPoints = !providerUnavailable && mapData.points.length > 0;
+  const canRenderMap = hasTargetPoints && mapState !== "error";
 
   useEffect(() => {
-    if (providerUnavailable || !mapData.points.length) {
-      setMapState("error");
-      return;
+    if (hasTargetPoints && mapState === "error") {
+      setMapState("loading");
     }
-    if (mapState === "error" || !mapTargetAvailable || !mapNodeRef.current) {
+  }, [hasTargetPoints]);
+
+  useEffect(() => {
+    if (!hasTargetPoints || mapState === "error" || !mapNodeRef.current) {
       return;
     }
 
@@ -160,7 +163,7 @@ export function XOneMap({
       polylineRef.current = undefined;
       fitKeyRef.current = "";
     };
-  }, [mapTargetAvailable, providerUnavailable, retryVersion]);
+  }, [hasTargetPoints, mapState, retryVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -239,7 +242,6 @@ export function XOneMap({
     }
   }, [mapData, mapState]);
 
-  const canRenderMap = mapTargetAvailable;
   return <section className={`xone-map xone-map-${density}`} aria-label={label}>
     <div className="xone-map-toolbar">
       <small>{routeProvider ? "Lộ trình đã được cập nhật" : "Bản đồ vị trí"}</small>
@@ -248,7 +250,17 @@ export function XOneMap({
         <button type="button" aria-label="Phóng to bản đồ" onClick={() => mapRef.current?.zoomIn()} disabled={!canRenderMap}><Plus size={13} /></button>
       </span>
     </div>
-    {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
+    {canRenderMap ? (
+      <div style={{ position: "relative", flex: "1 1 auto", minHeight: "150px", display: "flex", flexDirection: "column" }}>
+        <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} style={{ flex: 1, zIndex: 1 }} />
+        {mapState === "loading" && (
+          <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(234, 241, 243, 0.7)", borderRadius: "inherit" }}>
+            <LoaderCircle className="spinner" size={28} style={{ color: "var(--color-primary-strong)" }} />
+            <span style={{ marginTop: "10px", fontSize: "0.75rem", color: "var(--color-navy)", fontWeight: 700 }}>Đang tải bản đồ...</span>
+          </div>
+        )}
+      </div>
+    ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
     {mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
 }
@@ -261,11 +273,14 @@ function MapFallback({ label, points, providerUnavailable, locationDenied, route
       : points.length
         ? "Bản đồ nền chưa tải được trong môi trường hiện tại."
         : "Chưa có tọa độ đã xác minh.";
-  return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`}>
-    <strong>{providerUnavailable || points.length ? "Hiện chưa tải được bản đồ." : reason}</strong>
-    {providerUnavailable || points.length ? <button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button> : null}
-    <span>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
-    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl><div><dt>Lộ trình</dt><dd>{routeStatus ? statusLabel(routeStatus) : "Đã cập nhật"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
+  
+  const isErrorWithPoints = providerUnavailable || points.length > 0;
+
+  return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 20px", minHeight: "160px" }}>
+    <strong style={{ color: "var(--color-navy)", fontSize: "0.85rem" }}>{isErrorWithPoints ? "Hiện chưa tải được bản đồ." : reason}</strong>
+    {isErrorWithPoints ? <button className="button button-secondary" type="button" onClick={onRetry} style={{ marginTop: "12px" }}>Thử lại</button> : null}
+    <span style={{ marginTop: "8px", color: "var(--color-muted)", fontSize: "0.75rem", maxWidth: "300px" }}>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
+    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl style={{ marginTop: "16px" }}><div><dt>Lộ trình</dt><dd>{routeStatus ? statusLabel(routeStatus) : "Đã cập nhật"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
   </div>;
 }
 

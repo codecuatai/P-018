@@ -86,9 +86,14 @@ function FoodBrowse() {
   const [cancelChecked, setCancelChecked] = useState(false);
   const [notice, setNotice] = useState("");
   const [customizingItem, setCustomizingItem] = useState<JsonRecord>();
+  const [page, setPage] = useState(1);
+  const pageSize = 4;
+  const [menuPage, setMenuPage] = useState(1);
+  const menuPageSize = 4;
 
   const load = useCallback(async (query = "") => {
     setLoading(true); setError("");
+    setPage(1);
     try { setItems((await browseService("food", query)).items); }
     catch (reason) { setError(errorText(reason)); }
     finally { setLoading(false); }
@@ -98,7 +103,7 @@ function FoodBrowse() {
   async function openRestaurant(item: JsonRecord): Promise<void> {
     const id = idOf(item);
     if (!id) return;
-    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true);
+    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true); setMenuPage(1);
     try {
       const [detail, menu] = await Promise.all([getFoodRestaurant(id), getFoodMenu(id)]);
       setRestaurant(detail); setMenuItems(listFrom(menu.items));
@@ -184,9 +189,14 @@ function FoodBrowse() {
     finally { setCartLoading(false); }
   }
 
-  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <div className="menu-list">{menuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={setAddressId} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
+  const totalMenuPages = Math.max(1, Math.ceil(menuItems.length / menuPageSize));
+  const paginatedMenuItems = menuItems.slice((menuPage - 1) * menuPageSize, menuPage * menuPageSize);
 
-  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <div className="browse-results">{items.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
+  if (selectedId) return <div className="service-detail-flow" style={{ textAlign: "left" }}><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid" style={{ textAlign: "left" }}><div className="menu-panel" style={{ textAlign: "left" }}><div className="panel-heading" style={{ textAlign: "left" }}><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <><div className="menu-list" style={{ textAlign: "left" }}>{paginatedMenuItems.map((item) => <article className="menu-item" key={idOf(item)} style={{ textAlign: "left" }}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div style={{ textAlign: "left" }}><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{totalMenuPages > 1 ? (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "8px 0" }}><span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>Trang <strong>{menuPage}</strong> / {totalMenuPages} ({menuItems.length} món)</span><div style={{ display: "flex", gap: "6px" }}><button className="button button-secondary" type="button" onClick={() => setMenuPage((c) => Math.max(1, c - 1))} disabled={menuPage <= 1} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang trước"><ChevronLeft size={14} /> Trước</button><button className="button button-secondary" type="button" onClick={() => setMenuPage((c) => Math.min(totalMenuPages, c + 1))} disabled={menuPage >= totalMenuPages} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang sau">Sau <ChevronRight size={14} /></button></div></div>) : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={setAddressId} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+
+  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results" style={{ textAlign: "left" }}>{paginatedItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div style={{ textAlign: "left" }}><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{totalPages > 1 ? (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "8px 0" }}><span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>Trang <strong>{page}</strong> / {totalPages} ({items.length} nhà hàng)</span><div style={{ display: "flex", gap: "6px" }}><button className="button button-secondary" type="button" onClick={() => setPage((c) => Math.max(1, c - 1))} disabled={page <= 1} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang trước"><ChevronLeft size={14} /> Trước</button><button className="button button-secondary" type="button" onClick={() => setPage((c) => Math.min(totalPages, c + 1))} disabled={page >= totalPages} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang sau">Sau <ChevronRight size={14} /></button></div></div>) : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
 
 function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string) => void }) {
@@ -220,20 +230,230 @@ function RestaurantBrowse() {
   const [reservation, setReservation] = useState<JsonRecord>();
   const [checked, setChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 4;
 
-  const load = useCallback(async (query = "") => { setLoading(true); setError(""); try { setItems((await browseService("restaurant", query)).items); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }, []);
+  const load = useCallback(async (query = "") => {
+    setLoading(true);
+    setError("");
+    setPage(1);
+    try {
+      setItems((await browseService("restaurant", query)).items);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   useEffect(() => { void load(); }, [load]);
 
-  async function open(item: JsonRecord): Promise<void> { const id = idOf(item); if (!id) return; setDetailLoading(true); setError(""); setSelected(undefined); try { setSelected(await getRestaurantDetail(id)); } catch (reason) { setError(errorText(reason)); } finally { setDetailLoading(false); } }
-  async function check(): Promise<void> { if (!selected || actionLoading) return; setActionLoading(true); setError(""); try { const result = await checkRestaurantAvailability({ restaurant_id: idOf(selected), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 }); setAvailability(result); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function createHold(): Promise<void> { if (!selected || !availability?.available) return; setActionLoading(true); setError(""); try { setHold(await createRestaurantHold({ restaurant_id: idOf(selected), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 })); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function prepare(): Promise<void> { if (!selected || !hold?.id) return; setActionLoading(true); setError(""); try { setConfirmation(await prepareRestaurantReservation({ restaurant_id: idOf(selected), hold_id: String(hold.id), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 })); setChecked(false); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function confirm(): Promise<void> { if (!confirmation?.id || !checked) return; setActionLoading(true); setError(""); try { const result = await executeConfirmation(String(confirmation.id), { workflow_id: String(confirmation.workflow_id), action: String(confirmation.action) }); const tool = asRecord(result.tool_result); setReservation(asRecord(tool?.data ?? tool)); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function cancel(): Promise<void> { if (!reservation?.id) return; setActionLoading(true); setError(""); try { await cancelRestaurantReservation(String(reservation.id)); setReservation({ ...reservation, status: "CANCELLED" }); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
+  async function open(item: JsonRecord): Promise<void> {
+    const id = idOf(item);
+    if (!id) return;
+    setDetailLoading(true);
+    setError("");
+    setSelected(undefined);
+    try {
+      setSelected(await getRestaurantDetail(id));
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+  async function check(): Promise<void> {
+    if (!selected || actionLoading) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      const result = await checkRestaurantAvailability({ restaurant_id: idOf(selected), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 });
+      setAvailability(result);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+  async function createHold(): Promise<void> {
+    if (!selected || !availability?.available) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      setHold(await createRestaurantHold({ restaurant_id: idOf(selected), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 }));
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+  async function prepare(): Promise<void> {
+    if (!selected || !hold?.id) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      setConfirmation(await prepareRestaurantReservation({ restaurant_id: idOf(selected), hold_id: String(hold.id), party_size: partySize, start_at: new Date(startAt).toISOString(), duration_minutes: 120 }));
+      setChecked(false);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+  async function confirm(): Promise<void> {
+    if (!confirmation?.id || !checked) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      const result = await executeConfirmation(String(confirmation.id), { workflow_id: String(confirmation.workflow_id), action: String(confirmation.action) });
+      const tool = asRecord(result.tool_result);
+      setReservation(asRecord(tool?.data ?? tool));
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+  async function cancel(): Promise<void> {
+    if (!reservation?.id) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await cancelRestaurantReservation(String(reservation.id));
+      setReservation({ ...reservation, status: "CANCELLED" });
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
-  if (selected) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => setSelected(undefined)}><ChevronLeft size={16} /> Danh sách nhà hàng</button><DetailHeading item={selected} service="restaurant" /><div className="transaction-grid"><article className="transaction-panel"><div className="panel-heading"><div><span className="eyebrow">GIỮ BÀN</span><h2>Chọn thời gian</h2></div><MapPinned size={19} /></div><label className="transaction-field">Ngày và giờ<input type="datetime-local" value={startAt} onChange={(event) => { setStartAt(event.target.value); setAvailability(undefined); setHold(undefined); setConfirmation(undefined); }} /></label><label className="transaction-field">Số người<input type="number" min={1} max={20} value={partySize} onChange={(event) => { setPartySize(Number(event.target.value)); setAvailability(undefined); setHold(undefined); }} /></label><button className="button button-primary button-wide" type="button" onClick={() => void check()} disabled={actionLoading}>{actionLoading ? <Loader2 className="spinner" size={16} /> : <Search size={16} />} Kiểm tra bàn trống</button>{availability ? <div className={`availability-card ${availability.available ? "is-available" : "is-unavailable"}`}><strong>{availability.available ? "Có bàn phù hợp" : "Chưa có bàn phù hợp"}</strong><p>{display(availability.message ?? (availability.available ? "Có thể giữ chỗ trong thời gian này." : "Thử một khung giờ khác."))}</p>{availability.available && !hold ? <button className="button button-secondary" type="button" onClick={() => void createHold()} disabled={actionLoading}>Giữ bàn tạm thời</button> : null}</div> : null}{hold ? <div className="hold-card"><Check size={17} /><div><strong>Đã giữ bàn trong thời gian ngắn</strong><p>Hết hạn {formatDateTime(hold.expires_at)}</p></div><button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận</button></div> : null}{confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận đặt bàn" /> : null}{reservation ? <div className="success-card"><Check size={18} /><strong>Đặt bàn đã hoàn tất</strong><span>{statusLabel(reservation.status ?? "CONFIRMED")}</span><button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button></div> : null}{error ? <ErrorNote message={error} onRetry={() => void check()} /> : null}</article><aside className="service-context-panel"><span className="eyebrow">THÔNG TIN NHÀ HÀNG</span><p>Nếu địa điểm chưa có tọa độ hợp lệ, X-One giữ nguyên địa chỉ và không tự đoán khoảng cách.</p><Link className="text-link" href="/app?service=restaurant&mode=assistant">Tiếp tục với AI <ArrowRight size={15} /></Link></aside></div></div>;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
 
-  return <><SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />{loading ? <LoadingNote text="Đang tải nhà hàng…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <div className="browse-results">{items.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} /><div><h2>{display(item.name ?? "Nhà hàng")}</h2><p>{display(item.location ?? item.address ?? "Địa chỉ đang được xác minh")}</p><small>{display(item.cuisine_type ?? item.cuisine ?? "Ẩm thực chưa phân loại")} · {display(item.budget_range ?? "Mức giá chưa công bố")}</small></div><button className="button button-secondary" type="button" onClick={() => void open(item)}>Xem và giữ bàn <ChevronRight size={16} /></button></article>)}</div> : <EmptyNote title="Bạn muốn đặt bàn như thế nào?" body="Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp." />}</>;
+  if (selected) {
+    return (
+      <div className="service-detail-flow" style={{ textAlign: "left" }}>
+        <button className="text-link" type="button" onClick={() => setSelected(undefined)}>
+          <ChevronLeft size={16} /> Danh sách nhà hàng
+        </button>
+        <DetailHeading item={selected} service="restaurant" />
+        <div className="transaction-grid" style={{ textAlign: "left" }}>
+          <article className="transaction-panel" style={{ textAlign: "left" }}>
+            <div className="panel-heading" style={{ textAlign: "left" }}>
+              <div style={{ textAlign: "left" }}>
+                <span className="eyebrow">GIỮ BÀN</span>
+                <h2 style={{ textAlign: "left" }}>Chọn thời gian</h2>
+              </div>
+              <MapPinned size={19} />
+            </div>
+            <label className="transaction-field" style={{ textAlign: "left" }}>
+              Ngày và giờ
+              <input type="datetime-local" value={startAt} onChange={(event) => { setStartAt(event.target.value); setAvailability(undefined); setHold(undefined); setConfirmation(undefined); }} />
+            </label>
+            <label className="transaction-field" style={{ textAlign: "left" }}>
+              Số người
+              <input type="number" min={1} max={20} value={partySize} onChange={(event) => { setPartySize(Number(event.target.value)); setAvailability(undefined); setHold(undefined); }} />
+            </label>
+            <button className="button button-primary button-wide" type="button" onClick={() => void check()} disabled={actionLoading}>
+              {actionLoading ? <Loader2 className="spinner" size={16} /> : <Search size={16} />} Kiểm tra bàn trống
+            </button>
+            {availability ? (
+              <div className={`availability-card ${availability.available ? "is-available" : "is-unavailable"}`} style={{ textAlign: "left" }}>
+                <strong style={{ textAlign: "left" }}>{availability.available ? "Có bàn phù hợp" : "Chưa có bàn phù hợp"}</strong>
+                <p style={{ textAlign: "left" }}>{display(availability.message ?? (availability.available ? "Có thể giữ chỗ trong thời gian này." : "Thử một khung giờ khác."))}</p>
+                {availability.available && !hold ? <button className="button button-secondary" type="button" onClick={() => void createHold()} disabled={actionLoading}>Giữ bàn tạm thời</button> : null}
+              </div>
+            ) : null}
+            {hold ? (
+              <div className="hold-card" style={{ textAlign: "left" }}>
+                <Check size={17} />
+                <div style={{ textAlign: "left" }}>
+                  <strong style={{ textAlign: "left" }}>Đã giữ bàn trong thời gian ngắn</strong>
+                  <p style={{ textAlign: "left" }}>Hết hạn {formatDateTime(hold.expires_at)}</p>
+                </div>
+                <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận</button>
+              </div>
+            ) : null}
+            {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận đặt bàn" /> : null}
+            {reservation ? (
+              <div className="success-card" style={{ textAlign: "left" }}>
+                <Check size={18} />
+                <strong style={{ textAlign: "left" }}>Đặt bàn đã hoàn tất</strong>
+                <span>{statusLabel(reservation.status ?? "CONFIRMED")}</span>
+                <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button>
+              </div>
+            ) : null}
+            {error ? <ErrorNote message={error} onRetry={() => void check()} /> : null}
+          </article>
+          <aside className="service-context-panel" style={{ textAlign: "left" }}>
+            <span className="eyebrow">THÔNG TIN NHÀ HÀNG</span>
+            <p style={{ textAlign: "left" }}>Nếu địa điểm chưa có tọa độ hợp lệ, X-One giữ nguyên địa chỉ và không tự đoán khoảng cách.</p>
+            <Link className="text-link" href="/app?service=restaurant&mode=assistant">Tiếp tục với AI <ArrowRight size={15} /></Link>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
+      {loading ? (
+        <LoadingNote text="Đang tải nhà hàng…" />
+      ) : error ? (
+        <ErrorNote message={error} onRetry={() => void load(keyword)} />
+      ) : items.length ? (
+        <>
+          <div className="browse-results" style={{ textAlign: "left" }}>
+            {paginatedItems.map((item) => (
+              <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}>
+                <AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} />
+                <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
+                  <h2 style={{ textAlign: "left" }}>{display(item.name ?? "Nhà hàng")}</h2>
+                  <p style={{ textAlign: "left" }}>{display(item.location ?? item.address ?? "Địa chỉ đang được xác minh")}</p>
+                  <small style={{ textAlign: "left" }}>{display(item.cuisine_type ?? item.cuisine ?? "Ẩm thực chưa phân loại")} · {display(item.budget_range ?? "Mức giá chưa công bố")}</small>
+                </div>
+                <button className="button button-secondary" type="button" onClick={() => void open(item)}>
+                  Xem và giữ bàn <ChevronRight size={16} />
+                </button>
+              </article>
+            ))}
+          </div>
+          {totalPages > 1 ? (
+            <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-muted)", textAlign: "left" }}>
+                Trang <strong>{page}</strong> / {totalPages} · ({items.length} nhà hàng)
+              </span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page <= 1}
+                  aria-label="Trang trước"
+                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
+                >
+                  <ChevronLeft size={15} /> Trước
+                </button>
+                <button
+                  className="button button-secondary"
+                  type="button"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page >= totalPages}
+                  aria-label="Trang sau"
+                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
+                >
+                  Sau <ChevronRight size={15} />
+                </button>
+              </div>
+            </nav>
+          ) : null}
+        </>
+      ) : (
+        <EmptyNote title="Bạn muốn đặt bàn như thế nào?" body="Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp." />
+      )}
+    </>
+  );
 }
 
 function HealthcareBrowseWithFavorite() {
@@ -266,18 +486,92 @@ function HealthcareBrowse() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
+  const [slotPage, setSlotPage] = useState(1);
+  const slotPageSize = 3;
 
-  const load = useCallback(async (query = "") => { setLoading(true); setError(""); try { const result = await browseService("healthcare", query); const next = result.items; setDepartments(next); if (!department && next[0]) setDepartment(display(next[0].name ?? next[0].label ?? next[0].id)); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }, [department]);
-  useEffect(() => { void load(); void listHealthcarePatients().then((result) => { setPatients(result.items); setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id); }).catch(() => undefined); }, [load]);
-  useEffect(() => { if (!department) return; setActionLoading(true); setError(""); void listHealthcareDoctors(department).then(setDoctors).catch((reason) => setError(errorText(reason))).finally(() => setActionLoading(false)); }, [department]);
+  const load = useCallback(async (query = "") => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await browseService("healthcare", query);
+      const next = result.items;
+      setDepartments(next);
+      if (!department && next[0]) setDepartment(display(next[0].name ?? next[0].label ?? next[0].id));
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setLoading(false);
+    }
+  }, [department]);
+
+  useEffect(() => {
+    void load();
+    void listHealthcarePatients().then((result) => {
+      setPatients(result.items);
+      setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
+    }).catch(() => undefined);
+  }, [load]);
+
+  useEffect(() => {
+    if (!department) return;
+    setActionLoading(true);
+    setError("");
+    setSlotPage(1);
+    void listHealthcareDoctors(department).then(setDoctors).catch((reason) => setError(errorText(reason))).finally(() => setActionLoading(false));
+  }, [department]);
 
   const slots: JsonRecord[] = useMemo(() => doctors.flatMap((doctor) => listFrom(doctor.available_slots).map((value): JsonRecord => ({ ...value, doctor_name: doctor.name, doctor_id: doctor.id, doctor_description: doctor.description, price: doctor.price, facility: doctor.facility }))), [doctors]);
-  async function hold(): Promise<void> { if (!slot || !patientId || !symptoms.trim()) { setError("Chọn khung giờ, hồ sơ bệnh nhân và mô tả nhu cầu khám trước."); return; } setActionLoading(true); setError(""); try { setAppointment(await holdHealthcareSlot({ slot_id: numberOf(slot.id), patient_id: patientId, symptoms: symptoms.trim() })); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function pay(): Promise<void> { if (!appointment?.appointment_id) return; setActionLoading(true); setError(""); try { await acknowledgeHealthcarePayment(numberOf(appointment.appointment_id)); setPaymentDone(true); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
-  async function prepare(): Promise<void> { if (!appointment?.appointment_id || !paymentDone) return; setActionLoading(true); setError(""); try { setConfirmation(await prepareHealthcareAppointment(numberOf(appointment.appointment_id))); setChecked(false); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
+  const totalSlotPages = Math.max(1, Math.ceil(slots.length / slotPageSize));
+  const paginatedSlots = slots.slice((slotPage - 1) * slotPageSize, slotPage * slotPageSize);
+
+  async function hold(): Promise<void> {
+    if (!slot || !patientId || !symptoms.trim()) {
+      setError("Chọn khung giờ, hồ sơ bệnh nhân và mô tả nhu cầu khám trước.");
+      return;
+    }
+    setActionLoading(true);
+    setError("");
+    try {
+      setAppointment(await holdHealthcareSlot({ slot_id: numberOf(slot.id), patient_id: patientId, symptoms: symptoms.trim() }));
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function pay(): Promise<void> {
+    if (!appointment?.appointment_id) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await acknowledgeHealthcarePayment(numberOf(appointment.appointment_id));
+      setPaymentDone(true);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function prepare(): Promise<void> {
+    if (!appointment?.appointment_id || !paymentDone) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      setConfirmation(await prepareHealthcareAppointment(numberOf(appointment.appointment_id)));
+      setChecked(false);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   async function confirm(): Promise<void> {
     if (!confirmation?.id || !checked) return;
-    setActionLoading(true); setError("");
+    setActionLoading(true);
+    setError("");
     try {
       const result = await executeConfirmation(String(confirmation.id), { workflow_id: String(confirmation.workflow_id), action: String(confirmation.action) });
       const tool = asRecord(result.tool_result);
@@ -287,12 +581,200 @@ function HealthcareBrowse() {
       setAppointment(confirmedAppointment ?? appointment);
       setConfirmation(undefined);
       setChecked(false);
-    } catch (reason) { setError(errorText(reason)); }
-    finally { setActionLoading(false); }
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
   }
-  async function cancel(): Promise<void> { if (!appointment?.appointment_id) return; setActionLoading(true); setError(""); try { await cancelHealthcareAppointment(numberOf(appointment.appointment_id)); setAppointment({ ...appointment, status: "CANCELLED" }); } catch (reason) { setError(errorText(reason)); } finally { setActionLoading(false); } }
 
-  return <><SearchForm label="Tìm chuyên khoa" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: nội thần kinh" />{loading ? <LoadingNote text="Đang tải chuyên khoa…" /> : error && !departments.length ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : <div className="healthcare-flow"><article className="transaction-panel"><div className="panel-heading"><div><span className="eyebrow">CHUYÊN KHOA</span><h2>Chọn điểm bắt đầu</h2></div><HeartPulse size={19} /></div><div className="chip-list">{departments.map((item) => { const name = display(item.name ?? item.label ?? item.id); return <button className={department === name ? "chip is-active" : "chip"} key={name} type="button" onClick={() => { setDepartment(name); setSlot(undefined); setAppointment(undefined); }}>{name}</button>; })}</div>{department ? <><div className="panel-heading compact"><div><span className="eyebrow">BÁC SĨ VÀ KHUNG GIỜ</span><h2>{department}</h2></div></div>{actionLoading && !appointment ? <LoadingNote text="Đang tải khung giờ…" /> : slots.length ? <div className="slot-list">{slots.map((value) => <button className={slot?.id === value.id ? "slot-option is-active" : "slot-option"} key={String(value.id)} type="button" onClick={() => setSlot(value)}><strong>{display(value.doctor_name)}</strong><span>{formatDateTime(value.start_time)} · {display(asRecord(value.facility)?.name ?? asRecord(value.facility)?.address ?? "Cơ sở đang xác minh")}</span>{value.price !== undefined ? <small>{formatMoney(value.price)}</small> : null}</button>)}</div> : <EmptyNote title="Chưa có khung giờ" body="Chưa có lịch trống cho chuyên khoa này." />}</> : null}{slot ? <div className="healthcare-form"><label className="transaction-field">Hồ sơ bệnh nhân<select value={patientId ?? ""} onChange={(event) => setPatientId(Number(event.target.value))}><option value="">Chọn hồ sơ</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} · {patient.relationship}</option>)}</select></label><label className="transaction-field">Nhu cầu khám<textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} /></label><button className="button button-primary button-wide" type="button" onClick={() => void hold()} disabled={actionLoading || !patientId || !symptoms.trim()}>{actionLoading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Giữ khung giờ</button></div> : null}{appointment && !confirmation ? <div className="hold-card"><Check size={17} /><div><strong>Đã giữ khung giờ</strong><p>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}</p></div>{!paymentDone ? <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>Xác nhận thanh toán</button> : <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận cuối</button>}</div> : null}{confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận hoàn tất lịch khám" /> : null}{appointment?.status === "CONFIRMED" || appointment?.status === "CANCELLED" ? <div className="success-card"><Check size={18} /><strong>Lịch khám: {statusLabel(appointment.status)}</strong><span>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)}</span>{appointment.status === "CONFIRMED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy lịch khám</button> : null}</div> : null}{error ? <ErrorNote message={error} onRetry={() => void hold()} /> : null}</article><aside className="service-context-panel"><span className="eyebrow">THÔNG TIN LỊCH KHÁM</span><p>X-One chỉ hiển thị bác sĩ, giá và khung giờ khi thông tin đã sẵn sàng. Đây là luồng đặt lịch, không phải chẩn đoán.</p><Link className="text-link" href="/app?service=healthcare&mode=assistant">Tiếp tục với AI <ArrowRight size={15} /></Link></aside></div>}</>;
+  async function cancel(): Promise<void> {
+    if (!appointment?.appointment_id) return;
+    setActionLoading(true);
+    setError("");
+    try {
+      await cancelHealthcareAppointment(numberOf(appointment.appointment_id));
+      setAppointment({ ...appointment, status: "CANCELLED" });
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <SearchForm label="Tìm chuyên khoa" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: nội thần kinh" />
+      {loading ? (
+        <LoadingNote text="Đang tải chuyên khoa…" />
+      ) : error && !departments.length ? (
+        <ErrorNote message={error} onRetry={() => void load(keyword)} />
+      ) : (
+        <div className="healthcare-flow" style={{ textAlign: "left" }}>
+          <article className="transaction-panel" style={{ textAlign: "left" }}>
+            <div className="panel-heading" style={{ textAlign: "left" }}>
+              <div style={{ textAlign: "left" }}>
+                <span className="eyebrow">CHUYÊN KHOA</span>
+                <h2 style={{ textAlign: "left" }}>Chọn chuyên khoa khám</h2>
+              </div>
+              <HeartPulse size={19} />
+            </div>
+            <label className="transaction-field" style={{ textAlign: "left", marginTop: "12px" }}>
+              <span>Chuyên khoa</span>
+              <select
+                value={department}
+                onChange={(event) => {
+                  setDepartment(event.target.value);
+                  setSlot(undefined);
+                  setAppointment(undefined);
+                }}
+                aria-label="Chọn chuyên khoa khám"
+              >
+                <option value="">-- Chọn chuyên khoa --</option>
+                {departments.map((item) => {
+                  const name = display(item.name ?? item.label ?? item.id);
+                  return (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            {department ? (
+              <>
+                <div className="panel-heading compact" style={{ textAlign: "left", marginTop: "18px" }}>
+                  <div style={{ textAlign: "left" }}>
+                    <span className="eyebrow">BÁC SĨ VÀ KHUNG GIỜ</span>
+                    <h2 style={{ textAlign: "left" }}>{department}</h2>
+                  </div>
+                </div>
+                {actionLoading && !appointment ? (
+                  <LoadingNote text="Đang tải khung giờ…" />
+                ) : slots.length ? (
+                  <>
+                    <div className="slot-list" style={{ textAlign: "left" }}>
+                      {paginatedSlots.map((value) => (
+                        <button
+                          className={slot?.id === value.id ? "slot-option is-active" : "slot-option"}
+                          key={String(value.id)}
+                          type="button"
+                          onClick={() => setSlot(value)}
+                          style={{ textAlign: "left" }}
+                        >
+                          <strong style={{ textAlign: "left" }}>{display(value.doctor_name)}</strong>
+                          <span style={{ textAlign: "left" }}>
+                            {formatDateTime(value.start_time)} · {display(asRecord(value.facility)?.name ?? asRecord(value.facility)?.address ?? "Cơ sở đang xác minh")}
+                          </span>
+                          {value.price !== undefined ? <small style={{ textAlign: "left" }}>{formatMoney(value.price)}</small> : null}
+                        </button>
+                      ))}
+                    </div>
+                    {totalSlotPages > 1 ? (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "12px", padding: "6px 0" }}>
+                        <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+                          Trang <strong>{slotPage}</strong> / {totalSlotPages} ({slots.length} lịch khám)
+                        </span>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          <button
+                            className="button button-secondary"
+                            type="button"
+                            onClick={() => setSlotPage((c) => Math.max(1, c - 1))}
+                            disabled={slotPage <= 1}
+                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }}
+                            aria-label="Trang trước"
+                          >
+                            <ChevronLeft size={14} /> Trước
+                          </button>
+                          <button
+                            className="button button-secondary"
+                            type="button"
+                            onClick={() => setSlotPage((c) => Math.min(totalSlotPages, c + 1))}
+                            disabled={slotPage >= totalSlotPages}
+                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }}
+                            aria-label="Trang sau"
+                          >
+                            Sau <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <EmptyNote title="Chưa có khung giờ" body="Chưa có lịch trống cho chuyên khoa này." />
+                )}
+              </>
+            ) : null}
+            {slot ? (
+              <div className="healthcare-form" style={{ textAlign: "left" }}>
+                <label className="transaction-field" style={{ textAlign: "left" }}>
+                  <span>Hồ sơ bệnh nhân</span>
+                  <select value={patientId ?? ""} onChange={(event) => setPatientId(Number(event.target.value))}>
+                    <option value="">Chọn hồ sơ</option>
+                    {patients.map((patient) => (
+                      <option key={patient.id} value={patient.id}>
+                        {patient.name} · {patient.relationship}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="transaction-field" style={{ textAlign: "left" }}>
+                  <span>Nhu cầu khám</span>
+                  <textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} />
+                </label>
+                <button className="button button-primary button-wide" type="button" onClick={() => void hold()} disabled={actionLoading || !patientId || !symptoms.trim()}>
+                  {actionLoading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Giữ khung giờ
+                </button>
+              </div>
+            ) : null}
+            {appointment && !confirmation ? (
+              <div className="hold-card" style={{ textAlign: "left" }}>
+                <Check size={17} />
+                <div style={{ textAlign: "left" }}>
+                  <strong style={{ textAlign: "left" }}>Đã giữ khung giờ</strong>
+                  <p style={{ textAlign: "left" }}>
+                    {display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}
+                  </p>
+                </div>
+                {!paymentDone ? (
+                  <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>
+                    Xác nhận thanh toán
+                  </button>
+                ) : (
+                  <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>
+                    Xem xác nhận cuối
+                  </button>
+                )}
+              </div>
+            ) : null}
+            {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận hoàn tất lịch khám" /> : null}
+            {appointment?.status === "CONFIRMED" || appointment?.status === "CANCELLED" ? (
+              <div className="success-card" style={{ textAlign: "left" }}>
+                <Check size={18} />
+                <strong style={{ textAlign: "left" }}>Lịch khám: {statusLabel(appointment.status)}</strong>
+                <span>
+                  {display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)}
+                </span>
+                {appointment.status === "CONFIRMED" ? (
+                  <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>
+                    Hủy lịch khám
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {error ? <ErrorNote message={error} onRetry={() => void hold()} /> : null}
+          </article>
+          <aside className="service-context-panel" style={{ textAlign: "left" }}>
+            <span className="eyebrow">THÔNG TIN LỊCH KHÁM</span>
+            <p style={{ textAlign: "left" }}>X-One chỉ hiển thị bác sĩ, giá và khung giờ khi thông tin đã sẵn sàng. Đây là luồng đặt lịch, không phải chẩn đoán.</p>
+            <Link className="text-link" href="/app?service=healthcare&mode=assistant">
+              Tiếp tục với AI <ArrowRight size={15} />
+            </Link>
+          </aside>
+        </div>
+      )}
+    </>
+  );
 }
 
 function RideBrowse() {

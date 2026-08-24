@@ -38,10 +38,11 @@ describe("registration screen", () => {
     render(<RegisterForm onSuccess={mockSuccess} />);
     fireEvent.change(screen.getByLabelText("Họ và tên"), { target: { value: "Nguyễn An" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "an@example.test" } });
-    fireEvent.change(screen.getByLabelText("Mật khẩu"), { target: { value: "too-short" } });
+    fireEvent.change(screen.getByLabelText("Mật khẩu"), { target: { value: "short" } });
+    fireEvent.change(screen.getByLabelText("Xác nhận mật khẩu"), { target: { value: "short" } });
     fireEvent.submit(screen.getByRole("button", { name: "Tạo tài khoản" }).closest("form")!);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("15 ký tự");
+    expect(screen.getByRole("alert")).toHaveTextContent("8 ký tự");
     expect(mockRegister).not.toHaveBeenCalled();
   });
 
@@ -50,10 +51,11 @@ describe("registration screen", () => {
     render(<RegisterForm onSuccess={mockSuccess} />);
     fireEvent.change(screen.getByLabelText("Họ và tên"), { target: { value: "Nguyễn An" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "an@example.test" } });
-    fireEvent.change(screen.getByLabelText("Mật khẩu"), { target: { value: "a reliable local passphrase" } });
+    fireEvent.change(screen.getByLabelText("Mật khẩu"), { target: { value: "ValidPass123!" } });
+    fireEvent.change(screen.getByLabelText("Xác nhận mật khẩu"), { target: { value: "ValidPass123!" } });
     fireEvent.submit(screen.getByRole("button", { name: "Tạo tài khoản" }).closest("form")!);
 
-    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("Nguyễn An", "an@example.test", "a reliable local passphrase"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("Nguyễn An", "an@example.test", "ValidPass123!"));
     await waitFor(() => expect(mockSuccess).toHaveBeenCalled());
   });
 });

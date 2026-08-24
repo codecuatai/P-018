@@ -196,9 +196,9 @@
 .option-row { align-items: flex-start; }
 .option-row > div:nth-child(2) { flex: 1; }
 .option-row small { color: var(--color-muted-soft); font-size: 0.62rem; line-height: 1.35; }
-.option-image { width: 66px; height: 54px; flex: 0 0 auto; object-fit: cover; border-radius: 7px; background: #EEF3F6; }
-.option-image.compact { width: 52px; height: 44px; }
-.service-image-fallback { display: grid; place-items: center; color: var(--color-muted-soft); font-size: 0.61rem; text-align: center; }
+.option-image { box-sizing: border-box; width: 66px; height: 54px; min-width: 66px; min-height: 54px; max-width: 66px; max-height: 54px; flex: 0 0 66px; object-fit: cover; border-radius: 7px; background: #EEF3F6; }
+.option-image.compact { box-sizing: border-box; width: 52px; height: 44px; min-width: 52px; min-height: 44px; max-width: 52px; max-height: 44px; flex: 0 0 52px; }
+.service-image-fallback { display: grid; place-items: center; color: var(--color-muted); font-size: 0.61rem; text-align: center; background: #EEF3F6; border: 1px solid #DFE8EE; border-radius: 7px; }
 .ride-detail-action { margin-top: 12px; }
 .food-cart-dock { position: sticky; z-index: 3; bottom: 0; margin-top: 11px; background: var(--color-surface); border: 1px solid #C9D8FA; border-left: 3px solid var(--accent-food); border-radius: 10px; box-shadow: 0 -8px 20px rgb(10 37 64 / 8%); }
 .food-cart-dock-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
