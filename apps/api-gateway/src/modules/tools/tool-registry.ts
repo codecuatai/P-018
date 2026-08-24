@@ -31,6 +31,26 @@ export type ToolDefinition = {
   aliases?: readonly string[];
 };
 
+export const TOOL_REGISTRY_COMPATIBILITY = {
+  owner: 'gateway-tools',
+  expiresOn: '2026-12-31',
+  names: new Set([
+    'food.menu.get',
+    'food.menu_item.get',
+    'food.address.list',
+    'food.cart.get',
+    'food.delivery.quote',
+    'food.order.preview',
+    'food.order.get',
+    'food.order.track',
+    'food.order.cancel.preview',
+    'food.order.confirm',
+    'food.order.cancel',
+    'food.refund.execute',
+    'healthcare.payment.acknowledge',
+  ]),
+} as const;
+
 const definition = (
   value: Omit<ToolDefinition, 'toolName' | 'riskLevel' | 'classification'> & { classification?: ToolClassification },
 ): ToolDefinition => ({

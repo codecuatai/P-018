@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.3.0
+  version: 1.4.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -236,14 +236,74 @@ paths:
     post:
       summary: Add a menu item to an actor-scoped Food cart
       security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/CartId'}]
+      parameters:
+        - {$ref: '#/components/parameters/CartId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartItemRequest'}}}
       responses:
         '200': {description: Updated Food cart}
+        '400': {description: Missing idempotency key}
         '401': {description: Missing or invalid user token}
         '404': {description: Cart or menu item not found}
+        '409': {description: Idempotency or cart version conflict}
+  /api/v1/service-actions/food/cart/{cartId}/items/{itemId}:
+    patch:
+      summary: Update an item in an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CartId'}
+        - {$ref: '#/components/parameters/CartItemId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodCartItemUpdateRequest'}}}
+      responses:
+        '200': {description: Updated Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart item not found}
+        '409': {description: Idempotency or cart version conflict}
+    delete:
+      summary: Remove an item from an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CartId'}
+        - {$ref: '#/components/parameters/CartItemId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses:
+        '200': {description: Updated Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Cart item not found}
+        '409': {description: Idempotency or cart version conflict}
+  /api/v1/service-actions/food/cart/{cartId}/voucher:
+    post:
+      summary: Apply a voucher to an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CartId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FoodVoucherRequest'}}}
+      responses:
+        '200': {description: Updated Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Voucher, idempotency, or cart version conflict}
+    delete:
+      summary: Remove a voucher from an actor-scoped Food cart
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/CartId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses:
+        '200': {description: Updated Food cart}
+        '400': {description: Missing idempotency key}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Idempotency or cart version conflict}
   /api/v1/service-actions/restaurant/{restaurantId}:
     get:
       summary: Read one Restaurant catalog record through the Gateway
@@ -859,7 +919,7 @@ components:
       in: header
       name: Idempotency-Key
       required: true
-      schema: {type: string, minLength: 1, maxLength: 255}
+      schema: {type: string, minLength: 8, maxLength: 128}
     ServiceKey:
       in: path
       name: service
@@ -903,6 +963,11 @@ components:
     CartId:
       in: path
       name: cartId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    CartItemId:
+      in: path
+      name: itemId
       required: true
       schema: {type: string, minLength: 1, maxLength: 128}
     PatientId:
@@ -1307,6 +1372,28 @@ components:
             properties:
               group_id: {type: string, minLength: 1}
               option_id: {type: string, minLength: 1}
+    FoodCartItemUpdateRequest:
+      type: object
+      required: [quantity]
+      additionalProperties: false
+      properties:
+        quantity: {type: integer, minimum: 1, maximum: 50}
+        note: {type: string, maxLength: 500}
+        selected_options:
+          type: array
+          items:
+            type: object
+            required: [group_id, option_id]
+            additionalProperties: false
+            properties:
+              group_id: {type: string, minLength: 1}
+              option_id: {type: string, minLength: 1}
+    FoodVoucherRequest:
+      type: object
+      required: [code]
+      additionalProperties: false
+      properties:
+        code: {type: string, minLength: 1, maxLength: 50}
     RestaurantAvailabilityRequest:
       type: object
       required: [restaurant_id, party_size, start_at]

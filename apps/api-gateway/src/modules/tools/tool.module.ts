@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Injectable, Module, Post, Req, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
+import { Controller, Get, Headers, Injectable, Module, Req, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 
 import { FoodClient, JsonObject } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -11,10 +12,21 @@ import { ToolRegistry } from './tool-registry';
 
 type Permission = 'read' | 'draft_write' | 'preview' | 'confirmation_prepare' | 'transaction';
 interface ToolDefinition { name: string; description: string; input_schema: JsonObject; output_schema: JsonObject; permission: Permission; confirmation_required: boolean; version: string }
+export interface ToolProposal {
+  schema_version: '1';
+  capability_name: string;
+  semantic_arguments: JsonObject;
+  workflow_id: string;
+  tool_call_id: string;
+  risk_ceiling: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  confirmation_gate: 'none' | 'explicit_gateway_confirmation';
+}
 const objectSchema = (required: string[], properties: JsonObject): JsonObject => ({ type: 'object', additionalProperties: false, required, properties });
 const string = { type: 'string' };
 const selectedOption = objectSchema(['group_id', 'option_id'], { group_id: string, option_id: string });
 const selectedOptions = { type: 'array', items: selectedOption };
+const TOOL_CALL_ID_PATTERN = /^call_[A-Za-z0-9_-]{3,123}$/;
+const TRUSTED_EXECUTION_ID_PATTERN = /^[A-Za-z0-9:_-]{1,160}$/;
 
 const definitions: ToolDefinition[] = [
   { name: 'search_food', description: 'Search food and restaurants.', input_schema: objectSchema([], { keyword: string, district: string, category: string, max_price: { type: 'integer' } }), output_schema: objectSchema([], { items: { type: 'array' } }), permission: 'read', confirmation_required: false, version: '1.0' },
@@ -63,11 +75,11 @@ function validateArguments(definition: ToolDefinition, args: JsonObject): void {
 export class ToolService {
   constructor(private readonly food: FoodClient, private readonly confirmations: ConfirmationService, private readonly store: CoreStore) {}
   list(): ToolDefinition[] { return definitions; }
-  async execute(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string): Promise<JsonObject> {
+  async execute(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string, executionId?: string): Promise<JsonObject> {
     const startedAt = Date.now();
     await this.store.audit({ action: 'tool.execute.started', actorId: actor.sub, correlationId, metadata: { tool_name: name, permission: definitions.find((tool) => tool.name === name)?.permission ?? 'unknown' } });
     try {
-      const result = await this.executeUnsafe(name, args, actor, correlationId, conversationId);
+      const result = await this.executeUnsafe(name, args, actor, correlationId, conversationId, executionId);
       await this.store.audit({ action: 'tool.execute.succeeded', actorId: actor.sub, correlationId, metadata: { tool_name: name, duration_ms: Date.now() - startedAt, resource_ids: this.resourceIds(args) } });
       return result;
     } catch (error: unknown) {
@@ -76,8 +88,53 @@ export class ToolService {
     }
   }
 
+  async executeProposal(
+    proposal: ToolProposal,
+    resolvedArguments: JsonObject,
+    actor: AuthUser,
+    correlationId: string,
+    workflowId: string,
+    trustedExecutionId: string,
+  ): Promise<JsonObject> {
+    const definition = definitions.find((tool) => tool.name === proposal.capability_name);
+    const expectedRisk = definition?.permission === 'draft_write'
+      ? 'REVERSIBLE_WRITE'
+      : definition?.permission === 'confirmation_prepare'
+        ? 'FINANCIAL_OR_FINAL'
+        : 'READ';
+    const expectedGate = definition?.confirmation_required ? 'explicit_gateway_confirmation' : 'none';
+    if (
+      proposal.schema_version !== '1'
+      || !definition
+      || proposal.workflow_id !== workflowId
+      || proposal.risk_ceiling !== expectedRisk
+      || proposal.confirmation_gate !== expectedGate
+      || !TOOL_CALL_ID_PATTERN.test(proposal.tool_call_id)
+      || !TRUSTED_EXECUTION_ID_PATTERN.test(trustedExecutionId)
+      || Object.keys(proposal.semantic_arguments).some((key) => key.endsWith('_id'))
+    ) {
+      throw new UnprocessableEntityException({ code: 'INVALID_TOOL_PROPOSAL', detail: 'Agent proposal failed Gateway validation.' });
+    }
+    return this.execute(
+      proposal.capability_name,
+      resolvedArguments,
+      actor,
+      correlationId,
+      workflowId,
+      trustedExecutionId,
+    );
+  }
+
   private resourceIds(args: JsonObject): string[] { return Object.entries(args).filter(([key, value]) => key.endsWith('_id') && typeof value === 'string').map(([, value]) => String(value)); }
   private errorCode(error: unknown): string { const response = error instanceof Error && 'getResponse' in error && typeof (error as { getResponse?: unknown }).getResponse === 'function' ? (error as { getResponse: () => unknown }).getResponse() : undefined; return typeof response === 'object' && response !== null && 'code' in response ? String((response as { code: unknown }).code) : error instanceof Error ? error.name : 'UNKNOWN'; }
+  private writeKey(name: string, actorId: string, correlationId: string, conversationId?: string, executionId?: string): string {
+    const digest = createHash('sha256').update(JSON.stringify({
+      actor_id: actorId,
+      execution_id: executionId ?? conversationId ?? correlationId,
+      capability_name: name,
+    })).digest('hex');
+    return `tool:${digest}:${name}`;
+  }
 
   private addressSnapshot(address: Awaited<ReturnType<CoreStore['getSavedAddress']>>): JsonObject | undefined {
     if (!address) return undefined;
@@ -100,7 +157,7 @@ export class ToolService {
     return snapshot ? { ...args, address_snapshot: snapshot } : args;
   }
 
-  private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string): Promise<JsonObject> {
+  private async executeUnsafe(name: string, args: JsonObject, actor: AuthUser, correlationId: string, conversationId?: string, executionId?: string): Promise<JsonObject> {
     const definition = definitions.find((tool) => tool.name === name);
     if (!definition) throw new UnauthorizedException({ code: 'TOOL_NOT_FOUND', detail: 'Tool is not registered.' });
     if (!['read', 'draft_write', 'preview', 'confirmation_prepare'].includes(definition.permission)) throw new UnauthorizedException({ code: 'TOOL_NOT_ALLOWED', detail: 'Agent cannot execute this permission.' });
@@ -118,12 +175,12 @@ export class ToolService {
         return this.food.get(`/api/v1/addresses${typeof args.label === 'string' && args.label ? `?label=${encodeURIComponent(args.label)}` : ''}`, correlationId, actor.sub);
       }
       case 'get_food_cart': return this.food.get(`/api/v1/carts/${String(args.cart_id)}?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
-      case 'create_cart': return this.food.post('/api/v1/carts', { user_id: actor.sub, restaurant_id: args.restaurant_id }, correlationId, `cart:${actor.sub}:${String(args.restaurant_id)}:${conversationId ?? correlationId}`, actor.sub);
-      case 'add_to_cart': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/items`, args, correlationId, undefined, actor.sub);
-      case 'update_food_cart_item': return this.food.patch(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, args, correlationId, actor.sub);
-      case 'remove_food_cart_item': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, correlationId, actor.sub);
-      case 'apply_voucher': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/voucher`, { code: args.code }, correlationId, undefined, actor.sub);
-      case 'remove_food_voucher': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/voucher`, correlationId, actor.sub);
+      case 'create_cart': return this.food.post('/api/v1/carts', { user_id: actor.sub, restaurant_id: args.restaurant_id }, correlationId, this.writeKey(name, actor.sub, correlationId, conversationId, executionId), actor.sub);
+      case 'add_to_cart': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/items`, args, correlationId, this.writeKey(name, actor.sub, correlationId, conversationId, executionId), actor.sub);
+      case 'update_food_cart_item': return this.food.patch(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, args, correlationId, actor.sub, this.writeKey(name, actor.sub, correlationId, conversationId, executionId));
+      case 'remove_food_cart_item': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/items/${String(args.cart_item_id)}`, correlationId, actor.sub, this.writeKey(name, actor.sub, correlationId, conversationId, executionId));
+      case 'apply_voucher': return this.food.post(`/api/v1/carts/${String(args.cart_id)}/voucher`, { code: args.code }, correlationId, this.writeKey(name, actor.sub, correlationId, conversationId, executionId), actor.sub);
+      case 'remove_food_voucher': return this.food.delete(`/api/v1/carts/${String(args.cart_id)}/voucher`, correlationId, actor.sub, this.writeKey(name, actor.sub, correlationId, conversationId, executionId));
       case 'quote_delivery': return this.food.post('/api/v1/delivery/quote', await this.withCoreAddress(args, actor.sub), correlationId, undefined, actor.sub);
       case 'preview_order': return this.food.post('/api/v1/orders/preview', await this.withCoreAddress({ ...args, user_id: actor.sub }, actor.sub), correlationId, undefined, actor.sub);
       case 'get_food_order': return this.food.get(`/api/v1/orders/${String(args.order_id)}?user_id=${encodeURIComponent(actor.sub)}`, correlationId, actor.sub);
@@ -136,10 +193,6 @@ export class ToolService {
   }
 }
 
-function requireInternal(token: string | undefined, actorId: string | undefined, expected: string, bodyActor: string | undefined): void {
-  if (!token || token !== expected || !actorId || !bodyActor || actorId !== bodyActor) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication and actor assertion are required.' });
-}
-
 @Controller('internal/tools')
 export class ToolController {
   constructor(private readonly tools: ToolService, private readonly registry: ToolRegistry, private readonly config: ConfigService) {}
@@ -147,8 +200,6 @@ export class ToolController {
   list(@Headers('x-internal-service-token') token: string | undefined, @Req() request: CorrelatedRequest): object { if (!token || token !== this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN')) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication required.' }); return { data: this.tools.list(), meta: { request_id: request.correlationId } }; }
   @Get('registry-v2')
   registryV2(@Headers('x-internal-service-token') token: string | undefined, @Req() request: CorrelatedRequest): object { if (!token || token !== this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN')) throw new UnauthorizedException({ code: 'UNAUTHORIZED', detail: 'Internal service authentication required.' }); return { data: this.registry.list(), meta: { request_id: request.correlationId } }; }
-  @Post('execute')
-  execute(@Headers('x-internal-service-token') token: string | undefined, @Headers('x-actor-id') actorId: string | undefined, @Body() body: { name: string; arguments: JsonObject; actor_id?: string; conversation_id?: string }, @Req() request: CorrelatedRequest): Promise<object> { requireInternal(token, actorId, this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN'), body.actor_id); return this.tools.execute(body.name, body.arguments, { sub: actorId!, email: 'internal@xone.local', role: 'customer' }, request.correlationId ?? 'cor_unknown', body.conversation_id).then((data) => ({ data, meta: { request_id: request.correlationId } })); }
 }
 
 @Module({

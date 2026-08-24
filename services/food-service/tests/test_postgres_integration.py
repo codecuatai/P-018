@@ -59,6 +59,8 @@ async def _cart(service: FoodApplicationService, user_id: str, address_id: str =
             "quantity": 2,
             "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
         },
+        user_id,
+        f"add-{user_id}-{uuid4().hex}",
     )
 
 

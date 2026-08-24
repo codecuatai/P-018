@@ -111,6 +111,78 @@ class FoodApplicationService:
         }
         return await self.repository.create_cart_idempotent(cart, idempotency_key)
 
+    @classmethod
+    def _normalized_write_value(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: cls._normalized_write_value(value[key])
+                for key in sorted(value)
+            }
+        if isinstance(value, list):
+            normalized = [cls._normalized_write_value(item) for item in value]
+            return sorted(
+                normalized,
+                key=lambda item: json.dumps(
+                    item, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+                ),
+            )
+        return value
+
+    @classmethod
+    def _cart_write_hash(
+        cls, operation: str, cart_id: str, payload: dict[str, Any]
+    ) -> str:
+        normalized = cls._normalized_write_value(
+            {"operation": operation, "cart_id": cart_id, "payload": payload}
+        )
+        encoded = json.dumps(
+            normalized, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        )
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    async def _save_cart_write(
+        self,
+        cart: dict,
+        *,
+        expected_version: int,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+    ) -> dict:
+        if not idempotency_key:
+            raise DomainError(
+                "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required."
+            )
+        return await self.repository.save_cart_idempotent(
+            cart,
+            expected_version,
+            actor_id,
+            operation,
+            idempotency_key,
+            self._cart_write_hash(operation, str(cart["id"]), payload),
+        )
+
+    async def _cart_write_replay(
+        self,
+        *,
+        cart_id: str,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload: dict[str, Any],
+    ) -> dict | None:
+        if not idempotency_key:
+            raise DomainError(
+                "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key is required."
+            )
+        return await self.repository.get_cart_write_replay(
+            actor_id,
+            operation,
+            idempotency_key,
+            self._cart_write_hash(operation, cart_id, payload),
+        )
+
     async def _price_item(self, item: dict, selected_options: list[dict]) -> tuple[int, list[dict]]:
         return price_item(item, selected_options)
 
@@ -208,10 +280,27 @@ class FoodApplicationService:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
         return await self._reprice_cart(cart, persist=False)
 
-    async def add_item(self, cart_id: str, payload: dict, user_id: str | None = None) -> dict:
+    async def add_item(
+        self,
+        cart_id: str,
+        payload: dict,
+        user_id: str,
+        idempotency_key: str,
+    ) -> dict:
+        operation = "add_item"
+        replay = await self._cart_write_replay(
+            cart_id=cart_id,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=payload,
+        )
+        if replay is not None:
+            return replay
         cart = await self._cart(cart_id)
-        if user_id is not None and cart["user_id"] != user_id:
+        if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+        expected_version = int(cart.get("version", 0))
         item = await self.menu_item(payload["menu_item_id"])
         restaurant = await self.restaurant(item["restaurant_id"])
         if not restaurant.get("is_open", False):
@@ -230,12 +319,39 @@ class FoodApplicationService:
                 note=payload.get("note"),
             )
         )
-        return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
+        await self._recalculate(cart, persist=False)
+        return await self._save_cart_write(
+            cart,
+            expected_version=expected_version,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=payload,
+        )
 
-    async def update_item(self, cart_id: str, item_id: str, payload: dict, user_id: str | None = None) -> dict:
+    async def update_item(
+        self,
+        cart_id: str,
+        item_id: str,
+        payload: dict,
+        user_id: str,
+        idempotency_key: str,
+    ) -> dict:
+        operation = "update_item"
+        operation_payload = {"cart_item_id": item_id, **payload}
+        replay = await self._cart_write_replay(
+            cart_id=cart_id,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
+        if replay is not None:
+            return replay
         cart = await self._cart(cart_id)
-        if user_id is not None and cart["user_id"] != user_id:
+        if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+        expected_version = int(cart.get("version", 0))
         cart_item = next((value for value in cart["items"] if value["id"] == item_id), None)
         if cart_item is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy món trong giỏ hàng.")
@@ -261,22 +377,70 @@ class FoodApplicationService:
                 note=note,
             )
         )
-        return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
+        await self._recalculate(cart, persist=False)
+        return await self._save_cart_write(
+            cart,
+            expected_version=expected_version,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
 
-    async def remove_item(self, cart_id: str, item_id: str, user_id: str | None = None) -> dict:
+    async def remove_item(
+        self,
+        cart_id: str,
+        item_id: str,
+        user_id: str,
+        idempotency_key: str,
+    ) -> dict:
+        operation = "remove_item"
+        operation_payload = {"cart_item_id": item_id}
+        replay = await self._cart_write_replay(
+            cart_id=cart_id,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
+        if replay is not None:
+            return replay
         cart = await self._cart(cart_id)
-        if user_id is not None and cart["user_id"] != user_id:
+        if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+        expected_version = int(cart.get("version", 0))
         before = len(cart["items"])
         cart["items"] = [item for item in cart["items"] if item["id"] != item_id]
         if len(cart["items"]) == before:
             raise DomainError("NOT_FOUND", "Không tìm thấy món trong giỏ hàng.")
-        return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
+        await self._recalculate(cart, persist=False)
+        return await self._save_cart_write(
+            cart,
+            expected_version=expected_version,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
 
-    async def apply_voucher(self, cart_id: str, code: str, user_id: str | None = None) -> dict:
+    async def apply_voucher(
+        self, cart_id: str, code: str, user_id: str, idempotency_key: str
+    ) -> dict:
+        operation = "apply_voucher"
+        operation_payload = {"code": code.upper()}
+        replay = await self._cart_write_replay(
+            cart_id=cart_id,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
+        if replay is not None:
+            return replay
         cart = await self._cart(cart_id)
-        if user_id is not None and cart["user_id"] != user_id:
+        if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+        expected_version = int(cart.get("version", 0))
         voucher = await self.repository.get_voucher(code)
         if voucher is None:
             raise DomainError("VOUCHER_INVALID", "Voucher không hợp lệ.")
@@ -286,14 +450,44 @@ class FoodApplicationService:
         ):
             raise DomainError("VOUCHER_NOT_APPLICABLE", "Voucher không áp dụng cho nhà hàng này.")
         cart["voucher"] = {"code": str(voucher["code"]).upper()}
-        return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
+        await self._recalculate(cart, persist=False)
+        return await self._save_cart_write(
+            cart,
+            expected_version=expected_version,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
 
-    async def remove_voucher(self, cart_id: str, user_id: str | None = None) -> dict:
+    async def remove_voucher(
+        self, cart_id: str, user_id: str, idempotency_key: str
+    ) -> dict:
+        operation = "remove_voucher"
+        operation_payload: dict[str, Any] = {}
+        replay = await self._cart_write_replay(
+            cart_id=cart_id,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
+        if replay is not None:
+            return replay
         cart = await self._cart(cart_id)
-        if user_id is not None and cart["user_id"] != user_id:
+        if cart["user_id"] != user_id:
             raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+        expected_version = int(cart.get("version", 0))
         cart["voucher"] = None
-        return await self._recalculate(cart, expected_version=int(cart.get("version", 0)))
+        await self._recalculate(cart, persist=False)
+        return await self._save_cart_write(
+            cart,
+            expected_version=expected_version,
+            actor_id=user_id,
+            operation=operation,
+            idempotency_key=idempotency_key,
+            payload=operation_payload,
+        )
 
     async def delivery_quote(
         self, restaurant_id: str, address_id: str, user_id: str, address_snapshot: dict | None = None
@@ -573,11 +767,11 @@ class FoodApplicationService:
             {"latitude": stop["latitude"], "longitude": stop["longitude"]}
             for stop in pickup_stops
             if isinstance(stop, dict)
-            and isinstance(stop.get("latitude"), (int, float))
-            and isinstance(stop.get("longitude"), (int, float))
+            and isinstance(stop.get("latitude"), int | float)
+            and isinstance(stop.get("longitude"), int | float)
         ]
         address = order.get("address") if isinstance(order.get("address"), dict) else {}
-        if isinstance(address.get("latitude"), (int, float)) and isinstance(address.get("longitude"), (int, float)):
+        if isinstance(address.get("latitude"), int | float) and isinstance(address.get("longitude"), int | float):
             points.append({"latitude": address["latitude"], "longitude": address["longitude"]})
         delivery_route = {
             "provider": "food-service:planned-pickups",

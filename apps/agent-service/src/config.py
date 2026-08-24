@@ -1,7 +1,8 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,7 +24,6 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    api_gateway_internal_url: str = "http://localhost:3000"
     tool_registry_ttl_seconds: int = Field(default=60, ge=1)
     max_graph_steps: int = Field(default=12, ge=1, le=20)
     max_tool_calls: int = Field(default=6, ge=1, le=10)
@@ -31,14 +31,38 @@ class Settings(BaseSettings):
     # into deterministic mode without changing the production/demo default.
     agent_model_mode: Literal["deterministic", "gemini"] = "gemini"
 
-    # Langfuse Observability (Optional)
-    langfuse_public_key: str = ""
+    # Optional metadata-only Langfuse observability. The adapter auto-enables
+    # only for a complete key pair and never captures prompt/response bodies.
     langfuse_secret_key: str = ""
+    langfuse_public_key: str = ""
     langfuse_base_url: str = "https://us.cloud.langfuse.com"
 
     # Database
     database_url: str = Field(min_length=1)
+    agent_persistence_mode: Literal["required_postgres", "memory"] = "required_postgres"
     internal_service_token: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_langfuse_configuration(self) -> "Settings":
+        public_configured = bool(self.langfuse_public_key.strip())
+        secret_configured = bool(self.langfuse_secret_key.strip())
+        if public_configured != secret_configured:
+            raise ValueError("Langfuse requires both public and secret keys.")
+        parsed = urlsplit(self.langfuse_base_url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("LANGFUSE_BASE_URL must be a credential-free HTTPS URL.")
+        return self
+
+    @property
+    def langfuse_configured(self) -> bool:
+        return bool(self.langfuse_public_key.strip() and self.langfuse_secret_key.strip())
 
 
 @lru_cache

@@ -49,6 +49,10 @@ def test_contract_carries_semantic_parameters_and_write_safety_constraints() -> 
     path_parameter = next(item for item in availability["parameters"] if item.get("name") == "restaurant_id")
     assert path_parameter["in"] == "path"
     assert path_parameter["required"] is True
+    response_schema = availability["responses"]["200"]["content"]["application/json"]["schema"]
+    assert response_schema == {"$ref": "#/components/schemas/AvailabilityEnvelope"}
+    snapshot = contract_document()["components"]["schemas"]["AvailabilitySnapshot"]
+    assert {"snapshot_id", "resource_version", "observed_at", "expires_at"} <= set(snapshot["required"])
 
     side_effects = (
         ("/v1/reservation-holds", "post"),

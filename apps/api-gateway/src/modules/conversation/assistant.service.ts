@@ -14,6 +14,7 @@ import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
 import { ServiceCallError } from '../../resilience/service-call-error';
+import { ToolProposal, ToolService } from '../tools/tool.module';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
 import {
   buildOrchestrationSnapshot,
@@ -25,6 +26,16 @@ import {
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
 type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'DISCARDED';
 type InteractionMode = 'service' | 'chitchat' | 'advisory' | 'unsupported';
+type ReplanDirective = 'CONTINUE' | 'ASK_USER' | 'REFRESH_AUTHORITY' | 'REQUOTE_OR_REPREVIEW' | 'WAIT_AND_RETRY_SAME_KEY' | 'BLOCK_DEPENDENTS' | 'TERMINAL_FAILURE' | 'RECONCILIATION_REQUIRED';
+type PlannedCapabilityStep = {
+  step_kind: 'CAPABILITY' | 'WAIT_FOR_CONFIRMATION';
+  capability?: string;
+  schema_version?: string;
+  risk_ceiling: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
+  confirmation_gate: 'NONE' | 'SERVICE_DETAILS' | 'FINAL_COMMIT' | 'PAYMENT' | 'CANCELLATION';
+  phase: string;
+  requires_authority: JsonObject[];
+};
 
 type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'healthcare_cancel' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm' | 'food_payment';
 
@@ -67,6 +78,7 @@ type StoredTask = {
   blocking_task_id?: string;
   block_reason?: string;
   missing_information?: string[];
+  planned_step?: PlannedCapabilityStep;
 };
 
 type AssistantState = {
@@ -87,6 +99,8 @@ type PlanResolution = {
   clarificationQuestion?: string;
   interactionMode: InteractionMode;
   discardedTaskRefs: number[];
+  replanDirective?: ReplanDirective;
+  confirmationInvalidated: boolean;
 };
 
 type DiscardResult = {
@@ -126,6 +140,7 @@ type AgentPlanTask = {
   depends_on?: unknown;
   disposition?: unknown;
   missing_information?: unknown;
+  planned_step?: PlannedCapabilityStep;
 };
 
 type CapabilityDefinition = {
@@ -537,6 +552,17 @@ function storedState(value: unknown): AssistantState {
     ...(stringValue(task.blocking_task_id) ? { blocking_task_id: task.blocking_task_id as string } : {}),
     ...(stringValue(task.block_reason) ? { block_reason: task.block_reason as string } : {}),
     ...(Array.isArray(task.missing_information) ? { missing_information: task.missing_information.filter((i): i is string => typeof i === 'string') } : {}),
+    ...(isRecord(task.planned_step) ? {
+      planned_step: {
+        step_kind: task.planned_step.step_kind === 'WAIT_FOR_CONFIRMATION' ? 'WAIT_FOR_CONFIRMATION' : 'CAPABILITY',
+        ...(stringValue(task.planned_step.capability) ? { capability: stringValue(task.planned_step.capability) } : {}),
+        ...(stringValue(task.planned_step.schema_version) ? { schema_version: stringValue(task.planned_step.schema_version) } : {}),
+        risk_ceiling: task.planned_step.risk_ceiling as PlannedCapabilityStep['risk_ceiling'],
+        confirmation_gate: task.planned_step.confirmation_gate as PlannedCapabilityStep['confirmation_gate'],
+        phase: stringValue(task.planned_step.phase) ?? 'PLANNING',
+        requires_authority: arrayValue(task.planned_step.requires_authority).filter(isRecord),
+      } as PlannedCapabilityStep,
+    } : {}),
   }));
   const actions: StoredAction[] = arrayValue(value.actions).filter(isRecord).map((action) => ({
     id: stringValue(action.id) ?? `action_${randomUUID().slice(0, 8)}`,
@@ -596,23 +622,51 @@ export class AssistantService {
     private readonly healthcare: HealthcareClient,
     private readonly ride: RideWorkflowService,
     private readonly confirmations: ConfirmationService,
-    private readonly rideClient: RideClient,
     @Optional() private readonly food?: FoodClient,
+    @Optional() private readonly tools?: ToolService,
+    @Optional() private readonly rideClient?: RideClient,
   ) {}
 
   private validateCoreAHandoff(planner: JsonObject): void {
-    if (planner.planning_decision === undefined) return;
-    const decision = planner.planning_decision;
-    if (!isRecord(decision)) {
+    const rawDecision = planner.planning_decision;
+    if (!isRecord(rawDecision)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'A versioned Core A planning decision is required.' });
+    }
+    const decision: JsonObject = rawDecision;
+    if (decision.contract_version !== 'core-a.v1') {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent planning contract version is unsupported.' });
+    }
+    if (decision.capability_catalog_version !== CAPABILITY_SNAPSHOT.version) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_VERSION_REJECTED', detail: 'Agent capability catalog version does not match Gateway.' });
+    }
+    if (!Array.isArray(decision.tasks)) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
     const tasks = arrayValue(decision.tasks);
     if (tasks.length > 4 || tasks.some((task) => !isRecord(task))) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
+    if (!['SINGLE_TASK', 'INDEPENDENT_TASKS', 'DEPENDENT_TASKS', 'MIXED'].includes(String(decision.workflow_relation))) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent workflow relation is invalid.' });
+    }
     const interactionMode = decision.interaction_mode;
-    if (interactionMode !== undefined && !['service', 'chitchat', 'advisory', 'unsupported'].includes(String(interactionMode))) {
+    if (!['service', 'chitchat', 'advisory', 'unsupported'].includes(String(interactionMode))) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent interaction mode is invalid.' });
+    }
+    const replanDirective = decision.replan_directive;
+    const validReplanDirectives: ReplanDirective[] = ['CONTINUE', 'ASK_USER', 'REFRESH_AUTHORITY', 'REQUOTE_OR_REPREVIEW', 'WAIT_AND_RETRY_SAME_KEY', 'BLOCK_DEPENDENTS', 'TERMINAL_FAILURE', 'RECONCILIATION_REQUIRED'];
+    if (
+      replanDirective !== undefined
+      && replanDirective !== null
+      && !validReplanDirectives.includes(String(replanDirective) as ReplanDirective)
+    ) {
+      throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent re-plan directive is invalid.' });
+    }
+    if (typeof decision.confirmation_invalidated !== 'boolean') {
+      throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent confirmation invalidation flag is invalid.' });
+    }
+    if (!Array.isArray(decision.discarded_task_refs) || !Array.isArray(decision.blocked_task_refs)) {
+      throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task-reference lists are invalid.' });
     }
     const discardedTaskRefs = arrayValue(decision.discarded_task_refs);
     if (
@@ -632,6 +686,9 @@ export class AssistantService {
         throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task reference or domain is invalid.' });
       }
       refs.add(taskRef);
+      if (!['READY', 'NEEDS_INFO', 'WAITING', 'BLOCKED', 'FAILED', 'COMPLETED'].includes(stringValue(task.disposition) ?? '')) {
+        throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task disposition is invalid.' });
+      }
       const steps = arrayValue(task.steps);
       if (steps.length > 16) {
         throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent task has too many steps.' });
@@ -677,6 +734,14 @@ export class AssistantService {
         throw new ServiceUnavailableException({ code: 'AGENT_DEPENDENCY_REJECTED', detail: 'Agent dependency reference is invalid.' });
       }
     }
+    const blockedTaskRefs = arrayValue(decision.blocked_task_refs);
+    if (
+      blockedTaskRefs.length > 4
+      || blockedTaskRefs.some((value) => typeof value !== 'number' || !Number.isInteger(value) || !refs.has(value))
+      || new Set(blockedTaskRefs).size !== blockedTaskRefs.length
+    ) {
+      throw new ServiceUnavailableException({ code: 'AGENT_REPLAN_REJECTED', detail: 'Agent blocked-task references are invalid.' });
+    }
     const dependenciesByRef = new Map(tasks.map((value) => {
       const task = value as JsonObject;
       return [numberValue(task.task_ref) as number, arrayValue(task.depends_on) as number[]];
@@ -696,34 +761,55 @@ export class AssistantService {
     for (const taskRef of refs) visit(taskRef);
   }
 
-  private typedPlan(planner: JsonObject): PlanResolution | undefined {
-    if (planner.planning_decision === undefined) return undefined;
-    const decision = planner.planning_decision;
-    if (!isRecord(decision)) {
+  private typedPlan(planner: JsonObject): PlanResolution {
+    const rawDecision = planner.planning_decision;
+    if (!isRecord(rawDecision)) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
     }
-    const tasks = arrayValue(decision.tasks).filter(isRecord).map((task) => ({
-      domain: task.domain,
-      goal: task.goal,
-      normalized_request: task.normalized_request,
-      extracted_slots: this.semanticSlotValues(task.semantic_slots),
-      depends_on: arrayValue(task.depends_on),
-      disposition: task.disposition,
-      missing_information: arrayValue(task.missing_information),
-    }));
-    const compatibility = isRecord(planner.plan) ? planner.plan : {};
+    const decision: JsonObject = rawDecision;
+    const blockedTaskRefs = new Set(arrayValue(decision.blocked_task_refs).filter((value): value is number => typeof value === 'number'));
+    const tasks = arrayValue(decision.tasks).filter(isRecord).map((task) => {
+      const rawStep = arrayValue(task.steps).find(isRecord);
+      const plannedStep: PlannedCapabilityStep | undefined = rawStep
+        ? {
+          step_kind: rawStep.step_kind === 'WAIT_FOR_CONFIRMATION' ? 'WAIT_FOR_CONFIRMATION' : 'CAPABILITY',
+          ...(stringValue(rawStep.capability) ? { capability: stringValue(rawStep.capability) } : {}),
+          schema_version: '1',
+          risk_ceiling: rawStep.risk_ceiling as PlannedCapabilityStep['risk_ceiling'],
+          confirmation_gate: rawStep.confirmation_gate as PlannedCapabilityStep['confirmation_gate'],
+          phase: stringValue(rawStep.phase) ?? 'PLANNING',
+          requires_authority: arrayValue(rawStep.requires_authority).filter(isRecord),
+        }
+        : undefined;
+      return {
+        domain: task.domain,
+        goal: task.goal,
+        normalized_request: task.normalized_request,
+        extracted_slots: this.semanticSlotValues(task.semantic_slots),
+        depends_on: arrayValue(task.depends_on),
+        disposition: blockedTaskRefs.has(numberValue(task.task_ref) ?? -1) ? 'BLOCKED' : task.disposition,
+        missing_information: arrayValue(task.missing_information),
+        ...(plannedStep ? { planned_step: plannedStep } : {}),
+      };
+    });
     const clarification = isRecord(decision.clarification_need) ? decision.clarification_need : undefined;
-    const clarificationQuestion = clarification
-      ? stringValue(compatibility.clarification_question)
-        ?? this.typedClarification(arrayValue(clarification.missing_fields))
+    const requestedClarification = clarification
+      ? this.typedClarification(arrayValue(clarification.missing_fields))
       : undefined;
+    const directive = stringValue(decision.replan_directive) as ReplanDirective | undefined;
+    const clarificationQuestion = requestedClarification
+      ?? (directive === 'RECONCILIATION_REQUIRED'
+        ? 'Tráº¡ng thĂ¡i thao tĂ¡c trÆ°á»›c chÆ°a thá»ƒ xĂ¡c Ä‘á»‹nh. MĂ¬nh cáº§n Ä‘á»‘i soĂ¡t trÆ°á»›c khi tiáº¿p tá»¥c.'
+        : directive === 'ASK_USER'
+          ? 'MĂ¬nh cáº§n báº¡n xĂ¡c nháº­n thĂªm thĂ´ng tin trÆ°á»›c khi tiáº¿p tá»¥c.'
+          : undefined);
     return {
       tasks,
       ...(clarificationQuestion ? { clarificationQuestion } : {}),
-      interactionMode: interactionModeFrom(decision.interaction_mode ?? compatibility.interaction_mode),
-      discardedTaskRefs: discardedTaskRefsFrom(
-        decision.discarded_task_refs ?? compatibility.discarded_task_refs,
-      ),
+      interactionMode: interactionModeFrom(decision.interaction_mode),
+      discardedTaskRefs: discardedTaskRefsFrom(decision.discarded_task_refs),
+      ...(directive ? { replanDirective: directive } : {}),
+      confirmationInvalidated: decision.confirmation_invalidated === true,
     };
   }
 
@@ -753,6 +839,7 @@ export class AssistantService {
       pickup_address: 'điểm đón',
       dropoff_address: 'điểm đến',
       'query|dish_query': 'món bạn muốn tìm',
+      selection_domain: 'bạn muốn chọn đồ ăn hay lịch khám',
     };
     const values = fields
       .filter((field): field is string => typeof field === 'string')
@@ -840,11 +927,68 @@ export class AssistantService {
           phase: task.phase,
           extracted_slots: sanitizedSlots(task.extracted_slots),
           depends_on: task.depends_on.map((dependency) => taskIndexes.get(dependency)).filter((value): value is number => value !== undefined),
+          facts: this.authoritativeFacts(task, index),
           ...(pendingActions.length ? { pending_actions: pendingActions } : {}),
           ...(pendingChoice ? { pending_choice: pendingChoice } : {}),
         };
       }),
     };
+  }
+
+  private authoritativeFacts(task: StoredTask, taskRef: number): JsonObject[] {
+    const authoritative = task.authoritative ?? {};
+    const facts: JsonObject[] = [];
+    const add = (
+      factType: 'selected_candidate' | 'saved_address' | 'resource_snapshot' | 'quote' | 'booking_state',
+      field: string,
+      value: unknown,
+      resourceVersion?: unknown,
+      expiresAt?: unknown,
+    ): void => {
+      if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return;
+      if (typeof value === 'string' && !value) return;
+      facts.push({
+        fact_type: factType,
+        field,
+        value,
+        source_task_ref: taskRef,
+        ...((typeof resourceVersion === 'string' || typeof resourceVersion === 'number') ? { resource_version: resourceVersion } : {}),
+        ...(stringValue(expiresAt) ? { expires_at: stringValue(expiresAt) } : {}),
+      });
+    };
+    if (task.domain === 'food') {
+      const context = isRecord(authoritative.food_context) ? authoritative.food_context : isRecord(authoritative.state_updates) ? authoritative.state_updates : {};
+      const response = isRecord(authoritative.response) ? authoritative.response : {};
+      const data = isRecord(response.data) ? response.data : {};
+      const cart = isRecord(authoritative.cart) ? authoritative.cart : isRecord(data.cart) ? data.cart : {};
+      add('selected_candidate', 'restaurant_id', context.restaurant_id);
+      add('resource_snapshot', 'cart_id', context.cart_id, cart.version);
+      add('selected_candidate', 'menu_item_id', context.menu_item_id);
+      add('saved_address', 'address_id', context.address_id);
+    } else if (task.domain === 'restaurant') {
+      const selected = isRecord(authoritative.selected) ? authoritative.selected : {};
+      const hold = isRecord(authoritative.hold) ? authoritative.hold : {};
+      const availability = isRecord(authoritative.availability) ? authoritative.availability : {};
+      const reservation = isRecord(authoritative.reservation) ? authoritative.reservation : {};
+      add('selected_candidate', 'restaurant_id', selected.id);
+      add('resource_snapshot', 'availability_version', availability.snapshot_id, availability.resource_version ?? availability.version, availability.expires_at);
+      add('resource_snapshot', 'hold_id', hold.id, hold.resource_version ?? hold.version, hold.expires_at);
+      add('booking_state', 'reservation_id', reservation.id, reservation.resource_version ?? reservation.version);
+    } else if (task.domain === 'healthcare') {
+      const department = isRecord(authoritative.department) ? authoritative.department : {};
+      const selectedSlot = isRecord(authoritative.selectedSlot) ? authoritative.selectedSlot : {};
+      const appointment = isRecord(authoritative.appointment) ? authoritative.appointment : {};
+      add('selected_candidate', 'department_id', department.id);
+      add('selected_candidate', 'slot_id', selectedSlot.id, selectedSlot.resource_version ?? selectedSlot.version, selectedSlot.expires_at);
+      add('booking_state', 'appointment_id', appointment.appointment_id ?? appointment.id, appointment.resource_version ?? appointment.version, appointment.expires_at);
+    } else {
+      const result = isRecord(authoritative.result) ? authoritative.result : {};
+      const quote = [authoritative.quote, result.quote].find(isRecord) ?? {};
+      const booking = [authoritative.booking, result.booking].find(isRecord) ?? {};
+      add('quote', 'quote_id', quote.id, quote.quote_version ?? quote.resource_version, quote.expires_at);
+      add('booking_state', 'booking_id', booking.id, booking.resource_version ?? booking.version);
+    }
+    return facts.slice(0, 32);
   }
 
   private plannerText(value: unknown): string {
@@ -999,7 +1143,10 @@ export class AssistantService {
         const result = isRecord(activeRide.authoritative?.result) ? activeRide.authoritative.result : undefined;
         const booking = [activeRide.authoritative?.booking, result?.booking].find(isRecord);
         const bookingId = stringValue(booking?.id);
-        if (bookingId) {
+        if (bookingId && !this.rideClient) {
+          throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride cancellation is temporarily unavailable.' });
+        }
+        if (bookingId && this.rideClient) {
           const cancelResult = await this.rideClient.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
           activeRide.phase = 'COMPLETED';
           activeRide.revision += 1;
@@ -1027,22 +1174,17 @@ export class AssistantService {
     );
     this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
-    const typed = this.typedPlan(planner);
-    const rawPlanTasks = arrayValue(rawPlan.tasks).filter(isRecord) as AgentPlanTask[];
-    const discardedTaskRefs = typed?.discardedTaskRefs
-      ?? discardedTaskRefsFrom(rawPlan.discarded_task_refs);
+    const resolution = this.typedPlan(planner);
+    const discardedTaskRefs = resolution.discardedTaskRefs;
     const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
-    const legacyResolution = this.resolvePlanTasks(state.tasks, rawPlanTasks, message, state.actions);
-    const resolution: PlanResolution = typed ?? {
-      ...legacyResolution,
-      interactionMode: interactionModeFrom(rawPlan.interaction_mode),
-      discardedTaskRefs,
-    };
     const plan: JsonObject = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
     const planTasks = resolution.tasks;
-    const merge = this.mergeTasks(state.tasks, planTasks, message);
+    const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
     for (const taskId of discardResult.discardedIds) merge.touchedIds.add(taskId);
     const merged = merge.tasks;
+    if (resolution.confirmationInvalidated) {
+      this.invalidateCoreAConfirmations(merged, planTasks, merge.touchedIds);
+    }
     const actions: StoredAction[] = state.actions.filter((action) => {
       const task = merged.find((candidate) => candidate.id === action.task_id);
       return Boolean(task && !merge.touchedIds.has(task.id) && action.task_revision === task.revision);
@@ -1674,7 +1816,22 @@ export class AssistantService {
     };
   }
 
-  private mergeTasks(current: StoredTask[], planned: AgentPlanTask[], latestMessage: string): MergeResult {
+  private invalidateCoreAConfirmations(tasks: StoredTask[], planned: AgentPlanTask[], touchedIds: Set<string>): void {
+    const domains = new Set(planned.map((task) => task.domain).filter((domain): domain is Domain => domain === 'food' || domain === 'ride' || domain === 'restaurant' || domain === 'healthcare'));
+    for (const task of tasks) {
+      if (!domains.has(task.domain) || task.phase === 'COMPLETED' || task.phase === 'DISCARDED') continue;
+      if (!touchedIds.has(task.id)) task.revision += 1;
+      touchedIds.add(task.id);
+      if (task.phase === 'AWAITING_CONFIRMATION') task.phase = 'PLANNING';
+      task.public_item = undefined;
+      if (task.authoritative) {
+        const { pending: _pending, ...safeAuthority } = task.authoritative;
+        task.authoritative = safeAuthority;
+      }
+    }
+  }
+
+  private mergeTasks(current: StoredTask[], planned: AgentPlanTask[], latestMessage: string, replanDirective?: ReplanDirective): MergeResult {
     const next = current.map((task) => ({ ...task, extracted_slots: { ...task.extracted_slots } }));
     const touchedIds = new Set<string>();
     const plannedIds: string[] = [];
@@ -1682,30 +1839,46 @@ export class AssistantService {
       const domain = candidate.domain;
       if (domain !== 'ride' && domain !== 'food' && domain !== 'restaurant' && domain !== 'healthcare') continue;
       const request = stringValue(candidate.normalized_request) ?? '';
-      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED' && (!request || task.normalized_request === request));
+      const retrySameKey = replanDirective === 'WAIT_AND_RETRY_SAME_KEY';
+      const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED' && (!request || task.normalized_request === request));
       // A new destination or pickup is an update to the active journey, not a
       // second ride request. Other domains retain their request-based merge.
       const activeRide = domain === 'ride'
-        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
+        ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined;
       const match = sameRequest ?? activeRide ?? (planned.length === 1
-        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
+        ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined);
       const slots = sanitizedSlots(candidate.extracted_slots);
+      const requestedPhase: TaskPhase | undefined = candidate.disposition === 'BLOCKED'
+        ? 'BLOCKED'
+        : candidate.disposition === 'FAILED'
+          ? 'FAILED'
+          : candidate.disposition === 'NEEDS_INFO' || candidate.disposition === 'WAITING'
+            ? 'NEEDS_INFO'
+            : retrySameKey
+              ? 'PLANNING'
+              : undefined;
       if (match) {
         const nextSlots = { ...match.extracted_slots, ...slots };
         const changed = !sameJson(match.extracted_slots, nextSlots);
+        const stepChanged = !sameJson(match.planned_step, candidate.planned_step);
         const foodContinuation = domain === 'food' && match.phase !== 'COMPLETED';
-        if (changed || foodContinuation) {
-          match.revision += 1;
+        const phaseChanged = requestedPhase !== undefined && requestedPhase !== match.phase;
+        if (changed || stepChanged || foodContinuation || phaseChanged) {
+          const exactSameKeyRetry = retrySameKey && !changed && !stepChanged;
+          if (!exactSameKeyRetry) match.revision += 1;
           if (changed) this.resetTaskForRevision(match, nextSlots);
+          else if (stepChanged) match.phase = 'PLANNING';
           touchedIds.add(match.id);
           match.extracted_slots = nextSlots;
           match.latest_message = latestMessage;
         }
+        if (requestedPhase !== undefined) match.phase = requestedPhase;
         match.goal = stringValue(candidate.goal) ?? match.goal;
         match.normalized_request = request || match.normalized_request;
         match.missing_information = arrayValue(candidate.missing_information) as string[];
+        match.planned_step = candidate.planned_step;
         plannedIds.push(match.id);
         continue;
       }
@@ -1716,10 +1889,11 @@ export class AssistantService {
         normalized_request: request,
         extracted_slots: slots,
         depends_on: [],
-        phase: candidate.disposition === 'NEEDS_INFO' || candidate.disposition === 'WAITING' ? 'NEEDS_INFO' : 'PLANNING',
+        phase: requestedPhase ?? 'PLANNING',
         revision: 0,
         latest_message: latestMessage,
         missing_information: arrayValue(candidate.missing_information).filter((value): value is string => typeof value === 'string'),
+        ...(candidate.planned_step ? { planned_step: candidate.planned_step } : {}),
       };
       next.push(created);
       plannedIds.push(created.id);
@@ -1795,10 +1969,66 @@ export class AssistantService {
     conversationId: string,
     correlationId: string,
   ): Promise<TaskProcessResult> {
-    if (task.domain === 'restaurant') return this.processRestaurant(task, user, conversationId, correlationId);
-    if (task.domain === 'ride') return this.processRide(task, allTasks, user, conversationId, correlationId);
-    if (task.domain === 'healthcare') return this.processHealthcare(task, user, conversationId, correlationId);
-    return this.processFood(task, user, conversationId, correlationId);
+    const planned = task.planned_step;
+    if (planned?.step_kind === 'WAIT_FOR_CONFIRMATION') {
+      return {
+        phase: 'AWAITING_CONFIRMATION',
+        authoritative: task.authoritative,
+        publicItem: task.public_item,
+      };
+    }
+    if (planned) {
+      const definition = CAPABILITY_DEFINITIONS.find((item) => item.name === planned.capability);
+      if (
+        !definition
+        || definition.domain !== task.domain
+        || definition.schema_version !== planned.schema_version
+        || definition.risk_level !== planned.risk_ceiling
+        || definition.confirmation_gate !== planned.confirmation_gate
+      ) {
+        throw new ServiceUnavailableException({ code: 'CORE_A_DISPATCH_REJECTED', detail: 'Persisted Core A capability metadata is invalid.' });
+      }
+      const authorityAvailable = planned.requires_authority.every((requirement) => {
+        const sourceRef = numberValue(requirement.source_task_ref);
+        const sourceTask = sourceRef === undefined ? task : allTasks[sourceRef];
+        if (!sourceTask) return false;
+        const fact = this.authoritativeFacts(sourceTask, sourceRef ?? allTasks.indexOf(sourceTask))
+          .find((candidate) => candidate.field === requirement.fact);
+        if (!fact) return false;
+        if (requirement.required_version === true && fact.resource_version === undefined) return false;
+        if (requirement.must_be_unexpired === true) {
+          const expiry = stringValue(fact.expires_at);
+          if (!expiry || Number.isNaN(Date.parse(expiry)) || Date.parse(expiry) <= Date.now()) return false;
+        }
+        return true;
+      });
+      if (!authorityAvailable) {
+        return {
+          phase: 'NEEDS_INFO',
+          authoritative: task.authoritative,
+          publicItem: { kind: 'clarification', question: 'Thông tin xác thực đã thiếu hoặc hết hạn. Mình cần tải lại trước khi tiếp tục.' },
+        };
+      }
+    }
+
+    let result: TaskProcessResult;
+    if (task.domain === 'restaurant') result = await this.processRestaurant(task, user, conversationId, correlationId);
+    else if (task.domain === 'ride') result = await this.processRide(task, allTasks, user, conversationId, correlationId);
+    else if (task.domain === 'healthcare') result = await this.processHealthcare(task, user, conversationId, correlationId);
+    else result = await this.processFood(task, user, conversationId, correlationId);
+    if (!planned?.capability) return result;
+    return {
+      ...result,
+      authoritative: {
+        ...(result.authoritative ?? {}),
+        core_a_dispatch: {
+          capability: planned.capability,
+          schema_version: planned.schema_version,
+          risk_ceiling: planned.risk_ceiling,
+          confirmation_gate: planned.confirmation_gate,
+        },
+      },
+    };
   }
 
   private async processRestaurant(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
@@ -1982,7 +2212,10 @@ export class AssistantService {
     const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
     const existingBooking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
     const existingBookingId = stringValue(existingBooking?.id);
-    if (existingBookingId) {
+    if (existingBookingId && !this.rideClient) {
+      throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride status verification is temporarily unavailable.' });
+    }
+    if (existingBookingId && this.rideClient) {
       try {
         const liveBooking = await this.rideClient.getBooking(user.sub, { correlationId }, existingBookingId);
         if (isTerminalRideBookingStatus(liveBooking.status)) {
@@ -2215,6 +2448,121 @@ export class AssistantService {
     return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { department, doctors, selectedSlot, appointment }, publicItem, items: [publicItem], actions: [action, cancelAction, ...changeActions], workflowId };
   }
 
+  private async dispatchFoodProposals(
+    values: JsonObject[],
+    context: JsonObject,
+    selectedCandidate: JsonObject | undefined,
+    user: AuthUser,
+    correlationId: string,
+    workflowId: string,
+    trustedExecutionScope: string,
+    expectedCapability?: string,
+  ): Promise<{ data: JsonObject; stateUpdates: JsonObject; pending?: JsonObject }> {
+    if (!this.tools) throw new ServiceUnavailableException({ code: 'GATEWAY_DISPATCH_UNAVAILABLE', detail: 'Gateway proposal dispatcher is unavailable.' });
+    if (expectedCapability && !values.some((value) => value.capability_name === expectedCapability)) {
+      throw new UnprocessableEntityException({
+        code: 'CORE_A_PROPOSAL_MISMATCH',
+        detail: 'Food proposals do not contain the capability selected by Core A.',
+      });
+    }
+    const stateUpdates: JsonObject = {};
+    let data: JsonObject = {};
+    let pending: JsonObject | undefined;
+    let cartId = stringValue(context.cart_id);
+    let menuItemId = stringValue(selectedCandidate?.id) ?? stringValue(context.menu_item_id);
+    let restaurantId = stringValue(selectedCandidate?.restaurant_id) ?? stringValue(context.restaurant_id);
+    let addressId = stringValue(context.address_id);
+    let selectedOptions: JsonObject[] = [];
+
+    for (const [proposalIndex, value] of values.entries()) {
+      const proposal = value as unknown as ToolProposal;
+      const semantic = isRecord(value.semantic_arguments) ? value.semantic_arguments : {};
+      const name = stringValue(value.capability_name) ?? '';
+      let args: JsonObject;
+      if (name === 'search_food') {
+        args = {};
+        for (const key of ['keyword', 'district', 'category', 'max_price']) {
+          if (semantic[key] !== undefined) args[key] = semantic[key];
+        }
+      } else if (name === 'view_menu_item') {
+        if (!menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current Food selection is required.' });
+        args = { menu_item_id: menuItemId };
+      } else if (name === 'create_cart') {
+        if (!restaurantId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current restaurant selection is required.' });
+        args = { restaurant_id: restaurantId };
+      } else if (name === 'add_to_cart') {
+        if (!cartId || !menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'Current cart and menu item selections are required.' });
+        args = { cart_id: cartId, menu_item_id: menuItemId, quantity: numberValue(semantic.quantity) ?? 1, selected_options: selectedOptions };
+      } else if (name === 'list_food_delivery_addresses') {
+        args = { ...(stringValue(semantic.label) ? { label: stringValue(semantic.label) } : {}) };
+      } else if (name === 'quote_delivery') {
+        if (!restaurantId || !addressId) break;
+        args = { restaurant_id: restaurantId, address_id: addressId };
+      } else if (name === 'preview_order' || name === 'prepare_food_order_confirmation') {
+        if (!cartId || !addressId) break;
+        args = { cart_id: cartId, address_id: addressId };
+      } else {
+        throw new UnprocessableEntityException({ code: 'UNSUPPORTED_TOOL_PROPOSAL', detail: 'The proposed Food capability is not supported by this flow.' });
+      }
+
+      const executed = await this.tools.executeProposal(
+        proposal,
+        args,
+        user,
+        correlationId,
+        workflowId,
+        `${trustedExecutionScope}:p${proposalIndex}`,
+      );
+      if (name === 'search_food') {
+        const rows = (Array.isArray(executed) ? executed : arrayValue(executed.items)).filter(isRecord);
+        const restaurants: JsonObject[] = [];
+        const items: JsonObject[] = [];
+        for (const row of rows) {
+          const restaurant = isRecord(row.restaurant) ? row.restaurant : {};
+          const item = isRecord(row.item) ? row.item : row;
+          if (stringValue(restaurant.id) && !restaurants.some((entry) => entry.id === restaurant.id)) restaurants.push(restaurant);
+          if (stringValue(item.id)) items.push({ ...item, ...(stringValue(item.restaurant_id ?? restaurant.id) ? { restaurant_id: item.restaurant_id ?? restaurant.id } : {}), ...(Object.keys(restaurant).length ? { restaurant } : {}) });
+        }
+        stateUpdates.restaurant_candidates = restaurants;
+        stateUpdates.menu_item_candidates = items;
+        data = { items: rows };
+      } else if (name === 'view_menu_item') {
+        const groups = arrayValue(executed.option_groups).filter(isRecord);
+        const preferences = arrayValue(semantic.option_preferences).filter(isRecord);
+        selectedOptions = groups.filter((group) => group.required).flatMap((group) => {
+          const options = arrayValue(group.options).filter(isRecord);
+          const matched = options.find((option) => preferences.some((preference) => plainText(String(preference.value ?? '')).includes(plainText(String(option.name ?? '')))));
+          const option = matched ?? options[0];
+          return option && group.id !== undefined && option.id !== undefined ? [{ group_id: String(group.id), option_id: String(option.id) }] : [];
+        });
+      } else if (name === 'create_cart') {
+        cartId = stringValue(executed.id);
+        if (cartId) stateUpdates.cart_id = cartId;
+        data = { cart: executed };
+      } else if (name === 'add_to_cart') {
+        cartId = stringValue(executed.id) ?? cartId;
+        stateUpdates.cart_id = cartId;
+        stateUpdates.cart_items = arrayValue(executed.items).filter(isRecord);
+        data = { cart: executed };
+      } else if (name === 'list_food_delivery_addresses') {
+        const addresses = arrayValue(executed.addresses ?? executed.items).filter(isRecord);
+        stateUpdates.address_candidates = addresses;
+        const query = plainText(stringValue(context.address_query) ?? '');
+        const matched = addresses.find((address) => query && plainText(String(address.label ?? address.name ?? '')).includes(query));
+        const chosen = matched ?? (addresses.length === 1 ? addresses[0] : undefined);
+        addressId = stringValue(chosen?.id);
+        if (addressId) stateUpdates.address_id = addressId;
+        data = { addresses };
+      } else if (name === 'prepare_food_order_confirmation') {
+        pending = executed;
+        data = executed;
+      } else {
+        data = name === 'preview_order' ? { preview: executed } : executed;
+      }
+    }
+    return { data, stateUpdates, ...(pending ? { pending } : {}) };
+  }
+
   private async processFood(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
     const storedContext = isRecord(task.authoritative?.food_context)
       ? task.authoritative.food_context
@@ -2247,9 +2595,32 @@ export class AssistantService {
       })();
     const message = selectedIndex === undefined ? task.latest_message ?? task.normalized_request : 'Thêm 1 món đã chọn vào giỏ';
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: previousContext, correlation_id: correlationId }, correlationId);
-    const stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
-    const pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
-    const data = isRecord(response.data) ? response.data : {};
+    let stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
+    let pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
+    let data = isRecord(response.data) ? response.data : {};
+    const proposals = arrayValue(data.proposals).filter(isRecord);
+    const expectedCapability = task.planned_step?.capability;
+    if (expectedCapability && !proposals.length) {
+      throw new ServiceUnavailableException({
+        code: 'CORE_A_PROPOSAL_MISSING',
+        detail: 'Food Core A dispatch requires a validated Agent proposal.',
+      });
+    }
+    if (proposals.length) {
+      const dispatched = await this.dispatchFoodProposals(
+        proposals,
+        previousContext,
+        selectedCandidate,
+        user,
+        correlationId,
+        conversationId,
+        `food:${task.id}:r${task.revision}`,
+        expectedCapability,
+      );
+      stateUpdates = { ...stateUpdates, ...dispatched.stateUpdates };
+      pending = dispatched.pending;
+      data = dispatched.data;
+    }
     const responseCart = isRecord(data.cart) ? data.cart : undefined;
     const cartIdHint = stringValue(stateUpdates.cart_id) ?? stringValue(responseCart?.id) ?? stringValue((previousContext as JsonObject).cart_id);
     const authoritativeCart = cartIdHint && this.food && typeof this.food.getCart === 'function'
@@ -2346,9 +2717,9 @@ export class AssistantService {
       : [];
     if (pending?.id) {
       const action = this.actionFor(task, 'food_confirm', { confirmation_id: String(pending.id) });
-      return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext, pending }, publicItem, items: [publicItem], actions: [action] };
+      return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext, ...(authoritativeCart ? { cart: authoritativeCart } : {}), pending }, publicItem, items: [publicItem], actions: [action] };
     }
-    return { phase: response.response_type === 'error' ? 'FAILED' as TaskPhase : 'IN_PROGRESS' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext }, publicItem, items: [publicItem], actions: optionActions };
+    return { phase: response.response_type === 'error' ? 'FAILED' as TaskPhase : 'IN_PROGRESS' as TaskPhase, authoritative: { response, state_updates: nextContext, food_context: nextContext, ...(authoritativeCart ? { cart: authoritativeCart } : {}) }, publicItem, items: [publicItem], actions: optionActions };
   }
 
   private foodCartActions(task: StoredTask, context: JsonObject): StoredAction[] {
@@ -2494,7 +2865,7 @@ export class AssistantService {
       cart_items: arrayValue(refreshedCart.items).filter(isRecord),
     };
     const publicItem = { kind: 'food_cart', title: 'Giỏ hàng đã được cập nhật', cart: refreshedCart };
-    const authoritative = { ...(task.authoritative ?? {}), food_context: context, state_updates: context };
+    const authoritative = { ...(task.authoritative ?? {}), food_context: context, state_updates: context, cart: refreshedCart };
     return {
       phase: 'IN_PROGRESS',
       message: 'Mình đã cập nhật giỏ hàng.',

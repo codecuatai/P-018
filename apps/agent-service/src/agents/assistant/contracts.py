@@ -346,6 +346,8 @@ class ReplanDirective(StrEnum):
 
 
 class PlanningDecision(StrictModel):
+    contract_version: Literal["core-a.v1"] = "core-a.v1"
+    capability_catalog_version: str = Field(default="unavailable", min_length=1, max_length=80)
     tasks: list[CoreAPlannedTask] = Field(default_factory=list, max_length=4)
     clarification_need: ClarificationNeed | None = None
     workflow_relation: WorkflowRelation = WorkflowRelation.SINGLE_TASK

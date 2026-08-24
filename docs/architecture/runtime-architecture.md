@@ -17,7 +17,7 @@ flowchart TB
   Gateway --> Healthcare[healthcare-service :8103]
   Gateway --> Food[food-service :8104]
   Gateway --> Core[(xone_core)]
-  Agent -. provisioned target only .-> AgentDb[(xone_agent)]
+  Agent --> AgentDb[(xone_agent run metadata)]
   Ride --> RideDb[(xone_ride)]
   Restaurant --> RestaurantDb[(xone_restaurant)]
   Healthcare --> HealthcareDb[(xone_healthcare)]
@@ -46,13 +46,16 @@ owned migrations, then verifies Gateway and Web endpoints. Migrations remain
 explicit and idempotent; starting a container never performs destructive
 schema repair.
 
-The Agent's current workflow store is process-local; `xone_agent` is
-provisioned but no Agent persistence client/migration is wired, so it is not a
-durability claim. The optional Gemini adapter tries the configured model first. A
+The Agent actively uses migration `002_agent_run_metadata.sql` and persists only the
+approved run-metadata envelope in `xone_agent`. Required PostgreSQL mode fails
+readiness when the database or owned schema is unavailable; startup performs no
+DDL and never silently selects memory. The optional Gemini adapter tries the configured model first. A
 confirmed native structured-schema/capability failure retries raw output on
 that model and sends it through the existing validated parser. A configured
 fallback is eligible only for confirmed quota/rate-limit, temporary 5xx,
 timeout/network, or model-unavailable failures; authentication, permission,
 billing and malformed-request failures remain visible. All public Restaurant
 and Healthcare turns still pass through Gateway confirmation/payment gates;
-the Agent only emits typed requests.
+the Agent only emits typed proposals. No fake SSE route is exposed; the
+non-streaming contract remains authoritative until a real cancellable,
+backpressure-bounded stream is implemented.

@@ -55,6 +55,22 @@ class FoodRepository(Protocol):
     async def get_menu_item(self, item_id: str) -> dict | None: ...
     async def get_cart(self, cart_id: str) -> dict | None: ...
     async def save_cart(self, cart: dict, expected_version: int | None = None) -> dict: ...
+    async def save_cart_idempotent(
+        self,
+        cart: dict,
+        expected_version: int,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict: ...
+    async def get_cart_write_replay(
+        self,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict | None: ...
     async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict: ...
     async def get_voucher(self, code: str) -> dict | None: ...
     async def ensure_voucher_eligible(self, code: str, user_id: str) -> None: ...
@@ -316,6 +332,9 @@ class InMemoryFoodRepository:
         self.redeemed_vouchers: set[tuple[str, str]] = set()
         self.order_operations: dict[tuple[str, str], dict] = {}
         self.cart_operations: dict[tuple[str, str], tuple[str, dict]] = {}
+        self.cart_write_operations: dict[
+            tuple[str, str, str], tuple[str, dict]
+        ] = {}
         self._lock = asyncio.Lock()
 
     async def search(self, **filters) -> list[dict]:
@@ -406,6 +425,58 @@ class InMemoryFoodRepository:
             saved["version"] = current_version + 1 if current else 0
             self.carts[saved["id"]] = saved
             return deepcopy(saved)
+
+    async def save_cart_idempotent(
+        self,
+        cart: dict,
+        expected_version: int,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict:
+        async with self._lock:
+            operation_key = (actor_id, operation, idempotency_key)
+            existing_operation = self.cart_write_operations.get(operation_key)
+            if existing_operation is not None:
+                if existing_operation[0] != payload_hash:
+                    raise DomainError(
+                        "IDEMPOTENCY_KEY_REUSED",
+                        "Idempotency key đã được dùng cho payload khác.",
+                    )
+                return deepcopy(existing_operation[1])
+
+            current = self.carts.get(cart["id"])
+            if current is None or current.get("user_id") != actor_id:
+                raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+            if int(current.get("version", 0)) != expected_version:
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tải lại.")
+
+            saved = deepcopy(cart)
+            saved["version"] = expected_version + 1
+            self.carts[saved["id"]] = saved
+            self.cart_write_operations[operation_key] = (payload_hash, saved)
+            return deepcopy(saved)
+
+    async def get_cart_write_replay(
+        self,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict | None:
+        async with self._lock:
+            existing = self.cart_write_operations.get(
+                (actor_id, operation, idempotency_key)
+            )
+            if existing is None:
+                return None
+            if existing[0] != payload_hash:
+                raise DomainError(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "Idempotency key đã được dùng cho payload khác.",
+                )
+            return deepcopy(existing[1])
 
     async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict:
         async with self._lock:
@@ -916,6 +987,110 @@ class PostgresFoodRepository:
             saved = deepcopy(cart)
             saved["version"] = int(row["version"])
             return saved
+
+    async def save_cart_idempotent(
+        self,
+        cart: dict,
+        expected_version: int,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict:
+        pool = self._require_pool()
+        async with pool.acquire() as connection, connection.transaction():
+            await connection.execute(
+                """
+                INSERT INTO food_cart_write_operations (
+                    actor_id, operation, idempotency_key, payload_hash, cart_id
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (actor_id, operation, idempotency_key) DO NOTHING
+                """,
+                actor_id,
+                operation,
+                idempotency_key,
+                payload_hash,
+                cart["id"],
+            )
+            operation_row = await connection.fetchrow(
+                """
+                SELECT payload_hash, result
+                FROM food_cart_write_operations
+                WHERE actor_id=$1 AND operation=$2 AND idempotency_key=$3
+                FOR UPDATE
+                """,
+                actor_id,
+                operation,
+                idempotency_key,
+            )
+            if operation_row is None or str(operation_row["payload_hash"]) != payload_hash:
+                raise DomainError(
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "Idempotency key đã được dùng cho payload khác.",
+                )
+            if operation_row["result"] is not None:
+                return _json_object(operation_row["result"])
+
+            current = await connection.fetchrow(
+                "SELECT user_id, version FROM food_carts WHERE id=$1 FOR UPDATE",
+                cart["id"],
+            )
+            if current is None or str(current["user_id"]) != actor_id:
+                raise DomainError("FORBIDDEN", "Giỏ hàng không thuộc user hiện tại.")
+            if int(current["version"]) != expected_version:
+                raise DomainError("CART_CHANGED", "Giỏ hàng đã thay đổi, vui lòng tải lại.")
+
+            row = await connection.fetchrow(
+                """
+                UPDATE food_carts
+                SET data=$1::jsonb, version=version+1, updated_at=now()
+                WHERE id=$2
+                RETURNING version
+                """,
+                json.dumps(cart, ensure_ascii=False),
+                cart["id"],
+            )
+            saved = deepcopy(cart)
+            saved["version"] = int(row["version"])
+            await connection.execute(
+                """
+                UPDATE food_cart_write_operations
+                SET result=$1::jsonb
+                WHERE actor_id=$2 AND operation=$3 AND idempotency_key=$4
+                """,
+                json.dumps(saved, ensure_ascii=False),
+                actor_id,
+                operation,
+                idempotency_key,
+            )
+            return saved
+
+    async def get_cart_write_replay(
+        self,
+        actor_id: str,
+        operation: str,
+        idempotency_key: str,
+        payload_hash: str,
+    ) -> dict | None:
+        row = await self._require_pool().fetchrow(
+            """
+            SELECT payload_hash, result
+            FROM food_cart_write_operations
+            WHERE actor_id=$1 AND operation=$2 AND idempotency_key=$3
+            """,
+            actor_id,
+            operation,
+            idempotency_key,
+        )
+        if row is None:
+            return None
+        if str(row["payload_hash"]) != payload_hash:
+            raise DomainError(
+                "IDEMPOTENCY_KEY_REUSED",
+                "Idempotency key đã được dùng cho payload khác.",
+            )
+        return _json_object(row["result"]) if row["result"] is not None else None
 
     async def create_cart_idempotent(self, cart: dict, idempotency_key: str) -> dict:
         pool = self._require_pool()

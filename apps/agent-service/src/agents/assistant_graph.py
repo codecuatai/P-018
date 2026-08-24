@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta
+from time import perf_counter
 from typing import Any, Literal, TypedDict
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.agents.assistant.contracts import (
+    AuthoritativeFact,
     CapabilitySnapshot,
     CoreAInput,
     Domain,
@@ -22,7 +24,18 @@ from src.agents.assistant.planning import default_capability_snapshot
 from src.agents.assistant.planning.planner import CoreAPlanner
 from src.agents.assistant.understanding import semantic_turn_from_plan
 from src.config import get_settings
-from src.services.llm import GeminiAdapter, LLMAdapter, llm_diagnostics
+from src.observability import (
+    SafeObservationMetadata,
+    extract_generation_usage,
+    format_human_plan_output,
+    get_telemetry,
+)
+from src.services.llm import (
+    GeminiAdapter,
+    LLMAdapter,
+    llm_diagnostics,
+    provider_error_category,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +185,11 @@ def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
                     phase=str(raw.get("phase") or "PLANNING"),
                     revision=max(0, int(raw.get("revision", 0))),
                     depends_on=[item for item in raw.get("depends_on", []) if isinstance(item, int)],
+                    facts=[
+                        AuthoritativeFact.model_validate(item)
+                        for item in raw.get("facts", [])
+                        if isinstance(item, dict)
+                    ][:32],
                 )
             )
         except (TypeError, ValueError):
@@ -192,10 +210,115 @@ def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
 def _typed_pipeline_result(
     plan: AssistantPlan,
     state: AssistantState,
-    source: str,
+    source: Literal["model", "deterministic"],
 ) -> AssistantState:
-    input_ = _core_a_input(plan, state)
-    decision = plan_core_a(input_)
+    telemetry = get_telemetry()
+    with telemetry.observation(
+        "planner.route",
+        "chain",
+        SafeObservationMetadata(
+            decision_source=source,
+            interaction_mode=plan.interaction_mode,
+            task_count=len(plan.tasks),
+            status="started",
+        ),
+        input={
+            "interaction_mode": plan.interaction_mode,
+            "assistant_message": plan.assistant_message,
+            "raw_tasks_count": len(plan.tasks),
+            "decision_source": source,
+        },
+    ) as planner_observation:
+        input_ = _core_a_input(plan, state)
+        with telemetry.observation(
+            "core_a.validate",
+            "guardrail",
+            SafeObservationMetadata(status="started"),
+            input={
+                "task_count": len(input_.planner_context.tasks),
+                "capability_snapshot_version": input_.capability_snapshot.version,
+            },
+        ) as validation_observation:
+            try:
+                decision = plan_core_a(input_)
+            except Exception:
+                validation_observation.update(
+                    metadata=SafeObservationMetadata(
+                        accepted=False,
+                        status="failed",
+                        error_code="core_a_validation_failed",
+                    ),
+                    output={"accepted": False, "error": "Core A validation failed"},
+                )
+                raise
+            validation_observation.update(
+                metadata=SafeObservationMetadata(
+                    accepted=True,
+                    status="succeeded",
+                    contract_version=decision.contract_version,
+                    capability_catalog_version=decision.capability_catalog_version,
+                    clarification_required=decision.clarification_need is not None,
+                    blocked_count=len(decision.blocked_task_refs),
+                    discarded_count=len(decision.discarded_task_refs),
+                ),
+                output={
+                    "accepted": True,
+                    "contract_version": decision.contract_version,
+                    "clarification_required": decision.clarification_need is not None,
+                    "blocked_tasks": decision.blocked_task_refs,
+                    "discarded_tasks": decision.discarded_task_refs,
+                },
+            )
+        planner_observation.update(
+            metadata=SafeObservationMetadata(
+                decision_source=source,
+                interaction_mode=decision.interaction_mode,
+                workflow_relation=decision.workflow_relation,
+                replan_directive=decision.replan_directive,
+                task_count=len(decision.tasks),
+                status="succeeded",
+            ),
+            output=format_human_plan_output(decision, plan.assistant_message),
+        )
+        for task in decision.tasks:
+            steps = task.steps
+            step_summaries = [
+                f"[{step.step_kind}] {step.capability or step.confirmation_gate} (Risk: {step.risk_ceiling})"
+                for step in steps
+            ]
+            with telemetry.observation(
+                f"core_a.task [{task.domain.upper()}]",
+                "span",
+                SafeObservationMetadata(
+                    task_index=task.task_ref,
+                    domain=task.domain,
+                    disposition=task.disposition,
+                    dependency_count=len(task.depends_on),
+                    step_kinds=[step.step_kind for step in steps],
+                    capability_names=[
+                        step.capability for step in steps if step.capability is not None
+                    ],
+                    risk_ceilings=list(
+                        dict.fromkeys(str(step.risk_ceiling) for step in steps)
+                    ),
+                    confirmation_gates=list(
+                        dict.fromkeys(str(step.confirmation_gate) for step in steps)
+                    ),
+                    status="succeeded",
+                ),
+                input={
+                    "task_ref": task.task_ref,
+                    "domain": task.domain,
+                    "depends_on": task.depends_on,
+                    "normalized_request": task.normalized_request,
+                },
+                output={
+                    "disposition": task.disposition,
+                    "step_count": len(steps),
+                    "steps": step_summaries,
+                },
+            ):
+                pass
     return {
         "plan": plan.model_dump(),
         "semantic_turn": input_.semantic_turn.model_dump(mode="json"),
@@ -203,6 +326,7 @@ def _typed_pipeline_result(
         "assistant_message": plan.assistant_message,
         "decision_source": source,
     }
+
 
 
 def model_diagnostics() -> dict[str, Any]:
@@ -1529,10 +1653,88 @@ def _model_prompt(state: AssistantState) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-async def _invoke_structured(model: LLMAdapter, prompt: str, schema: type[BaseModel]) -> BaseModel:
-    structured = getattr(model, "ainvoke_structured", None)
-    raw = await structured(prompt, schema) if callable(structured) else await model.ainvoke(prompt)
-    return _parse_model(raw, schema)
+async def _invoke_structured(
+    model: LLMAdapter,
+    prompt: str,
+    schema: type[BaseModel],
+    *,
+    purpose: Literal["plan", "compose"],
+) -> BaseModel:
+    settings = get_settings()
+    telemetry = get_telemetry()
+    started_at = perf_counter()
+    observation_name = (
+        "LLM: Phân tích & Lập kế hoạch" if purpose == "plan" else "LLM: Soạn câu trả lời"
+    )
+    prompt_name = "core_a_plan" if purpose == "plan" else "core_a_compose"
+    with telemetry.observation(
+        observation_name,
+        "generation",
+        SafeObservationMetadata(
+            invocation="structured",
+            response_schema=schema.__name__,
+            prompt_template_name=prompt_name,
+            prompt_template_version="1",
+            status="started",
+        ),
+        input={"prompt": prompt, "purpose": purpose, "schema": schema.__name__},
+        model=settings.gemini_model,
+    ) as generation_observation:
+        try:
+            structured = getattr(model, "ainvoke_structured", None)
+            raw = (
+                await structured(prompt, schema)
+                if callable(structured)
+                else await model.ainvoke(prompt)
+            )
+            parsed = _parse_model(raw, schema)
+            usage = extract_generation_usage(raw)
+            runtime = (
+                llm_diagnostics(settings)
+                if isinstance(model, GeminiAdapter)
+                else {}
+            )
+            invocation = runtime.get("last_model_call_invocation")
+            generation_observation.update(
+                metadata=SafeObservationMetadata(
+                    invocation=(
+                        invocation if invocation in {"raw", "structured"} else "structured"
+                    ),
+                    response_schema=schema.__name__,
+                    prompt_template_name=prompt_name,
+                    prompt_template_version="1",
+                    fallback_used=bool(runtime.get("fallback_used", False)),
+                    structured_output_fallback_used=bool(
+                        runtime.get("structured_output_fallback_used", False)
+                    ),
+                    retry_count=1 if runtime.get("fallback_model_attempted") else 0,
+                    status="succeeded",
+                    latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+                ),
+                output=parsed.model_dump(mode="json"),
+                usage=usage,
+                model=(
+                    str(runtime.get("last_model_used"))
+                    if runtime.get("last_model_used")
+                    else settings.gemini_model
+                ),
+            )
+            return parsed
+        except Exception as error:
+            generation_observation.update(
+                metadata=SafeObservationMetadata(
+                    invocation="structured",
+                    response_schema=schema.__name__,
+                    prompt_template_name=prompt_name,
+                    prompt_template_version="1",
+                    status="failed",
+                    error_code=provider_error_category(error),
+                    latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+                ),
+                output={"error": str(error)[:300]},
+            )
+            raise
+
 
 
 def _deterministic_composition(
@@ -1559,7 +1761,7 @@ def _deterministic_composition(
     return "Mình vẫn ở đây. Bạn muốn cùng mình bắt đầu từ món ăn, chuyến xe, bàn ăn hay lịch khám?"
 
 
-async def compose_response(
+async def _compose_response(
     _message: str,
     tasks: list[dict[str, Any]],
     authoritative_results: list[dict[str, Any]],
@@ -1590,7 +1792,12 @@ async def compose_response(
         ensure_ascii=False,
     )
     try:
-        result = await _invoke_structured(model, prompt, AssistantComposition)
+        result = await _invoke_structured(
+            model,
+            prompt,
+            AssistantComposition,
+            purpose="compose",
+        )
         MODEL_DIAGNOSTICS.update(
             {
                 "last_model_call_at": _now().isoformat(),
@@ -1612,6 +1819,67 @@ async def compose_response(
         return fallback, "deterministic"
 
 
+async def compose_response(
+    message: str,
+    tasks: list[dict[str, Any]],
+    authoritative_results: list[dict[str, Any]],
+    llm: LLMAdapter | None = None,
+) -> tuple[str, str]:
+    """Trace only bounded composition metadata around the existing behavior."""
+
+    settings = get_settings()
+    telemetry = get_telemetry()
+    started_at = perf_counter()
+    model_expected = llm is not None or (
+        settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key)
+    )
+    with telemetry.observation(
+        "Response: Soạn thảo phản hồi",
+        "chain",
+        SafeObservationMetadata(
+            task_count=min(len(tasks), 4),
+            result_count=min(len(authoritative_results), 32),
+            status="started",
+        ),
+        input={
+            "user_message": message,
+            "task_count": len(tasks),
+            "authoritative_results_count": len(authoritative_results),
+        },
+    ) as composition_observation:
+        response, source = await _compose_response(
+            message,
+            tasks,
+            authoritative_results,
+            llm=llm,
+        )
+        degraded = model_expected and source == "deterministic"
+        composition_observation.update(
+            metadata=SafeObservationMetadata(
+                task_count=min(len(tasks), 4),
+                result_count=min(len(authoritative_results), 32),
+                decision_source=source,
+                status="degraded" if degraded else "succeeded",
+                error_code="composition_fallback" if degraded else None,
+                latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+            ),
+            output={"assistant_message": response, "decision_source": source},
+        )
+        if degraded:
+            with telemetry.observation(
+                "fallback",
+                "span",
+                SafeObservationMetadata(
+                    phase="compose",
+                    error_code="composition_fallback",
+                    status="degraded",
+                ),
+            ):
+                pass
+        return response, source
+
+
+
 def build_assistant_graph(llm: LLMAdapter | None = None):
     settings = get_settings()
     model = llm or GeminiAdapter()
@@ -1629,10 +1897,28 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
+            if settings.agent_model_mode == "gemini":
+                with get_telemetry().observation(
+                    "fallback",
+                    "span",
+                    SafeObservationMetadata(
+                        phase="plan",
+                        error_code="provider_not_configured",
+                        status="degraded",
+                    ),
+                ):
+                    pass
             return _typed_pipeline_result(plan, state, "deterministic")
         try:
             message = str(state.get("query", ""))
-            plan = _sanitize_plan(await _invoke_structured(model, _model_prompt(state), AssistantPlan))
+            plan = _sanitize_plan(
+                await _invoke_structured(
+                    model,
+                    _model_prompt(state),
+                    AssistantPlan,
+                    purpose="plan",
+                )
+            )
             plan = _merge_explicit_context_actions(plan, message, state.get("conversation_state"))
             plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
             plan = _enforce_reference_dependencies(plan, message)
@@ -1661,6 +1947,16 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                 }
             )
             logger.warning("Assistant planner unavailable; deterministic fallback: %s", type(error).__name__)
+            with get_telemetry().observation(
+                "fallback",
+                "span",
+                SafeObservationMetadata(
+                    phase="plan",
+                    error_code=provider_error_category(error),
+                    status="degraded",
+                ),
+            ):
+                pass
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
             return _typed_pipeline_result(plan, state, "deterministic")
 

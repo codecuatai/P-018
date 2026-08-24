@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from src.api.auth import require_internal_auth
-from src.models.schemas import AvailabilityCheckRequest
+from src.models.schemas import AvailabilityCheckRequest, AvailabilityEnvelope
 
 router = APIRouter(prefix="/restaurants", tags=["Restaurants"])
 
@@ -25,7 +25,7 @@ def get_restaurant(restaurant_id: str, request: Request, _actor=Depends(require_
     return envelope(restaurant, request)
 
 
-@router.post("/{restaurant_id}/availability")
+@router.post("/{restaurant_id}/availability", response_model=AvailabilityEnvelope)
 def check_availability(restaurant_id: str, body: AvailabilityCheckRequest, request: Request, _actor=Depends(require_internal_auth)):
     try:
         result = request.app.state.restaurant_service.check_availability(restaurant_id, body.party_size, body.start_at, body.duration_minutes, body.seating_type)

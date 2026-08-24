@@ -28,6 +28,7 @@ class CoreAPlanner:
             relation = self._relation(tasks)
             clarification = self._clarification(tasks, input_)
             decision = PlanningDecision(
+                capability_catalog_version=input_.capability_snapshot.version,
                 tasks=tasks,
                 clarification_need=clarification,
                 workflow_relation=relation,
@@ -39,7 +40,9 @@ class CoreAPlanner:
             )
             return validate_plan(decision, input_.capability_snapshot)
         except (ValueError, PlanPolicyError):
-            fallback = safe_skeleton(input_.semantic_turn, input_.planner_context)
+            fallback = safe_skeleton(input_.semantic_turn, input_.planner_context).model_copy(
+                update={"capability_catalog_version": input_.capability_snapshot.version}
+            )
             return validate_plan(fallback, input_.capability_snapshot)
 
     @staticmethod

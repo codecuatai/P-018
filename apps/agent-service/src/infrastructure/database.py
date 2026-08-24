@@ -2,117 +2,80 @@ from __future__ import annotations
 
 import logging
 
-from psycopg_pool import AsyncConnectionPool, ConnectionPool
+from psycopg_pool import AsyncConnectionPool
 
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_SYNC_POOL: ConnectionPool | None = None
 _ASYNC_POOL: AsyncConnectionPool | None = None
-_DB_AVAILABLE: bool | None = None
 
 
-def is_db_available() -> bool:
-    global _DB_AVAILABLE
-    if _DB_AVAILABLE is not None:
-        return _DB_AVAILABLE
-    settings = get_settings()
-    if not settings.database_url or settings.app_env == "test":
-        _DB_AVAILABLE = False
-        return False
-    return True
-
-
-def get_sync_pool() -> ConnectionPool | None:
-    global _SYNC_POOL, _DB_AVAILABLE
-    if not is_db_available():
-        return None
-    settings = get_settings()
-    if not settings.database_url:
-        return None
-    if _SYNC_POOL is None:
-        try:
-            _SYNC_POOL = ConnectionPool(
-                conninfo=settings.database_url,
-                min_size=1,
-                max_size=10,
-                open=False,
-                kwargs={"connect_timeout": 1},
-            )
-            _SYNC_POOL.open(wait=False)
-        except Exception as exc:
-            logger.debug("Could not initialize PostgreSQL sync connection pool: %s", exc)
-            _SYNC_POOL = None
-            _DB_AVAILABLE = False
-    return _SYNC_POOL
+class AgentPersistenceUnavailableError(RuntimeError):
+    """Raised when required Agent metadata persistence cannot be reached."""
 
 
 async def get_async_pool() -> AsyncConnectionPool | None:
-    global _ASYNC_POOL, _DB_AVAILABLE
-    if not is_db_available():
-        return None
+    """Return the Agent-owned pool without creating or altering any schema."""
+
+    global _ASYNC_POOL
     settings = get_settings()
-    if not settings.database_url:
+    if settings.agent_persistence_mode == "memory":
         return None
-    if _ASYNC_POOL is None:
-        try:
-            _ASYNC_POOL = AsyncConnectionPool(
-                conninfo=settings.database_url,
-                min_size=1,
-                max_size=10,
-                open=False,
-                kwargs={"connect_timeout": 1},
-            )
-            await _ASYNC_POOL.open(wait=False)
-        except Exception as exc:
-            logger.debug("Could not initialize PostgreSQL async connection pool: %s", exc)
-            _ASYNC_POOL = None
-            _DB_AVAILABLE = False
-    return _ASYNC_POOL
-
-
-def init_db_schema() -> bool:
-    """Verify that the owned Agent migration has been applied."""
-    global _DB_AVAILABLE
-    settings = get_settings()
-    if not settings.database_url or settings.app_env == "test":
-        _DB_AVAILABLE = False
-        return False
-    try:
-        pool = get_sync_pool()
-        if pool is None:
-            _DB_AVAILABLE = False
-            return False
-        with pool.connection(timeout=1.0) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT to_regclass('public.agent_workflow_states')")
-                row = cur.fetchone()
-                if not row or row[0] is None:
-                    logger.error("Agent database migration is missing: agent_workflow_states was not found.")
-                    _DB_AVAILABLE = False
-                    return False
-        logger.info("Agent workflow persistence schema is available.")
-        _DB_AVAILABLE = True
-        return True
-    except Exception as exc:
-        logger.debug("Database schema initialization deferred: %s", exc)
-        _DB_AVAILABLE = False
-        return False
-
-
-def close_pools() -> None:
-    global _SYNC_POOL, _ASYNC_POOL, _DB_AVAILABLE
-    if _SYNC_POOL is not None:
-        try:
-            _SYNC_POOL.close()
-        except Exception:
-            pass
-        _SYNC_POOL = None
     if _ASYNC_POOL is not None:
+        return _ASYNC_POOL
+
+    pool = AsyncConnectionPool(
+        conninfo=settings.database_url,
+        min_size=1,
+        max_size=10,
+        open=False,
+        kwargs={"connect_timeout": 2},
+    )
+    try:
+        await pool.open(wait=True, timeout=3.0)
+    except Exception as exc:
+        await pool.close()
+        logger.warning("Required Agent metadata database is unavailable: %s", type(exc).__name__)
+        raise AgentPersistenceUnavailableError("Agent metadata database is unavailable.") from exc
+    _ASYNC_POOL = pool
+    return pool
+
+
+async def persistence_ready() -> bool:
+    """Probe connectivity and the explicitly migrated metadata table."""
+
+    settings = get_settings()
+    if settings.agent_persistence_mode == "memory":
+        return True
+    try:
+        pool = await get_async_pool()
+        if pool is None:
+            return False
+        async with pool.connection(timeout=1.0) as connection:
+            cursor = await connection.execute(
+                "SELECT to_regclass('public.agent_run_metadata')"
+            )
+            row = await cursor.fetchone()
+            return bool(row and row[0])
+    except Exception as exc:
+        logger.warning("Agent metadata readiness probe failed: %s", type(exc).__name__)
+        await reset_pool()
+        return False
+
+
+async def reset_pool() -> None:
+    """Close the pool so a later request can recover after an outage."""
+
+    global _ASYNC_POOL
+    pool = _ASYNC_POOL
+    _ASYNC_POOL = None
+    if pool is not None:
         try:
-            _ASYNC_POOL.close()
-        except Exception:
-            pass
-        _ASYNC_POOL = None
-    _DB_AVAILABLE = None
+            await pool.close()
+        except Exception as exc:
+            logger.warning("Agent metadata pool close failed: %s", type(exc).__name__)
+
+
+async def close_pool() -> None:
+    await reset_pool()

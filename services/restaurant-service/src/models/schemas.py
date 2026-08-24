@@ -47,8 +47,21 @@ class AvailabilityCheckResponse(BaseModel):
     party_size: int
     available: bool
     table_code: str | None = None
-    resource_version: int = 1
+    snapshot_id: str
+    resource_version: str
+    observed_at: datetime
+    expires_at: datetime
     message: str | None = None
+
+
+class ResponseMeta(BaseModel):
+    request_id: str | None = None
+    timestamp: datetime
+
+
+class AvailabilityEnvelope(BaseModel):
+    data: AvailabilityCheckResponse
+    meta: ResponseMeta
 
 
 class ReservationCreateRequest(BaseModel):

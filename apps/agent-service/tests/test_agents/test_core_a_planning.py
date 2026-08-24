@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 from src.agents.assistant.contracts import (
     AuthoritativeFact,
+    AuthorityRequirement,
     CapabilitySnapshot,
     ConfirmationGate,
     CoreAInput,
@@ -33,6 +34,7 @@ from src.agents.assistant.contracts import (
 )
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot
 from src.agents.assistant.planning.replan import replan
+from src.agents.assistant.planning.requirements import usable_fact
 from src.agents.assistant_graph import plan_core_a
 
 
@@ -68,6 +70,25 @@ def fact(
     )
 
 
+def test_fresh_authority_requires_an_explicit_future_expiry() -> None:
+    now = datetime.now(UTC)
+    requirement = AuthorityRequirement(
+        fact="availability_version",
+        must_be_unexpired=True,
+    )
+    missing_expiry = fact("availability_version", "availability-1", version=1)
+    expired = missing_expiry.model_copy(
+        update={"expires_at": now - timedelta(seconds=1)}
+    )
+    fresh = missing_expiry.model_copy(
+        update={"expires_at": now + timedelta(seconds=30)}
+    )
+
+    assert usable_fact([missing_expiry], requirement, now=now) is None
+    assert usable_fact([expired], requirement, now=now) is None
+    assert usable_fact([fresh], requirement, now=now) == fresh
+
+
 def test_contract_rejects_fabricated_authoritative_food_field() -> None:
     with pytest.raises(ValidationError):
         FoodSemanticSlots.model_validate(
@@ -100,11 +121,60 @@ def test_food_discovery_selects_observed_read_capability() -> None:
         slots=FoodSemanticSlots(query=slot("phở"), max_price=slot(100000)),
     )
     decision = CoreAPlanner().plan(input_for(intent))
+    assert decision.contract_version == "core-a.v1"
+    assert decision.capability_catalog_version == "observed.v1"
     step = decision.tasks[0].steps[0]
     assert step.capability == "search_food"
     assert step.step_kind == StepKind.CAPABILITY
     assert step.risk_ceiling == RiskLevel.READ
     assert step.confirmation_gate == ConfirmationGate.NONE
+
+
+def test_food_selection_advances_to_add_to_cart_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.CREATE,
+        goal="Chọn món đầu tiên",
+        normalized_request="Chọn món đầu tiên",
+        slots=FoodSemanticSlots(query=slot("phở"), selection=slot("first")),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "add_to_cart"
+    assert step.risk_ceiling == RiskLevel.REVERSIBLE_WRITE
+
+
+def test_restaurant_selection_advances_to_hold_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RESTAURANT,
+        operation=Operation.CREATE,
+        goal="Chọn nhà hàng đầu tiên",
+        normalized_request="Chọn nhà hàng đầu tiên",
+        slots=RestaurantSemanticSlots(
+            location=slot("Hà Nội"),
+            party_size=slot(2),
+            start_at=slot("2099-01-01T19:00:00+07:00"),
+            selection=slot("first"),
+        ),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "restaurant.create_hold"
+    assert step.confirmation_gate == ConfirmationGate.SERVICE_DETAILS
+
+
+def test_healthcare_selection_advances_to_hold_slot_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.HEALTHCARE,
+        operation=Operation.CREATE,
+        goal="Chọn lịch đầu tiên",
+        normalized_request="Chọn lịch đầu tiên",
+        slots=HealthcareSemanticSlots(department=slot("Thần kinh"), selection=slot("first")),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "healthcare.hold_slot"
+    assert step.confirmation_gate == ConfirmationGate.SERVICE_DETAILS
 
 
 def test_legacy_facade_exposes_typed_core_a_seam() -> None:
