@@ -34,11 +34,20 @@ export function ActiveWorkRailCard({ item, onDetails, children }: { item: Histor
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
   const detail = tracking?.driver ? driver.name + (driver.vehicle ? " · " + driver.vehicle : "") : item.detail || summaryFor(item);
-  return <article className="active-ride-rail-card">
-    <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={18} /></div>
-    <div><strong>{item.title || titleFor(item.type)}</strong><span>{detail}</span><small>{statusLabel(status)}</small></div>
-    <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={14} /></button>
-    {children}
+  const typeAccent = item.type === "ride_booking" ? "active-card-ride" : item.type === "food_order" ? "active-card-food" : item.type === "restaurant_reservation" ? "active-card-restaurant" : "active-card-healthcare";
+  return <article className={`active-ride-rail-card ${typeAccent}`}>
+    <div className="active-card-top-row">
+      <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={16} /></div>
+      <div className="active-card-header-copy">
+        <strong>{item.title || titleFor(item.type)}</strong>
+        <span className="active-card-pulse-badge"><span className="pulse-dot" aria-hidden="true" />{statusLabel(status)}</span>
+      </div>
+    </div>
+    {detail && <div className="active-card-detail-line">{detail}</div>}
+    <div className="active-card-actions-row">
+      <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={13} /></button>
+      {children}
+    </div>
   </article>;
 }
 

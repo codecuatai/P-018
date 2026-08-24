@@ -252,16 +252,87 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   );
 }
 
-type PromptChip = { icon: React.ComponentType<{ size: number }>; service: string; accent: string; text: string };
+type ServiceCard = {
+  icon: React.ComponentType<{ size: number }>;
+  service: string;
+  desc: string;
+  accent: string;
+  prompt: string;
+  example: string;
+};
 
 function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
-  const chips: PromptChip[] = [
-    { icon: Car, service: "Đi xe", accent: "chip-ride", text: "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ" },
-    { icon: Utensils, service: "Đồ ăn", accent: "chip-food", text: "Tìm phở bò giao về nhà" },
-    { icon: UtensilsCrossed, service: "Nhà hàng", accent: "chip-restaurant", text: "Tối nay tìm nhà hàng cho 2 người ở Hà Nội" },
-    { icon: Stethoscope, service: "Khám bệnh", accent: "chip-healthcare", text: "Giúp tôi đặt lịch khám thần kinh sáng mai" },
+  const services: ServiceCard[] = [
+    {
+      icon: Car,
+      service: "Đặt xe di chuyển",
+      desc: "Xe 4 chỗ, 7 chỗ đón tận nơi",
+      accent: "welcome-card-ride",
+      prompt: "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
+      example: "VinUni → Hồ Gươm (4 chỗ)",
+    },
+    {
+      icon: Utensils,
+      service: "Giao đồ ăn ngon",
+      desc: "Tìm quán ngon và đặt món nóng",
+      accent: "welcome-card-food",
+      prompt: "Tìm phở bò giao về nhà",
+      example: "Tìm phở bò giao tận nơi",
+    },
+    {
+      icon: UtensilsCrossed,
+      service: "Đặt bàn nhà hàng",
+      desc: "Hẹn hò, tiệc gia đình, tiếp khách",
+      accent: "welcome-card-restaurant",
+      prompt: "Tối nay tìm nhà hàng cho 2 người ở Hà Nội",
+      example: "Bàn 2 người tối nay ở Hà Nội",
+    },
+    {
+      icon: Stethoscope,
+      service: "Đặt lịch khám bệnh",
+      desc: "Bác sĩ chuyên khoa, đặt hẹn nhanh",
+      accent: "welcome-card-healthcare",
+      prompt: "Giúp tôi đặt lịch khám thần kinh sáng mai",
+      example: "Khám chuyên khoa thần kinh",
+    },
   ];
-  return <div className="welcome-state"><div className="welcome-mark"><Sparkles size={22} /></div><h2 className="welcome-headline">Mình có thể giúp gì<br />hôm nay?</h2><p className="welcome-sub">Chỉ cần nói như đang nhắn tin — mình lo phần còn lại.</p><div className="prompt-chips">{chips.map(({ icon: Icon, service, accent, text }) => <button key={text} type="button" className={`prompt-chip ${accent}`} onClick={() => onStart(text)}><span className="chip-service-row"><span className="chip-icon"><Icon size={13} aria-hidden="true" /></span><span className="chip-service">{service}</span></span><span className="chip-text">{text}</span><span className="chip-arrow" aria-hidden="true">↗</span></button>)}</div></div>;
+
+  return (
+    <div className="welcome-state">
+      <div className="welcome-hero-badge">
+        <span className="welcome-sparkle"><Sparkles size={14} /></span>
+        <span>X-ONE CONCIERGE</span>
+      </div>
+      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
+      <p className="welcome-sub">
+        Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
+      </p>
+      <div className="welcome-services-grid">
+        {services.map(({ icon: Icon, service, desc, accent, prompt, example }) => (
+          <button
+            key={service}
+            type="button"
+            className={`welcome-service-card ${accent}`}
+            onClick={() => onStart(prompt)}
+          >
+            <div className="welcome-card-icon-wrap">
+              <Icon size={20} aria-hidden="true" />
+            </div>
+            <div className="welcome-card-body">
+              <div className="welcome-card-title-row">
+                <strong>{service}</strong>
+                <span className="welcome-card-arrow" aria-hidden="true">↗</span>
+              </div>
+              <p className="welcome-card-desc">{desc}</p>
+              <div className="welcome-card-prompt-pill">
+                <span>Ví dụ:</span> &ldquo;{example}&rdquo;
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
