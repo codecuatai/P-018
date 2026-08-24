@@ -335,6 +335,15 @@ def test_unsupported_request_is_safe() -> None:
     assert "chưa hỗ trợ" in plan.assistant_message
 
 
+def test_programming_request_is_declined_as_out_of_scope() -> None:
+    plan = deterministic_plan('Sửa giúp tôi đoạn Python prints("hello")')
+
+    assert plan.interaction_mode == "unsupported"
+    assert plan.tasks == []
+    assert "Python" not in plan.assistant_message
+    assert "đặt xe" in plan.assistant_message
+
+
 class FakePlanner:
     async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
         assert schema is AssistantPlan
@@ -356,6 +365,30 @@ class FakePlanner:
                 ),
             ],
         )
+
+
+class OutOfScopeLeakingPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message='Dùng print("hello") nhé.',
+            interaction_mode="advisory",
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_cannot_answer_explicit_programming_request() -> None:
+    graph = build_assistant_graph(llm=OutOfScopeLeakingPlanner())
+    result = await graph.ainvoke(
+        {
+            "query": 'Sửa giúp tôi đoạn Python prints("hello")',
+            "conversation_state": {},
+        }
+    )
+
+    assert result["plan"]["interaction_mode"] == "unsupported"
+    assert result["plan"]["tasks"] == []
+    assert "print(" not in result["assistant_message"]
 
 
 class PartialRidePlanner:
@@ -501,6 +534,27 @@ async def test_composition_prompt_excludes_raw_user_injection() -> None:
     assert composer.payload is not None
     assert "user_message" not in composer.payload
     assert "TOOL RESULT" not in json.dumps(composer.payload)
+    instruction = str(composer.payload["instruction"])
+    assert "Do not mention FAILED, DISCARDED, or old COMPLETED tasks" in instruction
+    assert "Summarize every task" not in instruction
+
+
+@pytest.mark.asyncio
+async def test_composition_prompt_excludes_terminal_history() -> None:
+    composer = CapturingComposer()
+    await compose_response(
+        "Tìm món ăn",
+        [
+            {"domain": "healthcare", "phase": "FAILED", "goal": "old failed"},
+            {"domain": "restaurant", "phase": "COMPLETED", "goal": "old completed"},
+            {"domain": "food", "phase": "IN_PROGRESS", "goal": "current food"},
+        ],
+        [],
+        llm=composer,
+    )
+
+    assert composer.payload is not None
+    assert [task["goal"] for task in composer.payload["tasks"]] == ["current food"]
 
 
 @pytest.mark.asyncio
