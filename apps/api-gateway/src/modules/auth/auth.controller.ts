@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { IsString, MaxLength } from 'class-validator';
+import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import type { Response } from 'express';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -20,6 +20,8 @@ class RegisterDto {
   full_name!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   password!: string;
 }
 
@@ -37,6 +39,8 @@ class ChangePasswordDto {
   current_password!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   new_password!: string;
 }
 
@@ -52,6 +56,8 @@ class ResetPasswordDto {
   token!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   new_password!: string;
 }
 

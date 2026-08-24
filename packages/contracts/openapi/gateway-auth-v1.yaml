@@ -212,7 +212,7 @@ components:
       properties:
         full_name: {type: string, minLength: 1, maxLength: 160}
         email: {type: string, format: email, maxLength: 320}
-        password: {type: string, minLength: 15, maxLength: 128, format: password}
+        password: {type: string, minLength: 8, maxLength: 128, format: password}
     LoginRequest:
       type: object
       additionalProperties: false
@@ -226,7 +226,7 @@ components:
       required: [current_password, new_password]
       properties:
         current_password: {type: string, format: password}
-        new_password: {type: string, minLength: 15, maxLength: 128, format: password}
+        new_password: {type: string, minLength: 8, maxLength: 128, format: password}
     ForgotPasswordRequest:
       type: object
       additionalProperties: false
@@ -239,7 +239,7 @@ components:
       required: [token, new_password]
       properties:
         token: {type: string, minLength: 1, maxLength: 512}
-        new_password: {type: string, minLength: 15, maxLength: 128, format: password}
+        new_password: {type: string, minLength: 8, maxLength: 128, format: password}
     AuthUser:
       type: object
       additionalProperties: false

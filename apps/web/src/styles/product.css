@@ -453,11 +453,12 @@
 .service-search > div { display: flex; align-items: center; gap: 8px; }
 .service-search > div input { flex: 1; }
 .service-search .button { min-height: 43px; }
-.browse-results { display: grid; gap: 9px; }
-.browse-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; }
-.browse-result h2 { margin: 0; color: var(--color-navy); font-size: 0.85rem; }
-.browse-result p { margin: 5px 0 0; color: var(--color-muted); font-size: 0.73rem; }
-.browse-result small { display: block; margin-top: 7px; color: var(--color-success-ink); font-size: 0.65rem; }
+.browse-results { display: grid; gap: 9px; text-align: left; }
+.browse-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px; background: var(--color-surface); border: 1px solid var(--color-border); border-left: 3px solid var(--color-primary); border-radius: 10px; text-align: left; }
+.browse-result > div { min-width: 0; flex: 1; text-align: left; }
+.browse-result h2 { margin: 0; color: var(--color-navy); font-size: 0.85rem; text-align: left; }
+.browse-result p { margin: 5px 0 0; color: var(--color-muted); font-size: 0.73rem; text-align: left; }
+.browse-result small { display: block; margin-top: 7px; color: var(--color-success-ink); font-size: 0.65rem; text-align: left; }
 .authoritative-image { width: min(100%, 260px); overflow: hidden; background: #EAF1F3; border: 1px solid var(--color-border); border-radius: 9px; }
 .authoritative-image.compact { flex: 0 0 72px; width: 72px; height: 72px; }
 .authoritative-image img { display: block; width: 100%; height: 100%; min-height: 110px; object-fit: cover; }
@@ -817,6 +818,105 @@
 .ride-live-status { display: flex; flex-wrap: wrap; gap: 7px 12px; padding: 9px; margin-top: 10px; color: var(--color-muted); background: var(--surface-mist); border: 1px solid #D3E5E1; border-radius: 8px; font-size: 0.68rem; }
 .ride-live-status strong { color: var(--color-success-ink); }
 .food-checkout-action { width: 100%; margin-top: 11px; }
+.service-detail-dialog-food {
+  box-sizing: border-box;
+  width: min(92vw, 860px);
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.service-detail-dialog-food .service-detail-dialog-body {
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+.food-detail-modal-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  max-height: calc(88vh - 64px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.food-detail-media-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.food-detail-media-column .detail-image {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+}
+.food-detail-map-section {
+  width: 100%;
+}
+.food-detail-map-box {
+  width: 100%;
+  height: 180px;
+  min-height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  position: relative;
+}
+.food-detail-map-box .xone-map {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 12px;
+}
+.food-detail-map-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 140px;
+  padding: 16px;
+  background: #F4F8FA;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 12px;
+  color: var(--color-navy);
+  text-align: center;
+}
+.food-detail-map-loading span {
+  margin-top: 8px;
+  font-size: 0.73rem;
+  font-weight: 700;
+  color: var(--color-navy);
+}
+.food-detail-no-map {
+  font-size: 0.72rem;
+  padding: 10px 12px;
+  background: #F7FAFC;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.food-detail-info-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .food-detail-modal-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .food-detail-media-column .detail-image {
+    height: 160px;
+  }
+  .food-detail-map-box {
+    height: 160px;
+  }
+}
 .service-detail-dialog-body { display: grid; gap: 15px; max-height: calc(88vh - 94px); overflow-y: auto; padding-right: 3px; }
 .detail-hero-copy { display: grid; gap: 5px; }
 .detail-hero-copy h3 { margin: 0; color: var(--color-navy); font-size: 1.1rem; }

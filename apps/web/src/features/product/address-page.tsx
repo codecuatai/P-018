@@ -64,7 +64,7 @@ export function AddressPage() {
     setCandidates([]);
     setLocationNote("Nếu đổi địa chỉ, bạn nên xác nhận lại vị trí để tính giao hàng chính xác. Lưu thủ công sẽ xóa tọa độ cũ.");
     setError("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => document.querySelector(".address-form")?.scrollIntoView({ behavior: "smooth", block: "center" }), 10);
   }
 
   async function resolve(): Promise<void> {

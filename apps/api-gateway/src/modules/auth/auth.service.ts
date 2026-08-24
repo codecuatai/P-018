@@ -10,7 +10,7 @@ import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
 import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
-const MIN_PASSWORD_LENGTH = 15;
+const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,

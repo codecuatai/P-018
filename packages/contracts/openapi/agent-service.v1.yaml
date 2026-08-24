@@ -372,7 +372,7 @@ components:
           items: {type: string}
         tool_request:
           oneOf: [{$ref: '#/components/schemas/ToolRequest'}, {type: 'null'}]
-        status: {enum: [NEEDS_INPUT, TOOL_REQUEST_READY, COMPLETED]}
+        status: {enum: [NEEDS_INPUT, TOOL_REQUEST_READY, PROPOSAL_READY, ERROR]}
       additionalProperties: false
     RideChatResponse:
       type: object

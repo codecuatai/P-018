@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { LoaderCircle } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { RideMapDetail } from "@/features/product/ride-map-detail";
@@ -50,7 +51,6 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, pr
       <DialogTitle className={kind === "ride" || kind === "healthcare" || kind === "restaurant" ? "visually-hidden" : undefined}>{title}</DialogTitle>
       <DialogDescription className={kind === "ride" || kind === "healthcare" || kind === "restaurant" ? "visually-hidden" : undefined}>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
       {kind === "ride" ? <RideDetail ride={ride} bookingId={bookingId} route={route} /> : kind === "restaurant" ? <RestaurantDetail option={option} title={title} address={address} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : kind === "healthcare" ? <HealthcareDetail option={option} title={title} address={address} facilityName={facilityName} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : <div className="service-detail-dialog-body">
-        {kind === "food" && option?.image_url ? <ImageWithFallback source={option.image_url} alt={title} /> : null}
         {kind === "food" ? <FoodDetail option={option} title={title} restaurantName={restaurantName} address={address} resolvedPoint={resolvedPoint} resolving={resolving} /> : null}
       </div>}
     </DialogContent>
@@ -91,7 +91,47 @@ function HealthcareDetail({ option, title, address, facilityName, resolvedPoint,
 }
 
 function FoodDetail({ option, title, restaurantName, address, resolvedPoint, resolving }: { option: AssistantOption | null; title: string; restaurantName: string; address: string; resolvedPoint?: XOnePoint; resolving: boolean }) {
-  return <><div className="detail-hero-copy"><span className="eyebrow">MÓN ĂN</span><h3>{title}</h3><p>{restaurantName}</p></div><div className="consumer-detail-grid"><Detail label="Giá" value={formatMoney(option?.price, "VND")} /><Detail label="Nhà hàng" value={restaurantName} /><Detail label="Mô tả" value={optionalText(option?.description)} /><Detail label="Danh mục" value={optionalText(option?.category)} /><Detail label="Đánh giá nhà hàng" value={option?.rating !== undefined ? `${option.rating} ★${option.review_count ? ` · ${option.review_count} đánh giá` : ""}` : "Đang cập nhật"} /><Detail label="Địa chỉ" value={address} /></div><OptionGroups groups={option?.options ?? option?.option_groups} />{resolvedPoint ? <XOneMap restaurant={resolvedPoint} label={`Vị trí ${restaurantName || "nhà hàng"}`} /> : resolving ? <p className="inline-note">Đang xác định vị trí…</p> : null}</>;
+  return (
+    <div className="food-detail-modal-layout" style={{ textAlign: "left" }}>
+      <div className="food-detail-media-column">
+        {option?.image_url ? (
+          <ImageWithFallback source={option.image_url} alt={title} />
+        ) : null}
+        <div className="food-detail-map-section">
+          {resolvedPoint ? (
+            <div className="food-detail-map-box">
+              <XOneMap restaurant={resolvedPoint} density="active" label={`Vị trí ${restaurantName || "nhà hàng"}`} />
+            </div>
+          ) : resolving ? (
+            <div className="food-detail-map-loading">
+              <LoaderCircle className="spinner" size={24} style={{ color: "var(--color-primary-strong)" }} />
+              <span>Đang tải vị trí nhà hàng...</span>
+            </div>
+          ) : (
+            <p className="inline-note food-detail-no-map">
+              Chưa có tọa độ bản đồ cho nhà hàng này.
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="food-detail-info-column">
+        <div className="detail-hero-copy">
+          <span className="eyebrow">MÓN ĂN</span>
+          <h3>{title}</h3>
+          <p>{restaurantName}</p>
+        </div>
+        <div className="consumer-detail-grid">
+          <Detail label="Giá" value={formatMoney(option?.price, "VND")} />
+          <Detail label="Nhà hàng" value={restaurantName} />
+          <Detail label="Mô tả" value={optionalText(option?.description)} />
+          <Detail label="Danh mục" value={optionalText(option?.category)} />
+          <Detail label="Đánh giá" value={option?.rating !== undefined ? `${option.rating} ★${option.review_count ? ` · ${option.review_count} đánh giá` : ""}` : "Đang cập nhật"} />
+          <Detail label="Địa chỉ" value={address} />
+        </div>
+        <OptionGroups groups={option?.options ?? option?.option_groups} />
+      </div>
+    </div>
+  );
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div className="consumer-detail-fact"><span>{label}</span><strong>{value}</strong></div>; }

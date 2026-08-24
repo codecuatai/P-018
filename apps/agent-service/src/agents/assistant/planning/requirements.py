@@ -18,7 +18,7 @@ SEMANTIC_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[str, ...]] = {
     (Domain.FOOD, Operation.CREATE): ("query|dish_query",),
     (Domain.FOOD, Operation.CANCEL): (),
     (Domain.FOOD, Operation.STATUS): (),
-    (Domain.RESTAURANT, Operation.DISCOVER): ("location",),
+    (Domain.RESTAURANT, Operation.DISCOVER): ("location|cuisine_query|cuisine_type|cuisine",),
     (Domain.RESTAURANT, Operation.CREATE): ("location", "party_size", "start_at"),
     (Domain.RESTAURANT, Operation.UPDATE): (),
     (Domain.RESTAURANT, Operation.CANCEL): (),
