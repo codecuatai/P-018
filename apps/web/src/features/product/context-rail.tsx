@@ -21,33 +21,27 @@ export function ContextRail({
   title,
   description,
   onCollapse,
+  style,
+  resizer,
   children,
 }: {
   mode: ContextRailMode;
   title: string;
   description: string;
   onCollapse?: () => void;
+  style?: React.CSSProperties;
+  resizer?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra">
+    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra" style={style}>
+      {resizer}
       <div className="context-rail-heading">
         <div className="context-rail-heading-copy">
           {mode !== "idle" ? <span className="eyebrow">ĐANG DIỄN RA</span> : <span className="eyebrow">TIỆN ÍCH</span>}
           <h2>{title}</h2>
           {description ? <p>{description}</p> : null}
         </div>
-        {onCollapse && (
-          <button
-            className="icon-button rail-collapse-btn"
-            type="button"
-            aria-label="Thu gọn bảng tiện ích bên phải"
-            title="Thu gọn tiện ích"
-            onClick={onCollapse}
-          >
-            <PanelRightClose size={16} />
-          </button>
-        )}
       </div>
       {children}
     </aside>
@@ -135,8 +129,10 @@ export function ConversationContextCards({ onServiceShortcut }: { onServiceShort
             onClick={() => onServiceShortcut?.(prompt)}
           >
             <span className="service-shortcut-icon"><Icon size={16} aria-hidden="true" /></span>
-            <span className="service-shortcut-name">{label}</span>
-            <span className="service-shortcut-desc">{description}</span>
+            <div className="service-shortcut-info">
+              <span className="service-shortcut-name">{label}</span>
+              <span className="service-shortcut-desc">{description}</span>
+            </div>
           </button>
         ))}
       </div>

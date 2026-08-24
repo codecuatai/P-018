@@ -92,17 +92,42 @@
 .composer-hint { margin: 6px auto 0; text-align: center; color: #94A3B8; font-size: var(--text-xs); }
 
 /* ─── Context rail (Right live activity) ──────────────────── */
-.context-rail { position: sticky; top: 0; display: grid; align-self: start; align-content: start; gap: 14px; padding: 20px 18px; background: #FFFFFF; border-left: 1px solid var(--color-border); border-radius: 0; box-shadow: none; transition: width 220ms ease, opacity 180ms ease, padding 220ms ease; overflow-x: hidden; width: 280px; box-sizing: border-box; }
-.assistant-layout.is-rail-collapsed .context-rail { width: 0; min-width: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+.assistant-layout { position: relative; display: grid; gap: 0; height: 100%; min-height: 0; flex: 1; align-items: stretch; background: #F8FAFC; }
+.assistant-layout.is-resizing-active { user-select: none; cursor: col-resize; }
+.context-rail { position: relative; display: flex; flex-direction: column; align-self: stretch; gap: 14px; padding: 20px 18px; background: #FFFFFF; border-left: 1px solid var(--color-border); border-radius: 0; box-shadow: none; transition: opacity 160ms ease, border-color 160ms ease; overflow-y: auto; overflow-x: hidden; height: 100%; max-height: 100%; box-sizing: border-box; }
+.assistant-layout.is-rail-collapsed .context-rail { width: 0 !important; min-width: 0; padding: 0; border: 0; opacity: 0; pointer-events: none; overflow: hidden; }
+
+/* Resizer handle on rail border */
+.rail-resizer { position: absolute; top: 0; left: -3px; bottom: 0; width: 6px; z-index: 35; cursor: col-resize; transition: background-color 150ms ease; }
+.rail-resizer:hover,
+.assistant-layout.is-resizing-active .rail-resizer { background: #3B82F6; opacity: 0.6; }
+
+/* Vertical Center Edge Toggle Button */
+.rail-edge-toggle { position: absolute; top: 50%; transform: translateY(-50%); z-index: 40; display: grid; width: 20px; height: 44px; place-items: center; background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 999px 0 0 999px; color: #64748B; cursor: pointer; box-shadow: -2px 0 8px rgb(0 0 0 / 7%); transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 120ms ease; }
+.rail-edge-toggle.is-collapsed { border-radius: 999px 0 0 999px; }
+.rail-edge-toggle:hover { background: #F8FAFC; color: #1D4ED8; border-color: #CBD5E1; }
+
 .context-rail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; padding-bottom: 4px; min-width: 0; max-width: 100%; }
 .context-rail-heading-copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .context-rail-heading-copy .eyebrow { display: block; color: #2563EB; font-family: var(--font-sans); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 1px; }
 .context-rail-heading-copy h2 { margin: 0; color: var(--color-navy); font-size: 1.15rem; font-weight: 750; letter-spacing: -0.03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-rail-heading-copy p { margin: 0; color: #64748B; font-size: var(--text-xs); line-height: 1.45; overflow-wrap: break-word; }
-.rail-collapse-btn { display: grid; width: 28px; height: 28px; place-items: center; color: var(--color-muted); background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer; transition: color 140ms ease, background-color 140ms ease; flex: 0 0 auto; }
-.rail-collapse-btn:hover { color: var(--color-navy); background: #F0F4F7; border-color: var(--color-border); }
-.context-rail-active { grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 54px); min-height: 0; overflow-y: hidden; overflow-x: hidden; border-color: var(--color-border); }
-.context-rail-recovery { border-color: #EDC5C0; }
+
+/* ─── Service shortcuts (Idle rail) ──────────────────────── */
+.service-shortcuts { display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box; }
+.service-shortcuts-label { color: #64748B; font-family: var(--font-sans); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.service-shortcuts-grid { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.service-shortcut-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; text-align: left; font-family: inherit; cursor: pointer; transition: all 140ms ease; width: 100%; box-sizing: border-box; }
+.service-shortcut-card:hover { background: #FFFFFF; border-color: #2563EB; box-shadow: 0 2px 8px rgb(37 99 235 / 10%); transform: translateY(-1px); }
+.service-shortcut-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 8px; flex: 0 0 auto; }
+.service-shortcut-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+.service-shortcut-name { color: var(--color-navy); font-weight: 700; font-size: var(--text-sm); line-height: 1.3; }
+.service-shortcut-desc { color: #64748B; font-size: var(--text-micro); line-height: 1.35; }
+
+.service-shortcut-ride .service-shortcut-icon { color: #2563EB; background: #EFF6FF; }
+.service-shortcut-food .service-shortcut-icon { color: #D97706; background: #FEF3C7; }
+.service-shortcut-restaurant .service-shortcut-icon { color: #7C3AED; background: #F5F3FF; }
+.service-shortcut-healthcare .service-shortcut-icon { color: #059669; background: #ECFDF5; }
 
 /* ─── Active work rail card (Realtime Pulse) ──────────────── */
 .active-ride-rail-card { display: grid; gap: 8px; padding: 12px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 12px; box-shadow: 0 1px 4px rgb(0 0 0 / 4%); transition: box-shadow 150ms ease; min-width: 0; max-width: 100%; box-sizing: border-box; }

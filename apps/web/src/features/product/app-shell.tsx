@@ -5,6 +5,8 @@ import {
   BookmarkCheck,
   Bot,
   CarFront,
+  ChevronLeft,
+  ChevronRight,
   History,
   LifeBuoy,
   LogOut,
@@ -49,6 +51,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
   useEffect(() => {
     try {
@@ -56,6 +60,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (savedSidebar !== null) setSidebarCollapsed(savedSidebar === "true");
       const savedRail = localStorage.getItem("xone_rail_collapsed");
       if (savedRail !== null) setRailCollapsed(savedRail === "true");
+      const savedWidth = localStorage.getItem("xone_sidebar_width");
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (!isNaN(parsed) && parsed >= 180 && parsed <= 450) setSidebarWidth(parsed);
+      }
     } catch {
       // Ignore localStorage errors in private browsing
     }
@@ -84,6 +93,31 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const handleSidebarMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingSidebar(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(Math.max(e.clientX, 180), 450);
+      setSidebarWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      setIsResizingSidebar(false);
+      try {
+        localStorage.setItem("xone_sidebar_width", String(sidebarWidth));
+      } catch {}
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingSidebar, sidebarWidth]);
+
   function toggleSidebar() {
     setSidebarCollapsed((prev) => {
       const next = !prev;
@@ -105,15 +139,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
       <header className="app-global-header">
         <div className="app-global-header-left">
-          <button
-            className="icon-button header-toggle-btn"
-            type="button"
-            aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
-            title={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
-            onClick={toggleSidebar}
-          >
-            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          </button>
           <Link className="brand-link header-brand" href="/app">
             <XOneMark size={26} />
             <span>X-One</span>
@@ -122,24 +147,44 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="app-global-header-right">
           <NotificationBell />
           <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
-          {assistantWorkspace && (
-            <button
-              className={`icon-button header-toggle-btn${railCollapsed ? " is-active-toggle" : ""}`}
-              type="button"
-              aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-              title={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-              onClick={toggleRail}
-            >
-              {railCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
-            </button>
-          )}
         </div>
       </header>
 
-      <div className="app-body">
-        <aside className="app-sidebar">
+      <div
+        className={`app-body${isResizingSidebar ? " is-resizing-active" : ""}`}
+        style={{
+          gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)`,
+        }}
+      >
+        <aside
+          className="app-sidebar"
+          style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
+        >
           <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} onToggleCollapse={toggleSidebar} />
+          {!sidebarCollapsed && (
+            <div
+              className="sidebar-resizer"
+              onMouseDown={handleSidebarMouseDown}
+              onDoubleClick={toggleSidebar}
+              title="Kéo để chỉnh kích thước sidebar, nhấp đúp để ẩn"
+            />
+          )}
         </aside>
+
+        {/* Center Vertical Edge Toggle Button for Left Sidebar */}
+        <button
+          className={`sidebar-edge-toggle${sidebarCollapsed ? " is-collapsed" : ""}`}
+          type="button"
+          aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
+          title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
+          onClick={toggleSidebar}
+          style={{
+            left: sidebarCollapsed ? 0 : `${sidebarWidth - 11}px`,
+          }}
+        >
+          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+
         <header className="app-mobile-header">
           <Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
           <div className="app-mobile-actions">
@@ -264,9 +309,9 @@ function NotificationBell() {
   }, [open]);
 
   return <div className="notification-bell-wrap" ref={ref}>
-    <button className="icon-button notification-bell-btn" type="button" aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`} onClick={() => setOpen((v) => !v)}>
+    <button className="notification-bell-btn" type="button" aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`} onClick={() => setOpen((v) => !v)}>
       <Bell size={18} />
-      {count > 0 && <span className="notification-badge" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+      {count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
     </button>
     {open && <div className="notification-popover" role="dialog" aria-label="Thông báo">
       <div className="notification-popover-header">
@@ -308,10 +353,7 @@ function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => 
 
   return <div className="user-menu-wrap" ref={ref}>
     <button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((v) => !v)}>
-      <span className="user-pill-badge">
-        <span className="user-avatar-circle">{initials(userEmail)}</span>
-        <span className="user-avatar-label">{userEmail ? userEmail.slice(0, 2).toUpperCase() : "US"}</span>
-      </span>
+      <span className="user-avatar-circle">{initials(userEmail)}</span>
     </button>
     {open && <div className="user-dropdown" role="menu">
       <div className="user-dropdown-header">
