@@ -1922,6 +1922,94 @@ describe('Unified assistant orchestration', () => {
     expect(stored?.state.actions).toHaveLength(1);
   });
 
+  it('does not replay cancelled, discarded, or failed services on a later request', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-terminal-history';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [
+        {
+          id: 'cancelled-healthcare',
+          domain: 'healthcare',
+          goal: 'Khám thần kinh',
+          normalized_request: 'Đặt lịch khám thần kinh',
+          extracted_slots: { department: 'thần kinh' },
+          depends_on: [],
+          phase: 'COMPLETED',
+          revision: 2,
+          public_item: { kind: 'appointment', resource_id: 51, status: 'CANCELLED' },
+          authoritative: { cancellation: { status: 'success', appointment_id: 51 } },
+        },
+        {
+          id: 'discarded-ride',
+          domain: 'ride',
+          goal: 'Đặt xe',
+          normalized_request: 'Đặt xe tới Hồ Gươm',
+          extracted_slots: {},
+          depends_on: [],
+          phase: 'DISCARDED',
+          revision: 1,
+        },
+        {
+          id: 'failed-restaurant',
+          domain: 'restaurant',
+          goal: 'Tìm nhà hàng cũ',
+          normalized_request: 'Tìm nhà hàng cũ',
+          extracted_slots: { location: 'Hà Nội' },
+          depends_on: [],
+          phase: 'FAILED',
+          revision: 0,
+          failure_code: 'RESTAURANT_UNAVAILABLE',
+          public_item: { kind: 'task_error', code: 'RESTAURANT_UNAVAILABLE', retryable: false },
+        },
+      ],
+      actions: [],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: 'Mình đã tìm nhà hàng theo yêu cầu mới.',
+        decision_source: 'deterministic',
+        plan: {
+          tasks: [{
+            domain: 'restaurant',
+            goal: 'Tìm nhà hàng mới',
+            normalized_request: 'Tìm nhà hàng cho hai người tối nay',
+            extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+          }],
+        },
+      }),
+    };
+    const restaurant = {
+      executeTool: jest.fn().mockResolvedValue([
+        { id: 'rest-new', name: 'Nhà hàng mới', location: 'Hoàn Kiếm, Hà Nội', cuisine_type: 'Vietnamese' },
+      ]),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(
+      user,
+      'Tìm nhà hàng cho hai người tối nay.',
+      conversationId,
+      'cor-terminal-history',
+    );
+
+    expect(response.items.map((item) => item.kind)).toEqual(['restaurant_options']);
+    expect(response.completed).toEqual([]);
+    expect(response.message).not.toMatch(/hủy|không thể|chưa thể hoàn tất/i);
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.id === 'cancelled-healthcare')?.phase).toBe('COMPLETED');
+    expect(tasks.find((task) => task.id === 'discarded-ride')?.phase).toBe('DISCARDED');
+    expect(tasks.find((task) => task.id === 'failed-restaurant')?.phase).toBe('FAILED');
+  });
+
   it('does not discard an active authoritative Ride booking', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {

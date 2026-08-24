@@ -1240,22 +1240,20 @@ export class AssistantService {
 
     for (const task of merged) {
       if (task.phase === 'DISCARDED') continue;
-      if (task.phase === 'COMPLETED' && task.public_item) {
+      // Durable task history is not the response projection for this turn.
+      // Only tasks touched by the current plan may contribute cards/results;
+      // otherwise a previously completed (including domain-cancelled) task or
+      // an old failure is replayed on an unrelated request.
+      if (task.phase === 'COMPLETED' && task.public_item && merge.touchedIds.has(task.id)) {
         completed.push(task.public_item);
         continue;
       }
       if (!merge.touchedIds.has(task.id)) {
-        if (task.public_item) {
-          if (task.phase === 'FAILED') {
-            const isActiveDomain = merged.some((candidate) => candidate.domain === task.domain && merge.touchedIds.has(candidate.id));
-            const isSoleTask = merged.length === 1;
-            const hasDependents = merged.some((candidate) => candidate.depends_on?.includes(task.id));
-            if (isActiveDomain || isSoleTask || hasDependents) {
-              items.push(task.public_item);
-            }
-          } else {
-            items.push(task.public_item);
-          }
+        // Active work may remain visible so a user can continue it. Terminal
+        // history (completed, failed, blocked, or domain-cancelled) stays in
+        // storage but is never replayed into an unrelated turn.
+        if (task.public_item && ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)) {
+          items.push(task.public_item);
         }
         continue;
       }
@@ -1313,8 +1311,12 @@ export class AssistantService {
       merged,
       Object.fromEntries(merged.flatMap((task) => task.failure_code ? [[task.id, task.failure_code]] : [])),
     );
-    const baseMessage = this.messageFor(message, plan, merged, items, actions);
-    const activeTasks = merged.filter((task) => task.phase !== 'DISCARDED');
+    const presentationTasks = merged.filter((task) => task.phase !== 'DISCARDED' && (
+      merge.touchedIds.has(task.id)
+      || ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)
+    ));
+    const baseMessage = this.messageFor(message, plan, presentationTasks, items, actions);
+    const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
     const composed = planner.decision_source === 'deterministic'
       ? baseMessage
       : await this.compose(message, conversationId, user.sub, activeTasks, resultsForComposition, correlationId, baseMessage);
