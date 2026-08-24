@@ -14,6 +14,9 @@ const values: Record<string, unknown> = {
   AUTH_REFRESH_COOKIE_NAME: 'xone_refresh',
   AUTH_DEV_RESET_TOKEN_CAPTURE: true,
   JWT_SECRET: 'test-jwt-secret-12345',
+  GOOGLE_CLIENT_ID: 'test-google-client-id.apps.googleusercontent.com',
+  GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
+  GOOGLE_CALLBACK_URL: 'http://localhost:3000/auth/callback/google',
 };
 
 function makeService(): { service: AuthService; store: AuthStore; core: CoreStore } {
@@ -92,5 +95,63 @@ describe('real local authentication', () => {
     await expect(service.resetPassword(reset.devResetToken!, nextPassword, 'cor-replay')).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESET_TOKEN_INVALID' }) });
     await expect(service.login({ email: 'an@example.test', password: nextPassword }, metadata, 'cor-login')).resolves.toMatchObject({ user: expect.any(Object) });
     expect(JSON.stringify((core.repository as unknown as { audits: unknown[] }).audits)).not.toContain(reset.devResetToken!);
+  });
+
+  it('generates a valid Google OAuth consent URL with configured parameters', () => {
+    const { service } = makeService();
+    const url = service.getGoogleAuthUrl();
+    expect(url).toContain('https://accounts.google.com/o/oauth2/v2/auth');
+    expect(url).toContain('client_id=test-google-client-id.apps.googleusercontent.com');
+    expect(url).toContain('redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback%2Fgoogle');
+    expect(url).toContain('scope=openid+email+profile');
+  });
+
+  it('authenticates with Google code by creating new user and issuing valid access/refresh tokens', async () => {
+    const { service } = makeService();
+    const mockProfile = {
+      sub: 'google-user-123',
+      email: 'google.user@example.test',
+      email_verified: true,
+      name: 'Google User',
+      picture: 'https://lh3.googleusercontent.com/a/avatar.jpg',
+    };
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn(async (url: string | URL | Request) => {
+      const urlStr = url.toString();
+      if (urlStr.includes('oauth2.googleapis.com/token')) {
+        return {
+          ok: true,
+          json: async () => ({ access_token: 'mock-google-access-token', id_token: 'mock-google-id-token' }),
+        } as unknown as Response;
+      }
+      if (urlStr.includes('googleapis.com/oauth2/v3/userinfo')) {
+        return {
+          ok: true,
+          json: async () => mockProfile,
+        } as unknown as Response;
+      }
+      return { ok: false, text: async () => 'Not Found' } as unknown as Response;
+    });
+
+    try {
+      const issued = await service.loginWithGoogle({ code: 'valid-google-code' }, metadata, 'cor-google-login');
+      expect(issued.user).toMatchObject({
+        email: 'google.user@example.test',
+        full_name: 'Google User',
+        role: 'customer',
+        authentication_kind: 'real',
+      });
+      expect(issued.accessToken).toBeDefined();
+      expect(issued.refreshToken).toBeDefined();
+
+      const authenticated = await service.authenticateAccessToken(issued.accessToken);
+      expect(authenticated).toMatchObject({
+        email: 'google.user@example.test',
+        sub: issued.user.sub,
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

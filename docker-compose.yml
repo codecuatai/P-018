@@ -92,6 +92,9 @@ services:
       GATEWAY_WORKFLOW_POLL_INTERVAL_MS: ${GATEWAY_WORKFLOW_POLL_INTERVAL_MS:?GATEWAY_WORKFLOW_POLL_INTERVAL_MS is required}
       RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
       RESTAURANT_FORCE_RESULT: ${RESTAURANT_FORCE_RESULT:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
       interval: 10s
@@ -111,6 +114,7 @@ services:
         NEXT_PUBLIC_HERO_POSTER_URL: ${NEXT_PUBLIC_HERO_POSTER_URL:-}
         NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY: ${NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY:-}
         NEXT_PUBLIC_GEOAPIFY_MAP_STYLE: ${NEXT_PUBLIC_GEOAPIFY_MAP_STYLE:-osm-bright}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     environment:
       NODE_ENV: production
       PORT: 3000

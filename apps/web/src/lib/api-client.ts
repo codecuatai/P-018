@@ -136,6 +136,17 @@ export async function login(email: string, password: string, shouldCommit?: () =
   return result.user;
 }
 
+export async function getGoogleAuthUrl(): Promise<string> {
+  const result = await request<{ url: string }>("/api/v1/auth/google/url", { method: "GET" }, { includeAuth: false, retryAuth: false });
+  return result.url;
+}
+
+export async function loginWithGoogle(code: string, redirectUri?: string, shouldCommit?: () => boolean): Promise<AuthUser> {
+  const result = await request<AuthResult>("/api/v1/auth/google", { method: "POST", body: JSON.stringify({ code, redirect_uri: redirectUri }) }, { includeAuth: false, retryAuth: false });
+  if (!shouldCommit || shouldCommit()) setAccessToken(result.access_token);
+  return result.user;
+}
+
 export async function register(fullName: string, email: string, password: string, shouldCommit?: () => boolean): Promise<AuthUser> {
   const result = await request<AuthResult>("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ full_name: fullName, email, password }) }, { includeAuth: false, retryAuth: false });
   if (!shouldCommit || shouldCommit()) setAccessToken(result.access_token);

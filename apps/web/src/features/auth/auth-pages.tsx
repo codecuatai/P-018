@@ -9,13 +9,74 @@ import { XOneMark } from "@/components/XOneMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { errorText, forgotPassword, resetPassword } from "@/lib/api-client";
+import { errorText, forgotPassword, getGoogleAuthUrl, resetPassword } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 import type { AuthUser } from "@/types";
 
 interface AuthFormProps {
   onSuccess: (user: AuthUser) => void;
   onSwitch?: () => void;
+}
+
+export function GoogleSignInButton({ pending, text = "Tiếp tục với Google" }: { pending?: boolean; text?: string }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleGoogleClick() {
+    setError("");
+    setLoading(true);
+    try {
+      const url = await getGoogleAuthUrl();
+      if (url) {
+        window.location.href = url;
+      } else {
+        setError("Không lấy được đường dẫn đăng nhập Google.");
+        setLoading(false);
+      }
+    } catch (err) {
+      setError(errorText(err));
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="google-auth-wrapper">
+      <button
+        type="button"
+        className="button-google-auth"
+        onClick={handleGoogleClick}
+        disabled={loading || pending}
+      >
+        {loading ? (
+          <LoaderCircle className="spinner" size={18} />
+        ) : (
+          <svg className="google-icon" width="18" height="18" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17Z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.36 24 12 24Z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15Z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.36 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98Z"
+            />
+          </svg>
+        )}
+        <span>{text}</span>
+      </button>
+      {error ? <p className="form-error" style={{ marginTop: 8 }}>{error}</p> : null}
+      <div className="auth-divider">
+        <span>Hoặc</span>
+      </div>
+    </div>
+  );
 }
 
 export function LoginForm({ onSuccess, onSwitch }: AuthFormProps) {
@@ -39,7 +100,22 @@ export function LoginForm({ onSuccess, onSwitch }: AuthFormProps) {
     }
   }
 
-  return <><form onSubmit={submit}><Field label="Email" id="login-email" type="email" value={email} onChange={setEmail} autoComplete="username" required /><PasswordField id="login-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="current-password" /><div className="form-row-end"><Link className="text-link" href="/forgot-password">Quên mật khẩu?</Link></div><FormFeedback error={error} /><Button className="button-wide" disabled={pending} type="submit">{pending ? <LoaderCircle className="spinner" size={17} /> : <LockKeyhole size={17} />}{pending ? "Đang đăng nhập…" : "Đăng nhập"}</Button></form><p className="auth-switch">Chưa có tài khoản? <button type="button" onClick={onSwitch}>Tạo tài khoản</button></p></>;
+  return (
+    <>
+      <GoogleSignInButton pending={pending} text="Đăng nhập bằng Google" />
+      <form onSubmit={submit}>
+        <Field label="Email" id="login-email" type="email" value={email} onChange={setEmail} autoComplete="username" required />
+        <PasswordField id="login-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="current-password" />
+        <div className="form-row-end"><Link className="text-link" href="/forgot-password">Quên mật khẩu?</Link></div>
+        <FormFeedback error={error} />
+        <Button className="button-wide" disabled={pending} type="submit">
+          {pending ? <LoaderCircle className="spinner" size={17} /> : <LockKeyhole size={17} />}
+          {pending ? "Đang đăng nhập…" : "Đăng nhập"}
+        </Button>
+      </form>
+      <p className="auth-switch">Chưa có tài khoản? <button type="button" onClick={onSwitch}>Tạo tài khoản</button></p>
+    </>
+  );
 }
 
 export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
@@ -77,7 +153,24 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
     }
   }
 
-  return <><form onSubmit={submit}><Field label="Họ và tên" id="register-name" value={fullName} onChange={setFullName} autoComplete="name" required /><Field label="Email" id="register-email" value={email} onChange={setEmail} autoComplete="email" required /><PasswordField id="register-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="new-password" minLength={8} /><PasswordField id="register-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={8} /><p className="field-hint">Mật khẩu dài từ 8 ký tự, bao gồm chữ, số và ký tự đặc biệt.</p><FormFeedback error={error} /><Button className="button-wide" disabled={pending} type="submit">{pending ? <LoaderCircle className="spinner" size={17} /> : <ShieldCheck size={17} />}{pending ? "Đang tạo tài khoản…" : "Tạo tài khoản"}</Button></form><p className="auth-switch">Đã có tài khoản? <button type="button" onClick={onSwitch}>Đăng nhập</button></p></>;
+  return (
+    <>
+      <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />
+      <form onSubmit={submit}>
+        <Field label="Họ và tên" id="register-name" value={fullName} onChange={setFullName} autoComplete="name" required />
+        <Field label="Email" id="register-email" value={email} onChange={setEmail} autoComplete="email" required />
+        <PasswordField id="register-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="new-password" minLength={8} />
+        <PasswordField id="register-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={8} />
+        <p className="field-hint">Mật khẩu dài từ 8 ký tự, bao gồm chữ, số và ký tự đặc biệt.</p>
+        <FormFeedback error={error} />
+        <Button className="button-wide" disabled={pending} type="submit">
+          {pending ? <LoaderCircle className="spinner" size={17} /> : <ShieldCheck size={17} />}
+          {pending ? "Đang tạo tài khoản…" : "Tạo tài khoản"}
+        </Button>
+      </form>
+      <p className="auth-switch">Đã có tài khoản? <button type="button" onClick={onSwitch}>Đăng nhập</button></p>
+    </>
+  );
 }
 
 export function ForgotPasswordPage() {
