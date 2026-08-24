@@ -33,9 +33,13 @@ function GoogleCallbackContent() {
 
     async function handleAuth() {
       try {
-        await loginWithGoogle(authCode);
+        const user = await loginWithGoogle(authCode);
         if (active) {
-          router.replace("/");
+          if (!user.onboarding_completed_at && user.authentication_kind !== "demo") {
+            router.replace("/app/onboarding");
+          } else {
+            router.replace("/app");
+          }
         }
       } catch (err) {
         if (active) {
