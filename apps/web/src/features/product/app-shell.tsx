@@ -179,7 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
           onClick={toggleSidebar}
           style={{
-            left: sidebarCollapsed ? 0 : `${sidebarWidth - 11}px`,
+            left: sidebarCollapsed ? "10px" : `${sidebarWidth}px`,
           }}
         >
           {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}

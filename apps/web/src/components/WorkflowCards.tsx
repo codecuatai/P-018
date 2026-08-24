@@ -23,7 +23,7 @@ export type FoodSelection = {
 type FoodSelectionChangeHandler = (selection: FoodSelection) => void;
 
 export function AssistantCards({ response, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { response: AssistantResponse; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
-  const secondaryActions = response.actions.filter((action) => !["select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
+  const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}

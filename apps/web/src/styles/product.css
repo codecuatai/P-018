@@ -16,9 +16,10 @@
 .app-body.is-resizing-active .sidebar-resizer { background: #3B82F6; opacity: 0.6; }
 
 /* Vertical Center Edge Toggle Button */
-.sidebar-edge-toggle { position: absolute; top: 50%; transform: translateY(-50%); z-index: 40; display: grid; width: 20px; height: 44px; place-items: center; background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 0 999px 999px 0; color: #64748B; cursor: pointer; box-shadow: 2px 0 8px rgb(0 0 0 / 7%); transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 120ms ease; }
-.sidebar-edge-toggle.is-collapsed { border-radius: 0 999px 999px 0; }
-.sidebar-edge-toggle:hover { background: #F8FAFC; color: #1D4ED8; border-color: #CBD5E1; }
+.sidebar-edge-toggle { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 40; display: grid; width: 26px; height: 26px; place-items: center; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 50%; color: #64748B; cursor: pointer; box-shadow: 0 2px 8px rgb(0 0 0 / 8%), 0 1px 2px rgb(0 0 0 / 4%); transition: all 140ms ease; }
+.sidebar-edge-toggle.is-collapsed { transform: translateY(-50%); box-shadow: 0 2px 10px rgb(0 0 0 / 12%); }
+.sidebar-edge-toggle:hover { background: #2563EB; color: #FFFFFF; border-color: #2563EB; box-shadow: 0 4px 12px rgb(37 99 235 / 35%); transform: translate(-50%, -50%) scale(1.1); }
+.sidebar-edge-toggle.is-collapsed:hover { transform: translateY(-50%) scale(1.1); }
 
 .sidebar-new-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 38px; background: #1D4ED8; color: #FFFFFF !important; font-weight: 650; font-size: var(--text-sm); border-radius: 999px; text-decoration: none; margin-bottom: 12px; box-shadow: 0 2px 8px rgb(29 78 216 / 25%); transition: background-color 150ms ease, transform 100ms ease; cursor: pointer; flex: 0 0 auto; }
 .sidebar-new-btn:hover { background: #1E40AF; transform: translateY(-1px); }

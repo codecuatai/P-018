@@ -364,7 +364,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
         onClick={() => toggleRail(!railCollapsed)}
         style={{
-          right: railCollapsed ? 0 : `${railWidth - 11}px`,
+          right: railCollapsed ? "10px" : `${railWidth}px`,
         }}
       >
         {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
