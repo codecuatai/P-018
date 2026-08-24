@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, Loader2, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, Bot, Loader2, Plus, RefreshCw, LocateFixed, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -8,7 +8,7 @@ import { createConversation, createIdempotencyKey, errorText, getActiveHistory, 
 import { emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
-import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
+import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail } from "@/features/product/context-rail";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string>();
@@ -24,6 +24,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const [foodSelections, setFoodSelections] = useState<Record<string, FoodSelection>>({});
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
+  const [showContextRail, setShowContextRail] = useState(true);
+  const [isLocating, setIsLocating] = useState(false);
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
@@ -238,14 +240,35 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   }
 
   function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
+  
+  async function handleLocate(): Promise<void> {
+    if (!("geolocation" in navigator)) {
+      alert("Trình duyệt không hỗ trợ vị trí.");
+      return;
+    }
+
+    setIsLocating(true);
+    try {
+      const position = await getCurrentPosition();
+      const address = await fetchAddress(position);
+      setComposer((previous) => previous + (previous ? " " : "") + address);
+      inputRef.current?.focus();
+    } catch {
+      alert("Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập và thử lại.");
+    } finally {
+      setIsLocating(false);
+    }
+  }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
+  const hasActiveService = activeItems.length > 0;
 
   return <section className="assistant-page" aria-labelledby="assistant-title">
     <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}{messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards />}</ContextRail></div>
+    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}{messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-inner"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><div className="composer-actions"><button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Lấy vị trí hiện tại" title="Lấy vị trí hiện tại">{isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}</button><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div></div></div>{hasActiveService ? <div id="active-service-panel" className={`sidebar-wrapper ${showContextRail ? "open" : "closed"}`}><div className="sidebar-inner"><ContextRail mode="active" title="Việc đang xử lý" description="Cập nhật mới nhất của các dịch vụ bạn đang dùng."><div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div></ContextRail></div></div> : null}</div>
+    {hasActiveService ? <button className={`sidebar-toggle-btn ${showContextRail ? "open" : "closed"}`} type="button" onClick={() => setShowContextRail((visible) => !visible)} aria-expanded={showContextRail} aria-controls="active-service-panel" aria-label={showContextRail ? "Thu gọn bảng dịch vụ" : "Mở bảng dịch vụ"}>{showContextRail ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}</button> : null}
     <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
   </section>;
 }
@@ -263,6 +286,47 @@ function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelection
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {
   return messages.some((message) => message.response?.items.some((item) => item.kind === "food_options")
     && message.response.actions.some((action) => action.kind === "select_food_item"));
+}
+
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
+  });
+}
+
+// Hàm lấy địa chỉ mới đã được cập nhật sử dụng BigDataCloud và Fallback tọa độ
+async function fetchAddress(position: GeolocationPosition): Promise<string> {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+  
+  try {
+    // Dùng API của BigDataCloud (chuyên dùng cho Frontend, siêu nhanh và không bị block)
+    const response = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=vi`
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      // Ghép các thành phần địa chỉ (Phường/Xã, Quận/Huyện, Tỉnh/Thành phố)
+      const addressParts = [data.locality, data.city, data.principalSubdivision].filter(Boolean);
+      
+      if (addressParts.length > 0) {
+        return addressParts.join(", ");
+      }
+    }
+    
+    // Nếu API trả về OK nhưng không có data chữ, ném lỗi để nhảy xuống catch
+    throw new Error("Không có dữ liệu text");
+    
+  } catch (error) {
+    console.warn("Lỗi API gọi địa chỉ, fallback về tọa độ thô:", error);
+    // Phao cứu sinh: Trả thẳng tọa độ cho AI tự hiểu, luồng chat vẫn mượt mà!
+    return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  }
 }
 
 async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {
