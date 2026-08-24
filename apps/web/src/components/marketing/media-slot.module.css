@@ -62,7 +62,7 @@
 .productMediaSlotFallback { display: grid; min-height: 340px; place-items: center; padding: 30px; }
 
 .productFallback { display: grid; width: min(100%, 340px); gap: 12px; color: var(--color-navy); }
-.fallbackKicker { color: var(--color-primary-strong); font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; }
+.fallbackKicker { color: var(--color-primary-strong); font-family: var(--font-sans); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; }
 .productFallback strong { font-size: 1.18rem; letter-spacing: -0.04em; }
 .productFallback p { margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.6; }
 .fallbackWindow { display: grid; gap: 12px; padding: 16px; background: rgb(255 255 255 / 78%); border: 1px solid rgb(22 50 79 / 13%); border-radius: 10px; box-shadow: var(--shadow-tight); }

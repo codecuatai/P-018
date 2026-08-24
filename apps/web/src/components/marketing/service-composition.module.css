@@ -86,7 +86,7 @@
   top: 13px;
   right: 15px;
   color: var(--color-muted-soft);
-  font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.55rem;
   font-weight: 600;
   letter-spacing: 0.08em;

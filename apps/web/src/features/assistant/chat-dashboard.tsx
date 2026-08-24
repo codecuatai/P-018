@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, Loader2, Plus, RefreshCw } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, Mic, PanelRightOpen, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -24,10 +24,72 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const [foodSelections, setFoodSelections] = useState<Record<string, FoodSelection>>({});
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railWidth, setRailWidth] = useState(280);
+  const [isResizingRail, setIsResizingRail] = useState(false);
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("xone_rail_collapsed");
+      if (saved !== null) {
+        const parsed = saved === "true";
+        setRailCollapsed(parsed);
+        window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: parsed } }));
+      }
+      const savedWidth = localStorage.getItem("xone_rail_width");
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (!isNaN(parsed) && parsed >= 220 && parsed <= 500) setRailWidth(parsed);
+      }
+    } catch {}
+
+    const handleToggleEvent = () => {
+      setRailCollapsed((prev) => {
+        const next = !prev;
+        try { localStorage.setItem("xone_rail_collapsed", String(next)); } catch {}
+        window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: next } }));
+        return next;
+      });
+    };
+
+    window.addEventListener("xone-toggle-rail", handleToggleEvent);
+    return () => window.removeEventListener("xone-toggle-rail", handleToggleEvent);
+  }, []);
+
+  const handleRailMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizingRail(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingRail) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 220), 500);
+      setRailWidth(newWidth);
+    };
+    const handleMouseUp = () => {
+      setIsResizingRail(false);
+      try {
+        localStorage.setItem("xone_rail_width", String(railWidth));
+      } catch {}
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizingRail, railWidth]);
+
+  function toggleRail(collapsed: boolean) {
+    setRailCollapsed(collapsed);
+    try { localStorage.setItem("xone_rail_collapsed", String(collapsed)); } catch {}
+    window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed } }));
+  }
 
   useEffect(() => {
     let active = true;
@@ -242,22 +304,189 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
 
-  return <section className="assistant-page" aria-labelledby="assistant-title">
+  return (
+    <section className="assistant-page" aria-labelledby="assistant-title">
     <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}{messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-label"><span>Hỏi X-One bất cứ điều gì</span><span>Enter gửi · Shift+Enter xuống dòng</span></div><div className="composer-box"><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards />}</ContextRail></div>
+    <div
+      className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
+      style={{
+        gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px`,
+      }}
+    >
+      <div className="chat-column">
+        <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
+          {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
+          {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
+          {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
+          {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
+        </div>
+        {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
+        <div className="composer-wrap">
+          <div className="composer-box">
+            <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+              <PlusCircle size={20} />
+            </button>
+            <textarea
+              ref={inputRef}
+              aria-label="Nhập yêu cầu"
+              disabled={sending}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
+              rows={1}
+              value={composer}
+            />
+            <div className="composer-actions">
+              <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
+                <Mic size={18} />
+              </button>
+              <button
+                className="send-button"
+                type="button"
+                onClick={() => void send()}
+                disabled={sending || !composer.trim()}
+                aria-label="Gửi yêu cầu"
+              >
+                {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
+              </button>
+            </div>
+          </div>
+          <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
+        </div>
+      </div>
+
+      {/* Center Vertical Edge Toggle Button for Right Rail */}
+      <button
+        className={`rail-edge-toggle${railCollapsed ? " is-collapsed" : ""}`}
+        type="button"
+        aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+        title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
+        onClick={() => toggleRail(!railCollapsed)}
+        style={{
+          right: railCollapsed ? "10px" : `${railWidth}px`,
+        }}
+      >
+        {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+      </button>
+
+      <ContextRail
+        mode={activeItems.length ? "active" : "idle"}
+        title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
+        description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
+        onCollapse={() => toggleRail(true)}
+        style={{ width: railCollapsed ? 0 : railWidth }}
+        resizer={
+          !railCollapsed ? (
+            <div
+              className="rail-resizer"
+              onMouseDown={handleRailMouseDown}
+              onDoubleClick={() => toggleRail(true)}
+              title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn"
+            />
+          ) : undefined
+        }
+      >
+        {activeItems.length ? (
+          <div className="active-work-list">
+            {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
+          </div>
+        ) : (
+          <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
+        )}
+      </ContextRail>
+    </div>
     <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
-  </section>;
+  </section>
+  );
 }
 
+type ServiceCard = {
+  icon: React.ComponentType<{ size: number }>;
+  service: string;
+  desc: string;
+  accent: string;
+  prompt: string;
+  example: string;
+};
+
 function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
-  const prompts = ["Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ", "Tìm phở bò giao về nhà", "Tối nay tìm nhà hàng cho 2 người ở Hà Nội", "Giúp tôi đặt lịch khám thần kinh sáng mai"];
-  return <div className="welcome-state"><div className="welcome-icon"><Bot size={26} /></div><span className="eyebrow">XIN CHÀO</span><h2>Mình có thể giúp gì hôm nay?</h2><p>Chỉ cần nói như đang nhắn tin. Nếu cần nhiều việc, mình sẽ sắp xếp chúng trong cùng cuộc trò chuyện.</p><div className="prompt-list">{prompts.map((prompt) => <button key={prompt} type="button" onClick={() => onStart(prompt)}><span>{prompt}</span><span aria-hidden="true">↗</span></button>)}</div></div>;
+  const services: ServiceCard[] = [
+    {
+      icon: Car,
+      service: "Đặt xe di chuyển",
+      desc: "Xe 4 chỗ, 7 chỗ đón tận nơi",
+      accent: "welcome-card-ride",
+      prompt: "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
+      example: "VinUni → Hồ Gươm (4 chỗ)",
+    },
+    {
+      icon: Utensils,
+      service: "Giao đồ ăn ngon",
+      desc: "Tìm quán ngon và đặt món nóng",
+      accent: "welcome-card-food",
+      prompt: "Tìm phở bò giao về nhà",
+      example: "Tìm phở bò giao tận nơi",
+    },
+    {
+      icon: UtensilsCrossed,
+      service: "Đặt bàn nhà hàng",
+      desc: "Hẹn hò, tiệc gia đình, tiếp khách",
+      accent: "welcome-card-restaurant",
+      prompt: "Tối nay tìm nhà hàng cho 2 người ở Hà Nội",
+      example: "Bàn 2 người tối nay ở Hà Nội",
+    },
+    {
+      icon: Stethoscope,
+      service: "Đặt lịch khám bệnh",
+      desc: "Bác sĩ chuyên khoa, đặt hẹn nhanh",
+      accent: "welcome-card-healthcare",
+      prompt: "Giúp tôi đặt lịch khám thần kinh sáng mai",
+      example: "Khám chuyên khoa thần kinh",
+    },
+  ];
+
+  return (
+    <div className="welcome-state">
+      <div className="welcome-hero-badge">
+        <span className="welcome-sparkle"><Sparkles size={14} /></span>
+        <span>X-ONE CONCIERGE</span>
+      </div>
+      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
+      <p className="welcome-sub">
+        Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
+      </p>
+      <div className="welcome-services-grid">
+        {services.map(({ icon: Icon, service, desc, accent, prompt, example }) => (
+          <button
+            key={service}
+            type="button"
+            className={`welcome-service-card ${accent}`}
+            onClick={() => onStart(prompt)}
+          >
+            <div className="welcome-card-icon-wrap">
+              <Icon size={20} aria-hidden="true" />
+            </div>
+            <div className="welcome-card-body">
+              <div className="welcome-card-title-row">
+                <strong>{service}</strong>
+                <span className="welcome-card-arrow" aria-hidden="true">↗</span>
+              </div>
+              <p className="welcome-card-desc">{desc}</p>
+              <div className="welcome-card-prompt-pill">
+                <span>Ví dụ:</span> &ldquo;{example}&rdquo;
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
   const assistant = message.role === "assistant";
-  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className="message-avatar">{assistant ? <Bot size={17} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-meta"><strong>{assistant ? "X-One" : "Bạn"}</strong><time>{formatTime(message.timestamp)}</time></div><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
+  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
 }
 
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {

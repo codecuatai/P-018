@@ -355,9 +355,10 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
     del tool_client
     model = llm or GeminiAdapter()
     settings = get_settings()
+    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
     use_model = llm is not None or (
         getattr(settings, "agent_model_mode", "deterministic") == "gemini"
-        and bool(settings.gemini_api_key)
+        and has_key
     )
 
     async def load_context(state: AgentState) -> AgentState:

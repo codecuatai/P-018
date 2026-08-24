@@ -166,7 +166,8 @@ async def _select_department(query: str, departments: list[dict[str, Any]]) -> s
     if not departments:
         return None
     settings = get_settings()
-    if settings.agent_model_mode == "gemini" and settings.gemini_api_key:
+    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
+    if settings.agent_model_mode == "gemini" and has_key:
         try:
             prompt = (
                 "Bạn hỗ trợ chọn chuyên khoa dựa trên mô tả dữ liệu được cung cấp. "

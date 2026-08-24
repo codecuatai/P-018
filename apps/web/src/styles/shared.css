@@ -12,14 +12,14 @@
 
 .skip-link:focus { transform: translateY(0); }
 
-.brand-link { display: inline-flex; align-items: center; gap: 9px; color: var(--color-navy); font-size: 1.03rem; font-weight: 780; letter-spacing: -0.04em; white-space: nowrap; }
+.brand-link { display: inline-flex; align-items: center; gap: 9px; color: var(--color-navy); font-size: var(--text-lg); font-weight: 780; letter-spacing: -0.04em; white-space: nowrap; }
 
 .eyebrow {
   display: block;
   margin: 0;
   color: var(--color-primary-strong);
-  font-family: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
-  font-size: 0.69rem;
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
   font-weight: 700;
   letter-spacing: 0.11em;
   line-height: 1.35;
@@ -34,8 +34,9 @@
   padding: 9px 14px;
   border: 1px solid transparent;
   border-radius: 9px;
-  font-size: 0.84rem;
-  font-weight: 760;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: 700;
   line-height: 1.25;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
@@ -49,15 +50,16 @@
 .button-danger { color: var(--color-danger); background: var(--color-danger-surface); border-color: #EDC5C0; }
 .button-danger:not(:disabled):hover { color: #8C2E25; background: #FFEAE6; border-color: #DB978F; }
 .button-wide { width: 100%; }
-.button-large { min-height: 48px; padding: 12px 18px; font-size: 0.91rem; }
+.button-large { min-height: 48px; padding: 12px 18px; font-size: var(--text-base); }
 
 .text-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--color-primary-strong);
-  font-size: 0.84rem;
-  font-weight: 760;
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: 700;
   text-decoration: underline;
   text-decoration-color: rgb(49 94 245 / 35%);
   text-underline-offset: 4px;

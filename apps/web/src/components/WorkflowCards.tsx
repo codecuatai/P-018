@@ -23,7 +23,7 @@ export type FoodSelection = {
 type FoodSelectionChangeHandler = (selection: FoodSelection) => void;
 
 export function AssistantCards({ response, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { response: AssistantResponse; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
-  const secondaryActions = response.actions.filter((action) => !["select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
+  const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
@@ -41,7 +41,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
       return <RestaurantConfirmation item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "ride_quote":
     case "ride_booking":
-      return <RideCardWithCancel item={item} />;
+      return <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "ride_timing_conflict":
       return <RideTimingConflictCard item={item} />;
     case "healthcare_options":
@@ -140,17 +140,114 @@ function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: {
   return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} /><Detail label="Thời gian" value={formatDateTime(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action ? <section className="restaurant-confirmation-form" aria-label="Xác nhận đặt bàn"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận thông tin đặt bàn ở trên.</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> Xác nhận đặt bàn</button></section> : null}</article>;
 }
 
-function RideCard({ item, children }: { item: AssistantRideItem; children?: ReactNode }) {
+function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const bookingId = item.booking_id ?? item.resource_id;
   const { data: tracking } = useRideTracking(bookingId);
-  return <><article className="assistant-card card-ride"><CardHeading icon={<CarFront size={17} />} label="Chuyến xe" title={item.title} /><div className="route-line"><div><span>Điểm đón</span><strong>{text(item.pickup)}</strong></div><div className="route-arrow">→</div><div><span>Điểm đến</span><strong>{text(item.dropoff)}</strong></div></div><div className="metric-row"><Metric label="Loại xe" value={text(item.vehicle, "Theo lựa chọn")} /><Metric label="Khoảng cách" value={item.distance_km !== undefined ? item.distance_km + " km" : item.route_distance_meters ? (item.route_distance_meters / 1000).toFixed(1) + " km" : "Đang cập nhật"} /><Metric label="Thời gian dự kiến" value={item.duration_minutes ? String(item.duration_minutes) + " phút" : item.route_duration_seconds ? Math.ceil(item.route_duration_seconds / 60) + " phút" : "Đang cập nhật"} /></div><div className="detail-list"><Detail label="Giá dự kiến" value={formatMoney(item.amount, text(item.currency, "VND"))} />{tracking?.status || item.status ? <Detail label="Trạng thái" value={statusLabel(tracking?.status ?? item.status)} /> : null}{item.recommended_departure ? <Detail label="Nên rời đi lúc" value={formatDateTime(item.recommended_departure)} /> : null}</div>{tracking ? <RideLiveStatus tracking={tracking} /> : null}<button className="small-action ride-detail-action" type="button" onClick={() => setDetailOpen(true)}>Xem bản đồ và hành trình</button>{item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}{children}</article><ServiceDetailDialog open={detailOpen} onOpenChange={setDetailOpen} kind="ride" option={null} ride={item} /></>;
+  const distance = item.distance_km !== undefined ? `${item.distance_km} km` : item.route_distance_meters ? `${(item.route_distance_meters / 1000).toFixed(1)} km` : undefined;
+  const duration = item.duration_minutes ? `${item.duration_minutes} phút` : item.route_duration_seconds ? `${Math.ceil(item.route_duration_seconds / 60)} phút` : undefined;
+  const price = formatMoney(item.amount, text(item.currency, "VND"));
+  const vehicle = text(item.vehicle, "Xe 4 chỗ");
+  const confirmAction = actions?.find((a) => a.kind === "ride_service" || a.kind === "ride_payment" || a.label?.includes("Xác nhận"));
+
+  return (
+    <>
+      <article className="assistant-card card-ride">
+        <div className="ride-ticket-header">
+          <div className="ride-ticket-badge">
+            <span className="ride-ticket-icon"><CarFront size={18} /></span>
+            <div>
+              <span className="ride-ticket-label">CHUYẾN XE</span>
+              <h3 className="ride-ticket-title">{text(item.title, "Ước tính chuyến đi")}</h3>
+            </div>
+          </div>
+          {item.amount !== undefined && (
+            <div className="ride-ticket-price">
+              <span className="ride-price-label">Giá dự kiến</span>
+              <strong className="ride-price-value">{price}</strong>
+            </div>
+          )}
+        </div>
+
+        <div className="ride-ticket-route">
+          <div className="route-stop pickup-stop">
+            <span className="route-dot pickup-dot" />
+            <div className="route-stop-copy">
+              <span className="route-stop-label">ĐIỂM ĐÓN</span>
+              <strong className="route-stop-address">{text(item.pickup, "Điểm đón chưa rõ")}</strong>
+            </div>
+          </div>
+          <div className="route-connector" />
+          <div className="route-stop dropoff-stop">
+            <span className="route-dot dropoff-dot" />
+            <div className="route-stop-copy">
+              <span className="route-stop-label">ĐIỂM ĐẾN</span>
+              <strong className="route-stop-address">{text(item.dropoff, "Điểm đến chưa rõ")}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="ride-ticket-specs">
+          <div className="ride-spec-item">
+            <span className="spec-label">Loại xe</span>
+            <strong className="spec-value">{vehicle}</strong>
+          </div>
+          {distance && (
+            <div className="ride-spec-item">
+              <span className="spec-label">Quãng đường</span>
+              <strong className="spec-value">{distance}</strong>
+            </div>
+          )}
+          {duration && (
+            <div className="ride-spec-item">
+              <span className="spec-label">Thời gian dự kiến</span>
+              <strong className="spec-value">{duration}</strong>
+            </div>
+          )}
+          {tracking?.status || item.status ? (
+            <div className="ride-spec-item">
+              <span className="spec-label">Trạng thái</span>
+              <strong className="spec-value">{statusLabel(tracking?.status ?? item.status)}</strong>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="ride-ticket-actions">
+          {confirmAction && onAction ? (
+            <button
+              className="ride-action-confirm"
+              type="button"
+              onClick={() => onAction(confirmAction)}
+              disabled={Boolean(disabledActionId)}
+            >
+              <Check size={16} /> {confirmAction.label || "Xác nhận chuyến xe"}
+            </button>
+          ) : (
+            <button
+              className="ride-action-confirm"
+              type="button"
+              onClick={() => {}}
+            >
+              <Check size={16} /> Xác nhận chuyến xe
+            </button>
+          )}
+          <button className="ride-action-map" type="button" onClick={() => setDetailOpen(true)}>
+            Xem bản đồ và hành trình
+          </button>
+        </div>
+        {tracking ? <RideLiveStatus tracking={tracking} /> : null}
+        {item.schedule_note ? <p className="card-note">{text(item.schedule_note)}</p> : null}
+        {children}
+      </article>
+      <ServiceDetailDialog open={detailOpen} onOpenChange={setDetailOpen} kind="ride" option={null} ride={item} />
+    </>
+  );
 }
 
-function RideCardWithCancel({ item }: { item: AssistantRideItem }) {
+function RideCardWithCancel({ item, actions, onAction, disabledActionId }: { item: AssistantRideItem; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const bookingId = item.kind === "ride_booking" ? item.booking_id ?? item.resource_id : undefined;
   const { data: tracking } = useRideTracking(bookingId);
-  return <RideCard item={item}><RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /></RideCard>;
+  return <RideCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId}>{item.kind === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /> : null}</RideCard>;
 }
 
 function RideTimingConflictCard({ item }: { item: AssistantRideTimingConflictItem }) {
