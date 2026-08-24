@@ -78,3 +78,12 @@ job.txt
 .pnpm-store/
 plan.md
 work.md
+
+# AI tools & Personal IDE Configs
+.codegraph/
+.agents/
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
