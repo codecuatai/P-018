@@ -73,6 +73,11 @@ test-results/
 # Local process metadata (PIDs and non-secret runtime state)
 .local-runtime/
 
+# Local observability exports (may contain trace metadata)
+h.json
+langfuse-trace*.json
+langfuse-export*.json
+
 phong.md
 job.txt
 .pnpm-store/

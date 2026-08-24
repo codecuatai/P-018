@@ -1,6 +1,6 @@
 # Current Architecture State
 
-This is the canonical, filesystem-backed status for X-One as of 2026-08-16.
+This is the canonical, filesystem-backed status for X-One as of 2026-08-20.
 It supersedes earlier Phase 0 descriptions that referred to a Vite Web demo or
 demo-only public authentication. Historic work evidence belongs in
 `WORKLOG.md`; it is not a claim about the current implementation.
@@ -72,6 +72,73 @@ Core `xone_core`, Agent target `xone_agent`, Ride `xone_ride`, Restaurant
 Cross-database queries, foreign keys, shared ORM models and shared domain
 business logic are prohibited.
 
+## Core Agent remediation evidence - 2026-08-20
+
+- Agent startup no longer creates tables and required PostgreSQL mode has no
+  silent memory fallback. Readiness checks the owned migration explicitly.
+- Food cart and voucher writes require an idempotency key and the Food-owned
+  transaction ledger enforces exact replay, changed-payload conflict, actor
+  scope and one logical mutation.
+- The Agent-side Gateway execution client and the HTTP
+  `/internal/tools/execute` endpoint were removed. Food execution now crosses
+  the typed Gateway proposal validator. Agent `tool_call_id` values are trace
+  references only; Gateway derives the write idempotency key from the trusted
+  actor, persisted task revision, capability, and bounded proposal index.
+- Gateway consumes Core A capability metadata and authoritative fact
+  projections, rejects schema/risk/gate/authority mismatch, and records the
+  validated capability used for dispatch. Model-visible projections exclude
+  authoritative IDs.
+- The handoff now carries `core-a.v1` plus capability-catalog version. Gateway
+  consumes blocked/failed dispositions and bounded re-plan directives, keeps
+  unchanged same-key retries on the same revision, and removes stale pending
+  confirmation evidence/actions/cards when terms change. Dispatch trace tests
+  cover all four domains. Gateway now requires `planning_decision`,
+  `core-a.v1`, and the exact observed capability-catalog version on every turn;
+  absent, partially versioned, unversioned, or mismatched handoffs fail closed.
+- Restaurant availability returns a 30-second authoritative snapshot with a
+  distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
+  Core A does not treat freshness-required authority without a future expiry as
+  usable.
+- Restaurant model extraction uses an `extra=forbid` semantic schema.
+  Vietnamese confirmation parsing rejects negation, questions, correction and
+  ambiguous substring matches. Actor-scoped Agent routes require constant-time
+  internal authentication plus `X-Actor-Id`.
+- The fake SSE endpoint and full-graph third-party callback remain removed.
+  A privacy-reviewed Langfuse v4 adapter now emits manual, metadata-only spans
+  for the Assistant run, validation, planner/model/Core A/task decisions,
+  composition, fallback and run-metadata persistence. Strict Pydantic
+  envelopes, SDK-only export filtering and export-stage masking exclude
+  input/output, prompts, messages, graph state, slots, authoritative data,
+  identities, secrets and hidden reasoning. Missing keys select a no-op
+  adapter; exporter failure is non-authoritative.
+- Agent run metadata now uses stable route/phase-scoped run identifiers, so a
+  single Gateway correlation chain can plan, execute Food, and compose without
+  a false `RUN_METADATA_CONFLICT`. Ride interpretation also receives the
+  required actor assertion through the typed Agent client.
+
+Local remediation verification passed Agent `196` tests (`1` PostgreSQL test
+skipped), Gateway `176` tests (`7` PostgreSQL/integration tests skipped),
+Restaurant `22` tests (`1` skipped), Food `38` tests (`3` PostgreSQL tests
+skipped), plus Ride `31` tests. Gateway lint/build, Ruff,
+environment validation (`123` root / `115` Compose variables), migration parity
+(`28` files), Compose rendering, contract parity, and OpenAPI YAML parsing
+passed. The sanitized evidence report is
+[`eval/results/core-agent-remediation-2026-08-20.md`](../../eval/results/core-agent-remediation-2026-08-20.md).
+Langfuse tracing also passed a live synthetic Agent run against the configured
+US endpoint: the private trace contained the six expected run, validation,
+model, planner, Core A and task observations, recorded provider token usage,
+and exposed no input/output, prompt, user/session identity or raw error text.
+See
+[`eval/results/core-agent-langfuse-tracing-2026-08-20.md`](../../eval/results/core-agent-langfuse-tracing-2026-08-20.md).
+The Agent image was rebuilt with Langfuse `4.14.4`, and the Gateway image was
+rebuilt with the null re-plan directive compatibility fix. Only
+`agent-service` and `api-gateway` were recreated with `--no-deps`; no database,
+domain service, or volume was restarted or removed. The live synthetic trace
+used the rebuilt Agent container.
+Live PostgreSQL restart/outage, provider 20-case, cross-service E2E, and rollback
+exercise remain explicitly blocked; this worktree is not certified 10/10 until
+those gates run successfully.
+
 ## Observed implementation matrix
 
 | Component | Status | Evidence | Current limitation |
@@ -80,10 +147,10 @@ business logic are prohibited.
 | Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | Calm task-first Vietnamese UI has route loading/error/empty/disabled states, reduced-motion handling, responsive shells, location/map panels, and tracking polling. The map is a deterministic visual snapshot, not a claim of a production map provider. |
 | Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
 | Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
-| Agent persistence | skeleton | `apps/agent-service/src/application/workflow_store.py`, `apps/agent-service/src/config.py` | `workflow_store` is process-local and no Agent persistence client/migration is wired. `xone_agent` is provisioned for target checkpoint/run metadata, so Agent state is lost on restart. |
+| Agent persistence | implemented | `apps/agent-service/migrations/002_agent_run_metadata.sql`, `src/application/run_metadata_store.py`, `src/infrastructure/database.py` | Production defaults to required PostgreSQL, performs no runtime DDL, and persists only allowlisted actor/workflow/run metadata, phase, capability names, latency and safe error code. The develop-branch `001_agent_workflow_states.sql` migration remains immutable history but has no runtime writer. Memory mode is explicit test/development configuration. Live PostgreSQL restart/reconnect acceptance remains unverified in this worktree. |
 | Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
 | Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py` and `20260816_0006_passenger_capacity.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, and actor-scoped history. Passenger-count/capacity policy is implemented and targeted tests pass, but migration apply/rollback and live Compose E2E for revision 0006 remain unverified in this worktree. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
-| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, `apps/agent-service/tests/test_agents/test_tool_registry_parity.py` | Version-2 inventory has 46 canonical entries: 23 `IMPLEMENTED_AGENT_TOOL`, 12 `IMPLEMENTED_GATEWAY_ACTION`, and 11 `IMPLEMENTED_DOMAIN_API`. Active V1 compatibility paths remain and runtime→JSON parity is one-way; the Agent never executes final side effects. |
+| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, Gateway and Agent parity tests | Version-2 inventory has 46 canonical entries. Parity is checked in both directions; runtime-only compatibility names require a named owner and expiry. The Agent emits semantic typed proposals only and has no execution/domain client. |
 | Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
 | Catalog data pipeline | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |
 | Recommendation + multi-service reliability | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, Core migration `011`, tests | Deterministic ranking, owning-service resource re-read, dependency/partial-success/compensation semantics, step idempotency, and durable plan readback are wired. Route-provider ETA is available for explicit routes/quotes; live browser transaction coverage passed. |

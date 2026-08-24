@@ -23,9 +23,23 @@ class SearchGateway:
             {"name": "execute_food_order", "permission": "transaction"},
         ]
 
-    async def execute(self, name: str, arguments: dict[str, Any], user_id: str, correlation_id: str, conversation_id: str | None = None) -> dict[str, Any]:
+    async def execute(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        user_id: str,
+        correlation_id: str,
+        conversation_id: str | None = None,
+    ) -> dict[str, Any]:
         self.calls.append((name, arguments))
-        return {"items": [{"restaurant": {"id": "restaurant_authoritative"}, "item": {"id": "item_authoritative", "restaurant_id": "restaurant_authoritative"}}]}
+        return {
+            "items": [
+                {
+                    "restaurant": {"id": "restaurant_authoritative"},
+                    "item": {"id": "item_authoritative", "restaurant_id": "restaurant_authoritative"},
+                }
+            ]
+        }
 
 
 class NativeStructuredLLM:
@@ -86,14 +100,20 @@ async def test_gemini_adapter_requests_native_json_schema(monkeypatch: pytest.Mo
             self.method: str | None = None
             self.schema: type[StructuredDecision] | None = None
 
-        def with_structured_output(self, schema: type[StructuredDecision], method: str, include_raw: bool) -> StructuredRunnable:
+        def with_structured_output(
+            self, schema: type[StructuredDecision], method: str, include_raw: bool
+        ) -> StructuredRunnable:
             self.schema = schema
             self.method = method
             assert include_raw is True
             return StructuredRunnable()
 
     model = Model()
-    monkeypatch.setattr(llm_module, "get_settings", lambda: SimpleNamespace(gemini_api_key="configured", gemini_model="test-model", llm_temperature=0.0))
+    monkeypatch.setattr(
+        llm_module,
+        "get_settings",
+        lambda: SimpleNamespace(gemini_api_key="configured", gemini_model="test-model", llm_temperature=0.0),
+    )
     with patch("langchain_google_genai.ChatGoogleGenerativeAI", return_value=model):
         result = await llm_module.GeminiAdapter().ainvoke_structured("schema prompt", StructuredDecision)
 
@@ -115,7 +135,7 @@ def test_native_wrapper_recovers_from_raw_message_when_parser_did_not() -> None:
 
 
 @pytest.mark.asyncio
-async def test_native_structured_response_is_used_and_authoritative_tools_run() -> None:
+async def test_native_structured_response_is_used_for_safe_proposal() -> None:
     gateway = SearchGateway()
     llm = NativeStructuredLLM(decision(dish_query="pho bo", max_price=100000))
     graph = build_graph(tool_client=gateway, llm=llm)
@@ -131,9 +151,12 @@ async def test_native_structured_response_is_used_and_authoritative_tools_run() 
     )
 
     assert llm.schema is StructuredDecision
-    assert gateway.calls == [("search_food", {"keyword": "pho bo", "max_price": 100000})]
+    assert gateway.calls == []
     assert result["decision_source"] == "model"
-    assert result["state_updates"]["restaurant_candidates"][0]["id"] == "restaurant_authoritative"
+    assert result["tool_calls"][0]["semantic_arguments"] == {
+        "keyword": "pho bo",
+        "max_price": 100000,
+    }
 
 
 @pytest.mark.parametrize(
@@ -162,7 +185,8 @@ async def test_malformed_semantic_slots_fall_back_without_unsafe_values(field: s
 
     assert result["decision_source"] == "deterministic"
     assert result["extracted_slots"].get(field) != value
-    assert gateway.calls[0][0] == "search_food"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio
@@ -200,7 +224,8 @@ async def test_malformed_model_output_falls_back_without_crashing() -> None:
     )
 
     assert result["decision_source"] == "deterministic"
-    assert gateway.calls[0][0] == "search_food"
+    assert gateway.calls == []
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
 
 
 @pytest.mark.asyncio

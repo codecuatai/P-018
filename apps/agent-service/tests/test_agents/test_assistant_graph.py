@@ -80,17 +80,19 @@ def test_healthcare_day_after_tomorrow_is_a_calendar_filter_not_a_stale_clock() 
     assert _time_slot("10 giờ ngày kia", now) == "2026-08-17T10:00:00+07:00"
 
     state = {
-        "tasks": [{
-            "domain": "healthcare",
-            "phase": "NEEDS_INFO",
-            "goal": "Tìm lịch khám",
-            "normalized_request": "Khám thần kinh",
-            "extracted_slots": {
-                "department": "than kinh",
-                "start_at": "2026-08-16T10:00:00+07:00",
-            },
-            "pending_actions": ["select_healthcare_slot"],
-        }],
+        "tasks": [
+            {
+                "domain": "healthcare",
+                "phase": "NEEDS_INFO",
+                "goal": "Tìm lịch khám",
+                "normalized_request": "Khám thần kinh",
+                "extracted_slots": {
+                    "department": "than kinh",
+                    "start_at": "2026-08-16T10:00:00+07:00",
+                },
+                "pending_actions": ["select_healthcare_slot"],
+            }
+        ],
     }
     follow_up = deterministic_plan("đổi lại sang ngày kia", state)
     slots = follow_up.tasks[0].extracted_slots
@@ -129,11 +131,58 @@ def test_food_follow_up_targets_food_only_when_other_tasks_are_active() -> None:
     assert domains(follow_up) == ["food"]
 
 
+def test_context_switch_discards_unfinished_ride_and_plans_food() -> None:
+    state = {
+        "tasks": [
+            {
+                "domain": "ride",
+                "phase": "NEEDS_INFO",
+                "goal": "Tìm chuyến xe",
+                "normalized_request": "Đặt xe đi Bờ Hồ",
+                "extracted_slots": {"dropoff_address": "Bờ Hồ"},
+                "missing_information": ["pickup_address"],
+            }
+        ],
+    }
+
+    plan = deterministic_plan("Thôi không đi xe nữa, tìm phở bò ăn ở nhà.", state)
+
+    assert plan.discarded_task_refs == [0]
+    assert domains(plan) == ["food"]
+    assert plan.interaction_mode == "service"
+
+
+def test_chitchat_and_advisory_do_not_force_a_service_task() -> None:
+    chitchat = deterministic_plan("Hôm nay bạn thế nào?")
+    advisory = deterministic_plan("Trời mưa lạnh thế này nên ăn gì ngon nhỉ?")
+    rainy_outing = deterministic_plan("Trời mưa đi đâu thì hợp?")
+
+    assert chitchat.tasks == []
+    assert chitchat.interaction_mode == "chitchat"
+    assert "gọi xe" in chitchat.assistant_message
+    assert advisory.tasks == []
+    assert advisory.interaction_mode == "advisory"
+    assert "phở" in advisory.assistant_message
+    assert rainy_outing.tasks == []
+    assert rainy_outing.interaction_mode == "advisory"
+    assert "không xem được thời tiết trực tiếp" in rainy_outing.assistant_message
+
+
 def test_ambiguous_generic_selection_requests_one_clarification() -> None:
     state = {
         "tasks": [
-            {"domain": "restaurant", "phase": "NEEDS_INFO", "extracted_slots": {}, "pending_actions": ["select_restaurant"]},
-            {"domain": "healthcare", "phase": "NEEDS_INFO", "extracted_slots": {}, "pending_actions": ["select_healthcare_slot"]},
+            {
+                "domain": "restaurant",
+                "phase": "NEEDS_INFO",
+                "extracted_slots": {},
+                "pending_actions": ["select_restaurant"],
+            },
+            {
+                "domain": "healthcare",
+                "phase": "NEEDS_INFO",
+                "extracted_slots": {},
+                "pending_actions": ["select_healthcare_slot"],
+            },
         ]
     }
     plan = deterministic_plan("Chọn cái đầu tiên", state)
@@ -294,6 +343,22 @@ class IncorrectRideEditPlanner:
         )
 
 
+class SwitchingFoodPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình chuyển sang tìm món nhé.",
+            tasks=[
+                PlannedTask(
+                    domain="food",
+                    goal="Tìm phở bò",
+                    normalized_request="Tìm phở bò ăn ở nhà",
+                    extracted_slots={"dish_query": "phở bò"},
+                ),
+            ],
+        )
+
+
 class FailingPlanner:
     async def ainvoke_structured(self, _prompt: str, _schema: type[Any]) -> Any:
         raise AssertionError("direct healthcare requests should use the bounded fast path")
@@ -349,10 +414,12 @@ class ConflictingExplicitSlotPlanner:
 @pytest.mark.asyncio
 async def test_model_cannot_override_explicit_vehicle_or_drop_tomorrow_preference() -> None:
     graph = build_assistant_graph(llm=ConflictingExplicitSlotPlanner())
-    result = await graph.ainvoke({
-        "query": "Đặt xe máy từ VinUni đến Hoàn Kiếm và đặt lịch khám thần kinh sáng mai",
-        "conversation_state": {},
-    })
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe máy từ VinUni đến Hoàn Kiếm và đặt lịch khám thần kinh sáng mai",
+            "conversation_state": {},
+        }
+    )
 
     assert result["plan"]["tasks"][0]["extracted_slots"]["vehicle_type"] == "BIKE"
     assert result["plan"]["tasks"][1]["extracted_slots"]["time_preference"] == "tomorrow_morning"
@@ -388,16 +455,51 @@ async def test_composition_prompt_excludes_raw_user_injection() -> None:
 @pytest.mark.asyncio
 async def test_deterministic_graph_runs_the_same_typed_core_a_pipeline() -> None:
     graph = build_assistant_graph()
-    result = await graph.ainvoke({
-        "query": "Đặt xe từ VinUni đến Hồ Gươm",
-        "conversation_state": {},
-    })
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe từ VinUni đến Hồ Gươm",
+            "conversation_state": {},
+        }
+    )
     assert result["decision_source"] == "deterministic"
     assert result["semantic_turn"]["intents"][0]["domain"] == "ride"
     step = result["planning_decision"]["tasks"][0]["steps"][0]
     assert step["step_kind"] == "CAPABILITY"
     assert step["capability"] == "ride.quote.create"
     assert step["risk_ceiling"] == "READ"
+
+
+@pytest.mark.asyncio
+async def test_gateway_facts_advance_core_a_without_entering_model_input() -> None:
+    graph = build_assistant_graph()
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe từ VinUni đến Hồ Gươm",
+            "conversation_state": {
+                "tasks": [
+                    {
+                        "task_ref": 0,
+                        "domain": "ride",
+                        "phase": "IN_PROGRESS",
+                        "facts": [
+                            {
+                                "fact_type": "quote",
+                                "field": "quote_id",
+                                "value": "quote_trusted",
+                                "source_task_ref": 0,
+                                "resource_version": "quote-v1",
+                                "expires_at": "2099-01-01T00:00:00+07:00",
+                            }
+                        ],
+                    }
+                ]
+            },
+        }
+    )
+
+    step = result["planning_decision"]["tasks"][0]["steps"][0]
+    assert step["capability"] == "ride.booking.prepare"
+    assert "quote_trusted" not in result["plan"]["tasks"][0]["extracted_slots"].values()
 
 
 @pytest.mark.asyncio
@@ -414,18 +516,58 @@ async def test_model_path_restores_explicit_route_and_vehicle_slots() -> None:
 async def test_model_path_replaces_incorrect_combined_ride_edit_slots() -> None:
     first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
     graph = build_assistant_graph(llm=IncorrectRideEditPlanner())
-    result = await graph.ainvoke({
-        "query": (
-            "đổi điểm đón thành đại học quốc gia hà nội và điểm đến thành công viên nghĩa đô giúp tôi, "
-            "đổi phương tiện bằng xe máy thôi"
-        ),
-        "conversation_state": {"tasks": [task.model_dump() for task in first.tasks]},
-    })
+    result = await graph.ainvoke(
+        {
+            "query": (
+                "đổi điểm đón thành đại học quốc gia hà nội và điểm đến thành công viên nghĩa đô giúp tôi, "
+                "đổi phương tiện bằng xe máy thôi"
+            ),
+            "conversation_state": {"tasks": [task.model_dump() for task in first.tasks]},
+        }
+    )
 
     slots = result["plan"]["tasks"][0]["extracted_slots"]
     assert slots["pickup_address"] == "đại học quốc gia hà nội"
     assert slots["dropoff_address"] == "công viên nghĩa đô"
     assert slots["vehicle_type"] == "BIKE"
+
+
+@pytest.mark.asyncio
+async def test_model_path_keeps_deterministic_context_discard_boundary() -> None:
+    graph = build_assistant_graph(llm=SwitchingFoodPlanner())
+    result = await graph.ainvoke(
+        {
+            "query": "Thôi không đi xe nữa, tìm phở bò ăn ở nhà.",
+            "conversation_state": {
+                "tasks": [
+                    {
+                        "domain": "ride",
+                        "phase": "NEEDS_INFO",
+                        "goal": "Tìm chuyến xe",
+                        "normalized_request": "Đặt xe đi Bờ Hồ",
+                        "extracted_slots": {"dropoff_address": "Bờ Hồ"},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert result["decision_source"] == "model"
+    assert result["plan"]["discarded_task_refs"] == [0]
+    assert result["planning_decision"]["discarded_task_refs"] == [0]
+    assert result["planning_decision"]["tasks"][0]["domain"] == "food"
+
+
+@pytest.mark.asyncio
+async def test_deterministic_composer_describes_available_options() -> None:
+    message, source = await compose_response(
+        "",
+        [{"domain": "food", "phase": "IN_PROGRESS"}],
+        [{"kind": "food_options"}],
+    )
+
+    assert source == "deterministic"
+    assert "lựa chọn" in message
 
 
 def test_model_prompt_contains_only_planner_safe_state() -> None:
@@ -434,19 +576,21 @@ def test_model_prompt_contains_only_planner_safe_state() -> None:
             "query": "Chọn quán đầu tiên",
             "messages": [{"role": "user", "content": "Tìm món"}],
             "conversation_state": {
-                "tasks": [{
-                    "id": "task-secret",
-                    "domain": "food",
-                    "goal": "Tìm món",
-                    "phase": "IN_PROGRESS",
-                    "extracted_slots": {"query": "phở", "restaurant_id": "restaurant-secret"},
-                    "authoritative": {
-                        "confirmation_id": "confirmation-secret",
-                        "workflow_id": "workflow-secret",
-                        "order_id": "order-secret",
-                        "payment": {"provider_reference": "provider-secret"},
-                    },
-                }],
+                "tasks": [
+                    {
+                        "id": "task-secret",
+                        "domain": "food",
+                        "goal": "Tìm món",
+                        "phase": "IN_PROGRESS",
+                        "extracted_slots": {"query": "phở", "restaurant_id": "restaurant-secret"},
+                        "authoritative": {
+                            "confirmation_id": "confirmation-secret",
+                            "workflow_id": "workflow-secret",
+                            "order_id": "order-secret",
+                            "payment": {"provider_reference": "provider-secret"},
+                        },
+                    }
+                ],
                 "actions": [{"id": "action-secret", "kind": "food_confirm", "task_id": "task-secret"}],
             },
         }
@@ -454,7 +598,29 @@ def test_model_prompt_contains_only_planner_safe_state() -> None:
     parsed = json.loads(prompt)
     state = parsed["conversation_state"]
     serialized = json.dumps(state)
-    for forbidden in ("task-secret", "confirmation-secret", "workflow-secret", "order-secret", "provider-secret", "action-secret", "authoritative"):
+    for forbidden in (
+        "task-secret",
+        "confirmation-secret",
+        "workflow-secret",
+        "order-secret",
+        "provider-secret",
+        "action-secret",
+        "authoritative",
+    ):
         assert forbidden not in serialized
     assert state["tasks"][0]["task_ref"] == 0
     assert state["tasks"][0]["extracted_slots"] == {"query": "phở"}
+
+
+def test_deterministic_plan_handles_food_lunch_recommendation_and_followup() -> None:
+    plan = deterministic_plan("gợi ý cho tôi món ăn trưa đi")
+    assert len(plan.tasks) == 1
+    assert plan.tasks[0].domain == "food"
+    assert plan.interaction_mode == "service"
+    dish = plan.tasks[0].extracted_slots.get("dish_query", "")
+    assert any(k in dish for k in ("mon", "trua", "cơm", "phở", "bún"))
+
+    # Follow up with "oke" continues the food task
+    followup = deterministic_plan("oke", conversation_state={"tasks": [plan.tasks[0].model_dump()]})
+    assert len(followup.tasks) == 1
+    assert followup.tasks[0].domain == "food"

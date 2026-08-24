@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import inspect
+import hashlib
 import json
 import logging
 from typing import Any, Literal
@@ -9,19 +9,13 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.agents.intent import classify, extract_slots
-from src.agents.option_resolution import resolve_options
 from src.agents.reference_resolution import resolve_references
 from src.agents.state import AgentState, FoodWorkflowContext
 from src.agents.tool_selection import select_tools
 from src.config import get_settings
-from src.services.gateway import GatewayToolClient, GatewayToolError
 from src.services.llm import GeminiAdapter, LLMAdapter
 
 logger = logging.getLogger(__name__)
-
-
-class ToolCallLimitError(RuntimeError):
-    """Raised before a nested tool call can exceed the configured hard limit."""
 
 
 class OptionPreference(BaseModel):
@@ -104,7 +98,7 @@ def _candidate_snapshot(value: Any) -> dict[str, Any]:
     result = {
         key: value[key]
         for key in _CANDIDATE_SCALAR_FIELDS
-        if key in value and isinstance(value[key], (str, int, float, bool))
+        if key in value and isinstance(value[key], str | int | float | bool)
     }
     for key in ("option_groups", "options"):
         if isinstance(value.get(key), list):
@@ -148,6 +142,96 @@ VALID_INTENTS = {
     "general_food_support",
     "out_of_scope",
 }
+
+PROPOSAL_REGISTRY = [
+    {"name": name}
+    for name in (
+        "search_food",
+        "view_menu",
+        "view_menu_item",
+        "list_food_delivery_addresses",
+        "get_food_cart",
+        "create_cart",
+        "add_to_cart",
+        "update_food_cart_item",
+        "remove_food_cart_item",
+        "apply_voucher",
+        "remove_food_voucher",
+        "quote_delivery",
+        "preview_order",
+        "get_food_order",
+        "track_food_order",
+        "preview_food_order_cancellation",
+        "prepare_food_order_confirmation",
+        "prepare_food_order_cancellation_confirmation",
+    )
+]
+
+_REVERSIBLE_WRITE_PROPOSALS = {
+    "create_cart",
+    "add_to_cart",
+    "update_food_cart_item",
+    "remove_food_cart_item",
+    "apply_voucher",
+    "remove_food_voucher",
+}
+_CONFIRMATION_PROPOSALS = {
+    "prepare_food_order_confirmation",
+    "prepare_food_order_cancellation_confirmation",
+}
+
+
+def _proposal(
+    tool: dict[str, Any],
+    *,
+    workflow_id: str,
+    correlation_id: str,
+    call_index: int,
+) -> dict[str, Any]:
+    """Project a selected tool to a non-executable, versioned Gateway proposal."""
+    name = str(tool.get("name", ""))
+    raw_arguments = tool.get("arguments", {})
+    semantic_arguments = {
+        key: value
+        for key, value in (
+            raw_arguments.items() if isinstance(raw_arguments, dict) else []
+        )
+        if not key.endswith("_id")
+    }
+    risk = (
+        "FINANCIAL_OR_FINAL"
+        if name in _CONFIRMATION_PROPOSALS
+        else "REVERSIBLE_WRITE"
+        if name in _REVERSIBLE_WRITE_PROPOSALS
+        else "READ"
+    )
+    identity = json.dumps(
+        {
+            "workflow_id": workflow_id,
+            "correlation_id": correlation_id,
+            "capability_name": name,
+            "semantic_arguments": semantic_arguments,
+            "call_index": call_index,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.sha256(identity.encode()).hexdigest()[:32]
+    return {
+        "schema_version": "1",
+        "capability_name": name,
+        "semantic_arguments": semantic_arguments,
+        "workflow_id": workflow_id,
+        "tool_call_id": f"call_{digest}",
+        "risk_ceiling": risk,
+        "confirmation_gate": (
+            "explicit_gateway_confirmation"
+            if name in _CONFIRMATION_PROPOSALS
+            else "none"
+        ),
+    }
 
 
 def reconcile_intent(
@@ -236,7 +320,11 @@ def _missing_slots(intent: str, slots: dict[str, Any]) -> list[str]:
     required: list[str] = []
     if intent == "create_cart":
         required.append("restaurant_id")
-    if intent in {"quote_delivery", "preview_order", "place_order"} and not slots.get("address_id") and not slots.get("address_query"):
+    if (
+        intent in {"quote_delivery", "preview_order", "place_order"}
+        and not slots.get("address_id")
+        and not slots.get("address_query")
+    ):
         required.append("address_id")
     if intent in {"preview_order", "place_order"}:
         required.append("cart_id")
@@ -261,13 +349,14 @@ def _missing_slots(intent: str, slots: dict[str, Any]) -> list[str]:
     return [slot for slot in required if not slots.get(slot)]
 
 
-def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | None = None):
-    gateway = tool_client or GatewayToolClient()
+def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
+    # Kept as a temporary call-site compatibility parameter. It is deliberately
+    # never invoked: the Agent has no execution or domain client.
+    del tool_client
     model = llm or GeminiAdapter()
     settings = get_settings()
     use_model = llm is not None or (
-        tool_client is None
-        and getattr(settings, "agent_model_mode", "deterministic") == "gemini"
+        getattr(settings, "agent_model_mode", "deterministic") == "gemini"
         and bool(settings.gemini_api_key)
     )
 
@@ -295,7 +384,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             and state.get("extracted_slots", {}).get("dish_query")
         ):
             deterministic_intent = "search_food"
-        registry: list[dict[str, Any]] = []
+        registry = PROPOSAL_REGISTRY
         fallback = {
             "intent": deterministic_intent,
             "confidence": None,
@@ -307,17 +396,12 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         # injection available for tests and explicit callers, but do not make
         # ordinary classified food requests wait for a remote model.
         if not use_model or (llm is None and deterministic_intent != "general_food_support"):
-            try:
-                registry = await gateway.registry(str(state.get("correlation_id")))
-            except GatewayToolError:
-                registry = []
             return {
                 **fallback,
                 "tool_registry": registry,
                 "step_count": state.get("step_count", 0) + 1,
             }
         try:
-            registry = await gateway.registry(str(state.get("correlation_id")))
             prompt = json.dumps(
                 {
                     "instruction": "Interpret the food-related part of this X-One conversation. Return semantic slots only; never return database IDs. Propose only registered non-transaction tools. The top-level assistant may be handling ride, restaurant, or healthcare tasks in the same turn, so do not claim that this subflow owns the whole conversation.",
@@ -325,13 +409,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                     "recent_messages": state.get("messages", [])[-20:],
                     "workflow_context": state.get("extracted_slots", {}),
                     "tool_registry": registry,
-                    "allowed_permissions": ["read", "draft_write", "preview", "confirmation_prepare"],
+                    "allowed_output": "semantic proposals only",
                     "response_schema": StructuredDecision.model_json_schema(),
                 },
                 ensure_ascii=False,
             )
             structured_invoke = getattr(model, "ainvoke_structured", None)
-            raw = await structured_invoke(prompt, StructuredDecision) if callable(structured_invoke) else await model.ainvoke(prompt)
+            raw = (
+                await structured_invoke(prompt, StructuredDecision)
+                if callable(structured_invoke)
+                else await model.ainvoke(prompt)
+            )
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
@@ -348,7 +436,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "tool_registry": registry,
                 "step_count": state.get("step_count", 0) + 1,
             }
-        except (json.JSONDecodeError, ValidationError, GatewayToolError) as exc:
+        except (json.JSONDecodeError, ValidationError) as exc:
             logger.warning("Structured model decision unavailable; deterministic fallback: %s", type(exc).__name__)
         except Exception as exc:
             logger.warning("LLM adapter failed; deterministic fallback: %s", type(exc).__name__)
@@ -384,11 +472,17 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
         }
         return {
             "missing_slots": missing,
-            **({
-                "response_type": "options",
-                "response": "Mình cần bạn chọn rõ " + ", ".join(labels.get(value, value) for value in missing) + ".",
-                "data": {"missing_slots": missing},
-            } if missing else {}),
+            **(
+                {
+                    "response_type": "options",
+                    "response": "Mình cần bạn chọn rõ "
+                    + ", ".join(labels.get(value, value) for value in missing)
+                    + ".",
+                    "data": {"missing_slots": missing},
+                }
+                if missing
+                else {}
+            ),
             "step_count": state.get("step_count", 0) + 1,
         }
 
@@ -424,146 +518,58 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
 
     async def execute_node(state: AgentState) -> AgentState:
         actor = state.get("user_id")
-        conversation = state.get("conversation_id")
-        if not actor or not conversation or not state.get("correlation_id"):
+        workflow_id = state.get("conversation_id")
+        correlation_id = state.get("correlation_id")
+        if not actor or not workflow_id or not correlation_id:
             return {"error": "IDENTITY_REQUIRED", "tool_calls": []}
-        results: list[dict[str, Any]] = []
-        calls: list[dict[str, Any]] = []
-        original_intent = str(state.get("intent", "general_food_support"))
-        working_slots = dict(state.get("extracted_slots", {}))
-        working_context = FoodWorkflowContext.model_validate(state.get("workflow_context", {})).model_dump(exclude_none=True)
-        pending_tools = list(state.get("selected_tools", []))
-        recommendation_fallback = False
-        max_steps = get_settings().max_graph_steps
-        max_tool_calls = get_settings().max_tool_calls
-
-        async def invoke(name: str, args: dict[str, Any]) -> dict[str, Any]:
-            if len(calls) >= max_tool_calls:
-                raise ToolCallLimitError()
-            signature = inspect.signature(gateway.execute)
-            if len(signature.parameters) >= 5:
-                return await gateway.execute(name, args, str(actor), str(state["correlation_id"]), str(conversation))
-            return await gateway.execute(name, args, str(actor), str(state["correlation_id"]))
-
-        try:
-            while pending_tools and len(calls) < max_tool_calls and len(calls) < max_steps:
-                tool = pending_tools.pop(0)
-                name = str(tool["name"])
-                result = await invoke(name, dict(tool.get("arguments", {})))
-                calls.append({"name": name, "status": "succeeded"})
-                results.append({"name": name, "data": result})
-                if (
-                    name == "search_food"
-                    and original_intent == "search_food"
-                    and tool.get("arguments", {}).get("keyword")
-                    and tool.get("arguments", {}).get("district")
-                    and not (result.get("items", []) if isinstance(result, dict) else [])
-                ):
-                    # The requested dish is unavailable in the selected area.
-                    # Make one bounded, read-only recommendation query instead
-                    # of claiming that the entire nearby catalog is empty.
-                    fallback_args: dict[str, Any] = {"district": tool["arguments"]["district"]}
-                    if tool["arguments"].get("max_price") is not None:
-                        fallback_args["max_price"] = tool["arguments"]["max_price"]
-                    pending_tools.append({"name": "search_food", "arguments": fallback_args})
-                    recommendation_fallback = True
-                if name == "list_food_delivery_addresses" and original_intent in {"quote_delivery", "preview_order", "place_order"}:
-                    addresses = result.get("addresses", result.get("items", [])) if isinstance(result, dict) else []
-                    working_context["address_candidates"] = addresses if isinstance(addresses, list) else []
-                    working_slots = resolve_references(working_slots, working_context)
-                    missing = _missing_slots(original_intent, working_slots)
-                    if working_slots.get("ambiguous_addresses"):
-                        missing = ["address_id"]
-                    if missing:
-                        return {
-                            "tool_calls": calls,
-                            "tool_results": results,
-                            "extracted_slots": working_slots,
-                            "missing_slots": missing,
-                            "ambiguity": "address" if working_slots.get("ambiguous_addresses") else "",
-                        }
-                    pending_tools = select_tools(original_intent, working_slots, state.get("tool_registry", []))
-                elif name == "view_menu_item" and state.get("intent") == "add_to_cart":
-                    item = result if isinstance(result, dict) else {}
-                    selected, missing = resolve_options(
-                        list(item.get("option_groups", [])),
-                        list(state.get("extracted_slots", {}).get("option_preferences", [])),
-                    )
-                    if missing:
-                        # Card selection uses the first explicitly displayed
-                        # option as its default.  This keeps direct +/- food
-                        # controls usable while the selected default remains
-                        # visible in the authoritative cart and confirmation.
-                        selected_groups = {value["group_id"] for value in selected}
-                        defaults = [
-                            {"group_id": str(group["id"]), "option_id": str(group["options"][0]["id"])}
-                            for group in item.get("option_groups", [])
-                            if group.get("required") and str(group.get("id")) not in selected_groups and group.get("options")
-                        ]
-                        if len(defaults) != len([group for group in item.get("option_groups", []) if group.get("required") and str(group.get("id")) not in selected_groups]):
-                            return {"tool_calls": calls, "tool_results": results, "missing_options": missing}
-                        selected.extend(defaults)
-                    slots = state.get("extracted_slots", {})
-                    if not slots.get("cart_id"):
-                        created = await invoke("create_cart", {"restaurant_id": slots.get("restaurant_id")})
-                        calls.append({"name": "create_cart", "status": "succeeded"})
-                        results.append({"name": "create_cart", "data": created})
-                        cart_id = created.get("id") if isinstance(created, dict) else None
-                    else:
-                        cart_id = slots.get("cart_id")
-                    if cart_id:
-                        added = await invoke(
-                            "add_to_cart",
-                            {
-                                "cart_id": cart_id,
-                                "menu_item_id": slots.get("menu_item_id"),
-                                "quantity": slots.get("quantity", 1),
-                                "selected_options": selected,
-                            },
-                        )
-                        calls.append({"name": "add_to_cart", "status": "succeeded"})
-                        results.append({"name": "add_to_cart", "data": added})
-                elif name == "search_food" and state.get("intent") == "add_to_cart":
-                    items = result.get("items", []) if isinstance(result, dict) else []
-                    if len(items) == 1 and isinstance(items[0], dict):
-                        item = items[0].get("item", {})
-                        item_id = item.get("id")
-                        required_options = [group for group in item.get("option_groups", []) if group.get("required")]
-                        if required_options:
-                            return {"tool_calls": calls, "tool_results": results, "missing_options": [str(group.get("name", "option")) for group in required_options]}
-                        slots = state.get("extracted_slots", {})
-                        cart_id = slots.get("cart_id")
-                        if cart_id and item_id:
-                            added = await invoke("add_to_cart", {"cart_id": cart_id, "menu_item_id": item_id, "quantity": slots.get("quantity", 1), "selected_options": []})
-                            calls.append({"name": "add_to_cart", "status": "succeeded"})
-                            results.append({"name": "add_to_cart", "data": added})
-                elif name == "create_cart" and state.get("intent") == "add_to_cart":
-                    slots = state.get("extracted_slots", {})
-                    created_id = result.get("id") if isinstance(result, dict) else None
-                    if created_id and slots.get("menu_item_id"):
-                        added = await invoke(
-                            "add_to_cart",
-                            {
-                                "cart_id": created_id,
-                                "menu_item_id": slots["menu_item_id"],
-                                "quantity": slots.get("quantity", 1),
-                                "selected_options": slots.get("selected_options", []),
-                            },
-                        )
-                        calls.append({"name": "add_to_cart", "status": "succeeded"})
-                        results.append({"name": "add_to_cart", "data": added})
-        except ToolCallLimitError:
-            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
-        except GatewayToolError as exc:
-            calls.append({"name": name, "status": "failed", "code": exc.code})
-            return {"error": exc.code, "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
-        if pending_tools:
-            return {"error": "TOOL_CALL_LIMIT", "tool_calls": calls, "tool_results": results, "extracted_slots": working_slots}
+        selected = list(state.get("selected_tools", []))
+        intent = str(state.get("intent", "general_food_support"))
+        slots = dict(state.get("extracted_slots", {}))
+        if (
+            intent == "add_to_cart"
+            and selected
+            and selected[0].get("name") == "view_menu_item"
+        ):
+            if not slots.get("cart_id"):
+                selected.append({"name": "create_cart", "arguments": {}})
+            selected.append(
+                {
+                    "name": "add_to_cart",
+                    "arguments": {
+                        "quantity": slots.get("quantity", 1),
+                        "option_preferences": slots.get(
+                            "option_preferences", []
+                        ),
+                    },
+                }
+            )
+        follow_up = {
+            "quote_delivery": "quote_delivery",
+            "preview_order": "preview_order",
+            "place_order": "prepare_food_order_confirmation",
+        }.get(intent)
+        if (
+            follow_up
+            and selected
+            and selected[0].get("name")
+            == "list_food_delivery_addresses"
+        ):
+            selected.append({"name": follow_up, "arguments": {}})
+        if len(selected) > get_settings().max_tool_calls:
+            return {"error": "TOOL_CALL_LIMIT", "tool_calls": []}
+        proposals = [
+            _proposal(
+                tool,
+                workflow_id=str(workflow_id),
+                correlation_id=str(correlation_id),
+                call_index=index,
+            )
+            for index, tool in enumerate(selected)
+        ]
         return {
-            "tool_calls": calls,
-            "tool_results": results,
-            "extracted_slots": working_slots,
-            "recommendation_fallback": recommendation_fallback,
+            "tool_calls": proposals,
+            "tool_results": [],
+            "extracted_slots": dict(state.get("extracted_slots", {})),
         }
 
     async def evaluate_node(state: AgentState) -> AgentState:
@@ -584,6 +590,27 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "response_type": state.get("response_type", "options"),
                 "response": state.get("response", "Bạn bổ sung giúp mình thông tin còn thiếu nhé."),
                 "data": state.get("data", {}),
+            }
+        proposals = state.get("tool_calls", [])
+        if proposals:
+            slots = state.get("extracted_slots", {})
+            semantic_updates = {
+                key: slots[key]
+                for key in (
+                    "dish_query",
+                    "district",
+                    "max_price",
+                    "address_query",
+                    "quantity",
+                    "option_preferences",
+                )
+                if slots.get(key) is not None
+            }
+            return {
+                "response_type": "text",
+                "response": "Gateway will validate and execute the proposed next step.",
+                "data": {"proposals": proposals},
+                "state_updates": semantic_updates,
             }
         results = state.get("tool_results", [])
         intent = str(state.get("intent", "general_food_support"))
@@ -611,9 +638,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 updates.update({"restaurant_candidates": restaurants, "menu_item_candidates": items})
             if name == "view_menu" and isinstance(data, dict) and isinstance(data.get("items"), list):
                 updates["menu_item_candidates"] = [
-                    _candidate_snapshot(item)
-                    for item in data["items"]
-                    if isinstance(item, dict) and item.get("id")
+                    _candidate_snapshot(item) for item in data["items"] if isinstance(item, dict) and item.get("id")
                 ]
                 if data.get("restaurant", {}).get("id"):
                     updates["restaurant_id"] = data["restaurant"]["id"]
@@ -646,9 +671,7 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
                 "pending_confirmation": confirmation,
                 "state_updates": updates,
             }
-        if intent == "search_food" and results and not any(
-            result.get("data", {}).get("items") for result in results
-        ):
+        if intent == "search_food" and results and not any(result.get("data", {}).get("items") for result in results):
             return {
                 "response_type": "text",
                 "response": "Mình chưa tìm thấy món phù hợp.",
@@ -678,7 +701,9 @@ def build_graph(tool_client: GatewayToolClient | None = None, llm: LLMAdapter | 
             "search_food": "Mình tìm được các món phù hợp.",
         }
         if intent == "search_food" and state.get("recommendation_fallback"):
-            messages["search_food"] = "Mình chưa thấy đúng món bạn yêu cầu ở khu vực này. Đây là các món và quán gần đó để bạn chọn thay thế."
+            messages["search_food"] = (
+                "Mình chưa thấy đúng món bạn yêu cầu ở khu vực này. Đây là các món và quán gần đó để bạn chọn thay thế."
+            )
         return {
             "response_type": "options" if results else "text",
             "response": messages.get(intent, "Mình có thể giúp bạn tìm món, xem menu và tạo giỏ."),

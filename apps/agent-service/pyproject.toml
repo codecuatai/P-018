@@ -17,8 +17,10 @@ dependencies = [
   "langchain-google-genai==4.3.2",
   "google-genai==2.17.0",
   "langgraph>=0.2.0",
+  "langgraph-checkpoint-postgres>=2.0.0",
+  "langfuse==4.14.4",
+  "psycopg[binary,pool]>=3.2.0",
   "httpx>=0.28.0",
-  "langfuse>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,3 +32,4 @@ include = ["src", "src.*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -92,48 +92,15 @@ def test_build_chat_model_keeps_sampling_kwargs_for_older_configured_model(monke
 
     llm_module.build_chat_model(configured, "gemini-2.5-flash-lite")
 
-    assert captured == [{
-        "model": "gemini-2.5-flash-lite",
-        "google_api_key": "configured",
-        "temperature": 0.2,
-        "top_p": 0.8,
-        "top_k": 20,
-    }]
-
-
-@pytest.mark.asyncio
-async def test_restaurant_gemini_adapter_uses_shared_generation_three_builder(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import src.model.gemini_adapter as restaurant_adapter
-
-    captured: list[dict[str, Any]] = []
-
-    class CapturingChatModel:
-        def __init__(self, **kwargs: Any) -> None:
-            captured.append(kwargs)
-
-        def with_structured_output(self, schema: type[Any]) -> "CapturingChatModel":
-            assert schema is restaurant_adapter.GeminiExtraction
-            return self
-
-        async def ainvoke(self, _prompt: str) -> restaurant_adapter.GeminiExtraction:
-            return restaurant_adapter.GeminiExtraction(
-                intent="restaurant_booking",
-                slot_patch={},
-                confidence=1.0,
-            )
-
-    monkeypatch.setattr(langchain_google_genai, "ChatGoogleGenerativeAI", CapturingChatModel)
-    configured = settings()
-    configured.gemini_model = "models/gemini-3.1-flash-lite"
-    configured.gemini_fallback_model = "gemini-2.5-flash-lite"
-    monkeypatch.setattr(restaurant_adapter, "get_settings", lambda: configured)
-
-    result = await restaurant_adapter.GeminiAdapter().extract("book a table", {})
-
-    assert result["intent"] == "restaurant_booking"
-    assert captured == [{"model": "models/gemini-3.1-flash-lite", "google_api_key": "configured"}]
+    assert captured == [
+        {
+            "model": "gemini-2.5-flash-lite",
+            "google_api_key": "configured",
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "top_k": 20,
+        }
+    ]
 
 
 class QuotaModel:

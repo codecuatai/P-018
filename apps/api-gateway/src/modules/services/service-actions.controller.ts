@@ -1,11 +1,31 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsArray, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
+
+enum FoodOrderStatus {
+  PAYMENT_PENDING = 'PAYMENT_PENDING',
+  PAYMENT_FAILED = 'PAYMENT_FAILED',
+  RESTAURANT_CONFIRMING = 'RESTAURANT_CONFIRMING',
+  RESTAURANT_REJECTED = 'RESTAURANT_REJECTED',
+  RESTAURANT_ACCEPTED = 'RESTAURANT_ACCEPTED',
+  PREPARING = 'PREPARING',
+  READY_FOR_PICKUP = 'READY_FOR_PICKUP',
+  DRIVER_ASSIGNED = 'DRIVER_ASSIGNED',
+  PICKED_UP = 'PICKED_UP',
+  DELIVERING = 'DELIVERING',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED'
+}
+
+class UpdateFoodStatusDto {
+  @IsEnum(FoodOrderStatus)
+  status!: string;
+}
 
 class FoodCartDto {
   @IsString()
@@ -106,14 +126,26 @@ class HealthcareHoldDto {
 
 function correlation(request: CorrelatedRequest): string { return request.correlationId ?? 'cor_unknown'; }
 function requiredIdempotency(value: string | undefined): string {
-  if (!value?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc cho thao tác ghi.', retryable: false });
-  return value.trim();
+  const normalized = value?.trim();
+  if (!normalized) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc cho thao tác ghi.', retryable: false });
+  if (normalized.length < 8 || normalized.length > 128) {
+    throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_INVALID', detail: 'Idempotency-Key phải có từ 8 đến 128 ký tự.', retryable: false });
+  }
+  return normalized;
 }
 
 @Controller('api/v1/service-actions')
 @UseGuards(AuthGuard)
 export class ServiceActionsController {
   constructor(private readonly food: FoodClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient) {}
+
+
+  @Patch('food/orders/:orderId/status')
+  async updateFoodStatus(@Param('orderId') orderId: string, @Body() body: UpdateFoodStatusDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const key = requiredIdempotency(idempotencyKey);
+    const updated = await this.food.updateOrderStatus(request.user.sub, correlation(request), orderId, { status: body.status }, key);
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
 
   @Get('food/restaurants/:restaurantId')
   async foodRestaurant(@Param('restaurantId') restaurantId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
@@ -136,28 +168,28 @@ export class ServiceActionsController {
   }
 
   @Post('food/cart/:cartId/items')
-  async addCartItem(@Param('cartId') cartId: string, @Body() body: FoodCartItemDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.addCartItem(request.user.sub, correlation(request), cartId, body as unknown as JsonObject), meta: { request_id: request.correlationId } };
+  async addCartItem(@Param('cartId') cartId: string, @Body() body: FoodCartItemDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.food.addCartItem(request.user.sub, correlation(request), cartId, body as unknown as JsonObject, requiredIdempotency(key)), meta: { request_id: request.correlationId } };
   }
 
   @Patch('food/cart/:cartId/items/:itemId')
-  async updateCartItem(@Param('cartId') cartId: string, @Param('itemId') itemId: string, @Body() body: FoodCartItemUpdateDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.updateCartItem(request.user.sub, correlation(request), cartId, itemId, body as unknown as JsonObject), meta: { request_id: request.correlationId } };
+  async updateCartItem(@Param('cartId') cartId: string, @Param('itemId') itemId: string, @Body() body: FoodCartItemUpdateDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.food.updateCartItem(request.user.sub, correlation(request), cartId, itemId, body as unknown as JsonObject, requiredIdempotency(key)), meta: { request_id: request.correlationId } };
   }
 
   @Delete('food/cart/:cartId/items/:itemId')
-  async removeCartItem(@Param('cartId') cartId: string, @Param('itemId') itemId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.removeCartItem(request.user.sub, correlation(request), cartId, itemId), meta: { request_id: request.correlationId } };
+  async removeCartItem(@Param('cartId') cartId: string, @Param('itemId') itemId: string, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.food.removeCartItem(request.user.sub, correlation(request), cartId, itemId, requiredIdempotency(key)), meta: { request_id: request.correlationId } };
   }
 
   @Post('food/cart/:cartId/voucher')
-  async applyVoucher(@Param('cartId') cartId: string, @Body() body: VoucherDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.applyVoucher(request.user.sub, correlation(request), cartId, body.code), meta: { request_id: request.correlationId } };
+  async applyVoucher(@Param('cartId') cartId: string, @Body() body: VoucherDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.food.applyVoucher(request.user.sub, correlation(request), cartId, body.code, requiredIdempotency(key)), meta: { request_id: request.correlationId } };
   }
 
   @Delete('food/cart/:cartId/voucher')
-  async removeVoucher(@Param('cartId') cartId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.removeVoucher(request.user.sub, correlation(request), cartId), meta: { request_id: request.correlationId } };
+  async removeVoucher(@Param('cartId') cartId: string, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    return { data: await this.food.removeVoucher(request.user.sub, correlation(request), cartId, requiredIdempotency(key)), meta: { request_id: request.correlationId } };
   }
 
   @Get('restaurant/:restaurantId')

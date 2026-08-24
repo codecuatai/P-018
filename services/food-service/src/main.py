@@ -44,7 +44,11 @@ async def lifespan(app: FastAPI):
                 logger.exception("Food workflow iteration failed")
             await asyncio.sleep(settings.workflow_poll_interval_ms / 1000)
 
-    worker = asyncio.create_task(workflow_worker()) if settings.persistence == "postgres" and settings.workflow_worker_enabled else None
+    worker = (
+        asyncio.create_task(workflow_worker())
+        if settings.persistence == "postgres" and settings.workflow_worker_enabled
+        else None
+    )
     yield
     if worker is not None:
         worker.cancel()
@@ -57,9 +61,40 @@ app = FastAPI(title="X-One Food Service", version="1.0.0", lifespan=lifespan)
 
 
 def food_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-    status_by_code = {"NOT_FOUND": 404, "FORBIDDEN": 403, "UNAUTHORIZED": 401, "INVALID_OPTION": 422, "CROSS_RESTAURANT_CART": 409, "VOUCHER_INVALID": 422, "VOUCHER_EXPIRED": 422, "VOUCHER_NOT_APPLICABLE": 422, "VOUCHER_USAGE_LIMIT": 409, "DELIVERY_OUT_OF_RANGE": 422, "CART_EMPTY": 422, "CART_CHANGED": 409, "PAYLOAD_MISMATCH": 409, "IDEMPOTENCY_KEY_REUSED": 409, "INVALID_ORDER_TRANSITION": 409, "WORKFLOW_CONFLICT": 409, "ORDER_NOT_CANCELLABLE": 409, "MENU_ITEM_UNAVAILABLE": 422, "RESTAURANT_CLOSED": 422, "UPSTREAM_UNAVAILABLE": 503}
+    status_by_code = {
+        "NOT_FOUND": 404,
+        "FORBIDDEN": 403,
+        "UNAUTHORIZED": 401,
+        "INVALID_OPTION": 422,
+        "CROSS_RESTAURANT_CART": 409,
+        "VOUCHER_INVALID": 422,
+        "VOUCHER_EXPIRED": 422,
+        "VOUCHER_NOT_APPLICABLE": 422,
+        "VOUCHER_USAGE_LIMIT": 409,
+        "DELIVERY_OUT_OF_RANGE": 422,
+        "CART_EMPTY": 422,
+        "CART_CHANGED": 409,
+        "PAYLOAD_MISMATCH": 409,
+        "IDEMPOTENCY_KEY_REUSED": 409,
+        "INVALID_ORDER_TRANSITION": 409,
+        "WORKFLOW_CONFLICT": 409,
+        "ORDER_NOT_CANCELLABLE": 409,
+        "MENU_ITEM_UNAVAILABLE": 422,
+        "RESTAURANT_CLOSED": 422,
+        "UPSTREAM_UNAVAILABLE": 503,
+    }
     response_status = status_by_code.get(exc.code, 400)
-    return JSONResponse(status_code=response_status, content={"type": f"https://x-one.local/problems/{exc.code.lower()}", "title": "Food domain error", "status": response_status, "code": exc.code, "detail": exc.detail, "retryable": response_status >= 500})
+    return JSONResponse(
+        status_code=response_status,
+        content={
+            "type": f"https://x-one.local/problems/{exc.code.lower()}",
+            "title": "Food domain error",
+            "status": response_status,
+            "code": exc.code,
+            "detail": exc.detail,
+            "retryable": response_status >= 500,
+        },
+    )
 
 
 app.add_exception_handler(DomainError, food_domain_error)

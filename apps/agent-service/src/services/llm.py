@@ -83,7 +83,9 @@ def provider_error_category(error: BaseException) -> ProviderErrorCategory:
     text = str(error).casefold()
     name = type(error).__name__.casefold()
 
-    if status == 429 or any(marker in text for marker in ("quota", "rate limit", "resource exhausted", "resource_exhausted")):
+    if status == 429 or any(
+        marker in text for marker in ("quota", "rate limit", "resource exhausted", "resource_exhausted")
+    ):
         return "quota_or_rate_limit"
     if status in {401, 403} or any(
         marker in text
@@ -99,9 +101,21 @@ def provider_error_category(error: BaseException) -> ProviderErrorCategory:
         )
     ):
         return "authentication_or_permission"
-    if status in {408, 504} or isinstance(error, (TimeoutError, ConnectionError, OSError)) or any(
-        marker in name or marker in text
-        for marker in ("timeout", "timed out", "deadline exceeded", "connecterror", "connection error", "network", "socket")
+    if (
+        status in {408, 504}
+        or isinstance(error, TimeoutError | ConnectionError | OSError)
+        or any(
+            marker in name or marker in text
+            for marker in (
+                "timeout",
+                "timed out",
+                "deadline exceeded",
+                "connecterror",
+                "connection error",
+                "network",
+                "socket",
+            )
+        )
     ):
         return "timeout_or_network"
     if status is not None and 500 <= status <= 599:
@@ -111,7 +125,15 @@ def provider_error_category(error: BaseException) -> ProviderErrorCategory:
 
     schema_marker = any(
         marker in text
-        for marker in ("response_schema", "response schema", "json_schema", "json schema", "structured output", "structured_output", "response_mime_type")
+        for marker in (
+            "response_schema",
+            "response schema",
+            "json_schema",
+            "json schema",
+            "structured output",
+            "structured_output",
+            "response_mime_type",
+        )
     )
     capability_marker = any(
         marker in text
@@ -134,7 +156,7 @@ def is_structured_schema_capability_error(error: BaseException) -> bool:
     category = provider_error_category(error)
     if category == "authentication_or_permission":
         return False
-    return isinstance(error, (NotImplementedError, TypeError, ValueError)) or category == "schema_or_capability"
+    return isinstance(error, NotImplementedError | TypeError | ValueError) or category == "schema_or_capability"
 
 
 def should_attempt_fallback_model(error: BaseException) -> bool:
@@ -247,7 +269,9 @@ class GeminiAdapter:
                 if should_attempt_fallback_model(error) and index < len(model_names) - 1:
                     fallback_attempted = True
                     continue
-                _record_model_call(settings, model_name, "failed", "raw", error=error, fallback_model_attempted=fallback_attempted)
+                _record_model_call(
+                    settings, model_name, "failed", "raw", error=error, fallback_model_attempted=fallback_attempted
+                )
                 raise
         raise RuntimeError("Gemini model invocation did not produce a result.")
 
@@ -281,13 +305,17 @@ class GeminiAdapter:
                         structured_output_fallback_used=True,
                     )
                     return result
-                _record_model_call(settings, model_name, "success", "structured", fallback_model_attempted=fallback_attempted)
+                _record_model_call(
+                    settings, model_name, "success", "structured", fallback_model_attempted=fallback_attempted
+                )
                 return result
             except Exception as error:
                 if should_attempt_fallback_model(error) and index < len(model_names) - 1:
                     fallback_attempted = True
                     continue
-                _record_model_call(settings, model_name, "failed", invocation, error=error, fallback_model_attempted=fallback_attempted)
+                _record_model_call(
+                    settings, model_name, "failed", invocation, error=error, fallback_model_attempted=fallback_attempted
+                )
                 raise
         raise RuntimeError("Gemini structured invocation did not produce a result.")
 

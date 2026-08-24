@@ -167,6 +167,37 @@ paths:
           $ref: "#/components/responses/Problem"
         "422":
           $ref: "#/components/responses/Problem"
+  /v1/bookings/{booking_id}:status:
+    patch:
+      operationId: updateRideBookingStatus
+      parameters:
+        - $ref: "#/components/parameters/BookingId"
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBookingStatusRequest"
+      responses:
+        "200":
+          description: Booking status updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingEnvelope"
+        "400":
+          $ref: "#/components/responses/Problem"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "409":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
   /v1/bookings/{booking_id}:
     get:
       operationId: getRideBooking
@@ -460,6 +491,14 @@ components:
       properties:
         confirmation:
           $ref: "#/components/schemas/Confirmation"
+    UpdateBookingStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [AWAITING_CONFIRMATION, SEARCHING_DRIVER, DRIVER_ASSIGNED, DRIVER_TO_PICKUP, DRIVER_ARRIVED, IN_PROGRESS, ARRIVED_DESTINATION, COMPLETED, NO_DRIVER, FAILED, PAYMENT_FAILED, CANCELLED]
     Quote:
       type: object
       additionalProperties: false

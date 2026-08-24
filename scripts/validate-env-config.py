@@ -35,6 +35,9 @@ REQUIRED_ROOT_KEYS = {
     "FOOD_SERVICE_URL",
     "GEMINI_API_KEY",
     "GEMINI_MODEL",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_BASE_URL",
 }
 VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)")
 

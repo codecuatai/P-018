@@ -59,10 +59,11 @@ truth for schemas, risk, owner, idempotency, confirmation, and aliases.
 Legacy Food names such as `view_menu`, `view_menu_item`, `create_cart`,
 `add_to_cart`, `preview_order`, and `track_food_order` are compatibility inputs
 mapped to the canonical definitions. They are not additional authorities and
-must not be added to new model prompts. The current parity test verifies that
-each JSON-inventory entry exists at runtime with matching metadata. Runtime-only
-compatibility entries are not yet rejected; a bidirectional registry-parity
-check is required before V2 can be described as the complete runtime registry.
+must not be added to new model prompts. The parity gate verifies both directions:
+every JSON entry has matching runtime metadata, and every runtime-only entry
+must be in `TOOL_REGISTRY_COMPATIBILITY` with owner `gateway-tools` and
+expiry `2026-12-31`. An unlisted runtime name or an expired allowlist fails
+the release test.
 
 ## Ride evidence audit
 

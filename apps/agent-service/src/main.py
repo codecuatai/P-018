@@ -1,18 +1,25 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 from src.config import get_settings
+from src.infrastructure.database import close_pool, persistence_ready
+from src.observability import initialize_telemetry, shutdown_telemetry
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
+    initialize_telemetry(settings)
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    yield
-    print("Shutting down...")
+    try:
+        yield
+    finally:
+        print("Shutting down...")
+        await shutdown_telemetry()
+        await close_pool()
 
 
 app = FastAPI(
@@ -41,7 +48,22 @@ async def liveness() -> dict:
 
 @app.get("/health/ready")
 async def readiness() -> dict:
-    return {"data": {"status": "ready", "service": "agent-service", "llm_configured": bool(settings.gemini_api_key)}}
+    if not await persistence_ready():
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "AGENT_PERSISTENCE_UNAVAILABLE",
+                "detail": "Required Agent persistence is unavailable.",
+            },
+        )
+    return {
+        "data": {
+            "status": "ready",
+            "service": "agent-service",
+            "llm_configured": bool(settings.gemini_api_key),
+            "persistence_mode": settings.agent_persistence_mode,
+        }
+    }
 
 
 @app.get("/health", include_in_schema=False)

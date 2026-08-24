@@ -215,4 +215,6 @@ export interface SessionActivity {
   status: string;
   detail: string;
   timestamp: string;
+  amount?: number;    // Số tiền thật từ backend (VND)
+  currency?: string;  // Loại tiền (mặc định VND)
 }

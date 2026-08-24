@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 from src.agents.assistant.contracts import (
     AuthoritativeFact,
+    AuthorityRequirement,
     CapabilitySnapshot,
     ConfirmationGate,
     CoreAInput,
@@ -33,6 +34,7 @@ from src.agents.assistant.contracts import (
 )
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot
 from src.agents.assistant.planning.replan import replan
+from src.agents.assistant.planning.requirements import usable_fact
 from src.agents.assistant_graph import plan_core_a
 
 
@@ -46,7 +48,7 @@ def input_for(
     snapshot: CapabilitySnapshot | None = None,
 ) -> CoreAInput:
     return CoreAInput(
-        semantic_turn=SemanticTurn(intents=list(intents), language='vi'),
+        semantic_turn=SemanticTurn(intents=list(intents), language="vi"),
         planner_context=context or PlannerContext(),
         capability_snapshot=snapshot or default_capability_snapshot(),
     )
@@ -68,12 +70,31 @@ def fact(
     )
 
 
+def test_fresh_authority_requires_an_explicit_future_expiry() -> None:
+    now = datetime.now(UTC)
+    requirement = AuthorityRequirement(
+        fact="availability_version",
+        must_be_unexpired=True,
+    )
+    missing_expiry = fact("availability_version", "availability-1", version=1)
+    expired = missing_expiry.model_copy(
+        update={"expires_at": now - timedelta(seconds=1)}
+    )
+    fresh = missing_expiry.model_copy(
+        update={"expires_at": now + timedelta(seconds=30)}
+    )
+
+    assert usable_fact([missing_expiry], requirement, now=now) is None
+    assert usable_fact([expired], requirement, now=now) is None
+    assert usable_fact([fresh], requirement, now=now) == fresh
+
+
 def test_contract_rejects_fabricated_authoritative_food_field() -> None:
     with pytest.raises(ValidationError):
         FoodSemanticSlots.model_validate(
             {
-                'query': {'value': 'phở', 'source': 'USER_EXPLICIT'},
-                'restaurant_id': {'value': 'model-id', 'source': 'USER_EXPLICIT'},
+                "query": {"value": "phở", "source": "USER_EXPLICIT"},
+                "restaurant_id": {"value": "model-id", "source": "USER_EXPLICIT"},
             }
         )
 
@@ -84,9 +105,9 @@ def test_contract_rejects_slot_schema_for_wrong_domain() -> None:
             intent_ref=0,
             domain=Domain.RIDE,
             operation=Operation.CREATE,
-            goal='Đặt xe',
-            normalized_request='Đặt xe',
-            slots=FoodSemanticSlots(query=slot('phở')),
+            goal="Đặt xe",
+            normalized_request="Đặt xe",
+            slots=FoodSemanticSlots(query=slot("phở")),
         )
 
 
@@ -95,16 +116,65 @@ def test_food_discovery_selects_observed_read_capability() -> None:
         intent_ref=0,
         domain=Domain.FOOD,
         operation=Operation.DISCOVER,
-        goal='Tìm phở',
-        normalized_request='Tìm phở dưới 100 nghìn',
-        slots=FoodSemanticSlots(query=slot('phở'), max_price=slot(100000)),
+        goal="Tìm phở",
+        normalized_request="Tìm phở dưới 100 nghìn",
+        slots=FoodSemanticSlots(query=slot("phở"), max_price=slot(100000)),
     )
     decision = CoreAPlanner().plan(input_for(intent))
+    assert decision.contract_version == "core-a.v1"
+    assert decision.capability_catalog_version == "observed.v1"
     step = decision.tasks[0].steps[0]
-    assert step.capability == 'search_food'
+    assert step.capability == "search_food"
     assert step.step_kind == StepKind.CAPABILITY
     assert step.risk_ceiling == RiskLevel.READ
     assert step.confirmation_gate == ConfirmationGate.NONE
+
+
+def test_food_selection_advances_to_add_to_cart_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.CREATE,
+        goal="Chọn món đầu tiên",
+        normalized_request="Chọn món đầu tiên",
+        slots=FoodSemanticSlots(query=slot("phở"), selection=slot("first")),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "add_to_cart"
+    assert step.risk_ceiling == RiskLevel.REVERSIBLE_WRITE
+
+
+def test_restaurant_selection_advances_to_hold_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RESTAURANT,
+        operation=Operation.CREATE,
+        goal="Chọn nhà hàng đầu tiên",
+        normalized_request="Chọn nhà hàng đầu tiên",
+        slots=RestaurantSemanticSlots(
+            location=slot("Hà Nội"),
+            party_size=slot(2),
+            start_at=slot("2099-01-01T19:00:00+07:00"),
+            selection=slot("first"),
+        ),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "restaurant.create_hold"
+    assert step.confirmation_gate == ConfirmationGate.SERVICE_DETAILS
+
+
+def test_healthcare_selection_advances_to_hold_slot_capability() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.HEALTHCARE,
+        operation=Operation.CREATE,
+        goal="Chọn lịch đầu tiên",
+        normalized_request="Chọn lịch đầu tiên",
+        slots=HealthcareSemanticSlots(department=slot("Thần kinh"), selection=slot("first")),
+    )
+    step = CoreAPlanner().plan(input_for(intent)).tasks[0].steps[0]
+    assert step.capability == "healthcare.hold_slot"
+    assert step.confirmation_gate == ConfirmationGate.SERVICE_DETAILS
 
 
 def test_legacy_facade_exposes_typed_core_a_seam() -> None:
@@ -112,11 +182,11 @@ def test_legacy_facade_exposes_typed_core_a_seam() -> None:
         intent_ref=0,
         domain=Domain.FOOD,
         operation=Operation.DISCOVER,
-        goal='Tìm phở',
-        normalized_request='Tìm phở',
-        slots=FoodSemanticSlots(query=slot('phở')),
+        goal="Tìm phở",
+        normalized_request="Tìm phở",
+        slots=FoodSemanticSlots(query=slot("phở")),
     )
-    assert plan_core_a(input_for(intent)).tasks[0].steps[0].capability == 'search_food'
+    assert plan_core_a(input_for(intent)).tasks[0].steps[0].capability == "search_food"
 
 
 def test_food_missing_address_stops_before_preview() -> None:
@@ -124,20 +194,20 @@ def test_food_missing_address_stops_before_preview() -> None:
         intent_ref=0,
         domain=Domain.FOOD,
         operation=Operation.CREATE,
-        goal='Đặt phở',
-        normalized_request='Đặt phở',
-        slots=FoodSemanticSlots(query=slot('phở')),
+        goal="Đặt phở",
+        normalized_request="Đặt phở",
+        slots=FoodSemanticSlots(query=slot("phở")),
     )
     context = PlannerContext(
         tasks=[
             PlannerTaskContext(
                 task_ref=0,
                 domain=Domain.FOOD,
-                phase='IN_PROGRESS',
+                phase="IN_PROGRESS",
                 facts=[
-                    fact('restaurant_id', 'res-1'),
-                    fact('menu_item_id', 'item-1'),
-                    fact('cart_id', 'cart-1', version=2),
+                    fact("restaurant_id", "res-1"),
+                    fact("menu_item_id", "item-1"),
+                    fact("cart_id", "cart-1", version=2),
                 ],
             )
         ]
@@ -145,8 +215,8 @@ def test_food_missing_address_stops_before_preview() -> None:
     decision = CoreAPlanner().plan(input_for(intent, context=context))
     assert decision.tasks[0].steps[0].step_kind == StepKind.WAIT_FOR_CONFIRMATION
     assert decision.tasks[0].steps[0].capability is None
-    assert decision.tasks[0].steps[0].purpose == 'Hỏi người dùng muốn giao tới địa chỉ nào'
-    assert all(step.capability != 'preview_order' for step in decision.tasks[0].steps)
+    assert decision.tasks[0].steps[0].purpose == "Hỏi người dùng muốn giao tới địa chỉ nào"
+    assert all(step.capability != "preview_order" for step in decision.tasks[0].steps)
 
 
 def test_food_uses_saved_addresses_only_after_explicit_address_reference() -> None:
@@ -154,25 +224,29 @@ def test_food_uses_saved_addresses_only_after_explicit_address_reference() -> No
         intent_ref=0,
         domain=Domain.FOOD,
         operation=Operation.CREATE,
-        goal='Đặt phở giao về nhà',
-        normalized_request='Đặt phở giao về nhà',
-        slots=FoodSemanticSlots(query=slot('phở'), address_reference=slot('home')),
+        goal="Đặt phở giao về nhà",
+        normalized_request="Đặt phở giao về nhà",
+        slots=FoodSemanticSlots(query=slot("phở"), address_reference=slot("home")),
     )
-    context = PlannerContext(tasks=[PlannerTaskContext(
-        task_ref=0,
-        domain=Domain.FOOD,
-        phase='IN_PROGRESS',
-        facts=[
-            fact('restaurant_id', 'res-1'),
-            fact('menu_item_id', 'item-1'),
-            fact('cart_id', 'cart-1', version=2),
-        ],
-    )])
+    context = PlannerContext(
+        tasks=[
+            PlannerTaskContext(
+                task_ref=0,
+                domain=Domain.FOOD,
+                phase="IN_PROGRESS",
+                facts=[
+                    fact("restaurant_id", "res-1"),
+                    fact("menu_item_id", "item-1"),
+                    fact("cart_id", "cart-1", version=2),
+                ],
+            )
+        ]
+    )
 
     step = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0].steps[0]
 
     assert step.step_kind == StepKind.CAPABILITY
-    assert step.capability == 'list_food_delivery_addresses'
+    assert step.capability == "list_food_delivery_addresses"
 
 
 def test_restaurant_final_commit_requires_fresh_authoritative_hold() -> None:
@@ -180,12 +254,12 @@ def test_restaurant_final_commit_requires_fresh_authoritative_hold() -> None:
         intent_ref=0,
         domain=Domain.RESTAURANT,
         operation=Operation.CREATE,
-        goal='Đặt bàn',
-        normalized_request='Đặt bàn tại Hoàn Kiếm cho 4 người lúc 19 giờ',
+        goal="Đặt bàn",
+        normalized_request="Đặt bàn tại Hoàn Kiếm cho 4 người lúc 19 giờ",
         slots=RestaurantSemanticSlots(
-            location=slot('Hoàn Kiếm'),
+            location=slot("Hoàn Kiếm"),
             party_size=slot(4),
-            start_at=slot('2026-08-13T19:00:00+07:00'),
+            start_at=slot("2026-08-13T19:00:00+07:00"),
         ),
     )
     context = PlannerContext(
@@ -193,17 +267,17 @@ def test_restaurant_final_commit_requires_fresh_authoritative_hold() -> None:
             PlannerTaskContext(
                 task_ref=0,
                 domain=Domain.RESTAURANT,
-                phase='IN_PROGRESS',
+                phase="IN_PROGRESS",
                 facts=[
-                    fact('restaurant_id', 'restaurant-1'),
-                    fact('availability_version', 'availability-1', fresh=True),
-                    fact('hold_id', 'hold-1', version=1, fresh=True),
+                    fact("restaurant_id", "restaurant-1"),
+                    fact("availability_version", "availability-1", fresh=True),
+                    fact("hold_id", "hold-1", version=1, fresh=True),
                 ],
             )
         ]
     )
     step = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0].steps[0]
-    assert step.capability == 'restaurant.create_reservation'
+    assert step.capability == "restaurant.create_reservation"
     assert step.risk_ceiling == RiskLevel.FINANCIAL_OR_FINAL
     assert step.confirmation_gate == ConfirmationGate.FINAL_COMMIT
 
@@ -213,22 +287,26 @@ def test_confirmation_waiting_step_has_no_dispatchable_capability() -> None:
         intent_ref=0,
         domain=Domain.FOOD,
         operation=Operation.CREATE,
-        goal='Đặt phở',
-        normalized_request='Đặt phở',
-        slots=FoodSemanticSlots(query=slot('phở')),
+        goal="Đặt phở",
+        normalized_request="Đặt phở",
+        slots=FoodSemanticSlots(query=slot("phở")),
     )
-    context = PlannerContext(tasks=[PlannerTaskContext(
-        task_ref=0,
-        domain=Domain.FOOD,
-        phase='AWAITING_CONFIRMATION',
-        facts=[
-            fact('restaurant_id', 'res-1'),
-            fact('menu_item_id', 'item-1'),
-            fact('cart_id', 'cart-1', version=1),
-            fact('address_id', 'address-1'),
-            fact('preview_id', 'preview-1', version=1, fresh=True),
-        ],
-    )])
+    context = PlannerContext(
+        tasks=[
+            PlannerTaskContext(
+                task_ref=0,
+                domain=Domain.FOOD,
+                phase="AWAITING_CONFIRMATION",
+                facts=[
+                    fact("restaurant_id", "res-1"),
+                    fact("menu_item_id", "item-1"),
+                    fact("cart_id", "cart-1", version=1),
+                    fact("address_id", "address-1"),
+                    fact("preview_id", "preview-1", version=1, fresh=True),
+                ],
+            )
+        ]
+    )
     step = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0].steps[0]
     assert step.step_kind == StepKind.WAIT_FOR_CONFIRMATION
     assert step.capability is None
@@ -240,27 +318,27 @@ def test_healthcare_to_ride_uses_dependency_not_model_destination() -> None:
         intent_ref=0,
         domain=Domain.HEALTHCARE,
         operation=Operation.CREATE,
-        goal='Đặt lịch khám',
-        normalized_request='Khám thần kinh sáng mai',
+        goal="Đặt lịch khám",
+        normalized_request="Khám thần kinh sáng mai",
         slots=HealthcareSemanticSlots(
-            department=slot('thần kinh'),
-            time_preference=slot('tomorrow_morning'),
+            department=slot("thần kinh"),
+            time_preference=slot("tomorrow_morning"),
         ),
     )
     ride = SemanticIntent(
         intent_ref=1,
         domain=Domain.RIDE,
         operation=Operation.CREATE,
-        goal='Đi xe tới bệnh viện',
-        normalized_request='Đi từ VinUni tới đó',
+        goal="Đi xe tới bệnh viện",
+        normalized_request="Đi từ VinUni tới đó",
         slots=RideSemanticSlots(
-            pickup_address=slot('VinUni'),
-            dropoff_address=slot('bệnh viện đó'),
+            pickup_address=slot("VinUni"),
+            dropoff_address=slot("bệnh viện đó"),
         ),
         references=[
             SemanticReference(
-                expression='đó',
-                reference_type='previous_result',
+                expression="đó",
+                reference_type="previous_result",
                 target_task_ref=0,
                 target_domain=Domain.HEALTHCARE,
                 resolution=ReferenceResolution.RESOLVED,
@@ -271,7 +349,7 @@ def test_healthcare_to_ride_uses_dependency_not_model_destination() -> None:
     planned_ride = decision.tasks[1]
     assert planned_ride.depends_on == [0]
     assert planned_ride.semantic_slots.dropoff_address is None
-    assert 'dropoff_address' not in planned_ride.missing_information
+    assert "dropoff_address" not in planned_ride.missing_information
 
 
 def test_capability_present_only_as_skeleton_is_not_selected() -> None:
@@ -279,8 +357,8 @@ def test_capability_present_only_as_skeleton_is_not_selected() -> None:
         intent_ref=0,
         domain=Domain.RESTAURANT,
         operation=Operation.UPDATE,
-        goal='Đổi lịch',
-        normalized_request='Đổi lịch đặt bàn',
+        goal="Đổi lịch",
+        normalized_request="Đổi lịch đặt bàn",
         slots=RestaurantSemanticSlots(),
     )
     context = PlannerContext(
@@ -288,15 +366,15 @@ def test_capability_present_only_as_skeleton_is_not_selected() -> None:
             PlannerTaskContext(
                 task_ref=0,
                 domain=Domain.RESTAURANT,
-                phase='IN_PROGRESS',
-                facts=[fact('reservation_id', 'reservation-1', version=2)],
+                phase="IN_PROGRESS",
+                facts=[fact("reservation_id", "reservation-1", version=2)],
             )
         ]
     )
     task = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0]
     assert task.steps == []
     assert task.disposition == TaskDisposition.WAITING
-    assert task.missing_information == ['capability:restaurant.update_reservation']
+    assert task.missing_information == ["capability:restaurant.update_reservation"]
 
 
 def test_stale_quote_invalidates_confirmation_and_requotes() -> None:
@@ -304,11 +382,11 @@ def test_stale_quote_invalidates_confirmation_and_requotes() -> None:
         intent_ref=0,
         domain=Domain.RIDE,
         operation=Operation.CREATE,
-        goal='Đặt xe',
-        normalized_request='Đi từ VinUni đến Hồ Gươm',
+        goal="Đặt xe",
+        normalized_request="Đi từ VinUni đến Hồ Gươm",
         slots=RideSemanticSlots(
-            pickup_address=slot('VinUni'),
-            dropoff_address=slot('Hồ Gươm'),
+            pickup_address=slot("VinUni"),
+            dropoff_address=slot("Hồ Gươm"),
         ),
     )
     original = CoreAPlanner().plan(input_for(intent))
@@ -317,9 +395,9 @@ def test_stale_quote_invalidates_confirmation_and_requotes() -> None:
         StepOutcome(
             task_ref=0,
             step_ref=0,
-            capability='ride.booking.prepare',
+            capability="ride.booking.prepare",
             outcome=StepOutcomeKind.REJECTED,
-            error_code='QUOTE_EXPIRED',
+            error_code="QUOTE_EXPIRED",
         ),
         PlannerContext(),
         default_capability_snapshot(),
@@ -333,11 +411,11 @@ def test_unknown_payment_requires_reconciliation_not_new_payment() -> None:
         intent_ref=0,
         domain=Domain.RIDE,
         operation=Operation.CREATE,
-        goal='Đặt xe',
-        normalized_request='Đặt xe',
+        goal="Đặt xe",
+        normalized_request="Đặt xe",
         slots=RideSemanticSlots(
-            pickup_address=slot('VinUni'),
-            dropoff_address=slot('Hồ Gươm'),
+            pickup_address=slot("VinUni"),
+            dropoff_address=slot("Hồ Gươm"),
         ),
     )
     original = CoreAPlanner().plan(input_for(intent))
@@ -346,7 +424,7 @@ def test_unknown_payment_requires_reconciliation_not_new_payment() -> None:
         StepOutcome(
             task_ref=0,
             step_ref=0,
-            capability='ride.booking.prepare',
+            capability="ride.booking.prepare",
             outcome=StepOutcomeKind.UNKNOWN,
         ),
         PlannerContext(),
@@ -360,21 +438,21 @@ def test_failed_dependency_blocks_ride_but_not_independent_food() -> None:
         intent_ref=0,
         domain=Domain.RESTAURANT,
         operation=Operation.DISCOVER,
-        goal='Tìm nhà hàng',
-        normalized_request='Tìm nhà hàng ở Hoàn Kiếm',
-        slots=RestaurantSemanticSlots(location=slot('Hoàn Kiếm')),
+        goal="Tìm nhà hàng",
+        normalized_request="Tìm nhà hàng ở Hoàn Kiếm",
+        slots=RestaurantSemanticSlots(location=slot("Hoàn Kiếm")),
     )
     ride = SemanticIntent(
         intent_ref=1,
         domain=Domain.RIDE,
         operation=Operation.CREATE,
-        goal='Đi tới đó',
-        normalized_request='Đi từ VinUni tới đó',
-        slots=RideSemanticSlots(pickup_address=slot('VinUni')),
+        goal="Đi tới đó",
+        normalized_request="Đi từ VinUni tới đó",
+        slots=RideSemanticSlots(pickup_address=slot("VinUni")),
         references=[
             SemanticReference(
-                expression='đó',
-                reference_type='previous_result',
+                expression="đó",
+                reference_type="previous_result",
                 target_task_ref=0,
                 target_domain=Domain.RESTAURANT,
                 resolution=ReferenceResolution.RESOLVED,
@@ -385,9 +463,9 @@ def test_failed_dependency_blocks_ride_but_not_independent_food() -> None:
         intent_ref=2,
         domain=Domain.FOOD,
         operation=Operation.DISCOVER,
-        goal='Tìm phở',
-        normalized_request='Tìm phở',
-        slots=FoodSemanticSlots(query=slot('phở')),
+        goal="Tìm phở",
+        normalized_request="Tìm phở",
+        slots=FoodSemanticSlots(query=slot("phở")),
     )
     original = CoreAPlanner().plan(input_for(restaurant, ride, food))
     changed = replan(
@@ -395,9 +473,9 @@ def test_failed_dependency_blocks_ride_but_not_independent_food() -> None:
         StepOutcome(
             task_ref=0,
             step_ref=0,
-            capability='restaurant.search',
+            capability="restaurant.search",
             outcome=StepOutcomeKind.REJECTED,
-            error_code='NOT_FOUND',
+            error_code="NOT_FOUND",
         ),
         PlannerContext(),
         default_capability_snapshot(),

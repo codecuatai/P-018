@@ -35,7 +35,13 @@ describe('Ride conversation lifecycle and revisions', () => {
     const secondQuote = quote('quote_2', 'Trường Đại học Công nghệ - ĐHQGHN / UET, Hà Nội');
     let turn = 0;
     const agent = {
-      interpret: jest.fn(async (_message: string, workflowId: string) => {
+      interpret: jest.fn(async (
+        _message: string,
+        workflowId: string,
+        _context: unknown,
+        _callContext: unknown,
+        _actorId: string,
+      ) => {
         turn += 1;
         const dropoff = turn === 1 ? firstQuote.dropoff_address : secondQuote.dropoff_address;
         return {
@@ -103,6 +109,7 @@ describe('Ride conversation lifecycle and revisions', () => {
     expect(second.quote?.id).not.toBe(first.quote?.id);
     expect(ride.createQuote).toHaveBeenCalledTimes(2);
     expect(ride.createQuote.mock.calls[0][1]).not.toBe(ride.createQuote.mock.calls[1][1]);
+    expect(agent.interpret.mock.calls[0][4]).toBe('actor-1');
   });
 
   it('keeps the Gateway workflow in tracking after payment while Ride searches', async () => {

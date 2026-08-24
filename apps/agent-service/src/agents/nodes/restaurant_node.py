@@ -3,14 +3,42 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
 from src.models.schemas import ToolRequest
 
 TZ = timezone(timedelta(hours=7))
+
+
+class RestaurantSlotPatch(BaseModel):
+    """User-expressible Restaurant values; authoritative fields are impossible."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    location: str | None = Field(default=None, min_length=1, max_length=300)
+    cuisine_type: str | None = Field(default=None, min_length=1, max_length=200)
+    budget_range: str | None = Field(default=None, min_length=1, max_length=120)
+    party_size: int | None = Field(default=None, ge=1, le=20)
+    local_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    local_time: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    duration_minutes: int | None = Field(default=None, ge=15, le=480)
+    seating_type: str | None = Field(default=None, min_length=1, max_length=80)
+    special_requests: str | None = Field(default=None, min_length=1, max_length=500)
+    selection: Literal["first", "second", "third", "fourth", "fifth"] | None = None
+
+
+class RestaurantExtraction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["ride", "food", "restaurant", "healthcare", "general_support"]
+    slot_patch: RestaurantSlotPatch = Field(default_factory=RestaurantSlotPatch)
+    confidence: float = Field(default=0.0, ge=0, le=1)
 
 
 def _fold(value: str) -> str:
@@ -58,11 +86,7 @@ def _matches_restaurant_name(name: str, query: str) -> bool:
     if folded_name in folded_query:
         return True
     stop_words = {"va", "và", "and", "nha", "hang"}
-    name_tokens = {
-        token
-        for token in re.findall(r"[a-z0-9]+", folded_name)
-        if token not in stop_words
-    }
+    name_tokens = {token for token in re.findall(r"[a-z0-9]+", folded_name) if token not in stop_words}
     query_tokens = set(re.findall(r"[a-z0-9]+", folded_query))
     return bool(name_tokens) and name_tokens.issubset(query_tokens)
 
@@ -77,7 +101,9 @@ def _extract_slots(query: str, previous: dict[str, Any], now: datetime) -> dict[
         slots["party_size"] = int(folded.strip())
 
     parsed_time = _parse_time(query)
-    if parsed_time and ("h" in folded or "gio" in folded or ":" in folded or any(word in folded for word in ("sang", "toi", "am", "pm"))):
+    if parsed_time and (
+        "h" in folded or "gio" in folded or ":" in folded or any(word in folded for word in ("sang", "toi", "am", "pm"))
+    ):
         slots["local_time"] = parsed_time
 
     parsed_date = _parse_date(query, now)
@@ -125,34 +151,13 @@ def _is_restaurant_message(query: str, previous_intent: str | None) -> bool:
     return any(term in folded for term in ("dat ban", "nha hang", "ban an", "ban co the di"))
 
 
-def _is_confirmation(query: str) -> bool:
-    folded = _fold(query).strip()
-    return any(term in folded for term in ("co", "dong y", "x ac nhan", "xac nhan", "dat di", "giu ban", "tiep tuc", "ok", "duoc"))
-
-
-def _tool_result_response(result: dict[str, Any], tool_name: str | None = None) -> str:
-    if result.get("error") == "PAST_START":
-        return "Khung giờ bạn chọn đã qua. Bạn chọn một giờ khác trong tương lai giúp mình nhé."
-    if result.get("error") == "CAPACITY_UNAVAILABLE":
-        return "Khung giờ này không còn bàn phù hợp. Bạn muốn thử giờ khác không?"
+def _tool_outcome(result: dict[str, Any], tool_name: str | None = None) -> str:
     if result.get("error"):
-        return "Mình chưa lấy được dữ liệu nhà hàng lúc này. Bạn thử lại giúp mình nhé."
+        return result["error"]
     data = result.get("data", result)
-    if tool_name == "restaurant.create_hold" and isinstance(data, dict):
-        return "Mình đã giữ bàn trong 10 phút. Bạn xác nhận lần cuối để mình tạo đặt bàn nhé."
-    if tool_name == "restaurant.create_reservation" and isinstance(data, dict):
-        return f"Đặt bàn thành công. Mã đặt bàn của bạn là {data.get('reservation_code', data.get('id', 'đã tạo'))}."
-    if isinstance(data, dict) and "items" in data:
-        items = data.get("items", [])
-        if not items:
-            return "Mình chưa tìm thấy nhà hàng phù hợp ở khu vực đó. Bạn muốn thử khu vực khác không?"
-        names = [str(item.get("name", "nhà hàng")) for item in items[:5]]
-        return "Mình tìm thấy: " + ", ".join(names) + ". Bạn muốn kiểm tra bàn ở nhà hàng nào?"
-    if isinstance(data, dict) and data.get("available") is True:
-        return "Khung giờ này đang có bàn phù hợp. Bạn có muốn mình giữ bàn để tiếp tục đặt không?"
-    if isinstance(data, dict) and data.get("available") is False:
-        return "Khung giờ này hiện không còn bàn phù hợp. Bạn muốn thử giờ khác không?"
-    return "Mình đã nhận được kết quả từ nhà hàng. Bạn muốn tiếp tục bước nào?"
+    if isinstance(data, dict) and "items" in data and not data.get("items"):
+        return "EMPTY_RESULT"
+    return "SUCCEEDED"
 
 
 async def classify_and_extract(state: AgentState) -> dict[str, Any]:
@@ -161,37 +166,92 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     context = state.get("context", {})
     if context.get("tool_result"):
         if context.get("tool_result_only"):
-            return {"status": "COMPLETED", "response": _tool_result_response(context["tool_result"], context.get("tool_name")), "intent": previous_intent or "restaurant_booking", "slots": context.get("slots", {})}
+            return {
+                "status": "COMPLETED",
+                "outcome": _tool_outcome(context["tool_result"], context.get("tool_name")),
+                "intent": previous_intent or "restaurant_booking",
+                "slots": context.get("slots", {}),
+            }
         context_slots = dict(context.get("slots", {}))
         context_slots["_tool_result"] = context.get("tool_result")
         tool_name = context.get("tool_name")
         slots = _extract_slots(query, context_slots, datetime.now(TZ))
         if tool_name == "restaurant.search" and slots.get("restaurant_id"):
-            tool_request = validate_tool_request(ToolRequest(
-                tool_name="restaurant.check_availability", risk_level="READ",
-                arguments={key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots},
-                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-            ))
-            return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
-        elif tool_name == "restaurant.check_availability" and _is_confirmation(query):
-            tool_request = validate_tool_request(ToolRequest(
-                tool_name="restaurant.create_hold", risk_level="REVERSIBLE_WRITE",
-                arguments={key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots},
-                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-                idempotency_key=f"hold-{state['workflow_id']}-{state.get('turn_id', '1')}",
-            ))
-            return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
-        elif tool_name == "restaurant.create_hold" and _is_confirmation(query):
+            tool_request = validate_tool_request(
+                ToolRequest(
+                    tool_name="restaurant.check_availability",
+                    risk_level="READ",
+                    arguments={
+                        key: slots[key]
+                        for key in ("restaurant_id", "party_size", "start_at", "duration_minutes")
+                        if key in slots
+                    },
+                    workflow_id=state["workflow_id"],
+                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
+                )
+            )
+            return {
+                "intent": "restaurant_booking",
+                "slots": slots,
+                "tool_request": tool_request.model_dump(),
+                "status": "TOOL_REQUEST_READY",
+            }
+        elif tool_name == "restaurant.check_availability" and is_explicit_confirmation(query):
+            tool_request = validate_tool_request(
+                ToolRequest(
+                    tool_name="restaurant.create_hold",
+                    risk_level="REVERSIBLE_WRITE",
+                    arguments={
+                        key: slots[key]
+                        for key in ("restaurant_id", "party_size", "start_at", "duration_minutes")
+                        if key in slots
+                    },
+                    workflow_id=state["workflow_id"],
+                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
+                    idempotency_key=f"hold-{state['workflow_id']}-{state.get('turn_id', '1')}",
+                )
+            )
+            return {
+                "intent": "restaurant_booking",
+                "slots": slots,
+                "tool_request": tool_request.model_dump(),
+                "status": "TOOL_REQUEST_READY",
+            }
+        elif tool_name == "restaurant.create_hold" and is_explicit_confirmation(query):
             hold_result = context.get("tool_result", {})
-            hold_data = hold_result.get("data") if isinstance(hold_result, dict) and isinstance(hold_result.get("data"), dict) else hold_result
-            tool_request = validate_tool_request(ToolRequest(
-                tool_name="restaurant.create_reservation", risk_level="FINANCIAL_OR_FINAL",
-                arguments={"restaurant_id": slots.get("restaurant_id"), "party_size": slots.get("party_size"), "start_at": slots.get("start_at"), "duration_minutes": slots.get("duration_minutes", 120), "hold_id": hold_data.get("id")},
-                workflow_id=state["workflow_id"], tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-                idempotency_key=f"reservation-{state['workflow_id']}-{state.get('turn_id', '1')}",
-            ))
-            return {"intent": "restaurant_booking", "slots": slots, "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
-        return {"status": "COMPLETED", "response": _tool_result_response(context["tool_result"], tool_name), "intent": previous_intent or "restaurant_booking", "slots": context.get("slots", {})}
+            hold_data = (
+                hold_result.get("data")
+                if isinstance(hold_result, dict) and isinstance(hold_result.get("data"), dict)
+                else hold_result
+            )
+            tool_request = validate_tool_request(
+                ToolRequest(
+                    tool_name="restaurant.create_reservation",
+                    risk_level="FINANCIAL_OR_FINAL",
+                    arguments={
+                        "restaurant_id": slots.get("restaurant_id"),
+                        "party_size": slots.get("party_size"),
+                        "start_at": slots.get("start_at"),
+                        "duration_minutes": slots.get("duration_minutes", 120),
+                        "hold_id": hold_data.get("id"),
+                    },
+                    workflow_id=state["workflow_id"],
+                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
+                    idempotency_key=f"reservation-{state['workflow_id']}-{state.get('turn_id', '1')}",
+                )
+            )
+            return {
+                "intent": "restaurant_booking",
+                "slots": slots,
+                "tool_request": tool_request.model_dump(),
+                "status": "TOOL_REQUEST_READY",
+            }
+        return {
+            "status": "COMPLETED",
+            "outcome": _tool_outcome(context["tool_result"], tool_name),
+            "intent": previous_intent or "restaurant_booking",
+            "slots": context.get("slots", {}),
+        }
 
     folded = _fold(query)
     if any(term in folded for term in ("suc khoe", "bac si", "kham benh", "y te")):
@@ -203,12 +263,32 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     slots = _extract_slots(query, context.get("slots", state.get("slots", {})), now)
     try:
         from src.config import get_settings
+
         if get_settings().agent_model_mode == "gemini":
-            from src.model.gemini_adapter import GeminiAdapter
-            model_result = await GeminiAdapter().extract(query, context)
-            if model_result.get("intent") in {"healthcare_request", "general_chat"}:
-                return {"intent": model_result["intent"], "slots": slots, "status": "COMPLETED", "unsupported": model_result["intent"] == "healthcare_request"}
-            slots.update({key: value for key, value in model_result.get("slot_patch", {}).items() if value not in (None, "")})
+            from src.services.llm import GeminiAdapter
+
+            safe_previous = RestaurantSlotPatch.model_validate(
+                {key: value for key, value in slots.items() if key in RestaurantSlotPatch.model_fields}
+            )
+            prompt = (
+                "Phân loại intent và trích xuất duy nhất các trường semantic theo schema. "
+                "Không tạo ID, giá, currency, version, availability, status, confirmation hay tool result.\n"
+                f"Semantic context: {safe_previous.model_dump(exclude_none=True)}\n"
+                f"Tin nhắn: {query}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantExtraction)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            model_result = raw if isinstance(raw, RestaurantExtraction) else RestaurantExtraction.model_validate(raw)
+            if model_result.intent in {"healthcare", "general_support"}:
+                return {
+                    "intent": "healthcare_request" if model_result.intent == "healthcare" else "general_chat",
+                    "slots": slots,
+                    "status": "COMPLETED",
+                    "unsupported": model_result.intent == "healthcare",
+                }
+            if model_result.intent == "restaurant":
+                slots.update(model_result.slot_patch.model_dump(exclude_none=True))
     except Exception:
         # Deterministic extraction remains a safe availability-only fallback.
         pass
@@ -221,30 +301,67 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
 
     if slots.get("restaurant_id"):
         tool_name = "restaurant.check_availability"
-        arguments = {key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots}
+        arguments = {
+            key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots
+        }
     else:
         tool_name = "restaurant.search"
-        arguments = {key: slots[key] for key in ("location", "party_size", "start_at", "duration_minutes") if key in slots}
+        arguments = {
+            key: slots[key] for key in ("location", "party_size", "start_at", "duration_minutes") if key in slots
+        }
         arguments.setdefault("limit", 10)
-    tool_request = validate_tool_request(ToolRequest(
-        tool_name=tool_name,
-        risk_level="READ",
-        arguments=arguments,
-        workflow_id=state["workflow_id"],
-        tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-    ))
-    return {"intent": "restaurant_booking", "slots": slots, "missing_slots": [], "tool_request": tool_request.model_dump(), "status": "TOOL_REQUEST_READY"}
+    tool_request = validate_tool_request(
+        ToolRequest(
+            tool_name=tool_name,
+            risk_level="READ",
+            arguments=arguments,
+            workflow_id=state["workflow_id"],
+            tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
+        )
+    )
+    return {
+        "intent": "restaurant_booking",
+        "slots": slots,
+        "missing_slots": [],
+        "tool_request": tool_request.model_dump(),
+        "status": "TOOL_REQUEST_READY",
+    }
 
 
 def compose_restaurant_response(state: AgentState) -> dict[str, Any]:
+    phase = "PLANNING"
+    outcome = "UNKNOWN"
+    missing = []
+    error_code = None
+
     if state.get("unsupported"):
-        return {"response": "Hiện tại mình chưa hỗ trợ đặt lịch kiểm tra sức khỏe. Mình có thể hỗ trợ tìm nhà hàng và đặt bàn."}
-    if state.get("status") == "NEEDS_INPUT":
-        labels = {"party_size": "số người", "local_date": "ngày", "local_time": "giờ", "location": "khu vực hoặc thành phố"}
-        first_missing = state.get("missing_slots", ["thông tin cần thiết"])[0]
-        return {"response": f"Bạn cho mình biết {labels.get(first_missing, first_missing)} nhé."}
-    if state.get("status") == "TOOL_REQUEST_READY":
-        return {"response": "Mình sẽ tìm nhà hàng và kiểm tra lựa chọn phù hợp cho bạn.", "tool_request": state.get("tool_request")}
-    if state.get("intent") == "general_chat":
-        return {"response": "Mình là trợ lý đặt bàn nhà hàng. Bạn có thể nói ví dụ: ‘Đặt bàn cho 2 người ngày mai lúc 19h ở Hà Nội’."}
-    return {"response": state.get("response", "Mình đã xử lý yêu cầu của bạn.")}
+        phase = "FAILED"
+        error_code = "UNSUPPORTED_DOMAIN"
+    elif state.get("status") == "NEEDS_INPUT":
+        phase = "NEEDS_INFO"
+        missing = state.get("missing_slots", [])
+    elif state.get("status") == "TOOL_REQUEST_READY":
+        phase = "IN_PROGRESS"
+    elif state.get("intent") == "general_chat":
+        phase = "FAILED"
+        error_code = "GENERAL_CHAT"
+    else:
+        phase = "COMPLETED"
+        outcome = state.get("outcome", "SUCCEEDED")
+
+    envelope = {
+        "phase": phase,
+        "outcome": outcome,
+        "missing_information": missing,
+        "error_code": error_code,
+        "actions": [],
+        "authoritative_cards": [],
+    }
+    response = "Mình đã cập nhật thông tin theo kết quả xác thực."
+    if phase == "NEEDS_INFO":
+        response = "Mình cần thêm thông tin cần thiết để tiếp tục xử lý yêu cầu của bạn."
+    elif phase == "IN_PROGRESS":
+        response = "Mình đang kiểm tra lựa chọn phù hợp dựa trên dữ liệu hiện có."
+    elif phase == "FAILED":
+        response = "Yêu cầu chưa thể hoàn tất an toàn với thông tin hiện tại."
+    return {"response": response, "grounding_envelope": envelope, "tool_request": state.get("tool_request")}

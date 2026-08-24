@@ -54,6 +54,10 @@ class CancelBookingRequest(StrictModel):
     confirmation: ConfirmationRequest
 
 
+class UpdateBookingStatusRequest(StrictModel):
+    status: str
+
+
 class QuoteOut(StrictModel):
     id: str
     actor_id: str

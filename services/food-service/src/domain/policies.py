@@ -39,7 +39,11 @@ ALLOWED_TRANSITIONS: dict[FoodOrderStatus, set[FoodOrderStatus]] = {
     FoodOrderStatus.AWAITING_CONFIRMATION: {FoodOrderStatus.PAYMENT_PENDING, FoodOrderStatus.CANCELLED},
     FoodOrderStatus.PAYMENT_PENDING: {FoodOrderStatus.PAID, FoodOrderStatus.PAYMENT_FAILED},
     FoodOrderStatus.PAID: {FoodOrderStatus.RESTAURANT_CONFIRMING},
-    FoodOrderStatus.RESTAURANT_CONFIRMING: {FoodOrderStatus.RESTAURANT_ACCEPTED, FoodOrderStatus.RESTAURANT_REJECTED, FoodOrderStatus.CANCELLED},
+    FoodOrderStatus.RESTAURANT_CONFIRMING: {
+        FoodOrderStatus.RESTAURANT_ACCEPTED,
+        FoodOrderStatus.RESTAURANT_REJECTED,
+        FoodOrderStatus.CANCELLED,
+    },
     FoodOrderStatus.RESTAURANT_ACCEPTED: {FoodOrderStatus.PREPARING, FoodOrderStatus.CANCELLED},
     FoodOrderStatus.PREPARING: {FoodOrderStatus.READY_FOR_PICKUP},
     FoodOrderStatus.READY_FOR_PICKUP: {FoodOrderStatus.DRIVER_ASSIGNED},
@@ -76,7 +80,9 @@ def quote_delivery(
     address: dict,
     config: DeliveryConfig,
 ) -> dict:
-    if any(restaurant.get(field) is None for field in ("latitude", "longitude")) or any(address.get(field) is None for field in ("latitude", "longitude")):
+    if any(restaurant.get(field) is None for field in ("latitude", "longitude")) or any(
+        address.get(field) is None for field in ("latitude", "longitude")
+    ):
         return {
             "distance_km": None,
             "distance_source": "address_only",
@@ -122,7 +128,12 @@ def quote_multi_pickup_delivery(
             "distance_km": None,
             "distance_source": "address_only",
             "fee": {"amount": config.minimum_fee, "currency": "VND"},
-            "breakdown": {"base_fee": config.base_fee, "distance_fee": 0, "long_distance_surcharge": 0, "pickup_stop_count": len(restaurants)},
+            "breakdown": {
+                "base_fee": config.base_fee,
+                "distance_fee": 0,
+                "long_distance_surcharge": 0,
+                "pickup_stop_count": len(restaurants),
+            },
             "eta_minutes": config.eta_minutes + (len(restaurants) - 1) * 5,
         }
 
@@ -140,7 +151,12 @@ def quote_multi_pickup_delivery(
         "pickup_stops": restaurants,
         "distance_km": round(distance, 2),
         "fee": {"amount": fee, "currency": "VND"},
-        "breakdown": {"base_fee": config.base_fee, "distance_fee": distance_fee, "long_distance_surcharge": surcharge, "pickup_stop_count": len(restaurants)},
+        "breakdown": {
+            "base_fee": config.base_fee,
+            "distance_fee": distance_fee,
+            "long_distance_surcharge": surcharge,
+            "pickup_stop_count": len(restaurants),
+        },
         "eta_minutes": config.eta_minutes + round(distance * 2) + (len(restaurants) - 1) * 5,
     }
 
@@ -178,7 +194,12 @@ def cancellation_policy(status: FoodOrderStatus) -> dict:
         FoodOrderStatus.RESTAURANT_CONFIRMING,
         FoodOrderStatus.RESTAURANT_ACCEPTED,
     }
-    return {"allowed": allowed, "refund_amount_percent": 100 if allowed else 0, "reason": "Trước khi món bắt đầu được chuẩn bị" if allowed else "Đơn đã bắt đầu chuẩn bị hoặc giao", "policy_version": "food-cancel-v1"}
+    return {
+        "allowed": allowed,
+        "refund_amount_percent": 100 if allowed else 0,
+        "reason": "Trước khi món bắt đầu được chuẩn bị" if allowed else "Đơn đã bắt đầu chuẩn bị hoặc giao",
+        "policy_version": "food-cancel-v1",
+    }
 
 
 def choose_restaurant_acceptance(random_value: Callable[[], float], rejection_rate: float) -> bool:

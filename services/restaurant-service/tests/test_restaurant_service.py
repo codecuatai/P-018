@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 
 os.environ.setdefault("SERVICE_PORT", "8102")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./.test-restaurant.db")
@@ -86,7 +87,14 @@ def test_check_availability():
     payload = {"party_size": 4, "start_at": "2030-08-10T19:00:00+07:00", "duration_minutes": 120}
     response = client.post("/v1/restaurants/rest-001/availability", json=payload, headers=AUTH)
     assert response.status_code == 200
-    assert response.json()["data"]["available"] is True
+    data = response.json()["data"]
+    assert data["available"] is True
+    assert data["snapshot_id"].startswith("availability:rest-001:")
+    assert data["resource_version"].startswith("availability-v1:")
+    assert data["snapshot_id"] != data["resource_version"]
+    observed_at = datetime.fromisoformat(data["observed_at"])
+    expires_at = datetime.fromisoformat(data["expires_at"])
+    assert (expires_at - observed_at).total_seconds() == 30
 
 
 def test_check_availability_reports_past_start():

@@ -27,8 +27,8 @@ export function useAuth() {
       try {
         const token = await loadStoredToken();
         if (!token) {
-          // Bỏ qua đăng nhập, tự động vào app
-          setCurrentUser({ sub: 'sandbox-123', email: 'demo@x-one.local', role: 'user' });
+          // Không có token — yêu cầu đăng nhập thật
+          setCurrentUser(null);
           setAuthLoading(false);
           return;
         }
@@ -36,8 +36,8 @@ export function useAuth() {
         setCurrentUser(user);
       } catch {
         await clearAuthSession();
-        // Fallback tự động vào app nếu lỗi kết nối backend
-        setCurrentUser({ sub: 'sandbox-123', email: 'demo@x-one.local', role: 'user' });
+        // Token hết hạn hoặc backend không khả dụng — yêu cầu đăng nhập lại
+        setCurrentUser(null);
       } finally {
         setAuthLoading(false);
       }

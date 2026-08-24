@@ -665,8 +665,8 @@ def _point(latitude: float | None, longitude: float | None) -> dict[str, float] 
 
 def _valid_point(latitude: Any, longitude: Any) -> bool:
     return (
-        isinstance(latitude, (int, float))
-        and isinstance(longitude, (int, float))
+        isinstance(latitude, int | float)
+        and isinstance(longitude, int | float)
         and math.isfinite(float(latitude))
         and math.isfinite(float(longitude))
         and -90 <= float(latitude) <= 90
@@ -755,7 +755,11 @@ def tracking_elapsed(booking: Booking, now: datetime) -> float:
     scaled = elapsed * get_settings().tracking_time_scale
     driver = booking.driver or {}
     speed_factor = driver.get("tracking_speed_factor", 1.0)
-    if not isinstance(speed_factor, (int, float)) or not math.isfinite(float(speed_factor)) or not 0 < float(speed_factor) <= 1:
+    if (
+        not isinstance(speed_factor, int | float)
+        or not math.isfinite(float(speed_factor))
+        or not 0 < float(speed_factor) <= 1
+    ):
         speed_factor = 1.0
     return scaled * float(speed_factor)
 
@@ -830,6 +834,6 @@ def _json_safe(value: Any) -> Any:
         return value.value
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_json_safe(item) for item in value]
     return value

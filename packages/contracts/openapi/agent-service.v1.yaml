@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: X-One Agent Service
-  version: 1.2.0
+  version: 1.4.0
   description: >
     Internal interpretation boundary. The Agent returns safe language and a
     validated typed tool request. It never calls a domain service, database,
@@ -35,6 +35,7 @@ paths:
   /api/v1/chat:
     post:
       operationId: interpretFoodChatTurn
+      description: Returns versioned semantic Food proposals only. The Agent has no execution client; Gateway validates proposals, resolves trusted IDs, and dispatches typed domain clients.
       security: [{internalServiceToken: []}]
       parameters: [{ $ref: '#/components/parameters/ActorId' }]
       requestBody:
@@ -84,6 +85,7 @@ paths:
     post:
       operationId: interpretRideChatTurn
       security: [{internalServiceToken: []}]
+      parameters: [{ $ref: '#/components/parameters/ActorId' }]
       requestBody:
         required: true
         content:
@@ -105,7 +107,7 @@ components:
     ActorId:
       in: header
       name: X-Actor-Id
-      required: false
+      required: true
       schema: {type: string, minLength: 1, maxLength: 128}
   schemas:
     AssistantChatRequest:
@@ -138,15 +140,148 @@ components:
             plan: {type: object, additionalProperties: true}
             semantic_turn: {type: object, additionalProperties: true}
             planning_decision:
-              type: object
+              $ref: '#/components/schemas/CoreAPlanningDecision'
               description: >-
                 Typed Core A plan. Each step is a bounded capability request or
                 an explicit confirmation wait; the Agent never executes it.
-              additionalProperties: true
+                The plan may also carry a bounded interaction_mode and
+                discarded_task_refs for conversation-only context retirement.
+                Discarding conversation work is not domain-resource
+                cancellation.
             decision_source: {enum: [model, deterministic]}
             model: {type: string}
             fallback_model: {type: string}
         meta: {$ref: '#/components/schemas/ResponseMeta'}
+    CoreAPlanningDecision:
+      type: object
+      additionalProperties: false
+      required: [contract_version, capability_catalog_version, tasks, workflow_relation, confirmation_invalidated, blocked_task_refs, interaction_mode, discarded_task_refs]
+      properties:
+        contract_version: {type: string, enum: [core-a.v1]}
+        capability_catalog_version: {type: string, minLength: 1, maxLength: 80}
+        tasks: {type: array, maxItems: 4, items: {$ref: '#/components/schemas/CoreAPlannedTask'}}
+        clarification_need:
+          oneOf: [{$ref: '#/components/schemas/CoreAClarificationNeed'}, {type: 'null'}]
+        workflow_relation: {type: string, enum: [SINGLE_TASK, INDEPENDENT_TASKS, DEPENDENT_TASKS, MIXED]}
+        replan_directive:
+          type: [string, 'null']
+          enum: [CONTINUE, ASK_USER, REFRESH_AUTHORITY, REQUOTE_OR_REPREVIEW, WAIT_AND_RETRY_SAME_KEY, BLOCK_DEPENDENTS, TERMINAL_FAILURE, RECONCILIATION_REQUIRED, null]
+        confirmation_invalidated: {type: boolean}
+        blocked_task_refs: {type: array, maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 0, maximum: 3}}
+        interaction_mode: {type: string, enum: [service, chitchat, advisory, unsupported]}
+        discarded_task_refs: {type: array, maxItems: 8, uniqueItems: true, items: {type: integer, minimum: 0, maximum: 7}}
+    CoreAPlannedTask:
+      type: object
+      additionalProperties: false
+      required: [task_ref, domain, operation, goal, normalized_request, semantic_slots, depends_on, missing_information, missing_authority, steps, disposition]
+      properties:
+        task_ref: {type: integer, minimum: 0, maximum: 3}
+        domain: {type: string, enum: [food, ride, restaurant, healthcare]}
+        operation: {type: string, enum: [DISCOVER, CREATE, STATUS, UPDATE, CANCEL]}
+        goal: {type: string, minLength: 1, maxLength: 500}
+        normalized_request: {type: string, minLength: 1, maxLength: 2000}
+        semantic_slots:
+          oneOf:
+            - {$ref: '#/components/schemas/CoreARideSemanticSlots'}
+            - {$ref: '#/components/schemas/CoreARestaurantSemanticSlots'}
+            - {$ref: '#/components/schemas/CoreAHealthcareSemanticSlots'}
+            - {$ref: '#/components/schemas/CoreAFoodSemanticSlots'}
+        depends_on: {type: array, maxItems: 4, uniqueItems: true, items: {type: integer, minimum: 0, maximum: 3}}
+        missing_information: {type: array, maxItems: 16, items: {type: string}}
+        missing_authority: {type: array, maxItems: 16, items: {$ref: '#/components/schemas/CoreAAuthorityRequirement'}}
+        steps: {type: array, maxItems: 16, items: {$ref: '#/components/schemas/CoreAPlannedStep'}}
+        disposition: {type: string, enum: [READY, NEEDS_INFO, WAITING, BLOCKED, FAILED, COMPLETED]}
+        blocking_task_ref: {type: [integer, 'null'], minimum: 0, maximum: 3}
+    CoreASemanticSlot:
+      type: object
+      additionalProperties: false
+      required: [value, source]
+      properties:
+        value: {oneOf: [{type: string}, {type: integer}, {type: boolean}]}
+        source: {type: string, enum: [USER_EXPLICIT, CONVERSATION_REFERENCE, AUTHORITATIVE_CONTEXT, INFERRED_PREFERENCE]}
+        confidence: {type: [number, 'null'], minimum: 0, maximum: 1}
+    CoreARideSemanticSlots:
+      type: object
+      additionalProperties: false
+      properties:
+        pickup_address: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        dropoff_address: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        vehicle_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        passenger_count: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        promo_code: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+    CoreARestaurantSemanticSlots:
+      type: object
+      additionalProperties: false
+      properties:
+        location: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        cuisine_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        budget_range: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        party_size: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        start_at: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        duration_minutes: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        seating_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        selection: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        special_requests: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+    CoreAHealthcareSemanticSlots:
+      type: object
+      additionalProperties: false
+      properties:
+        department: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        symptoms: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        start_at: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        time_preference: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        selection: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+    CoreAFoodSemanticSlots:
+      type: object
+      additionalProperties: false
+      properties:
+        query: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        dish_query: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        location: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        district: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        category: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        max_price: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        delivery_preference: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        selection: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        quantity: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        selected_options: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        note: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        voucher_code: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        address_reference: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        payment_method: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+    CoreAAuthorityRequirement:
+      type: object
+      additionalProperties: false
+      required: [fact, required_version, must_be_unexpired]
+      properties:
+        source_task_ref: {type: [integer, 'null'], minimum: 0, maximum: 3}
+        fact: {type: string, minLength: 1, maxLength: 120}
+        required_version: {type: boolean}
+        must_be_unexpired: {type: boolean}
+    CoreAPlannedStep:
+      type: object
+      additionalProperties: false
+      required: [step_ref, purpose, step_kind, phase, requires_semantic_fields, requires_authority, depends_on_steps, risk_ceiling, confirmation_gate]
+      properties:
+        step_ref: {type: integer, minimum: 0}
+        purpose: {type: string, minLength: 1, maxLength: 500}
+        step_kind: {type: string, enum: [CAPABILITY, WAIT_FOR_CONFIRMATION]}
+        capability: {type: [string, 'null'], maxLength: 160}
+        phase: {type: string, enum: [PLANNING, NEEDS_INFO, IN_PROGRESS, COMPLETED, FAILED, DISCOVERY, SELECTION, AVAILABILITY, DRAFT_WRITE, QUOTE_OR_PREVIEW, SERVICE_CONFIRMATION, FINAL_COMMIT, PAYMENT_CONFIRMATION, STATUS, CANCELLATION_PREVIEW, CANCELLATION_CONFIRMATION]}
+        requires_semantic_fields: {type: array, maxItems: 16, items: {type: string}}
+        requires_authority: {type: array, maxItems: 16, items: {$ref: '#/components/schemas/CoreAAuthorityRequirement'}}
+        depends_on_steps: {type: array, maxItems: 16, uniqueItems: true, items: {type: integer, minimum: 0}}
+        risk_ceiling: {type: string, enum: [READ, REVERSIBLE_WRITE, FINANCIAL_OR_FINAL]}
+        confirmation_gate: {type: string, enum: [NONE, SERVICE_DETAILS, FINAL_COMMIT, PAYMENT, CANCELLATION]}
+    CoreAClarificationNeed:
+      type: object
+      additionalProperties: false
+      required: [code, missing_fields, reason]
+      properties:
+        task_ref: {type: [integer, 'null'], minimum: 0, maximum: 3}
+        code: {type: string, minLength: 1, maxLength: 100}
+        missing_fields: {type: array, maxItems: 16, items: {type: string}}
+        reason: {type: string, minLength: 1, maxLength: 500}
     ChatRequest:
       type: object
       required: [message, conversation_id, user_id]
@@ -212,7 +347,14 @@ components:
         response_type: {type: string}
         message: {type: string}
         response: {type: [string, 'null']}
-        data: {type: object, additionalProperties: true}
+        data:
+          type: object
+          additionalProperties: true
+          properties:
+            proposals:
+              type: array
+              maxItems: 8
+              items: {$ref: '#/components/schemas/ToolProposal'}
         pending_confirmation: {type: [object, 'null'], additionalProperties: true}
         meta: {type: object, additionalProperties: true}
         state_updates: {type: object, additionalProperties: true}
@@ -258,6 +400,21 @@ components:
         schema_version: {type: string, minLength: 1, maxLength: 32}
         idempotency_key: {type: [string, 'null'], minLength: 1, maxLength: 256}
       additionalProperties: false
+    ToolProposal:
+      type: object
+      required: [schema_version, capability_name, semantic_arguments, workflow_id, tool_call_id, risk_ceiling, confirmation_gate]
+      additionalProperties: false
+      properties:
+        schema_version: {type: string, const: '1'}
+        capability_name: {type: string, minLength: 1, maxLength: 100}
+        semantic_arguments:
+          type: object
+          description: User-expressible semantic values only; authoritative resource IDs are forbidden.
+          additionalProperties: true
+        workflow_id: {type: string, minLength: 1, maxLength: 128}
+        tool_call_id: {type: string, minLength: 1, maxLength: 100}
+        risk_ceiling: {enum: [READ, REVERSIBLE_WRITE, FINANCIAL_OR_FINAL]}
+        confirmation_gate: {enum: [none, explicit_gateway_confirmation]}
     ResponseMeta:
       type: object
       properties:

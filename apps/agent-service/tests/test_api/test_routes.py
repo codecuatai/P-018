@@ -10,15 +10,27 @@ async def test_health(client):
 
 @pytest.mark.asyncio
 async def test_chat_empty_message(client):
-    response = await client.post("/api/v1/chat", json={"message": ""}, headers={"X-Internal-Service-Token": "test-token"})
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": ""},
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "actor"},
+    )
     assert response.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_chat_requires_real_actor_and_conversation(client):
     response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn"})
+    assert response.status_code == 401
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Tìm món ăn"},
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "actor"},
+    )
     assert response.status_code == 422
-    response = await client.post("/api/v1/chat", json={"message": "Tìm món ăn", "user_id": "actor", "conversation_id": "conversation"})
+    response = await client.post(
+        "/api/v1/chat", json={"message": "Tìm món ăn", "user_id": "actor", "conversation_id": "conversation"}
+    )
     assert response.status_code == 401
 
 
@@ -54,10 +66,64 @@ async def test_assistant_chat_returns_a_bounded_multi_domain_plan(client):
     assert [task["domain"] for task in data["plan"]["tasks"]] == ["food", "healthcare"]
     assert all("price" not in task.get("extracted_slots", {}) for task in data["plan"]["tasks"])
     assert all(
-        step["step_kind"] == "CAPABILITY"
-        for task in data["planning_decision"]["tasks"]
-        for step in task["steps"]
+        step["step_kind"] == "CAPABILITY" for task in data["planning_decision"]["tasks"] for step in task["steps"]
     )
+
+
+@pytest.mark.asyncio
+async def test_one_correlation_chain_can_plan_execute_food_and_compose(client):
+    headers = {
+        "X-Internal-Service-Token": "test-token",
+        "X-Actor-Id": "actor-shared-correlation",
+    }
+    common = {
+        "conversation_id": "conv-shared-correlation",
+        "user_id": "actor-shared-correlation",
+        "correlation_id": "corr-shared-correlation",
+    }
+
+    planned = await client.post(
+        "/api/v1/assistant-chat",
+        json={**common, "message": "Tim pho giao ve nha"},
+        headers=headers,
+    )
+    food = await client.post(
+        "/api/v1/chat",
+        json={**common, "message": "Tim pho giao ve nha"},
+        headers=headers,
+    )
+    composed = await client.post(
+        "/api/v1/assistant-chat",
+        json={
+            **common,
+            "message": "Tim pho giao ve nha",
+            "mode": "compose",
+            "authoritative_results": [],
+        },
+        headers=headers,
+    )
+
+    assert planned.status_code == 200
+    assert food.status_code == 200
+    assert composed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_fake_assistant_chat_stream_endpoint_is_removed(client):
+    response = await client.post(
+        "/api/v1/assistant-chat/stream",
+        json={
+            "message": "Tim pho giao ve nha va dat lich kham than kinh sang mai",
+            "conversation_id": "conv-assistant-stream-1",
+            "user_id": "actor-assistant-stream-1",
+            "correlation_id": "corr-assistant-stream-1",
+        },
+        headers={
+            "X-Internal-Service-Token": "test-token",
+            "X-Actor-Id": "actor-assistant-stream-1",
+        },
+    )
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -94,15 +160,53 @@ async def test_restaurant_chat_requires_internal_auth(client):
 async def test_restaurant_chat_merges_follow_up_turns(client):
     headers = {"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-test"}
     workflow_id = "wf-multi-turn"
-    first = await client.post("/api/v1/restaurant-chat", json={"message": "đặt bàn", "workflow_id": workflow_id}, headers=headers)
-    assert first.json()["data"]["missing_slots"][0] == "party_size"
-    second = await client.post("/api/v1/restaurant-chat", json={"message": "1 người", "workflow_id": workflow_id}, headers=headers)
-    assert second.json()["data"]["missing_slots"][0] == "local_date"
-    third = await client.post("/api/v1/restaurant-chat", json={"message": "9h30", "workflow_id": workflow_id}, headers=headers)
-    assert third.json()["data"]["missing_slots"][0] == "local_date"
-    fourth = await client.post("/api/v1/restaurant-chat", json={"message": "ngày mai", "workflow_id": workflow_id}, headers=headers)
-    assert fourth.json()["data"]["missing_slots"][0] == "location"
-    fifth = await client.post("/api/v1/restaurant-chat", json={"message": "Hà Nội", "workflow_id": workflow_id}, headers=headers)
+    first = await client.post(
+        "/api/v1/restaurant-chat", json={"message": "đặt bàn", "workflow_id": workflow_id}, headers=headers
+    )
+    first_data = first.json()["data"]
+    assert first_data["missing_slots"][0] == "party_size"
+    second = await client.post(
+        "/api/v1/restaurant-chat",
+        json={
+            "message": "1 người",
+            "workflow_id": workflow_id,
+            "context": {"intent": first_data["intent"], "slots": first_data["slots"]},
+        },
+        headers=headers,
+    )
+    second_data = second.json()["data"]
+    assert second_data["missing_slots"][0] == "local_date"
+    third = await client.post(
+        "/api/v1/restaurant-chat",
+        json={
+            "message": "9h30",
+            "workflow_id": workflow_id,
+            "context": {"intent": second_data["intent"], "slots": second_data["slots"]},
+        },
+        headers=headers,
+    )
+    third_data = third.json()["data"]
+    assert third_data["missing_slots"][0] == "local_date"
+    fourth = await client.post(
+        "/api/v1/restaurant-chat",
+        json={
+            "message": "ngày mai",
+            "workflow_id": workflow_id,
+            "context": {"intent": third_data["intent"], "slots": third_data["slots"]},
+        },
+        headers=headers,
+    )
+    fourth_data = fourth.json()["data"]
+    assert fourth_data["missing_slots"][0] == "location"
+    fifth = await client.post(
+        "/api/v1/restaurant-chat",
+        json={
+            "message": "Hà Nội",
+            "workflow_id": workflow_id,
+            "context": {"intent": fourth_data["intent"], "slots": fourth_data["slots"]},
+        },
+        headers=headers,
+    )
     assert fifth.json()["data"]["status"] == "TOOL_REQUEST_READY"
     assert fifth.json()["data"]["tool_request"]["tool_name"] == "restaurant.search"
 
@@ -138,7 +242,16 @@ async def test_restaurant_chat_reuses_read_result_for_selection(client):
 
     selected = await client.post(
         "/api/v1/restaurant-chat",
-        json={"message": "chon pho heritage", "workflow_id": workflow_id},
+        json={
+            "message": "chon pho heritage",
+            "workflow_id": workflow_id,
+            "context": {
+                "intent": grounded.json()["data"]["intent"],
+                "slots": grounded.json()["data"]["slots"],
+                "tool_name": "restaurant.search",
+                "tool_result": {"items": [{"id": "r1", "name": "Pho Heritage"}], "total": 1},
+            },
+        },
         headers=headers,
     )
     selected_data = selected.json()["data"]
@@ -172,6 +285,41 @@ async def test_healthcare_chat_requires_internal_auth(client):
 
 
 @pytest.mark.asyncio
+async def test_assistant_chat_rejects_actor_mismatch(client):
+    response = await client.post(
+        "/api/v1/assistant-chat",
+        json={"message": "Tim mon an", "conversation_id": "conv-auth", "user_id": "body-actor"},
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "header-actor"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ACTOR_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_vertical_routes_require_actor_assertion(client):
+    headers = {"X-Internal-Service-Token": "test-token"}
+    restaurant = await client.post(
+        "/api/v1/restaurant-chat",
+        json={"message": "đặt bàn", "workflow_id": "wf-no-actor-restaurant"},
+        headers=headers,
+    )
+    healthcare = await client.post(
+        "/api/v1/healthcare-chat",
+        json={"message": "đặt lịch khám", "workflow_id": "wf-no-actor-healthcare"},
+        headers=headers,
+    )
+    ride = await client.post(
+        "/api/v1/ride-chat",
+        json={"message": "đặt xe", "workflow_id": "wf-no-actor-ride"},
+        headers=headers,
+    )
+
+    assert restaurant.status_code == 401
+    assert healthcare.status_code == 401
+    assert ride.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_ride_chat_returns_typed_quote_request(client):
     response = await client.post(
         "/api/v1/ride-chat",
@@ -179,7 +327,7 @@ async def test_ride_chat_returns_typed_quote_request(client):
             "message": "from 1 Main Street to 2 Lake Road by car 4",
             "workflow_id": "wf-ride-agent-1",
         },
-        headers={"X-Internal-Service-Token": "test-token"},
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-ride"},
     )
     assert response.status_code == 200
     data = response.json()["data"]
@@ -196,7 +344,7 @@ async def test_ride_chat_keeps_passenger_count_out_of_destination(client):
             "message": "Đặt xe 7 chỗ từ VinUni đến Hồ Gươm cho 4 người",
             "workflow_id": "wf-ride-passengers-1",
         },
-        headers={"X-Internal-Service-Token": "test-token"},
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-ride"},
     )
 
     assert response.status_code == 200

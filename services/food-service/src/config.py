@@ -22,14 +22,32 @@ class Settings(BaseSettings):
     delivery_long_distance_surcharge: int = Field(default=5000, ge=0)
     delivery_eta_minutes: int = Field(default=35, ge=1)
     restaurant_rejection_rate: float = Field(default=0.05, ge=0, le=1)
-    restaurant_confirm_delay_ms: int = Field(default=3000, ge=0, validation_alias=AliasChoices("FOOD_RESTAURANT_CONFIRM_DELAY_MS", "RESTAURANT_CONFIRM_DELAY_MS"))
-    preparing_delay_ms: int = Field(default=5000, ge=0, validation_alias=AliasChoices("FOOD_PREPARING_DELAY_MS", "PREPARING_DELAY_MS"))
-    ready_for_pickup_delay_ms: int = Field(default=3000, ge=0, validation_alias=AliasChoices("FOOD_READY_FOR_PICKUP_DELAY_MS", "READY_FOR_PICKUP_DELAY_MS"))
-    driver_assign_delay_ms: int = Field(default=3000, ge=0, validation_alias=AliasChoices("FOOD_DRIVER_ASSIGN_DELAY_MS", "DRIVER_ASSIGN_DELAY_MS"))
-    pickup_delay_ms: int = Field(default=3000, ge=0, validation_alias=AliasChoices("FOOD_PICKUP_DELAY_MS", "PICKUP_DELAY_MS"))
-    delivery_delay_ms: int = Field(default=5000, ge=0, validation_alias=AliasChoices("FOOD_DELIVERY_DELAY_MS", "DELIVERY_DELAY_MS"))
-    workflow_poll_interval_ms: int = Field(default=500, ge=20, validation_alias=AliasChoices("FOOD_WORKFLOW_POLL_INTERVAL_MS", "WORKFLOW_POLL_INTERVAL_MS"))
-    workflow_worker_enabled: bool = Field(default=True, validation_alias=AliasChoices("FOOD_WORKFLOW_WORKER_ENABLED", "WORKFLOW_WORKER_ENABLED"))
+    restaurant_confirm_delay_ms: int = Field(
+        default=3000,
+        ge=0,
+        validation_alias=AliasChoices("FOOD_RESTAURANT_CONFIRM_DELAY_MS", "RESTAURANT_CONFIRM_DELAY_MS"),
+    )
+    preparing_delay_ms: int = Field(
+        default=5000, ge=0, validation_alias=AliasChoices("FOOD_PREPARING_DELAY_MS", "PREPARING_DELAY_MS")
+    )
+    ready_for_pickup_delay_ms: int = Field(
+        default=3000, ge=0, validation_alias=AliasChoices("FOOD_READY_FOR_PICKUP_DELAY_MS", "READY_FOR_PICKUP_DELAY_MS")
+    )
+    driver_assign_delay_ms: int = Field(
+        default=3000, ge=0, validation_alias=AliasChoices("FOOD_DRIVER_ASSIGN_DELAY_MS", "DRIVER_ASSIGN_DELAY_MS")
+    )
+    pickup_delay_ms: int = Field(
+        default=3000, ge=0, validation_alias=AliasChoices("FOOD_PICKUP_DELAY_MS", "PICKUP_DELAY_MS")
+    )
+    delivery_delay_ms: int = Field(
+        default=5000, ge=0, validation_alias=AliasChoices("FOOD_DELIVERY_DELAY_MS", "DELIVERY_DELAY_MS")
+    )
+    workflow_poll_interval_ms: int = Field(
+        default=500, ge=20, validation_alias=AliasChoices("FOOD_WORKFLOW_POLL_INTERVAL_MS", "WORKFLOW_POLL_INTERVAL_MS")
+    )
+    workflow_worker_enabled: bool = Field(
+        default=True, validation_alias=AliasChoices("FOOD_WORKFLOW_WORKER_ENABLED", "WORKFLOW_WORKER_ENABLED")
+    )
     workflow_step_delay_ms: int | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")

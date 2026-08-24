@@ -157,7 +157,13 @@ def hold_slot(req: HoldSlotRequest, idempotency_key: str | None = Header(None)):
                 break
 
     res = make_response({
-        "appointment_id": 9999,
+        # Tạo appointment_id động: nếu có idempotency_key → deterministic từ key (đảm bảo cùng key = cùng ID);
+        # nếu không → ngẫu nhiên trong khoảng 10000–99999 để tránh conflict trong cùng sandbox session.
+        "appointment_id": (
+            int(uuid.UUID(idempotency_key).int % 90000) + 10000
+            if idempotency_key and len(idempotency_key) == 36
+            else int(uuid.uuid4().int % 90000) + 10000
+        ),
         "doctor_name": doc_name,
         "start_time": start_time
     })

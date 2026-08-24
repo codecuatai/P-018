@@ -1,0 +1,75 @@
+{
+  "evidence_version": 1,
+  "date": "2026-08-20",
+  "status": "PASS_LOCAL_AND_LIVE",
+  "sdk": {
+    "name": "langfuse",
+    "version": "4.14.4"
+  },
+  "configuration": {
+    "variables": [
+      "LANGFUSE_SECRET_KEY",
+      "LANGFUSE_PUBLIC_KEY",
+      "LANGFUSE_BASE_URL"
+    ],
+    "auto_enable_complete_pair": true,
+    "partial_pair_rejected": true
+  },
+  "tests": {
+    "agent": {
+      "passed": 195,
+      "skipped": 1
+    },
+    "focused": {
+      "passed": 47
+    },
+    "ruff": "PASS",
+    "compile": "PASS",
+    "pip_check": "PASS",
+    "docker_build": "PASS",
+    "compose_render": "PASS",
+    "environment": {
+      "root_variables": 123,
+      "compose_variables": 115
+    },
+    "migration_parity_files": 28,
+    "deterministic_eval": {
+      "dataset_cases": 200,
+      "tool_exact": 107,
+      "domain_correct": 65,
+      "domain_cases": 109,
+      "planner_p95_ms": 2.077
+    }
+  },
+  "live_trace": {
+    "correlation_id": "langfuse-smoke-371d4da084ce4133962aa9b9841fe4ec",
+    "private": true,
+    "observations": 6,
+    "observation_names": [
+      "agent.core_a.run",
+      "request.validate",
+      "model.generate.plan",
+      "planner.route",
+      "core_a.validate",
+      "core_a.task"
+    ],
+    "model_generations": 1,
+    "usage_recorded": true,
+    "input_output_absent": true,
+    "prompt_absent": true,
+    "user_session_identity_absent": true,
+    "raw_status_message_absent": true
+  },
+  "security": {
+    "full_graph_callback_attached": false,
+    "typed_allowlist": true,
+    "sdk_scope_filter": true,
+    "export_masking": true,
+    "tracked_trace_export_removed": true,
+    "secret_pattern_scanner": "PASS"
+  },
+  "limitations": [
+    "The live trace is synthetic and non-PII.",
+    "Production traffic volume, retention, and dashboard access governance were not certified."
+  ]
+}

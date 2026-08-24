@@ -43,7 +43,9 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
         slots["pickup_address"] = route.group(1).strip(" .,!?")[:300]
         slots["dropoff_address"] = _strip_vehicle_suffix(route.group(2).strip(" .,!?"))[:300]
     else:
-        pickup = re.search(r"(?:điểm đón|pickup)\s*[:：]\s*(.+?)(?:,|;|\s+điểm đến|\s+dropoff)\s*[:：]?", query, re.IGNORECASE)
+        pickup = re.search(
+            r"(?:điểm đón|pickup)\s*[:：]\s*(.+?)(?:,|;|\s+điểm đến|\s+dropoff)\s*[:：]?", query, re.IGNORECASE
+        )
         dropoff = re.search(r"(?:điểm đến|dropoff)\s*[:：]\s*(.+)$", query, re.IGNORECASE)
         if pickup:
             slots["pickup_address"] = pickup.group(1).strip(" .,!?")[:300]
@@ -62,7 +64,9 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
     if passenger:
         slots["passenger_count"] = passenger.group(1)
 
-    promo = re.search(r"(?:ma|mã)\s*(?:khuyen mai|khuyến mãi|promo)?\s*[:：]?\s*([A-Za-z0-9_-]{2,50})", query, re.IGNORECASE)
+    promo = re.search(
+        r"(?:ma|mã)\s*(?:khuyen mai|khuyến mãi|promo)?\s*[:：]?\s*([A-Za-z0-9_-]{2,50})", query, re.IGNORECASE
+    )
     if promo:
         slots["promo_code"] = promo.group(1)
 
@@ -75,7 +79,9 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
 def _strip_vehicle_suffix(value: str) -> str:
     result = value
     for _ in range(2):
-        result = re.sub(r"\s+(?:cho\s+)?[1-9][0-9]?\s*(?:người|nguoi|khách|khach|passengers?)\s*$", "", result, flags=re.IGNORECASE)
+        result = re.sub(
+            r"\s+(?:cho\s+)?[1-9][0-9]?\s*(?:người|nguoi|khách|khach|passengers?)\s*$", "", result, flags=re.IGNORECASE
+        )
         result = re.sub(
             r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
             "",
@@ -122,9 +128,8 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
     patch = _patch(context, slots)
     missing = [field for field in ("pickup_address", "dropoff_address") if not slots.get(field)]
     if missing:
-        labels = {"pickup_address": "địa chỉ đón", "dropoff_address": "địa chỉ đến"}
         return {
-            "response": f"Bạn cho mình biết {labels[missing[0]]} để mình tính giá chuyến đi nhé.",
+            "response": "Bạn cho mình biết điểm đón và điểm đến còn thiếu để mình tính giá chuyến đi nhé.",
             "intent": "clarify_ride",
             "missing_fields": missing,
             "state_patch": patch,
@@ -138,7 +143,9 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
             "intent": "get_ride_status",
             "missing_fields": [],
             "state_patch": patch,
-            "tool_request": _tool("ride.booking.status.get", "READ", {"booking_id": str(ride["latest_booking_id"])}, workflow_id, turn_id),
+            "tool_request": _tool(
+                "ride.booking.status.get", "READ", {"booking_id": str(ride["latest_booking_id"])}, workflow_id, turn_id
+            ),
         }
 
     if not ride.get("latest_quote_id"):

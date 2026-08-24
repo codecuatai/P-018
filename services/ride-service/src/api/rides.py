@@ -20,6 +20,7 @@ from src.api.schemas import (
     ResponseMeta,
     TrackingEnvelope,
     TrackingOut,
+    UpdateBookingStatusRequest,
 )
 from src.application.ride_service import RideApplication
 from src.config import get_settings
@@ -197,6 +198,29 @@ def cancel_booking(
             confirmation=_confirmation(payload.confirmation),
         ),
         idempotency_key,
+    )
+    return BookingEnvelope(data=BookingOut.model_validate(result), meta=_meta(request))
+
+
+
+@router.patch(
+    "/bookings/{booking_id}:status",
+    response_model=BookingEnvelope,
+    dependencies=[Depends(require_internal_service)],
+)
+def update_booking_status(
+    booking_id: str,
+    payload: UpdateBookingStatusRequest,
+    request: Request,
+    actor_id: Annotated[str, Depends(require_actor)],
+    idempotency_key: Annotated[str, Depends(require_idempotency_key)],
+    session: Annotated[Session, Depends(get_session)],
+) -> BookingEnvelope:
+    result = application(session).update_status(
+        booking_id=booking_id,
+        actor_id=actor_id,
+        target_status=payload.status,
+        idempotency_key=idempotency_key,
     )
     return BookingEnvelope(data=BookingOut.model_validate(result), meta=_meta(request))
 
