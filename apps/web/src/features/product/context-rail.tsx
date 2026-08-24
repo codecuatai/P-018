@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, CarFront, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
+import { ArrowRight, CalendarDays, CarFront, PanelRightClose, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { resolveAddress } from "@/lib/api-client";
@@ -16,11 +16,42 @@ import { XOneMap, type XOnePoint } from "./xone-map";
 
 export type ContextRailMode = "idle" | "active" | "tracking" | "recovery";
 
-export function ContextRail({ mode, title, description, children }: { mode: ContextRailMode; title: string; description: string; children: ReactNode }) {
-  return <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra">
-    {mode !== "idle" ? <div className="context-rail-heading"><span className="eyebrow">ĐANG DIỄN RA</span><h2>{title}</h2><p>{description}</p></div> : null}
-    {children}
-  </aside>;
+export function ContextRail({
+  mode,
+  title,
+  description,
+  onCollapse,
+  children,
+}: {
+  mode: ContextRailMode;
+  title: string;
+  description: string;
+  onCollapse?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra">
+      <div className="context-rail-heading">
+        <div className="context-rail-heading-copy">
+          {mode !== "idle" ? <span className="eyebrow">ĐANG DIỄN RA</span> : <span className="eyebrow">TIỆN ÍCH</span>}
+          <h2>{title}</h2>
+          {description ? <p>{description}</p> : null}
+        </div>
+        {onCollapse && (
+          <button
+            className="icon-button rail-collapse-btn"
+            type="button"
+            aria-label="Thu gọn bảng tiện ích bên phải"
+            title="Thu gọn tiện ích"
+            onClick={onCollapse}
+          >
+            <PanelRightClose size={16} />
+          </button>
+        )}
+      </div>
+      {children}
+    </aside>
+  );
 }
 
 export function ActiveRideRailCard({ ride, onDetails }: { ride: HistoryItem; onDetails?: (item: HistoryItem) => void }) {

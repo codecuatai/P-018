@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Loader2, Plus, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
+import { ArrowUp, Loader2, PanelRightOpen, Plus, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -24,10 +24,40 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const [foodSelections, setFoodSelections] = useState<Record<string, FoodSelection>>({});
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("xone_rail_collapsed");
+      if (saved !== null) {
+        const parsed = saved === "true";
+        setRailCollapsed(parsed);
+        window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: parsed } }));
+      }
+    } catch {}
+
+    const handleToggleEvent = () => {
+      setRailCollapsed((prev) => {
+        const next = !prev;
+        try { localStorage.setItem("xone_rail_collapsed", String(next)); } catch {}
+        window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: next } }));
+        return next;
+      });
+    };
+
+    window.addEventListener("xone-toggle-rail", handleToggleEvent);
+    return () => window.removeEventListener("xone-toggle-rail", handleToggleEvent);
+  }, []);
+
+  function toggleRail(collapsed: boolean) {
+    setRailCollapsed(collapsed);
+    try { localStorage.setItem("xone_rail_collapsed", String(collapsed)); } catch {}
+    window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed } }));
+  }
 
   useEffect(() => {
     let active = true;
@@ -246,7 +276,54 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     <section className="assistant-page" aria-labelledby="assistant-title">
     <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
     <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
-    <div className="assistant-layout"><div className="chat-column"><div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>{loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}{conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}{messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}{messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}</div>{foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}<div className="composer-wrap"><div className="composer-box"><span className="composer-prefix" aria-hidden="true"><Sparkles size={15} /></span><textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} /><button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button></div><p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p></div></div><ContextRail mode={activeItems.length ? "active" : "idle"} title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"} description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}>{activeItems.length ? <div className="active-work-list">{activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}</div> : <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />}</ContextRail></div>
+    <div className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}`}>
+      <div className="chat-column">
+        {railCollapsed && (
+          <div className="rail-reopen-bar">
+            <button
+              className="rail-reopen-pill"
+              type="button"
+              aria-label="Mở bảng tiện ích bên phải"
+              title="Mở bảng tiện ích"
+              onClick={() => toggleRail(false)}
+            >
+              <PanelRightOpen size={14} />
+              <span>{activeItems.length ? `Tiện ích (${activeItems.length})` : "Mở tiện ích"}</span>
+              {activeItems.length > 0 && <span className="rail-pulse-dot-mini" aria-hidden="true" />}
+            </button>
+          </div>
+        )}
+        <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
+          {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
+          {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
+          {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
+          {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
+        </div>
+        {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
+        <div className="composer-wrap">
+          <div className="composer-box">
+            <span className="composer-prefix" aria-hidden="true"><Sparkles size={15} /></span>
+            <textarea ref={inputRef} aria-label="Nhập yêu cầu" disabled={sending} onChange={(event) => setComposer(event.target.value)} onKeyDown={onKeyDown} placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…" rows={2} value={composer} />
+            <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">{sending ? <Loader2 className="spinner" size={18} /> : <ArrowUp size={18} />}</button>
+          </div>
+          <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
+        </div>
+      </div>
+      <ContextRail
+        mode={activeItems.length ? "active" : "idle"}
+        title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
+        description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
+        onCollapse={() => toggleRail(true)}
+      >
+        {activeItems.length ? (
+          <div className="active-work-list">
+            {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
+          </div>
+        ) : (
+          <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
+        )}
+      </ContextRail>
+    </div>
     <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
   </section>
   );

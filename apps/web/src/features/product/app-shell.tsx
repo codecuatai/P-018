@@ -9,6 +9,10 @@ import {
   LogOut,
   Menu,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Settings,
   ShieldCheck,
   Stethoscope,
@@ -41,37 +45,133 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      const savedSidebar = localStorage.getItem("xone_sidebar_collapsed");
+      if (savedSidebar !== null) setSidebarCollapsed(savedSidebar === "true");
+      const savedRail = localStorage.getItem("xone_rail_collapsed");
+      if (savedRail !== null) setRailCollapsed(savedRail === "true");
+    } catch {
+      // Ignore localStorage errors in private browsing
+    }
+
+    const handleRailState = (e: Event) => {
+      const detail = (e as CustomEvent<{ collapsed: boolean }>).detail;
+      if (detail && typeof detail.collapsed === "boolean") setRailCollapsed(detail.collapsed);
+    };
+    window.addEventListener("xone-rail-state-changed", handleRailState);
+
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        setSidebarCollapsed((prev) => {
+          const next = !prev;
+          try { localStorage.setItem("xone_sidebar_collapsed", String(next)); } catch {}
+          return next;
+        });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("xone-rail-state-changed", handleRailState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  function toggleSidebar() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("xone_sidebar_collapsed", String(next)); } catch {}
+      return next;
+    });
+  }
+
+  function toggleRail() {
+    window.dispatchEvent(new CustomEvent("xone-toggle-rail"));
+  }
 
   async function handleLogout() {
     try { await logout(); } finally { router.replace("/"); }
   }
 
-  return <div className="app-shell"><a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
-    <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} /></aside>
-    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
-      <div className="app-mobile-actions">
-        <NotificationBell />
-        <Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact /></SheetContent></Sheet>
-      </div>
-    </header>
-    <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">
-      {assistantWorkspace && (
-        <div className="app-topbar">
+  return (
+    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+      <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
+      <aside className="app-sidebar">
+        <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} onToggleCollapse={toggleSidebar} />
+      </aside>
+      <header className="app-mobile-header">
+        <Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
+        <div className="app-mobile-actions">
           <NotificationBell />
-          <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+          <Sheet>
+            <SheetTrigger asChild>
+              <button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button>
+            </SheetTrigger>
+            <SheetContent title="Không gian X-One">
+              <Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact />
+            </SheetContent>
+          </Sheet>
         </div>
-      )}
-      {children}
-    </main>
-  </div>;
+      </header>
+      <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">
+        {assistantWorkspace && (
+          <div className="app-topbar">
+            <div className="app-topbar-left">
+              <button
+                className={`icon-button topbar-toggle-btn${sidebarCollapsed ? " is-active-toggle" : ""}`}
+                type="button"
+                aria-label={sidebarCollapsed ? "Mở rộng thanh điều hướng bên trái (Ctrl+B)" : "Thu gọn thanh điều hướng bên trái (Ctrl+B)"}
+                title={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
+                onClick={toggleSidebar}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              </button>
+            </div>
+            <div className="app-topbar-right">
+              <NotificationBell />
+              <button
+                className={`icon-button topbar-toggle-btn${railCollapsed ? " is-active-toggle" : ""}`}
+                type="button"
+                aria-label={railCollapsed ? "Mở rộng tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+                title={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+                onClick={toggleRail}
+              >
+                {railCollapsed ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
+              </button>
+              <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+            </div>
+          </div>
+        )}
+        {children}
+      </main>
+    </div>
+  );
 }
 
-function Sidebar({ userEmail, pathname, onLogout, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; compact?: boolean }) {
+function Sidebar({ userEmail, pathname, onLogout, onToggleCollapse, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; onToggleCollapse?: () => void; compact?: boolean }) {
   return (
     <div className="sidebar-content">
       <div className="sidebar-header">
         <Link className="brand-link sidebar-brand" href="/app"><XOneMark size={28} /><span>X-One</span></Link>
-        <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>+ Mới</Link>
+        <div className="sidebar-header-actions">
+          <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation} title="Cuộc trò chuyện mới">+ Mới</Link>
+          {!compact && onToggleCollapse && (
+            <button
+              className="icon-button sidebar-collapse-btn"
+              type="button"
+              aria-label="Thu gọn thanh điều hướng (Ctrl+B)"
+              title="Thu gọn menu (Ctrl+B)"
+              onClick={onToggleCollapse}
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          )}
+        </div>
       </div>
       <nav className="app-nav" aria-label="Không gian X-One">
         {navigation.map(({ href, label, icon: Icon }) => {
