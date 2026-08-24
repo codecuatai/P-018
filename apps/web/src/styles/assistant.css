@@ -78,7 +78,7 @@
 
 /* ─── Composer (Floating Command Bar) ─────────────────────── */
 .composer-wrap { padding: 10px 36px 16px; background: transparent; display: flex; flex-direction: column; align-items: center; width: 100%; box-sizing: border-box; }
-.composer-box { display: flex; align-items: center; gap: 10px; width: min(100%, 820px); padding: 6px 8px 6px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 999px; box-shadow: 0 4px 18px rgb(0 0 0 / 6%), 0 1px 3px rgb(0 0 0 / 4%); transition: border-color 160ms ease, box-shadow 160ms ease; box-sizing: border-box; }
+.composer-box { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 100%; padding: 6px 8px 6px 14px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 999px; box-shadow: 0 4px 18px rgb(0 0 0 / 6%), 0 1px 3px rgb(0 0 0 / 4%); transition: border-color 160ms ease, box-shadow 160ms ease; box-sizing: border-box; }
 .composer-box:focus-within { border-color: #3B82F6; box-shadow: 0 4px 20px rgb(59 130 246 / 14%), 0 0 0 3px rgb(59 130 246 / 10%); }
 .composer-addon-btn { display: grid; width: 30px; height: 30px; place-items: center; color: #64748B; background: transparent; border: 0; cursor: pointer; border-radius: 50%; flex: 0 0 auto; transition: color 140ms ease, background-color 140ms ease; }
 .composer-addon-btn:hover { color: #1E293B; background: #F1F5F9; }
@@ -157,8 +157,8 @@
 .active-work-list::-webkit-scrollbar-thumb { background: #C5D4DC; border-radius: 999px; }
 
 /* ─── Assistant workflow cards ───────────────────────────── */
-.assistant-cards { display: grid; gap: 8px; margin-top: 11px; text-align: left; }
-.assistant-card { width: min(100%, 700px); padding: 18px 20px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 16px; box-shadow: 0 2px 10px rgb(0 0 0 / 4%); }
+.assistant-cards { display: grid; gap: 8px; margin-top: 11px; text-align: left; width: 100%; }
+.assistant-card { width: 100%; max-width: 860px; padding: 18px 20px; background: #FFFFFF; border: 1px solid #E5E7EB; border-radius: 16px; box-shadow: 0 2px 10px rgb(0 0 0 / 4%); box-sizing: border-box; }
 .card-restaurant { border-left: 4px solid #249A6A; }
 .card-ride { border: 1px solid #E5E7EB; box-shadow: 0 2px 12px rgb(0 0 0 / 4%); display: grid; gap: 14px; }
 .card-food { border-left: 4px solid var(--accent-food, #D97706); }
