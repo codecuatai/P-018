@@ -106,9 +106,10 @@ Quy tắc ứng xử và bóc tách tác vụ:
 XONE_SYSTEM_PROMPT += """
 
 Before building tasks, read user_profile, conversation_state.tasks, and recent_messages. Preserve COMPLETED tasks as history; only discard an in-progress task when the user explicitly abandons it. Map saved address phrases such as home to the matching saved-address label. For ambiguous or missing addresses, ask one clarification question or use location_query; never invent an exact address. Analyze intent, service count, dependencies, and required slots internally before emitting JSON. ride requires pickup_address and dropoff_address; food requires dish_query; restaurant requires location or cuisine_query; healthcare requires department. Maximum 4 tasks. Never claim success unless authoritative_results proves it.
+Requests about programming, mathematics, politics, schoolwork, computer repair, or other non-X-One topics are unsupported: return interaction_mode="unsupported", tasks=[], and a brief Vietnamese refusal. Do not answer the unrelated question or provide code/instructions.
 """
 
-COMPOSE_INSTRUCTION = """You are X-One composing a Vietnamese response from authoritative system results. Summarize every task, including COMPLETED history and current in-progress work. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Be concise and address the user as bạn."""
+COMPOSE_INSTRUCTION = """You are X-One composing a Vietnamese response from authoritative system results. Focus only on the current request and active tasks. Do not mention FAILED, DISCARDED, or old COMPLETED tasks unless the user explicitly asks about them. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Be concise. Use first person 'mình' and address the user as 'bạn'; never use 'em', 'anh', or 'tôi'."""
 
 _CONFIRMED_RESULT_KINDS = {"booking_confirmed", "order_confirmed"}
 
@@ -1021,6 +1022,21 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             assistant_message="Rất vui vì giúp được bạn. Khi cần thêm gì, cứ gọi mình nhé!",
         )
 
+    if _has_any(
+        lowered,
+        (
+            "python", "javascript", "typescript", "viet code", "lap trinh",
+            "toan hoc", "chinh tri", "lam bai tap", "sua may tinh",
+        ),
+    ):
+        return AssistantPlan(
+            interaction_mode="unsupported",
+            assistant_message=(
+                "Xin lỗi bạn, mình chỉ hỗ trợ đặt xe, đồ ăn, nhà hàng và lịch khám. "
+                "Bạn muốn mình hỗ trợ dịch vụ nào?"
+            ),
+        )
+
     if _has_any(lowered, ("troi mua di dau", "nen di dau khi mua", "mua gio di dau")):
         return AssistantPlan(
             interaction_mode="advisory",
@@ -1829,11 +1845,18 @@ async def _compose_response(
     """Compose a warm, helpful explanation around authoritative values."""
     settings = get_settings()
     use_model = llm is not None or (settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key))
-    fallback = _deterministic_composition(tasks, authoritative_results)
+    current_tasks = [
+        task for task in tasks
+        if isinstance(task, dict) and task.get("phase") not in {"FAILED", "DISCARDED", "COMPLETED"}
+    ]
+    fallback = _deterministic_composition(current_tasks, authoritative_results)
     if not use_model:
         return fallback, "deterministic"
     model = llm or GeminiAdapter()
-    safe_tasks = _planner_safe_state({"tasks": tasks}).get("tasks", [])
+    # Completed/failed/discarded tasks are historical state, not current work.
+    # Keep them out of the model context so the composer cannot resurrect old
+    # transactions in a new turn.
+    safe_tasks = _planner_safe_state({"tasks": current_tasks}).get("tasks", [])
     safe_results = _bounded_authoritative_results(authoritative_results)
     prompt = json.dumps(
         {
@@ -1972,6 +1995,11 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             return _typed_pipeline_result(plan, state, "deterministic")
         try:
             message = str(state.get("query", ""))
+            # Apply the same explicit out-of-scope boundary before invoking a
+            # generative model; prompt-only enforcement is not sufficient.
+            explicit_boundary = _conversation_only_plan(message, _plain(message))
+            if explicit_boundary is not None and explicit_boundary.interaction_mode == "unsupported":
+                return _typed_pipeline_result(explicit_boundary, state, "deterministic")
             plan = _sanitize_plan(
                 await _invoke_structured(
                     model,
