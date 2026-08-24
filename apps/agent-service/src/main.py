@@ -60,7 +60,7 @@ async def readiness() -> dict:
         "data": {
             "status": "ready",
             "service": "agent-service",
-            "llm_configured": bool(settings.gemini_api_key),
+            "llm_configured": bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key)),
             "persistence_mode": settings.agent_persistence_mode,
         }
     }

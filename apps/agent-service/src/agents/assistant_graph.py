@@ -343,7 +343,7 @@ def model_diagnostics() -> dict[str, Any]:
         "fallback_used": runtime["fallback_used"],
         "fallback_model_attempted": runtime["fallback_model_attempted"],
         "structured_output_fallback_used": runtime["structured_output_fallback_used"],
-        "api_key_configured": bool(settings.gemini_api_key),
+        "api_key_configured": bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key)),
         "last_model_call_at": runtime["last_model_call_at"],
         "last_model_call_status": runtime["last_model_call_status"],
         "last_model_call_error_type": runtime["last_model_call_error"],
@@ -1769,7 +1769,8 @@ async def _compose_response(
 ) -> tuple[str, str]:
     """Compose a warm, helpful explanation around authoritative values."""
     settings = get_settings()
-    use_model = llm is not None or (settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key))
+    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
+    use_model = llm is not None or (settings.agent_model_mode == "gemini" and has_key)
     fallback = _deterministic_composition(tasks, authoritative_results)
     if not use_model:
         return fallback, "deterministic"
@@ -1830,9 +1831,8 @@ async def compose_response(
     settings = get_settings()
     telemetry = get_telemetry()
     started_at = perf_counter()
-    model_expected = llm is not None or (
-        settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key)
-    )
+    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
+    model_expected = llm is not None or (settings.agent_model_mode == "gemini" and has_key)
     with telemetry.observation(
         "Response: Soạn thảo phản hồi",
         "chain",
@@ -1883,7 +1883,8 @@ async def compose_response(
 def build_assistant_graph(llm: LLMAdapter | None = None):
     settings = get_settings()
     model = llm or GeminiAdapter()
-    use_model = llm is not None or (settings.agent_model_mode == "gemini" and bool(settings.gemini_api_key))
+    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
+    use_model = llm is not None or (settings.agent_model_mode == "gemini" and has_key)
 
     async def decide(state: AssistantState) -> AssistantState:
         if state.get("mode", "plan") == "compose":

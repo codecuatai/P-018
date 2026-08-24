@@ -17,7 +17,7 @@ Real authentication requires `AUTH_ACCESS_TOKEN_TTL_SECONDS`, `AUTH_REFRESH_TOKE
 
 Production is different: do not upload root `.env` wholesale. The deployment platform supplies each service's individual environment variables and secrets. The same configuration names keep code unchanged.
 
-For a real-Gemini Gate G2 evaluation, set a valid `GEMINI_API_KEY` in a private root `.env` and set `AGENT_MODEL_MODE=gemini`. The key is optional for normal local startup but required for that evaluation path. `GEMINI_API_KEY` is mapped only to `agent-service`; status/health may report only whether it is configured, never its value.
+For a real-Gemini Gate G2 evaluation, set a valid `GEMINI_API_KEY` (or multiple comma-separated keys in `GEMINI_API_KEYS`) in a private root `.env` and set `AGENT_MODEL_MODE=gemini`. When multiple keys are configured in `GEMINI_API_KEYS` (e.g. `key1,key2,key3`), `agent-service` automatically distributes model invocations across keys using a Round Robin pool and provides seamless failover if an individual key encounters quota/rate limits (429). The keys are optional for normal local startup but required for that evaluation path. `GEMINI_API_KEY` and `GEMINI_API_KEYS` are mapped only to `agent-service`; status/health/diagnostics may report only whether keys are configured and the count of active keys, never their secret values.
 
 Optional Agent tracing uses exactly `LANGFUSE_SECRET_KEY`,
 `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_BASE_URL`. Two blank keys keep the

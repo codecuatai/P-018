@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     # LLM adapter configuration. Deterministic fallback is used when no key is configured.
     gemini_api_key: str = ""
+    gemini_api_keys: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
@@ -59,6 +60,32 @@ class Settings(BaseSettings):
         ):
             raise ValueError("LANGFUSE_BASE_URL must be a credential-free HTTPS URL.")
         return self
+
+    @model_validator(mode="after")
+    def sync_gemini_keys(self) -> "Settings":
+        if not self.gemini_api_key.strip() and self.gemini_api_keys.strip():
+            first_key = next((k.strip() for k in self.gemini_api_keys.split(",") if k.strip()), "")
+            self.gemini_api_key = first_key
+        return self
+
+    @property
+    def api_keys(self) -> list[str]:
+        keys: list[str] = []
+        if self.gemini_api_keys:
+            for k in self.gemini_api_keys.split(","):
+                k_clean = k.strip()
+                if k_clean and k_clean not in keys:
+                    keys.append(k_clean)
+        if self.gemini_api_key:
+            for k in self.gemini_api_key.split(","):
+                k_clean = k.strip()
+                if k_clean and k_clean not in keys:
+                    keys.append(k_clean)
+        return keys
+
+    @property
+    def has_gemini_api_key(self) -> bool:
+        return len(self.api_keys) > 0
 
     @property
     def langfuse_configured(self) -> bool:

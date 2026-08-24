@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import threading
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
@@ -38,14 +37,47 @@ MODEL_RUNTIME_DIAGNOSTICS: dict[str, Any] = {
     "last_model_call_http_status": None,
     "last_model_call_category": None,
     "last_model_call_invocation": None,
+    "keys_configured_count": 0,
 }
+
+
+class GeminiKeyPool:
+    """Thread-safe Round Robin selector and failover sequence for Gemini API keys."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._index = 0
+
+    def reset(self) -> None:
+        with self._lock:
+            self._index = 0
+
+    def get_keys_for_invocation(self, settings: Any) -> list[str]:
+        """Return available keys ordered starting from the current round-robin turn."""
+        keys = getattr(settings, "api_keys", [])
+        if not keys:
+            single = str(getattr(settings, "gemini_api_key", "")).strip()
+            keys = [single] if single else []
+        if not keys:
+            return []
+        with self._lock:
+            start_index = self._index % len(keys)
+            self._index = (self._index + 1) % len(keys)
+        return keys[start_index:] + keys[:start_index]
+
+
+KEY_POOL = GeminiKeyPool()
 
 
 def llm_diagnostics(settings: Any | None = None) -> dict[str, Any]:
     """Return safe runtime diagnostics without error text, prompts, or secrets."""
     current = settings or get_settings()
+    configured_keys = getattr(current, "api_keys", [])
+    if not configured_keys and getattr(current, "gemini_api_key", ""):
+        configured_keys = [current.gemini_api_key]
     MODEL_RUNTIME_DIAGNOSTICS["configured_primary"] = str(getattr(current, "gemini_model", ""))
     MODEL_RUNTIME_DIAGNOSTICS["configured_fallback"] = str(getattr(current, "gemini_fallback_model", ""))
+    MODEL_RUNTIME_DIAGNOSTICS["keys_configured_count"] = len(configured_keys)
     return dict(MODEL_RUNTIME_DIAGNOSTICS)
 
 
@@ -181,6 +213,9 @@ def _record_model_call(
 ) -> None:
     error_status = provider_status_code(error) if error else None
     error_category = provider_error_category(error) if error else None
+    configured_keys = getattr(settings, "api_keys", [])
+    if not configured_keys and getattr(settings, "gemini_api_key", ""):
+        configured_keys = [settings.gemini_api_key]
     MODEL_RUNTIME_DIAGNOSTICS.update(
         {
             "configured_primary": str(settings.gemini_model),
@@ -195,6 +230,7 @@ def _record_model_call(
             "last_model_call_http_status": error_status,
             "last_model_call_category": error_category,
             "last_model_call_invocation": invocation,
+            "keys_configured_count": len(configured_keys),
         }
     )
 
@@ -227,12 +263,13 @@ def _sampling_kwargs(settings: Any, model_name: str) -> dict[str, Any]:
     return kwargs
 
 
-def build_chat_model(settings: Any, model_name: str) -> Any:
+def build_chat_model(settings: Any, model_name: str, api_key: str | None = None) -> Any:
     from langchain_google_genai import ChatGoogleGenerativeAI
 
+    key = api_key or getattr(settings, "gemini_api_key", "")
     kwargs = {
         "model": model_name,
-        "google_api_key": settings.gemini_api_key,
+        "google_api_key": key,
         **_sampling_kwargs(settings, model_name),
     }
     return ChatGoogleGenerativeAI(
@@ -248,85 +285,157 @@ def is_quota_or_rate_limit_error(error: BaseException) -> bool:
 class GeminiAdapter:
     """Lazy Gemini boundary. Tests inject fakes and production never logs provider payloads."""
 
-    def _model(self, model_name: str | None = None) -> Any:
+    def _model(self, model_name: str | None = None, api_key: str | None = None) -> Any:
         settings = get_settings()
-        if not settings.gemini_api_key:
+        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return None
-        return build_chat_model(settings, model_name or settings.gemini_model)
+        target_model = model_name or settings.gemini_model
+        import inspect
+        try:
+            sig = inspect.signature(build_chat_model)
+            params = sig.parameters
+            if "api_key" in params or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+                return build_chat_model(settings, target_model, api_key=api_key)
+        except Exception:
+            pass
+        return build_chat_model(settings, target_model)
 
     async def ainvoke(self, prompt: str) -> Any:
         settings = get_settings()
-        if not settings.gemini_api_key:
+        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return ""
         model_names = gemini_model_names(settings)
+        keys = KEY_POOL.get_keys_for_invocation(settings)
+        if not keys:
+            return ""
+
         fallback_attempted = False
-        for index, model_name in enumerate(model_names):
-            try:
-                response: Any = await self._model(model_name).ainvoke(prompt)
-                _record_model_call(settings, model_name, "success", "raw", fallback_model_attempted=fallback_attempted)
-                return response
-            except Exception as error:
-                if should_attempt_fallback_model(error) and index < len(model_names) - 1:
-                    fallback_attempted = True
-                    continue
-                _record_model_call(
-                    settings, model_name, "failed", "raw", error=error, fallback_model_attempted=fallback_attempted
-                )
-                raise
+        last_error: BaseException | None = None
+
+        for model_index, model_name in enumerate(model_names):
+            for key_index, api_key in enumerate(keys):
+                try:
+                    response: Any = await self._model(model_name, api_key=api_key).ainvoke(prompt)
+                    _record_model_call(
+                        settings, model_name, "success", "raw", fallback_model_attempted=fallback_attempted
+                    )
+                    return response
+                except Exception as error:
+                    last_error = error
+                    # If this key hit quota/rate limit or temporary failure, and other keys remain, fail over to next key
+                    if (
+                        provider_error_category(error)
+                        in {
+                            "quota_or_rate_limit",
+                            "temporary_provider_failure",
+                            "authentication_or_permission",
+                            "timeout_or_network",
+                        }
+                        and key_index < len(keys) - 1
+                    ):
+                        continue
+                    break
+
+            if last_error and should_attempt_fallback_model(last_error) and model_index < len(model_names) - 1:
+                fallback_attempted = True
+                continue
+
+            _record_model_call(
+                settings,
+                model_name,
+                "failed",
+                "raw",
+                error=last_error,
+                fallback_model_attempted=fallback_attempted,
+            )
+            if last_error:
+                raise last_error
         raise RuntimeError("Gemini model invocation did not produce a result.")
 
     async def ainvoke_structured(self, prompt: str, schema: type[BaseModel]) -> Any:
         settings = get_settings()
-        if not settings.gemini_api_key:
+        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return ""
         model_names = gemini_model_names(settings)
+        keys = KEY_POOL.get_keys_for_invocation(settings)
+        if not keys:
+            return ""
+
         fallback_attempted = False
-        for index, model_name in enumerate(model_names):
-            model = self._model(model_name)
-            invocation: ModelInvocation = "structured"
-            try:
+        last_error: BaseException | None = None
+
+        for model_index, model_name in enumerate(model_names):
+            for key_index, api_key in enumerate(keys):
+                model = self._model(model_name, api_key=api_key)
+                invocation: ModelInvocation = "structured"
                 try:
-                    structured = model.with_structured_output(schema, method="json_schema", include_raw=True)
-                    result = await structured.ainvoke(prompt)
-                except Exception as structured_error:
-                    if not is_structured_schema_capability_error(structured_error):
-                        raise
-                    # A confirmed native-schema capability failure can use the
-                    # same model in raw mode; downstream parsers still validate
-                    # the Assistant schema before accepting it.
-                    invocation = "raw"
-                    result = await model.ainvoke(prompt)
+                    try:
+                        structured = model.with_structured_output(schema, method="json_schema", include_raw=True)
+                        result = await structured.ainvoke(prompt)
+                    except Exception as structured_error:
+                        if not is_structured_schema_capability_error(structured_error):
+                            raise
+                        # A confirmed native-schema capability failure can use the
+                        # same model in raw mode; downstream parsers still validate
+                        # the Assistant schema before accepting it.
+                        invocation = "raw"
+                        result = await model.ainvoke(prompt)
+                        _record_model_call(
+                            settings,
+                            model_name,
+                            "success",
+                            "raw",
+                            fallback_model_attempted=fallback_attempted,
+                            structured_output_fallback_used=True,
+                        )
+                        return result
                     _record_model_call(
-                        settings,
-                        model_name,
-                        "success",
-                        "raw",
-                        fallback_model_attempted=fallback_attempted,
-                        structured_output_fallback_used=True,
+                        settings, model_name, "success", "structured", fallback_model_attempted=fallback_attempted
                     )
                     return result
-                _record_model_call(
-                    settings, model_name, "success", "structured", fallback_model_attempted=fallback_attempted
-                )
-                return result
-            except Exception as error:
-                if should_attempt_fallback_model(error) and index < len(model_names) - 1:
-                    fallback_attempted = True
-                    continue
-                _record_model_call(
-                    settings, model_name, "failed", invocation, error=error, fallback_model_attempted=fallback_attempted
-                )
-                raise
+                except Exception as error:
+                    last_error = error
+                    if (
+                        provider_error_category(error)
+                        in {
+                            "quota_or_rate_limit",
+                            "temporary_provider_failure",
+                            "authentication_or_permission",
+                            "timeout_or_network",
+                        }
+                        and key_index < len(keys) - 1
+                    ):
+                        continue
+                    break
+
+            if last_error and should_attempt_fallback_model(last_error) and model_index < len(model_names) - 1:
+                fallback_attempted = True
+                continue
+
+            _record_model_call(
+                settings,
+                model_name,
+                "failed",
+                invocation,
+                error=last_error,
+                fallback_model_attempted=fallback_attempted,
+            )
+            if last_error:
+                raise last_error
         raise RuntimeError("Gemini structured invocation did not produce a result.")
 
 
 def get_llm_config() -> dict[str, str]:
     settings = get_settings()
     runtime = llm_diagnostics(settings)
+    configured_keys = getattr(settings, "api_keys", [])
+    if not configured_keys and getattr(settings, "gemini_api_key", ""):
+        configured_keys = [settings.gemini_api_key]
     return {
         "model": settings.gemini_model,
         "fallback_model": settings.gemini_fallback_model,
-        "api_key_configured": "true" if settings.gemini_api_key else "false",
+        "api_key_configured": "true" if configured_keys else "false",
+        "keys_configured_count": str(len(configured_keys)),
         "last_model_used": str(runtime["last_model_used"] or ""),
         "fallback_used": "true" if runtime["fallback_used"] else "false",
         "last_model_call_status": str(runtime["last_model_call_status"]),
