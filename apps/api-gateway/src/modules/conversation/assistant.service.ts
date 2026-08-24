@@ -839,6 +839,7 @@ export class AssistantService {
       pickup_address: 'điểm đón',
       dropoff_address: 'điểm đến',
       'query|dish_query': 'món bạn muốn tìm',
+      'location|cuisine_query|cuisine_type|cuisine': 'khu vực hoặc loại món',
       selection_domain: 'bạn muốn chọn đồ ăn hay lịch khám',
     };
     const values = fields
@@ -1030,23 +1031,11 @@ export class AssistantService {
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
     const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
+    // The Agent plan is the typed semantic decision. Do not reclassify it with
+    // a second keyword classifier in the Gateway; heuristics are only for
+    // short follow-up turns where the Agent intentionally returned no tasks.
+    if (planned.length) return { tasks: planned };
     const folded = plainText(message);
-    const explicitDomains = new Set<Domain>();
-    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day'])) explicitDomains.add('food');
-    if (textHasAny(folded, ['dat ban', 'nha hang', 'an tai nha hang'])) explicitDomains.add('restaurant');
-    if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'khoa', 'tam ly', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
-    if (textHasAny(folded, ['dat xe', 'goi xe', 'di tu', 'xe may', 'xe 4 cho', 'xe 7 cho'])) explicitDomains.add('ride');
-
-    if (explicitDomains.size) {
-      const explicitTasks = planned.filter((task) => explicitDomains.has(task.domain as Domain));
-      if (explicitTasks.length) return { tasks: explicitTasks };
-      if (explicitDomains.size === 1) {
-        const domain = [...explicitDomains][0];
-        const existing = active.find((task) => task.domain === domain);
-        if (existing) return { tasks: [this.planFromTask(existing)] };
-      }
-      return { tasks: planned };
-    }
 
     const targets = this.followUpDomains(active, actions, folded);
     if (targets.length > 1) {
@@ -2044,8 +2033,14 @@ export class AssistantService {
     const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
-    if (!location || !partySize || !startAt) {
-      const missing = [!location ? 'khu vực' : '', !partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
+    const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
+    const existing = task.authoritative;
+    const selection = stringValue(slots.selection);
+    const existingSelected = isRecord(existing?.selected);
+    const discoveryMissing = !location && !cuisineQuery;
+    const bookingDetailsMissing = Boolean(selection || existingSelected) && (!partySize || !startAt);
+    if (discoveryMissing || bookingDetailsMissing) {
+      const missing = [discoveryMissing ? 'khu vực hoặc loại món' : '', !partySize && (selection || existingSelected) ? 'số người' : '', !startAt && (selection || existingSelected) ? 'thời gian' : ''].filter(Boolean);
       const question = missing.length === 1 && missing[0] === 'thời gian'
         ? 'Bạn muốn đặt bàn lúc mấy giờ?'
         : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
@@ -2058,15 +2053,12 @@ export class AssistantService {
         items: [{ kind: 'clarification'}],
       };
     }
-    const existing = task.authoritative;
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
-    const selection = stringValue(slots.selection);
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
     const requestedIndex = selectionIndexFromText(task.latest_message, candidates);
     if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
     if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
     if (!candidates.length) {
-      const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',

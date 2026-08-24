@@ -210,9 +210,9 @@ async def assistant_chat(
         user_id=safe_code(request.user_id),
         tags=[f"mode:{request.mode}", f"env:{settings.app_env}"],
         input={
-            "user_message": request.message,
             "mode": request.mode,
             "conversation_id": request.conversation_id,
+            "message_length": len(request.message),
         },
     ) as root_observation:
         try:
@@ -392,7 +392,7 @@ async def chat(
         session_id=request.conversation_id,
         user_id=safe_code(request.user_id),
         tags=["domain:food", f"env:{settings.app_env}"],
-        input={"user_message": request.message, "conversation_id": request.conversation_id},
+        input={"conversation_id": request.conversation_id, "message_length": len(request.message)},
     ) as food_observation:
         try:
             result = await food_agent.ainvoke(
@@ -430,6 +430,11 @@ async def chat(
                 data=result.get("data", {}),
                 pending_confirmation=result.get("pending_confirmation"),
                 state_updates=state_updates,
+                turn_status=(
+                    "NEEDS_INPUT" if result.get("missing_slots") or result.get("missing_options")
+                    else "ERROR" if result.get("error")
+                    else "PROPOSAL_READY"
+                ),
                 meta={
                     "conversation_id": request.conversation_id,
                     "request_id": request.correlation_id,
@@ -440,7 +445,11 @@ async def chat(
                 actor_id=request.user_id,
                 workflow_id=request.conversation_id,
                 run_id=run_id,
-                phase=str(result.get("status", "COMPLETED")),
+                phase=(
+                    "NEEDS_INPUT" if result.get("missing_slots") or result.get("missing_options")
+                    else "ERROR" if result.get("error")
+                    else "PROPOSAL_READY"
+                ),
                 result=result,
                 started_at=started_at,
             )
@@ -448,7 +457,7 @@ async def chat(
                 output={
                     "response": result.get("response", ""),
                     "intent": result.get("intent"),
-                    "status": result.get("status", "COMPLETED"),
+                    "turn_status": response.turn_status,
                 }
             )
             return {"data": response.model_dump(), "meta": {"request_id": request.correlation_id}}
@@ -477,7 +486,7 @@ async def restaurant_chat(
         session_id=workflow_id,
         user_id=safe_code(actor_id),
         tags=["domain:restaurant", f"env:{settings.app_env}"],
-        input={"user_message": request.message, "workflow_id": workflow_id},
+        input={"workflow_id": workflow_id, "message_length": len(request.message)},
     ) as rest_observation:
         try:
             result = await restaurant_agent.ainvoke(
@@ -541,7 +550,7 @@ async def healthcare_chat(
         session_id=workflow_id,
         user_id=safe_code(actor_id),
         tags=["domain:healthcare", f"env:{settings.app_env}"],
-        input={"user_message": request.message, "workflow_id": workflow_id},
+        input={"workflow_id": workflow_id, "message_length": len(request.message)},
     ) as health_observation:
         try:
             result = await healthcare_agent.ainvoke(
@@ -603,7 +612,7 @@ async def ride_chat(
         session_id=request.workflow_id,
         user_id=safe_code(actor_id),
         tags=["domain:ride", f"env:{settings.app_env}"],
-        input={"user_message": request.message, "workflow_id": request.workflow_id},
+        input={"workflow_id": request.workflow_id, "message_length": len(request.message)},
     ) as ride_observation:
         try:
             result = await ride_agent.ainvoke(

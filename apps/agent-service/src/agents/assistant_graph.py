@@ -72,6 +72,7 @@ Structured safety rules — these ALWAYS take precedence:
 - Cancellation of a real booking/payment requires a typed cancellation workflow, NOT discarded_task_refs.
 - Never fabricate live weather, traffic, or real-time facts unless explicitly provided in context.
 - Never fabricate doctor names, restaurant names, food items, prices, or booking IDs.
+- Ask only for information required by the next executable capability. Start discovery with any sufficient signal (dish/cuisine/location); defer party size, exact time, delivery address, and payment details until the user selects or explicitly requests the committing step. Reuse profile, saved addresses, prior selections, safe defaults, and authoritative results before asking.
 - Maximum 1 clarification_question per response turn.
 """.strip()
 
@@ -108,6 +109,36 @@ Before building tasks, read user_profile, conversation_state.tasks, and recent_m
 """
 
 COMPOSE_INSTRUCTION = """You are X-One composing a Vietnamese response from authoritative system results. Summarize every task, including COMPLETED history and current in-progress work. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Be concise and address the user as bạn."""
+
+_CONFIRMED_RESULT_KINDS = {"booking_confirmed", "order_confirmed"}
+
+
+def _bounded_authoritative_results(value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Expose only bounded public result fields to the composing model."""
+    safe: list[dict[str, Any]] = []
+    for item in value[:8]:
+        if not isinstance(item, dict) or not isinstance(item.get("kind"), str):
+            continue
+        public: dict[str, Any] = {"kind": str(item["kind"])[:80]}
+        for key in ("options", "items", "message", "question", "status", "summary"):
+            candidate = item.get(key)
+            if key in {"options", "items"} and isinstance(candidate, list):
+                public[key] = _safe_model_value(candidate[:3])
+            elif key in {"message", "question", "status", "summary"} and isinstance(candidate, str):
+                public[key] = _safe_model_text(candidate, 500)
+        safe.append(public)
+    return safe[:3]
+
+
+def _safe_composed_message(message: str, authoritative_results: list[dict[str, Any]]) -> str:
+    if any(isinstance(item, dict) and item.get("kind") in _CONFIRMED_RESULT_KINDS for item in authoritative_results):
+        return message
+    normalized = _plain(message)
+    if any(phrase in normalized for phrase in ("da dat thanh cong", "da xac nhan", "da thanh toan", "da dat hang", "da hoan tat")):
+        return _deterministic_composition([], authoritative_results)
+    if any(phrase in message.casefold() for phrase in ("đã đặt thành công", "đã xác nhận", "đã thanh toán", "đã đặt hàng", "đã hoàn tất")):
+        return _deterministic_composition([], authoritative_results)
+    return message
 
 
 class PlannedTask(BaseModel):
@@ -765,10 +796,12 @@ def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: 
         # Discovery can begin with a location or cuisine alone. Booking details
         # become mandatory only after the user asks to reserve/hold a table.
         booking_intent = _has_any(_plain(text), ("dat ban", "giu ban", "dat cho", "an toi", "an trua"))
-        required = ("location", "party_size", "start_at") if booking_intent else ("location",)
-        for key in required:
-            if not slots.get(key):
-                missing.append(key)
+        if not slots.get("location") and not slots.get("cuisine_query") and not slots.get("cuisine_type") and not slots.get("cuisine"):
+            missing.append("location|cuisine_query")
+        if booking_intent:
+            for key in ("party_size", "start_at"):
+                if not slots.get(key):
+                    missing.append(key)
     if domain == "ride":
         for key in ("pickup_address",):
             if not slots.get(key):
@@ -1548,7 +1581,13 @@ def _merge_explicit_context_actions(
         else []
     )
     deterministic_refs = _discard_targets(message, raw_tasks)
-    discarded_refs = sorted(set(plan.discarded_task_refs).union(deterministic_refs))
+    allowed_model_refs = {
+        index
+        for index, value in enumerate(raw_tasks[:8])
+        if isinstance(value, dict)
+        and str(value.get("phase", "PLANNING")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+    }
+    discarded_refs = sorted((set(plan.discarded_task_refs).intersection(allowed_model_refs)).union(deterministic_refs))
     interaction_mode = plan.interaction_mode
     if plan.tasks:
         interaction_mode = "service"
@@ -1697,7 +1736,7 @@ async def _invoke_structured(
             prompt_template_version="1",
             status="started",
         ),
-        input={"prompt": prompt, "purpose": purpose, "schema": schema.__name__},
+        input={"purpose": purpose, "schema": schema.__name__, "prompt_length": len(prompt)},
         model=settings.gemini_model,
     ) as generation_observation:
         try:
@@ -1795,12 +1834,13 @@ async def _compose_response(
         return fallback, "deterministic"
     model = llm or GeminiAdapter()
     safe_tasks = _planner_safe_state({"tasks": tasks}).get("tasks", [])
-    safe_results = _safe_model_value(authoritative_results[:8])
+    safe_results = _bounded_authoritative_results(authoritative_results)
     prompt = json.dumps(
         {
             "system_prompt": f"{STRUCTURED_CONVERSATION_RULES}\n\n{XONE_SYSTEM_PROMPT}",
             "instruction": COMPOSE_INSTRUCTION,
-            "legacy_instruction": (
+            "legacy_instruction": COMPOSE_INSTRUCTION,
+            "deprecated_instruction": (
                 "Viết phản hồi tiếng Việt tự nhiên, thân thiện và chu đáo cho người dùng dựa trên danh sách tác vụ và kết quả thực tế từ hệ thống. "
                 "Tuyệt đối không lặp lại các ID kỹ thuật ẩn, không tự bịa số liệu, giá tiền, trạng thái, tên hay địa chỉ. "
                 "Không khẳng định đơn/lịch đã hoàn tất trừ khi kết quả ghi rõ hoàn thành. "
@@ -1827,7 +1867,7 @@ async def _compose_response(
             }
         )
         logger.info("assistant.composition.accepted model=%s", llm_diagnostics(settings)["last_model_used"])
-        return str(result.message), "model"
+        return _safe_composed_message(str(result.message), authoritative_results), "model"
     except Exception as error:  # provider errors are intentionally reduced to a safe fallback
         MODEL_DIAGNOSTICS.update(
             {
@@ -1863,7 +1903,7 @@ async def compose_response(
             status="started",
         ),
         input={
-            "user_message": message,
+            "message_length": len(message),
             "task_count": len(tasks),
             "authoritative_results_count": len(authoritative_results),
         },
