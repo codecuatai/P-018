@@ -16,7 +16,7 @@ async function main(): Promise<void> {
   const databaseUrl = requiredEnv('DATABASE_URL');
 
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('LOCAL_ADMIN_EMAIL must be a valid email.');
-  if (password.length < 15 || password.length > 128) throw new Error('LOCAL_ADMIN_PASSWORD must contain 15-128 characters.');
+  if (password.length < 8 || password.length > 128) throw new Error('LOCAL_ADMIN_PASSWORD must contain 8-128 characters.');
 
   const now = new Date().toISOString();
   const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);

@@ -64,11 +64,15 @@ FORBIDDEN_MODEL_FIELDS = {
 }
 TIMEZONE = "Asia/Bangkok"
 STRUCTURED_CONVERSATION_RULES = """
-Structured conversation rules:
-- Use interaction_mode=chitchat for social turns and interaction_mode=advisory for general advice without a concrete service request; both return tasks=[].
-- When the user explicitly switches away from unfinished conversation work, add the prior safe task_ref to discarded_task_refs and plan only the newly requested work.
-- discarded_task_refs only abandons conversation work. It never cancels or claims to cancel a real booking, order, reservation, appointment, hold, or payment; those require the typed cancellation workflow and confirmation policy.
-- Never claim access to live weather or other real-time facts unless trusted context supplies them.
+Structured safety rules — these ALWAYS take precedence:
+- interaction_mode=chitchat: social turns only, tasks=[].
+- interaction_mode=advisory: general advice without booking/ordering, tasks=[].
+- interaction_mode=service: concrete service request, populate tasks[] accordingly.
+- discarded_task_refs: ONLY for in-progress conversation tasks the user explicitly abandons. NEVER discard COMPLETED tasks.
+- Cancellation of a real booking/payment requires a typed cancellation workflow, NOT discarded_task_refs.
+- Never fabricate live weather, traffic, or real-time facts unless explicitly provided in context.
+- Never fabricate doctor names, restaurant names, food items, prices, or booking IDs.
+- Maximum 1 clarification_question per response turn.
 """.strip()
 
 XONE_SYSTEM_PROMPT = """Bạn là X-One — Trợ lý ảo đa dịch vụ thông minh, thân thiện và linh hoạt tại Việt Nam.
@@ -97,6 +101,14 @@ Quy tắc ứng xử và bóc tách tác vụ:
 - Nếu conversation_state chứa saved_addresses, bạn có thể tự động nhận diện và sử dụng các tên gọi (label) này (VD: "Nhà", "Công ty") làm địa điểm đặt xe, giao đồ ăn mà không cần hỏi lại.
 """
 
+# Additional planner instructions from the current product prompt.
+XONE_SYSTEM_PROMPT += """
+
+Before building tasks, read user_profile, conversation_state.tasks, and recent_messages. Preserve COMPLETED tasks as history; only discard an in-progress task when the user explicitly abandons it. Map saved address phrases such as home to the matching saved-address label. For ambiguous or missing addresses, ask one clarification question or use location_query; never invent an exact address. Analyze intent, service count, dependencies, and required slots internally before emitting JSON. ride requires pickup_address and dropoff_address; food requires dish_query; restaurant requires location or cuisine_query; healthcare requires department. Maximum 4 tasks. Never claim success unless authoritative_results proves it.
+"""
+
+COMPOSE_INSTRUCTION = """You are X-One composing a Vietnamese response from authoritative system results. Summarize every task, including COMPLETED history and current in-progress work. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Be concise and address the user as bạn."""
+
 
 class PlannedTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -113,6 +125,7 @@ class PlannedTask(BaseModel):
 class AssistantPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    reasoning: str = Field(default="", max_length=800, description="Internal intent, slot, and dependency analysis; never display to the user.")
     assistant_message: str = Field(default="Mình sẽ giúp bạn xử lý yêu cầu này.", max_length=1000)
     tasks: list[PlannedTask] = Field(default_factory=list, max_length=4)
     interaction_mode: Literal["service", "chitchat", "advisory", "unsupported"] = "service"
@@ -1289,6 +1302,8 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
         dependencies = raw_task.get("depends_on", [])
         if isinstance(dependencies, list):
             safe_task["depends_on"] = [item for item in dependencies if isinstance(item, int) and 0 <= item < 8]
+        if str(raw_task.get("phase", "PLANNING")) == "COMPLETED":
+            safe_task["completed"] = True
         pending_actions = raw_task.get("pending_actions", [])
         if isinstance(pending_actions, list):
             safe_actions = [
@@ -1631,13 +1646,18 @@ def _parse_model(raw: Any, schema: type[BaseModel]) -> BaseModel:
 def _model_prompt(state: AssistantState) -> str:
     settings = get_settings()
     recent_messages = []
-    for message in state.get("messages", [])[-12:]:
+    for message in state.get("messages", [])[-20:]:
         if not isinstance(message, dict):
             continue
         role = message.get("role")
         content = _safe_model_text(message.get("content"), 1200)
         if role in {"user", "assistant"} and content:
             recent_messages.append({"role": role, "content": content})
+    response_schema = AssistantPlan.model_json_schema()
+    required = response_schema.setdefault("required", [])
+    if "reasoning" in required:
+        required.remove("reasoning")
+    required.insert(0, "reasoning")
     payload = {
         "system_prompt": f"{STRUCTURED_CONVERSATION_RULES}\n\n{XONE_SYSTEM_PROMPT}",
         "current_time": _now().isoformat(),
@@ -1646,7 +1666,7 @@ def _model_prompt(state: AssistantState) -> str:
         "recent_messages": recent_messages,
         "conversation_state": _planner_safe_state(state.get("conversation_state", {})),
         "user_profile": _safe_slots(state.get("user_profile", {})) if state.get("user_profile") else None,
-        "response_schema": AssistantPlan.model_json_schema(),
+        "response_schema": response_schema,
         "max_tasks": 4,
         "configured_model": settings.gemini_model,
     }
@@ -1779,7 +1799,8 @@ async def _compose_response(
     prompt = json.dumps(
         {
             "system_prompt": f"{STRUCTURED_CONVERSATION_RULES}\n\n{XONE_SYSTEM_PROMPT}",
-            "instruction": (
+            "instruction": COMPOSE_INSTRUCTION,
+            "legacy_instruction": (
                 "Viết phản hồi tiếng Việt tự nhiên, thân thiện và chu đáo cho người dùng dựa trên danh sách tác vụ và kết quả thực tế từ hệ thống. "
                 "Tuyệt đối không lặp lại các ID kỹ thuật ẩn, không tự bịa số liệu, giá tiền, trạng thái, tên hay địa chỉ. "
                 "Không khẳng định đơn/lịch đã hoàn tất trừ khi kết quả ghi rõ hoàn thành. "

@@ -571,7 +571,7 @@ function friendlyErrorMessage(code: string, detail: string): string {
   const source = `${code} ${detail}`.toUpperCase();
   if (source.includes("INVALID_CREDENTIALS")) return "Email hoặc mật khẩu không đúng.";
   if (source.includes("ACCOUNT_ALREADY_EXISTS")) return "Email này đã được dùng để tạo tài khoản.";
-  if (source.includes("PASSWORD_POLICY")) return "Dùng mật khẩu hoặc cụm mật khẩu từ 15 ký tự trở lên.";
+  if (source.includes("PASSWORD_POLICY")) return "Dùng mật khẩu hoặc cụm mật khẩu từ 8 ký tự trở lên.";
   if (source.includes("RESET_TOKEN")) return "Liên kết đặt lại mật khẩu không còn hợp lệ. Bạn hãy yêu cầu liên kết mới.";
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
