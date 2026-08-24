@@ -9,7 +9,7 @@ import { configureGatewayHttpSecurity } from '../src/common/http-security';
 import { getGatewaySecurityConfig } from '../src/config/environment';
 
 const origin = 'http://localhost:5173';
-const password = 'a reliable local passphrase';
+const password = 'a reliable local passphrase 123!@#';
 
 describe('real auth HTTP contract', () => {
   let app: NestExpressApplication;

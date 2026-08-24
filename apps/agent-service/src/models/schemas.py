@@ -95,7 +95,7 @@ class ChatResponse(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
     tool_request: ToolRequest | None = None
-    status: Literal["NEEDS_INPUT", "TOOL_REQUEST_READY", "PROPOSAL_READY", "ERROR"] = "PROPOSAL_READY"
+    status: Literal["NEEDS_INPUT", "TOOL_REQUEST_READY", "PROPOSAL_READY", "COMPLETED", "ERROR"] = "PROPOSAL_READY"
 
 
 class ToolRequest(BaseModel):

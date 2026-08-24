@@ -1127,9 +1127,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "gan day",
         ),
     )
-    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi tai")) and not _has_any(
-        lowered, ("giao ve", "ship", "dat mon")
-    )
+    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi tai"))
     explicit_food = _has_any(
         lowered,
         (
@@ -1736,7 +1734,7 @@ async def _invoke_structured(
             prompt_template_version="1",
             status="started",
         ),
-        input={"purpose": purpose, "schema": schema.__name__, "prompt_length": len(prompt)},
+        input={"prompt": prompt, "purpose": purpose, "schema": schema.__name__, "prompt_length": len(prompt)},
         model=settings.gemini_model,
     ) as generation_observation:
         try:
