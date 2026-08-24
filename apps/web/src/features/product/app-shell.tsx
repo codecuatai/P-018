@@ -1,6 +1,22 @@
 "use client";
 
-import { Bell, BookmarkCheck, History, LifeBuoy, LogOut, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound, X } from "lucide-react";
+import {
+  Bell,
+  BookmarkCheck,
+  CarFront,
+  History,
+  LifeBuoy,
+  LogOut,
+  Menu,
+  MessageSquareText,
+  Settings,
+  ShieldCheck,
+  Stethoscope,
+  Store,
+  UserRound,
+  Utensils,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -51,29 +67,33 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 function Sidebar({ userEmail, pathname, onLogout, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; compact?: boolean }) {
-  const contents = <div className="sidebar-content">
-    <div className="sidebar-header">
-      <Link className="brand-link sidebar-brand" href="/app"><XOneMark size={28} /><span>X-One</span></Link>
-      <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>+ Mới</Link>
-    </div>
-    <nav className="app-nav" aria-label="Không gian X-One">
-      {navigation.map(({ href, label, icon: Icon }) => {
-        const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`);
-        const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={17} /><span>{label}</span></Link>;
-        return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>;
-      })}
-    </nav>
-    <RecentConversations pathname={pathname} compact={compact} />
-    <div className="sidebar-spacer" />
-    <div className="sidebar-footer">
-      <div className="sidebar-identity">
-        <span className="identity-initials">{initials(userEmail)}</span>
-        <span className="sidebar-identity-copy"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></span>
+  return (
+    <div className="sidebar-content">
+      <div className="sidebar-header">
+        <Link className="brand-link sidebar-brand" href="/app"><XOneMark size={28} /><span>X-One</span></Link>
+        <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>+ Mới</Link>
       </div>
-      <SidebarUserMenu onLogout={onLogout} compact={compact} />
+      <nav className="app-nav" aria-label="Không gian X-One">
+        {navigation.map(({ href, label, icon: Icon }) => {
+          const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`);
+          const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={17} /><span>{label}</span></Link>;
+          return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>;
+        })}
+      </nav>
+      <RecentConversations pathname={pathname} compact={compact} />
+      <div className="sidebar-spacer" />
+      <div className="sidebar-footer">
+        <div className="sidebar-identity">
+          <span className="identity-initials">{initials(userEmail)}</span>
+          <span className="sidebar-identity-copy">
+            <strong>{userEmail || "Tài khoản X-One"}</strong>
+            <small><ShieldCheck size={12} /> Phiên bảo mật</small>
+          </span>
+        </div>
+        <SidebarUserMenu onLogout={onLogout} compact={compact} />
+      </div>
     </div>
-  </div>;
-  return contents;
+  );
 }
 
 function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>; compact: boolean }) {
@@ -88,7 +108,7 @@ function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>;
   }, [open]);
 
   const menuItems = [
-    { href: "/app/profile", icon: UserRound, label: "Hồ sơ" },
+    { href: "/app/profile", icon: UserRound, label: "Hồ sơ & cài đặt" },
     { href: "/app/services", icon: Store, label: "Dịch vụ" },
     { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
   ];
@@ -100,12 +120,12 @@ function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>;
     {open && <div className="sidebar-user-dropdown" role="menu">
       {menuItems.map(({ href, icon: Icon, label }) =>
         compact
-          ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} />{label}</Link></SheetClose>
-          : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} />{label}</Link>
+          ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link></SheetClose>
+          : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>
       )}
       <div className="dropdown-divider" />
       <button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}>
-        <LogOut size={15} />Đăng xuất
+        <LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span>
       </button>
     </div>}
   </div>;
@@ -156,7 +176,7 @@ function NotificationBell() {
       <div className="notification-popover-header">
         <span>Thông báo</span>
         {count > 0 && <span className="notif-unread-count">{count} chưa đọc</span>}
-        <button className="icon-button" type="button" aria-label="Đóng" onClick={() => setOpen(false)}><X size={15} /></button>
+        <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}><X size={14} /></button>
       </div>
       <div className="notification-popover-body">
         {items.length === 0
@@ -184,6 +204,12 @@ function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => 
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  const menuItems = [
+    { href: "/app/profile", icon: UserRound, label: "Hồ sơ & cài đặt" },
+    { href: "/app/services", icon: Store, label: "Dịch vụ" },
+    { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
+  ];
+
   return <div className="user-menu-wrap" ref={ref}>
     <button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((v) => !v)}>
       <span className="identity-initials identity-initials-sm">{initials(userEmail)}</span>
@@ -194,18 +220,16 @@ function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => 
         <small><ShieldCheck size={12} /> Phiên bảo mật</small>
       </div>
       <div className="dropdown-divider" />
-      {([
-        { href: "/app/profile", icon: UserRound, label: "Hồ sơ & cài đặt" },
-        { href: "/app/services", icon: Store, label: "Dịch vụ" },
-        { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
-      ] as const).map(({ href, icon: Icon, label }) => (
+      {menuItems.map(({ href, icon: Icon, label }) => (
         <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}>
-          <Icon size={15} />{label}
+          <Icon size={15} className="dropdown-item-icon" />
+          <span>{label}</span>
         </Link>
       ))}
       <div className="dropdown-divider" />
       <button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}>
-        <LogOut size={15} />Đăng xuất
+        <LogOut size={15} className="dropdown-item-danger-icon" />
+        <span>Đăng xuất</span>
       </button>
     </div>}
   </div>;
@@ -228,7 +252,46 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
   }, []);
   const groups = groupConversations(items.filter((item) => item.status !== "ARCHIVED")).slice(0, 3);
   if (!groups.length) return null;
-  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span>{conversationTitle(item)}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
+  return (
+    <div className="sidebar-recent">
+      <div className="sidebar-recent-heading">
+        <span>Gần đây</span>
+        <Link href="/app/history">Xem tất cả</Link>
+      </div>
+      <nav aria-label="Cuộc trò chuyện gần đây">
+        {groups.map((group) => (
+          <div className="sidebar-recent-group" key={group.label}>
+            <small>{group.label}</small>
+            {group.items.slice(0, compact ? 4 : 5).map((item) => {
+              const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`;
+              const title = conversationTitle(item);
+              const Icon = conversationIcon(title);
+              return (
+                <Link
+                  className={`sidebar-conversation-link ${current ? "is-active" : ""}`}
+                  href={`/app/conversations/${encodeURIComponent(item.conversationId)}`}
+                  aria-current={current ? "page" : undefined}
+                  key={item.conversationId}
+                >
+                  <span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span>
+                  <span className="sidebar-conv-title">{title}</span>
+                  <time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time>
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function conversationIcon(title: string) {
+  const lower = title.toLowerCase();
+  if (lower.includes("xe") || lower.includes("chuyến") || lower.includes("đi") || lower.includes("đón")) return CarFront;
+  if (lower.includes("ăn") || lower.includes("phở") || lower.includes("món") || lower.includes("quán") || lower.includes("bàn") || lower.includes("nhà hàng")) return Utensils;
+  if (lower.includes("khám") || lower.includes("bệnh") || lower.includes("bác sĩ") || lower.includes("y tế")) return Stethoscope;
+  return MessageSquareText;
 }
 
 function groupConversations(items: ConversationRecord[]): Array<{ label: string; items: ConversationRecord[] }> {
