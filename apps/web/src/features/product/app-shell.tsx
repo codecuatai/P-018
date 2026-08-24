@@ -1,26 +1,23 @@
 "use client";
 
-import { Bell, Heart, History, LifeBuoy, LogOut, Menu, MessageSquareText, ShieldCheck, Store, UserRound } from "lucide-react";
+import { Bell, BookmarkCheck, History, LifeBuoy, LogOut, Menu, MessageSquareText, Settings, ShieldCheck, Store, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { getUnreadNotificationCount, listConversations } from "@/lib/api-client";
+import { getUnreadNotificationCount, listConversations, listNotifications } from "@/lib/api-client";
 import { CONVERSATIONS_CHANGED_EVENT, emitNewConversation } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
 
+// Core navigation — only the 3 most frequently used destinations
 const navigation = [
   { href: "/app", label: "Trợ lý", icon: MessageSquareText },
   { href: "/app/history", label: "Lịch sử", icon: History },
-  { href: "/app/notifications", label: "Thông báo", icon: Bell },
-  { href: "/app/favorites", label: "Đã lưu", icon: Heart },
-  { href: "/app/support", label: "Hỗ trợ", icon: LifeBuoy },
-  { href: "/app/services", label: "Dịch vụ", icon: Store },
-  { href: "/app/profile", label: "Hồ sơ & cài đặt", icon: UserRound },
+  { href: "/app/favorites", label: "Đã lưu", icon: BookmarkCheck },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -35,14 +32,183 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return <div className="app-shell"><a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
     <aside className="app-sidebar"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} /></aside>
-    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link><Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact /></SheetContent></Sheet></header>
-    <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">{children}</main>
+    <header className="app-mobile-header"><Link className="brand-link" href="/app"><XOneMark size={27} /><span>X-One</span></Link>
+      <div className="app-mobile-actions">
+        <NotificationBell />
+        <Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} onLogout={handleLogout} compact /></SheetContent></Sheet>
+      </div>
+    </header>
+    <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">
+      {assistantWorkspace && (
+        <div className="app-topbar">
+          <NotificationBell />
+          <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+        </div>
+      )}
+      {children}
+    </main>
   </div>;
 }
 
 function Sidebar({ userEmail, pathname, onLogout, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; compact?: boolean }) {
-  const contents = <div className="sidebar-content"><Link className="brand-link sidebar-brand" href="/app"><XOneMark size={30} /><span>X-One</span></Link><Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>Trợ lý mới</Link><nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => { const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`); const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={18} /><span>{label}</span>{href === "/app/notifications" ? <NotificationCount /> : null}</Link>; return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>; })}</nav><RecentConversations pathname={pathname} compact={compact} /><div className="sidebar-spacer" /><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={13} /> Phiên bảo mật</small></span></div><button className="sidebar-logout" type="button" onClick={() => void onLogout()}><LogOut size={17} /> Đăng xuất</button></div>;
+  const contents = <div className="sidebar-content">
+    <div className="sidebar-header">
+      <Link className="brand-link sidebar-brand" href="/app"><XOneMark size={28} /><span>X-One</span></Link>
+      <Link className="button button-primary sidebar-new" href="/app" onClick={emitNewConversation}>+ Mới</Link>
+    </div>
+    <nav className="app-nav" aria-label="Không gian X-One">
+      {navigation.map(({ href, label, icon: Icon }) => {
+        const current = href === "/app" ? pathname === "/app" || Boolean(pathname?.startsWith("/app/conversations/")) : pathname === href || pathname?.startsWith(`${href}/`);
+        const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={href} aria-current={current ? "page" : undefined}><Icon size={17} /><span>{label}</span></Link>;
+        return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>;
+      })}
+    </nav>
+    <RecentConversations pathname={pathname} compact={compact} />
+    <div className="sidebar-spacer" />
+    <div className="sidebar-footer">
+      <div className="sidebar-identity">
+        <span className="identity-initials">{initials(userEmail)}</span>
+        <span className="sidebar-identity-copy"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></span>
+      </div>
+      <SidebarUserMenu onLogout={onLogout} compact={compact} />
+    </div>
+  </div>;
   return contents;
+}
+
+function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>; compact: boolean }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  const menuItems = [
+    { href: "/app/profile", icon: UserRound, label: "Hồ sơ" },
+    { href: "/app/services", icon: Store, label: "Dịch vụ" },
+    { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
+  ];
+
+  return <div className="sidebar-user-menu" ref={ref}>
+    <button className="sidebar-settings-btn" type="button" aria-label="Cài đặt và tài khoản" onClick={() => setOpen((v) => !v)}>
+      <Settings size={16} />
+    </button>
+    {open && <div className="sidebar-user-dropdown" role="menu">
+      {menuItems.map(({ href, icon: Icon, label }) =>
+        compact
+          ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} />{label}</Link></SheetClose>
+          : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} />{label}</Link>
+      )}
+      <div className="dropdown-divider" />
+      <button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}>
+        <LogOut size={15} />Đăng xuất
+      </button>
+    </div>}
+  </div>;
+}
+
+function NotificationBell() {
+  const { status } = useAuth();
+  const [count, setCount] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean }>>([]);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (status !== "authenticated") { setCount(0); return; }
+    let active = true;
+    const controller = new AbortController();
+    void getUnreadNotificationCount(controller.signal).then((result) => { if (active) setCount(result.unread_count); }).catch(() => undefined);
+    return () => { active = false; controller.abort(); };
+  }, [status]);
+
+  useEffect(() => {
+    if (!open || status !== "authenticated") return;
+    let active = true;
+    void listNotifications().then((result) => {
+      if (active) setItems((result.items ?? []).slice(0, 6).map((n) => ({
+        id: n.id,
+        title: n.title || "Thông báo",
+        body: n.body || undefined,
+        read: n.status === "READ",
+      })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [open, status]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return <div className="notification-bell-wrap" ref={ref}>
+    <button className="icon-button notification-bell-btn" type="button" aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`} onClick={() => setOpen((v) => !v)}>
+      <Bell size={18} />
+      {count > 0 && <span className="notification-badge" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+    </button>
+    {open && <div className="notification-popover" role="dialog" aria-label="Thông báo">
+      <div className="notification-popover-header">
+        <span>Thông báo</span>
+        {count > 0 && <span className="notif-unread-count">{count} chưa đọc</span>}
+        <button className="icon-button" type="button" aria-label="Đóng" onClick={() => setOpen(false)}><X size={15} /></button>
+      </div>
+      <div className="notification-popover-body">
+        {items.length === 0
+          ? <p className="notif-empty">Không có thông báo mới.</p>
+          : items.map((item) => <div key={item.id} className={`notif-item${item.read ? "" : " notif-unread"}`}>
+            {!item.read && <span className="notif-dot" aria-hidden="true" />}
+            <div className="notif-copy"><strong>{item.title}</strong>{item.body && <span>{item.body}</span>}</div>
+          </div>)}
+      </div>
+      <div className="notification-popover-footer">
+        <Link href="/app/notifications" onClick={() => setOpen(false)}>Xem tất cả thông báo →</Link>
+      </div>
+    </div>}
+  </div>;
+}
+
+function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return <div className="user-menu-wrap" ref={ref}>
+    <button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((v) => !v)}>
+      <span className="identity-initials identity-initials-sm">{initials(userEmail)}</span>
+    </button>
+    {open && <div className="user-dropdown" role="menu">
+      <div className="user-dropdown-header">
+        <strong>{userEmail || "Tài khoản X-One"}</strong>
+        <small><ShieldCheck size={12} /> Phiên bảo mật</small>
+      </div>
+      <div className="dropdown-divider" />
+      {([
+        { href: "/app/profile", icon: UserRound, label: "Hồ sơ & cài đặt" },
+        { href: "/app/services", icon: Store, label: "Dịch vụ" },
+        { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
+      ] as const).map(({ href, icon: Icon, label }) => (
+        <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}>
+          <Icon size={15} />{label}
+        </Link>
+      ))}
+      <div className="dropdown-divider" />
+      <button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}>
+        <LogOut size={15} />Đăng xuất
+      </button>
+    </div>}
+  </div>;
 }
 
 function RecentConversations({ pathname, compact }: { pathname: string | null; compact: boolean }) {
@@ -86,18 +252,4 @@ function dayGroup(value?: string): string {
 
 function dateValue(value: ConversationRecord): number { const parsed = new Date(value.updatedAt ?? value.lastMessageAt ?? value.createdAt ?? 0).getTime(); return Number.isFinite(parsed) ? parsed : 0; }
 function formatRecentTime(value?: string): string { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date); }
-
-function NotificationCount() {
-  const { status } = useAuth();
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (status !== "authenticated") { setCount(0); return; }
-    let active = true;
-    const controller = new AbortController();
-    void getUnreadNotificationCount(controller.signal).then((result) => { if (active) setCount(result.unread_count); }).catch(() => undefined);
-    return () => { active = false; controller.abort(); };
-  }, [status]);
-  return count > 0 ? <span className="notification-count" aria-label={`${count} thông báo chưa đọc`}>{count > 99 ? "99+" : count}</span> : null;
-}
-
 function initials(email: string): string { return email.trim().slice(0, 2).toUpperCase() || "XO"; }
