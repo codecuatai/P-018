@@ -32,6 +32,13 @@ the Restaurant-owned `catalog_dataset_versions` table used by the importer to
 record the active dataset version and repeatable apply/audit evidence; it does
 not create a cross-domain catalog or shared database authority.
 
+Food and Restaurant discovery catalogs are imported PostgreSQL data at runtime.
+Operational seed commands do not create fixed restaurant or menu-item examples:
+Food runs its catalog importer, while Restaurant seed only adds owned booking
+resources (tables and opening hours) to already-imported restaurant rows. The
+in-memory Food repository remains an explicit unit-test adapter and is never
+selected by the Compose runtime configuration.
+
 ## Product/Ops and local demo persistence
 
 Core migration `012_core_product_ops.sql` adds actor-scoped durable

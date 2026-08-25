@@ -210,9 +210,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 function Sidebar({ userEmail, pathname, onLogout, onToggleCollapse, compact = false }: { userEmail: string; pathname: string | null; onLogout: () => Promise<void>; onToggleCollapse?: () => void; compact?: boolean }) {
   return (
     <div className="sidebar-content">
-      <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Cuộc trò chuyện mới">
+      <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới và xóa bớt ngữ cảnh cũ">
         <Plus size={16} />
-        <span>Mới</span>
+        <span>Đoạn chat mới</span>
       </Link>
       <nav className="app-nav" aria-label="Không gian X-One">
         {navigation.map(({ href, label, icon: Icon }) => {

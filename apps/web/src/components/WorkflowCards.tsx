@@ -95,7 +95,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
             <small>{text(option.cuisine, "Ẩm thực đang cập nhật")} {option.rating !== undefined ? `· ${option.rating} ★` : ""}</small>
           </div>
           <div className="option-actions">
-            {selectionActions[originalIndex] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[originalIndex])} disabled={Boolean(disabledActionId)}>Chọn quán</button> : null}
+            {selectionActions[originalIndex] ? <button className="small-action" type="button" onClick={() => onAction(selectionActions[originalIndex]!)} disabled={Boolean(disabledActionId)}>Chọn quán</button> : null}
             <button className="small-action" type="button" onClick={() => setDetail(option)}>Xem chi tiết</button>
           </div>
         </div>)}
@@ -137,7 +137,8 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
 function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: { item: AssistantRestaurantConfirmationItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const [confirmed, setConfirmed] = useState(false);
   const action = actions.find((candidate) => candidate.kind === "restaurant_confirm");
-  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} /><Detail label="Thời gian" value={formatDateTime(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action ? <section className="restaurant-confirmation-form" aria-label="Xác nhận đặt bàn"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận thông tin đặt bàn ở trên.</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> Xác nhận đặt bàn</button></section> : null}</article>;
+  const isCanceled = item.status === "FAILED" || item.status === "DISCARDED" || item.status === "CANCELLED";
+  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} /><Detail label="Thời gian" value={formatDateTime(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action && !isCanceled ? <section className="restaurant-confirmation-form" aria-label="Xác nhận đặt bàn"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận thông tin đặt bàn ở trên.</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> Xác nhận đặt bàn</button></section> : null}</article>;
 }
 
 function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
@@ -358,6 +359,7 @@ function FoodConfirmation({ item, confirmationAction, paymentAction, onAction, d
   const pickupStops = item.pickup_stops ?? [];
   const readyForPayment = item.confirmation_state === "PAYMENT_REQUIRED";
   const action = readyForPayment ? paymentAction : confirmationAction;
+  const isCanceled = (item as any).status === "FAILED" || (item as any).status === "DISCARDED" || (item as any).status === "CANCELLED";
   const cartItems = item.cart?.items?.filter((cartItem) => text(cartItem.name).length > 0) ?? [];
   return <section className="food-confirmation-form" aria-label="Xác nhận đơn giao hàng">
     <div className="detail-list">
@@ -369,8 +371,8 @@ function FoodConfirmation({ item, confirmationAction, paymentAction, onAction, d
     </div>
     {cartItems.length ? <ul className="food-confirmation-items" aria-label="Món đã chọn">{cartItems.map((cartItem, index) => <li key={`${text(cartItem.name, "món")}-${index}`}><span>{text(cartItem.name, "Món ăn")} × {cartItem.quantity ?? 1}</span><strong>{formatMoney((cartItem.unit_price ?? cartItem.price ?? 0) * (cartItem.quantity ?? 1), cartItem.currency ?? "VND")}</strong></li>)}</ul> : null}
     {pickupStops.length > 1 ? <p className="card-note">Một tài xế sẽ lần lượt lấy món tại {pickupStops.length} địa điểm rồi giao đến địa chỉ của bạn.</p> : null}
-    {!readyForPayment ? <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận món, các điểm lấy hàng và địa chỉ giao ở trên.</span></label> : null}
-    {action ? <button className="card-action food-checkout-action" type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId) || (!readyForPayment && !confirmed)}><CircleDollarSign size={15} /> {readyForPayment ? "Thanh toán đơn hàng" : "Xác nhận thông tin đơn"}</button> : null}
+    {!readyForPayment && !isCanceled ? <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận món, các điểm lấy hàng và địa chỉ giao ở trên.</span></label> : null}
+    {action && !isCanceled ? <button className="card-action food-checkout-action" type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId) || (!readyForPayment && !confirmed)}><CircleDollarSign size={15} /> {readyForPayment ? "Thanh toán đơn hàng" : "Xác nhận thông tin đơn"}</button> : null}
   </section>;
 }
 

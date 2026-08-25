@@ -32,7 +32,6 @@
 .sidebar-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 6px; color: var(--color-muted-soft); font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1; }
 .sidebar-recent-heading > span { display: inline-flex; align-items: center; line-height: 1; }
 .sidebar-recent-heading a { display: inline-flex; align-items: center; color: var(--color-primary-strong); font-family: inherit; font-size: var(--text-micro); font-weight: 600; letter-spacing: 0; text-transform: none; text-decoration: none; line-height: 1; }
-.sidebar-recent-heading a:hover { text-decoration: underline; }
 .sidebar-recent nav { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 3px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 150ms ease; }
 .sidebar-recent nav:hover { scrollbar-color: #D6E2EB transparent; }
 .sidebar-recent nav::-webkit-scrollbar { width: 4px; }

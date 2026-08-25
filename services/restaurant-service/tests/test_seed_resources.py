@@ -41,3 +41,16 @@ def test_seed_adds_booking_resources_to_existing_imported_catalog() -> None:
     assert restaurant_count == 1
     assert table_count == 5
     assert hour_count == 7
+
+
+def test_seed_does_not_create_catalog_rows_when_import_is_empty() -> None:
+    repository = RestaurantRepository("sqlite:///:memory:")
+    engine = repository.factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    repository.seed()
+
+    with repository.factory() as db:
+        assert db.scalar(select(func.count(RestaurantRow.id))) == 0
+        assert db.scalar(select(func.count(TableRow.id))) == 0
+        assert db.scalar(select(func.count(OpeningHourRow.id))) == 0

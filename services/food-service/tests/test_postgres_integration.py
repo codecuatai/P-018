@@ -34,7 +34,6 @@ async def postgres_food() -> tuple[PostgresFoodRepository, FoodApplicationServic
     pool = repository._require_pool()
     for migration in sorted((root / "migrations").glob("*.sql")):
         await pool.execute(migration.read_text(encoding="utf-8"))
-    await pool.execute((root / "seeds" / "001_demo_hanoi.sql").read_text(encoding="utf-8"))
     settings = Settings(
         app_env="test",
         persistence="postgres",
@@ -50,14 +49,47 @@ async def postgres_food() -> tuple[PostgresFoodRepository, FoodApplicationServic
         await repository.close()
 
 
-async def _cart(service: FoodApplicationService, user_id: str, address_id: str = "addr_demo") -> dict:
-    cart = await service.create_cart(user_id, "res_pho_hanoi", f"cart-{user_id}-{uuid4().hex}")
+async def _catalog_ids(repository: PostgresFoodRepository) -> tuple[str, str, str, str]:
+    pool = repository._require_pool()
+    item = await pool.fetchrow(
+        "SELECT id, data->>'restaurant_id' AS restaurant_id FROM food_catalog "
+        "WHERE record_type='menu_item' AND is_active=TRUE ORDER BY id LIMIT 1"
+    )
+    alternative = await pool.fetchval(
+        "SELECT id FROM food_catalog WHERE record_type='restaurant' AND is_active=TRUE AND id <> $1 ORDER BY id LIMIT 1",
+        item["restaurant_id"] if item else "",
+    )
+    voucher = await pool.fetchval(
+        "SELECT data->>'code' FROM food_catalog WHERE record_type='voucher' AND is_active=TRUE ORDER BY id LIMIT 1"
+    )
+    if not item or not alternative or not voucher:
+        pytest.skip("PostgreSQL Food catalog must contain menu, restaurant, and voucher records")
+    return str(item["restaurant_id"]), str(item["id"]), str(alternative), str(voucher)
+
+
+async def _cart(
+    repository: PostgresFoodRepository,
+    service: FoodApplicationService,
+    user_id: str,
+    address_id: str | None = None,
+) -> dict:
+    restaurant_id, menu_item_id, _, _ = await _catalog_ids(repository)
+    item_data = await repository._require_pool().fetchval(
+        "SELECT data FROM food_catalog WHERE id=$1 AND record_type='menu_item'",
+        menu_item_id,
+    )
+    selected_options = []
+    for group in (item_data or {}).get("option_groups", []):
+        options = group.get("options", []) if isinstance(group, dict) else []
+        if group.get("required") and options:
+            selected_options.append({"group_id": group["id"], "option_id": options[0]["id"]})
+    cart = await service.create_cart(user_id, restaurant_id, f"cart-{user_id}-{uuid4().hex}")
     return await service.add_item(
         cart["id"],
         {
-            "menu_item_id": "item_pho_bo",
+            "menu_item_id": menu_item_id,
             "quantity": 2,
-            "selected_options": [{"group_id": "opt_size", "option_id": "large"}],
+            "selected_options": selected_options,
         },
         user_id,
         f"add-{user_id}-{uuid4().hex}",
@@ -79,7 +111,7 @@ async def test_postgres_order_voucher_retry_and_rollback(
         address_id,
         json.dumps({"id": address_id, "user_id": user_id, "latitude": 21.0125, "longitude": 105.848}),
     )
-    cart = await _cart(service, user_id, address_id)
+    cart = await _cart(repository, service, user_id, address_id)
     order = await service.create_order(
         {
             "cart_id": cart["id"],
@@ -102,11 +134,12 @@ async def test_postgres_order_voucher_retry_and_rollback(
     count = await pool.fetchval("SELECT count(*) FROM food_order_status_events WHERE order_id=$1", order["id"])
     assert count == 1
 
-    await pool.execute("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}','0'::jsonb) WHERE id='XONE50'")
+    voucher = (await _catalog_ids(repository))[3]
+    await pool.execute("UPDATE food_catalog SET data=jsonb_set(data,'{used_count}','0'::jsonb) WHERE data->>'code'=$1", voucher)
     invalid = deepcopy(order)
     invalid["id"] = "ord_pg_rollback"
     invalid["idempotency_key"] = f"pg-rollback-key-{run_id}"
-    invalid["voucher"] = {"code": "XONE50"}
+    invalid["voucher"] = {"code": voucher}
     invalid["timeline"] = [
         {
             "from_status": None,
@@ -119,7 +152,7 @@ async def test_postgres_order_voucher_retry_and_rollback(
     with pytest.raises(ValueError):
         await repository.create_order_with_optional_voucher(invalid, invalid["voucher"])
     assert await pool.fetchval("SELECT count(*) FROM food_orders WHERE id='ord_pg_rollback'") == 0
-    assert await pool.fetchval("SELECT (data->>'used_count')::int FROM food_catalog WHERE id='XONE50'") == 0
+    assert await pool.fetchval("SELECT (data->>'used_count')::int FROM food_catalog WHERE data->>'code'=$1", voucher) == 0
     assert await pool.fetchval("SELECT count(*) FROM food_voucher_redemptions WHERE order_id='ord_pg_rollback'") == 0
 
 
@@ -137,7 +170,7 @@ async def test_postgres_due_claim_is_single_winner(
         address_id,
         json.dumps({"id": address_id, "user_id": user_id, "latitude": 21.0125, "longitude": 105.848}),
     )
-    cart = await _cart(service, user_id, address_id)
+    cart = await _cart(repository, service, user_id, address_id)
     order = await service.create_order(
         {
             "cart_id": cart["id"],
@@ -175,12 +208,13 @@ async def test_postgres_create_cart_concurrent_idempotency(
     pool = repository._require_pool()
     user_id = f"usr_pg_cart_{uuid4().hex[:12]}"
     key = f"pg-cart-concurrent-{uuid4().hex[:12]}"
-    results = await asyncio.gather(*[service.create_cart(user_id, "res_pho_hanoi", key) for _ in range(20)])
+    restaurant_id, _, alternative_restaurant_id, _ = await _catalog_ids(repository)
+    results = await asyncio.gather(*[service.create_cart(user_id, restaurant_id, key) for _ in range(20)])
     assert len({cart["id"] for cart in results}) == 1
     assert (
         await pool.fetchval("SELECT count(*) FROM food_carts WHERE user_id=$1 AND idempotency_key=$2", user_id, key)
         == 1
     )
     with pytest.raises(DomainError) as error:
-        await service.create_cart(user_id, "res_bun_cha", key)
+        await service.create_cart(user_id, alternative_restaurant_id, key)
     assert error.value.code == "IDEMPOTENCY_KEY_REUSED"
