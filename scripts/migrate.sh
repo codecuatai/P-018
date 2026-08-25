@@ -15,6 +15,7 @@ docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/011_core_multi_service_workflows.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/012_core_product_ops.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/013_core_admin_support_idempotency.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/014_core_memory_system.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/001_food_vertical_slice.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/002_food_workflow_concurrency.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/003_food_atomicity.sql
