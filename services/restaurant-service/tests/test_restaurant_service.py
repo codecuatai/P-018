@@ -14,6 +14,52 @@ from src.repositories.restaurant_repository import RestaurantRepository
 engine = build_engine(os.environ["DATABASE_URL"])
 Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
+with engine.begin() as connection:
+    connection.execute(
+        RestaurantRow.__table__.insert(),
+        [
+            {
+                "id": "rest-001",
+                "name": "Le Petit Bistro",
+                "location": "District 1, Ho Chi Minh City",
+                "cuisine_type": "French",
+                "budget_range": "$$$",
+                "rating": 4.8,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-002",
+                "name": "Sakura Sushi House",
+                "location": "District 3, Ho Chi Minh City",
+                "cuisine_type": "Japanese",
+                "budget_range": "$$",
+                "rating": 4.6,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-003",
+                "name": "Phở & Trà Heritage",
+                "location": "Hoan Kiem, Hanoi",
+                "cuisine_type": "Vietnamese",
+                "budget_range": "$",
+                "rating": 4.9,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-004",
+                "name": "Trattoria Bella Italia",
+                "location": "Tay Ho, Hanoi",
+                "cuisine_type": "Italian",
+                "budget_range": "$$$",
+                "rating": 4.7,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+        ],
+    )
 RestaurantRepository(os.environ["DATABASE_URL"]).seed()
 app.state.restaurant_service = RestaurantApplicationService(RestaurantRepository(os.environ["DATABASE_URL"]))
 client = TestClient(app)
