@@ -2496,12 +2496,8 @@ export class AssistantService {
         }
         const district = String(args.district ?? '').toLowerCase();
         const centralDistricts = ['hoàn kiếm', 'ba đình', 'đống đa', 'hai bà trưng', 'tây hồ', 'cầu giấy'];
-        const isHanoi = /hà nội|ha noi/i.test(`${district} ${String(args.keyword)}`) || district.length > 0;
         if (district && !centralDistricts.some((item) => district.includes(item))) {
           throw new UnprocessableEntityException({ code: 'FOOD_OUTSIDE_CENTRAL_HANOI', detail: 'X-One hiện chỉ hỗ trợ đặt món trong khu vực trung tâm Hà Nội.' });
-        }
-        if (!isHanoi && !district) {
-          throw new UnprocessableEntityException({ code: 'FOOD_LOCATION_REQUIRED', detail: 'Vui lòng cho biết địa chỉ giao món trong khu vực trung tâm Hà Nội.' });
         }
       } else if (name === 'view_menu_item') {
         if (!menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current Food selection is required.' });
