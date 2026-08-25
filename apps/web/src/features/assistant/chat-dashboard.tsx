@@ -1,17 +1,17 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, Mic, PanelRightOpen, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
-import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
+import { emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
-  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
+  const [conversationId, setConversationId] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
@@ -24,20 +24,14 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const [foodSelections, setFoodSelections] = useState<Record<string, FoodSelection>>({});
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
-  
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [railWidth, setRailWidth] = useState(280);
   const [isResizingRail, setIsResizingRail] = useState(false);
-  
-  const [isLocating, setIsLocating] = useState(false);
-  const [locateError, setLocateError] = useState("");
-
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Resize Rail Logic
   useEffect(() => {
     try {
       const saved = localStorage.getItem("xone_rail_collapsed");
@@ -97,7 +91,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed } }));
   }
 
-  // Conversation Logic
   useEffect(() => {
     let active = true;
     setLoadingHistory(true);
@@ -179,10 +172,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   }, [activeRefreshNonce, user.sub]);
 
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
-
-  useEffect(() => {
-    emitActiveConversationChanged(conversationId);
-  }, [conversationId]);
 
   useEffect(() => {
     const handleNewConversation = () => newConversation();
@@ -310,133 +299,110 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     } finally { setSending(false); setActiveActionId(undefined); }
   }
 
-  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
-  
-  async function handleLocate(): Promise<void> {
-    if (!("geolocation" in navigator)) {
-      setLocateError("Trình duyệt của bạn không hỗ trợ định vị.");
-      return;
-    }
-
-    setIsLocating(true);
-    setLocateError("");
-    try {
-      const position = await getCurrentPosition();
-      const address = await fetchAddress(position);
-      setComposer((previous) => previous + (previous ? " " : "") + address);
-      inputRef.current?.focus();
-    } catch {
-      setLocateError("Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập và thử lại.");
-    } finally {
-      setIsLocating(false);
-    }
-  }
-
+  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
-  
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
-  
+
   return (
     <section className="assistant-page" aria-labelledby="assistant-title">
-      <header className="assistant-header">
-        <div className="assistant-heading">
-          <span className="eyebrow">X-ONE ASSISTANT</span>
-          <h1 id="assistant-title">Xin chào<span className="visually-hidden"> · Trợ lý X-One</span></h1>
-          <p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p>
+    <h1 id="assistant-title" className="visually-hidden">Trợ lý X-One</h1>
+    <header className="assistant-header"><div className="assistant-heading"><span className="eyebrow">X-ONE ASSISTANT</span><h1 id="assistant-title">Xin chào</h1><p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p></div><button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới"><Plus size={18} /></button></header>
+    <div
+      className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
+      style={{
+        gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px`,
+      }}
+    >
+      <div className="chat-column">
+        <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
+          {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
+          {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
+          {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
+          {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
         </div>
-        <button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới">
-          <Plus size={18} />
-        </button>
-      </header>
-      
-      <div
-        className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
-        style={{ gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
-      >
-        <div className="chat-column">
-          <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
-            {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
-            {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
-            {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
-            {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
-          </div>
-          
-          {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
-          
-          <div className="composer-wrap">
-            <div className="composer-box">
-              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
-                <PlusCircle size={20} />
+        {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
+        <div className="composer-wrap">
+          <div className="composer-box">
+            <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+              <PlusCircle size={20} />
+            </button>
+            <textarea
+              ref={inputRef}
+              aria-label="Nhập yêu cầu"
+              disabled={sending}
+              onChange={(event) => setComposer(event.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
+              rows={1}
+              value={composer}
+            />
+            <div className="composer-actions">
+              <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
+                <Mic size={18} />
               </button>
-              <textarea
-                ref={inputRef}
-                aria-label="Nhập yêu cầu"
-                disabled={sending}
-                onChange={(event) => setComposer(event.target.value)}
-                onKeyDown={onKeyDown}
-                placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
-                rows={1}
-                value={composer}
-              />
-              <div className="composer-actions">
-                <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Lấy vị trí hiện tại" title="Lấy vị trí hiện tại">
-                  {isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}
-                </button>
-                <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
-                  <Mic size={18} />
-                </button>
-                <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">
-                  {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
-                </button>
-              </div>
+              <button
+                className="send-button"
+                type="button"
+                onClick={() => void send()}
+                disabled={sending || !composer.trim()}
+                aria-label="Gửi yêu cầu"
+              >
+                {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
+              </button>
             </div>
-            {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
-            <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
           </div>
+          <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
         </div>
-
-        {/* Center Vertical Edge Toggle Button for Right Rail */}
-        <button
-          className={`rail-edge-toggle${railCollapsed ? " is-collapsed" : ""}`}
-          type="button"
-          aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
-          title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
-          onClick={() => toggleRail(!railCollapsed)}
-          style={{ right: railCollapsed ? "10px" : `${railWidth}px` }}
-        >
-          {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
-        </button>
-
-        <ContextRail
-          mode={activeItems.length ? "active" : "idle"}
-          title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
-          description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
-          onCollapse={() => toggleRail(true)}
-          style={{ width: railCollapsed ? 0 : railWidth }}
-          resizer={
-            !railCollapsed ? (
-              <div className="rail-resizer" onMouseDown={handleRailMouseDown} onDoubleClick={() => toggleRail(true)} title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn" />
-            ) : undefined
-          }
-        >
-          {activeItems.length ? (
-            <div className="active-work-list">
-              {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
-            </div>
-          ) : (
-            <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
-          )}
-        </ContextRail>
       </div>
 
-      <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
-    </section>
+      {/* Center Vertical Edge Toggle Button for Right Rail */}
+      <button
+        className={`rail-edge-toggle${railCollapsed ? " is-collapsed" : ""}`}
+        type="button"
+        aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
+        title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
+        onClick={() => toggleRail(!railCollapsed)}
+        style={{
+          right: railCollapsed ? "10px" : `${railWidth}px`,
+        }}
+      >
+        {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+      </button>
+
+      <ContextRail
+        mode={activeItems.length ? "active" : "idle"}
+        title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
+        description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
+        onCollapse={() => toggleRail(true)}
+        style={{ width: railCollapsed ? 0 : railWidth }}
+        resizer={
+          !railCollapsed ? (
+            <div
+              className="rail-resizer"
+              onMouseDown={handleRailMouseDown}
+              onDoubleClick={() => toggleRail(true)}
+              title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn"
+            />
+          ) : undefined
+        }
+      >
+        {activeItems.length ? (
+          <div className="active-work-list">
+            {activeItems.map((item) => <ActiveWorkRailCard key={`${item.type}-${item.id}`} item={item} onDetails={setActiveDetail} />)}
+          </div>
+        ) : (
+          <ConversationContextCards onServiceShortcut={(prompt) => { setComposer(prompt); setTimeout(() => inputRef.current?.focus(), 0); }} />
+        )}
+      </ContextRail>
+    </div>
+    <ActiveWorkDetailDialog item={activeDetail} open={Boolean(activeDetail)} onOpenChange={(open) => { if (!open) setActiveDetail(null); }} />
+  </section>
   );
 }
 
 type ServiceCard = {
-  icon: LucideIcon;
+  icon: React.ComponentType<{ size: number }>;
   service: string;
   desc: string;
   accent: string;
@@ -526,63 +492,6 @@ function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelection
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {
   return messages.some((message) => message.response?.items.some((item) => item.kind === "food_options")
     && message.response.actions.some((action) => action.kind === "select_food_item"));
-}
-
-function getCurrentPosition(): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-    });
-  });
-}
-
-const REVERSE_GEOCODE_TIMEOUT_MS = 8_000;
-
-// Reverse geocode through Nominatim (OpenStreetMap) for house-number level detail.
-// The request is aborted after REVERSE_GEOCODE_TIMEOUT_MS so a slow or unreachable
-// provider can never leave the composer's locate button spinning.
-async function fetchAddress(position: GeolocationPosition): Promise<string> {
-  const lat = position.coords.latitude;
-  const lon = position.coords.longitude;
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), REVERSE_GEOCODE_TIMEOUT_MS);
-
-  try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=vi`,
-      { signal: controller.signal },
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      const addr = data.address;
-      
-      if (addr) {
-        const houseNumber = addr.house_number ? `Số ${addr.house_number}` : "";
-        const road = addr.road || "";
-        const streetInfo = [houseNumber, road].filter(Boolean).join(" ");
-        
-        const district = addr.county || addr.suburb || addr.city_district || "";
-        const city = addr.city || addr.province || addr.state || "";
-        
-        const rawAddress = [streetInfo, district, city].filter(Boolean).join(", ");
-        const uniqueParts = [...new Set(rawAddress.split(", ").map(s => s.trim()))].filter(Boolean);
-        
-        if (uniqueParts.length > 0) {
-          return uniqueParts.join(", ");
-        }
-      }
-    }
-    throw new Error("Không có dữ liệu chi tiết");
-    
-  } catch (error) {
-    console.warn("Lỗi API Nominatim, fallback về tọa độ thô:", error);
-    return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-  } finally {
-    window.clearTimeout(timer);
-  }
 }
 
 async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {

@@ -1,6 +1,5 @@
 export const CONVERSATIONS_CHANGED_EVENT = "xone:conversations-changed";
 export const NEW_CONVERSATION_EVENT = "xone:new-conversation";
-export const ACTIVE_CONVERSATION_EVENT = "xone:active-conversation";
 
 export function emitConversationsChanged(): void {
   if (typeof window === "undefined") return;
@@ -10,9 +9,4 @@ export function emitConversationsChanged(): void {
 export function emitNewConversation(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(NEW_CONVERSATION_EVENT));
-}
-
-export function emitActiveConversationChanged(conversationId?: string): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(ACTIVE_CONVERSATION_EVENT, { detail: { conversationId } }));
 }
