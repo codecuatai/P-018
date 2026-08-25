@@ -106,7 +106,7 @@ export function XOneMap({
   }, [hasTargetPoints]);
 
   useEffect(() => {
-    if (!hasTargetPoints || mapState === "error" || !mapNodeRef.current) {
+    if (!hasTargetPoints || !mapNodeRef.current) {
       return;
     }
 
@@ -175,7 +175,9 @@ export function XOneMap({
       polylineRef.current = undefined;
       fitKeyRef.current = "";
     };
-  }, [hasTargetPoints, mapState, retryVersion]);
+    // `mapState` is intentionally excluded: changing loading -> ready must not
+    // tear down the map before the marker/fit-bounds effect can observe it.
+  }, [hasTargetPoints, retryVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
