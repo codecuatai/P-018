@@ -130,11 +130,23 @@ export function XOneMap({
         leafletRef.current = L;
         const browserKey = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY?.trim();
         const style = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim() || "osm-bright";
-        if (!browserKey || browserKey.includes("__PASTE_")) throw new Error("map-key-unavailable");
-        const tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
-        const tileLayer = L.tileLayer(tileUrl, { attribution: TILE_ATTRIBUTION, maxZoom: 19 });
+        let tileUrl: string;
+        let attribution = TILE_ATTRIBUTION;
+        if (browserKey && !browserKey.includes("__PASTE_")) {
+          tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
+        } else {
+          tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+          attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+        }
+        const tileLayer = L.tileLayer(tileUrl, { attribution, maxZoom: 19 });
         tileLayerRef.current = tileLayer;
-        tileLayer.on("tileerror", () => { if (!disposed) setMapState("error"); });
+        tileLayer.on("tileerror", () => {
+          if (!tileUrl.includes("openstreetmap.org")) {
+            tileLayer.setUrl("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+          } else if (!disposed) {
+            setMapState("error");
+          }
+        });
         tileLayer.addTo(map);
         resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
         resizeTimer = window.setTimeout(() => invalidateMapSize(map), 120);
@@ -219,14 +231,8 @@ export function XOneMap({
       }
       const marker = existing ?? (key === "healthcare"
         ? L.marker(toLatLng(point), { icon: L.divIcon({ className: "xone-healthcare-marker", html: '<span aria-hidden="true"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map)
-        : L.circleMarker(toLatLng(point), { radius: key === "current" || key === "driver" ? 8 : 7, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map));
-      const isStationaryMarker = key === "origin" || key === "destination" || key === "restaurant" || key === "healthcare";
-      if (!existing || isStationaryMarker) {
-        const frame = markerAnimationRefs.current[key];
-        if (frame !== undefined) window.cancelAnimationFrame(frame);
-        delete markerAnimationRefs.current[key];
-        marker.setLatLng(toLatLng(point));
-      } else {
+        : L.circleMarker(toLatLng(point), { radius: key === "driver" || key === "current" ? 9 : 8, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 0.95 }).addTo(map));
+      if (existing) {
         animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion(), key === "driver" ? mapData.route : undefined);
       }
       marker.unbindTooltip();
@@ -251,15 +257,15 @@ export function XOneMap({
       </span>
     </div>
     {canRenderMap ? (
-      <div style={{ position: "relative", flex: "1 1 auto", minHeight: "150px", display: "flex", flexDirection: "column" }}>
-        <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} style={{ flex: 1, zIndex: 1 }} />
+      <>
+        <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} />
         {mapState === "loading" && (
-          <div style={{ position: "absolute", inset: 0, zIndex: 2, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "rgba(234, 241, 243, 0.7)", borderRadius: "inherit" }}>
+          <div className="xone-map-loading-overlay">
             <LoaderCircle className="spinner" size={28} style={{ color: "var(--color-primary-strong)" }} />
             <span style={{ marginTop: "10px", fontSize: "0.75rem", color: "var(--color-navy)", fontWeight: 700 }}>Đang tải bản đồ...</span>
           </div>
         )}
-      </div>
+      </>
     ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
     {mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;

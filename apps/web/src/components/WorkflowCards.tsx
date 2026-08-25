@@ -222,15 +222,7 @@ function RideCard({ item, children, actions, onAction, disabledActionId }: { ite
             >
               <Check size={16} /> {confirmAction.label || "Xác nhận chuyến xe"}
             </button>
-          ) : (
-            <button
-              className="ride-action-confirm"
-              type="button"
-              onClick={() => {}}
-            >
-              <Check size={16} /> Xác nhận chuyến xe
-            </button>
-          )}
+          ) : null}
           <button className="ride-action-map" type="button" onClick={() => setDetailOpen(true)}>
             Xem bản đồ và hành trình
           </button>
