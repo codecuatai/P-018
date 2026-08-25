@@ -122,17 +122,18 @@ function getSnapshot(bookingId: string): RideSnapshot {
 
 const serverSnapshot: RideSnapshot = { loading: false, error: "" };
 
-export function useRideTracking(bookingId?: string): RideSnapshot & { refresh: () => void } {
+export function useRideTracking(bookingId?: string, enabled = true): RideSnapshot & { refresh: () => void } {
   const key = bookingId?.trim() ?? "";
-  const subscribeToEntry = useCallback((listener: () => void) => key ? subscribe(key, listener) : () => undefined, [key]);
-  const readSnapshot = useCallback(() => key ? getSnapshot(key) : serverSnapshot, [key]);
+  const activeKey = enabled ? key : "";
+  const subscribeToEntry = useCallback((listener: () => void) => activeKey ? subscribe(activeKey, listener) : () => undefined, [activeKey]);
+  const readSnapshot = useCallback(() => activeKey ? getSnapshot(activeKey) : serverSnapshot, [activeKey]);
   const snapshot = useSyncExternalStore(subscribeToEntry, readSnapshot, () => serverSnapshot);
   const refresh = useCallback(() => {
-    if (!key) return;
-    const entry = getEntry(key);
+    if (!activeKey) return;
+    const entry = getEntry(activeKey);
     void fetchRide(entry, false);
-  }, [key]);
-  useEffect(() => { if (key) ensureVisibilityListener(); }, [key]);
+  }, [activeKey]);
+  useEffect(() => { if (activeKey) ensureVisibilityListener(); }, [activeKey]);
   return { ...snapshot, refresh };
 }
 

@@ -2484,6 +2484,25 @@ export class AssistantService {
         for (const key of ['keyword', 'district', 'category', 'max_price']) {
           if (semantic[key] !== undefined) args[key] = semantic[key];
         }
+        // Agent vocabulary uses dish_query/query, while Food requires keyword.
+        // Resolve the delivery district from the actor-scoped address context so
+        // “nearby” means the same district as the requested delivery address.
+        if (!args.keyword) args.keyword = semantic.dish_query ?? semantic.query ?? context.dish_query ?? context.query ?? '';
+        if (!args.district) {
+          const addressId = stringValue(context.address_id);
+          const address = arrayValue(context.address_candidates).filter(isRecord).find((entry) => stringValue(entry.id) === addressId);
+          const district = stringValue(address?.district);
+          if (district) args.district = district;
+        }
+        const district = String(args.district ?? '').toLowerCase();
+        const centralDistricts = ['hoàn kiếm', 'ba đình', 'đống đa', 'hai bà trưng', 'tây hồ', 'cầu giấy'];
+        const isHanoi = /hà nội|ha noi/i.test(`${district} ${String(args.keyword)}`) || district.length > 0;
+        if (district && !centralDistricts.some((item) => district.includes(item))) {
+          throw new UnprocessableEntityException({ code: 'FOOD_OUTSIDE_CENTRAL_HANOI', detail: 'X-One hiện chỉ hỗ trợ đặt món trong khu vực trung tâm Hà Nội.' });
+        }
+        if (!isHanoi && !district) {
+          throw new UnprocessableEntityException({ code: 'FOOD_LOCATION_REQUIRED', detail: 'Vui lòng cho biết địa chỉ giao món trong khu vực trung tâm Hà Nội.' });
+        }
       } else if (name === 'view_menu_item') {
         if (!menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current Food selection is required.' });
         args = { menu_item_id: menuItemId };

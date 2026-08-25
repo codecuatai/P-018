@@ -144,7 +144,7 @@ function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: {
 function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const bookingId = item.booking_id ?? item.resource_id;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   const distance = item.distance_km !== undefined ? `${item.distance_km} km` : item.route_distance_meters ? `${(item.route_distance_meters / 1000).toFixed(1)} km` : undefined;
   const duration = item.duration_minutes ? `${item.duration_minutes} phút` : item.route_duration_seconds ? `${Math.ceil(item.route_duration_seconds / 60)} phút` : undefined;
   const price = formatMoney(item.amount, text(item.currency, "VND"));
@@ -239,7 +239,7 @@ function RideCard({ item, children, actions, onAction, disabledActionId }: { ite
 
 function RideCardWithCancel({ item, actions, onAction, disabledActionId }: { item: AssistantRideItem; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const bookingId = item.kind === "ride_booking" ? item.booking_id ?? item.resource_id : undefined;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   return <RideCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId}>{item.kind === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /> : null}</RideCard>;
 }
 
@@ -449,20 +449,17 @@ function AddressOptionsCard({ item }: { item: AssistantAddressOptionsItem }) {
 
 function TaskErrorCard({ item }: { item: AssistantTaskErrorItem }) {
   const requiresPatientProfile = item.error_code === "PATIENT_LINK_REQUIRED";
-  const fallback = taskErrorCopy(item.error_code);
-  return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title || fallback.title} />
-    <p>{text(item.note, "Mình chưa thể hoàn tất lựa chọn này. Bạn hãy kiểm tra lại thông tin rồi thử lại nhé.")}</p>
-    {requiresPatientProfile ? <Link className="small-action task-error-action" href="/app/profile?section=patients">Liên kết hồ sơ người bệnh</Link> : null}
-  </article>;
-}
-
-function taskErrorCopy(code?: string): { title: string; note: string } {
-  switch (code) {
-    case "NO_DRIVER": return { title: "Chưa tìm thấy tài xế", note: "Hiện chưa có tài xế phù hợp. Bạn có thể thử lại sau hoặc đổi thời gian/điểm đi." };
-    case "SLOT_UNAVAILABLE": return { title: "Khung giờ không còn trống", note: "Khung giờ này vừa được chọn hết. Hãy chọn một khung giờ khác để tiếp tục." };
-    case "ACTION_NOT_AVAILABLE": return { title: "Lựa chọn đã hết hiệu lực", note: "Lựa chọn cũ không còn dùng được. Hãy chọn phương án hiện tại trong cuộc trò chuyện." };
-    default: return { title: "Dịch vụ gặp sự cố", note: "Mình chưa thể hoàn tất bước này. Bạn hãy kiểm tra thông tin hoặc thử lại." };
+  if (requiresPatientProfile) {
+    return (
+      <div className="task-error-notice">
+        <p className="task-error-hint">{text(item.note, "Bạn cần liên kết hồ sơ người bệnh trước khi tiếp tục.")}</p>
+        <Link className="small-action task-error-action" href="/app/profile?section=patients">
+          Liên kết hồ sơ người bệnh
+        </Link>
+      </div>
+    );
   }
+  return <p className="task-error-hint">Bạn hãy thử lại nhé.</p>;
 }
 
 function FallbackCard({ item }: { item: { title: string; note?: string; question?: string } }) {

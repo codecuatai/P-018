@@ -72,9 +72,12 @@
 .typing-indicator span:nth-child(2) { animation-delay: 140ms; }
 .typing-indicator span:nth-child(3) { animation-delay: 280ms; }
 
-/* ─── Retry button ───────────────────────────────────────── */
+/* ─── Retry button & Error Notice ────────────────────────── */
 .retry-button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; margin-top: 8px; color: var(--color-danger, #DC2626); background: var(--color-surface); border: 1px solid #FECACA; border-radius: 7px; font-size: var(--text-xs); font-weight: 750; }
 .retry-button:hover { background: #FEF2F2; }
+.task-error-hint { color: var(--color-danger, #DC2626); font-size: var(--text-xs, 0.75rem); font-weight: 500; margin: 6px 0 0; line-height: 1.4; }
+.task-error-notice { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.task-error-notice .task-error-action { width: fit-content; }
 
 /* ─── Composer (Floating Command Bar) ─────────────────────── */
 .composer-wrap { padding: 10px 36px 16px; background: transparent; display: flex; flex-direction: column; align-items: center; width: 100%; box-sizing: border-box; }
