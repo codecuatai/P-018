@@ -14,6 +14,7 @@ import {
   cancelRestaurantReservation,
   checkRestaurantAvailability,
   confirmRideBooking,
+  createSavedAddress,
   createFoodCart,
   createRestaurantHold,
   errorText,
@@ -47,6 +48,7 @@ import { ServiceDetailDialog } from "@/components/ServiceDetailDialog";
 
 type JsonRecord = Record<string, unknown>;
 type Point = { latitude: number; longitude: number };
+const STANDARD_DELIVERY_FEE = 30_000;
 
 const copy: Record<ServiceKey, { label: string; description: string; action: string }> = {
   food: { label: "Đồ ăn", description: "Chọn nhà hàng, xem thực đơn và hoàn tất đơn giao.", action: "Tìm món" },
@@ -67,6 +69,7 @@ export function ServiceBrowse({ service }: { service: ServiceKey }) {
 
 function FoodBrowse() {
   const itemsPerPage = 5;
+  const menuItemsPerPage = 6;
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
   const [page, setPage] = useState(1);
@@ -75,6 +78,7 @@ function FoodBrowse() {
   const [selectedId, setSelectedId] = useState("");
   const [restaurant, setRestaurant] = useState<JsonRecord>();
   const [menuItems, setMenuItems] = useState<JsonRecord[]>([]);
+  const [menuPage, setMenuPage] = useState(1);
   const [detailLoading, setDetailLoading] = useState(false);
   const [cart, setCart] = useState<JsonRecord>();
   const [cartLoading, setCartLoading] = useState(false);
@@ -103,7 +107,7 @@ function FoodBrowse() {
     setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true);
     try {
       const [detail, menu] = await Promise.all([getFoodRestaurant(id), getFoodMenu(id)]);
-      setRestaurant(detail); setMenuItems(listFrom(menu.items));
+      setRestaurant(detail); setMenuItems(listFrom(menu.items)); setMenuPage(1);
     } catch (reason) { setError(errorText(reason)); }
     finally { setDetailLoading(false); }
   }
@@ -115,6 +119,7 @@ function FoodBrowse() {
       const current = cart ?? await createFoodCart(selectedId);
       const next = await addFoodCartItem(String(current.id), { menu_item_id: idOf(item), quantity: 1, ...(selectedOptions.length ? { selected_options: selectedOptions } : {}), ...(note?.trim() ? { note: note.trim() } : {}) });
       setCart(next);
+      setConfirmation(undefined); setChecked(false);
       setCustomizingItem(undefined);
       setNotice(`${display(item.name ?? item.title ?? "Món ăn")} đã được thêm vào giỏ.`);
     } catch (reason) { setError(errorText(reason)); }
@@ -124,7 +129,7 @@ function FoodBrowse() {
   async function changeQuantity(item: JsonRecord, quantity: number): Promise<void> {
     if (!cart || quantity < 1) return;
     setCartLoading(true); setError("");
-    try { setCart(await updateFoodCartItem(String(cart.id), String(item.id), { quantity })); }
+    try { setCart(await updateFoodCartItem(String(cart.id), String(item.id), { quantity })); setConfirmation(undefined); setChecked(false); }
     catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -132,7 +137,7 @@ function FoodBrowse() {
   async function removeItem(item: JsonRecord): Promise<void> {
     if (!cart) return;
     setCartLoading(true); setError("");
-    try { setCart(await removeFoodCartItem(String(cart.id), String(item.id))); }
+    try { setCart(await removeFoodCartItem(String(cart.id), String(item.id))); setConfirmation(undefined); setChecked(false); }
     catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -140,7 +145,7 @@ function FoodBrowse() {
   async function applyVoucherCode(): Promise<void> {
     if (!cart || !voucher.trim()) return;
     setCartLoading(true); setError("");
-    try { setCart(await applyFoodVoucher(String(cart.id), voucher.trim())); setVoucher(""); }
+    try { setCart(await applyFoodVoucher(String(cart.id), voucher.trim())); setVoucher(""); setConfirmation(undefined); setChecked(false); }
     catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -148,7 +153,7 @@ function FoodBrowse() {
   async function removeVoucherCode(): Promise<void> {
     if (!cart) return;
     setCartLoading(true); setError("");
-    try { setCart(await removeFoodVoucher(String(cart.id))); }
+    try { setCart(await removeFoodVoucher(String(cart.id))); setConfirmation(undefined); setChecked(false); }
     catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -188,8 +193,10 @@ function FoodBrowse() {
 
   const pageCount = Math.ceil(items.length / itemsPerPage);
   const visibleItems = useMemo(() => items.slice((page - 1) * itemsPerPage, page * itemsPerPage), [items, page]);
+  const menuPageCount = Math.ceil(menuItems.length / menuItemsPerPage);
+  const visibleMenuItems = useMemo(() => menuItems.slice((menuPage - 1) * menuItemsPerPage, menuPage * menuItemsPerPage), [menuItems, menuPage]);
 
-  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <div className="menu-list">{menuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={setAddressId} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => setMenuPage((current) => Math.max(1, current - 1))} disabled={menuPage === 1}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount}</span><button className="button button-secondary" type="button" onClick={() => setMenuPage((current) => Math.min(menuPageCount, current + 1))} disabled={menuPage === menuPageCount}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
 
   return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Phân trang danh sách nhà hàng"><button className="button button-secondary" type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {page} / {pageCount}</span><button className="button button-secondary" type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
@@ -203,11 +210,56 @@ function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonReco
   return <div className="food-customizer" aria-label={`Tùy chỉnh ${display(item.name ?? item.title ?? "món ăn")}`}><div className="food-customizer-heading"><div><span className="eyebrow">TÙY CHỈNH MÓN</span><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3></div><button className="text-button" type="button" onClick={onCancel}>Hủy</button></div>{groups.map((group) => { const groupId = idOf(group); const options = listFrom(group.options); return <label className="food-option-group" key={groupId}><span>{display(group.name ?? group.label ?? "Tùy chọn")}{group.required === true ? " · bắt buộc" : " · tùy chọn"}</span><select value={selected[groupId] ?? ""} onChange={(event) => setSelected((current) => ({ ...current, [groupId]: event.target.value }))} required={group.required === true}><option value="">{group.required === true ? "Chọn một phương án" : "Không chọn"}</option>{options.map((option) => <option key={idOf(option)} value={idOf(option)}>{display(option.name ?? option.label ?? option.id)}{numberOf(option.price) ? ` · +${formatMoney(option.price)}` : ""}</option>)}</select></label>; })}<label className="food-option-note"><span>Ghi chú cho bếp (không bắt buộc)</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={2} placeholder="Ví dụ: ít hành, để riêng nước dùng" /></label><button className="button button-primary" type="button" onClick={submit} disabled={loading || missing}><ShoppingBag size={15} />{loading ? "Đang thêm…" : "Thêm vào giỏ"}</button></div>;
 }
 
-function FoodCart({ cart, addresses, addressId, setAddressId, voucher, setVoucher, loading, onVoucher, onRemoveVoucher, onQuantity, onRemove, onPreview, confirmation, checked, setChecked, onExecute, orderResult, cancelConfirmation, cancelChecked, setCancelChecked, onPrepareCancel, onExecuteCancel }: { cart?: JsonRecord; addresses: SavedAddress[]; addressId: string; setAddressId: (value: string) => void; voucher: string; setVoucher: (value: string) => void; loading: boolean; onVoucher: () => void; onRemoveVoucher: () => void; onQuantity: (item: JsonRecord, quantity: number) => void; onRemove: (item: JsonRecord) => void; onPreview: () => void; confirmation?: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onExecute: () => void; orderResult?: JsonRecord; cancelConfirmation?: JsonRecord; cancelChecked: boolean; setCancelChecked: (value: boolean) => void; onPrepareCancel: () => void; onExecuteCancel: () => void }) {
+function FoodCart({ cart, addresses, addressId, setAddressId, onAddressAdded, voucher, setVoucher, loading, onVoucher, onRemoveVoucher, onQuantity, onRemove, onPreview, confirmation, checked, setChecked, onExecute, orderResult, cancelConfirmation, cancelChecked, setCancelChecked, onPrepareCancel, onExecuteCancel }: { cart?: JsonRecord; addresses: SavedAddress[]; addressId: string; setAddressId: (value: string) => void; onAddressAdded: (address: SavedAddress) => void; voucher: string; setVoucher: (value: string) => void; loading: boolean; onVoucher: () => void; onRemoveVoucher: () => void; onQuantity: (item: JsonRecord, quantity: number) => void; onRemove: (item: JsonRecord) => void; onPreview: () => void; confirmation?: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onExecute: () => void; orderResult?: JsonRecord; cancelConfirmation?: JsonRecord; cancelChecked: boolean; setCancelChecked: (value: boolean) => void; onPrepareCancel: () => void; onExecuteCancel: () => void }) {
   const items = listFrom(cart?.items);
-  const total = numberOf(cart?.total);
+  const quantity = items.reduce((total, item) => total + Math.max(1, numberOf(item.quantity)), 0);
+  const itemSubtotal = items.reduce((total, item) => total + moneyAmount(item.unit_price ?? item.price) * Math.max(1, numberOf(item.quantity)), 0);
+  const subtotal = moneyAmount(cart?.subtotal) || itemSubtotal;
+  const hasDeliveryFee = cart?.delivery_fee !== undefined && cart?.delivery_fee !== null;
+  const deliveryFee = hasDeliveryFee ? moneyAmount(cart?.delivery_fee) : (items.length ? STANDARD_DELIVERY_FEE : 0);
+  const total = moneyAmount(cart?.total) || subtotal + deliveryFee;
+  const currency = moneyCurrency(cart?.total) ?? moneyCurrency(cart?.subtotal) ?? display(cart?.currency ?? "VND");
   const order = asRecord(orderResult?.order);
-  return <aside className="transaction-panel"><div className="panel-heading"><div><span className="eyebrow">GIỎ HÀNG</span><h2>{items.length ? `${items.length} món` : "Chưa có món"}</h2></div><ShoppingBag size={19} /></div>{items.length ? <div className="cart-items">{items.map((item) => <div className="cart-item" key={String(item.id)}><div><strong>{display(item.name)}</strong><small>{formatMoney(item.unit_price)} · SL {numberOf(item.quantity)}</small></div><div className="cart-item-actions"><button type="button" onClick={() => onQuantity(item, Math.max(1, numberOf(item.quantity) - 1))} disabled={loading}>−</button><button type="button" onClick={() => onQuantity(item, numberOf(item.quantity) + 1)} disabled={loading}>+</button><button className="text-button danger-text" type="button" onClick={() => onRemove(item)} disabled={loading}>Xóa</button></div></div>)}</div> : <p className="inline-note">Chọn món để bắt đầu giỏ hàng của một nhà hàng.</p>}{cart?.voucher ? <div className="voucher-applied"><span>Mã {display(asRecord(cart.voucher)?.code)}</span><button className="text-button" type="button" onClick={onRemoveVoucher} disabled={loading}>Bỏ mã</button></div> : <div className="voucher-row"><input aria-label="Mã giảm giá" placeholder="Mã giảm giá" value={voucher} onChange={(event) => setVoucher(event.target.value)} /><button className="text-button" type="button" onClick={onVoucher} disabled={loading || !voucher.trim()}>Áp dụng</button></div>}{items.length ? <><div className="cart-total"><span>Tạm tính</span><strong>{formatMoney(total)}</strong></div>{addresses.length ? <label className="transaction-field">Địa chỉ giao hàng<select value={addressId} onChange={(event) => setAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} · {address.address_text}</option>)}</select></label> : <p className="field-hint">Chưa có địa chỉ. <Link className="text-link" href="/app/addresses">Lưu một địa chỉ</Link> trước khi đặt món.</p>}<button className="button button-primary button-wide" type="button" onClick={onPreview} disabled={loading || !addressId}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xem preview xác nhận</button></> : null}{confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={onExecute} loading={loading} label="Xác nhận đặt món và thanh toán" /> : null}{order ? <div className="success-card"><Check size={18} /><strong>Đơn đã được tiếp nhận</strong><span>{formatMoney(order.amount, display(order.currency ?? "VND"))}</span><button className="button button-secondary" type="button" onClick={onPrepareCancel} disabled={loading}>Xem điều kiện hủy</button>{cancelConfirmation ? <ConfirmationBox confirmation={cancelConfirmation} checked={cancelChecked} setChecked={setCancelChecked} onConfirm={onExecuteCancel} loading={loading} label="Xác nhận hủy đơn và xử lý hoàn tiền nếu đủ điều kiện" /> : null}</div> : null}{order?.id ? <FoodTrackingPanel orderId={String(order.id)} /> : null}</aside>;
+  return <aside className="transaction-panel food-cart-panel"><div className="panel-heading"><div><span className="eyebrow">GIỎ HÀNG</span><h2>{items.length ? `${quantity} món` : "Chưa có món"}</h2></div><ShoppingBag size={19} /></div>{items.length ? <div className="cart-items">{items.map((item) => <div className="cart-item" key={String(item.id)}><div><strong>{display(item.name)}</strong><small>{formatMoney(item.unit_price ?? item.price, display(item.currency ?? currency))} · SL {numberOf(item.quantity)}</small></div><div className="cart-item-actions"><button type="button" aria-label={`Giảm số lượng ${display(item.name)}`} onClick={() => numberOf(item.quantity) <= 1 ? onRemove(item) : onQuantity(item, numberOf(item.quantity) - 1)} disabled={loading}>−</button><button type="button" aria-label={`Tăng số lượng ${display(item.name)}`} onClick={() => onQuantity(item, numberOf(item.quantity) + 1)} disabled={loading}>+</button><button className="text-button danger-text" type="button" onClick={() => onRemove(item)} disabled={loading}>Xóa</button></div></div>)}</div> : <p className="inline-note">Chọn món để bắt đầu giỏ hàng của một nhà hàng.</p>}{cart?.voucher ? <div className="voucher-applied"><span>Mã {display(asRecord(cart.voucher)?.code)}</span><button className="text-button" type="button" onClick={onRemoveVoucher} disabled={loading}>Bỏ mã</button></div> : <div className="voucher-row"><input aria-label="Mã giảm giá" placeholder="Mã giảm giá" value={voucher} onChange={(event) => setVoucher(event.target.value)} /><button className="text-button" type="button" onClick={onVoucher} disabled={loading || !voucher.trim()}>Áp dụng</button></div>}{items.length ? <><dl className="cart-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(subtotal, currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(deliveryFee, currency)}{hasDeliveryFee ? "" : " dự kiến"}</dd></div><div><dt>Tổng dự kiến</dt><dd>{formatMoney(total, currency)}</dd></div></dl><FoodDeliveryAddress addresses={addresses} addressId={addressId} setAddressId={setAddressId} onAddressAdded={onAddressAdded} disabled={loading} /><button className="button button-primary button-wide" type="button" onClick={onPreview} disabled={loading || !addressId}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xem preview xác nhận</button></> : null}{confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={onExecute} loading={loading} label="Xác nhận đặt món và thanh toán" /> : null}{order ? <div className="success-card"><Check size={18} /><strong>Đơn đã được tiếp nhận</strong><span>{formatMoney(order.amount, display(order.currency ?? "VND"))}</span><button className="button button-secondary" type="button" onClick={onPrepareCancel} disabled={loading}>Xem điều kiện hủy</button>{cancelConfirmation ? <ConfirmationBox confirmation={cancelConfirmation} checked={cancelChecked} setChecked={setCancelChecked} onConfirm={onExecuteCancel} loading={loading} label="Xác nhận hủy đơn và xử lý hoàn tiền nếu đủ điều kiện" /> : null}</div> : null}{order?.id ? <FoodTrackingPanel orderId={String(order.id)} /> : null}</aside>;
+}
+
+function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdded, disabled }: { addresses: SavedAddress[]; addressId: string; setAddressId: (value: string) => void; onAddressAdded: (address: SavedAddress) => void; disabled: boolean }) {
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState("Giao hàng");
+  const [query, setQuery] = useState("");
+  const [provider, setProvider] = useState("geoapify");
+  const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
+  const [selected, setSelected] = useState<GeocodeCandidate>();
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function search(): Promise<void> {
+    if (!query.trim() || searching) return;
+    setSearching(true); setError(""); setSelected(undefined);
+    try {
+      const normalizedQuery = normalizeAddress(query).includes("ha noi") ? query.trim() : `${query.trim()}, Hà Nội`;
+      const result = await autocompleteAddress(normalizedQuery);
+      const matches = result.suggestions.filter((candidate) => candidate.latitude !== null && candidate.longitude !== null && isHanoiInnerCityAddress(candidate.address_text)).slice(0, 5);
+      setProvider(result.provider || "geoapify");
+      setCandidates(matches);
+      if (!matches.length) setError("Chưa tìm thấy địa chỉ thuộc khu vực nội thành Hà Nội. Hãy nhập thêm phường hoặc quận.");
+    } catch (reason) { setError(errorText(reason)); }
+    finally { setSearching(false); }
+  }
+
+  async function save(): Promise<void> {
+    if (!selected || selected.latitude === null || selected.longitude === null || saving) return;
+    setSaving(true); setError("");
+    try {
+      const created = await createSavedAddress({ label: label.trim() || "Giao hàng", address_text: selected.address_text, city: "Hà Nội", district: hanoiDistrict(selected.address_text), latitude: selected.latitude, longitude: selected.longitude, provider, source: "geocoded" });
+      onAddressAdded(created);
+      setAdding(false); setQuery(""); setCandidates([]); setSelected(undefined);
+    } catch (reason) { setError(errorText(reason)); }
+    finally { setSaving(false); }
+  }
+
+  return <div className="food-delivery-address"><label className="transaction-field">Địa chỉ giao hàng<select value={addressId} onChange={(event) => setAddressId(event.target.value)} disabled={disabled}><option value="">Chọn địa chỉ</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} · {address.address_text}</option>)}</select></label><button className="text-button food-address-toggle" type="button" onClick={() => { setAdding((value) => !value); setError(""); }} disabled={disabled}>{adding ? "Đóng phần thêm địa chỉ" : "Thêm địa chỉ giao mới"}</button>{adding ? <div className="food-address-form"><label>Nhãn<input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label><label>Địa chỉ nội thành Hà Nội<div className="food-address-search"><input value={query} onChange={(event) => { setQuery(event.target.value); setSelected(undefined); setCandidates([]); }} placeholder="Số nhà, đường, phường, quận" /><button className="button button-secondary" type="button" onClick={() => void search()} disabled={searching || !query.trim()}>{searching ? <Loader2 className="spinner" size={15} /> : <Search size={15} />} Tìm</button></div></label>{candidates.length ? <div className="food-address-candidates" role="listbox" aria-label="Địa chỉ giao hàng nội thành Hà Nội">{candidates.map((candidate) => <button className={selected?.address_text === candidate.address_text ? "is-active" : ""} type="button" role="option" aria-selected={selected?.address_text === candidate.address_text} key={`${candidate.address_text}-${candidate.latitude}`} onClick={() => { setSelected(candidate); setQuery(candidate.address_text); }}>{candidate.address_text}</button>)}</div> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide" type="button" onClick={() => void save()} disabled={saving || !selected}>{saving ? <Loader2 className="spinner" size={15} /> : <MapPinned size={15} />} {saving ? "Đang lưu…" : "Lưu và chọn địa chỉ"}</button><p className="field-hint">Chỉ các kết quả đã định vị trong 12 quận nội thành Hà Nội được chấp nhận.</p></div> : null}</div>;
 }
 
 function RestaurantBrowse() {
@@ -386,7 +438,7 @@ function AuthoritativeImage({ source, alt, compact = false }: { source: unknown;
 }
 function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKey }) { const point = pointFromRecord(item); const resourceId = idOf(item); return <div className="service-detail-heading"><div><AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} /><span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span><h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2><p>{display(item.address ?? item.location ?? item.description ?? "Địa chỉ đang cập nhật")}</p>{service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}</div>{point ? <XOneMap destination={point} label="Vị trí địa điểm" /> : <span className="field-hint">Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span>}</div>; }
 function ConfirmationBox({ confirmation, checked, setChecked, onConfirm, loading, label }: { confirmation: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onConfirm: () => void; loading: boolean; label: string }) { return <div className="confirmation-box"><div><span className="eyebrow">XÁC NHẬN RÕ RÀNG</span><h3>{display(confirmation.title ?? "Kiểm tra lần cuối")}</h3><p>{display(confirmation.detail ?? "Các điều khoản hiện tại đã được kiểm tra từ nguồn đáng tin cậy.")}</p>{confirmation.preview ? <PreviewSummary preview={asRecord(confirmation.preview)} /> : null}</div><label className="confirmation-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /> <span>{label}</span></label><button className="button button-primary" type="button" onClick={onConfirm} disabled={loading || !checked}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận</button></div>; }
-function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const total = asRecord(preview.total); return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(preview.subtotal)}</dd></div><div><dt>Giao hàng</dt><dd>{formatMoney(preview.delivery_fee ?? preview.delivery_amount)}</dd></div><div><dt>Tổng</dt><dd>{formatMoney(total?.amount, display(total?.currency ?? "VND"))}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(asRecord(preview.address)?.address ?? asRecord(preview.address)?.address_text ?? "Đã kiểm tra")}</dd></div></dl>; }
+function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND"); const address = asRecord(preview.address ?? preview.delivery_address); const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text; return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>; }
 function LoadingNote({ text }: { text: string }) { return <p className="inline-note service-loading-note" aria-live="polite"><Loader2 className="spinner" size={17} /> {text}</p>; }
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="error-panel" role="alert"><p>{message}</p><button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button></div>; }
 function EmptyNote({ title, body }: { title: string; body: string }) { return <div className="empty-state"><Search size={24} /><h2>{title}</h2><p>{body}</p></div>; }
@@ -396,7 +448,13 @@ function isRecord(value: unknown): value is JsonRecord { return typeof value ===
 function idOf(value: JsonRecord): string { return display(value.id ?? value.restaurant_id ?? value.source_record_id); }
 function display(value: unknown, fallback = "—"): string { return typeof value === "string" || typeof value === "number" ? String(value) : fallback; }
 function numberOf(value: unknown): number { const valueNumber = Number(value); return Number.isFinite(valueNumber) ? valueNumber : 0; }
+function moneyAmount(value: unknown): number { return isRecord(value) ? numberOf(value.amount ?? value.value) : numberOf(value); }
+function moneyCurrency(value: unknown): string | undefined { if (!isRecord(value)) return undefined; const currency = value.currency; return typeof currency === "string" && currency ? currency : undefined; }
 function formatMoney(value: unknown, currency = "VND"): string { return presentMoney(numberOf(value), currency); }
+const HANOI_INNER_DISTRICTS = ["ba dinh", "hoan kiem", "hai ba trung", "dong da", "tay ho", "cau giay", "thanh xuan", "hoang mai", "long bien", "ha dong", "bac tu liem", "nam tu liem"];
+function normalizeAddress(value: string): string { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase(); }
+function isHanoiInnerCityAddress(value: string): boolean { const normalized = normalizeAddress(value); return (normalized.includes("ha noi") || normalized.includes("hanoi")) && HANOI_INNER_DISTRICTS.some((district) => normalized.includes(district)); }
+function hanoiDistrict(value: string): string | undefined { const normalized = normalizeAddress(value); const district = HANOI_INNER_DISTRICTS.find((candidate) => normalized.includes(candidate)); return district ? district.split(" ").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ") : undefined; }
 function vehicleLabel(value: string): string { return ({ BIKE: "Xe máy", CAR_4: "Ô tô 4 chỗ", CAR_7: "Ô tô 7 chỗ" } as Record<string, string>)[value] ?? value; }
 function pointFromRecord(value: JsonRecord): Point | undefined { if (value.suspicious === true) return undefined; const latitude = Number(value.latitude); const longitude = Number(value.longitude); return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : undefined; }
 function candidatePoint(candidate: GeocodeCandidate): Point | undefined { return candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined; }
