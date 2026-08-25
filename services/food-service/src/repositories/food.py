@@ -428,7 +428,7 @@ class InMemoryFoodRepository:
         fold_keyword = _fold_text(raw_keyword)
         raw_district = district or ""
         district_folded = "" if str(raw_district).strip().casefold() in ("hà nội", "ha noi", "hồ chí minh", "ho chi minh", "tp hcm", "đà nẵng", "da nang") else _fold_text(raw_district)
-        
+
         if fold_keyword:
             search_results = await self.search(keyword=keyword, district=district, category=category, open_only=open_only, limit=1000, offset=0)
             grouped: dict[str, dict] = {}

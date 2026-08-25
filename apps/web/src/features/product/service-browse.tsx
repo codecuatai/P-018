@@ -349,9 +349,6 @@ function RestaurantBrowse() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
-
   if (selected) {
     return (
       <div className="service-detail-flow" style={{ textAlign: "left" }}>
