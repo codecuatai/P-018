@@ -126,15 +126,19 @@ export function XOneMap({
         mapRef.current = map;
         leafletRef.current = L;
         const browserKey = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY?.trim();
-        const style = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim() || "osm-bright";
+        const configuredStyle = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim();
+        const style = !configuredStyle || configuredStyle === "osm-bright" ? "osm-bright-smooth" : configuredStyle;
         if (!browserKey || browserKey.includes("__PASTE_")) throw new Error("map-key-unavailable");
         const tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
         const tileLayer = L.tileLayer(tileUrl, { attribution: TILE_ATTRIBUTION, maxZoom: 19 });
         tileLayerRef.current = tileLayer;
         tileLayer.on("tileerror", () => { if (!disposed) setMapState("error"); });
         tileLayer.addTo(map);
-        resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
-        resizeTimer = window.setTimeout(() => invalidateMapSize(map), 120);
+        map.whenReady(() => {
+          invalidateMapSize(map);
+          resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
+          resizeTimer = window.setTimeout(() => invalidateMapSize(map), 250);
+        });
         if (!disposed) setMapState("ready");
       } catch {
         if (!disposed) setMapState("error");
