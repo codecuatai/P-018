@@ -895,14 +895,19 @@ export class AssistantService {
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
     
-    const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
+    // Terminal tasks remain durable history, but must not be planner context.
+    // Keep original refs so a discard directive still addresses the stored task.
+    const activeEntries = state.tasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase));
+    const activeTasks = activeEntries.map(({ task }) => task);
     const activeDomains = Array.from(new Set(activeTasks.map((t) => t.domain)));
     const focusTask = activeTasks.find((t) => t.phase === 'NEEDS_INFO' || t.phase === 'AWAITING_CONFIRMATION') ?? activeTasks[0];
     const activeDomain = focusTask ? focusTask.domain : undefined;
     const workflowPhase = focusTask ? focusTask.phase : undefined;
     
     const workingMemory = {
-      active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
+      active_task_refs: activeEntries.map(({ index }) => index),
       active_domain: activeDomain,
       active_domains: activeDomains,
       workflow_phase: workflowPhase,
@@ -917,7 +922,7 @@ export class AssistantService {
     return {
       working_memory: workingMemory,
       conversation_summary: conversationSummary,
-      tasks: state.tasks.slice(0, 8).map((task, index) => {
+      tasks: activeEntries.slice(0, 8).map(({ task, index }) => {
         const pendingActions = Array.from(new Set(state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind)));
         const pendingChoice = this.plannerPendingChoice(task);
         return {
@@ -1124,6 +1129,9 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
+    const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
+      ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
+      : [];
     const foldedMessage = plainText(message);
     if (textHasAny(foldedMessage, ['huy chuyen', 'huy dat xe', 'huy cuoc', 'huy xe', 'dung dat xe'])) {
       const activeRideIndex = state.tasks.findIndex((t) => t.domain === 'ride' && t.phase !== 'COMPLETED' && t.phase !== 'FAILED' && t.phase !== 'DISCARDED');
@@ -1155,7 +1163,7 @@ export class AssistantService {
         user_id: user.sub,
         message,
         messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses },
+        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ memory_id: memory.id, namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, source_turn_id: memory.sourceTurnId, why_retrieved: memory.whyRetrieved })) },
         user_profile: {
           id: user.id ?? user.sub,
           name: user.full_name ?? '',
