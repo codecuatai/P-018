@@ -85,13 +85,16 @@ Khả năng dịch vụ cốt lõi:
 4. Đặt lịch khám sức khỏe (healthcare): chuyên khoa (department), bác sĩ, ngày hẹn (appointment_date), thời gian mong muốn (time_preference: morning, afternoon, evening).
 
 Quy tắc ứng xử và bóc tách tác vụ:
-- Thân thiện, tự nhiên, mang phong cách trợ lý chu đáo (xưng "mình" hoặc "em", gọi "bạn").
+- Thân thiện, tự nhiên, mang phong cách trợ lý chu đáo: luôn xưng "mình" và gọi người dùng là "bạn"; không dùng "em", "anh" hoặc "tôi".
 - Chitchat / Tư vấn chung ("chào bạn", "bạn là ai", "hôm nay ăn gì ngon"): trả về `tasks: []`, `interaction_mode: "chitchat"` hoặc `"advisory"`.
 - Yêu cầu dịch vụ cụ thể: trích xuất danh sách `tasks` chính xác.
 - Khi người dùng ĐỔI Ý / HỦY BỎ yêu cầu cũ ("thôi không đi xe nữa, tìm quán phở"): điền task_ref của tác vụ cũ vào `discarded_task_refs` và chỉ tạo task mới.
 - Chuỗi dịch vụ phụ thuộc ("Tìm quán lẩu ở Hoàn Kiếm rồi đặt xe đưa tôi tới đó"):
   + Task 0 (restaurant): Tìm nhà hàng ở Hoàn Kiếm.
   + Task 1 (ride): depends_on = [0], không tự bịa địa chỉ đến (dropoff_address để trống để Gateway lấy từ Task 0).
+- Anchor-first: healthcare và restaurant là task neo có lịch/điểm đến cố định. Phải xác định hoặc hỏi thông tin còn thiếu của task neo trước khi lập các chặng ride phụ thuộc; không hỏi pickup/dropoff của ride khi điểm đến neo chưa được chọn.
+- Task retention: khi lượt mới chỉ bổ sung thông tin di chuyển, giữ nguyên mọi task healthcare/restaurant đang PLANNING, NEEDS_INFO hoặc IN_PROGRESS trong conversation_state.tasks và hợp nhất slot mới; không thay thế chúng bằng task ride.
+- Advisory trước khi phân rã: với nhiều chặng, nhiều điểm đón hoặc nhóm từ ba người trở lên, đưa ra tối đa hai phương án tuyến/xe và hỏi bạn chọn trước khi tạo hàng loạt task ride.
 - Đa dịch vụ độc lập ("Tìm bún chả giao về nhà và đặt lịch khám tim mạch sáng mai"):
   + Task 0 (food): dish_query = "bún chả", delivery_preference = "home".
   + Task 1 (healthcare): department = "tim mach", time_preference = "tomorrow_morning".
@@ -110,7 +113,7 @@ Food delivery and restaurant services are limited to central Hanoi (Hoàn Kiếm
 Requests about programming, mathematics, politics, schoolwork, computer repair, or other non-X-One topics are unsupported: return interaction_mode="unsupported", tasks=[], and a brief Vietnamese refusal. Do not answer the unrelated question or provide code/instructions.
 """
 
-COMPOSE_INSTRUCTION = """You are X-One composing a Vietnamese response from authoritative system results. Focus only on the current request and active tasks. Do not mention FAILED, DISCARDED, or old COMPLETED tasks unless the user explicitly asks about them. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Be concise. Use first person 'mình' and address the user as 'bạn'; never use 'em', 'anh', or 'tôi'."""
+COMPOSE_INSTRUCTION = """You are X-One composing a concise Vietnamese response from authoritative system results. Focus only on the current request and active tasks. Do not mention FAILED, DISCARDED, or old COMPLETED tasks unless the user explicitly asks about them. Keep anchor tasks (healthcare/restaurant) ahead of dependent ride steps and make the next required choice clear. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Always use first person 'mình' and address the user as 'bạn'; never use 'em', 'anh', or 'tôi'."""
 
 _CONFIRMED_RESULT_KINDS = {"booking_confirmed", "order_confirmed"}
 
@@ -1603,6 +1606,65 @@ def _merge_explicit_context_actions(
         and str(value.get("phase", "PLANNING")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
     }
     discarded_refs = sorted((set(plan.discarded_task_refs).intersection(allowed_model_refs)).union(deterministic_refs))
+    # Retain unfinished anchor tasks when a follow-up turn only adds travel
+    # details. The planner may omit them due to recency bias, but Gateway
+    # needs the original healthcare/restaurant task to remain addressable.
+    if not discarded_refs and raw_tasks:
+        active_anchors = [
+            value for value in raw_tasks[:8]
+            if isinstance(value, dict)
+            and str(value.get("phase", "PLANNING")) in {"PLANNING", "NEEDS_INFO", "IN_PROGRESS"}
+            and str(value.get("domain", "")) in {"healthcare", "restaurant"}
+        ]
+        has_ride = any(task.domain == "ride" for task in plan.tasks)
+        retained_domains = {task.domain for task in plan.tasks}
+        if has_ride and active_anchors:
+            missing_anchor_domains = {
+                str(value.get("domain")) for value in active_anchors
+                if str(value.get("domain")) not in retained_domains
+            }
+            if len(missing_anchor_domains) > 1:
+                question = "Bạn muốn chuyến xe này gắn với lịch khám hay nhà hàng đang chuẩn bị?"
+                return AssistantPlan(
+                    assistant_message=question,
+                    interaction_mode="advisory",
+                    tasks=[],
+                    needs_clarification=True,
+                    clarification_question=question,
+                )
+            retained: list[PlannedTask] = []
+            for value in active_anchors:
+                domain = str(value.get("domain"))
+                if domain in retained_domains:
+                    continue
+                slots = value.get("extracted_slots") if isinstance(value.get("extracted_slots"), dict) else {}
+                retained_task = _task(
+                        domain,
+                        str(value.get("goal") or message),
+                        str(value.get("goal") or "Tiếp tục yêu cầu đang dang dở"),
+                        dict(slots),
+                    )
+                if isinstance(value.get("normalized_request"), str) and value["normalized_request"].strip():
+                    retained_task = retained_task.model_copy(update={"normalized_request": value["normalized_request"][:2000]})
+                retained.append(retained_task)
+            if retained:
+                retained_count = len(retained)
+                if retained_count + len(plan.tasks) > 4:
+                    question = "Mình đang giữ các yêu cầu chính của bạn. Bạn muốn hoàn tất yêu cầu neo trước hay chọn phương án di chuyển trước?"
+                    return AssistantPlan(
+                        assistant_message=question,
+                        interaction_mode="advisory",
+                        tasks=[],
+                        needs_clarification=True,
+                        clarification_question=question,
+                    )
+                shifted: list[PlannedTask] = []
+                for task in plan.tasks:
+                    dependencies = [value + retained_count for value in task.depends_on]
+                    if task.domain == "ride":
+                        dependencies = sorted(set(dependencies).union(range(retained_count)))
+                    shifted.append(task.model_copy(update={"depends_on": dependencies}))
+                plan = plan.model_copy(update={"tasks": [*retained, *shifted]})
     interaction_mode = plan.interaction_mode
     if plan.tasks:
         interaction_mode = "service"
@@ -1668,6 +1730,40 @@ def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> Assist
             slots.pop("dropoff_address", None)
         tasks.append(task.model_copy(update={"depends_on": dependencies, "extracted_slots": slots}))
     return plan.model_copy(update={"tasks": tasks})
+
+
+def _requires_route_advisory(message: str, plan: AssistantPlan) -> bool:
+    """Detect route choices that need user selection before task fan-out."""
+    lowered = _plain(message)
+    multi_pickup = sum(
+        marker in lowered
+        for marker in ("don tai", "don o", "don tung nguoi", "bon noi", "ba noi", "nhieu diem")
+    ) >= 2
+    group_match = re.search(r"\b([3-9]|[1-9][0-9])\s*nguoi\b", lowered)
+    group_trip = bool(group_match) and any(token in lowered for token in ("di an", "di cung", "di nha hang", "goi xe"))
+    multi_leg = sum(task.domain == "ride" for task in plan.tasks) > 1
+    return bool((multi_pickup or group_trip or multi_leg) and len(plan.tasks) >= 1)
+
+
+def _apply_plan_guards(
+    plan: AssistantPlan,
+    message: str,
+    conversation_state: dict[str, Any] | None,
+) -> AssistantPlan:
+    """Apply deterministic safety and planning rules to every planner path."""
+    plan = _merge_explicit_context_actions(plan, message, conversation_state)
+    plan = _merge_explicit_semantics(plan, message)
+    plan = _enforce_reference_dependencies(plan, message)
+    if _requires_route_advisory(message, plan):
+        question = "Bạn muốn đi 1 xe 7 chỗ đón theo tuyến hay nhiều xe riêng? Mình sẽ lập các chặng sau khi bạn chọn phương án."
+        return AssistantPlan(
+            assistant_message=question,
+            interaction_mode="advisory",
+            tasks=[],
+            needs_clarification=True,
+            clarification_question=question,
+        )
+    return _sanitize_plan(plan)
 
 
 def _parse_model(raw: Any, schema: type[BaseModel]) -> BaseModel:
@@ -1980,6 +2076,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             return {"assistant_message": message, "decision_source": source}
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = _apply_plan_guards(plan, str(state.get("query", "")), state.get("conversation_state", {}))
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
             if settings.agent_model_mode == "gemini":
                 with get_telemetry().observation(
@@ -2008,9 +2105,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                     purpose="plan",
                 )
             )
-            plan = _merge_explicit_context_actions(plan, message, state.get("conversation_state"))
-            plan = _sanitize_plan(_merge_explicit_semantics(plan, message))
-            plan = _enforce_reference_dependencies(plan, message)
+            plan = _apply_plan_guards(plan, message, state.get("conversation_state"))
             MODEL_DIAGNOSTICS.update(
                 {
                     "last_model_call_at": _now().isoformat(),
@@ -2047,6 +2142,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             ):
                 pass
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = _apply_plan_guards(plan, str(state.get("query", "")), state.get("conversation_state", {}))
             return _typed_pipeline_result(plan, state, "deterministic")
 
     graph = StateGraph(AssistantState)

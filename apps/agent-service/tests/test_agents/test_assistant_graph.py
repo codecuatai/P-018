@@ -10,6 +10,8 @@ from src.agents.assistant_graph import (
     PlannedTask,
     _bounded_authoritative_results,
     _healthcare_requested_date,
+    _merge_explicit_context_actions,
+    _apply_plan_guards,
     _model_prompt,
     _safe_composed_message,
     _time_slot,
@@ -54,6 +56,83 @@ def test_restaurant_discovery_does_not_require_booking_details() -> None:
 def test_planner_schema_requires_reasoning_first() -> None:
     parsed = json.loads(_model_prompt({"query": "Đặt xe", "messages": [], "conversation_state": {}}))
     assert parsed["response_schema"]["required"][0] == "reasoning"
+
+
+def test_followup_ride_retains_unfinished_healthcare_anchor() -> None:
+    ride = PlannedTask(
+        domain="ride",
+        goal="Đặt chặng xe",
+        normalized_request="Đón từ nhà ra bến xe",
+        extracted_slots={"pickup_address": "Nhà", "dropoff_address": "Bến xe"},
+    )
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[ride]),
+        "Đặt xe đón từ nhà ra bến xe rồi đi viện",
+        {
+            "tasks": [
+                {
+                    "domain": "healthcare",
+                    "phase": "NEEDS_INFO",
+                    "goal": "Đặt lịch khám thần kinh",
+                    "extracted_slots": {"department": "than kinh", "appointment_date": "tomorrow"},
+                }
+            ]
+        },
+    )
+    assert [task.domain for task in plan.tasks] == ["healthcare", "ride"]
+    assert plan.tasks[1].depends_on == [0]
+
+
+def test_deterministic_guard_path_retains_healthcare_anchor() -> None:
+    plan = deterministic_plan(
+        "Đặt xe đón từ nhà ra bến xe rồi đi viện",
+        {"tasks": [{"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám thần kinh", "extracted_slots": {"department": "than kinh"}}]},
+    )
+    guarded = _apply_plan_guards(plan, "Đặt xe đón từ nhà ra bến xe rồi đi viện", {"tasks": [{"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám thần kinh", "extracted_slots": {"department": "than kinh"}}]})
+    assert [task.domain for task in guarded.tasks] == ["healthcare", "ride"]
+    assert guarded.tasks[1].depends_on == [0]
+
+
+def test_complex_group_route_enters_advisory_before_ride_fanout() -> None:
+    plan = _apply_plan_guards(
+        deterministic_plan("4 người ở Cầu Giấy, Hoàn Kiếm, Đống Đa, Tây Hồ tối nay gọi xe đi ăn"),
+        "4 người ở Cầu Giấy, Hoàn Kiếm, Đống Đa, Tây Hồ tối nay gọi xe đi ăn",
+        {},
+    )
+    assert plan.interaction_mode == "advisory"
+    assert plan.tasks == []
+    assert plan.needs_clarification is True
+
+
+def test_followup_ride_retains_restaurant_anchor_without_inventing_destination() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(tasks=[PlannedTask(
+            domain="ride",
+            goal="Đi tới nhà hàng đó",
+            normalized_request="Gọi xe từ VinUni tới nhà hàng đó",
+            extracted_slots={"pickup_address": "VinUni", "dropoff_address": "nhà hàng đó"},
+        )]),
+        "Gọi xe từ VinUni tới nhà hàng đó",
+        {"tasks": [{"domain": "restaurant", "phase": "PLANNING", "goal": "Tìm nhà hàng lẩu", "normalized_request": "Tìm nhà hàng lẩu ở Hoàn Kiếm", "extracted_slots": {"location": "Hoàn Kiếm", "cuisine_query": "lẩu"}}]},
+    )
+    assert [task.domain for task in guarded.tasks] == ["restaurant", "ride"]
+    assert guarded.tasks[1].depends_on == [0]
+    assert "dropoff_address" not in guarded.tasks[1].extracted_slots
+    assert guarded.tasks[0].normalized_request == "Tìm nhà hàng lẩu ở Hoàn Kiếm"
+
+
+def test_multiple_active_anchors_require_selection_instead_of_wrong_dependency() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(tasks=[PlannedTask(domain="ride", goal="Gọi xe", normalized_request="Gọi xe", extracted_slots={})]),
+        "Gọi xe giúp mình",
+        {"tasks": [
+            {"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám", "extracted_slots": {}},
+            {"domain": "restaurant", "phase": "PLANNING", "goal": "Ăn tối", "extracted_slots": {}},
+        ]},
+    )
+    assert guarded.interaction_mode == "advisory"
+    assert guarded.tasks == []
+    assert guarded.needs_clarification is True
 
 
 def test_composer_result_projection_limits_choices_and_fields() -> None:

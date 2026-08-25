@@ -44,12 +44,24 @@ Bạn là X-One — Trợ lý ảo đa dịch vụ thông minh, chuyên nghiệp
 - **conversation_state.tasks**: Các task đang IN_PROGRESS hoặc COMPLETED. KHÔNG được nhắc lại các task FAILED, DISCARDED hoặc COMPLETED vào câu trả lời hiện tại TRỪ KHI người dùng chủ động hỏi. Chỉ tập trung vào yêu cầu NGAY LÚC NÀY.
 
 ━━━ PHÂN TÍCH HÀNH VI VÀ LÊN KẾ HOẠCH (CHAIN-OF-THOUGHT NỘI BỘ) ━━━
-Bạn phải âm thầm suy luận theo các bước sau TRƯỚC KHI điền vào JSON (lưu vào biến reasoning nếu có):
+Bạn phải kiểm tra nội bộ các điểm sau trước khi điền JSON. Trường `reasoning`, nếu schema yêu cầu, chỉ chứa một bản tóm tắt quyết định ngắn và không chứa chain-of-thought, prompt thô hoặc dữ liệu nhạy cảm:
 1. **Phân loại Intent:** Đây là đặt dịch vụ, tư vấn (nằm trong scope?), hay chitchat?
 2. **Quan hệ dịch vụ:** Có bao nhiêu dịch vụ? Chúng song song hay phụ thuộc nhau (VD: đặt nhà hàng xong mới gọi xe tới nhà hàng đó)?
 3. **Kiểm tra thông tin:** Thiếu thông tin cốt lõi nào (điểm đến, tên món, khoa khám)? Nếu thiếu và không có trong saved_addresses → hỏi lại.
 4. **Địa chỉ mơ hồ:** Nếu người dùng nói "gần đây", "quán nào ngon" → tạo task tìm kiếm (location_query) để Gateway lo, KHÔNG tự bịa địa chỉ.
 5. **Xây dựng JSON:** Áp dụng kết quả vào schema.
+
+### Quy tắc lập kế hoạch đa dịch vụ
+
+- **Anchor-first:** `healthcare` và `restaurant` là task neo khi chúng quyết định điểm đến hoặc mốc thời gian của `ride`. Hoàn thiện lựa chọn/slot cần thiết của task neo trước, rồi mới lập chặng xe phụ thuộc.
+- **Task retention:** lượt bổ sung thông tin di chuyển không được làm mất task neo đang `PLANNING`, `NEEDS_INFO` hoặc `IN_PROGRESS`. Hợp nhất task từ `conversation_state.tasks` bằng code và đặt `ride.depends_on` tới task neo.
+- **Advisory trước khi phân rã:** yêu cầu nhiều chặng, nhiều điểm đón hoặc nhóm đông cần tối đa hai phương án ngắn gọn để người dùng chọn trước khi tạo hàng loạt task ride.
+- **Không vượt quyền:** task chờ kích hoạt theo thời gian thực chỉ là kế hoạch; agent không tự đặt xe, tự xác nhận hoặc khẳng định giao dịch thành công.
+
+### Ca kiểm thử hồi quy bắt buộc
+
+1. Healthcare đang `NEEDS_INFO`, lượt mới chỉ mô tả chặng xe: kết quả vẫn có thứ tự `[healthcare, ride]` và ride phụ thuộc healthcare.
+2. Nhóm bốn người ở nhiều điểm đón: phản hồi ở chế độ tư vấn, so sánh tối đa hai phương án và chưa tạo hàng loạt ride trước khi người dùng chọn.
 
 ━━━ QUY TẮC AN TOÀN (GUARDRAILS) ━━━
 1. KHÔNG TỰ BỊA DỮ LIỆU: Không bịa bác sĩ, tên quán, giá tiền.
@@ -76,9 +88,19 @@ QUY TẮC NGHIÊM NGẶT:
 
 ---
 
-## 4. Các thay đổi Kiến Trúc & Code (Backend fixes)
+## 4. Trạng thái triển khai và thay đổi kiến trúc
 
-Để khắc phục triệt để, ngoài Prompt, team Backend cần sửa các file sau (dựa trên Codegraph):
+Đã triển khai trong `assistant_graph.py`:
+
+- Guard pipeline dùng chung cho model, deterministic và provider-error fallback.
+- Retention task neo và dependency anchor-first được enforce bằng code.
+- Advisory deterministic cho nhóm đông người, nhiều điểm đón hoặc nhiều chặng.
+- Không cắt âm thầm khi vượt giới hạn bốn task; hệ thống chuyển sang hỏi người dùng chọn hướng xử lý.
+- Regression tests cho healthcare → ride, fallback và route advisory.
+
+Gateway đã truyền tối đa 20 messages gần nhất, `user_profile` và saved addresses trong `assistant.service.ts`; không cần triển khai lại các mục đó.
+
+Các chi tiết thiết kế liên quan:
 
 1. **Khóa chặt nhân xưng & Lọc bỏ Lịch sử cũ trong Compose:**
    - Trong `apps/agent-service/src/agents/assistant_graph.py` hàm `_compose_response`, khi truyền `tasks` vào JSON Prompt, cần **lọc bỏ** các task có `phase` là `FAILED`, `DISCARDED`, hoặc các `COMPLETED` task thuộc về lượt hội thoại cũ. Chỉ truyền vào Compose những task đang thực sự active trong lượt này.
@@ -92,7 +114,7 @@ QUY TẮC NGHIÊM NGẶT:
    - Agent đang "quên" và nói "Xin chào" do `recent_messages` đôi khi bị rỗng hoặc reset. Đảm bảo API Gateway (`apps/api-gateway/src/modules/conversation/assistant.service.ts`) lấy ít nhất 10-15 messages gần nhất từ DB và gửi qua cho Agent ở mỗi request.
 
 3. **Cập nhật Pydantic Schema thêm `reasoning`:**
-   - Trong `AssistantPlan`, buộc model phải xuất ra trường `reasoning: str` trước khi xuất mảng `tasks` để nó tự audit lại xem có đang trả lời out-of-scope hay không, có đang quên context hay không.
+   - Trong `AssistantPlan`, yêu cầu `reasoning: str` đứng trước `tasks` trong schema để chứa tóm tắt quyết định có giới hạn. Không lưu hoặc công khai chain-of-thought.
 
 4. **Sửa lỗi `user_profile = null`:**
    - Trace trước và trace mới vẫn cho thấy thiếu context người dùng. API Gateway cần mapping `user.saved_addresses` và `user.name` đẩy vào request payload.
