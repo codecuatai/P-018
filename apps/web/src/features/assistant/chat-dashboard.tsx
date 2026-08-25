@@ -302,33 +302,46 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
-// Hàm lấy địa chỉ mới đã được cập nhật sử dụng BigDataCloud và Fallback tọa độ
+// Cập nhật hàm fetchAddress sử dụng API Nominatim (OpenStreetMap) lấy chi tiết đến mức độ số nhà, tên đường
 async function fetchAddress(position: GeolocationPosition): Promise<string> {
   const lat = position.coords.latitude;
   const lon = position.coords.longitude;
   
   try {
-    // Dùng API của BigDataCloud (chuyên dùng cho Frontend, siêu nhanh và không bị block)
+    // Dùng Nominatim với tham số zoom=18 (cấp độ đường phố) và addressdetails=1 để lấy chi tiết
     const response = await fetch(
-      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=vi`
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=vi`
     );
     
     if (response.ok) {
       const data = await response.json();
-      // Ghép các thành phần địa chỉ (Phường/Xã, Quận/Huyện, Tỉnh/Thành phố)
-      const addressParts = [data.locality, data.city, data.principalSubdivision].filter(Boolean);
+      const addr = data.address;
       
-      if (addressParts.length > 0) {
-        return addressParts.join(", ");
+      if (addr) {
+        // 1. Lấy số nhà và tên đường
+        const houseNumber = addr.house_number ? `Số ${addr.house_number}` : "";
+        const road = addr.road || "";
+        const streetInfo = [houseNumber, road].filter(Boolean).join(" ");
+        
+        // 2. Lấy Quận/Huyện và Tỉnh/Thành phố
+        const district = addr.county || addr.suburb || addr.city_district || "";
+        const city = addr.city || addr.province || addr.state || "";
+        
+        // 3. Ghép tất cả lại
+        const rawAddress = [streetInfo, district, city].filter(Boolean).join(", ");
+        
+        // 4. Mẹo UX: Xóa các từ bị lặp nhau (ví dụ: Gia Lâm, Gia Lâm, Hà Nội -> Gia Lâm, Hà Nội)
+        const uniqueParts = [...new Set(rawAddress.split(", ").map(s => s.trim()))].filter(Boolean);
+        
+        if (uniqueParts.length > 0) {
+          return uniqueParts.join(", ");
+        }
       }
     }
-    
-    // Nếu API trả về OK nhưng không có data chữ, ném lỗi để nhảy xuống catch
-    throw new Error("Không có dữ liệu text");
+    throw new Error("Không có dữ liệu chi tiết");
     
   } catch (error) {
-    console.warn("Lỗi API gọi địa chỉ, fallback về tọa độ thô:", error);
-    // Phao cứu sinh: Trả thẳng tọa độ cho AI tự hiểu, luồng chat vẫn mượt mà!
+    console.warn("Lỗi API Nominatim, fallback về tọa độ thô:", error);
     return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
   }
 }
