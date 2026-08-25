@@ -1,88 +1,93 @@
-# BÁO CÁO ĐÁNH GIÁ VÀ TÁI CẤU TRÚC KIẾN TRÚC X-ONE AGENT
-*(Tổng hợp từ Phân tích Log Trace, Mã nguồn Orchestration và Cấu trúc Bộ nhớ)*
+# BÁO CÁO CHI TIẾT: LỖI LUỒNG ĐẶT ĐỒ ĂN VÀ VẤN ĐỀ KIẾN TRÚC X-ONE AGENT
 
-Tài liệu này trình bày phân tích chuyên sâu về các lỗ hổng kiến trúc hiện tại của hệ thống X-One, dẫn đến tình trạng suy luận kém, mất ngữ cảnh và sinh ảo giác (hallucination). Dựa trên phân tích 100 trace log thực tế và đối chiếu trực tiếp với codebase (bao gồm Gateway và cấu trúc LangGraph của Agent), dưới đây là chi tiết các vấn đề và giải pháp khắc phục toàn diện.
-
----
-
-## PHẦN 1: TẦNG QUẢN LÝ TRẠNG THÁI & BỘ NHỚ (STATE & MEMORY MANAGEMENT)
-
-### 1.1. Hiện trạng và Điểm yếu Hệ thống
-Theo bằng chứng từ codebase (file `migration` dòng 28 và `assistant.service.ts` dòng 1157), Core đang lưu toàn bộ messages và state trong một cột JSONB duy nhất (`conversation_states`). Gateway giới hạn gửi tối đa 20 message gần nhất cho Agent. 
-
-**Biểu hiện lỗi qua Log:**
-- **Rò rỉ ngữ cảnh (Context Leak):** Trong Trace 13, khi đang xử lý yêu cầu tìm chuyến xe từ Đại học Thủy Lợi, Agent vẫn lưu giữ một "task healthcare cũ" trong bộ nhớ. 
-- **Lặp từ máy móc:** Trace 1 cho thấy hệ thống thiếu logic fallback khi `saved_addresses` rỗng, dẫn đến phản hồi ngô nghê: *"Mình sẽ giúp bạn tìm phở bò giao về nhà nhé. Bạn muốn mình giao đến địa chỉ nào?"* [cite: 1787651635237-lf-events-export-cmso4085y03ghad0dxeiv8az3.csv].
-- **Thiếu Semantic Memory:** Hệ thống hiện chỉ có *Working memory* (task đang hoạt động) mà không có bộ nhớ dài hạn. `conversation_summary` hiện tại quá nghèo nàn, không lưu trữ được sở thích hay thói quen đã được xác nhận.
-
-### 1.2. Phân tích Nguyên nhân
-Vấn đề không nằm ở việc "Agent không lưu lịch sử", mà là **cách lưu trữ lịch sử dưới dạng JSONB khổng lồ thiếu cấu trúc**. Việc không có cơ chế phân loại (phân biệt giữa dữ kiện tạm thời, sở thích lâu dài và thông tin xác thực) khiến LLM dễ bị nhiễu.
-
-### 1.3. Giải pháp Tái cấu trúc
-Cần thay thế JSONB cục bộ bằng **Hệ thống Bộ nhớ Phân lớp (Layered Memory)**. Tận dụng các hệ quản trị CSDL quan hệ kết hợp với cơ sở dữ liệu vector (như Qdrant) để thiết lập luồng truy xuất chuẩn xác:
-
-*   **Working memory (Gateway/Core):** Quản lý task đang xử lý, slot thiếu, action chờ xác nhận.
-*   **Episodic memory (Core):** Những sự kiện đã xảy ra, quyết định, điều chỉnh (ví dụ: "Lần trước tôi chọn quán này").
-*   **Semantic user memory (Core + Qdrant):** Sở thích ăn uống, thói quen (chỉ lưu sau khi có độ tin cậy `confidence` cao).
-*   **Authoritative facts (Domain Service):** Dữ kiện tuyệt đối (giá, booking_id). TUYỆT ĐỐI KHÔNG để Agent tự lưu và tự suy luận.
-
-**Đề xuất Schema Core Database:**
-- `conversation_turns`: Lưu rành mạch từng lượt (sequence_no, role, content).
-- `memory_items`: Bảng cốt lõi chứa `key`, `typed_value`, `confidence`, `valid_until` và `supersedes_id` (để xử lý xung đột thông tin).
+Tài liệu này tổng hợp toàn bộ các vấn đề nghiêm trọng đang xảy ra trong luồng hội thoại và tính năng đặt đồ ăn của X-One. Báo cáo dựa trên phân tích 100+ trace log đầu tiên, mã nguồn orchestration và phản hồi thực tế khi tương tác chạm trên UI.
 
 ---
 
-## PHẦN 2: TẦNG ĐỊNH TUYẾN & LẬP KẾ HOẠCH (PLANNING & ORCHESTRATION)
+## 1. VẤN ĐỀ VỀ QUẢN LÝ TRẠNG THÁI (BÓNG MA TASK CŨ)
 
-### 2.1. Hiện trạng và Điểm yếu Hệ thống
-Khi đi sâu vào file `apps/agent-service/src/agents/assistant_graph.py`, luồng phối hợp giữa CoreAPlanner và Gateway lộ rõ điểm yếu về **Tool Mapping**. 
+**🔴 Vấn đề:**
+Người dùng cảm thấy khó chịu vì hệ thống "nhớ dai" một cách sai lệch. Các Task đã bị hủy (discarded) hoặc đã hoàn thành vẫn liên tục quay trở lại can thiệp vào các đoạn chat sau, làm hỏng luồng giao tiếp.
 
-**Biểu hiện lỗi:** Khi người dùng hỏi *"Cho tôi xem menu của quán Phở Thìn"*, hệ thống không xử lý được, trả về lỗi rỗng hoặc bị điều hướng sai.
+**🔍 Minh chứng (Trace Logs):**
+- **Trace 107:** Người dùng ra lệnh hủy chuyến xe: *"thôi, tôi ở nhà ăn cái gì đó v"*. Agent nhận diện đúng và đẩy task `ride` vào danh sách `discarded_task_refs`.
+- **Trace 164 & 185:** Khi người dùng chuyển sang bàn về đồ ăn tối, Agent vẫn lẩm bẩm trong lý luận (reasoning): *"Task 0 (ride) was already completed/processed previously, so it remains in conversation history"*.
+- **Trace 262:** Khi người dùng hỏi chitchat toán học *"1 + 1 bằng mấy?"*, Agent lại phân tích: *"Since there is an active ride task in progress... preserving task 0"*.
 
-### 2.2. Phân tích Nguyên nhân
-Trong `XONE_SYSTEM_PROMPT` (dòng 81-86), `domain: food` chỉ được hướng dẫn 3 tác vụ: *tìm quán ăn, chọn món, địa chỉ giao*. Planner hoàn toàn **mù mờ về công cụ xem menu**. 
-Khi gặp câu hỏi này, Planner thường đưa ra 2 quyết định sai lầm:
-1. Gán ép `dish_query = "menu quán Phở Thìn"`.
-2. Phân loại câu hỏi thành `interaction_mode = "advisory"` (tư vấn chung).
-Hậu quả nghiêm trọng là Gateway sẽ bypass (bỏ qua) việc gọi tool (như `food.list_menu`), dẫn đến việc cấp cho Agent một mảng `authoritative_results: []` trống rỗng.
+**⚠️ Nguyên nhân gốc rễ:**
+- Gateway không thực sự pop/delete (xóa hoặc vô hiệu hóa) các Task ID nằm trong mảng `discarded_task_refs` khỏi cơ sở dữ liệu `conversation_states`.
+- Hệ thống bê nguyên xi cục lịch sử JSONB (chứa cả task rác đã hủy) nạp ngược vào Prompt Context của LLM ở những lượt chat kế tiếp, khiến LLM lầm tưởng người dùng vẫn đang đợi xe.
 
-### 2.3. Giải pháp Tái cấu trúc
-Sửa đổi trực tiếp `XONE_SYSTEM_PROMPT` để dạy LLM định dạng chính xác từng sub-intent:
-```markdown
-2. Giao đồ ăn tận nơi (food): 
-   - Tìm quán ăn theo tên/địa chỉ (restaurant_query)
-   - Xem menu của quán (menu_query / list_menu)
-   - Chọn món (dish_query)
-   - Địa chỉ giao (location)
-```
-Cần thiết lập rào chắn để Planner bắt buộc trả về schema chuẩn, đảm bảo Gateway luôn map đúng tool ở tầng backend.
+**✅ Cách giải quyết:**
+1. **Can thiệp Gateway:** Gateway BẮT BUỘC phải dọn dẹp biến `conversation_state.tasks` trước khi lưu vào DB. Những task nào bị LLM đánh dấu `discarded` thì phải xóa hẳn hoặc đổi trạng thái thành `inactive` để không nạp vào Prompt nữa.
+2. **Layered Memory:** Chuyển đổi từ việc lưu JSONB khổng lồ sang mô hình bộ nhớ phân lớp (Working memory cho task hiện tại, Episodic memory cho lịch sử).
 
 ---
 
-## PHẦN 3: TẦNG TỔNG HỢP & KIỂM SOÁT ẢO GIÁC (COMPOSER & GUARDRAILS)
+## 2. LỖI LẬP KẾ HOẠCH & VÒNG LẶP HỎI VÒNG VÈO
 
-### 3.1. Hiện trạng và Điểm yếu Hệ thống
-Đây là lỗ hổng chí mạng nhất giải thích cho các phản hồi ngớ ngẩn. Điển hình ở Trace 5, hệ thống tự động sinh ra một danh sách "cơm tấm, phở, bún chả..." dù vừa thất bại khi tìm quán cơm tấm trước đó [cite: 1787651635237-lf-events-export-cmso4085y03ghad0dxeiv8az3.csv].
+**🔴 Vấn đề:**
+Luồng đặt đồ ăn bị cứng nhắc. Hệ thống liên tục hỏi vặn lại người dùng để lấy một thông tin cố định thay vì chủ động gọi Tool để đưa ra gợi ý, gây ra vòng lặp vô tận (Endless Clarification Loop).
 
-### 3.2. Phân tích Nguyên nhân
-Tại node Composer (`COMPOSE_INSTRUCTION` dòng 116), prompt có chỉ thị: *"Never invent IDs, prices, times, names..."* nhưng lại **thiếu Negative Constraints (ràng buộc phủ định) cho dữ liệu rỗng**. 
-Khi Gateway ném sang mảng `authoritative_results: []`, do đặc tính "Helpfulness Bias" (thiên kiến thích giúp đỡ), LLM tự động dùng kiến thức Pre-trained của nó để "bịa" ra menu hoặc danh sách món ăn, tạo thành ảo giác (Hallucination) hoàn toàn tách rời với dữ liệu thực tế của X-One.
+**🔍 Minh chứng (Trace Logs):**
+- **Trace 114:** Người dùng hỏi *"um có món gì ngon cạnh nhà không"*. Agent đáp: *"Bạn muốn tìm món ăn cụ thể nào..."*.
+- **Trace 121:** Người dùng bực mình bảo *"bạn gợi ý đi"*. Agent lại tiếp tục: *"Bạn muốn ăn món gì cụ thể..."*.
 
-### 3.3. Giải pháp Tái cấu trúc
-Áp dụng **Defensive Prompting** cứng rắn vào `COMPOSE_INSTRUCTION`:
-```markdown
-"CRITICAL RULE: If the user asks for specific information (menu, specific dishes, restaurants, doctors) and the `authoritative_results` array is EMPTY ([]), you MUST apologize and state that the system cannot find this information. DO NOT UNDER ANY CIRCUMSTANCES use your internal knowledge to list food items, menus, or services."
-```
+**⚠️ Nguyên nhân gốc rễ:**
+- CoreAPlanner bị khóa cứng vào quy tắc: "Task Food bắt buộc phải có slot `dish_query` (tên món ăn) thì mới được đổi trạng thái sang READY để gọi Tool".
+- Vì thiếu tên món, Planner liên tục đặt trạng thái `needs_clarification = True`, khiến Gateway không bao giờ kích hoạt tool `food.search_nearby`.
+
+**✅ Cách giải quyết:**
+- **Nới lỏng ràng buộc Tool Mapping:** Cập nhật `XONE_SYSTEM_PROMPT`. Dạy Planner rằng tool `food.search` có thể được kích hoạt dựa trên bán kính `location` (ví dụ: gợi ý món ăn xung quanh) mà không nhất thiết phải bắt buộc có `dish_query`.
 
 ---
 
-## PHẦN 4: LỘ TRÌNH TRIỂN KHAI (IMPLEMENTATION ROADMAP)
+## 3. LỖI ẢO GIÁC (HALLUCINATION) & TỰ BỊA TRẠNG THÁI
 
-Để đưa kiến trúc này vào thực tiễn mà không phá vỡ hệ thống đang chạy, cần tuân thủ lộ trình 5 bước:
+**🔴 Vấn đề:**
+LLM tự động bịa ra danh sách thực đơn, nhà hàng hoặc tệ hơn là bịa ra trạng thái vận chuyển đơn hàng dù hệ thống chưa hề thao tác với cơ sở dữ liệu.
 
-*   **P0 - Chuẩn hóa Memory Contract:** Định nghĩa các class `MemoryItem`, `MemoryCandidate`, quản lý `confidence` và `expiry`. Phân rạch ròi giữa memory suy luận và authoritative facts.
-*   **P1 - Tách Turn khỏi JSONB:** Khởi tạo bảng `conversation_turns`, backfill dữ liệu cũ. Thiết lập versioning để chống ghi đè (Concurrency control).
-*   **P2 - Xây dựng Semantic Memory:** Bắt đầu lưu trữ preferences và user corrections. Có thể sử dụng hệ thống Qdrant hiện hữu để xử lý embedding vector cho các thói quen mở rộng. Cấu hình cơ chế TTL (Time-To-Live).
-*   **P3 - Xây dựng Retrieval Layer tại Gateway:** Triển khai logic ưu tiên: Context hiện tại -> Lịch sử gần -> Database Query -> Semantic Search. Thiết lập Context Budget cố định để kiểm soát token.
-*   **P4 - Summary & Compaction:** Tóm tắt (compact) dữ liệu sau mỗi 10-20 turns để thu gọn context window, đảm bảo `summary` không lưu trữ lầm các dữ liệu thay đổi liên tục như trạng thái đơn hàng.
-*   **P5 - Đánh giá (Hardening):** Đo lường Retrieval precision/recall, tỷ lệ rò rỉ context, và độ trễ hệ thống (hiện đang ở mức trung bình 1.8s) [cite: 1787651635237-lf-events-export-cmso4085y03ghad0dxeiv8az3.csv].
+**🔍 Minh chứng (Trace Logs):**
+- **Trace 144:** Người dùng chốt món bún chả và hỏi *"bao giờ giao tới"*. Agent trả lời ngay: *"Đơn hàng bún chả của bạn đang được chuẩn bị và sẽ sớm được giao đến nhà bạn nhé!"* (Dù người dùng chưa hề chọn quán, chưa xem giá và chưa thanh toán).
+- **Trace 5:** Hệ thống tìm kiếm cơm tấm thất bại (Authoritative results = rỗng), LLM tự bịa ra: *"Mình có bún chả, phở, mì cay..."*.
+
+**⚠️ Nguyên nhân gốc rễ:**
+- Đặc tính **Helpfulness Bias** của LLM. Khi Gateway ném vào một kết quả rỗng `[]` (hoặc khi chưa kích hoạt Tool Booking), LLM vẫn muốn "giúp đỡ" bằng cách dùng trí nhớ mặc định để tự sinh ra câu trả lời có vẻ hợp lý.
+- Thiếu **Negative Constraint** (ràng buộc cấm) trong bước sinh ngôn ngữ (Composer).
+
+**✅ Cách giải quyết:**
+- Thêm Guardrail (Rào chắn) vào `COMPOSE_INSTRUCTION`: *"CRITICAL RULE: Nếu hệ thống chưa trả về `order_id` hoặc trạng thái xác nhận từ Tool, tuyệt đối KHÔNG ĐƯỢC báo cáo rằng đơn hàng đang được chuẩn bị. Nếu `authoritative_results` rỗng, bắt buộc phải báo lỗi, không tự bịa món ăn."*
+
+---
+
+## 4. LỖI ĐỨT GÃY LUỒNG THANH TOÁN (LỖI "CHƯA THỂ HOÀN TẤT")
+
+**🔴 Vấn đề:**
+Khi người dùng duyệt xong danh sách quán, bấm nút "Đặt hàng" trên giao diện (UI Giai đoạn 4), hệ thống văng lỗi *"Mình chưa thể hoàn tất lựa chọn này. Bạn thử lại với thông tin hiện tại nhé."* và luồng bị đứt gãy.
+
+**🔍 Minh chứng:**
+Hành vi lỗi trên App thực tế khi tương tác giao diện để tiến tới bước Giỏ hàng/Thanh toán.
+
+**⚠️ Nguyên nhân gốc rễ:**
+- **Mất Reference UUID (ID Ẩn):** Agent giao tiếp bằng chữ ("Quán số 1"), nhưng Database cần UUID. Khi user bấm chọn, Agent không thể ánh xạ text sang UUID, dẫn đến Gateway gọi Tool bị thiếu ID nhà hàng/món ăn.
+- **Bypass UI vào luồng NLP:** Khi user bấm nút trên App, thao tác này lại bị chuyển thành Text và ném qua Agent Planner xử lý. LLM không có Payload (giỏ hàng, đơn giá) để xử lý bước tiếp theo.
+- **Micro-tasking quá tải:** Việc bắt LLM phải duy trì máy trạng thái (State Machine) qua 4 bước: `create_cart` -> `add_item` -> `quote` -> `order` là quá sức đối với bộ nhớ ngữ cảnh hữu hạn.
+
+**✅ Cách giải quyết:**
+1. **Tách biệt UI và NLP:** Khi tương tác chạm vào UI (chọn món, bấm đặt hàng), App phải gọi thẳng API Gateway (`POST /cart/checkout`) kèm theo Payload rõ ràng. Gateway xử lý và lưu State, không bắt Agent Planner phải "đoán" ý định đặt hàng. Agent lúc này chỉ làm nhiệm vụ thông báo (Composer).
+2. **Sử dụng Macro-Tools:** Gom các tool vụn vặt lại. Thay vì nhiều step tạo giỏ hàng, viết một tool duy nhất `food.checkout.prepare` xử lý trọn gói đầu vào, giảm tải cho LLM.
+3. **Reference Mapping:** Gateway phải lưu ngầm bảng ánh xạ (VD: Option 1 = UUID_xyz) và truyền vào prompt để LLM truy xuất chính xác khi người dùng chat "Tôi lấy món số 1".
+
+---
+
+## 5. ĐÁNH GIÁ VÀ TRẠNG THÁI TRIỂN KHAI THỰC TẾ (EVALUATION & STATUS)
+
+Dựa trên việc phân tích mã nguồn thực tế của hệ thống X-One (NestJS Gateway và FastAPI Agent), dưới đây là đánh giá mức độ phù hợp và trạng thái áp dụng của các giải pháp trên:
+
+**Đánh giá tổng quan:** Các giải pháp nâng cấp được đề xuất là **cực kỳ phù hợp** và bám sát chính xác các lỗ hổng kiến trúc hiện tại. Tuy nhiên, hầu hết các giải pháp này **chưa được triển khai hoàn chỉnh** trong mã nguồn.
+
+**Chi tiết trạng thái (Lý do cần thay đổi):**
+1. **Quản lý trạng thái (Bóng ma task cũ):** *Chưa triệt để.* Ở bước sinh câu trả lời (`_compose_response`), Agent đã có đoạn code lọc bỏ các task `FAILED/DISCARDED`. Tuy nhiên, ở bước lập kế hoạch (`CoreAPlanner`), toàn bộ lịch sử task cũ từ DB (JSONB) vẫn bị nhồi nguyên vẹn vào Context của LLM, khiến LLM bị nhiễu. Việc dọn dẹp triệt để tại Gateway là lý do bắt buộc để giải quyết lỗi này.
+2. **Lỗi lập kế hoạch (Vòng lặp hỏi vòng vèo):** *Chưa triển khai.* System Prompt hiện tại (`assistant_graph.py` dòng 111) vẫn đang bị khóa cứng bởi quy tắc: `food requires dish_query`. Đây là lý do Agent không chịu gọi Tool gợi ý nhà hàng nếu user không cung cấp tên món. Cần nới lỏng ràng buộc này để tăng tính linh hoạt.
+3. **Lỗi ảo giác (Hallucination):** *Chưa triển khai.* Khối lệnh `COMPOSE_INSTRUCTION` hiện tại hoàn toàn thiếu rào chắn phủ định (Negative Constraint) khi mảng dữ liệu `authoritative_results` bị rỗng. Đây là lý do chính khiến LLM tự ý dùng kiến thức cá nhân để "bịa" ra menu.
+4. **Lỗi đứt gãy thanh toán (Bypass UI):** *Đang xung đột kiến trúc.* Hiện tại Gateway đã mở sẵn các API endpoint trực tiếp (`POST /cart`, `POST /orders/preview`), nhưng Agent Registry lại vẫn đang ôm đồm các Micro-tools (`create_cart`, `add_cart_item`). Lý do cần thay đổi là LLM không thể duy trì độ chính xác của UUID qua nhiều turn chat; cần chuyển sang Macro-tools và đẩy toàn bộ logic State Machine về phía API Gateway.
