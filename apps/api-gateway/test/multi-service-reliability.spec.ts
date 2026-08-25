@@ -6,7 +6,8 @@ import {
   recordCompensationResult,
   recordStepResult,
 } from '../src/modules/workflow/multi-service-reliability';
-import { HealthcareClient, RestaurantClient } from '../src/clients/service.clients';
+import { HealthcareClient, RestaurantClient, RideClient } from '../src/clients/service.clients';
+import { LocationService } from '../src/modules/personal/personal.module';
 import { MultiServiceReliabilityService } from '../src/modules/workflow/reliability.module';
 
 function source(overrides: Record<string, unknown> = {}) {
@@ -116,7 +117,9 @@ describe('multi-service reliability state machine', () => {
       }),
     } as unknown as RestaurantClient;
     const healthcare = { getFacility: jest.fn() } as unknown as HealthcareClient;
-    const service = new MultiServiceReliabilityService(repository as unknown as CoreStore, restaurant, healthcare);
+    const ride = { createQuote: jest.fn() } as unknown as RideClient;
+    const locations = { geocode: jest.fn(), route: jest.fn() } as unknown as LocationService;
+    const service = new MultiServiceReliabilityService(repository as unknown as CoreStore, restaurant, healthcare, ride, locations);
     const request = { kind: 'restaurant_ride' as const, source: source({ address: 'caller-controlled address', latitude: 0, longitude: 0 }) };
     const created = await service.createPlan('actor-1', 'workflow-1', request, 'cor-1');
     expect(restaurant.getRestaurant).toHaveBeenCalledWith('restaurant-001', 'actor-1', 'cor-1');
@@ -125,8 +128,31 @@ describe('multi-service reliability state machine', () => {
       coordinates: { latitude: 21.031, longitude: 105.811 },
       coordinate_status: 'validated',
     });
-    const recreated = new MultiServiceReliabilityService(repository as unknown as CoreStore, restaurant, healthcare);
+    const recreated = new MultiServiceReliabilityService(repository as unknown as CoreStore, restaurant, healthcare, ride, locations);
     expect(await recreated.getPlan('actor-1', created.workflow_id)).toEqual(created);
     expect((await recreated.createPlan('actor-1', 'workflow-1', request, 'cor-2')).workflow_id).toBe(created.workflow_id);
+  });
+
+  it('activates a dependent Ride idempotently after re-reading the authoritative destination', async () => {
+    const repository = new InMemoryCoreRepository();
+    const restaurant = {
+      getRestaurant: jest.fn().mockResolvedValue({ id: 'restaurant-001', address: '12 Hàng Bông', latitude: 21.0285, longitude: 105.8048, coordinate_status: 'validated' }),
+    } as unknown as RestaurantClient;
+    const healthcare = { getFacility: jest.fn() } as unknown as HealthcareClient;
+    const quote = { id: 'quote-1', pickup_address: 'VinUni', dropoff_address: '12 Hàng Bông' };
+    const ride = { createQuote: jest.fn().mockResolvedValue(quote) } as unknown as RideClient;
+    const locations = {
+      geocode: jest.fn().mockResolvedValue({ candidates: [{ address_text: 'VinUni', latitude: 20.9914, longitude: 105.9459 }] }),
+      route: jest.fn().mockResolvedValue({ status: 'RESOLVED', provider: 'geoapify', route_distance_meters: 15000, route_duration_seconds: 1200, route_geometry: [{ latitude: 20.9914, longitude: 105.9459 }, { latitude: 21.0285, longitude: 105.8048 }], route_snapshot_hash: 'route-1' }),
+    } as unknown as LocationService;
+    const service = new MultiServiceReliabilityService(repository as unknown as CoreStore, restaurant, healthcare, ride, locations);
+    const created = await service.createPlan('actor-1', 'plan-key', { kind: 'restaurant_ride', source: source() }, 'cor-1');
+    await service.applyStep('actor-1', created.workflow_id, 'restaurant_selection', 'restaurant-step', { status: 'SUCCEEDED', result: { restaurant_id: 'restaurant-001' } }, 'cor-2');
+    const activated = await service.activateRideStep('actor-1', created.workflow_id, 'ride_quote', 'activate-key', { pickup_address: 'VinUni', vehicle_type: 'CAR_4', passenger_count: 2 }, 'cor-3');
+    expect(restaurant.getRestaurant).toHaveBeenCalledTimes(2);
+    expect(ride.createQuote).toHaveBeenCalledWith('actor-1', 'activate-key', expect.objectContaining({ workflowId: created.workflow_id }), expect.objectContaining({ dropoff_address: '12 Hàng Bông', passenger_count: 2, route_snapshot_hash: 'route-1' }));
+    expect(activated.steps.find((step) => step.id === 'ride_quote')).toMatchObject({ status: 'SUCCEEDED', result: { quote } });
+    expect(await service.activateRideStep('actor-1', created.workflow_id, 'ride_quote', 'activate-key', { pickup_address: 'VinUni', vehicle_type: 'CAR_4', passenger_count: 2 }, 'cor-4')).toEqual(activated);
+    await expect(service.activateRideStep('actor-1', created.workflow_id, 'ride_quote', 'activate-key', { pickup_address: 'Khác', vehicle_type: 'CAR_4', passenger_count: 2 }, 'cor-5')).rejects.toMatchObject({ response: expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' }) });
   });
 });

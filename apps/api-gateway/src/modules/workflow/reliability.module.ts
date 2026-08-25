@@ -34,10 +34,13 @@ import {
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { ClientsModule } from '../../clients/clients.module';
 import { HealthcareClient, RestaurantClient } from '../../clients/service.clients';
+import { RideClient } from '../../clients/service.clients';
+import { LocationService } from '../personal/personal.module';
 import { CoreModule, CoreStore, MultiServiceWorkflowRecord } from '../core/core.module';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthModule } from '../auth/auth.module';
 import { AuthUser } from '../auth/auth.types';
+import { PersonalModule } from '../personal/personal.module';
 import {
   AuthoritativeResource,
   Candidate,
@@ -95,6 +98,39 @@ class StepResultDto {
   result?: Record<string, unknown>;
 }
 
+class RideActivationDto {
+  @IsString()
+  @MinLength(3)
+  pickup_address!: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  pickup_latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  pickup_longitude?: number;
+
+  @IsOptional()
+  @IsIn(['BIKE', 'CAR_4', 'CAR_7'])
+  vehicle_type?: 'BIKE' | 'CAR_4' | 'CAR_7';
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  passenger_count?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  pickup_time?: string;
+}
+
 class OriginDto {
   @IsNumber()
   @Min(-90)
@@ -129,6 +165,8 @@ export class MultiServiceReliabilityService {
     private readonly core: CoreStore,
     private readonly restaurant: RestaurantClient,
     private readonly healthcare: HealthcareClient,
+    private readonly ride: RideClient,
+    private readonly locations: LocationService,
   ) {}
 
   async createPlan(actorId: string, idempotencyKey: string, body: MultiServicePlanDto, correlationId: string): Promise<MultiServicePlan> {
@@ -183,6 +221,72 @@ export class MultiServiceReliabilityService {
     const record = await this.requireRecord(actorId, workflowId);
     const next = this.applyStepResult(record, stepId, { status: body.status, idempotency_key: idempotencyKey, payload_hash: body.payload_hash, error_code: body.error_code, result: body.result }, correlationId);
     return next;
+  }
+
+  async activateRideStep(actorId: string, workflowId: string, stepId: string, idempotencyKey: string, body: RideActivationDto, correlationId: string): Promise<MultiServicePlan> {
+    const record = await this.requireRecord(actorId, workflowId);
+    const plan = record.plan as unknown as MultiServicePlan;
+    const activationHash = hashRequest({ workflow_id: workflowId, step_id: stepId, ...body });
+    const priorHash = plan.applied_idempotency[idempotencyKey];
+    if (priorHash) {
+      if (priorHash !== activationHash) throw new ConflictException({ code: 'IDEMPOTENCY_CONFLICT', detail: 'Idempotency-Key đã được dùng với payload khác.', retryable: false });
+      return plan;
+    }
+    const step = plan.steps.find((candidate) => candidate.id === stepId);
+    if (!step || step.domain !== 'ride' || step.action !== 'ride.quote.create') {
+      throw new BadRequestException({ code: 'RIDE_STEP_REQUIRED', detail: 'Workflow step này không phải chặng Ride có thể kích hoạt.', retryable: false });
+    }
+    if (step.status !== 'PENDING') {
+      throw new ConflictException({ code: 'RIDE_STEP_NOT_PENDING', detail: 'Chặng Ride không còn ở trạng thái chờ kích hoạt.', retryable: false });
+    }
+    if (step.depends_on.some((dependency) => plan.steps.find((candidate) => candidate.id === dependency)?.status !== 'SUCCEEDED')) {
+      throw new ConflictException({ code: 'WORKFLOW_DEPENDENCY_NOT_SATISFIED', detail: 'Cần hoàn tất bước phụ thuộc trước khi kích hoạt chặng Ride.', retryable: false });
+    }
+
+    const sourceAuthority = plan.kind === 'restaurant_ride' ? 'restaurant-service' : 'healthcare-service';
+    const source = await this.resolveSource(
+      plan.kind,
+      { id: plan.destination?.resource_id ?? '', authority: sourceAuthority },
+      actorId,
+      correlationId,
+    );
+    const destination = authoritativeDestination(source);
+    if (!destination?.coordinates || destination.coordinate_status !== 'validated' || !destination.address) {
+      throw new BadRequestException({ code: 'AUTHORITATIVE_DESTINATION_UNRESOLVED', detail: 'Chưa có địa chỉ và tọa độ xác thực cho điểm đến.', retryable: true });
+    }
+    const pickup = body.pickup_latitude !== undefined && body.pickup_longitude !== undefined
+      ? { address: body.pickup_address.trim(), coordinate: { latitude: body.pickup_latitude, longitude: body.pickup_longitude } }
+      : await this.resolvePickup(body.pickup_address);
+    const route = await this.locations.route(pickup.coordinate, destination.coordinates);
+    if (route.status !== 'RESOLVED' || route.provider !== 'geoapify' || !route.route_geometry?.length || !route.route_snapshot_hash) {
+      throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Chưa lấy được tuyến đường xác thực cho chặng Ride.', retryable: true });
+    }
+    const quote = await this.ride.createQuote(actorId, idempotencyKey, { correlationId, workflowId }, {
+      pickup_address: pickup.address,
+      dropoff_address: destination.address,
+      vehicle_type: body.vehicle_type ?? 'CAR_4',
+      passenger_count: body.passenger_count ?? 1,
+      ...(body.pickup_time ? { pickup_time: body.pickup_time } : {}),
+      pickup_latitude: pickup.coordinate.latitude,
+      pickup_longitude: pickup.coordinate.longitude,
+      dropoff_latitude: destination.coordinates.latitude,
+      dropoff_longitude: destination.coordinates.longitude,
+      route_provider: route.provider,
+      route_distance_meters: route.route_distance_meters,
+      route_duration_seconds: route.route_duration_seconds,
+      route_geometry: route.route_geometry,
+      route_snapshot_hash: route.route_snapshot_hash,
+    });
+    return this.applyStepResult(record, stepId, { status: 'SUCCEEDED', idempotency_key: idempotencyKey, payload_hash: activationHash, result: { quote } }, correlationId);
+  }
+
+  private async resolvePickup(address: string): Promise<{ address: string; coordinate: { latitude: number; longitude: number } }> {
+    const result = await this.locations.geocode(address);
+    const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+    if (!candidate || candidate.latitude === null || candidate.longitude === null) {
+      throw new BadRequestException({ code: 'LOCATION_UNRESOLVED', detail: 'Chưa xác định được điểm đón.', retryable: true });
+    }
+    return { address: candidate.address_text, coordinate: { latitude: candidate.latitude, longitude: candidate.longitude } };
   }
 
   async applyCompensation(actorId: string, workflowId: string, compensationId: string, idempotencyKey: string, body: StepResultDto, correlationId: string): Promise<MultiServicePlan> {
@@ -255,6 +359,13 @@ export class MultiServiceReliabilityController {
     return { data, meta: { request_id: request.correlationId } };
   }
 
+  @Post(':workflowId/steps/:stepId/activate')
+  async activate(@Param('workflowId') workflowId: string, @Param('stepId') stepId: string, @Body() body: RideActivationDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AuthenticatedRequest): Promise<object> {
+    if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc cho kích hoạt chặng Ride.', retryable: false });
+    const data = await this.reliability.activateRideStep(request.user.sub, workflowId, stepId, idempotencyKey.trim(), body, request.correlationId ?? 'cor_unknown');
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
   @Post(':workflowId/compensations/:compensationId/result')
   async compensation(@Param('workflowId') workflowId: string, @Param('compensationId') compensationId: string, @Body() body: StepResultDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AuthenticatedRequest): Promise<object> {
     if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc cho compensation.', retryable: false });
@@ -274,7 +385,7 @@ export class RecommendationController {
   }
 }
 
-@Module({ imports: [AuthModule, CoreModule, ClientsModule], controllers: [MultiServiceReliabilityController, RecommendationController], providers: [MultiServiceReliabilityService], exports: [MultiServiceReliabilityService] })
+@Module({ imports: [AuthModule, CoreModule, ClientsModule, PersonalModule], controllers: [MultiServiceReliabilityController, RecommendationController], providers: [MultiServiceReliabilityService], exports: [MultiServiceReliabilityService] })
 export class ReliabilityModule {}
 
 function normalizeSource(source: AuthoritativeResourceDto): AuthoritativeResource {

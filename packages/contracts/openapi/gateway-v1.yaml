@@ -663,6 +663,22 @@ paths:
         '400': {description: Invalid step}
         '401': {description: Missing or invalid user token}
         '409': {description: Dependency or idempotency conflict}
+  /api/v1/workflows/multi-service/{workflowId}/steps/{stepId}/activate:
+    post:
+      summary: Re-read the authoritative destination and activate a dependent Ride quote step
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/WorkflowId'}
+        - {$ref: '#/components/parameters/StepId'}
+        - $ref: '#/components/parameters/RequiredIdempotencyKey'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RideStepActivationRequest'}}}
+      responses:
+        '200': {description: Ride quote created and workflow step recorded}
+        '400': {description: Invalid pickup or unresolved authoritative destination}
+        '401': {description: Missing or invalid user token}
+        '409': {description: Dependency, state, or idempotency conflict}
   /api/v1/workflows/multi-service/{workflowId}/compensations/{compensationId}/result:
     post:
       summary: Record an explicit compensation result
@@ -1544,3 +1560,14 @@ components:
         payload_hash: {type: string, maxLength: 120}
         error_code: {type: string, maxLength: 120}
         result: {type: object, additionalProperties: true}
+    RideStepActivationRequest:
+      type: object
+      required: [pickup_address]
+      additionalProperties: false
+      properties:
+        pickup_address: {type: string, minLength: 3, maxLength: 300}
+        pickup_latitude: {type: number, minimum: -90, maximum: 90}
+        pickup_longitude: {type: number, minimum: -180, maximum: 180}
+        vehicle_type: {type: string, enum: [BIKE, CAR_4, CAR_7], default: CAR_4}
+        passenger_count: {type: integer, minimum: 1, maximum: 20, default: 1}
+        pickup_time: {type: string, format: date-time}
