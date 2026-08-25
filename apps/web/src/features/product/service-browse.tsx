@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   acknowledgeHealthcarePayment,
@@ -406,26 +406,56 @@ function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote 
 function AddressAutocompleteField({ id, label, value, placeholder, onChange, onSelect }: { id: string; label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (candidate: GeocodeCandidate) => void }) {
   const [suggestions, setSuggestions] = useState<GeocodeCandidate[]>([]);
   const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const pickedRef = useRef("");
 
   useEffect(() => {
     const query = value.trim();
-    if (query.length < 3) {
+    if (query.length < 3 || query === pickedRef.current) {
       setSuggestions([]);
       setOpen(false);
+      setSearching(false);
       return;
     }
     let active = true;
     const timer = globalThis.setTimeout(() => {
+      setSearching(true);
       void autocompleteAddress(query).then((result) => {
         if (!active) return;
         setSuggestions(result.suggestions.filter((item) => item.latitude !== null && item.longitude !== null).slice(0, 5));
         setOpen(true);
-      }).catch(() => { if (active) setSuggestions([]); });
+      }).catch(() => { if (active) setSuggestions([]); }).finally(() => { if (active) setSearching(false); });
     }, 300);
     return () => { active = false; globalThis.clearTimeout(timer); };
   }, [value]);
 
-  return <div className="address-autocomplete"><label htmlFor={id}>{label}</label><input id={id} value={value} onChange={(event) => onChange(event.target.value)} onFocus={() => { if (suggestions.length) setOpen(true); }} onBlur={() => globalThis.setTimeout(() => setOpen(false), 150)} placeholder={placeholder} autoComplete="off" required minLength={3} />{open && suggestions.length ? <div className="address-suggestions" role="listbox" aria-label={`Gợi ý ${label.toLowerCase()}`}>{suggestions.map((candidate, index) => <button className="address-suggestion" key={`${candidate.address_text}-${index}`} type="button" role="option" onMouseDown={(event) => event.preventDefault()} onClick={() => { onSelect(candidate); setOpen(false); }}>{candidate.address_text}</button>)}</div> : null}</div>;
+  const listId = `${id}-suggestions`;
+  const expanded = open && suggestions.length > 0;
+
+  return <div className="address-autocomplete">
+    <label htmlFor={id}>{label}</label>
+    <div className="address-autocomplete-control">
+      <input
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onFocus={() => { if (suggestions.length) setOpen(true); }}
+        onBlur={() => globalThis.setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(event) => { if (event.key === "Escape" && expanded) { event.stopPropagation(); setOpen(false); } }}
+        placeholder={placeholder}
+        autoComplete="off"
+        required
+        minLength={3}
+        role="combobox"
+        aria-controls={expanded ? listId : undefined}
+        aria-expanded={expanded}
+        aria-autocomplete="list"
+        aria-busy={searching}
+      />
+      {searching ? <span className="address-autocomplete-spinner" aria-hidden="true"><Loader2 className="spinner" size={16} /></span> : null}
+    </div>
+    {expanded ? <div className="address-suggestions" id={listId} role="listbox" aria-label={`Gợi ý ${label.toLowerCase()}`}>{suggestions.map((candidate, index) => <button className="address-suggestion" key={`${candidate.address_text}-${index}`} type="button" role="option" aria-selected={false} onMouseDown={(event) => event.preventDefault()} onClick={() => { pickedRef.current = candidate.address_text.trim(); onSelect(candidate); setSuggestions([]); setOpen(false); }}>{candidate.address_text}</button>)}</div> : null}
+  </div>;
 }
 
 function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit: () => void; placeholder: string }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} /><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button></div></form>; }

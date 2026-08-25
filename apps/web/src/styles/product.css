@@ -548,8 +548,11 @@
 .address-shortcuts label { display: grid; gap: 5px; color: var(--color-muted); font-size: 0.65rem; font-weight: 700; }
 .address-shortcuts select { min-height: 34px; padding: 7px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 6px; font-size: 0.69rem; }
 .address-autocomplete { position: relative; display: grid; gap: 5px; }
-.address-suggestions { position: absolute; z-index: 20; top: calc(100% + 3px); right: 0; left: 0; display: grid; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px; box-shadow: 0 12px 26px rgb(26 45 61 / 14%); }
-.address-suggestion { padding: 9px 11px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.73rem; line-height: 1.35; cursor: pointer; }
+.address-autocomplete-control { position: relative; display: block; }
+.address-autocomplete-control input { padding-right: 36px; }
+.address-autocomplete-spinner { position: absolute; top: 50%; right: 12px; display: grid; place-items: center; color: var(--color-primary); transform: translateY(-50%); pointer-events: none; }
+.address-suggestions { position: absolute; z-index: 1200; top: calc(100% + 4px); right: 0; left: 0; display: grid; max-height: 232px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px; box-shadow: 0 14px 34px rgb(16 34 54 / 18%); scrollbar-width: thin; }
+.address-suggestion { display: block; width: 100%; padding: 11px 13px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.73rem; line-height: 1.4; word-break: break-word; cursor: pointer; transition: background-color 120ms ease; }
 .address-suggestion:last-child { border-bottom: 0; }
 .address-suggestion:hover, .address-suggestion:focus-visible { background: #F1F7F8; outline: 0; }
 .ride-result { display: grid; gap: 7px; }
