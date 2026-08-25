@@ -46,7 +46,7 @@ export function RideMapDetail({ bookingId, initialOrigin, initialDestination, in
         {showInfo ? <aside className="ride-map-info-panel" aria-label="Thông tin chuyến"><div className="consumer-detail-grid">{facts.map((fact) => <Fact key={fact.label} label={fact.label} value={fact.value} />)}</div></aside> : null}
       </div>
     </section>
-    {bookingId ? <RideTrackingPanel bookingId={bookingId} hideMap className="ride-map-status-panel" /> : null}
+    {bookingId ? <RideTrackingPanel bookingId={bookingId} hideMap polling className="ride-map-status-panel" /> : null}
   </div>;
 }
 

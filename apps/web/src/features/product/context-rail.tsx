@@ -54,7 +54,7 @@ export function ActiveRideRailCard({ ride, onDetails }: { ride: HistoryItem; onD
 
 export function ActiveWorkRailCard({ item, onDetails, children }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; children?: ReactNode }) {
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   const driver = parseRideDriver(tracking?.driver);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
@@ -79,7 +79,7 @@ export function ActiveWorkRailCard({ item, onDetails, children }: { item: Histor
 export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; onCancelled?: () => void }) {
   const [cancelled, setCancelled] = useState(false);
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   if (cancelled) return null;
   return <ActiveWorkRailCard item={item} onDetails={onDetails}>{item.type === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" /> : null}</ActiveWorkRailCard>;

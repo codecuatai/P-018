@@ -144,7 +144,7 @@ function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: {
 function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const bookingId = item.booking_id ?? item.resource_id;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   const distance = item.distance_km !== undefined ? `${item.distance_km} km` : item.route_distance_meters ? `${(item.route_distance_meters / 1000).toFixed(1)} km` : undefined;
   const duration = item.duration_minutes ? `${item.duration_minutes} phút` : item.route_duration_seconds ? `${Math.ceil(item.route_duration_seconds / 60)} phút` : undefined;
   const price = formatMoney(item.amount, text(item.currency, "VND"));
@@ -239,7 +239,7 @@ function RideCard({ item, children, actions, onAction, disabledActionId }: { ite
 
 function RideCardWithCancel({ item, actions, onAction, disabledActionId }: { item: AssistantRideItem; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
   const bookingId = item.kind === "ride_booking" ? item.booking_id ?? item.resource_id : undefined;
-  const { data: tracking } = useRideTracking(bookingId);
+  const { data: tracking } = useRideTracking(bookingId, false);
   return <RideCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId}>{item.kind === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={tracking?.status ?? item.status} /> : null}</RideCard>;
 }
 
