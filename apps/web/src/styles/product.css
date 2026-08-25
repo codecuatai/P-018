@@ -32,15 +32,14 @@
 .sidebar-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 6px; color: var(--color-muted-soft); font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1; }
 .sidebar-recent-heading > span { display: inline-flex; align-items: center; line-height: 1; }
 .sidebar-recent-heading a { display: inline-flex; align-items: center; color: var(--color-primary-strong); font-family: inherit; font-size: var(--text-micro); font-weight: 600; letter-spacing: 0; text-transform: none; text-decoration: none; line-height: 1; }
-.sidebar-recent-heading a:hover { text-decoration: underline; }
-.sidebar-recent nav { display: grid; align-content: start; gap: 8px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 3px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 150ms ease; }
+.sidebar-recent nav { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 3px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 150ms ease; }
 .sidebar-recent nav:hover { scrollbar-color: #D6E2EB transparent; }
 .sidebar-recent nav::-webkit-scrollbar { width: 4px; }
 .sidebar-recent nav::-webkit-scrollbar-track { background: transparent; }
 .sidebar-recent nav::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; transition: background-color 150ms ease; }
 .sidebar-recent nav:hover::-webkit-scrollbar-thumb { background: #D6E2EB; }
 .sidebar-recent nav::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
-.sidebar-recent-group { display: grid; gap: 3px; }
+.sidebar-recent-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-recent-group > small { padding: 4px 6px 2px; color: var(--color-muted-soft); font-size: var(--text-micro); font-weight: 600; }
 .sidebar-conversation-link { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; color: var(--color-ink); border: 1px solid transparent; border-radius: 8px; font-size: var(--text-sm); text-decoration: none; transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; }
 .sidebar-conv-icon { display: grid; width: 20px; height: 20px; place-items: center; color: var(--color-muted); flex: 0 0 auto; }
@@ -724,6 +723,7 @@
 .xone-map-fallback dl div { display: grid; gap: 2px; }
 .xone-map-fallback dt { color: var(--color-muted-soft); font-size: 0.6rem; text-transform: uppercase; }
 .xone-map-fallback dd { margin: 0; color: var(--color-ink); font-size: 0.7rem; font-weight: 750; }
+.xone-map-loading-overlay { position: absolute; inset: 0; z-index: 500; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(234, 241, 243, 0.7); border-radius: inherit; }
 
 .app-nav-link { position: relative; }
 .notification-count { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; padding: 0 4px; margin-left: auto; color: #fff; background: var(--color-danger); border-radius: 999px; font-family: var(--font-sans); font-size: 0.58rem; font-weight: 800; }
@@ -1184,10 +1184,10 @@
 .service-detail-dialog-ride,
 .active-ride-detail-dialog {
   box-sizing: border-box;
-  width: min(94vw, 1420px);
-  height: min(92vh, 1100px);
-  max-height: calc(100dvh - 32px);
-  padding: 64px 24px 24px;
+  width: min(96vw, 1440px);
+  height: min(94vh, 1100px);
+  max-height: calc(100dvh - 24px);
+  padding: 56px 20px 20px;
   border: 1px solid rgb(22 50 79 / 18%);
   border-radius: 20px;
   box-shadow: 0 24px 80px rgb(6 29 50 / 22%);
@@ -1221,12 +1221,21 @@
 }
 
 .ride-map-detail {
-  padding: 0 8px 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
 .ride-map-stage {
-  height: min(76vh, 760px);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 380px;
   border-radius: 16px;
 }
 
