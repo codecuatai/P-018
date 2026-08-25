@@ -57,6 +57,8 @@
 .sidebar-identity-copy { min-width: 0; display: grid; gap: 1px; }
 .sidebar-identity-copy strong { display: block; overflow: hidden; color: var(--color-navy); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-identity-copy small { display: flex; align-items: center; gap: 3px; color: var(--color-success-ink); font-size: var(--text-micro); }
+.sidebar-logout { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 6px 9px; color: var(--color-muted); background: transparent; border: 1px solid transparent; border-radius: 7px; font-family: inherit; font-size: var(--text-micro); font-weight: 700; line-height: 1; white-space: nowrap; cursor: pointer; transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
+.sidebar-logout:hover { color: var(--color-danger, #DC2626); background: #FEF2F2; border-color: #FECACA; }
 .sidebar-user-menu { position: relative; flex: 0 0 auto; }
 .sidebar-settings-btn { display: grid; width: 30px; height: 30px; place-items: center; color: var(--color-muted); background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer; transition: color 150ms ease, background-color 150ms ease; }
 .sidebar-settings-btn:hover { color: var(--color-navy); background: #F0F4F7; border-color: var(--color-border); }
