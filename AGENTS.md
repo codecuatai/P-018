@@ -30,7 +30,7 @@ Before changing a file, run `git status --short` and read this file plus the nea
 - Root `.env.example` is the local Compose source of truth. Compose maps least-privilege variables explicitly; never use a shared `env_file`.
 - Inside a container, use Docker service DNS names, never `localhost`, for another container. Loopback is allowed only in a standalone/local example or a container's own health check.
 - Service config reads process environment only. Update root example, Compose mapping, validation, docs, and a standalone example together.
-- Never commit/read/print `.env`, secrets, raw prompts, or chain-of-thought. Do not hard-code credentials or service URLs. Do not log tokens, credentials, full payment credentials, unnecessary sensitive PII, or raw production data in fixtures; retention for prompts/conversations is unresolved until explicitly designed.
+- Never commit/read/print `.env`, secrets, raw prompts, or chain-of-thought. Do not hard-code credentials or service URLs. Do not log tokens, credentials, full payment credentials, unnecessary sensitive PII, or raw production data in fixtures; retention for prompts/conversations is unresolved until explicitly designed. **Narrow QA evidence exception:** agents may execute only `scripts/trello-upload.ps1` with a non-sensitive card ID and repository-local evidence path. The helper, not the agent, may internally read only `TRELLO_API_KEY` and `TRELLO_API_TOKEN` from root `.env`, and may return only safe attachment metadata. This does not permit an agent to inspect, print, copy, pass, or reuse either secret, and does not apply to any other script or credential.
 
 ## Quality, documentation, and change discipline
 

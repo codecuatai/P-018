@@ -28,6 +28,17 @@ There is no configuration that enables raw prompt, message, response, graph
 state, authoritative result, actor/session identity, or chain-of-thought
 capture.
 
+## QA Trello evidence upload
+
+`TRELLO_API_KEY` and `TRELLO_API_TOKEN` are optional host-only credentials for
+the narrowly scoped `scripts/trello-upload.ps1` helper. They are never mapped
+into Compose, an application container, or browser-visible configuration. The
+helper accepts only a card ID and a repository-local evidence file path, tests
+the credentials internally, uploads one attachment, verifies that attachment
+is present on that card, and writes only safe attachment metadata. Do not run
+the helper with a secret command-line argument or use the credentials from any
+other script.
+
 After rebuilding and starting `agent-service`, submit a synthetic,
 metadata-only verification trace with:
 

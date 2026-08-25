@@ -38,6 +38,18 @@ python scripts/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 ```
 
+## Uploading QA evidence to Trello
+
+When a QA card needs an evidence attachment, use the host-only helper with
+non-sensitive arguments only:
+
+```powershell
+./scripts/trello-upload.ps1 -CardId e3nGtVrF -FilePath artifacts/qa-audit/BUG-LANDING-001-HORIZONTAL-OVERFLOW-320.png
+```
+
+The helper reads only its two private Trello credentials internally from root
+`.env`; it never prints them and is not a Compose service configuration.
+
 ## Standalone service and Web development
 
 Service-level `.env.example` files are optional references for a service
