@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, inspect, text
+from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
@@ -298,22 +298,39 @@ def _appointment_data(appointment: Appointment, db: Session | None = None) -> di
 def get_departments(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
+    keyword: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> dict[str, Any]:
     query = db.query(Department).filter(Department.is_active.is_(True))
     active_version = _active_catalog_version(db)
     if active_version:
         query = query.filter(Department.dataset_version == active_version)
+    if keyword and keyword.strip():
+        k = f"%{keyword.strip()}%"
+        query = query.filter(or_(Department.name.ilike(k), Department.description.ilike(k), Department.specialty.ilike(k)))
+    total = query.count()
+    if offset is not None and offset > 0:
+        query = query.offset(offset)
+    if limit is not None and limit > 0:
+        query = query.limit(limit)
     departments = query.order_by(Department.name).all()
+    items = [
+        {
+            "id": department.id,
+            "name": department.name,
+            "description": department.description,
+            "facility": _facility_data(db, department.facility_source_id),
+        }
+        for department in departments
+    ]
     return {
-        "data": [
-            {
-                "id": department.id,
-                "name": department.name,
-                "description": department.description,
-                "facility": _facility_data(db, department.facility_source_id),
-            }
-            for department in departments
-        ]
+        "data": {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
     }
 
 

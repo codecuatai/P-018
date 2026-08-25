@@ -72,6 +72,24 @@ class FoodApplicationService:
     async def search(self, **filters: Any) -> list[dict]:
         return await self.repository.search(**filters)
 
+    async def list_restaurants(
+        self,
+        keyword: str = "",
+        district: str | None = None,
+        category: str | None = None,
+        open_only: bool = True,
+        limit: int = 12,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        return await self.repository.list_restaurants(
+            keyword=keyword,
+            district=district,
+            category=category,
+            open_only=open_only,
+            limit=limit,
+            offset=offset,
+        )
+
     async def restaurant(self, restaurant_id: str) -> dict:
         restaurant = await self.repository.get_restaurant(restaurant_id)
         if restaurant is None:

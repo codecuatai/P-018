@@ -90,23 +90,86 @@ export class ServiceHubService {
     return { items, checked_at: new Date().toISOString() };
   }
 
-  async browse(service: ServiceKey, actorId: string, correlationId: string, keyword?: string, origin?: { latitude: number; longitude: number }): Promise<{ items: JsonObject[]; source: string; partial: boolean }> {
+  async browse(service: ServiceKey, actorId: string, correlationId: string, keyword?: string, origin?: { latitude: number; longitude: number }, pagination?: { page?: number; limit?: number; offset?: number }): Promise<{ items: JsonObject[]; total: number; page: number; limit: number; total_pages: number; source: string; partial: boolean }> {
+    const page = pagination?.page && pagination.page > 0 ? pagination.page : 1;
+    const limit = pagination?.limit && pagination.limit > 0 ? pagination.limit : (service === 'food' || service === 'restaurant' ? 4 : 6);
+    const offset = pagination?.offset !== undefined && pagination.offset >= 0 ? pagination.offset : (page - 1) * limit;
+
     if (service === 'food') {
-      const query = keyword ? `?keyword=${encodeURIComponent(keyword)}` : '';
-      const value = await this.food.get(`/api/v1/restaurants${query}`, correlationId, actorId);
-      return { items: rankByDistance(arrayValue(value), origin), source: 'food-service', partial: false };
+      const params = new URLSearchParams();
+      if (keyword) params.set('keyword', keyword);
+      params.set('limit', String(limit));
+      params.set('offset', String(offset));
+      const value = await this.food.get(`/api/v1/restaurants?${params.toString()}`, correlationId, actorId);
+      const rawItems = arrayValue(value);
+      const total = typeof value.total === 'number'
+        ? value.total
+        : isObject(value.data) && typeof (value.data as JsonObject).total === 'number'
+          ? (value.data as JsonObject).total as number
+          : rawItems.length;
+      return {
+        items: rankByDistance(rawItems, origin),
+        total,
+        page,
+        limit,
+        total_pages: Math.max(1, Math.ceil(total / limit)),
+        source: 'food-service',
+        partial: false,
+      };
     }
     if (service === 'restaurant') {
-      const value = await this.restaurant.listRestaurants(actorId, correlationId, keyword);
-      const items = isObject(value.items) && Array.isArray(value.items.items) ? value.items.items.filter(isObject) : Array.isArray(value.items) ? value.items.filter(isObject) : [];
-      return { items: rankByDistance(items, origin), source: 'restaurant-service', partial: false };
+      const value = await this.restaurant.listRestaurants(actorId, correlationId, keyword, limit, offset);
+      const rawItems = isObject(value.items) && Array.isArray(value.items.items)
+        ? value.items.items.filter(isObject)
+        : Array.isArray(value.items)
+          ? value.items.filter(isObject)
+          : arrayValue(value);
+      const total = isObject(value.items) && typeof value.items.total === 'number'
+        ? value.items.total
+        : typeof value.total === 'number'
+          ? value.total
+          : isObject(value.data) && typeof (value.data as JsonObject).total === 'number'
+            ? (value.data as JsonObject).total as number
+            : rawItems.length;
+      return {
+        items: rankByDistance(rawItems, origin),
+        total,
+        page,
+        limit,
+        total_pages: Math.max(1, Math.ceil(total / limit)),
+        source: 'restaurant-service',
+        partial: false,
+      };
     }
     if (service === 'healthcare') {
-      const value = await this.healthcare.listDepartments(actorId, correlationId);
-      return { items: rankByDistance(arrayValue(value), origin), source: 'healthcare-service', partial: false };
+      const value = await this.healthcare.listDepartments(actorId, correlationId, keyword, limit, offset);
+      const rawItems = arrayValue(value);
+      const total = typeof value.total === 'number'
+        ? value.total
+        : isObject(value.data) && typeof (value.data as JsonObject).total === 'number'
+          ? (value.data as JsonObject).total as number
+          : rawItems.length;
+      return {
+        items: rankByDistance(rawItems, origin),
+        total,
+        page,
+        limit,
+        total_pages: Math.max(1, Math.ceil(total / limit)),
+        source: 'healthcare-service',
+        partial: false,
+      };
     }
     const value = await this.ride.listQuotes(actorId, { correlationId });
-    return { items: rankByDistance(arrayValue(value), origin), source: 'ride-service', partial: false };
+    const rawItems = arrayValue(value);
+    return {
+      items: rankByDistance(rawItems, origin),
+      total: rawItems.length,
+      page: 1,
+      limit: rawItems.length || 1,
+      total_pages: 1,
+      source: 'ride-service',
+      partial: false,
+    };
   }
 
   async quoteRide(actorId: string, idempotencyKey: string, correlationId: string, body: RideQuoteDto): Promise<unknown> {
@@ -155,12 +218,31 @@ export class ServiceHubController {
   }
 
   @Get(':service')
-  async browse(@Param('service') service: string, @Query('q') keyword: string | undefined, @Query('latitude') latitudeValue: string | undefined, @Query('longitude') longitudeValue: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+  async browse(
+    @Param('service') service: string,
+    @Query('q') keyword: string | undefined,
+    @Query('latitude') latitudeValue: string | undefined,
+    @Query('longitude') longitudeValue: string | undefined,
+    @Query('page') pageValue: string | undefined,
+    @Query('limit') limitValue: string | undefined,
+    @Query('offset') offsetValue: string | undefined,
+    @Req() request: CorrelatedRequest & { user: AuthUser }
+  ): Promise<object> {
     if (!isServiceKey(service)) throw new BadRequestException({ code: 'SERVICE_INVALID', detail: 'Dịch vụ không được hỗ trợ.', retryable: false });
     const latitude = parseCoordinate(latitudeValue, -90, 90);
     const longitude = parseCoordinate(longitudeValue, -180, 180);
     if ((latitudeValue !== undefined && latitude === undefined) || (longitudeValue !== undefined && longitude === undefined)) throw new BadRequestException({ code: 'LOCATION_INVALID', detail: 'Invalid coordinates.', retryable: false });
-    const data = await this.hub.browse(service, request.user.sub, request.correlationId ?? 'cor_unknown', keyword, latitude !== undefined && longitude !== undefined ? { latitude, longitude } : undefined);
+    const page = pageValue ? Number(pageValue) : undefined;
+    const limit = limitValue ? Number(limitValue) : undefined;
+    const offset = offsetValue ? Number(offsetValue) : undefined;
+    const data = await this.hub.browse(
+      service,
+      request.user.sub,
+      request.correlationId ?? 'cor_unknown',
+      keyword,
+      latitude !== undefined && longitude !== undefined ? { latitude, longitude } : undefined,
+      { page, limit, offset }
+    );
     return { data, meta: { request_id: request.correlationId } };
   }
 

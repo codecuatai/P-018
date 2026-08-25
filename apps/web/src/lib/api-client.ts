@@ -217,8 +217,17 @@ export function getFoodTracking(orderId: string, signal?: AbortSignal): Promise<
   return request(`/api/v1/food/orders/${encodeURIComponent(orderId)}/tracking`, { method: "GET", signal });
 }
 
-export function browseService(service: "food" | "ride" | "restaurant" | "healthcare", keyword?: string): Promise<{ items: Record<string, unknown>[]; source: string; partial: boolean }> {
-  const query = keyword?.trim() ? `?q=${encodeURIComponent(keyword.trim())}` : "";
+export function browseService(
+  service: "food" | "ride" | "restaurant" | "healthcare",
+  keyword?: string,
+  pagination?: { page?: number; limit?: number; offset?: number }
+): Promise<{ items: Record<string, unknown>[]; total?: number; page?: number; limit?: number; total_pages?: number; source: string; partial: boolean }> {
+  const params = new URLSearchParams();
+  if (keyword?.trim()) params.set("q", keyword.trim());
+  if (pagination?.page !== undefined) params.set("page", String(pagination.page));
+  if (pagination?.limit !== undefined) params.set("limit", String(pagination.limit));
+  if (pagination?.offset !== undefined) params.set("offset", String(pagination.offset));
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request(`/api/v1/services/${service}${query}`, { method: "GET" });
 }
 

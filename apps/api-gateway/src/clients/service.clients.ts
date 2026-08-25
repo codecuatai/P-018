@@ -522,8 +522,12 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(reservationId)}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
   }
 
-  async listRestaurants(actorId: string, correlationId: string, keyword?: string): Promise<JsonObject> {
-    const query = keyword ? `?location=${encodeURIComponent(keyword)}` : '';
+  async listRestaurants(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
+    const params = new URLSearchParams();
+    if (keyword) params.set('location', keyword);
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.legacyRequest<JsonObject>(`/v1/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
   }
 
@@ -606,8 +610,13 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/api/v1/appointments', { method: 'GET' }, correlationId, actorId);
   }
 
-  async listDepartments(actorId: string, correlationId: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/api/v1/departments', { method: 'GET' }, correlationId, actorId);
+  async listDepartments(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
+    const params = new URLSearchParams();
+    if (keyword) params.set('keyword', keyword);
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.legacyRequest<JsonObject>(`/api/v1/departments${query}`, { method: 'GET' }, correlationId, actorId);
   }
 
   async listDoctors(actorId: string, correlationId: string, department: string): Promise<JsonObject> {
