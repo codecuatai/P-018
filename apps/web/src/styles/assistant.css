@@ -85,13 +85,15 @@
 .composer-box textarea { width: 100%; min-height: 26px; height: 26px; padding: 3px 0; resize: none; color: var(--color-ink); background: transparent; border: 0; outline: 0; font-family: inherit; font-size: var(--text-base); line-height: 1.4; flex: 1; }
 .composer-box textarea::placeholder { color: #94A3B8; }
 .composer-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.composer-mic-btn { display: grid; width: 30px; height: 30px; place-items: center; color: #64748B; background: transparent; border: 0; cursor: pointer; border-radius: 50%; transition: color 140ms ease, background-color 140ms ease; }
-.composer-mic-btn:hover { color: #1E293B; background: #F1F5F9; }
+.composer-mic-btn,
+.location-button { display: grid; width: 30px; height: 30px; place-items: center; color: #64748B; background: transparent; border: 0; cursor: pointer; border-radius: 50%; flex: 0 0 auto; transition: color 140ms ease, background-color 140ms ease; }
+.composer-mic-btn:hover,
+.location-button:not(:disabled):hover { color: #1E293B; background: #F1F5F9; }
 .send-button { display: grid; width: 34px; height: 34px; place-items: center; flex: 0 0 auto; color: #FFFFFF !important; background: #2563EB !important; border: 0; border-radius: 50%; transition: background-color 160ms ease, transform 100ms ease, box-shadow 160ms ease; cursor: pointer; box-shadow: 0 2px 8px rgb(37 99 235 / 35%); }
 .send-button:not(:disabled):hover { background: #1D4ED8 !important; transform: scale(1.06); box-shadow: 0 4px 12px rgb(37 99 235 / 45%); }
 .send-button:disabled { opacity: 0.35; background: #94A3B8 !important; cursor: not-allowed; box-shadow: none; }
 .composer-hint { margin: 6px auto 0; text-align: center; color: #94A3B8; font-size: var(--text-xs); }
-
+.composer-error { margin: 6px auto 0; padding: 6px 12px; color: var(--color-danger); background: var(--color-danger-surface); border: 1px solid #F0CCC6; border-radius: 999px; font-size: var(--text-xs); text-align: center; }
 /* ─── Context rail (Right live activity) ──────────────────── */
 .assistant-layout { position: relative; display: grid; gap: 0; height: 100%; min-height: 0; flex: 1; align-items: stretch; background: #F8FAFC; }
 .assistant-layout.is-resizing-active { user-select: none; cursor: col-resize; }

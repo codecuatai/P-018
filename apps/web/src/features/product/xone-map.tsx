@@ -51,6 +51,8 @@ const MARKER_STYLES: Record<MarkerKey, { color: string; label: string }> = {
   healthcare: { color: "#A54D86", label: "Cơ sở y tế" },
 };
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · <a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a>';
+const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 export function XOneMap({
   origin,
@@ -129,27 +131,34 @@ export function XOneMap({
         mapRef.current = map;
         leafletRef.current = L;
         const browserKey = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY?.trim();
-        const style = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim() || "osm-bright";
-        let tileUrl: string;
-        let attribution = TILE_ATTRIBUTION;
-        if (browserKey && !browserKey.includes("__PASTE_")) {
-          tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
-        } else {
-          tileUrl = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-          attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-        }
-        const tileLayer = L.tileLayer(tileUrl, { attribution, maxZoom: 19 });
+        const configuredStyle = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim();
+        const style = !configuredStyle || configuredStyle === "osm-bright" ? "osm-bright-smooth" : configuredStyle;
+        // Geoapify is optional. Without a usable browser key the map still renders
+        // on public OpenStreetMap tiles instead of failing outright.
+        const usableKey = browserKey && !browserKey.includes("__PASTE_") ? browserKey : undefined;
+        let onOsmTiles = usableKey === undefined;
+        const tileUrl = usableKey
+          ? `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(usableKey)}`
+          : OSM_TILE_URL;
+        const tileLayer = L.tileLayer(tileUrl, { attribution: onOsmTiles ? OSM_ATTRIBUTION : TILE_ATTRIBUTION, maxZoom: 19 });
         tileLayerRef.current = tileLayer;
         tileLayer.on("tileerror", () => {
-          if (!tileUrl.includes("openstreetmap.org")) {
-            tileLayer.setUrl("https://tile.openstreetmap.org/{z}/{x}/{y}.png");
+          if (!onOsmTiles) {
+            onOsmTiles = true;
+            tileLayer.setUrl(OSM_TILE_URL);
+            tileLayer.options.attribution = OSM_ATTRIBUTION;
+            map.attributionControl?.removeAttribution(TILE_ATTRIBUTION);
+            map.attributionControl?.addAttribution(OSM_ATTRIBUTION);
           } else if (!disposed) {
             setMapState("error");
           }
         });
         tileLayer.addTo(map);
-        resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
-        resizeTimer = window.setTimeout(() => invalidateMapSize(map), 120);
+        map.whenReady(() => {
+          invalidateMapSize(map);
+          resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
+          resizeTimer = window.setTimeout(() => invalidateMapSize(map), 250);
+        });
         if (!disposed) setMapState("ready");
       } catch {
         if (!disposed) setMapState("error");
