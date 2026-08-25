@@ -68,6 +68,8 @@ export function ServiceBrowse({ service }: { service: ServiceKey }) {
 function FoodBrowse() {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -91,14 +93,30 @@ function FoodBrowse() {
   const [menuPage, setMenuPage] = useState(1);
   const menuPageSize = 4;
 
-  const load = useCallback(async (query = "") => {
-    setLoading(true); setError("");
-    setPage(1);
-    try { setItems((await browseService("food", query)).items); }
-    catch (reason) { setError(errorText(reason)); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { void load(); void listSavedAddresses().then((result) => { setAddresses(result.items); setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? ""); }).catch(() => undefined); }, [load]);
+  const load = useCallback(async (query = "", pageNum = 1) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await browseService("food", query, { page: pageNum, limit: pageSize });
+      setItems(res.items);
+      const total = res.total ?? res.items.length;
+      setTotalItems(total);
+      setTotalPages(res.total_pages ?? Math.max(1, Math.ceil(total / pageSize)));
+      setPage(pageNum);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setLoading(false);
+    }
+  }, [pageSize]);
+
+  useEffect(() => {
+    void load("", 1);
+    void listSavedAddresses().then((result) => {
+      setAddresses(result.items);
+      setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? "");
+    }).catch(() => undefined);
+  }, [load]);
 
   async function openRestaurant(item: JsonRecord): Promise<void> {
     const id = idOf(item);
@@ -189,14 +207,12 @@ function FoodBrowse() {
     finally { setCartLoading(false); }
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
   const totalMenuPages = Math.max(1, Math.ceil(menuItems.length / menuPageSize));
   const paginatedMenuItems = menuItems.slice((menuPage - 1) * menuPageSize, menuPage * menuPageSize);
 
   if (selectedId) return <div className="service-detail-flow" style={{ textAlign: "left" }}><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid" style={{ textAlign: "left" }}><div className="menu-panel" style={{ textAlign: "left" }}><div className="panel-heading" style={{ textAlign: "left" }}><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <><div className="menu-list" style={{ textAlign: "left" }}>{paginatedMenuItems.map((item) => <article className="menu-item" key={idOf(item)} style={{ textAlign: "left" }}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div style={{ textAlign: "left" }}><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{totalMenuPages > 1 ? (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "8px 0" }}><span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>Trang <strong>{menuPage}</strong> / {totalMenuPages} ({menuItems.length} món)</span><div style={{ display: "flex", gap: "6px" }}><button className="button button-secondary" type="button" onClick={() => setMenuPage((c) => Math.max(1, c - 1))} disabled={menuPage <= 1} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang trước"><ChevronLeft size={14} /> Trước</button><button className="button button-secondary" type="button" onClick={() => setMenuPage((c) => Math.min(totalMenuPages, c + 1))} disabled={menuPage >= totalMenuPages} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang sau">Sau <ChevronRight size={14} /></button></div></div>) : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={setAddressId} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
 
-  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results" style={{ textAlign: "left" }}>{paginatedItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div style={{ textAlign: "left" }}><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{totalPages > 1 ? (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "8px 0" }}><span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>Trang <strong>{page}</strong> / {totalPages} ({items.length} nhà hàng)</span><div style={{ display: "flex", gap: "6px" }}><button className="button button-secondary" type="button" onClick={() => setPage((c) => Math.max(1, c - 1))} disabled={page <= 1} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang trước"><ChevronLeft size={14} /> Trước</button><button className="button button-secondary" type="button" onClick={() => setPage((c) => Math.min(totalPages, c + 1))} disabled={page >= totalPages} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang sau">Sau <ChevronRight size={14} /></button></div></div>) : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
+  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword, 1)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword, page)} /> : items.length ? <><div className="browse-results" style={{ textAlign: "left" }}>{items.map((item) => <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div style={{ textAlign: "left" }}><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{totalPages > 1 ? (<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "14px", padding: "8px 0" }}><span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>Trang <strong>{page}</strong> / {totalPages} ({totalItems} nhà hàng)</span><div style={{ display: "flex", gap: "6px" }}><button className="button button-secondary" type="button" onClick={() => void load(keyword, Math.max(1, page - 1))} disabled={page <= 1 || loading} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang trước"><ChevronLeft size={14} /> Trước</button><button className="button button-secondary" type="button" onClick={() => void load(keyword, Math.min(totalPages, page + 1))} disabled={page >= totalPages || loading} style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }} aria-label="Trang sau">Sau <ChevronRight size={14} /></button></div></div>) : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
 
 function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string) => void }) {
@@ -218,6 +234,8 @@ function FoodCart({ cart, addresses, addressId, setAddressId, voucher, setVouche
 function RestaurantBrowse() {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [selected, setSelected] = useState<JsonRecord>();
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -233,19 +251,23 @@ function RestaurantBrowse() {
   const [page, setPage] = useState(1);
   const pageSize = 4;
 
-  const load = useCallback(async (query = "") => {
+  const load = useCallback(async (query = "", pageNum = 1) => {
     setLoading(true);
     setError("");
-    setPage(1);
     try {
-      setItems((await browseService("restaurant", query)).items);
+      const res = await browseService("restaurant", query, { page: pageNum, limit: pageSize });
+      setItems(res.items);
+      const total = res.total ?? res.items.length;
+      setTotalItems(total);
+      setTotalPages(res.total_pages ?? Math.max(1, Math.ceil(total / pageSize)));
+      setPage(pageNum);
     } catch (reason) {
       setError(errorText(reason));
     } finally {
       setLoading(false);
     }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [pageSize]);
+  useEffect(() => { void load("", 1); }, [load]);
 
   async function open(item: JsonRecord): Promise<void> {
     const id = idOf(item);
@@ -397,15 +419,15 @@ function RestaurantBrowse() {
 
   return (
     <>
-      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
+      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword, 1)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
       {loading ? (
         <LoadingNote text="Đang tải nhà hàng…" />
       ) : error ? (
-        <ErrorNote message={error} onRetry={() => void load(keyword)} />
+        <ErrorNote message={error} onRetry={() => void load(keyword, page)} />
       ) : items.length ? (
         <>
           <div className="browse-results" style={{ textAlign: "left" }}>
-            {paginatedItems.map((item) => (
+            {items.map((item) => (
               <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}>
                 <AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} />
                 <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
@@ -422,14 +444,14 @@ function RestaurantBrowse() {
           {totalPages > 1 ? (
             <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
               <span style={{ fontSize: "0.75rem", color: "var(--color-muted)", textAlign: "left" }}>
-                Trang <strong>{page}</strong> / {totalPages} · ({items.length} nhà hàng)
+                Trang <strong>{page}</strong> / {totalPages} · ({totalItems} nhà hàng)
               </span>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={page <= 1}
+                  onClick={() => void load(keyword, Math.max(1, page - 1))}
+                  disabled={page <= 1 || loading}
                   aria-label="Trang trước"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >
@@ -438,8 +460,8 @@ function RestaurantBrowse() {
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  disabled={page >= totalPages}
+                  onClick={() => void load(keyword, Math.min(totalPages, page + 1))}
+                  disabled={page >= totalPages || loading}
                   aria-label="Trang sau"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >

@@ -51,6 +51,15 @@ AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime |
 
 class FoodRepository(Protocol):
     async def search(self, **filters) -> list[dict]: ...
+    async def list_restaurants(
+        self,
+        keyword: str = "",
+        district: str | None = None,
+        category: str | None = None,
+        open_only: bool = True,
+        limit: int = 12,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]: ...
     async def get_restaurant(self, restaurant_id: str) -> dict | None: ...
     async def get_menu_item(self, item_id: str) -> dict | None: ...
     async def get_cart(self, cart_id: str) -> dict | None: ...
@@ -405,6 +414,47 @@ class InMemoryFoodRepository:
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
         return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start : start + limit]]
+
+    async def list_restaurants(
+        self,
+        keyword: str = "",
+        district: str | None = None,
+        category: str | None = None,
+        open_only: bool = True,
+        limit: int = 12,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        raw_keyword = str(keyword or "").strip().casefold()
+        fold_keyword = _fold_text(raw_keyword)
+        raw_district = district or ""
+        district_folded = "" if str(raw_district).strip().casefold() in ("hà nội", "ha noi", "hồ chí minh", "ho chi minh", "tp hcm", "đà nẵng", "da nang") else _fold_text(raw_district)
+        
+        if fold_keyword:
+            search_results = await self.search(keyword=keyword, district=district, category=category, open_only=open_only, limit=1000, offset=0)
+            grouped: dict[str, dict] = {}
+            for res in search_results:
+                r = deepcopy(res["restaurant"])
+                grouped.setdefault(r["id"], {**r, "matching_items": []})["matching_items"].append(res["item"])
+            all_items = list(grouped.values())
+            total = len(all_items)
+            return all_items[offset : offset + limit], total
+
+        matched = []
+        for r in self.restaurants.values():
+            if open_only and not r.get("is_open", True):
+                continue
+            if district_folded and district_folded not in _fold_text(f"{r.get('district', '')} {r.get('address', '')}"):
+                continue
+            matched.append(deepcopy(r))
+        matched.sort(
+            key=lambda r: (
+                -(r.get("rating") or 0),
+                -(r.get("review_count") or 0),
+                str(r.get("name", "")).casefold(),
+            )
+        )
+        total = len(matched)
+        return matched[offset : offset + limit], total
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         return deepcopy(self.restaurants.get(restaurant_id))
@@ -928,6 +978,47 @@ class PostgresFoodRepository:
             {"item": full_items.get(str(entry["item"]["id"]), entry["item"]), "restaurant": entry["restaurant"]}
             for entry in window
         ]
+
+    async def list_restaurants(
+        self,
+        keyword: str = "",
+        district: str | None = None,
+        category: str | None = None,
+        open_only: bool = True,
+        limit: int = 12,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        raw_keyword = str(keyword or "").strip().casefold()
+        fold_keyword = _fold_text(raw_keyword)
+        if fold_keyword:
+            search_results = await self.search(keyword=keyword, district=district, category=category, open_only=open_only, limit=1000, offset=0)
+            grouped: dict[str, dict] = {}
+            for res in search_results:
+                r = res["restaurant"]
+                grouped.setdefault(r["id"], {**r, "matching_items": []})["matching_items"].append(res["item"])
+            all_items = list(grouped.values())
+            total = len(all_items)
+            return all_items[offset : offset + limit], total
+
+        raw_district = district or ""
+        district_folded = "" if str(raw_district).strip().casefold() in ("hà nội", "ha noi", "hồ chí minh", "ho chi minh", "tp hcm", "đà nẵng", "da nang") else _fold_text(raw_district)
+        all_restaurants = [value for value in await self._records("restaurant")]
+        matched = []
+        for r in all_restaurants:
+            if open_only and not r.get("is_open", True):
+                continue
+            if district_folded and district_folded not in _fold_text(f"{r.get('district', '')} {r.get('address', '')}"):
+                continue
+            matched.append(r)
+        matched.sort(
+            key=lambda r: (
+                -(r.get("rating") or 0),
+                -(r.get("review_count") or 0),
+                str(r.get("name", "")).casefold(),
+            )
+        )
+        total = len(matched)
+        return matched[offset : offset + limit], total
 
     async def get_restaurant(self, restaurant_id: str) -> dict | None:
         pool = self._require_pool()

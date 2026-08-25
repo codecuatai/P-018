@@ -264,8 +264,9 @@ class RestaurantRepository:
             # Prefer restaurants with an actual image without changing the
             # relative order of records in either group.
             rows.sort(key=lambda row: not isinstance(row.image_url, str) or not row.image_url.strip())
-            rows = rows[offset : offset + limit]
-            return [self.restaurant_dict(row) for row in rows]
+            total = len(rows)
+            paginated_rows = rows[offset : offset + limit]
+            return [self.restaurant_dict(row) for row in paginated_rows], total
 
     def get_restaurant_by_id(self, restaurant_id):
         with self.factory() as db:
