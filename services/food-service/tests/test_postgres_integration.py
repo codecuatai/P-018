@@ -67,7 +67,12 @@ async def _catalog_ids(repository: PostgresFoodRepository) -> tuple[str, str, st
     return str(item["restaurant_id"]), str(item["id"]), str(alternative), str(voucher)
 
 
-async def _cart(repository: PostgresFoodRepository, service: FoodApplicationService, user_id: str, address_id: str) -> dict:
+async def _cart(
+    repository: PostgresFoodRepository,
+    service: FoodApplicationService,
+    user_id: str,
+    address_id: str | None = None,
+) -> dict:
     restaurant_id, menu_item_id, _, _ = await _catalog_ids(repository)
     item_data = await repository._require_pool().fetchval(
         "SELECT data FROM food_catalog WHERE id=$1 AND record_type='menu_item'",
@@ -165,7 +170,7 @@ async def test_postgres_due_claim_is_single_winner(
         address_id,
         json.dumps({"id": address_id, "user_id": user_id, "latitude": 21.0125, "longitude": 105.848}),
     )
-    cart = await _cart(service, user_id, address_id)
+    cart = await _cart(repository, service, user_id, address_id)
     order = await service.create_order(
         {
             "cart_id": cart["id"],
