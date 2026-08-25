@@ -33,14 +33,14 @@
 .sidebar-recent-heading > span { display: inline-flex; align-items: center; line-height: 1; }
 .sidebar-recent-heading a { display: inline-flex; align-items: center; color: var(--color-primary-strong); font-family: inherit; font-size: var(--text-micro); font-weight: 600; letter-spacing: 0; text-transform: none; text-decoration: none; line-height: 1; }
 .sidebar-recent-heading a:hover { text-decoration: underline; }
-.sidebar-recent nav { display: grid; gap: 8px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 3px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 150ms ease; }
+.sidebar-recent nav { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding-right: 3px; scrollbar-width: thin; scrollbar-color: transparent transparent; transition: scrollbar-color 150ms ease; }
 .sidebar-recent nav:hover { scrollbar-color: #D6E2EB transparent; }
 .sidebar-recent nav::-webkit-scrollbar { width: 4px; }
 .sidebar-recent nav::-webkit-scrollbar-track { background: transparent; }
 .sidebar-recent nav::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; transition: background-color 150ms ease; }
 .sidebar-recent nav:hover::-webkit-scrollbar-thumb { background: #D6E2EB; }
 .sidebar-recent nav::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
-.sidebar-recent-group { display: grid; gap: 3px; }
+.sidebar-recent-group { display: flex; flex-direction: column; gap: 2px; }
 .sidebar-recent-group > small { padding: 4px 6px 2px; color: var(--color-muted-soft); font-size: var(--text-micro); font-weight: 600; }
 .sidebar-conversation-link { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; color: var(--color-ink); border: 1px solid transparent; border-radius: 8px; font-size: var(--text-sm); text-decoration: none; transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease; }
 .sidebar-conv-icon { display: grid; width: 20px; height: 20px; place-items: center; color: var(--color-muted); flex: 0 0 auto; }
