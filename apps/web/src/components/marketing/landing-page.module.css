@@ -1,12 +1,14 @@
-.landingPage { min-width: 0; overflow-x: clip; background: var(--color-surface); }
+.landingPage { min-width: 0; width: 100%; max-width: 100vw; overflow-x: hidden; background: var(--color-surface); box-sizing: border-box; }
 .landingPage [id] { scroll-margin-top: 94px; }
-.container { width: min(1160px, calc(100% - 48px)); margin: 0 auto; }
+.container { width: min(1160px, calc(100% - 48px)); margin: 0 auto; box-sizing: border-box; }
 
 .hero {
   position: relative;
   min-height: min(800px, max(680px, calc(100svh - 10px)));
   padding: 108px 0 72px;
-  overflow: clip;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100vw;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
@@ -22,7 +24,7 @@
 .heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-navy); font-size: 0.79rem; font-weight: 650; }
 .heroNote svg { color: var(--color-success); }
 
-.section { padding: clamp(54px, 6vw, 88px) 0; }
+.section { padding: clamp(54px, 6vw, 88px) 0; overflow: hidden; width: 100%; }
 .sectionHeading { max-width: 780px; }
 .sectionHeading h2,
 .storyCopy h2,
@@ -78,7 +80,7 @@
 .assistantCopy .textLink { margin-top: 26px; border-radius: 999px; text-decoration: none; }
 .assistantCopy .textLink:active { transform: translateY(0) scale(0.98); }
 
-.cta { position: relative; min-height: 100svh; padding: 0; overflow: clip; color: var(--color-ink); background: var(--surface-slate); }
+.cta { position: relative; min-height: 100svh; padding: 0; overflow: hidden; width: 100%; max-width: 100vw; color: var(--color-ink); background: var(--surface-slate); }
 .finalCtaLayout { position: relative; display: grid; grid-template-columns: minmax(0, 0.6fr) minmax(0, 0.4fr); min-height: 100svh; align-items: stretch; }
 .finalCtaCopy { position: relative; z-index: 2; align-self: end; padding: 0 clamp(28px, 5vw, 84px) clamp(92px, 30vh, 142px) max(24px, calc((100vw - 1160px) / 2)); }
 .finalCtaCopy > svg { color: var(--color-primary); }
@@ -117,14 +119,15 @@
   .assistantSignal { order: 2; }
   .finalCtaLayout { display: flex; min-height: auto; flex-direction: column; padding-top: 72px; }
   .finalCtaCopy { align-self: auto; padding: 0 18px 0; }
-  .finalCtaObject { position: relative; inset: auto; width: min(84vw, 620px); min-height: 58svh; margin: 22px -20px 0 auto; }
-  .finalCtaObject img { width: 100%; height: auto; max-width: 100%; max-height: none; transform: scale(1.08) translateX(2%); }
+  .finalCtaObject { position: relative; inset: auto; width: min(84vw, 620px); max-width: 100%; min-height: 58svh; margin: 22px 0 0 auto; }
+  .finalCtaObject img { width: 100%; height: auto; max-width: 100%; max-height: none; transform: scale(1.08) translateX(0); }
   .finalObjectFallback { width: 100%; height: 58svh; }
 }
 
 @media (max-width: 560px) {
   .container { width: calc(100% - 28px); }
   .hero { min-height: 680px; padding: 90px 0 58px; }
+  .heroCopy::before { top: -30px; right: -12px; bottom: -30px; left: -12px; }
   .heroStage { padding-top: clamp(24px, 4svh, 36px); }
   .heroTitle { font-size: clamp(2.55rem, 10.9vw, 3.3rem); line-height: 1.08; }
   .heroTitleLine { white-space: normal; }
@@ -146,7 +149,7 @@
   .finalCtaLayout { padding-top: 60px; padding-bottom: 78px; }
   .finalCtaCopy h2 { font-size: clamp(2.2rem, 11vw, 3.1rem); }
   .ctaActions { align-items: flex-start; flex-direction: column; gap: 15px; }
-  .finalCtaObject { width: min(90vw, 470px); min-height: 52svh; margin: 12px -24px 0 auto; }
+  .finalCtaObject { width: min(90vw, 470px); max-width: 100%; min-height: 52svh; margin: 12px 0 0 auto; }
   .finalObjectFallback { height: 52svh; }
   .footer { padding: 14px 0; }
 }

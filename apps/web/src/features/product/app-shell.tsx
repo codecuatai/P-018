@@ -47,8 +47,16 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
   const assistantHref = activeConversationId ? `/app/conversations/${encodeURIComponent(activeConversationId)}` : "/app";
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 820);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     const match = pathname?.match(/^\/app\/conversations\/([^/]+)/);
@@ -138,12 +146,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div className={`app-body${isResizingSidebar ? " is-resizing-active" : ""}`} style={{ gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)` }}>
-        <aside className="app-sidebar" style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}>
+      <div
+        className={`app-body${isResizingSidebar ? " is-resizing-active" : ""}`}
+        style={isMobile ? undefined : { gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)` }}
+      >
+        <aside className="app-sidebar" style={isMobile ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth }}>
           <Sidebar userEmail={user?.email ?? ""} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} />
           {!sidebarCollapsed && <div className="sidebar-resizer" onMouseDown={(event) => { event.preventDefault(); setIsResizingSidebar(true); }} onDoubleClick={toggleSidebar} title="Kéo để chỉnh kích thước sidebar, nhấp đúp để ẩn" />}
         </aside>
-        <button className={`sidebar-edge-toggle${sidebarCollapsed ? " is-collapsed" : ""}`} type="button" aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"} title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"} onClick={toggleSidebar} style={{ left: sidebarCollapsed ? "10px" : `${sidebarWidth}px` }}>
+        <button
+          className={`sidebar-edge-toggle${sidebarCollapsed ? " is-collapsed" : ""}`}
+          type="button"
+          aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
+          title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
+          onClick={toggleSidebar}
+          style={isMobile ? undefined : { left: sidebarCollapsed ? "10px" : `${sidebarWidth}px` }}
+        >
           {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
         <header className="app-mobile-header">
