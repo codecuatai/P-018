@@ -28,7 +28,15 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [railWidth, setRailWidth] = useState(280);
   const [isResizingRail, setIsResizingRail] = useState(false);
-  
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 1040);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
 
@@ -352,7 +360,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       
       <div
         className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
-        style={{ gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
+        style={isMobile ? undefined : { gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
       >
         <div className="chat-column">
           <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
@@ -403,7 +411,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
           title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
           onClick={() => toggleRail(!railCollapsed)}
-          style={{ right: railCollapsed ? "10px" : `${railWidth}px` }}
+          style={isMobile ? undefined : { right: railCollapsed ? "10px" : `${railWidth}px` }}
         >
           {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
@@ -413,9 +421,9 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
           description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
           onCollapse={() => toggleRail(true)}
-          style={{ width: railCollapsed ? 0 : railWidth }}
+          style={isMobile ? undefined : { width: railCollapsed ? 0 : railWidth }}
           resizer={
-            !railCollapsed ? (
+            !railCollapsed && !isMobile ? (
               <div className="rail-resizer" onMouseDown={handleRailMouseDown} onDoubleClick={() => toggleRail(true)} title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn" />
             ) : undefined
           }

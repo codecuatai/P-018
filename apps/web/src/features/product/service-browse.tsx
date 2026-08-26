@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -98,7 +99,18 @@ function FoodBrowse() {
     catch (reason) { setError(errorText(reason)); }
     finally { setLoading(false); }
   }, []);
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => { void load(); void listSavedAddresses().then((result) => { setAddresses(result.items); setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? ""); }).catch(() => undefined); }, [load]);
+  useEffect(() => {
+    if (!initialResourceId || selectedId || detailLoading) return;
+    const match = items.find((item) => idOf(item) === initialResourceId);
+    if (match) {
+      void openRestaurant(match);
+    } else if (items.length > 0) {
+      void openRestaurant({ id: initialResourceId });
+    }
+  }, [initialResourceId, items, selectedId, detailLoading]);
 
   async function openRestaurant(item: JsonRecord): Promise<void> {
     const id = idOf(item);
@@ -291,7 +303,22 @@ function RestaurantBrowse() {
       setLoading(false);
     }
   }, []);
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!initialResourceId || selected || detailLoading) return;
+    const match = items.find((item) => idOf(item) === initialResourceId);
+    if (match) {
+      void open(match);
+    } else if (items.length > 0) {
+      setDetailLoading(true);
+      void getRestaurantDetail(initialResourceId)
+        .then(setSelected)
+        .catch((reason) => setError(errorText(reason)))
+        .finally(() => setDetailLoading(false));
+    }
+  }, [initialResourceId, items, selected, detailLoading]);
 
   async function open(item: JsonRecord): Promise<void> {
     const id = idOf(item);
@@ -550,6 +577,8 @@ function HealthcareBrowse() {
     }
   }, [department]);
 
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => {
     void load();
     void listHealthcarePatients().then((result) => {
@@ -557,6 +586,11 @@ function HealthcareBrowse() {
       setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
     }).catch(() => undefined);
   }, [load]);
+  useEffect(() => {
+    if (!initialResourceId || !departments.length) return;
+    const match = departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId);
+    if (match) setDepartment(display(match.name ?? match.label ?? match.id));
+  }, [initialResourceId, departments]);
 
   useEffect(() => {
     if (!department) return;
