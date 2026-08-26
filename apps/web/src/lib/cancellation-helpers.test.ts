@@ -1,4 +1,4 @@
-import { executeServiceCancellation, isCancellableStatus } from "./cancellation-helpers";
+import { canRateStatus, executeServiceCancellation, isCancellableStatus } from "./cancellation-helpers";
 import * as apiClient from "@/lib/api-client";
 
 jest.mock("@/lib/api-client", () => ({
@@ -9,7 +9,7 @@ jest.mock("@/lib/api-client", () => ({
   executeCancellation: jest.fn().mockResolvedValue({ status: "CANCELLED" }),
 }));
 
-describe("cancellation helpers", () => {
+describe("cancellation and rating helpers", () => {
   test("correctly evaluates cancellable status", () => {
     expect(isCancellableStatus("restaurant_reservation", "CONFIRMED")).toBe(true);
     expect(isCancellableStatus("restaurant_reservation", "CANCELLED")).toBe(false);
@@ -20,6 +20,27 @@ describe("cancellation helpers", () => {
 
     expect(isCancellableStatus("ride_booking", "IN_TRANSIT")).toBe(false);
     expect(isCancellableStatus("ride_booking", "SEARCHING")).toBe(true);
+  });
+
+  test("correctly evaluates rating eligibility based on completed status", () => {
+    // Restaurant reservation rating eligibility: CONFIRMED or HELD must NOT allow rating
+    expect(canRateStatus("CONFIRMED", "restaurant_reservation")).toBe(false);
+    expect(canRateStatus("HELD", "restaurant_reservation")).toBe(false);
+    expect(canRateStatus("COMPLETED", "restaurant_reservation")).toBe(true);
+
+    // Healthcare appointment rating eligibility: PAYMENT_CONFIRMED or SCHEDULED must NOT allow rating
+    expect(canRateStatus("PAYMENT_CONFIRMED", "healthcare_appointment")).toBe(false);
+    expect(canRateStatus("CONFIRMED", "healthcare_appointment")).toBe(false);
+    expect(canRateStatus("SCHEDULED", "healthcare_appointment")).toBe(false);
+    expect(canRateStatus("COMPLETED", "healthcare_appointment")).toBe(true);
+
+    // Ride booking rating eligibility
+    expect(canRateStatus("CONFIRMED", "ride_booking")).toBe(false);
+    expect(canRateStatus("COMPLETED", "ride_booking")).toBe(true);
+
+    // Food order rating eligibility
+    expect(canRateStatus("PREPARING", "food_order")).toBe(false);
+    expect(canRateStatus("DELIVERED", "food_order")).toBe(true);
   });
 
   test("executes restaurant reservation cancellation", async () => {

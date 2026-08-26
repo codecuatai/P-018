@@ -21,6 +21,32 @@ export function isCancellableStatus(type: HistoryType, status: string): boolean 
   return false;
 }
 
+export function canRateStatus(status: string, type: HistoryType, resource?: Record<string, unknown>): boolean {
+  const value = String(status || "").toUpperCase();
+  if (type === "ride_booking") {
+    return value === "COMPLETED" || value === "FULFILLED";
+  }
+  if (type === "food_order") {
+    return ["DELIVERED", "COMPLETED", "FULFILLED"].includes(value);
+  }
+  if (type === "restaurant_reservation") {
+    if (value === "COMPLETED" || value === "FULFILLED") return true;
+    if (value === "SEATED") {
+      const startTimeStr = String(resource?.start_at ?? resource?.reservation_time ?? "");
+      if (startTimeStr) {
+        const startTime = new Date(startTimeStr).getTime();
+        return !Number.isNaN(startTime) && Date.now() >= startTime;
+      }
+      return true;
+    }
+    return false;
+  }
+  if (type === "healthcare_appointment") {
+    return value === "COMPLETED" || value === "FULFILLED";
+  }
+  return false;
+}
+
 export async function executeServiceCancellation(
   type: HistoryType,
   resourceOrId: Record<string, unknown> | string
