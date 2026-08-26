@@ -625,6 +625,8 @@
 .healthcare-flow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 0.44fr); gap: 15px; align-items: start; }
 .service-context-panel { color: var(--color-muted); background: var(--surface-ice); }
 .service-context-panel p { margin: 9px 0 15px; font-size: 0.74rem; line-height: 1.6; }
+.history-resume-payment { width: 100%; margin-top: 14px; }
+.history-map-placeholder { display: grid; min-height: 130px; place-items: center; padding: 18px; color: var(--color-muted); background: var(--surface-ice); border: 1px solid var(--color-border); border-radius: 9px; font-size: 0.73rem; text-align: center; }
 .availability-card,
 .hold-card { display: flex; align-items: flex-start; gap: 9px; padding: 12px; margin-top: 13px; border-radius: 8px; }
 .availability-card { justify-content: space-between; flex-wrap: wrap; background: #F8FAFB; border: 1px solid var(--color-border); }
@@ -643,12 +645,37 @@
 .chip { padding: 8px 10px; color: var(--color-muted); background: #F7FAFC; border: 1px solid var(--color-border); border-radius: 7px; font-size: 0.69rem; font-weight: 750; }
 .chip.is-active { color: var(--color-primary-strong); background: #EAF4FA; border-color: #CBE1ED; }
 .slot-list { display: grid; gap: 7px; margin-top: 13px; }
-.slot-option { display: grid; gap: 4px; padding: 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 8px; text-align: left; }
+.slot-option { position: relative; display: grid; gap: 4px; padding: 11px 38px 11px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 8px; text-align: left; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.slot-option:hover { background: var(--surface-ice); border-color: #AFC7F5; }
+.slot-option:focus-visible { outline: 3px solid rgb(49 94 245 / 24%); outline-offset: 2px; }
 .slot-option.is-active { border-color: var(--color-primary); background: #F2F8FC; box-shadow: 0 0 0 2px rgb(49 94 245 / 8%); }
+.slot-option-arrow { position: absolute; top: 50%; right: 12px; color: var(--color-primary); transform: translateY(-50%); }
 .slot-option strong { color: var(--color-navy); font-size: 0.74rem; }
 .slot-option span { color: var(--color-muted); font-size: 0.67rem; line-height: 1.4; }
 .slot-option small { color: var(--color-success-ink); font-size: 0.66rem; font-weight: 750; }
 .healthcare-form { display: grid; gap: 2px; padding-top: 7px; }
+.healthcare-combobox { position: relative; }
+.healthcare-combobox input { width: 100%; }
+.healthcare-combobox-options { position: absolute; z-index: 20; top: calc(100% + 4px); right: 0; left: 0; display: grid; max-height: 240px; overflow-y: auto; background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 8px; box-shadow: 0 14px 34px rgb(16 34 54 / 18%); }
+.healthcare-combobox-options button { width: 100%; padding: 9px 10px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font: inherit; font-size: 0.72rem; cursor: pointer; }
+.healthcare-combobox-options button:last-child { border-bottom: 0; }
+.healthcare-combobox-options button:hover,
+.healthcare-combobox-options button:focus-visible,
+.healthcare-combobox-options button.is-active { background: var(--surface-ice); outline: 0; }
+.healthcare-summary { position: sticky; top: 18px; }
+.healthcare-summary-details { display: grid; gap: 0; margin: 12px 0 2px; border-top: 1px solid #DCEAE7; }
+.healthcare-summary-details div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #DCEAE7; }
+.healthcare-summary-details dt { color: var(--color-muted); font-size: 0.69rem; }
+.healthcare-summary-details dd { max-width: 62%; margin: 0; color: var(--color-ink); font-size: 0.69rem; font-weight: 750; text-align: right; overflow-wrap: anywhere; }
+.healthcare-profile-toggle { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 0; }
+.healthcare-profile-form { display: grid; gap: 8px; padding: 10px; margin-top: 8px; background: #F7FAFC; border: 1px solid var(--color-border); border-radius: 8px; }
+.healthcare-profile-form label { display: grid; gap: 5px; color: var(--color-navy); font-size: 0.68rem; font-weight: 720; }
+.healthcare-profile-form input,
+.healthcare-profile-form select { min-height: 36px; padding: 8px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 7px; font: inherit; font-size: 0.72rem; font-weight: 400; }
+.healthcare-profile-form .button { margin-top: 2px; }
+.healthcare-profile-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 7px; padding: 8px 9px; color: #9F382F; background: var(--color-danger-surface); border: 1px solid #EFC7C2; border-radius: 7px; font-size: 0.67rem; line-height: 1.4; }
+.healthcare-profile-error .text-button { color: #9F382F; }
+.healthcare-summary-error { margin: 12px 0 0; padding: 9px 10px; color: #9F382F; background: var(--color-danger-surface); border: 1px solid #EFC7C2; border-radius: 7px; font-size: 0.68rem; line-height: 1.45; }
 .healthcare-browse-with-favorite { display: grid; gap: 12px; }
 .healthcare-favorite-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 13px; color: var(--color-navy); background: #F7FCFB; border: 1px solid #CFE3DF; border-radius: 8px; }
 .healthcare-favorite-banner > span { display: grid; gap: 4px; }
@@ -718,6 +745,7 @@
   .service-detail-heading { grid-template-columns: minmax(0, 1fr); }
   .service-detail-heading .xone-map { width: 100%; }
   .service-detail-heading > div:first-child > .authoritative-image { width: 100%; }
+  .healthcare-summary { position: static; }
 }
 
 @media (max-width: 560px) {

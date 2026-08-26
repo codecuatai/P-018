@@ -252,23 +252,23 @@ export function getFoodCart(cartId: string): Promise<Record<string, unknown>> {
 }
 
 export function addFoodCartItem(cartId: string, value: { menu_item_id: string; quantity: number; selected_options?: Array<{ group_id: string; option_id: string }>; note?: string }): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("food-cart-item") });
 }
 
 export function updateFoodCartItem(cartId: string, itemId: string, value: { quantity: number; selected_options?: Array<{ group_id: string; option_id: string }> | null; note?: string }): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("food-cart-item-update") });
 }
 
 export function removeFoodCartItem(cartId: string, itemId: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("food-cart-item-remove") });
 }
 
 export function applyFoodVoucher(cartId: string, code: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "POST", body: JSON.stringify({ code }) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "POST", body: JSON.stringify({ code }) }, { idempotencyKey: createIdempotencyKey("food-cart-voucher") });
 }
 
 export function removeFoodVoucher(cartId: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "DELETE" });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("food-cart-voucher-remove") });
 }
 
 export function prepareFoodOrder(value: { cart_id: string; address_id: string }): Promise<Record<string, unknown>> {
@@ -662,8 +662,14 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
   if (source.includes("GEOAPIFY") || source.includes("LOCATION_UNRESOLVED") || source.includes("REAL_ROUTE_REQUIRED")) return "Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.";
-  if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("IDEMPOTENCY") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
+  if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
     return "Lựa chọn này vừa được cập nhật. Hãy chọn lại từ danh sách mới.";
+  }
+  if (source.includes("IDEMPOTENCY_KEY_REQUIRED") || source.includes("IDEMPOTENCY_KEY_INVALID")) {
+    return "Thao tác giỏ hàng chưa được gửi đầy đủ. Bạn hãy thử lại.";
+  }
+  if (source.includes("IDEMPOTENCY_KEY_REUSED")) {
+    return "Yêu cầu giỏ hàng đã được dùng cho dữ liệu khác. Bạn hãy thử lại.";
   }
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
   if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";

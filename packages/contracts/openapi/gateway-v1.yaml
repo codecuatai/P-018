@@ -455,7 +455,7 @@ paths:
         - {$ref: '#/components/parameters/HistoryType'}
         - {$ref: '#/components/parameters/ResourceId'}
       responses:
-        '200': {description: Authoritative transaction detail}
+        '200': {description: Authoritative transaction detail. Healthcare details include safe normalized facility, doctor, department, patient, slot, payment-state, and location fields when available.}
         '400': {description: Invalid history type or resource id}
         '401': {description: Missing or invalid user token}
         '404': {description: Resource not found}
