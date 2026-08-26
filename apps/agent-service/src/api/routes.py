@@ -325,6 +325,7 @@ async def assistant_chat(
                 ),
                 output=output_summary,
             )
+            usage = result.get("usage")
             return {
                 "data": {
                     "conversation_id": request.conversation_id,
@@ -335,8 +336,12 @@ async def assistant_chat(
                     "decision_source": result.get("decision_source", "deterministic"),
                     "model": result.get("model", settings.gemini_model),
                     "fallback_model": result.get("fallback_model", settings.gemini_fallback_model),
+                    "usage": usage,
                 },
-                "meta": {"request_id": request.correlation_id},
+                "meta": {
+                    "request_id": request.correlation_id,
+                    "usage": usage,
+                },
             }
         except HTTPException as error:
             root_observation.update(

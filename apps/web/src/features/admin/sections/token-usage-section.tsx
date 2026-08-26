@@ -5,6 +5,15 @@ import { Cpu, DollarSign, Filter, Sparkles, TrendingUp, Zap } from "lucide-react
 import { errorText, getAdminTokenUsage } from "@/lib/api-client";
 import type { AdminTokenUsageReport } from "@/types";
 
+const FEATURE_LABELS: Record<string, string> = {
+  assistant: "AI Assistant (Trợ lý)",
+  ride: "Gọi xe (Ride)",
+  food: "Giao đồ ăn (Food)",
+  restaurant: "Đặt bàn (Restaurant)",
+  healthcare: "Y tế (Healthcare)",
+  other: "Khác",
+};
+
 export function TokenUsageSection() {
   const [feature, setFeature] = useState("");
   const [model, setModel] = useState("");
@@ -33,19 +42,22 @@ export function TokenUsageSection() {
           <span>Tính năng (Feature):</span>
           <select value={feature} onChange={(e) => setFeature(e.target.value)} className="admin-select">
             <option value="">Tất cả tính năng</option>
-            <option value="chat_turn">Chat Assistant</option>
-            <option value="multi_service_planner">Multi-service Planner</option>
-            <option value="tool_execution">Tool Execution</option>
-            <option value="memory_extraction">Memory Extraction</option>
+            <option value="assistant">AI Assistant (Trợ lý)</option>
+            <option value="ride">Gọi xe (Ride)</option>
+            <option value="food">Giao đồ ăn (Food)</option>
+            <option value="restaurant">Đặt bàn (Restaurant)</option>
+            <option value="healthcare">Y tế (Healthcare)</option>
+            <option value="other">Khác</option>
           </select>
         </label>
         <label className="admin-filter-item">
           <span>Mô hình (Model):</span>
           <select value={model} onChange={(e) => setModel(e.target.value)} className="admin-select">
             <option value="">Tất cả mô hình</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
           </select>
         </label>
         <button className="button button-secondary" type="button" onClick={loadUsage}>
@@ -91,7 +103,7 @@ export function TokenUsageSection() {
               <div className="admin-domain-list">
                 {Object.entries(data.by_feature ?? {}).map(([feat, val]) => (
                   <div className="admin-domain-row" key={feat}>
-                    <strong>{feat}</strong>
+                    <strong>{FEATURE_LABELS[feat] ?? feat}</strong>
                     <span className="admin-domain-detail">{new Intl.NumberFormat("vi-VN").format(val.total ?? 0)} tokens</span>
                     <span className="admin-badge">${(val.cost ?? 0).toFixed(4)}</span>
                   </div>

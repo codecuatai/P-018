@@ -2049,4 +2049,39 @@ describe('Unified assistant orchestration', () => {
     expect(result.discardedIds.size).toBe(0);
     expect(tasks[0].phase).toBe('IN_PROGRESS');
   });
+
+  it('records token usage when agent response contains usage metadata', async () => {
+    const recordTokenUsage = jest.fn();
+    const service = new AssistantService(
+      { recordTokenUsage } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = service as unknown as {
+      recordUsageFromAgentResponse: (res: Record<string, unknown>, actorId?: string, feat?: string) => Promise<void>;
+    };
+
+    await internal.recordUsageFromAgentResponse(
+      {
+        model: 'gemini-1.5-flash',
+        usage: { prompt_tokens: 150, completion_tokens: 50, total_tokens: 200 },
+      },
+      'user_123',
+      'assistant',
+    );
+
+    expect(recordTokenUsage).toHaveBeenCalledTimes(1);
+    const callArg = recordTokenUsage.mock.calls[0][0];
+    expect(callArg.actorId).toBe('user_123');
+    expect(callArg.model).toBe('gemini-1.5-flash');
+    expect(callArg.feature).toBe('assistant');
+    expect(callArg.promptTokens).toBe(150);
+    expect(callArg.completionTokens).toBe(50);
+    expect(callArg.totalTokens).toBe(200);
+    expect(callArg.estimatedCostUsd).toBeGreaterThan(0);
+  });
 });
+
