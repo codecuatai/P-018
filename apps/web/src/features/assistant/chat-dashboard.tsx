@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
@@ -28,7 +29,15 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [railWidth, setRailWidth] = useState(280);
   const [isResizingRail, setIsResizingRail] = useState(false);
-  
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 1040);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
 
@@ -147,34 +156,94 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     let active = true;
     let timer: number | undefined;
     let request: AbortController | undefined;
-    const refresh = async (): Promise<void> => {
+    let lastFetchTime = 0;
+    let consecutiveUnchanged = 0;
+
+    const scheduleNext = (interval: number) => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (active && !document.hidden) {
+        timer = window.setTimeout(() => { void refresh(); }, interval);
+      }
+    };
+
+    const refresh = async (resetBackoff = false): Promise<void> => {
       if (!active || document.hidden || request) return;
+
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTime;
+      // Enforce minimum 5s gap between requests under any circumstance
+      if (lastFetchTime > 0 && timeSinceLastFetch < 5000) {
+        const remainingDelay = 5000 - timeSinceLastFetch;
+        scheduleNext(remainingDelay);
+        return;
+      }
+
+      if (resetBackoff) {
+        consecutiveUnchanged = 0;
+      }
+
       request = new AbortController();
+      lastFetchTime = Date.now();
+
       try {
         const result = await getActiveHistory(request.signal);
-        if (active) setActiveItems((current) => sameHistoryItems(current, result.items) ? current : result.items);
-        if (active && result.items.length && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
+        if (!active) return;
+
+        let currentItems: HistoryItem[] = [];
+        setActiveItems((previous) => {
+          const isSame = sameHistoryItems(previous, result.items);
+          if (isSame) {
+            consecutiveUnchanged += 1;
+          } else {
+            consecutiveUnchanged = 0;
+          }
+          currentItems = result.items;
+          return isSame ? previous : result.items;
+        });
+
+        const nextInterval = calculatePollingInterval(currentItems, consecutiveUnchanged);
+        scheduleNext(nextInterval);
       } catch {
         // Keep the last known active work visible during a transient network failure.
-        if (active && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
+        const fallbackInterval = calculatePollingInterval([], consecutiveUnchanged);
+        scheduleNext(fallbackInterval);
+      } finally {
+        request = undefined;
       }
-      finally { request = undefined; }
     };
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
         if (timer !== undefined) window.clearTimeout(timer);
         timer = undefined;
       } else {
-        void refresh();
+        void refresh(true);
       }
     };
+
+    const handleWindowFocus = () => {
+      if (!document.hidden) {
+        void refresh(true);
+      }
+    };
+
+    const handleActiveWorkChanged = () => {
+      void refresh(true);
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("xone-active-work-changed", handleActiveWorkChanged);
+
     void refresh();
+
     return () => {
       active = false;
       if (timer !== undefined) window.clearTimeout(timer);
       request?.abort();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("xone-active-work-changed", handleActiveWorkChanged);
     };
   }, [activeRefreshNonce, user.sub]);
 
@@ -352,7 +421,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       
       <div
         className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
-        style={{ gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
+        style={isMobile ? undefined : { gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
       >
         <div className="chat-column">
           <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
@@ -403,7 +472,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
           title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
           onClick={() => toggleRail(!railCollapsed)}
-          style={{ right: railCollapsed ? "10px" : `${railWidth}px` }}
+          style={isMobile ? undefined : { right: railCollapsed ? "10px" : `${railWidth}px` }}
         >
           {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
@@ -413,9 +482,9 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
           description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
           onCollapse={() => toggleRail(true)}
-          style={{ width: railCollapsed ? 0 : railWidth }}
+          style={isMobile ? undefined : { width: railCollapsed ? 0 : railWidth }}
           resizer={
-            !railCollapsed ? (
+            !railCollapsed && !isMobile ? (
               <div className="rail-resizer" onMouseDown={handleRailMouseDown} onDoubleClick={() => toggleRail(true)} title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn" />
             ) : undefined
           }
