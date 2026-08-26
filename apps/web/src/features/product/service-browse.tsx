@@ -2,6 +2,7 @@
 
 import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -42,6 +43,7 @@ import {
 import type { AssistantRideItem, GeocodeCandidate, HealthcarePatient, RideQuote, SavedAddress, ServiceKey } from "@/types";
 
 import { RideTrackingPanel } from "./ride-tracking";
+import { useRideTracking } from "./ride-tracking-cache";
 import { FoodTrackingPanel } from "./food-tracking";
 import { XOneMap } from "./xone-map";
 import { formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
@@ -127,7 +129,18 @@ function FoodBrowse() {
     catch (reason) { if (browseRequestRef.current === requestId) setError(errorText(reason)); }
     finally { if (browseRequestRef.current === requestId) { if (keepList) setPaging(false); else setLoading(false); } }
   }, []);
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => { void load(); void listSavedAddresses().then((result) => { setAddresses(result.items); setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? ""); }).catch(() => undefined); }, [load]);
+  useEffect(() => {
+    if (!initialResourceId || selectedId || detailLoading) return;
+    const match = items.find((item) => idOf(item) === initialResourceId);
+    if (match) {
+      void openRestaurant(match);
+    } else if (items.length > 0) {
+      void openRestaurant({ id: initialResourceId });
+    }
+  }, [initialResourceId, items, selectedId, detailLoading]);
 
   const loadMenu = useCallback(async (id: string, targetPage: number): Promise<void> => {
     const requestId = menuRequestRef.current + 1;
@@ -340,7 +353,22 @@ function RestaurantBrowse() {
       setLoading(false);
     }
   }, []);
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    if (!initialResourceId || selected || detailLoading) return;
+    const match = items.find((item) => idOf(item) === initialResourceId);
+    if (match) {
+      void open(match);
+    } else if (items.length > 0) {
+      setDetailLoading(true);
+      void getRestaurantDetail(initialResourceId)
+        .then(setSelected)
+        .catch((reason) => setError(errorText(reason)))
+        .finally(() => setDetailLoading(false));
+    }
+  }, [initialResourceId, items, selected, detailLoading]);
 
   async function open(item: JsonRecord): Promise<void> {
     const id = idOf(item);
@@ -626,10 +654,21 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
     }
   }, []);
 
+  const searchParams = useSearchParams();
+  const initialResourceId = searchParams.get("resource");
   useEffect(() => {
     void load();
     void loadPatients();
   }, [load, loadPatients]);
+  useEffect(() => {
+    if (!initialResourceId || !departments.length) return;
+    const match = departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId);
+    if (match) {
+      const name = display(match.name ?? match.label ?? match.id);
+      setDepartment(name);
+      setKeyword(name);
+    }
+  }, [initialResourceId, departments]);
 
   useEffect(() => {
     if (!resumeAppointmentId) return;
@@ -917,11 +956,12 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
 }
 
 function RideBrowse() {
-  const [pickup, setPickup] = useState("");
-  const [dropoff, setDropoff] = useState("");
+  const searchParams = useSearchParams();
+  const [pickup, setPickup] = useState(searchParams.get("pickup") ?? "");
+  const [dropoff, setDropoff] = useState(searchParams.get("dropoff") ?? "");
   const [pickupPoint, setPickupPoint] = useState<Point>();
   const [dropoffPoint, setDropoffPoint] = useState<Point>();
-  const [vehicle, setVehicle] = useState<"BIKE" | "CAR_4" | "CAR_7">("CAR_4");
+  const [vehicle, setVehicle] = useState<"BIKE" | "CAR_4" | "CAR_7">((searchParams.get("vehicle") as any) ?? "CAR_4");
   const [quote, setQuote] = useState<RideQuote>();
   const [booking, setBooking] = useState<JsonRecord>();
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
@@ -965,7 +1005,7 @@ function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
   };
 }
 
-function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) { const noDriver = booking.status === "NO_DRIVER"; const completed = booking.status === "COMPLETED"; const searching = booking.status === "SEARCHING_DRIVER"; return <div className="ride-result"><div className="success-card"><Check size={18} /><strong>{noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}</strong><span>{noDriver ? "Bạn có thể thử lại với một điểm đón khác." : searching ? "Đang tìm tài xế gần bạn…" : `Trạng thái hiện tại: ${statusLabel(booking.status)}`}</span></div><RideTrackingPanel bookingId={String(booking.id)} /><p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p></div>; }
+function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) { const { data: tracking } = useRideTracking(String(booking.id)); const currentStatus = tracking?.status ?? booking.status; const noDriver = currentStatus === "NO_DRIVER"; const completed = currentStatus === "COMPLETED"; const searching = currentStatus === "SEARCHING_DRIVER"; const cancelled = currentStatus === "CANCELLED"; return <div className="ride-result"><div className="success-card"><Check size={18} /><strong>{cancelled ? "Chuyến đã bị hủy" : noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}</strong><span>{cancelled ? "Bạn có thể thử lại với một báo giá mới." : noDriver ? "Bạn có thể thử lại với một điểm đón khác." : searching ? "Đang tìm tài xế gần bạn…" : `Trạng thái hiện tại: ${statusLabel(currentStatus)}`}</span></div><RideTrackingPanel bookingId={String(booking.id)} polling />{cancelled ? null : <p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p>}</div>; }
 
 function AddressAutocompleteField({ id, label, value, placeholder, onChange, onSelect }: { id: string; label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (candidate: GeocodeCandidate) => void }) {
   const [suggestions, setSuggestions] = useState<GeocodeCandidate[]>([]);

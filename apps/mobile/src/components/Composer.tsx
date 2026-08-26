@@ -109,9 +109,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: theme.colors.primary,
     justifyContent: 'center',
     alignItems: 'center',

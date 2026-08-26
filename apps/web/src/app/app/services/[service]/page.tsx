@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 
 import { ServiceBrowse } from "@/features/product/service-browse";
@@ -9,5 +10,9 @@ export default async function ServiceBrowsePage({ params, searchParams }: { para
   const { service } = await params;
   const query = await searchParams;
   if (!services.includes(service as ServiceKey)) notFound();
-  return <ServiceBrowse service={service as ServiceKey} resumeAppointmentId={service === "healthcare" ? query.appointment_id : undefined} />;
+  return (
+    <Suspense fallback={<p className="inline-note">Đang tải dịch vụ…</p>}>
+      <ServiceBrowse service={service as ServiceKey} resumeAppointmentId={service === "healthcare" ? query.appointment_id : undefined} />
+    </Suspense>
+  );
 }
