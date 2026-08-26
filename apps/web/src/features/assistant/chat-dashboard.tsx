@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
@@ -155,34 +156,94 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     let active = true;
     let timer: number | undefined;
     let request: AbortController | undefined;
-    const refresh = async (): Promise<void> => {
+    let lastFetchTime = 0;
+    let consecutiveUnchanged = 0;
+
+    const scheduleNext = (interval: number) => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      if (active && !document.hidden) {
+        timer = window.setTimeout(() => { void refresh(); }, interval);
+      }
+    };
+
+    const refresh = async (resetBackoff = false): Promise<void> => {
       if (!active || document.hidden || request) return;
+
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTime;
+      // Enforce minimum 5s gap between requests under any circumstance
+      if (lastFetchTime > 0 && timeSinceLastFetch < 5000) {
+        const remainingDelay = 5000 - timeSinceLastFetch;
+        scheduleNext(remainingDelay);
+        return;
+      }
+
+      if (resetBackoff) {
+        consecutiveUnchanged = 0;
+      }
+
       request = new AbortController();
+      lastFetchTime = Date.now();
+
       try {
         const result = await getActiveHistory(request.signal);
-        if (active) setActiveItems((current) => sameHistoryItems(current, result.items) ? current : result.items);
-        if (active && result.items.length && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
+        if (!active) return;
+
+        let currentItems: HistoryItem[] = [];
+        setActiveItems((previous) => {
+          const isSame = sameHistoryItems(previous, result.items);
+          if (isSame) {
+            consecutiveUnchanged += 1;
+          } else {
+            consecutiveUnchanged = 0;
+          }
+          currentItems = result.items;
+          return isSame ? previous : result.items;
+        });
+
+        const nextInterval = calculatePollingInterval(currentItems, consecutiveUnchanged);
+        scheduleNext(nextInterval);
       } catch {
         // Keep the last known active work visible during a transient network failure.
-        if (active && !document.hidden) timer = window.setTimeout(() => { void refresh(); }, 5000);
+        const fallbackInterval = calculatePollingInterval([], consecutiveUnchanged);
+        scheduleNext(fallbackInterval);
+      } finally {
+        request = undefined;
       }
-      finally { request = undefined; }
     };
+
     const handleVisibilityChange = () => {
       if (document.hidden) {
         if (timer !== undefined) window.clearTimeout(timer);
         timer = undefined;
       } else {
-        void refresh();
+        void refresh(true);
       }
     };
+
+    const handleWindowFocus = () => {
+      if (!document.hidden) {
+        void refresh(true);
+      }
+    };
+
+    const handleActiveWorkChanged = () => {
+      void refresh(true);
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("xone-active-work-changed", handleActiveWorkChanged);
+
     void refresh();
+
     return () => {
       active = false;
       if (timer !== undefined) window.clearTimeout(timer);
       request?.abort();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("xone-active-work-changed", handleActiveWorkChanged);
     };
   }, [activeRefreshNonce, user.sub]);
 
