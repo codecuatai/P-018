@@ -17,12 +17,12 @@ export type ParsedRideDriver = {
 };
 
 export function RideTrackingPanel(props: { bookingId: string; hideMap?: boolean; className?: string; polling?: boolean }) {
-  const { data: tracking } = useRideTracking(props.bookingId, props.polling ?? false);
+  const { data: tracking } = useRideTracking(props.bookingId, true);
   return <><RideTrackingPanelContent {...props} /><RideCancelButton bookingId={props.bookingId} status={tracking?.status} /></>;
 }
 
 function RideTrackingPanelContent({ bookingId, hideMap = false, className, polling = false }: { bookingId: string; hideMap?: boolean; className?: string; polling?: boolean }) {
-  const { data: tracking, loading, error } = useRideTracking(bookingId, polling);
+  const { data: tracking, loading, error } = useRideTracking(bookingId, true);
   const origin = pointFrom(tracking?.route?.origin);
   const destination = pointFrom(tracking?.route?.destination);
   const current = tracking?.current_location ?? undefined;

@@ -55,7 +55,7 @@ export function ActiveRideRailCard({ ride, onDetails }: { ride: HistoryItem; onD
 
 export function ActiveWorkRailCard({ item, onDetails, children }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; children?: ReactNode }) {
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
-  const { data: tracking } = useRideTracking(bookingId, false);
+  const { data: tracking } = useRideTracking(bookingId);
   const driver = parseRideDriver(tracking?.driver);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
@@ -84,7 +84,7 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   const [error, setError] = useState("");
 
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
-  const { data: tracking } = useRideTracking(bookingId, false);
+  const { data: tracking } = useRideTracking(bookingId);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const canCancel = isCancellableStatus(item.type, status);
 

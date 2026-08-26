@@ -41,6 +41,7 @@ import {
 import type { AssistantRideItem, GeocodeCandidate, HealthcarePatient, RideQuote, SavedAddress, ServiceKey } from "@/types";
 
 import { RideTrackingPanel } from "./ride-tracking";
+import { useRideTracking } from "./ride-tracking-cache";
 import { FoodTrackingPanel } from "./food-tracking";
 import { XOneMap } from "./xone-map";
 import { formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
@@ -907,7 +908,7 @@ function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
   };
 }
 
-function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) { const noDriver = booking.status === "NO_DRIVER"; const completed = booking.status === "COMPLETED"; const searching = booking.status === "SEARCHING_DRIVER"; return <div className="ride-result"><div className="success-card"><Check size={18} /><strong>{noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}</strong><span>{noDriver ? "Bạn có thể thử lại với một điểm đón khác." : searching ? "Đang tìm tài xế gần bạn…" : `Trạng thái hiện tại: ${statusLabel(booking.status)}`}</span></div><RideTrackingPanel bookingId={String(booking.id)} /><p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p></div>; }
+function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) { const { data: tracking } = useRideTracking(String(booking.id)); const currentStatus = tracking?.status ?? booking.status; const noDriver = currentStatus === "NO_DRIVER"; const completed = currentStatus === "COMPLETED"; const searching = currentStatus === "SEARCHING_DRIVER"; const cancelled = currentStatus === "CANCELLED"; return <div className="ride-result"><div className="success-card"><Check size={18} /><strong>{cancelled ? "Chuyến đã bị hủy" : noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}</strong><span>{cancelled ? "Bạn có thể thử lại với một báo giá mới." : noDriver ? "Bạn có thể thử lại với một điểm đón khác." : searching ? "Đang tìm tài xế gần bạn…" : `Trạng thái hiện tại: ${statusLabel(currentStatus)}`}</span></div><RideTrackingPanel bookingId={String(booking.id)} polling />{cancelled ? null : <p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p>}</div>; }
 
 function AddressAutocompleteField({ id, label, value, placeholder, onChange, onSelect }: { id: string; label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (candidate: GeocodeCandidate) => void }) {
   const [suggestions, setSuggestions] = useState<GeocodeCandidate[]>([]);
