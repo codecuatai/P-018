@@ -105,7 +105,7 @@ export function FeedbackSection() {
                     <td><code>{item.actor_id}</code></td>
                     <td><span className="admin-badge">{item.domain}</span></td>
                     <td><code>{item.resource_id}</code></td>
-                    <td>{"★".repeat(item.rating)}{"☆".repeat(5 - item.rating)} ({item.rating}/5)</td>
+                    <td>{"★".repeat(Math.max(0, Math.min(5, item.rating)))}{"☆".repeat(Math.max(0, 5 - item.rating))} ({item.rating}/5)</td>
                     <td>{item.comment || "—"}</td>
                     <td>{new Date(item.created_at).toLocaleString("vi-VN")}</td>
                   </tr>

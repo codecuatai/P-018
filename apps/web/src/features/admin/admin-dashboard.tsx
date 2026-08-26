@@ -44,22 +44,10 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import {
-  errorText,
-  getAdminDatasets,
-  getAdminPayments,
-  getAdminSupportTickets,
-  getAdminSummary,
-  getAdminSystemHealth,
-  getAdminTransactions,
-  getAdminUsers,
-  getAdminWorkflows,
-  updateAdminSupportTicket,
-} from "@/lib/api-client";
 import { useOptionalAuth } from "@/providers/auth-provider";
 import type {
   AdminHealthCheck,
@@ -78,120 +66,17 @@ import { FeedbackSection } from "./sections/feedback-section";
 import { SystemLogsSection } from "./sections/system-logs-section";
 import { TokenUsageSection } from "./sections/token-usage-section";
 import { UserServicesSection } from "./sections/user-services-section";
-
-type Loadable<T> = { data?: T; loading: boolean; error?: string };
-
-// 6 Consolidated Main Tabs
-export type MainTabId =
-  | "overview"
-  | "users"
-  | "transactions"
-  | "ai-integrations"
-  | "support"
-  | "system-logs";
-
-export type SubTabId =
-  | "summary"
-  | "health"
-  | "datasets"
-  | "user-list"
-  | "user-services"
-  | "domain-trans"
-  | "payments-list"
-  | "workflow-reconciliation"
-  | "api-keys"
-  | "token-usage"
-  | "support-queue"
-  | "feedback-ratings"
-  | "logs-view";
-
-interface TabDefinition {
-  id: MainTabId;
-  label: string;
-  subtitle: string;
-  icon: typeof Gauge;
-  subtabs: Array<{ id: SubTabId; label: string; icon: typeof LayoutDashboard; hashName?: string }>;
-}
-
-const CONSOLIDATED_TABS: TabDefinition[] = [
-  {
-    id: "overview",
-    label: "Tổng quan & Sức khỏe",
-    subtitle: "Chỉ số tổng hợp, sức khỏe microservices và trạng thái dataset",
-    icon: Gauge,
-    subtabs: [
-      { id: "summary", label: "Tổng quan", icon: LayoutDashboard, hashName: "overview" },
-      { id: "health", label: "Sức khỏe hệ thống", icon: HeartPulse, hashName: "health" },
-      { id: "datasets", label: "Dataset & độ tươi", icon: Database, hashName: "datasets" },
-    ],
-  },
-  {
-    id: "users",
-    label: "Người dùng & Phân quyền",
-    subtitle: "Danh sách người dùng và quản lý quyền truy cập dịch vụ",
-    icon: Users,
-    subtabs: [
-      { id: "user-list", label: "Người dùng", icon: Users, hashName: "users" },
-      { id: "user-services", label: "Dịch vụ User", icon: ShieldCheck, hashName: "user-services" },
-    ],
-  },
-  {
-    id: "transactions",
-    label: "Giao dịch & Vận hành",
-    subtitle: "Đơn hàng domain, dòng tiền thanh toán và đối soát workflow",
-    icon: Activity,
-    subtabs: [
-      { id: "domain-trans", label: "Giao dịch domain", icon: ShoppingBag, hashName: "transactions" },
-      { id: "payments-list", label: "Thanh toán & hoàn tiền", icon: CreditCard, hashName: "payments" },
-      { id: "workflow-reconciliation", label: "Workflow reconciliation", icon: Workflow, hashName: "workflows" },
-    ],
-  },
-  {
-    id: "ai-integrations",
-    label: "AI Engine & API Keys",
-    subtitle: "Quản lý khóa API đối tác, token usage và dự toán chi phí AI",
-    icon: Sparkles,
-    subtabs: [
-      { id: "api-keys", label: "Quản lý API Keys", icon: Key, hashName: "api-keys" },
-      { id: "token-usage", label: "Tokens & AI Cost", icon: Sparkles, hashName: "token-usage" },
-    ],
-  },
-  {
-    id: "support",
-    label: "Hỗ trợ & Đánh giá",
-    subtitle: "Xử lý hàng đợi support tickets và theo dõi đánh giá dịch vụ",
-    icon: LifeBuoy,
-    subtabs: [
-      { id: "support-queue", label: "Support queue", icon: LifeBuoy, hashName: "support" },
-      { id: "feedback-ratings", label: "Đánh giá & Phản hồi", icon: Star, hashName: "feedback" },
-    ],
-  },
-  {
-    id: "system-logs",
-    label: "System Logs & Audit",
-    subtitle: "Truy vết nhật ký vận hành và audit trail thời gian thực",
-    icon: ScrollText,
-    subtabs: [
-      { id: "logs-view", label: "System Logs", icon: ScrollText, hashName: "system-logs" },
-    ],
-  },
-];
+import { CONSOLIDATED_TABS } from "./admin-tabs";
+import type { Loadable, MainTabId, SubTabId } from "./admin.types";
+import { useAdminData } from "./hooks/use-admin-data";
+import { useAdminNavigation } from "./hooks/use-admin-navigation";
 
 export function AdminDashboard() {
   const auth = useOptionalAuth();
   const user = auth?.user;
   const logout = auth?.logout ?? (async () => {});
 
-  // Tab State
-  const [activeMainTab, setActiveMainTab] = useState<MainTabId>("overview");
-  const [activeSubTab, setActiveSubTab] = useState<Record<MainTabId, SubTabId>>({
-    overview: "summary",
-    users: "user-list",
-    transactions: "domain-trans",
-    "ai-integrations": "api-keys",
-    support: "support-queue",
-    "system-logs": "logs-view",
-  });
+  const { activeMainTab, activeSubTab, switchMainTab, switchSubTab } = useAdminNavigation();
 
   // Sidebar Layout State
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -199,69 +84,24 @@ export function AdminDashboard() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [sidebarSearch, setSidebarSearch] = useState("");
 
-  // Data States
-  const [summary, setSummary] = useState<Loadable<AdminSummary>>({ loading: true });
-  const [users, setUsers] = useState<Loadable<{ items: AdminUserRecord[]; total: number; page: number; page_size: number }>>({ loading: true });
-  const [transactions, setTransactions] = useState<Loadable<{ items: AdminTransactionRecord[]; page: number; page_size: number; partial: boolean; unavailable: string[] }>>({ loading: true });
-  const [payments, setPayments] = useState<Loadable<AdminPayments>>({ loading: true });
-  const [workflows, setWorkflows] = useState<Loadable<{ items: AdminWorkflowRecord[]; total: number; page: number; page_size: number }>>({ loading: true });
-  const [datasets, setDatasets] = useState<Loadable<{ items: AdminSummary["datasets"] }>>({ loading: true });
-  const [health, setHealth] = useState<Loadable<{ items: AdminHealthCheck[] }>>({ loading: true });
-  const [support, setSupport] = useState<Loadable<{ items: SupportTicket[]; total: number }>>({ loading: true });
-  const [refreshing, setRefreshing] = useState(false);
+  const {
+    summary,
+    users,
+    transactions,
+    payments,
+    workflows,
+    datasets,
+    health,
+    support,
+    refreshing,
+    lastCheckedAt,
+    load,
+    refreshHealth,
+    refreshTransactions,
+    refreshWorkflows,
+    updateTicket,
+  } = useAdminData();
   const [autoPollHealth, setAutoPollHealth] = useState(false);
-  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
-
-  // Sync with window hash on load & hashchange
-  useEffect(() => {
-    const handleHash = () => {
-      const hash = window.location.hash.replace("#", "");
-      if (!hash) return;
-
-      for (const tab of CONSOLIDATED_TABS) {
-        if (tab.id === hash) {
-          setActiveMainTab(tab.id);
-          return;
-        }
-        for (const sub of tab.subtabs) {
-          if (sub.hashName === hash || sub.id === hash) {
-            setActiveMainTab(tab.id);
-            setActiveSubTab((prev) => ({ ...prev, [tab.id]: sub.id }));
-            return;
-          }
-        }
-      }
-    };
-    handleHash();
-    window.addEventListener("hashchange", handleHash);
-    return () => window.removeEventListener("hashchange", handleHash);
-  }, []);
-
-  const switchMainTab = (mainTabId: MainTabId, targetSubTabId?: SubTabId) => {
-    setActiveMainTab(mainTabId);
-    if (targetSubTabId) {
-      setActiveSubTab((prev) => ({ ...prev, [mainTabId]: targetSubTabId }));
-    }
-    const tabDef = CONSOLIDATED_TABS.find((t) => t.id === mainTabId);
-    const sub = targetSubTabId || activeSubTab[mainTabId] || tabDef?.subtabs[0]?.id;
-    const subDef = tabDef?.subtabs.find((s) => s.id === sub);
-    try {
-      window.history.replaceState(null, "", `#${subDef?.hashName || mainTabId}`);
-    } catch {
-      // ignore
-    }
-  };
-
-  const switchSubTab = (subTabId: SubTabId) => {
-    setActiveSubTab((prev) => ({ ...prev, [activeMainTab]: subTabId }));
-    const tabDef = CONSOLIDATED_TABS.find((t) => t.id === activeMainTab);
-    const subDef = tabDef?.subtabs.find((s) => s.id === subTabId);
-    try {
-      window.history.replaceState(null, "", `#${subDef?.hashName || subTabId}`);
-    } catch {
-      // ignore
-    }
-  };
 
   // Saved Sidebar Width & Collapsed State
   useEffect(() => {
@@ -337,65 +177,6 @@ export function AdminDashboard() {
     }
   }
 
-  const load = useCallback(async () => {
-    setRefreshing(true);
-    const requests = await Promise.allSettled([
-      getAdminSummary(),
-      getAdminUsers(),
-      getAdminTransactions(),
-      getAdminPayments(),
-      getAdminWorkflows(),
-      getAdminDatasets(),
-      getAdminSystemHealth(),
-      getAdminSupportTickets(),
-    ]);
-    const [summaryRes, usersRes, transRes, payRes, workRes, dataRes, healthRes, suppRes] = requests;
-    setSummary(loadable(summaryRes));
-    setUsers(loadable(usersRes));
-    setTransactions(loadable(transRes));
-    setPayments(loadable(payRes));
-    setWorkflows(loadable(workRes));
-    setDatasets(loadable(dataRes));
-    setHealth(loadable(healthRes));
-    setSupport(loadable(suppRes));
-    setLastCheckedAt(Date.now());
-    setRefreshing(false);
-  }, []);
-
-  const refreshHealth = useCallback(async () => {
-    try {
-      const res = await getAdminSystemHealth();
-      setHealth({ loading: false, data: res });
-      setLastCheckedAt(Date.now());
-    } catch (err) {
-      setHealth({ loading: false, error: errorText(err) });
-    }
-  }, []);
-
-  const refreshTransactions = useCallback(async () => {
-    setTransactions((prev) => ({ ...prev, loading: true, error: undefined }));
-    try {
-      const res = await getAdminTransactions();
-      setTransactions({ loading: false, data: res });
-    } catch (err) {
-      setTransactions({ loading: false, error: errorText(err) });
-    }
-  }, []);
-
-  const refreshWorkflows = useCallback(async () => {
-    setWorkflows((prev) => ({ ...prev, loading: true, error: undefined }));
-    try {
-      const res = await getAdminWorkflows();
-      setWorkflows({ loading: false, data: res });
-    } catch (err) {
-      setWorkflows({ loading: false, error: errorText(err) });
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
   // Health auto-polling
   useEffect(() => {
     if (!autoPollHealth) return;
@@ -430,18 +211,6 @@ export function AdminDashboard() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [autoPollHealth, refreshHealth]);
-
-  async function updateTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) {
-    try {
-      const updated = await updateAdminSupportTicket(id, patch);
-      setSupport((current) => ({
-        ...current,
-        data: current.data ? { ...current.data, items: current.data.items.map((t) => (t.id === id ? updated : t)) } : current.data,
-      }));
-    } catch (error) {
-      setSupport((current) => ({ ...current, error: errorText(error) }));
-    }
-  }
 
   const currentTabDef = CONSOLIDATED_TABS.find((t) => t.id === activeMainTab) || CONSOLIDATED_TABS[0];
   const CurrentIcon = currentTabDef.icon;
@@ -2063,10 +1832,6 @@ function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick:
     return () => document.removeEventListener("mousedown", handleClick);
   }, [active, onOutsideClick]);
   return ref;
-}
-
-function loadable<T>(result: PromiseSettledResult<T>): Loadable<T> {
-  return result.status === "fulfilled" ? { data: result.value, loading: false } : { loading: false, error: errorText(result.reason) };
 }
 
 function valueNumber(value: unknown): string {

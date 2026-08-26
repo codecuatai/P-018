@@ -24,6 +24,34 @@ export type HealthItem = {
   error?: string;
 };
 
+type SanitizedApiKey = {
+  id: string;
+  provider: string;
+  label: string;
+  last4: string;
+  status: string;
+  expiresAt?: string;
+  updatedAt: string;
+  updatedBy: string;
+  createdAt: string;
+};
+
+// Return only safe metadata for API keys — never expose ciphertext, IV, auth tag,
+// or idempotency bookkeeping to the client.
+function sanitizeApiKey(k: SanitizedApiKey): JsonObject {
+  return {
+    id: k.id,
+    provider: k.provider,
+    label: k.label,
+    last4: k.last4,
+    status: k.status,
+    expires_at: k.expiresAt,
+    updated_at: k.updatedAt,
+    updated_by: k.updatedBy,
+    created_at: k.createdAt,
+  } as unknown as JsonObject;
+}
+
 function adminFeedbackResponse(
   result: {
     items: Array<{
@@ -370,17 +398,10 @@ export class AdminService {
 
   async listApiKeys(): Promise<{ items: JsonObject[] }> {
     const keys = await this.core.queryApiKeys();
-    const normalized = keys.map((k) => ({
-      ...k,
-      updated_at: k.updatedAt,
-      updated_by: k.updatedBy,
-      created_at: k.createdAt,
-      expires_at: k.expiresAt,
-    }));
-    return { items: normalized as unknown as JsonObject[] };
+    return { items: keys.map((k) => sanitizeApiKey(k)) };
   }
 
-  async createApiKey(data: { provider: 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other'; label: string; key: string; environment?: string; expires_at?: string }, actorId: string, correlationId: string): Promise<JsonObject> {
+  async createApiKey(data: { provider: 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other'; label: string; key: string; expires_at?: string }, actorId: string, correlationId: string): Promise<JsonObject> {
     const rawKey = data.key.trim();
     const last4 = rawKey.length > 4 ? `...${rawKey.slice(-4)}` : rawKey;
     const id = `key_${randomUUID()}`;
@@ -394,7 +415,6 @@ export class AdminService {
       keyCiphertext: encrypted.ciphertext,
       keyIv: encrypted.iv,
       keyAuthTag: encrypted.authTag,
-      environment: data.environment ?? 'development',
       expiresAt: data.expires_at,
       updatedBy: actorId,
     });
@@ -403,9 +423,9 @@ export class AdminService {
       actorId,
       correlationId,
       resourceId: id,
-      metadata: { provider: data.provider, label: data.label, environment: data.environment ?? 'development' },
+      metadata: { provider: data.provider, label: data.label },
     });
-    return created as unknown as JsonObject;
+    return sanitizeApiKey(created);
   }
 
   async rotateApiKey(id: string, data: { key: string; expires_at?: string }, actorId: string, correlationId: string, idempotencyKey: string): Promise<JsonObject | undefined> {
@@ -442,7 +462,7 @@ export class AdminService {
           metadata: { provider: res.record.provider, label: res.record.label, idempotencyKey, requestHash },
         });
       }
-      return res.record as unknown as JsonObject;
+      return sanitizeApiKey(res.record);
     }
     return undefined;
   }
@@ -472,7 +492,7 @@ export class AdminService {
           metadata: { provider: res.record.provider, label: res.record.label, idempotencyKey, requestHash },
         });
       }
-      return res.record as unknown as JsonObject;
+      return sanitizeApiKey(res.record);
     }
     return undefined;
   }
@@ -515,7 +535,7 @@ export class AdminService {
   }
 
   async systemLogs(filters: { correlation_id?: string; actor_id?: string; action?: string; from_time?: string; to_time?: string; page?: number; page_size?: number } = {}): Promise<JsonObject> {
-    return this.core.queryAuditLogs({
+    const result = (await this.core.queryAuditLogs({
       actorId: filters.actor_id,
       action: filters.action,
       correlationId: filters.correlation_id,
@@ -523,7 +543,17 @@ export class AdminService {
       toTime: filters.to_time,
       page: filters.page,
       pageSize: filters.page_size,
-    }) as unknown as JsonObject;
+    })) as unknown as { items: Array<Record<string, unknown>>; total: number };
+    const items = (result.items ?? []).map((entry) => ({
+      id: entry.id,
+      action: entry.action,
+      actor_id: entry.actorId,
+      resource_id: entry.resourceId,
+      correlation_id: entry.correlationId,
+      metadata: entry.metadata,
+      created_at: entry.createdAt,
+    }));
+    return { items, total: result.total ?? items.length } as unknown as JsonObject;
   }
 
   async tokenUsageSummary(filters: { from_time?: string; to_time?: string; feature?: string; model?: string } = {}): Promise<JsonObject> {

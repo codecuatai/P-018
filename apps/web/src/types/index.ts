@@ -288,7 +288,6 @@ export interface AdminApiKeyRecord {
   label: string;
   last4: string;
   status: "active" | "disabled" | "expired";
-  environment: string;
   expires_at?: string;
   updated_at: string;
   updated_by: string;

@@ -35,7 +35,6 @@ class CreateApiKeyDto {
   @IsNotEmpty() @IsIn(['gemini', 'trello', 'geoapify', 'google_maps', 'other']) provider!: 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other';
   @IsNotEmpty() @IsString() label!: string;
   @IsNotEmpty() @IsString() key!: string;
-  @IsOptional() @IsString() environment?: string;
   @IsOptional() @IsString() expires_at?: string;
 }
 

@@ -2,22 +2,15 @@
 
 import { useEffect, useState } from "react";
 import {
-  Activity,
   Car,
   Check,
-  CheckCircle2,
   Copy,
-  ExternalLink,
   HeartPulse,
   Mail,
   MessageSquare,
-  Search,
   Shield,
   ShoppingBag,
   Star,
-  ToggleLeft,
-  ToggleRight,
-  User,
   Utensils,
 } from "lucide-react";
 import { errorText, getAdminUserFeedback, getAdminUserServices } from "@/lib/api-client";
@@ -28,13 +21,6 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
   const [userSummary, setUserSummary] = useState<{ loading: boolean; data?: AdminUserServiceSummary; error?: string }>({ loading: false });
   const [userFeedback, setUserFeedback] = useState<{ loading: boolean; data?: AdminFeedbackSummary; error?: string }>({ loading: false });
   const [copiedId, setCopiedId] = useState(false);
-  const [servicePermissions, setServicePermissions] = useState<Record<string, boolean>>({
-    food: true,
-    ride: true,
-    restaurant: true,
-    healthcare: true,
-  });
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!selectedUserId && users.length > 0) {
@@ -80,15 +66,6 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const toggleService = (domainKey: string, domainName: string) => {
-    const nextState = !servicePermissions[domainKey];
-    setServicePermissions((prev) => ({ ...prev, [domainKey]: nextState }));
-    setToastMessage(
-      `Đã ${nextState ? "kích hoạt" : "tạm dừng"} dịch vụ ${domainName} cho tài khoản ${selectedUser?.email || "này"}.`
-    );
-    setTimeout(() => setToastMessage(null), 3000);
-  };
-
   const getUserInitials = (name?: string, email?: string) => {
     if (name && name.trim()) {
       const parts = name.trim().split(/\s+/);
@@ -96,6 +73,15 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
     }
     return email ? email.slice(0, 2).toUpperCase() : "US";
   };
+
+  const services = userSummary.data
+    ? [
+        { key: "food", name: "Ẩm thực (Food)", icon: <ShoppingBag size={18} />, iconStyle: { background: "#FFF7ED", color: "#EA580C" }, count: userSummary.data.food_count, unit: "đơn hàng đã đặt" },
+        { key: "ride", name: "Di chuyển (Ride)", icon: <Car size={18} />, iconStyle: { background: "#ECFDF5", color: "#059669" }, count: userSummary.data.ride_count, unit: "chuyến xe hoàn tất" },
+        { key: "restaurant", name: "Đặt bàn (Restaurant)", icon: <Utensils size={18} />, iconStyle: { background: "#FEF3C7", color: "#D97706" }, count: userSummary.data.restaurant_count, unit: "lượt đặt bàn" },
+        { key: "healthcare", name: "Y tế (Healthcare)", icon: <HeartPulse size={18} />, iconStyle: { background: "#EFF6FF", color: "#2563EB" }, count: userSummary.data.healthcare_count, unit: "lịch khám đã đặt" },
+      ]
+    : [];
 
   return (
     <div className="admin-subcontent">
@@ -119,28 +105,6 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
           </select>
         </div>
       </div>
-
-      {/* Toast Alert */}
-      {toastMessage && (
-        <div
-          style={{
-            margin: "0.75rem 0",
-            padding: "10px 14px",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            background: "#ECFDF5",
-            border: "1px solid #A7F3D0",
-            color: "#065F46",
-            borderRadius: "8px",
-            fontSize: "0.74rem",
-            fontWeight: 500,
-          }}
-        >
-          <CheckCircle2 size={16} />
-          <span>{toastMessage}</span>
-        </div>
-      )}
 
       {selectedUser && (
         <div className="admin-user-card">
@@ -202,169 +166,34 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
         </div>
       ) : userSummary.data ? (
         <>
-          {/* Multi-Service Operations Matrix */}
+          {/* Multi-Service Activity Matrix (read-only) */}
           <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
               <h3 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--color-navy)", margin: 0 }}>
-                Phân quyền & Hoạt động 4 Domain dịch vụ
+                Hoạt động 4 Domain dịch vụ
               </h3>
               <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>
-                Quản lý bật/tắt quyền truy cập từng dịch vụ theo tài khoản
+                Số liệu sử dụng dịch vụ theo tài khoản
               </span>
             </div>
 
             <div className="admin-service-matrix">
-              {/* Food */}
-              <div className="admin-service-item">
-                <div className="admin-service-item-header">
-                  <div className="admin-service-item-icon" style={{ background: "#FFF7ED", color: "#EA580C" }}>
-                    <ShoppingBag size={18} />
+              {services.map((svc) => (
+                <div className="admin-service-item" key={svc.key}>
+                  <div className="admin-service-item-header">
+                    <div className="admin-service-item-icon" style={svc.iconStyle}>
+                      {svc.icon}
+                    </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleService("food", "Ẩm thực (Food)")}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: servicePermissions.food ? "#059669" : "#94A3B8" }}
-                    title={servicePermissions.food ? "Nhấn để tạm dừng dịch vụ" : "Nhấn để kích hoạt dịch vụ"}
-                  >
-                    {servicePermissions.food ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                  </button>
-                </div>
-                <div>
-                  <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>Ẩm thực (Food)</strong>
-                  <div className="admin-service-item-stat">
-                    <strong>{userSummary.data.food_count}</strong>
-                    <span>đơn hàng đã đặt</span>
+                  <div>
+                    <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>{svc.name}</strong>
+                    <div className="admin-service-item-stat">
+                      <strong>{svc.count}</strong>
+                      <span>{svc.unit}</span>
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-                  <span
-                    className={`admin-badge status-${servicePermissions.food ? "healthy" : "unavailable"}`}
-                    style={{ fontSize: "0.64rem" }}
-                  >
-                    {servicePermissions.food ? "Quyền kích hoạt" : "Đã tạm dừng"}
-                  </span>
-                  <a
-                    href="#transactions"
-                    style={{ fontSize: "0.68rem", color: "var(--color-brand, #3B82F6)", textDecoration: "none", display: "flex", alignItems: "center", gap: "2px" }}
-                  >
-                    Xem lịch sử <ExternalLink size={10} />
-                  </a>
-                </div>
-              </div>
-
-              {/* Ride */}
-              <div className="admin-service-item">
-                <div className="admin-service-item-header">
-                  <div className="admin-service-item-icon" style={{ background: "#ECFDF5", color: "#059669" }}>
-                    <Car size={18} />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleService("ride", "Di chuyển (Ride)")}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: servicePermissions.ride ? "#059669" : "#94A3B8" }}
-                    title={servicePermissions.ride ? "Nhấn để tạm dừng dịch vụ" : "Nhấn để kích hoạt dịch vụ"}
-                  >
-                    {servicePermissions.ride ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                  </button>
-                </div>
-                <div>
-                  <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>Di chuyển (Ride)</strong>
-                  <div className="admin-service-item-stat">
-                    <strong>{userSummary.data.ride_count}</strong>
-                    <span>chuyến xe hoàn tất</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-                  <span
-                    className={`admin-badge status-${servicePermissions.ride ? "healthy" : "unavailable"}`}
-                    style={{ fontSize: "0.64rem" }}
-                  >
-                    {servicePermissions.ride ? "Quyền kích hoạt" : "Đã tạm dừng"}
-                  </span>
-                  <a
-                    href="#transactions"
-                    style={{ fontSize: "0.68rem", color: "var(--color-brand, #3B82F6)", textDecoration: "none", display: "flex", alignItems: "center", gap: "2px" }}
-                  >
-                    Xem lịch sử <ExternalLink size={10} />
-                  </a>
-                </div>
-              </div>
-
-              {/* Restaurant */}
-              <div className="admin-service-item">
-                <div className="admin-service-item-header">
-                  <div className="admin-service-item-icon" style={{ background: "#FEF3C7", color: "#D97706" }}>
-                    <Utensils size={18} />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleService("restaurant", "Đặt bàn (Restaurant)")}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: servicePermissions.restaurant ? "#059669" : "#94A3B8" }}
-                    title={servicePermissions.restaurant ? "Nhấn để tạm dừng dịch vụ" : "Nhấn để kích hoạt dịch vụ"}
-                  >
-                    {servicePermissions.restaurant ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                  </button>
-                </div>
-                <div>
-                  <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>Đặt bàn (Restaurant)</strong>
-                  <div className="admin-service-item-stat">
-                    <strong>{userSummary.data.restaurant_count}</strong>
-                    <span>lượt đặt bàn</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-                  <span
-                    className={`admin-badge status-${servicePermissions.restaurant ? "healthy" : "unavailable"}`}
-                    style={{ fontSize: "0.64rem" }}
-                  >
-                    {servicePermissions.restaurant ? "Quyền kích hoạt" : "Đã tạm dừng"}
-                  </span>
-                  <a
-                    href="#transactions"
-                    style={{ fontSize: "0.68rem", color: "var(--color-brand, #3B82F6)", textDecoration: "none", display: "flex", alignItems: "center", gap: "2px" }}
-                  >
-                    Xem lịch sử <ExternalLink size={10} />
-                  </a>
-                </div>
-              </div>
-
-              {/* Healthcare */}
-              <div className="admin-service-item">
-                <div className="admin-service-item-header">
-                  <div className="admin-service-item-icon" style={{ background: "#EFF6FF", color: "#2563EB" }}>
-                    <HeartPulse size={18} />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleService("healthcare", "Y tế (Healthcare)")}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: servicePermissions.healthcare ? "#059669" : "#94A3B8" }}
-                    title={servicePermissions.healthcare ? "Nhấn để tạm dừng dịch vụ" : "Nhấn để kích hoạt dịch vụ"}
-                  >
-                    {servicePermissions.healthcare ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                  </button>
-                </div>
-                <div>
-                  <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>Y tế (Healthcare)</strong>
-                  <div className="admin-service-item-stat">
-                    <strong>{userSummary.data.healthcare_count}</strong>
-                    <span>lịch khám đã đặt</span>
-                  </div>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
-                  <span
-                    className={`admin-badge status-${servicePermissions.healthcare ? "healthy" : "unavailable"}`}
-                    style={{ fontSize: "0.64rem" }}
-                  >
-                    {servicePermissions.healthcare ? "Quyền kích hoạt" : "Đã tạm dừng"}
-                  </span>
-                  <a
-                    href="#transactions"
-                    style={{ fontSize: "0.68rem", color: "var(--color-brand, #3B82F6)", textDecoration: "none", display: "flex", alignItems: "center", gap: "2px" }}
-                  >
-                    Xem lịch sử <ExternalLink size={10} />
-                  </a>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
@@ -395,6 +224,10 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
               <div className="admin-loading" style={{ padding: "30px" }}>
                 <span className="loading-mark" /> Đang tải lịch sử đánh giá…
               </div>
+            ) : userFeedback.error ? (
+              <div className="admin-error" style={{ padding: "20px" }}>
+                <span>{userFeedback.error}</span>
+              </div>
             ) : userFeedback.data?.items && userFeedback.data.items.length > 0 ? (
               <div className="admin-table-wrap" style={{ border: "none", borderRadius: 0 }}>
                 <table className="admin-table">
@@ -423,7 +256,7 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
                         </td>
                         <td>
                           <span style={{ color: "#F59E0B", letterSpacing: "1px", fontSize: "0.85rem" }}>
-                            {"★".repeat(fb.rating)}
+                            {"★".repeat(Math.max(0, Math.min(5, fb.rating)))}
                             {"☆".repeat(Math.max(0, 5 - fb.rating))}
                           </span>{" "}
                           <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>({fb.rating}/5)</span>

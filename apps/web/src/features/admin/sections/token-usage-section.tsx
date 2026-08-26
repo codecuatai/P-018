@@ -63,22 +63,22 @@ export function TokenUsageSection() {
             <article className="admin-metric">
               <span className="admin-metric-icon"><Sparkles size={17} /></span>
               <span>Tổng Tokens tiêu thụ</span>
-              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_tokens)}</strong>
+              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_tokens ?? 0)}</strong>
             </article>
             <article className="admin-metric">
               <span className="admin-metric-icon"><Cpu size={17} /></span>
               <span>Prompt Tokens</span>
-              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_prompt_tokens)}</strong>
+              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_prompt_tokens ?? 0)}</strong>
             </article>
             <article className="admin-metric">
               <span className="admin-metric-icon"><Zap size={17} /></span>
               <span>Completion Tokens</span>
-              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_completion_tokens)}</strong>
+              <strong>{new Intl.NumberFormat("vi-VN").format(data.total_completion_tokens ?? 0)}</strong>
             </article>
             <article className="admin-metric">
               <span className="admin-metric-icon"><DollarSign size={17} /></span>
               <span>Ước tính Chi phí (USD)</span>
-              <strong>${data.total_estimated_cost_usd.toFixed(4)}</strong>
+              <strong>${(data.total_estimated_cost_usd ?? 0).toFixed(4)}</strong>
             </article>
           </div>
 
@@ -89,11 +89,11 @@ export function TokenUsageSection() {
                 <span>Token & Cost</span>
               </div>
               <div className="admin-domain-list">
-                {Object.entries(data.by_feature).map(([feat, val]) => (
+                {Object.entries(data.by_feature ?? {}).map(([feat, val]) => (
                   <div className="admin-domain-row" key={feat}>
                     <strong>{feat}</strong>
-                    <span className="admin-domain-detail">{new Intl.NumberFormat("vi-VN").format(val.total)} tokens</span>
-                    <span className="admin-badge">${val.cost.toFixed(4)}</span>
+                    <span className="admin-domain-detail">{new Intl.NumberFormat("vi-VN").format(val.total ?? 0)} tokens</span>
+                    <span className="admin-badge">${(val.cost ?? 0).toFixed(4)}</span>
                   </div>
                 ))}
               </div>
@@ -105,18 +105,18 @@ export function TokenUsageSection() {
                 <span>Token & Cost</span>
               </div>
               <div className="admin-domain-list">
-                {Object.entries(data.by_model).map(([mod, val]) => (
+                {Object.entries(data.by_model ?? {}).map(([mod, val]) => (
                   <div className="admin-domain-row" key={mod}>
                     <strong>{mod}</strong>
-                    <span className="admin-domain-detail">{new Intl.NumberFormat("vi-VN").format(val.total)} tokens</span>
-                    <span className="admin-badge">${val.cost.toFixed(4)}</span>
+                    <span className="admin-domain-detail">{new Intl.NumberFormat("vi-VN").format(val.total ?? 0)} tokens</span>
+                    <span className="admin-badge">${(val.cost ?? 0).toFixed(4)}</span>
                   </div>
                 ))}
               </div>
             </div>
           </div>
 
-          {data.top_consumers.length > 0 && (
+          {(data.top_consumers?.length ?? 0) > 0 && (
             <div className="admin-card" style={{ marginTop: "1rem" }}>
               <div className="admin-card-title">
                 <h3>Top người dùng tiêu thụ tokens nhiều nhất</h3>
@@ -132,11 +132,11 @@ export function TokenUsageSection() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.top_consumers.map((consumer) => (
+                    {(data.top_consumers ?? []).map((consumer) => (
                       <tr key={consumer.actor_id}>
                         <td><code>{consumer.actor_id}</code></td>
-                        <td><strong>{new Intl.NumberFormat("vi-VN").format(consumer.total_tokens)}</strong></td>
-                        <td>${consumer.estimated_cost_usd.toFixed(4)}</td>
+                        <td><strong>{new Intl.NumberFormat("vi-VN").format(consumer.total_tokens ?? 0)}</strong></td>
+                        <td>${(consumer.estimated_cost_usd ?? 0).toFixed(4)}</td>
                       </tr>
                     ))}
                   </tbody>

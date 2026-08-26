@@ -501,7 +501,7 @@ export function getAdminApiKeys(): Promise<{ items: AdminApiKeyRecord[] }> {
   return request("/api/v1/admin/api-keys", { method: "GET" });
 }
 
-export function postAdminApiKey(body: { provider: string; label: string; key: string; environment?: string; expires_at?: string }): Promise<AdminApiKeyRecord> {
+export function postAdminApiKey(body: { provider: string; label: string; key: string; expires_at?: string }): Promise<AdminApiKeyRecord> {
   return request("/api/v1/admin/api-keys", { method: "POST", body: JSON.stringify(body) });
 }
 

@@ -59,7 +59,6 @@ export function ApiKeysSection() {
   const [formProvider, setFormProvider] = useState<"gemini" | "trello" | "geoapify" | "google_maps" | "other">("gemini");
   const [formLabel, setFormLabel] = useState("");
   const [formKey, setFormKey] = useState("");
-  const [formEnv, setFormEnv] = useState("development");
 
   const loadKeys = () => {
     setKeys((prev) => ({ ...prev, loading: true, error: undefined }));
@@ -82,7 +81,6 @@ export function ApiKeysSection() {
         provider: formProvider,
         label: formLabel.trim(),
         key: formKey.trim(),
-        environment: formEnv,
       });
       setActionMessage({ type: "success", text: "Thêm API Key thành công." });
       setShowAddModal(false);
@@ -287,20 +285,6 @@ export function ApiKeysSection() {
                   required
                 />
               </div>
-
-              <div className="admin-form-group">
-                <label className="admin-form-label">Môi trường hoạt động</label>
-                <select
-                  value={formEnv}
-                  onChange={(e) => setFormEnv(e.target.value)}
-                  className="admin-select"
-                  style={{ width: "100%" }}
-                >
-                  <option value="development">development</option>
-                  <option value="staging">staging</option>
-                  <option value="production">production</option>
-                </select>
-              </div>
             </div>
 
             <div className="admin-form-group">
@@ -441,7 +425,6 @@ export function ApiKeysSection() {
                   <th style={{ width: "120px" }}>Provider</th>
                   <th>Nhãn / Mô tả</th>
                   <th style={{ width: "110px" }}>Giá trị ẩn</th>
-                  <th style={{ width: "110px" }}>Môi trường</th>
                   <th style={{ width: "110px" }}>Trạng thái</th>
                   <th style={{ width: "120px" }}>Cập nhật bởi</th>
                   <th style={{ width: "140px" }}>Cập nhật lúc</th>
@@ -487,19 +470,6 @@ export function ApiKeysSection() {
                             {copiedId === key.id ? <Check size={12} color="#059669" /> : <Copy size={12} />}
                           </button>
                         </div>
-                      </td>
-                      <td>
-                        <span
-                          className="admin-badge"
-                          style={{
-                            fontSize: "0.66rem",
-                            background: key.environment === "production" ? "#F5F3FF" : key.environment === "staging" ? "#FEF3C7" : "#EFF6FF",
-                            color: key.environment === "production" ? "#6D28D9" : key.environment === "staging" ? "#92400E" : "#1D4ED8",
-                            border: `1px solid ${key.environment === "production" ? "#DDD6FE" : key.environment === "staging" ? "#FDE68A" : "#BFDBFE"}`,
-                          }}
-                        >
-                          {key.environment}
-                        </span>
                       </td>
                       <td>
                         <span className={`admin-badge status-${isActive ? "healthy" : "unavailable"}`}>
