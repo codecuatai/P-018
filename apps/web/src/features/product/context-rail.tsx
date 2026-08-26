@@ -3,7 +3,8 @@
 import { ArrowRight, CalendarDays, CarFront, PanelRightClose, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { resolveAddress } from "@/lib/api-client";
+import { errorText, resolveAddress } from "@/lib/api-client";
+import { executeServiceCancellation, isCancellableStatus } from "@/lib/cancellation-helpers";
 import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { HistoryItem } from "@/types";
 import { RideMapDetail } from "./ride-map-detail";
@@ -78,11 +79,51 @@ export function ActiveWorkRailCard({ item, onDetails, children }: { item: Histor
 
 export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; onCancelled?: () => void }) {
   const [cancelled, setCancelled] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState("");
+
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
   const { data: tracking } = useRideTracking(bookingId, false);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
+  const canCancel = isCancellableStatus(item.type, status);
+
   if (cancelled) return null;
-  return <ActiveWorkRailCard item={item} onDetails={onDetails}>{item.type === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" /> : null}</ActiveWorkRailCard>;
+
+  async function handleCancel() {
+    setPending(true); setError("");
+    try {
+      await executeServiceCancellation(item.type, item.resource.id ? item.resource : item.id);
+      setCancelled(true);
+      onCancelled?.();
+      window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
+      if (item.type === "ride_booking") {
+        window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } }));
+      }
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setPending(false);
+      setShowConfirm(false);
+    }
+  }
+
+  return <ActiveWorkRailCard item={item} onDetails={onDetails}>
+    {item.type === "ride_booking" ? (
+      <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" />
+    ) : canCancel ? (
+      showConfirm ? (
+        <div className="active-card-cancel-confirm">
+          <small>Hủy đặt?</small>
+          <button className="button button-danger text-button" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "..." : "Xác nhận"}</button>
+          <button className="button button-secondary text-button" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Đóng</button>
+        </div>
+      ) : (
+        <button className="button button-secondary text-button active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>Hủy</button>
+      )
+    ) : null}
+    {error ? <small className="form-error">{error}</small> : null}
+  </ActiveWorkRailCard>;
 }
 
 export function ConversationContextCards({ onServiceShortcut }: { onServiceShortcut?: (prompt: string) => void }) {
