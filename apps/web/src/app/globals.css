@@ -87,8 +87,8 @@ svg { display: block; }
 ::selection { color: var(--color-surface); background: var(--color-primary); }
 
 :focus-visible {
-  outline: 3px solid rgb(49 94 245 / 45%);
-  outline-offset: 3px;
+  outline: 2.5px solid rgb(49 94 245 / 70%);
+  outline-offset: 2px;
 }
 
 @media (prefers-reduced-motion: reduce) {

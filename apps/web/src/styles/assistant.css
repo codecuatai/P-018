@@ -11,7 +11,7 @@
 .rail-pulse-dot-mini { width: 6px; height: 6px; background: var(--color-success); border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px #E6F6ED; }
 
 /* ─── Chat feed ──────────────────────────────────────────── */
-.chat-feed { min-height: 0; flex: 1; background: #F8FAFC; overflow-y: auto; padding: 24px 36px 20px; scroll-behavior: smooth; scrollbar-color: #C5D4DC transparent; scrollbar-width: thin; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; }
+.chat-feed { min-height: 0; flex: 1; background: #F8FAFC; overflow-y: auto; padding: 24px 36px 20px; scroll-behavior: smooth; scroll-padding-bottom: 24px; scrollbar-color: #C5D4DC transparent; scrollbar-width: thin; display: flex; flex-direction: column; width: 100%; box-sizing: border-box; }
 .chat-feed::-webkit-scrollbar { width: 6px; }
 .chat-feed::-webkit-scrollbar-track { background: transparent; }
 .chat-feed::-webkit-scrollbar-thumb { background: #C5D4DC; border-radius: 999px; }
