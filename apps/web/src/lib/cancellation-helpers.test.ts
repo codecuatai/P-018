@@ -27,6 +27,9 @@ describe("cancellation and rating helpers", () => {
     expect(canRateStatus("CONFIRMED", "restaurant_reservation")).toBe(false);
     expect(canRateStatus("HELD", "restaurant_reservation")).toBe(false);
     expect(canRateStatus("COMPLETED", "restaurant_reservation")).toBe(true);
+    expect(canRateStatus("SEATED", "restaurant_reservation")).toBe(false);
+    expect(canRateStatus("SEATED", "restaurant_reservation", { start_at: "2099-01-01T19:00:00Z" })).toBe(false);
+    expect(canRateStatus("SEATED", "restaurant_reservation", { start_at: "2020-01-01T19:00:00Z" })).toBe(true);
 
     // Healthcare appointment rating eligibility: PAYMENT_CONFIRMED or SCHEDULED must NOT allow rating
     expect(canRateStatus("PAYMENT_CONFIRMED", "healthcare_appointment")).toBe(false);

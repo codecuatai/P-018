@@ -37,7 +37,7 @@ export function canRateStatus(status: string, type: HistoryType, resource?: Reco
         const startTime = new Date(startTimeStr).getTime();
         return !Number.isNaN(startTime) && Date.now() >= startTime;
       }
-      return true;
+      return false;
     }
     return false;
   }
