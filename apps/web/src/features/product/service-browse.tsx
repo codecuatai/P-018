@@ -858,11 +858,12 @@ function HealthcareBrowse() {
 }
 
 function RideBrowse() {
-  const [pickup, setPickup] = useState("");
-  const [dropoff, setDropoff] = useState("");
+  const searchParams = useSearchParams();
+  const [pickup, setPickup] = useState(searchParams.get("pickup") ?? "");
+  const [dropoff, setDropoff] = useState(searchParams.get("dropoff") ?? "");
   const [pickupPoint, setPickupPoint] = useState<Point>();
   const [dropoffPoint, setDropoffPoint] = useState<Point>();
-  const [vehicle, setVehicle] = useState<"BIKE" | "CAR_4" | "CAR_7">("CAR_4");
+  const [vehicle, setVehicle] = useState<"BIKE" | "CAR_4" | "CAR_7">((searchParams.get("vehicle") as any) ?? "CAR_4");
   const [quote, setQuote] = useState<RideQuote>();
   const [booking, setBooking] = useState<JsonRecord>();
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);

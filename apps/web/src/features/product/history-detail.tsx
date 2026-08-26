@@ -35,9 +35,24 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
   useEffect(() => { void load(); }, [load]);
 
   async function reorder(): Promise<void> {
+    if (type === "ride_booking") {
+      const snap = (typeof resource?.quote === "object" && resource?.quote !== null ? resource.quote : typeof resource?.snapshot === "object" && resource?.snapshot !== null ? resource.snapshot : resource) as Record<string, unknown> | undefined;
+      const pickup = String(snap?.pickup_address ?? snap?.pickup ?? resource?.pickup_address ?? resource?.pickup ?? "");
+      const dropoff = String(snap?.dropoff_address ?? snap?.dropoff ?? resource?.dropoff_address ?? resource?.dropoff ?? "");
+      const vehicle = String(snap?.vehicle_type ?? snap?.vehicle ?? resource?.vehicle_type ?? resource?.vehicle ?? "CAR_4");
+      
+      const search = new URLSearchParams();
+      if (pickup && pickup !== "undefined") search.set("pickup", pickup);
+      if (dropoff && dropoff !== "undefined") search.set("dropoff", dropoff);
+      if (vehicle && vehicle !== "undefined") search.set("vehicle", vehicle);
+      
+      window.location.href = `/app/services/ride?${search.toString()}`;
+      return;
+    }
+
     setActionPending(true); setActionMessage(""); setError("");
     try {
-      const result = type === "food_order" ? await prepareFoodReorder(id) : type === "ride_booking" ? await prepareRideRebook(id) : type === "restaurant_reservation" ? await prepareRestaurantRebook(id) : await prepareHealthcareRebook(id);
+      const result = type === "food_order" ? await prepareFoodReorder(id) : type === "restaurant_reservation" ? await prepareRestaurantRebook(id) : await prepareHealthcareRebook(id);
       setActionMessage(reorderMessage(type, result));
     } catch (reason) { setError(errorText(reason)); } finally { setActionPending(false); }
   }
@@ -76,9 +91,10 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
 
 function PurposeBuiltDetail({ type, resource, id }: { type: HistoryType; resource: Record<string, unknown>; id: string }) {
   if (type === "ride_booking") {
-    const origin = pointFrom(resource.pickup_latitude, resource.pickup_longitude) ?? nestedPoint(resource.route, "origin");
-    const destination = pointFrom(resource.dropoff_latitude, resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination");
-    return <section className="history-purpose-detail"><DetailSection title="Hành trình"><Fact label="Điểm đón" value={optionalText(resource.pickup_address ?? resource.pickup)} /><Fact label="Điểm đến" value={optionalText(resource.dropoff_address ?? resource.dropoff)} /><Fact label="Khoảng cách" value={distanceText(resource.distance_km, resource.route)} /><Fact label="Thời gian" value={minutesText(resource.duration_minutes, resource.route)} /><Fact label="Loại xe" value={optionalText(resource.vehicle_type ?? resource.vehicle)} /><Fact label="Giá chuyến" value={formatMoney(resource.amount ?? resource.fare, String(resource.currency ?? "VND"))} /><Fact label="Tài xế" value={driverText(resource.driver)} /></DetailSection>{origin || destination ? <XOneMap origin={origin} destination={destination} routeGeometry={routeFrom(resource.route)} routePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} label="Bản đồ hành trình" /> : null}<RideTrackingPanel bookingId={id} /></section>;
+    const snap = (typeof resource.quote === "object" && resource.quote !== null ? resource.quote : typeof resource.snapshot === "object" && resource.snapshot !== null ? resource.snapshot : resource) as Record<string, unknown>;
+    const origin = pointFrom(snap.pickup_latitude ?? resource.pickup_latitude, snap.pickup_longitude ?? resource.pickup_longitude) ?? nestedPoint(resource.route, "origin");
+    const destination = pointFrom(snap.dropoff_latitude ?? resource.dropoff_latitude, snap.dropoff_longitude ?? resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination");
+    return <section className="history-purpose-detail"><DetailSection title="Hành trình"><Fact label="Điểm đón" value={optionalText(snap.pickup_address ?? snap.pickup ?? resource.pickup_address ?? resource.pickup)} /><Fact label="Điểm đến" value={optionalText(snap.dropoff_address ?? snap.dropoff ?? resource.dropoff_address ?? resource.dropoff)} /><Fact label="Khoảng cách" value={distanceText(snap.distance_km ?? resource.distance_km, resource.route)} /><Fact label="Thời gian" value={minutesText(snap.duration_minutes ?? resource.duration_minutes, resource.route)} /><Fact label="Loại xe" value={optionalText(snap.vehicle_type ?? snap.vehicle ?? resource.vehicle_type ?? resource.vehicle)} /><Fact label="Giá chuyến" value={formatMoney(snap.amount ?? snap.fare ?? resource.amount ?? resource.fare, String(snap.currency ?? resource.currency ?? "VND"))} /><Fact label="Tài xế" value={driverText(resource.driver)} /></DetailSection>{origin || destination ? <XOneMap origin={origin} destination={destination} routeGeometry={routeFrom(resource.route)} routePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} label="Bản đồ hành trình" /> : null}<RideTrackingPanel bookingId={id} /></section>;
   }
   if (type === "food_order") return <section className="history-purpose-detail"><Image source={resource.image_url ?? nestedValue(resource.restaurant, "image_url")} alt="Đơn đồ ăn" /><DetailSection title="Đơn đồ ăn"><Fact label="Nhà hàng" value={nestedName(resource.restaurant) || optionalText(resource.restaurant_name)} /><Fact label="Món đã chọn" value={itemsSummary(resource.items)} /><Fact label="Tổng cộng" value={formatMoney(resource.total ?? resource.amount, String(resource.currency ?? "VND"))} /><Fact label="Địa chỉ giao" value={optionalText(resource.delivery_address ?? resource.address)} /></DetailSection><FoodTrackingPanel orderId={id} /></section>;
   if (type === "restaurant_reservation") {
