@@ -15,6 +15,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api-gateway/package.json ./apps/api-gateway/package.json
 RUN pnpm install --filter @x-one/api-gateway --prod --frozen-lockfile
 COPY --from=builder /workspace/apps/api-gateway/dist ./apps/api-gateway/dist
+COPY --from=builder /workspace/apps/api-gateway/migrations ./apps/api-gateway/migrations
 WORKDIR /workspace/apps/api-gateway
 USER node
 EXPOSE 3000
