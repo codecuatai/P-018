@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -16,12 +16,14 @@ import {
   confirmRideBooking,
   createSavedAddress,
   createFoodCart,
+  createHealthcarePatient,
   createRestaurantHold,
   errorText,
   executeCancellation,
   executeConfirmation,
   getFoodMenu,
   getFoodRestaurant,
+  getHistoryDetail,
   getRestaurantDetail,
   holdHealthcareSlot,
   listHealthcareDoctors,
@@ -57,12 +59,12 @@ const copy: Record<ServiceKey, { label: string; description: string; action: str
 };
 const icons = { food: Utensils, ride: Bike, restaurant: MapPinned, healthcare: HeartPulse };
 
-export function ServiceBrowse({ service }: { service: ServiceKey }) {
+export function ServiceBrowse({ service, resumeAppointmentId }: { service: ServiceKey; resumeAppointmentId?: string }) {
   const Icon = icons[service];
   return <section className="service-browse" aria-labelledby="service-browse-title">
     <div className="service-browse-top"><Link className="text-link" href="/app/services"><ArrowLeft size={16} /> Dịch vụ</Link><Link className="text-link" href={`/app?service=${service}&mode=assistant`}>Tiếp tục với X-One AI <ArrowRight size={16} /></Link></div>
     <header className="service-browse-heading"><span className="service-browse-icon"><Icon size={22} /></span><div><span className="eyebrow">{service.toUpperCase()}</span><h1 id="service-browse-title">{copy[service].label}</h1><p>{copy[service].description}</p></div></header>
-    {service === "food" ? <FoodBrowse /> : service === "restaurant" ? <RestaurantBrowse /> : service === "healthcare" ? <HealthcareBrowseWithFavorite /> : <RideBrowse />}
+    {service === "food" ? <FoodBrowse /> : service === "restaurant" ? <RestaurantBrowse /> : service === "healthcare" ? <HealthcareBrowseWithFavorite resumeAppointmentId={resumeAppointmentId} /> : <RideBrowse />}
   </section>;
 }
 
@@ -502,21 +504,21 @@ function RestaurantBrowse() {
   );
 }
 
-function HealthcareBrowseWithFavorite() {
+function HealthcareBrowseWithFavorite({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
   const [facilityId, setFacilityId] = useState("");
   useEffect(() => {
     let active = true;
-    void browseService("healthcare").then((result) => {
+    void browseService("healthcare", undefined, { limit: 100, offset: 0 }).then((result) => {
       const facility = asRecord(asRecord(result.items[0])?.facility);
       const id = facility?.source_id ?? facility?.id;
       if (active && (typeof id === "string" || typeof id === "number")) setFacilityId(String(id));
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
-  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse /></div>;
+  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} /></div>;
 }
 
-function HealthcareBrowse() {
+function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
   const [keyword, setKeyword] = useState("");
   const [departments, setDepartments] = useState<JsonRecord[]>([]);
   const [doctors, setDoctors] = useState<JsonRecord[]>([]);
@@ -533,33 +535,80 @@ function HealthcareBrowse() {
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [slotPage, setSlotPage] = useState(1);
+  const [departmentOpen, setDepartmentOpen] = useState(false);
+  const [departmentActiveIndex, setDepartmentActiveIndex] = useState(0);
+  const [profileFormOpen, setProfileFormOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileRelationship, setProfileRelationship] = useState<HealthcarePatient["relationship"]>("self");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [patientError, setPatientError] = useState("");
   const slotPageSize = 3;
 
-  const load = useCallback(async (query = "") => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await browseService("healthcare", query);
+      const result = await browseService("healthcare", undefined, { limit: 100, offset: 0 });
       const next = result.items;
       setDepartments(next);
-      if (!department && next[0]) setDepartment(display(next[0].name ?? next[0].label ?? next[0].id));
+      const names = next.map((item) => display(item.name ?? item.label ?? item.id));
+      const selected = names[0] ?? "";
+      setDepartment(selected);
+      setKeyword(selected);
     } catch (reason) {
       setError(errorText(reason));
     } finally {
       setLoading(false);
     }
-  }, [department]);
+  }, []);
+
+  const loadPatients = useCallback(async () => {
+    setPatientsLoading(true);
+    setPatientError("");
+    try {
+      const result = await listHealthcarePatients();
+      setPatients(result.items);
+      setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
+      if (!result.items.length) setProfileFormOpen(true);
+    } catch (reason) {
+      setPatientError(errorText(reason));
+    } finally {
+      setPatientsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void load();
-    void listHealthcarePatients().then((result) => {
-      setPatients(result.items);
-      setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
-    }).catch(() => undefined);
-  }, [load]);
+    void loadPatients();
+  }, [load, loadPatients]);
 
   useEffect(() => {
-    if (!department) return;
+    if (!resumeAppointmentId) return;
+    void getHistoryDetail("healthcare_appointment", resumeAppointmentId).then((value) => {
+      const source = asRecord(value);
+      if (!source) throw new Error("Lịch khám không có dữ liệu.");
+      const doctor = asRecord(source?.doctor);
+      const sourceSlot = asRecord(source?.slot);
+      const departmentName = display(source?.department_name ?? asRecord(source?.department)?.name ?? source?.department);
+      if (departmentName) { setDepartment(departmentName); setKeyword(departmentName); }
+      if (source?.patient_id !== undefined) setPatientId(numberOf(source.patient_id));
+      setSlot({
+        id: sourceSlot?.id ?? source.slot_id,
+        start_time: source?.start_time ?? source?.appointment_time ?? sourceSlot?.start_time,
+        end_time: sourceSlot?.end_time,
+        doctor_name: source?.doctor_name ?? doctor?.name,
+        doctor_id: doctor?.id ?? source?.doctor_id,
+        price: source?.price ?? doctor?.price,
+        facility: source?.facility,
+      });
+      setAppointment({ ...source, appointment_id: numberOf(source?.appointment_id ?? resumeAppointmentId) });
+    }).catch((reason) => setError(errorText(reason)));
+  }, [resumeAppointmentId]);
+
+  useEffect(() => {
+    if (!department) { setDoctors([]); return; }
     setActionLoading(true);
     setError("");
     setSlotPage(1);
@@ -569,6 +618,41 @@ function HealthcareBrowse() {
   const slots: JsonRecord[] = useMemo(() => doctors.flatMap((doctor) => listFrom(doctor.available_slots).map((value): JsonRecord => ({ ...value, doctor_name: doctor.name, doctor_id: doctor.id, doctor_description: doctor.description, price: doctor.price, facility: doctor.facility }))), [doctors]);
   const totalSlotPages = Math.max(1, Math.ceil(slots.length / slotPageSize));
   const paginatedSlots = slots.slice((slotPage - 1) * slotPageSize, slotPage * slotPageSize);
+  const filteredDepartments = useMemo(() => {
+    const query = keyword.trim() === department ? "" : keyword.trim().toLocaleLowerCase();
+    return departments.filter((item) => !query || display(item.name ?? item.label ?? item.id).toLocaleLowerCase().includes(query));
+  }, [department, departments, keyword]);
+
+  function chooseDepartment(value: string): void {
+    setDepartment(value);
+    setKeyword(value);
+    setDepartmentOpen(false);
+    setDepartmentActiveIndex(0);
+    setSlot(undefined);
+    setAppointment(undefined);
+    setConfirmation(undefined);
+    setPaymentDone(false);
+    setChecked(false);
+  }
+
+  async function createProfile(): Promise<void> {
+    if (!profileName.trim() || !profilePhone.trim() || profileSaving) return;
+    setProfileSaving(true);
+    setPatientError("");
+    try {
+      const patient = await createHealthcarePatient({ name: profileName.trim(), phone: profilePhone.trim(), relationship: profileRelationship });
+      setPatients((current) => [...current.filter((item) => item.id !== patient.id), patient]);
+      setPatientId(patient.id);
+      setProfileName("");
+      setProfilePhone("");
+      setProfileRelationship("self");
+      setProfileFormOpen(false);
+    } catch (reason) {
+      setPatientError(errorText(reason));
+    } finally {
+      setProfileSaving(false);
+    }
+  }
 
   async function hold(): Promise<void> {
     if (!slot || !patientId || !symptoms.trim()) {
@@ -650,11 +734,10 @@ function HealthcareBrowse() {
 
   return (
     <>
-      <SearchForm label="Tìm chuyên khoa" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: nội thần kinh" />
       {loading ? (
         <LoadingNote text="Đang tải chuyên khoa…" />
       ) : error && !departments.length ? (
-        <ErrorNote message={error} onRetry={() => void load(keyword)} />
+        <ErrorNote message={error} onRetry={() => void load()} />
       ) : (
         <div className="healthcare-flow" style={{ textAlign: "left" }}>
           <article className="transaction-panel" style={{ textAlign: "left" }}>
@@ -665,28 +748,35 @@ function HealthcareBrowse() {
               </div>
               <HeartPulse size={19} />
             </div>
-            <label className="transaction-field" style={{ textAlign: "left", marginTop: "12px" }}>
-              <span>Chuyên khoa</span>
-              <select
-                value={department}
-                onChange={(event) => {
-                  setDepartment(event.target.value);
-                  setSlot(undefined);
-                  setAppointment(undefined);
+            <div className="transaction-field healthcare-combobox" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDepartmentOpen(false); }}>
+              <span id="healthcare-department-label">Chuyên khoa</span>
+              <input
+                role="combobox"
+                aria-labelledby="healthcare-department-label"
+                aria-expanded={departmentOpen}
+                aria-controls="healthcare-department-options"
+                aria-autocomplete="list"
+                aria-activedescendant={departmentOpen && filteredDepartments[departmentActiveIndex] ? `healthcare-department-option-${departmentActiveIndex}` : undefined}
+                value={keyword}
+                onFocus={() => setDepartmentOpen(true)}
+                onChange={(event) => { setKeyword(event.target.value); setDepartmentOpen(true); setDepartmentActiveIndex(0); if (department) { setDepartment(""); setSlot(undefined); setAppointment(undefined); setConfirmation(undefined); setPaymentDone(false); setChecked(false); } }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") { event.preventDefault(); setDepartmentOpen(true); setDepartmentActiveIndex((current) => departmentOpen ? Math.min(current + 1, Math.max(0, filteredDepartments.length - 1)) : 0); }
+                  if (event.key === "ArrowUp") { event.preventDefault(); setDepartmentActiveIndex((current) => Math.max(0, current - 1)); }
+                  if (event.key === "Enter" && filteredDepartments[departmentActiveIndex]) { event.preventDefault(); chooseDepartment(display(filteredDepartments[departmentActiveIndex].name ?? filteredDepartments[departmentActiveIndex].label ?? filteredDepartments[departmentActiveIndex].id)); }
+                  if (event.key === "Escape") setDepartmentOpen(false);
                 }}
-                aria-label="Chọn chuyên khoa khám"
-              >
-                <option value="">-- Chọn chuyên khoa --</option>
-                {departments.map((item) => {
-                  const name = display(item.name ?? item.label ?? item.id);
-                  return (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
+                placeholder="Tìm hoặc chọn chuyên khoa"
+              />
+              {departmentOpen ? (
+                <div id="healthcare-department-options" className="healthcare-combobox-options" role="listbox">
+                  {filteredDepartments.length ? filteredDepartments.map((item, index) => {
+                    const name = display(item.name ?? item.label ?? item.id);
+                    return <button id={`healthcare-department-option-${index}`} key={name} type="button" role="option" aria-selected={department === name} className={index === departmentActiveIndex ? "is-active" : ""} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseDepartment(name)}>{name}</button>;
+                  }) : <span className="field-hint">Không tìm thấy chuyên khoa phù hợp.</span>}
+                </div>
+              ) : null}
+            </div>
             {department ? (
               <>
                 <div className="panel-heading compact" style={{ textAlign: "left", marginTop: "18px" }}>
@@ -705,7 +795,8 @@ function HealthcareBrowse() {
                           className={slot?.id === value.id ? "slot-option is-active" : "slot-option"}
                           key={String(value.id)}
                           type="button"
-                          onClick={() => setSlot(value)}
+                          aria-pressed={slot?.id === value.id}
+                          onClick={() => { setSlot(value); setAppointment(undefined); setConfirmation(undefined); setPaymentDone(false); setChecked(false); }}
                           style={{ textAlign: "left" }}
                         >
                           <strong style={{ textAlign: "left" }}>{display(value.doctor_name)}</strong>
@@ -713,6 +804,7 @@ function HealthcareBrowse() {
                             {formatDateTime(value.start_time)} · {display(asRecord(value.facility)?.name ?? asRecord(value.facility)?.address ?? "Cơ sở đang xác minh")}
                           </span>
                           {value.price !== undefined ? <small style={{ textAlign: "left" }}>{formatMoney(value.price)}</small> : null}
+                          <ChevronRight className="slot-option-arrow" size={18} aria-hidden="true" />
                         </button>
                       ))}
                     </div>
@@ -751,68 +843,22 @@ function HealthcareBrowse() {
                 )}
               </>
             ) : null}
-            {slot ? (
-              <div className="healthcare-form" style={{ textAlign: "left" }}>
-                <label className="transaction-field" style={{ textAlign: "left" }}>
-                  <span>Hồ sơ bệnh nhân</span>
-                  <select value={patientId ?? ""} onChange={(event) => setPatientId(Number(event.target.value))}>
-                    <option value="">Chọn hồ sơ</option>
-                    {patients.map((patient) => (
-                      <option key={patient.id} value={patient.id}>
-                        {patient.name} · {patient.relationship}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="transaction-field" style={{ textAlign: "left" }}>
-                  <span>Nhu cầu khám</span>
-                  <textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} />
-                </label>
-                <button className="button button-primary button-wide" type="button" onClick={() => void hold()} disabled={actionLoading || !patientId || !symptoms.trim()}>
-                  {actionLoading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Giữ khung giờ
-                </button>
-              </div>
-            ) : null}
-            {appointment && !confirmation ? (
-              <div className="hold-card" style={{ textAlign: "left" }}>
-                <Check size={17} />
-                <div style={{ textAlign: "left" }}>
-                  <strong style={{ textAlign: "left" }}>Đã giữ khung giờ</strong>
-                  <p style={{ textAlign: "left" }}>
-                    {display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}
-                  </p>
-                </div>
-                {!paymentDone ? (
-                  <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>
-                    Xác nhận thanh toán
-                  </button>
-                ) : (
-                  <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>
-                    Xem xác nhận cuối
-                  </button>
-                )}
-              </div>
-            ) : null}
-            {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận hoàn tất lịch khám" /> : null}
-            {appointment?.status === "CONFIRMED" || appointment?.status === "CANCELLED" ? (
-              <div className="success-card" style={{ textAlign: "left" }}>
-                <Check size={18} />
-                <strong style={{ textAlign: "left" }}>Lịch khám: {statusLabel(appointment.status)}</strong>
-                <span>
-                  {display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)}
-                </span>
-                {appointment.status === "CONFIRMED" ? (
-                  <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>
-                    Hủy lịch khám
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-            {error ? <ErrorNote message={error} onRetry={() => void hold()} /> : null}
           </article>
-          <aside className="service-context-panel" style={{ textAlign: "left" }}>
+          <aside className="service-context-panel healthcare-summary" style={{ textAlign: "left" }}>
             <span className="eyebrow">THÔNG TIN LỊCH KHÁM</span>
-            <p style={{ textAlign: "left" }}>X-One chỉ hiển thị bác sĩ, giá và khung giờ khi thông tin đã sẵn sàng. Đây là luồng đặt lịch, không phải chẩn đoán.</p>
+            {slot ? <dl className="healthcare-summary-details"><div><dt>Bác sĩ</dt><dd>{display(slot.doctor_name)}</dd></div><div><dt>Thời gian</dt><dd>{formatDateTime(slot.start_time)}</dd></div><div><dt>Chi phí</dt><dd>{formatMoney(slot.price)}</dd></div></dl> : <p style={{ textAlign: "left" }}>Chọn một khung giờ để xem bác sĩ, thời gian và chi phí.</p>}
+            {slot && !appointment ? <div className="healthcare-form" style={{ textAlign: "left" }}>
+              <label className="transaction-field" style={{ textAlign: "left" }}><span>Hồ sơ bệnh nhân</span><select value={patientId ?? ""} onChange={(event) => setPatientId(event.target.value ? Number(event.target.value) : undefined)} disabled={patientsLoading}><option value="">{patientsLoading ? "Đang tải hồ sơ…" : "Chọn hồ sơ"}</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} · {patient.relationship}</option>)}</select></label>
+              {patientError ? <div className="healthcare-profile-error" role="alert"><span>{patientError}</span><button className="text-button" type="button" onClick={() => void loadPatients()}>Thử lại</button></div> : null}
+              <button className="text-button healthcare-profile-toggle" type="button" onClick={() => setProfileFormOpen((current) => !current)}><Plus size={14} aria-hidden="true" />{profileFormOpen ? "Đóng biểu mẫu" : "Thêm hồ sơ mới"}</button>
+              {profileFormOpen ? <div className="healthcare-profile-form"><label><span>Họ và tên</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label><label><span>Số điện thoại</span><input value={profilePhone} onChange={(event) => setProfilePhone(event.target.value)} required /></label><label><span>Quan hệ</span><select value={profileRelationship} onChange={(event) => setProfileRelationship(event.target.value as HealthcarePatient["relationship"])}><option value="self">Bản thân</option><option value="child">Con</option><option value="parent">Cha/mẹ</option><option value="dependent">Người phụ thuộc</option></select></label><button className="button button-secondary" type="button" onClick={() => void createProfile()} disabled={profileSaving || !profileName.trim() || !profilePhone.trim()}>{profileSaving ? <Loader2 className="spinner" size={15} /> : null} Lưu hồ sơ</button></div> : null}
+              <label className="transaction-field" style={{ textAlign: "left" }}><span>Nhu cầu khám</span><textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} /></label>
+              <button className="button button-primary button-wide" type="button" onClick={() => void hold()} disabled={actionLoading || !patientId || !symptoms.trim()}>{actionLoading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận đặt lịch</button>
+            </div> : null}
+            {appointment && !confirmation && appointment.status !== "CONFIRMED" && appointment.status !== "CANCELLED" ? <div className="hold-card"><Check size={17} /><div><strong>Đã giữ khung giờ</strong><p>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}</p></div>{!paymentDone ? <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>Xác nhận thanh toán</button> : <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận cuối</button>}</div> : null}
+            {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận hoàn tất lịch khám" /> : null}
+            {appointment?.status === "CONFIRMED" || appointment?.status === "CANCELLED" ? <div className="success-card"><Check size={18} /><strong>Lịch khám: {statusLabel(appointment.status)}</strong><span>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)}</span>{appointment.status === "CONFIRMED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy lịch khám</button> : null}</div> : null}
+            {error ? <p className="form-error healthcare-summary-error" role="alert">{error}</p> : null}
             <Link className="text-link" href="/app?service=healthcare&mode=assistant">
               Tiếp tục với AI <ArrowRight size={15} />
             </Link>

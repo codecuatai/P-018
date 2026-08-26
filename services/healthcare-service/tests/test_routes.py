@@ -105,6 +105,109 @@ def test_healthcare_writes_require_idempotency_key(path: str, method: str) -> No
     assert response.json()["detail"]["code"] == "IDEMPOTENCY_KEY_REQUIRED"
 
 
+def test_departments_are_ordered_before_pagination() -> None:
+    with TestingSessionLocal() as db:
+        db.add_all(
+            [
+                Department(name="Khoa Tim mạch", description="Cardiology"),
+                Department(name="Khoa Da liễu", description="Dermatology"),
+                Department(name="Khoa Nhi", description="Pediatrics"),
+            ]
+        )
+        db.commit()
+
+    first_page = client.get("/api/v1/departments?limit=2&offset=0", headers=headers())
+    assert first_page.status_code == 200, first_page.text
+    assert [item["name"] for item in first_page.json()["data"]["items"]] == ["Khoa Da liễu", "Khoa Nhi"]
+    assert first_page.json()["data"]["total"] == 4
+
+    second_page = client.get("/api/v1/departments?limit=2&offset=2", headers=headers())
+    assert second_page.status_code == 200, second_page.text
+    assert [item["name"] for item in second_page.json()["data"]["items"]] == ["Khoa Nội Thần kinh", "Khoa Tim mạch"]
+
+
+@pytest.mark.parametrize(
+    ("limit", "offset", "expected_count"),
+    [(1, 0, 1), (1, 1, 1), (10, 0, 4), (10, 20, 0)],
+)
+def test_departments_pagination_parameters(limit: int, offset: int, expected_count: int) -> None:
+    with TestingSessionLocal() as db:
+        db.add_all(
+            [
+                Department(name="Khoa Tim mạch", description="Cardiology"),
+                Department(name="Khoa Da liễu", description="Dermatology"),
+                Department(name="Khoa Nhi", description="Pediatrics"),
+            ]
+        )
+        db.commit()
+
+    response = client.get(f"/api/v1/departments?limit={limit}&offset={offset}", headers=headers())
+    assert response.status_code == 200, response.text
+    assert len(response.json()["data"]["items"]) == expected_count
+
+
+def test_departments_keyword_filter_uses_department_columns() -> None:
+    response = client.get("/api/v1/departments?keyword=Neurology&limit=100&offset=0", headers=headers())
+    assert response.status_code == 200, response.text
+    assert [item["name"] for item in response.json()["data"]["items"]] == ["Khoa Nội Thần kinh"]
+
+
+def test_departments_recover_when_optional_catalog_version_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.api import routes as healthcare_routes
+
+    class MissingRegistryInspector:
+        @staticmethod
+        def has_table(_table_name: str) -> bool:
+            return True
+
+    monkeypatch.setattr(healthcare_routes, "inspect", lambda _connection: MissingRegistryInspector())
+    response = client.get("/api/v1/departments?limit=100&offset=0", headers=headers())
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["total"] == 1
+
+
+def test_departments_include_facility_data_without_changing_pagination() -> None:
+    with TestingSessionLocal() as db:
+        db.add(
+            HealthcareFacility(
+                source_id="facility-departments",
+                name="Phòng khám X-One",
+                address="12 Nguyễn Trãi",
+                is_active=True,
+            )
+        )
+        db.flush()
+        department = db.query(Department).filter(Department.id == 1).one()
+        department.facility_source_id = "facility-departments"
+        db.commit()
+
+    response = client.get("/api/v1/departments?limit=100&offset=0", headers=headers())
+    assert response.status_code == 200, response.text
+    first = next(item for item in response.json()["data"]["items"] if item["id"] == 1)
+    assert first["facility"]["source_id"] == "facility-departments"
+
+
+def test_doctors_exclude_past_available_slots() -> None:
+    with TestingSessionLocal() as db:
+        doctor = db.query(Doctor).filter(Doctor.id == 1).one()
+        now = datetime.now(UTC).replace(tzinfo=None)
+        db.add(
+            TimeSlot(
+                doctor_id=doctor.id,
+                start_time=now - timedelta(days=1),
+                end_time=now - timedelta(days=1) + timedelta(minutes=30),
+                status=SlotStatus.AVAILABLE.value,
+            )
+        )
+        db.commit()
+
+    response = client.get("/api/v1/doctors?department=Khoa%20N%E1%BB%99i%20Th%E1%BA%A7n%20kinh", headers=headers())
+    assert response.status_code == 200, response.text
+    returned_slots = response.json()["data"][0]["available_slots"]
+    assert len(returned_slots) == 2
+    assert all(datetime.fromisoformat(slot["start_time"].replace("Z", "+00:00")) > datetime.now(UTC) for slot in returned_slots)
+
+
 @pytest.mark.parametrize("key", ["", "   "])
 def test_healthcare_writes_reject_empty_idempotency_key(key: str) -> None:
     response = client.post(

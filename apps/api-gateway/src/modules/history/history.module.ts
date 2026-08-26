@@ -270,7 +270,7 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
       ? ['status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
       : type === 'restaurant_reservation'
         ? ['status', 'name', 'restaurant_name', 'address', 'location', 'reservation_time', 'start_at', 'booking_time', 'party_size', 'image_url']
-        : ['status', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
+        : ['appointment_id', 'status', 'is_paid', 'patient_id', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'doctor_id', 'slot_id', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
 
   if (type === 'ride_booking') {
     const driver = publicDriver(resource.driver);
@@ -331,10 +331,13 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
     if (doctor) result.doctor = doctor;
     const department = publicPerson(resource.department);
     if (department) result.department = department;
+    const patient = publicPerson(resource.patient);
+    if (patient) result.patient = patient;
     const facilityName = stringField(resource.facility_name) ?? stringField(facility?.name);
     const facilityAddress = stringField(resource.address) ?? stringField(facility?.address);
     const doctorName = stringField(resource.doctor_name) ?? stringField(doctor?.name);
     const departmentName = stringField(resource.department_name) ?? stringField(resource.department) ?? stringField(department?.name);
+    const patientName = stringField(resource.patient_name) ?? stringField(patient?.name);
     const slot = isObject(resource.slot) ? resource.slot : undefined;
     const startTime = stringField(resource.start_time) ?? stringField(resource.start_at) ?? stringField(slot?.start_time);
     const price = typeof resource.price === 'number' ? resource.price : typeof doctor?.price === 'number' ? doctor.price : undefined;
@@ -342,8 +345,10 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
     if (facilityAddress) result.address = facilityAddress;
     if (doctorName) result.doctor_name = doctorName;
     if (departmentName) result.department_name = departmentName;
+    if (patientName) result.patient_name = patientName;
     if (startTime) result.start_time = startTime;
     if (price !== undefined) result.price = price;
+    if (slot) result.slot = pickFields(slot, ['id', 'start_time', 'end_time', 'status', 'hold_expires_at']);
     const point = publicPoint(resource.location) ?? publicPointFromFields(resource.latitude, resource.longitude) ?? publicPoint(facility?.location);
     if (point) result.location = point;
   }
