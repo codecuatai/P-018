@@ -72,12 +72,19 @@ function FoodBrowse() {
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
   const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [activeKeyword, setActiveKeyword] = useState("");
   const [loading, setLoading] = useState(true);
+  const [paging, setPaging] = useState(false);
   const [error, setError] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [restaurant, setRestaurant] = useState<JsonRecord>();
   const [menuItems, setMenuItems] = useState<JsonRecord[]>([]);
   const [menuPage, setMenuPage] = useState(1);
+  const [menuPageCount, setMenuPageCount] = useState(1);
+  const [menuTotal, setMenuTotal] = useState(0);
+  const [menuLoading, setMenuLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [cart, setCart] = useState<JsonRecord>();
   const [cartLoading, setCartLoading] = useState(false);
@@ -91,22 +98,62 @@ function FoodBrowse() {
   const [cancelChecked, setCancelChecked] = useState(false);
   const [notice, setNotice] = useState("");
   const [customizingItem, setCustomizingItem] = useState<JsonRecord>();
+  // Chống race: mỗi lần gọi tăng số thứ tự, phản hồi về muộn hơn lần gọi mới nhất
+  // sẽ bị bỏ qua. Cần thiết vì ô tìm kiếm bị khoá theo `loading` còn thanh phân
+  // trang khoá theo `paging`, nên người dùng vẫn có thể tìm khi đang đổi trang.
+  const browseRequestRef = useRef(0);
+  const menuRequestRef = useRef(0);
 
-  const load = useCallback(async (query = "") => {
-    setLoading(true); setError("");
-    try { setItems((await browseService("food", query)).items); setPage(1); }
-    catch (reason) { setError(errorText(reason)); }
-    finally { setLoading(false); }
+  // `keepList` = true khi chỉ đổi trang: giữ nguyên danh sách đang hiển thị và chỉ
+  // khoá thanh phân trang, tránh việc cả danh sách lẫn nút chuyển trang bị thay
+  // bằng spinner rồi nhảy layout ở mỗi lần bấm Trước/Sau.
+  const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
+    const requestId = browseRequestRef.current + 1;
+    browseRequestRef.current = requestId;
+    if (keepList) setPaging(true); else setLoading(true);
+    setError("");
+    try {
+      const result = await browseService("food", query, { page: targetPage, limit: itemsPerPage });
+      if (browseRequestRef.current !== requestId) return;
+      const total = typeof result.total === "number" ? result.total : result.items.length;
+      setItems(result.items);
+      setActiveKeyword(query);
+      setPage(typeof result.page === "number" && result.page > 0 ? result.page : targetPage);
+      setTotalItems(total);
+      setPageCount(typeof result.total_pages === "number" && result.total_pages > 0 ? result.total_pages : Math.max(1, Math.ceil(total / itemsPerPage)));
+    }
+    catch (reason) { if (browseRequestRef.current === requestId) setError(errorText(reason)); }
+    finally { if (browseRequestRef.current === requestId) { if (keepList) setPaging(false); else setLoading(false); } }
   }, []);
   useEffect(() => { void load(); void listSavedAddresses().then((result) => { setAddresses(result.items); setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? ""); }).catch(() => undefined); }, [load]);
+
+  const loadMenu = useCallback(async (id: string, targetPage: number): Promise<void> => {
+    const requestId = menuRequestRef.current + 1;
+    menuRequestRef.current = requestId;
+    setMenuLoading(true);
+    try {
+      const menu = await getFoodMenu(id, { limit: menuItemsPerPage, offset: (targetPage - 1) * menuItemsPerPage });
+      // Bỏ qua nếu người dùng đã mở nhà hàng khác hoặc đổi trang trong lúc chờ,
+      // tránh thực đơn của nhà hàng cũ ghi đè lên nhà hàng đang xem.
+      if (menuRequestRef.current !== requestId) return;
+      const fetched = listFrom(menu.items);
+      const total = typeof menu.total === "number" ? menu.total : fetched.length;
+      setMenuItems(fetched);
+      setMenuPage(targetPage);
+      setMenuTotal(total);
+      setMenuPageCount(Math.max(1, Math.ceil(total / menuItemsPerPage)));
+    }
+    catch (reason) { if (menuRequestRef.current === requestId) setError(errorText(reason)); }
+    finally { if (menuRequestRef.current === requestId) setMenuLoading(false); }
+  }, []);
 
   async function openRestaurant(item: JsonRecord): Promise<void> {
     const id = idOf(item);
     if (!id) return;
-    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true); setMenuPage(1);
+    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true); setMenuPage(1); setMenuPageCount(1); setMenuTotal(0);
     try {
-      const [detail, menu] = await Promise.all([getFoodRestaurant(id), getFoodMenu(id)]);
-      setRestaurant(detail); setMenuItems(listFrom(menu.items)); setMenuPage(1);
+      const [detail] = await Promise.all([getFoodRestaurant(id), loadMenu(id, 1)]);
+      setRestaurant(detail);
     } catch (reason) { setError(errorText(reason)); }
     finally { setDetailLoading(false); }
   }
@@ -190,14 +237,14 @@ function FoodBrowse() {
     finally { setCartLoading(false); }
   }
 
-  const pageCount = Math.ceil(items.length / itemsPerPage);
-  const visibleItems = useMemo(() => items.slice((page - 1) * itemsPerPage, page * itemsPerPage), [items, page]);
-  const menuPageCount = Math.ceil(menuItems.length / menuItemsPerPage);
-  const visibleMenuItems = useMemo(() => menuItems.slice((menuPage - 1) * menuItemsPerPage, menuPage * menuItemsPerPage), [menuItems, menuPage]);
+  // Danh sách và thực đơn đều được phân trang ở server, nên `items`/`menuItems`
+  // đã đúng là nội dung của trang hiện tại — không slice lại ở client nữa.
+  const visibleItems = items;
+  const visibleMenuItems = menuItems;
 
-  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuItems.length ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => setMenuPage((current) => Math.max(1, current - 1))} disabled={menuPage === 1}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount}</span><button className="button button-secondary" type="button" onClick={() => setMenuPage((current) => Math.min(menuPageCount, current + 1))} disabled={menuPage === menuPageCount}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuTotal > 0 ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.max(1, menuPage - 1))} disabled={menuPage === 1 || menuLoading}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount} · {menuTotal} món</span><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.min(menuPageCount, menuPage + 1))} disabled={menuPage === menuPageCount || menuLoading}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
 
-  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Phân trang danh sách nhà hàng"><button className="button button-secondary" type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {page} / {pageCount}</span><button className="button button-secondary" type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page === pageCount}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
+  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Phân trang danh sách nhà hàng"><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.max(1, page - 1), true)} disabled={page === 1 || paging}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {page} / {pageCount} · {totalItems} nhà hàng</span><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.min(pageCount, page + 1), true)} disabled={page === pageCount || paging}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
 
 function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string) => void }) {

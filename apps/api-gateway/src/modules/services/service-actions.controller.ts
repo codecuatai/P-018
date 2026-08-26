@@ -153,8 +153,14 @@ export class ServiceActionsController {
   }
 
   @Get('food/restaurants/:restaurantId/menu')
-  async foodMenu(@Param('restaurantId') restaurantId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    return { data: await this.food.get(`/api/v1/restaurants/${encodeURIComponent(restaurantId)}/menu`, correlation(request), request.user.sub), meta: { request_id: request.correlationId } };
+  async foodMenu(@Param('restaurantId') restaurantId: string, @Query('limit') limitValue: string | undefined, @Query('offset') offsetValue: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const params = new URLSearchParams();
+    const limit = Number(limitValue);
+    const offset = Number(offsetValue);
+    if (limitValue !== undefined && Number.isFinite(limit) && limit > 0) params.set('limit', String(Math.min(Math.trunc(limit), 500)));
+    if (offsetValue !== undefined && Number.isFinite(offset) && offset >= 0) params.set('offset', String(Math.trunc(offset)));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return { data: await this.food.get(`/api/v1/restaurants/${encodeURIComponent(restaurantId)}/menu${query}`, correlation(request), request.user.sub), meta: { request_id: request.correlationId } };
   }
 
   @Post('food/cart')

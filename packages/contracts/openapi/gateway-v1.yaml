@@ -205,7 +205,10 @@ paths:
     get:
       summary: Read an authoritative Food menu through the Gateway
       security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      parameters:
+        - {$ref: '#/components/parameters/RestaurantId'}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
         '200': {description: Food menu for the restaurant}
         '401': {description: Missing or invalid user token}

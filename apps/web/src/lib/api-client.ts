@@ -235,8 +235,12 @@ export function getFoodRestaurant(id: string): Promise<Record<string, unknown>> 
   return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function getFoodMenu(id: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}/menu`, { method: "GET" });
+export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  if (pagination?.limit !== undefined) params.set("limit", String(pagination.limit));
+  if (pagination?.offset !== undefined) params.set("offset", String(pagination.offset));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}/menu${query}`, { method: "GET" });
 }
 
 export function createFoodCart(restaurantId: string): Promise<Record<string, unknown>> {
