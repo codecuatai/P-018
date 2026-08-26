@@ -6,6 +6,7 @@ import { WorkflowModule } from '../workflow/workflow.module';
 import { AdminController } from './admin.controller';
 import { AdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
+import { InternalKeysController } from './internal-keys.controller';
 
-@Module({ imports: [AuthModule, CoreModule, WorkflowModule], controllers: [AdminController], providers: [AdminGuard, AdminService] })
+@Module({ imports: [AuthModule, CoreModule, WorkflowModule], controllers: [AdminController, InternalKeysController], providers: [AdminGuard, AdminService] })
 export class AdminModule {}

@@ -235,5 +235,46 @@ describe('AdminService', () => {
       const replayRevoke = await service.revokeApiKey(String(created.id), 'admin_1', 'corr_rev', idempotencyKey);
       expect(replayRevoke?.status).toBe('disabled');
     });
+
+    it('should return only active, non-expired decrypted keys for the target provider', async () => {
+      // Create active gemini key 1
+      await service.createApiKey(
+        { provider: 'gemini', label: 'Gemini Primary', key: 'AIzaSy-primary-1111' },
+        'admin_1',
+        'corr_1',
+      );
+      // Create active gemini key 2
+      await service.createApiKey(
+        { provider: 'gemini', label: 'Gemini Secondary', key: 'AIzaSy-secondary-2222' },
+        'admin_1',
+        'corr_2',
+      );
+      // Create trello key (different provider)
+      await service.createApiKey(
+        { provider: 'trello', label: 'Trello Key', key: 'trello-secret-3333' },
+        'admin_1',
+        'corr_3',
+      );
+      // Create expired gemini key
+      const expiredDate = new Date(Date.now() - 60000).toISOString();
+      await service.createApiKey(
+        { provider: 'gemini', label: 'Gemini Expired', key: 'AIzaSy-expired-4444', expires_at: expiredDate },
+        'admin_1',
+        'corr_4',
+      );
+      // Create revoked gemini key
+      const toRevoke = await service.createApiKey(
+        { provider: 'gemini', label: 'Gemini Revoked', key: 'AIzaSy-revoked-5555' },
+        'admin_1',
+        'corr_5',
+      );
+      await service.revokeApiKey(String(toRevoke.id), 'admin_1', 'corr_rev', 'idem_rev');
+
+      const geminiKeys = await service.getActiveDecryptedKeys('gemini');
+      expect(geminiKeys).toEqual(expect.arrayContaining(['AIzaSy-primary-1111', 'AIzaSy-secondary-2222']));
+      expect(geminiKeys).not.toContain('trello-secret-3333');
+      expect(geminiKeys).not.toContain('AIzaSy-expired-4444');
+      expect(geminiKeys).not.toContain('AIzaSy-revoked-5555');
+    });
   });
 });

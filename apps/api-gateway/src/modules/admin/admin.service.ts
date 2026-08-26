@@ -401,6 +401,30 @@ export class AdminService {
     return { items: keys.map((k) => sanitizeApiKey(k)) };
   }
 
+  async getActiveDecryptedKeys(provider: 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other' = 'gemini'): Promise<string[]> {
+    const keys = await this.core.queryApiKeys();
+    const now = Date.now();
+    const activeKeys = keys.filter((k) => {
+      if (k.provider !== provider || k.status !== 'active') return false;
+      if (k.expiresAt && new Date(k.expiresAt).getTime() <= now) return false;
+      return Boolean(k.keyCiphertext && k.keyIv && k.keyAuthTag);
+    });
+
+    const masterSecret = this.config.getOrThrow<string>('JWT_SECRET');
+    const decryptedKeys: string[] = [];
+    for (const record of activeKeys) {
+      try {
+        const plain = decryptSecret(record.keyCiphertext!, record.keyIv!, record.keyAuthTag!, masterSecret).trim();
+        if (plain && !decryptedKeys.includes(plain)) {
+          decryptedKeys.push(plain);
+        }
+      } catch {
+        // Skip corrupted or un-decryptable keys
+      }
+    }
+    return decryptedKeys;
+  }
+
   async createApiKey(data: { provider: 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other'; label: string; key: string; expires_at?: string }, actorId: string, correlationId: string): Promise<JsonObject> {
     const rawKey = data.key.trim();
     const last4 = rawKey.length > 4 ? `...${rawKey.slice(-4)}` : rawKey;
@@ -515,6 +539,27 @@ export class AdminService {
     }
 
     if (key.provider === 'gemini') {
+      if (rawSecret) {
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${rawSecret}`, {
+            signal: AbortSignal.timeout(4000),
+          }).catch(() => null);
+          if (res) {
+            const latency_ms = Math.round(performance.now() - started);
+            if (res.ok) {
+              return { success: true, message: 'Xác thực Gemini API Key thành công.', latency_ms };
+            }
+            if (res.status === 429) {
+              return { success: false, message: 'Gemini API Key đã vượt hạn mức sử dụng (Quota / Rate Limit).', latency_ms };
+            }
+            if (res.status === 400 || res.status === 403) {
+              return { success: false, message: 'Gemini API Key không hợp lệ hoặc bị từ chối quyền truy cập.', latency_ms };
+            }
+          }
+        } catch {
+          // Fall back to agent ready probe
+        }
+      }
       const ready = await this.agent.ready(correlationId).catch(() => ({ ok: false }));
       const latency_ms = Math.round(performance.now() - started);
       return { success: ready.ok, message: ready.ok ? 'Kết nối tới Gemini AI Engine thành công.' : 'AI Engine chưa sẵn sàng.', latency_ms };

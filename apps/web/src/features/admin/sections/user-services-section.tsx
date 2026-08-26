@@ -8,6 +8,7 @@ import {
   HeartPulse,
   Mail,
   MessageSquare,
+  Search,
   Shield,
   ShoppingBag,
   Star,
@@ -18,6 +19,7 @@ import type { AdminFeedbackSummary, AdminUserRecord, AdminUserServiceSummary } f
 
 export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
   const [selectedUserId, setSelectedUserId] = useState<string>("");
+  const [userQuery, setUserQuery] = useState("");
   const [userSummary, setUserSummary] = useState<{ loading: boolean; data?: AdminUserServiceSummary; error?: string }>({ loading: false });
   const [userFeedback, setUserFeedback] = useState<{ loading: boolean; data?: AdminFeedbackSummary; error?: string }>({ loading: false });
   const [copiedId, setCopiedId] = useState(false);
@@ -58,6 +60,10 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
   }, [selectedUserId]);
 
   const selectedUser = users.find((u) => u.id === selectedUserId);
+  const normalizedQuery = userQuery.trim().toLowerCase();
+  const filteredUsers = users.filter((user) =>
+    [user.full_name, user.email, user.role, user.status].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery),
+  );
 
   const handleCopyId = () => {
     if (!selectedUser) return;
@@ -86,24 +92,34 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
   return (
     <div className="admin-subcontent">
       {/* User selection control */}
-      <div className="admin-filter-bar" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: "260px" }}>
-          <label style={{ fontSize: "0.74rem", fontWeight: 700, color: "var(--color-navy)", whiteSpace: "nowrap" }}>
-            Tài khoản quản lý:
-          </label>
+      <div className="admin-filter-bar admin-user-picker">
+        <label className="admin-field-label" htmlFor="admin-user-search">Tài khoản quản lý</label>
+        <div className="admin-search-field">
+          <Search size={16} aria-hidden="true" />
+          <input
+            id="admin-user-search"
+            type="search"
+            value={userQuery}
+            onChange={(e) => setUserQuery(e.target.value)}
+            placeholder="Tìm theo tên, email hoặc quyền…"
+            aria-label="Tìm kiếm tài khoản"
+          />
+        </div>
+        <div className="admin-select-wrap">
           <select
             value={selectedUserId}
             onChange={(e) => setSelectedUserId(e.target.value)}
             className="admin-select"
-            style={{ width: "100%", maxWidth: "420px" }}
+            aria-label="Chọn tài khoản quản lý"
           >
-            {users.map((user) => (
+            {filteredUsers.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.full_name || user.email} ({user.email}) · {user.role.toUpperCase()}
               </option>
             ))}
           </select>
         </div>
+        <span className="admin-filter-count">{filteredUsers.length}/{users.length} tài khoản</span>
       </div>
 
       {selectedUser && (

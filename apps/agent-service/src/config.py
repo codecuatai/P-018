@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
     agent_persistence_mode: Literal["required_postgres", "memory"] = "required_postgres"
     internal_service_token: str = Field(min_length=1)
+    api_gateway_url: str = "http://api-gateway:3000"
+    gemini_key_cache_ttl_seconds: int = Field(default=30, ge=5, le=3600)
 
     @model_validator(mode="after")
     def validate_langfuse_configuration(self) -> "Settings":

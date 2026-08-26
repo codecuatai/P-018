@@ -26,6 +26,8 @@ import {
 } from "@/lib/api-client";
 import type { AdminApiKeyRecord } from "@/types";
 
+const DEFAULT_GEMINI_LABEL = "gemini-3.5-flash-lite";
+
 function formatTimestamp(val?: string): string {
   if (!val) return "—";
   const d = new Date(val);
@@ -57,7 +59,7 @@ export function ApiKeysSection() {
 
   // New Key Form State
   const [formProvider, setFormProvider] = useState<"gemini" | "trello" | "geoapify" | "google_maps" | "other">("gemini");
-  const [formLabel, setFormLabel] = useState("");
+  const [formLabel, setFormLabel] = useState(DEFAULT_GEMINI_LABEL);
   const [formKey, setFormKey] = useState("");
 
   const loadKeys = () => {
@@ -84,7 +86,7 @@ export function ApiKeysSection() {
       });
       setActionMessage({ type: "success", text: "Thêm API Key thành công." });
       setShowAddModal(false);
-      setFormLabel("");
+      setFormLabel(DEFAULT_GEMINI_LABEL);
       setFormKey("");
       loadKeys();
     } catch (err) {
@@ -166,34 +168,31 @@ export function ApiKeysSection() {
   return (
     <div className="admin-subcontent">
       {/* Header controls */}
-      <div className="admin-filter-bar" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: "10px" }}>
-        <div className="admin-filter-left" style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-          <div className="admin-search-wrap" style={{ position: "relative", minWidth: "220px" }}>
+      <div className="admin-filter-bar admin-api-toolbar">
+        <div className="admin-filter-left admin-api-filters">
+          <div className="admin-search-wrap admin-api-search">
             <input
               type="search"
               placeholder="Tìm theo nhãn, provider, key…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="admin-input"
-              style={{ width: "100%", paddingLeft: "32px" }}
             />
             <Search size={15} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "var(--color-muted)" }} />
           </div>
-          <select
-            value={providerFilter}
-            onChange={(e) => setProviderFilter(e.target.value)}
-            className="admin-select"
-          >
-            <option value="all">Tất cả Provider</option>
-            <option value="gemini">Google Gemini AI</option>
-            <option value="trello">Trello</option>
-            <option value="geoapify">Geoapify Maps</option>
-            <option value="google_maps">Google Maps</option>
-            <option value="other">Khác</option>
-          </select>
+          <div className="admin-select-wrap admin-api-provider-filter">
+            <select value={providerFilter} onChange={(e) => setProviderFilter(e.target.value)} className="admin-select">
+              <option value="all">Tất cả Provider</option>
+              <option value="gemini">Google Gemini AI</option>
+              <option value="trello">Trello</option>
+              <option value="geoapify">Geoapify Maps</option>
+              <option value="google_maps">Google Maps</option>
+              <option value="other">Khác</option>
+            </select>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+        <div className="admin-api-actions">
           <button
             className="button button-secondary"
             type="button"
@@ -237,29 +236,22 @@ export function ApiKeysSection() {
       {/* Add API Key Form Card */}
       {showAddModal && (
         <div
-          className="admin-card"
-          style={{
-            margin: "1rem 0",
-            border: "1px solid var(--color-brand, #3B82F6)",
-            boxShadow: "0 4px 12px rgba(59, 130, 246, 0.08)",
-            borderRadius: "10px",
-            padding: "16px 20px",
-            background: "#FFFFFF",
-          }}
+          className="admin-card admin-api-form-card"
         >
-          <div className="admin-card-title" style={{ marginBottom: "14px" }}>
-            <h3 style={{ fontSize: "0.86rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+          <div className="admin-card-title admin-api-form-heading">
+            <h3>
               <Key size={16} color="var(--color-brand, #3B82F6)" /> Cấu hình API Key mới
             </h3>
-            <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>
+            <span>
               Khóa được mã hóa AES-256-GCM và lưu an toàn, chỉ hiển thị hậu tố bảo vệ.
             </span>
           </div>
 
-          <form onSubmit={handleCreate} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+          <form onSubmit={handleCreate} className="admin-api-form">
+            <div className="admin-api-form-grid">
               <div className="admin-form-group">
                 <label className="admin-form-label">Provider tích hợp</label>
+                <div className="admin-select-wrap">
                 <select
                   value={formProvider}
                   onChange={(e) => setFormProvider(e.target.value as any)}
@@ -272,13 +264,14 @@ export function ApiKeysSection() {
                   <option value="google_maps">Google Maps</option>
                   <option value="other">Khác</option>
                 </select>
+                </div>
               </div>
 
               <div className="admin-form-group">
                 <label className="admin-form-label">Nhãn / Mô tả nhận diện</label>
                 <input
                   type="text"
-                  placeholder="ví dụ: Gemini 1.5 Flash Primary"
+                  placeholder="gemini-3.5-flash-lite"
                   value={formLabel}
                   onChange={(e) => setFormLabel(e.target.value)}
                   className="admin-input"
@@ -289,36 +282,26 @@ export function ApiKeysSection() {
 
             <div className="admin-form-group">
               <label className="admin-form-label">Giá trị API Key (Secret)</label>
-              <div style={{ position: "relative" }}>
+              <div className="admin-api-secret-field">
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="Nhập secret key: AIzaSy... / trello_token..."
                   value={formKey}
                   onChange={(e) => setFormKey(e.target.value)}
                   className="admin-input"
-                  style={{ width: "100%", paddingRight: "40px" }}
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{
-                    position: "absolute",
-                    right: "10px",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    color: "var(--color-muted)",
-                  }}
+                  className="admin-api-secret-toggle"
                 >
                   {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
+            <div className="admin-api-form-actions">
               <button
                 className="button button-secondary"
                 type="button"
