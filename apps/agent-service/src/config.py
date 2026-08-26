@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -42,8 +43,17 @@ class Settings(BaseSettings):
     database_url: str = Field(min_length=1)
     agent_persistence_mode: Literal["required_postgres", "memory"] = "required_postgres"
     internal_service_token: str = Field(min_length=1)
-    api_gateway_url: str = "http://api-gateway:3000"
+    api_gateway_url: str = ""
     gemini_key_cache_ttl_seconds: int = Field(default=30, ge=5, le=3600)
+
+    @model_validator(mode="after")
+    def resolve_api_gateway_url(self) -> "Settings":
+        if not self.api_gateway_url.strip():
+            # In Docker container (/.dockerenv exists), route to Docker service DNS 'http://api-gateway:3000'
+            # In standalone/host local development, route to 'http://localhost:3000'
+            in_docker = Path("/.dockerenv").exists()
+            self.api_gateway_url = "http://api-gateway:3000" if in_docker else "http://localhost:3000"
+        return self
 
     @model_validator(mode="after")
     def validate_langfuse_configuration(self) -> "Settings":
