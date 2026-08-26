@@ -20,6 +20,7 @@ export function AuthDialog({ open, mode, nextPath, onOpenChange, onModeChange }:
   const router = useRouter();
   const isLogin = mode === "login";
   const destination = (authenticatedUser: AuthUser) => {
+    if (authenticatedUser.role === "admin" && authenticatedUser.status !== "disabled") return nextPath ?? "/admin";
     if (!authenticatedUser.onboarding_completed_at && authenticatedUser.authentication_kind !== "demo") return "/app/onboarding";
     return nextPath ?? "/app";
   };
