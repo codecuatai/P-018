@@ -275,10 +275,85 @@ export interface AdminDomainStatus {
 
 export interface AdminHealthCheck {
   service: string;
-  status: "healthy" | "unavailable";
+  status: "healthy" | "degraded" | "unavailable";
   latency_ms: number;
   checked_at: string;
+  detail?: Record<string, unknown>;
   error?: string;
+}
+
+export interface AdminApiKeyRecord {
+  id: string;
+  provider: "gemini" | "trello" | "geoapify" | "google_maps" | "other";
+  label: string;
+  last4: string;
+  status: "active" | "disabled" | "expired";
+  expires_at?: string;
+  updated_at: string;
+  updated_by: string;
+  created_at: string;
+}
+
+export interface AdminLogEntry {
+  id: string;
+  action: string;
+  actor_id?: string;
+  resource_id?: string;
+  correlation_id?: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AdminTokenUsageReport {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_estimated_cost_usd: number;
+  by_feature: Record<string, { prompt: number; completion: number; total: number; cost: number }>;
+  by_model: Record<string, { prompt: number; completion: number; total: number; cost: number }>;
+  daily_trends: Array<{
+    date: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    estimated_cost_usd: number;
+  }>;
+  top_consumers: Array<{
+    actor_id: string;
+    total_tokens: number;
+    estimated_cost_usd: number;
+  }>;
+}
+
+export interface AdminUserServiceSummary {
+  user_id: string;
+  ride_count: number;
+  food_count: number;
+  restaurant_count: number;
+  healthcare_count: number;
+  feedback_count: number;
+  last_active_at?: string;
+}
+
+export interface AdminFeedbackSummary {
+  items: Array<{
+    id: string;
+    actor_id: string;
+    domain: ProductOpsDomain;
+    resource_type: string;
+    resource_id: string;
+    rating: number;
+    comment?: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+  total: number;
+  page: number;
+  page_size: number;
+  stats: {
+    average_rating: number;
+    by_domain: Record<string, { count: number; average_rating: number }>;
+  };
 }
 
 export interface AdminDatasetStatus extends AdminDomainStatus {}

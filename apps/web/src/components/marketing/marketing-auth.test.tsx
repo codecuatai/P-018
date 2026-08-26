@@ -64,4 +64,17 @@ describe("marketing authentication dialog", () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/app/onboarding"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("routes an active admin directly to the admin workspace before onboarding", async () => {
+    mockLogin.mockResolvedValueOnce({ sub: "admin-1", email: "admin@example.test", role: "admin", status: "active" });
+    render(<MarketingHarness />);
+    fireEvent.click(screen.getByRole("button", { name: "Đăng nhập" }));
+    const dialog = screen.getByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("Email"), { target: { value: "admin@example.test" } });
+    fireEvent.change(within(dialog).getByLabelText("Mật khẩu"), { target: { value: "admin local passphrase" } });
+    fireEvent.submit(within(dialog).getByRole("button", { name: "Đăng nhập" }).closest("form")!);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/admin"));
+  });
 });
