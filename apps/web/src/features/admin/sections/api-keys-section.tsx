@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Check,
+  Activity,
   CheckCircle2,
-  Copy,
   Eye,
   EyeOff,
   Key,
+  Lock,
   Plus,
   RefreshCw,
   Search,
@@ -27,6 +27,15 @@ import {
 import type { AdminApiKeyRecord } from "@/types";
 
 const DEFAULT_GEMINI_LABEL = "gemini-3.5-flash-lite";
+
+interface KeyTestStatus {
+  loading?: boolean;
+  tested?: boolean;
+  success?: boolean;
+  message?: string;
+  latency_ms?: number;
+  testedAt?: string;
+}
 
 function formatTimestamp(val?: string): string {
   if (!val) return "—";
@@ -53,7 +62,8 @@ export function ApiKeysSection() {
   const [showPassword, setShowPassword] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, KeyTestStatus>>({});
+  const [testingAll, setTestingAll] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -131,26 +141,52 @@ export function ApiKeysSection() {
   };
 
   const handleTest = async (id: string) => {
-    setActionLoading(true);
+    setTestResults((prev) => ({
+      ...prev,
+      [id]: { loading: true },
+    }));
     setActionMessage(null);
     try {
       const res = await testAdminApiKey(id);
+      const result: KeyTestStatus = {
+        loading: false,
+        tested: true,
+        success: res.success,
+        message: res.message,
+        latency_ms: res.latency_ms,
+        testedAt: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+      };
+      setTestResults((prev) => ({ ...prev, [id]: result }));
       if (res.success) {
-        setActionMessage({ type: "success", text: `${res.message} (Độ trễ: ${res.latency_ms} ms)` });
+        setActionMessage({
+          type: "success",
+          text: `Khóa ${id.slice(0, 10)}... hoạt động tốt (Độ trễ: ${res.latency_ms} ms).`,
+        });
       } else {
-        setActionMessage({ type: "error", text: `${res.message} (Độ trễ: ${res.latency_ms} ms)` });
+        setActionMessage({
+          type: "error",
+          text: `Khóa ${id.slice(0, 10)}... không khả dụng: ${res.message} (Độ trễ: ${res.latency_ms} ms).`,
+        });
       }
     } catch (err) {
-      setActionMessage({ type: "error", text: errorText(err) });
-    } finally {
-      setActionLoading(false);
+      const msg = errorText(err);
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { loading: false, tested: true, success: false, message: msg },
+      }));
+      setActionMessage({ type: "error", text: msg });
     }
   };
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleTestAll = async () => {
+    const activeKeys = filteredKeys.filter((k) => k.status === "active");
+    if (activeKeys.length === 0) return;
+    setTestingAll(true);
+    setActionMessage(null);
+    for (const key of activeKeys) {
+      await handleTest(key.id);
+    }
+    setTestingAll(false);
   };
 
   const filteredKeys = useMemo(() => {
@@ -196,6 +232,15 @@ export function ApiKeysSection() {
           <button
             className="button button-secondary"
             type="button"
+            onClick={handleTestAll}
+            disabled={testingAll || keys.loading || filteredKeys.filter((k) => k.status === "active").length === 0}
+            title="Kiểm tra kết nối tất cả các khóa đang hoạt động"
+          >
+            <Activity size={14} className={testingAll ? "spin" : ""} /> {testingAll ? "Đang kiểm tra…" : "Kiểm tra tất cả"}
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
             onClick={loadKeys}
             disabled={keys.loading}
             title="Làm mới danh sách"
@@ -235,28 +280,30 @@ export function ApiKeysSection() {
 
       {/* Add API Key Form Card */}
       {showAddModal && (
-        <div
-          className="admin-card admin-api-form-card"
-        >
+        <div className="admin-card admin-api-form-card">
           <div className="admin-card-title admin-api-form-heading">
             <h3>
               <Key size={16} color="var(--color-brand, #3B82F6)" /> Cấu hình API Key mới
             </h3>
             <span>
-              Khóa được mã hóa AES-256-GCM và lưu an toàn, chỉ hiển thị hậu tố bảo vệ.
+              Khóa được mã hóa AES-256-GCM và lưu an toàn, tuyệt đối không lộ secret ra ngoài.
             </span>
           </div>
 
           <form onSubmit={handleCreate} className="admin-api-form">
             <div className="admin-api-form-grid">
               <div className="admin-form-group">
-                <label className="admin-form-label">Provider tích hợp</label>
-                <div className="admin-select-wrap">
+                <label className="admin-form-label">Dịch vụ (Provider)</label>
                 <select
                   value={formProvider}
-                  onChange={(e) => setFormProvider(e.target.value as any)}
+                  onChange={(e) => {
+                    const val = e.target.value as any;
+                    setFormProvider(val);
+                    if (val === "gemini" && formLabel === "default") {
+                      setFormLabel(DEFAULT_GEMINI_LABEL);
+                    }
+                  }}
                   className="admin-select"
-                  style={{ width: "100%" }}
                 >
                   <option value="gemini">Google Gemini AI</option>
                   <option value="trello">Trello</option>
@@ -264,14 +311,13 @@ export function ApiKeysSection() {
                   <option value="google_maps">Google Maps</option>
                   <option value="other">Khác</option>
                 </select>
-                </div>
               </div>
 
               <div className="admin-form-group">
-                <label className="admin-form-label">Nhãn / Mô tả nhận diện</label>
+                <label className="admin-form-label">Nhãn / Mô tả</label>
                 <input
                   type="text"
-                  placeholder="gemini-3.5-flash-lite"
+                  placeholder="Ví dụ: gemini-3.5-flash-lite / trello-main"
                   value={formLabel}
                   onChange={(e) => setFormLabel(e.target.value)}
                   className="admin-input"
@@ -405,13 +451,13 @@ export function ApiKeysSection() {
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th style={{ width: "120px" }}>Provider</th>
-                  <th>Nhãn / Mô tả</th>
-                  <th style={{ width: "110px" }}>Giá trị ẩn</th>
+                  <th style={{ width: "100px" }}>Provider</th>
+                  <th style={{ minWidth: "160px" }}>Nhãn / Mô tả</th>
+                  <th style={{ width: "120px" }}>Khóa bí mật</th>
                   <th style={{ width: "110px" }}>Trạng thái</th>
-                  <th style={{ width: "120px" }}>Cập nhật bởi</th>
-                  <th style={{ width: "140px" }}>Cập nhật lúc</th>
-                  <th style={{ width: "160px", textAlign: "right" }}>Thao tác</th>
+                  <th style={{ width: "160px" }}>Sức khỏe kết nối</th>
+                  <th style={{ width: "130px" }}>Cập nhật lúc</th>
+                  <th style={{ minWidth: "260px", textAlign: "right" }}>Thao tác</th>
                 </tr>
               </thead>
               <tbody>
@@ -419,6 +465,7 @@ export function ApiKeysSection() {
                   const updatedBy = key.updated_by || (key as any).updatedBy || "admin";
                   const updatedAt = key.updated_at || (key as any).updatedAt;
                   const isActive = key.status === "active";
+                  const testStatus = testResults[key.id];
 
                   return (
                     <tr key={key.id}>
@@ -442,16 +489,12 @@ export function ApiKeysSection() {
                         </div>
                       </td>
                       <td>
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
-                          <code className="admin-code-pill">{key.last4 || "••••"}</code>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(key.last4, key.id)}
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: "2px", color: "var(--color-muted)" }}
-                            title="Sao chép"
-                          >
-                            {copiedId === key.id ? <Check size={12} color="#059669" /> : <Copy size={12} />}
-                          </button>
+                        <div
+                          className="admin-key-masked"
+                          title="Khóa bí mật được mã hóa AES-256-GCM an toàn trong Database"
+                        >
+                          <Lock size={11} className="admin-key-lock-icon" />
+                          <span className="admin-masked-dots">••••••••••••</span>
                         </div>
                       </td>
                       <td>
@@ -461,46 +504,78 @@ export function ApiKeysSection() {
                         </span>
                       </td>
                       <td>
-                        <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>{updatedBy}</span>
+                        {testStatus?.loading ? (
+                          <span className="admin-health-pill testing">
+                            <RefreshCw size={11} className="spin" /> Đang kiểm tra…
+                          </span>
+                        ) : testStatus?.tested ? (
+                          testStatus.success ? (
+                            <span
+                              className="admin-health-pill success"
+                              title={`${testStatus.message || "Hoạt động tốt"} - Lúc ${testStatus.testedAt}`}
+                            >
+                              <CheckCircle2 size={11} /> Khả dụng ({testStatus.latency_ms ?? 0}ms)
+                            </span>
+                          ) : (
+                            <span
+                              className="admin-health-pill error"
+                              title={`${testStatus.message || "Không khả dụng"} - Lúc ${testStatus.testedAt}`}
+                            >
+                              <XCircle size={11} /> {testStatus.message || "Lỗi kết nối"}
+                            </span>
+                          )
+                        ) : (
+                          <span
+                            className="admin-health-pill unverified"
+                            title="Bấm 'Kiểm tra' để gửi request xác thực khóa"
+                          >
+                            <Activity size={11} /> Chưa kiểm tra
+                          </span>
+                        )}
                       </td>
                       <td>
                         <span style={{ fontSize: "0.7rem", color: "var(--color-muted-soft)" }}>
                           {formatTimestamp(updatedAt)}
                         </span>
                       </td>
-                      <td style={{ textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: "4px", justifyContent: "flex-end" }}>
+                      <td className="admin-api-actions-cell">
+                        <div className="admin-action-btn-group">
                           <button
-                            className="button button-secondary"
-                            style={{ padding: "3px 8px", fontSize: "0.7rem" }}
                             type="button"
+                            className="admin-action-btn admin-action-btn-test"
                             onClick={() => handleTest(key.id)}
-                            disabled={actionLoading}
-                            title="Kiểm tra kết nối"
+                            disabled={actionLoading || testStatus?.loading}
+                            title="Kiểm tra kết nối và hạn mức của khóa"
                           >
-                            <Zap size={11} /> Test
+                            {testStatus?.loading ? (
+                              <RefreshCw size={12} className="spin" />
+                            ) : (
+                              <Zap size={12} />
+                            )}
+                            <span>{testStatus?.loading ? "Đang thử…" : "Kiểm tra"}</span>
                           </button>
+
                           {isActive && (
                             <>
                               <button
-                                className="button button-secondary"
-                                style={{ padding: "3px 8px", fontSize: "0.7rem" }}
                                 type="button"
+                                className="admin-action-btn admin-action-btn-rotate"
                                 onClick={() => setRotateKeyId(key.id)}
-                                disabled={actionLoading}
-                                title="Xoay khóa mới"
+                                disabled={actionLoading || testStatus?.loading}
+                                title="Đổi sang secret key mới"
                               >
-                                Rotate
+                                <RefreshCw size={12} />
+                                <span>Đổi khóa</span>
                               </button>
                               <button
-                                className="button button-secondary"
-                                style={{ padding: "3px 8px", fontSize: "0.7rem", color: "#DC2626" }}
                                 type="button"
+                                className="admin-action-btn admin-action-btn-revoke"
                                 onClick={() => handleRevoke(key.id, key.label)}
-                                disabled={actionLoading}
-                                title="Thu hồi khóa"
+                                disabled={actionLoading || testStatus?.loading}
+                                title="Vô hiệu hóa khóa này"
                               >
-                                Revoke
+                                <ShieldAlert size={12} />
+                                <span>Thu hồi</span>
                               </button>
                             </>
                           )}
