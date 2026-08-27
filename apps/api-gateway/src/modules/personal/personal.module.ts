@@ -374,13 +374,13 @@ export class LocationService {
 
   private localDeterministicCandidate(query: string): GeocodeCandidate | undefined {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
-    const normalized = query.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim();
+    const normalized = foldLocalAddress(query);
     const fixtures: Array<{ matches: string[]; latitude: number; longitude: number }> = [
       { matches: ['ho hoan kiem', 'ho guom'], latitude: 21.0285, longitude: 105.8048 },
       { matches: ['vinuni'], latitude: 20.9914, longitude: 105.945975 },
       { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], latitude: 10.7758, longitude: 106.7004 },
     ];
-    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value));
+    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`)));
     return fixture ? { address_text: query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
   }
 
@@ -580,6 +580,10 @@ export class HealthcarePatientController {
 
 function assertCoordinatePair(latitude: number | undefined, longitude: number | undefined): void {
   if ((latitude === undefined) !== (longitude === undefined)) throw new BadRequestException({ code: 'COORDINATE_PAIR_REQUIRED', detail: 'Vĩ độ và kinh độ phải được gửi cùng nhau.', retryable: false });
+}
+
+function foldLocalAddress(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
 }
 
 function roundCoordinate(value: number | undefined): number | undefined {

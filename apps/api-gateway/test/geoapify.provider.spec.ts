@@ -71,6 +71,19 @@ describe('Geoapify provider boundary', () => {
     expect(geoapify.geocode).toHaveBeenCalledWith('an address with no result');
   });
 
+  it('matches a known local place when the query includes contextual address details', async () => {
+    const geoapify = { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() };
+    const locations = new LocationService(
+      config({ APP_ENV: 'development', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: true }),
+      geoapify as never,
+    );
+
+    const result = await locations.geocode('Trường Đại học VinUni, Hà Nội');
+
+    expect(result).toMatchObject({ provider: 'deterministic-local-demo', status: 'RESOLVED' });
+    expect(result.candidates[0]).toMatchObject({ latitude: 20.9914, longitude: 105.945975 });
+  });
+
   it('reverse geocodes a coordinate through Geoapify', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       results: [{ lat: 21.0285, lon: 105.8048, formatted: 'Hồ Hoàn Kiếm, Hà Nội', rank: 1 }],
