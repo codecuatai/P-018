@@ -701,6 +701,10 @@
 .address-suggestion { display: block; width: 100%; padding: 11px 13px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.73rem; line-height: 1.4; word-break: break-word; cursor: pointer; transition: background-color 120ms ease; }
 .address-suggestion:last-child { border-bottom: 0; }
 .address-suggestion:hover, .address-suggestion:focus-visible { background: #F1F7F8; outline: 0; }
+.ride-form { position: relative; z-index: 1; }
+.ride-quote-submit { position: relative; z-index: 2; }
+.ride-form .address-autocomplete { z-index: 3; }
+.ride-form .address-suggestions { position: relative; z-index: 20; top: auto; right: auto; left: auto; margin-top: 4px; }
 .ride-result { display: grid; gap: 7px; }
 .xone-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .xone-map-toolbar small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1921,4 +1925,77 @@
   .restaurant-map-canvas > .xone-map > small:last-child { right: 10px; bottom: 10px; max-width: 46%; padding: 6px 8px; font-size: 0.58rem; }
   .restaurant-map-info-button { top: 10px; right: 84px; }
   .restaurant-map-info-panel { top: 54px; right: 10px; width: calc(100% - 20px); max-height: calc(100% - 64px); }
+}
+
+@media (max-width: 320px) {
+  .ride-map-canvas,
+  .active-ride-map,
+  .quote-result > .xone-map { overflow-y: auto; }
+
+  .ride-map-canvas > .xone-map,
+  .active-ride-map > .xone-map,
+  .quote-result > .xone-map {
+    display: grid;
+    grid-template-rows: auto minmax(240px, 1fr) auto;
+    gap: 6px;
+    height: auto;
+    min-height: 100%;
+    padding: 6px;
+    overflow: visible;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar,
+  .active-ride-map > .xone-map > .xone-map-toolbar,
+  .quote-result > .xone-map > .xone-map-toolbar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 0;
+    pointer-events: auto;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar small,
+  .active-ride-map > .xone-map > .xone-map-toolbar small,
+  .quote-result > .xone-map > .xone-map-toolbar small {
+    max-width: none;
+    padding: 6px 8px;
+    white-space: normal;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar button,
+  .active-ride-map > .xone-map > .xone-map-toolbar button,
+  .quote-result > .xone-map > .xone-map-toolbar button { width: 28px; height: 28px; }
+
+  .ride-map-canvas > .xone-map > .xone-map-leaflet,
+  .ride-map-canvas > .xone-map > .xone-map-fallback,
+  .active-ride-map > .xone-map > .xone-map-leaflet,
+  .active-ride-map > .xone-map > .xone-map-fallback,
+  .quote-result > .xone-map > .xone-map-leaflet,
+  .quote-result > .xone-map > .xone-map-fallback {
+    position: relative;
+    inset: auto;
+    height: 240px;
+    min-height: 240px;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-legend,
+  .active-ride-map > .xone-map > .xone-map-legend,
+  .quote-result > .xone-map > .xone-map-legend {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 8px;
+    width: 100%;
+    max-width: none;
+    padding: 6px 8px;
+  }
+
+  .ride-map-canvas .leaflet-bottom.leaflet-right,
+  .active-ride-map .leaflet-bottom.leaflet-right,
+  .quote-result > .xone-map .leaflet-bottom.leaflet-right { right: 4px; bottom: 4px; max-width: calc(100% - 8px); }
+
+  .ride-map-canvas .leaflet-control-attribution,
+  .active-ride-map .leaflet-control-attribution,
+  .quote-result > .xone-map .leaflet-control-attribution { max-width: 100%; font-size: 7px; line-height: 1.15; white-space: normal; }
 }
