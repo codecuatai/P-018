@@ -161,8 +161,17 @@ export function getProfile(): Promise<AuthUser> {
   return request<AuthUser>("/api/v1/users/me", { method: "GET" });
 }
 
-export function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
-  return request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+export async function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
+  const updated = await request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+  if (patch.phone && updated.phone !== patch.phone) {
+    throw new ApiError({
+      code: "PROFILE_PHONE_NOT_PERSISTED",
+      detail: "Hồ sơ không trả về số điện thoại vừa lưu.",
+      status: 502,
+      retryable: true,
+    });
+  }
+  return updated;
 }
 
 export function listSavedAddresses(): Promise<{ items: SavedAddress[] }> {
@@ -679,6 +688,8 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("IDEMPOTENCY_KEY_REUSED")) {
     return "Yêu cầu giỏ hàng đã được dùng cho dữ liệu khác. Bạn hãy thử lại.";
   }
+  if (source.includes("PROFILE_PHONE_NOT_PERSISTED")) return "Chưa xác nhận được số điện thoại đã được lưu. Dữ liệu của bạn vẫn được giữ lại, hãy thử lại.";
+  if (source.includes("PHONE_INVALID")) return "Số điện thoại không hợp lệ. Hãy kiểm tra lại số Việt Nam của bạn.";
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
   if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";
   if (source.includes("UNAUTHORIZED") || source.includes("FORBIDDEN") || source.includes("AUTHENTICATION")) {

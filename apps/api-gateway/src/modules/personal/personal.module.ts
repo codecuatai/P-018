@@ -13,8 +13,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
@@ -27,7 +27,7 @@ import { CoreModule, CoreStore, SavedAddressPatch, SavedAddressRecord } from '..
 import { AuthModule } from '../auth/auth.module';
 import { GeoapifyProvider } from './geoapify.provider';
 
-class ProfilePatchDto {
+export class ProfilePatchDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
@@ -37,6 +37,8 @@ class ProfilePatchDto {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:(?:0|\+84)(?:3|5|7|8|9)\d{8})?$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
   phone?: string;
 
   @IsOptional()
@@ -593,6 +595,10 @@ function roundCoordinate(value: number | undefined): number | undefined {
 function clean(value: string | undefined): string | undefined {
   const cleaned = value?.trim();
   return cleaned || undefined;
+}
+
+function normalizePhone(value: string): string {
+  return value.replace(/[\s().-]/g, '');
 }
 
 function assertCoordinate(value: LocationCoordinate, name: string): void {
