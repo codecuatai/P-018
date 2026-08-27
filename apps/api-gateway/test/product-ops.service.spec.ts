@@ -6,7 +6,7 @@ function makeService() {
   const store = new InMemoryProductOpsStore();
   const food = { listOrders: jest.fn().mockResolvedValue({ items: [] }), getOrder: jest.fn() } as unknown as FoodClient;
   const ride = { listBookings: jest.fn().mockResolvedValue({ items: [] }), getBooking: jest.fn() } as unknown as RideClient;
-  const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }), getRestaurant: jest.fn() } as unknown as RestaurantClient;
+  const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }), getRestaurant: jest.fn(), getReservation: jest.fn() } as unknown as RestaurantClient;
   const healthcare = { listAppointments: jest.fn().mockResolvedValue({ items: [] }), getFacility: jest.fn(), getAppointment: jest.fn() } as unknown as HealthcareClient;
   return { service: new ProductOpsService(store as never, food, ride, restaurant, healthcare), store, food, ride, restaurant, healthcare };
 }
@@ -46,7 +46,7 @@ describe('ProductOpsService', () => {
     await expect(service.createFeedback('actor-1', 'cor-2', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).resolves.toMatchObject({ resourceId: 'ride-1', rating: 5 });
 
     // Restaurant: CONFIRMED or future SEATED should be rejected
-    (restaurant.listReservations as jest.Mock).mockResolvedValue({ items: [{ id: 'res-1', status: 'CONFIRMED', start_at: '2099-01-01T19:00:00Z' }] });
+    (restaurant.getReservation as jest.Mock).mockResolvedValue({ id: 'res-1', actor_id: 'actor-1', status: 'CONFIRMED', start_at: '2099-01-01T19:00:00Z' });
     await expect(service.createFeedback('actor-1', 'cor-3', { domain: 'restaurant', resourceType: 'restaurant_reservation', resourceId: 'res-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
 
     // Healthcare: PAYMENT_CONFIRMED or CONFIRMED in future should be rejected
