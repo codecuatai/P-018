@@ -233,9 +233,22 @@ function notificationEvents(domain: string, resourceId: string, status: string, 
 function isCompleted(domain: ProductOpsDomain, resource: JsonObject): boolean {
   const status = String(resource.status ?? '').toUpperCase();
   if (domain === 'food') return ['DELIVERED', 'COMPLETED', 'FULFILLED'].includes(status);
-  if (domain === 'ride') return status === 'COMPLETED';
-  if (domain === 'restaurant') return ['CONFIRMED', 'COMPLETED', 'SEATED'].includes(status);
-  return ['CONFIRMED', 'COMPLETED', 'PAYMENT_CONFIRMED'].includes(status);
+  if (domain === 'ride') return ['COMPLETED', 'FULFILLED'].includes(status);
+  if (domain === 'restaurant') {
+    if (['COMPLETED', 'FULFILLED'].includes(status)) return true;
+    if (status === 'SEATED') {
+      const start = stringAt(resource, ['start_at', 'reservation_time', 'start_time']);
+      if (start) {
+        const timestamp = Date.parse(start);
+        return Number.isFinite(timestamp) && Date.now() >= timestamp;
+      }
+    }
+    return false;
+  }
+  if (domain === 'healthcare') {
+    return ['COMPLETED', 'FULFILLED'].includes(status);
+  }
+  return false;
 }
 
 function arrayAt(value: JsonObject, key: string): JsonObject[] {

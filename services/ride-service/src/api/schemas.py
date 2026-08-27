@@ -110,6 +110,29 @@ class BookingOut(StrictModel):
     updated_at: datetime
     driver_id: str | None = None
     tracking_started_at: datetime | None = None
+    pickup_address: str | None = None
+    dropoff_address: str | None = None
+    vehicle_type: str | None = None
+    distance_km: int | None = None
+    duration_minutes: int | None = None
+    base_fee: int | None = None
+    distance_fee: int | None = None
+    time_fee: int | None = None
+    peak_surcharge: int | None = None
+    discount: int | None = None
+    tariff_version: str | None = None
+    expires_at: datetime | None = None
+    pickup_latitude: float | None = None
+    pickup_longitude: float | None = None
+    dropoff_latitude: float | None = None
+    dropoff_longitude: float | None = None
+    route_provider: str | None = None
+    route_distance_meters: int | None = None
+    route_duration_seconds: int | None = None
+    route_polyline: str | None = None
+    route_geometry: list[dict[str, float]] | None = None
+    route_snapshot_hash: str | None = None
+    tariff_snapshot: dict[str, Any] | None = None
 
 
 class TrackingOut(StrictModel):

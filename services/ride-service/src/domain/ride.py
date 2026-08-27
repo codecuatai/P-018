@@ -163,9 +163,16 @@ class Booking:
     tracking_started_at: datetime | None = None
     passenger_count: int = 1
     capacity_policy_version: str = CAPACITY_POLICY_VERSION
+    quote_snapshot: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
-        return _json_safe(asdict(self))
+        data = _json_safe(asdict(self))
+        qs = data.pop("quote_snapshot", None)
+        if qs:
+            # Exclude id and status from quote_snapshot to avoid overwriting booking fields
+            qs_copy = {k: v for k, v in qs.items() if k not in ("id", "status")}
+            data.update(qs_copy)
+        return data
 
 
 @dataclass(frozen=True)

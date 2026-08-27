@@ -5,7 +5,7 @@ import { installAuthenticatedFixture } from "./support/mock-gateway";
 test("conversation new → send → rename → archive → unarchive → reload → delete", async ({ context, page }) => {
   const gateway = await installAuthenticatedFixture(context, { email: "conversation@example.test" });
   await page.goto("/app");
-  await expect(page.getByRole("heading", { name: "Mình có thể giúp gì hôm nay?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bạn cần hỗ trợ gì hôm nay?" })).toBeVisible();
 
   await page.getByLabel("Nhập yêu cầu").fill("Tìm một lựa chọn deterministic");
   await page.getByRole("button", { name: "Gửi yêu cầu" }).click();

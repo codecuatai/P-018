@@ -78,7 +78,7 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
   async function handleCancel(): Promise<void> {
     setActionPending(true); setActionMessage(""); setError("");
     try {
-      const cancelResult = await executeServiceCancellation(type, resource ?? id);
+      const cancelResult = await executeServiceCancellation(type, resource ?? id, id);
       const newStatus = String(cancelResult.status ?? "CANCELLED");
       setResource((prev) => prev ? { ...prev, status: newStatus } : { status: newStatus });
       if (type === "ride_booking") markRideTrackingCancelled(id);
