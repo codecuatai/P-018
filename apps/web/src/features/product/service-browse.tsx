@@ -294,6 +294,9 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const selectedSavedAddress = addresses.find((address) => address.id === addressId);
+  const savedPoint = selectedSavedAddress?.latitude !== undefined && selectedSavedAddress.longitude !== undefined ? { latitude: selectedSavedAddress.latitude, longitude: selectedSavedAddress.longitude } : undefined;
+  const newPoint = selected && selected.latitude !== null && selected.longitude !== null ? { latitude: selected.latitude, longitude: selected.longitude } : undefined;
 
   async function search(): Promise<void> {
     if (!query.trim() || searching) return;
@@ -320,7 +323,23 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
     finally { setSaving(false); }
   }
 
-  return <div className="food-delivery-address"><label className="transaction-field">Địa chỉ giao hàng<select value={addressId} onChange={(event) => setAddressId(event.target.value)} disabled={disabled}><option value="">Chọn địa chỉ</option>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} · {address.address_text}</option>)}</select></label><button className="text-button food-address-toggle" type="button" onClick={() => { setAdding((value) => !value); setError(""); }} disabled={disabled}>{adding ? "Đóng phần thêm địa chỉ" : "Thêm địa chỉ giao mới"}</button>{adding ? <div className="food-address-form"><label>Nhãn<input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label><div className="food-address-field"><label htmlFor="food-address-query">Địa chỉ nội thành Hà Nội</label><div className="food-address-search"><input id="food-address-query" value={query} onChange={(event) => { setQuery(event.target.value); setSelected(undefined); setCandidates([]); }} placeholder="Số nhà, đường, phường, quận" /><button className="button button-secondary" type="button" onClick={() => void search()} disabled={searching || !query.trim()}>{searching ? <Loader2 className="spinner" size={15} /> : <Search size={15} />} Tìm</button></div></div>{candidates.length ? <div className="food-address-candidates" role="listbox" aria-label="Địa chỉ giao hàng nội thành Hà Nội">{candidates.map((candidate) => <button className={selected?.address_text === candidate.address_text ? "is-active" : ""} type="button" role="option" aria-selected={selected?.address_text === candidate.address_text} key={`${candidate.address_text}-${candidate.latitude}`} onClick={() => { setSelected(candidate); setQuery(candidate.address_text); }}>{candidate.address_text}</button>)}</div> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide" type="button" onClick={() => void save()} disabled={saving || !selected}>{saving ? <Loader2 className="spinner" size={15} /> : <MapPinned size={15} />} {saving ? "Đang lưu…" : "Lưu và chọn địa chỉ"}</button><p className="field-hint">Chỉ các kết quả đã định vị trong 12 quận nội thành Hà Nội được chấp nhận.</p></div> : null}</div>;
+  return <div className="food-delivery-address">
+    <div className="food-address-heading"><span>Địa chỉ giao hàng</span><small>{selectedSavedAddress ? "Địa chỉ đã lưu" : "Chưa chọn địa chỉ"}</small></div>
+    {addresses.length ? <div className="food-saved-addresses" role="listbox" aria-label="Địa chỉ giao hàng đã lưu">
+      {addresses.map((address) => <button className={`food-saved-address ${address.id === addressId ? "is-selected" : ""}`} type="button" role="option" aria-selected={address.id === addressId} key={address.id} onClick={() => setAddressId(address.id)} disabled={disabled}><strong>{address.label}</strong><span>{address.address_text}</span></button>)}
+    </div> : <p className="field-hint">Chưa có địa chỉ lưu sẵn. Hãy thêm một địa chỉ bên dưới.</p>}
+    {selectedSavedAddress ? <div className="food-address-selected"><span>Địa chỉ đang dùng</span><strong>{selectedSavedAddress.label}</strong><input value={selectedSavedAddress.address_text} readOnly aria-label="Địa chỉ giao hàng đang chọn" /></div> : null}
+    <button className="text-button food-address-toggle" type="button" onClick={() => { setAdding((value) => !value); setError(""); }} disabled={disabled}>{adding ? "Đóng phần thêm địa chỉ" : "Thêm địa chỉ giao mới"}</button>
+    {adding ? <div className="food-address-form">
+      <label>Nhãn<input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label>
+      <div className="food-address-field"><label htmlFor="food-address-query">Địa chỉ nội thành Hà Nội</label><div className="food-address-search"><input id="food-address-query" value={query} onChange={(event) => { setQuery(event.target.value); setSelected(undefined); setCandidates([]); }} placeholder="Số nhà, đường, phường, quận" /><button className="button button-secondary" type="button" onClick={() => void search()} disabled={searching || !query.trim()}>{searching ? <Loader2 className="spinner" size={15} /> : <Search size={15} />} Tìm</button></div></div>
+      {candidates.length ? <div className="food-address-candidates" role="listbox" aria-label="Địa chỉ giao hàng nội thành Hà Nội">{candidates.map((candidate) => <button className={selected?.address_text === candidate.address_text ? "is-active" : ""} type="button" role="option" aria-selected={selected?.address_text === candidate.address_text} key={`${candidate.address_text}-${candidate.latitude}`} onClick={() => { setSelected(candidate); setQuery(candidate.address_text); }}>{candidate.address_text}</button>)}</div> : null}
+      {error ? <p className="form-error" role="alert">{error}</p> : null}
+      <button className="button button-primary button-wide" type="button" onClick={() => void save()} disabled={saving || !selected}>{saving ? <Loader2 className="spinner" size={15} /> : <MapPinned size={15} />} {saving ? "Đang lưu…" : "Lưu và chọn địa chỉ"}</button>
+      <p className="field-hint">Bạn có thể chọn địa chỉ đã lưu ở phía trên hoặc thêm địa chỉ mới từ kết quả định vị.</p>
+    </div> : null}
+    <XOneMap destination={newPoint ?? savedPoint} label={selectedSavedAddress ? `Vị trí ${selectedSavedAddress.label}` : "Vị trí địa chỉ giao hàng"} />
+  </div>;
 }
 
 function RestaurantBrowse() {
