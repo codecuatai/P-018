@@ -11,6 +11,7 @@ $envPath = (Resolve-Path (Join-Path $repoRoot $EnvFile)).Path
 $runtimeDir = Join-Path $repoRoot ".local-runtime"
 $metadataPath = Join-Path $runtimeDir "processes.json"
 $runnerPath = Join-Path $repoRoot "scripts\local\local-process.ps1"
+$agentRunnerPath = Join-Path $repoRoot "apps\agent-service\run_local.py"
 $started = @()
 
 function Get-EnvironmentValue {
@@ -92,15 +93,17 @@ try {
     }
     foreach ($portSpec in @(@(3000, "Gateway"), @(5173, "Web"), @(8001, "Agent"), @(8101, "Ride"), @(8102, "Restaurant"), @(8103, "Healthcare"), @(8104, "Food"))) { Assert-PortFree -Port $portSpec[0] -Name $portSpec[1] }
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "apps\api-gateway\dist\main.js") -PathType Leaf)) { Invoke-Checked -FilePath "corepack" -Arguments @("pnpm", "--dir", "apps/api-gateway", "build") -FailureMessage "Gateway build failed." }
+    if (-not (Test-Path -LiteralPath $agentRunnerPath -PathType Leaf)) { throw "Windows-safe Agent runner was not found: $agentRunnerPath" }
     New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
     Start-LocalService -Name "gateway" -Kind "gateway" -WorkingDirectory (Join-Path $repoRoot "apps\api-gateway") -FilePath "node" -CommandArguments @("dist/main.js") -Port 3000 -DatabaseKey "CORE_DATABASE_URL"
-    Start-LocalService -Name "agent" -Kind "agent" -WorkingDirectory (Join-Path $repoRoot "apps\agent-service") -FilePath "python" -CommandArguments @("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8001") -Port 8001 -DatabaseKey "AGENT_DATABASE_URL"
+    Start-LocalService -Name "agent" -Kind "agent" -WorkingDirectory (Join-Path $repoRoot "apps\agent-service") -FilePath "python" -CommandArguments @($agentRunnerPath, "--host", "127.0.0.1", "--port", "8001") -Port 8001 -DatabaseKey "AGENT_DATABASE_URL"
     Start-LocalService -Name "food" -Kind "food" -WorkingDirectory (Join-Path $repoRoot "services\food-service") -FilePath "python" -CommandArguments @("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8104") -Port 8104 -DatabaseKey "FOOD_DATABASE_URL"
     Start-LocalService -Name "ride" -Kind "ride" -WorkingDirectory (Join-Path $repoRoot "services\ride-service") -FilePath "python" -CommandArguments @("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8101") -Port 8101 -DatabaseKey "RIDE_DATABASE_URL"
     Start-LocalService -Name "restaurant" -Kind "restaurant" -WorkingDirectory (Join-Path $repoRoot "services\restaurant-service") -FilePath "python" -CommandArguments @("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8102") -Port 8102 -DatabaseKey "RESTAURANT_DATABASE_URL"
     Start-LocalService -Name "healthcare" -Kind "healthcare" -WorkingDirectory (Join-Path $repoRoot "services\healthcare-service") -FilePath "python" -CommandArguments @("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8103") -Port 8103 -DatabaseKey "HEALTHCARE_DATABASE_URL"
     Start-LocalService -Name "web" -Kind "web" -WorkingDirectory (Join-Path $repoRoot "apps\web") -FilePath "corepack" -CommandArguments @("pnpm", "dev") -Port 5173 -DatabaseKey ""
     $started | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+    Wait-Http -Uri "http://localhost:8001/health/ready" -Seconds $WaitSeconds
     Wait-Http -Uri "http://localhost:3000/health/live" -Seconds $WaitSeconds
     Wait-Http -Uri "http://localhost:5173/api/health" -Seconds $WaitSeconds
     Write-Host "Local X-One processes are ready." -ForegroundColor Green

@@ -6,7 +6,7 @@ $metadataPath = Join-Path $repoRoot $RuntimeFile
 $checks = @(
     @{ name = "gateway"; uri = "http://localhost:3000/health/live" },
     @{ name = "web"; uri = "http://localhost:5173/api/health" },
-    @{ name = "agent"; uri = "http://localhost:8001/health/live" },
+    @{ name = "agent"; uri = "http://localhost:8001/health/ready" },
     @{ name = "ride"; uri = "http://localhost:8101/health/live" },
     @{ name = "restaurant"; uri = "http://localhost:8102/health/live" },
     @{ name = "healthcare"; uri = "http://localhost:8103/health/live" },
