@@ -1,9 +1,9 @@
 "use client";
 
 import { LocateFixed, MapPinned, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createSavedAddress, deleteSavedAddress, errorText, listSavedAddresses, resolveAddress, updateSavedAddress } from "@/lib/api-client";
+import { autocompleteAddress, createSavedAddress, deleteSavedAddress, errorText, listSavedAddresses, resolveAddress, reverseGeocodeAddress, updateSavedAddress } from "@/lib/api-client";
 import type { GeocodeCandidate, SavedAddress } from "@/types";
 
 import { XOneMap } from "./xone-map";
@@ -11,7 +11,9 @@ import { XOneMap } from "./xone-map";
 type Coordinates = { latitude: number; longitude: number };
 
 function normalizeCoordinates(value: Coordinates): Coordinates {
-  return { latitude: Number(value.latitude.toFixed(6)), longitude: Number(value.longitude.toFixed(6)) };
+  const latitude = Number(value.latitude);
+  const longitude = Number(value.longitude);
+  return { latitude: Number(latitude.toFixed(6)), longitude: Number(longitude.toFixed(6)) };
 }
 
 export function AddressPage() {
@@ -28,6 +30,8 @@ export function AddressPage() {
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [locationNote, setLocationNote] = useState("");
+  const autocompleteSequence = useRef(0);
+  const skipAutocompleteQuery = useRef("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +46,26 @@ export function AddressPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const query = addressText.trim();
+    const sequence = ++autocompleteSequence.current;
+    if (query.length < 3 || query === skipAutocompleteQuery.current) {
+      skipAutocompleteQuery.current = "";
+      if (query.length < 3) setCandidates([]);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void autocompleteAddress(query).then((result) => {
+        if (sequence !== autocompleteSequence.current) return;
+        setProvider(result.provider);
+        setCandidates(result.suggestions.slice(0, 5));
+      }).catch(() => {
+        if (sequence === autocompleteSequence.current) setCandidates([]);
+      });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [addressText]);
 
   function resetForm(): void {
     setEditingId(null);
@@ -85,8 +109,15 @@ export function AddressPage() {
   }
 
   function selectCandidate(candidate: GeocodeCandidate): void {
+    skipAutocompleteQuery.current = candidate.address_text;
     setAddressText(candidate.address_text);
-    if (candidate.latitude !== null && candidate.longitude !== null) setCoordinates(normalizeCoordinates({ latitude: candidate.latitude, longitude: candidate.longitude }));
+    const latitude = Number(candidate.latitude);
+    const longitude = Number(candidate.longitude);
+    if (candidate.latitude !== null && candidate.longitude !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      setCoordinates(normalizeCoordinates({ latitude, longitude }));
+      setProvider(provider || "geocoded");
+    }
+    setCandidates([]);
     setLocationNote("Đã chọn tọa độ từ kết quả định vị. Kiểm tra lại địa chỉ trước khi lưu.");
   }
 
@@ -99,10 +130,26 @@ export function AddressPage() {
     setError("");
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setCoordinates(normalizeCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude }));
-        setProvider("browser-geolocation");
-        setLocationNote("Đã nhận vị trí hiện tại từ trình duyệt. Hãy nhập địa chỉ để lưu nhãn dễ nhớ.");
-        setLocating(false);
+        const point = normalizeCoordinates({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+        setCoordinates(point);
+        setCandidates([]);
+        setLocationNote("Đã nhận tọa độ. Đang tìm địa chỉ tương ứng…");
+        void reverseGeocodeAddress(point.latitude, point.longitude).then((result) => {
+          const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+          if (!candidate) {
+            setProvider("browser-geolocation");
+            setLocationNote("Chưa đổi được tọa độ thành địa chỉ. Bạn hãy nhập địa chỉ để lưu; vị trí hiện tại vẫn đang được đánh dấu trên bản đồ.");
+            return;
+          }
+          skipAutocompleteQuery.current = candidate.address_text;
+          setAddressText(candidate.address_text);
+          setCoordinates(normalizeCoordinates({ latitude: candidate.latitude!, longitude: candidate.longitude! }));
+          setProvider(result.provider);
+          setLocationNote("Đã điền địa chỉ hiện tại và đánh dấu vị trí trên bản đồ. Kiểm tra lại trước khi lưu.");
+        }).catch(() => {
+          setProvider("browser-geolocation");
+          setLocationNote("Đã nhận vị trí hiện tại nhưng chưa lấy được địa chỉ. Bạn hãy nhập địa chỉ để lưu.");
+        }).finally(() => setLocating(false));
       },
       () => {
         setLocationNote("Không thể nhận vị trí. Bạn vẫn có thể nhập và lưu địa chỉ thủ công.");
@@ -142,6 +189,7 @@ export function AddressPage() {
         const created = await createSavedAddress({ label: label.trim(), address_text: addressText.trim(), ...(coordinates ?? {}), ...(provider ? { provider } : {}), source: coordinates ? "geocoded" : "manual" });
         setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       }
+      await load();
       resetForm();
     } catch (reason) {
       setError(errorText(reason));
@@ -177,11 +225,11 @@ export function AddressPage() {
     <div className="address-form">
       <div className="address-form-heading"><div><strong>{editingId ? "Chỉnh sửa địa chỉ" : "Thêm địa chỉ"}</strong>{editingId ? <p className="inline-note">Đang sửa địa chỉ đã lưu.</p> : null}</div>{editingId ? <button className="text-button" type="button" onClick={resetForm}><X size={15} /> Hủy sửa</button> : null}</div>
       <label><span>Nhãn</span><input value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Nhà, Công ty…" /></label>
-      <label><span>Địa chỉ</span><input value={addressText} onChange={(event) => changeAddress(event.target.value)} placeholder="Số nhà, đường, quận, thành phố" /></label>
+      <label className="address-autocomplete-field"><span>Địa chỉ</span><input value={addressText} onChange={(event) => changeAddress(event.target.value)} placeholder="Số nhà, đường, quận, thành phố" autoComplete="street-address" aria-autocomplete="list" aria-controls="address-suggestions" /></label>
       <div className="address-form-actions"><button className="button button-secondary" type="button" onClick={() => void resolve()} disabled={locating || !addressText.trim()}><MapPinned size={16} />{locating ? "Đang xác nhận…" : "Xác nhận vị trí"}</button><button className="button button-secondary" type="button" onClick={useBrowserLocation} disabled={locating}><LocateFixed size={16} />Vị trí hiện tại</button><button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !label.trim() || !addressText.trim()}><Plus size={16} />{saving ? "Đang lưu…" : editingId ? "Cập nhật địa chỉ" : "Lưu địa chỉ"}</button></div>
     </div>
     {locationNote ? <p className="inline-note location-note" aria-live="polite">{locationNote}</p> : null}
-    {candidates.length ? <div className="location-candidates" aria-label="Kết quả định vị">{candidates.map((candidate, index) => <button className="location-candidate" type="button" key={`${candidate.address_text}-${index}`} onClick={() => selectCandidate(candidate)}><strong>{candidate.address_text}</strong><small>{candidate.latitude !== null && candidate.longitude !== null ? `${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}` : "Chưa có tọa độ"}</small></button>)}</div> : null}
+    {candidates.length ? <div id="address-suggestions" className="location-candidates" role="listbox" aria-label="Gợi ý địa chỉ">{candidates.map((candidate, index) => <button className="location-candidate" role="option" type="button" key={`${candidate.address_text}-${index}`} onClick={() => selectCandidate(candidate)}><strong>{candidate.address_text}</strong><small>{candidate.latitude !== null && candidate.longitude !== null ? `${candidate.latitude.toFixed(5)}, ${candidate.longitude.toFixed(5)}` : "Chưa có tọa độ"}</small></button>)}</div> : null}
     <XOneMap destination={coordinates} label="Vị trí địa chỉ" />
     {error ? <div className="error-panel" role="alert"><p>{error}</p></div> : null}
     {loading ? <p className="inline-note">Đang tải địa chỉ…</p> : items.length === 0 ? <div className="empty-state"><MapPinned size={24} /><h2>Chưa có địa chỉ</h2><p>Lưu một điểm đến để các luồng đặt xe và giao hàng có thể dùng lại sau khi bạn xác nhận.</p></div> : <div className="address-list">{items.map((item) => <article className="address-row" key={item.id}><div><div className="address-title"><strong>{item.label}</strong>{item.is_default ? <span className="status-badge">Mặc định</span> : null}</div><p>{item.address_text}</p><small>{item.city ?? "Chưa phân loại"}</small></div><div className="address-actions">{!item.is_default ? <button className="text-button" type="button" onClick={() => void makeDefault(item)}>Đặt mặc định</button> : null}<button className="icon-button" type="button" onClick={() => startEdit(item)} aria-label={`Sửa ${item.label}`}><Pencil size={16} /></button><button className="icon-button danger" type="button" onClick={() => void remove(item)} aria-label={`Xóa ${item.label}`}><Trash2 size={16} /></button></div></article>)}</div>}

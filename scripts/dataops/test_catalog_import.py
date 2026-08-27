@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
-from catalog_import import ROOT, build_plan, database_timestamp, database_timestamp_without_timezone, resolve_source_root
+from catalog_import import EXPECTED, build_plan, database_timestamp, database_timestamp_without_timezone, fallback_restaurant_coordinate, resolve_source_root
 
 
 def test_database_timestamp_converts_iso_offset_to_aware_datetime() -> None:
@@ -27,12 +28,50 @@ def test_food_plan_is_versioned_and_keeps_source_provenance() -> None:
     assert all(record.payload.get("source_metadata", {}).get("source_record_id") == record.source_record_id for record in plan.records)
 
 
-def test_restaurant_plan_excludes_suspicious_duplicate_coordinates_from_geo_fields() -> None:
+def test_restaurant_plan_generates_coordinates_for_every_restaurant() -> None:
     plan = build_plan("restaurant", "test-restaurant-v1")
     assert len(plan.records) == 1_307
-    assert all(record.payload["coordinate_status"] == "suspicious_default" for record in plan.records)
-    assert all(record.payload["latitude"] is None and record.payload["longitude"] is None for record in plan.records)
-    assert all(record.payload["latitude_raw"] == 21.0285 and record.payload["longitude_raw"] == 105.8048 for record in plan.records)
+    assert all(record.payload["coordinate_status"] == "generated_fallback" for record in plan.records)
+    assert all(isinstance(record.payload["latitude"], float) and isinstance(record.payload["longitude"], float) for record in plan.records)
+    assert all(21.0000 <= record.payload["latitude"] <= 21.0500 for record in plan.records)
+    assert all(105.8000 <= record.payload["longitude"] <= 105.8600 for record in plan.records)
+    assert len({(record.payload["latitude"], record.payload["longitude"]) for record in plan.records}) > 1_300
+
+
+def test_generated_restaurant_coordinates_are_deterministic() -> None:
+    first = build_plan("restaurant", "test-restaurant-coordinates-v1")
+    second = build_plan("restaurant", "test-restaurant-coordinates-v2")
+    assert [(record.payload["latitude"], record.payload["longitude"]) for record in first.records] == [
+        (record.payload["latitude"], record.payload["longitude"]) for record in second.records
+    ]
+    assert fallback_restaurant_coordinate("osm_1000087449") == fallback_restaurant_coordinate("osm_1000087449")
+    assert all(record.payload["latitude_raw"] == 21.0285 and record.payload["longitude_raw"] == 105.8048 for record in first.records)
+
+
+def test_restaurant_plan_preserves_valid_source_coordinates(tmp_path: Path) -> None:
+    source_path = tmp_path / "data" / "restaurant-service" / "crawled_restaurants.csv"
+    source_path.parent.mkdir(parents=True)
+    row = {column: "" for column in EXPECTED["restaurant"]}
+    row.update({
+        "source_id": "real-coordinate",
+        "name": "Real Hanoi Restaurant",
+        "address": "12 Nguyen Trai",
+        "city": "Hanoi",
+        "latitude": "21.012345",
+        "longitude": "105.845678",
+        "source_name": "test",
+        "source_url": "https://example.com/restaurant",
+        "fetched_at": "2026-08-11T01:42:47+07:00",
+    })
+    with source_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=EXPECTED["restaurant"])
+        writer.writeheader()
+        writer.writerow(row)
+
+    record = build_plan("restaurant", "test-real-coordinate-v1", source_root=tmp_path).records[0].payload
+    assert record["latitude"] == 21.012345
+    assert record["longitude"] == 105.845678
+    assert record["coordinate_status"] == "validated"
 
 
 def test_healthcare_plan_repairs_specialty_csv_and_keeps_quality_flags() -> None:
@@ -71,8 +110,8 @@ def test_restaurant_plan_reports_repeated_default_coordinates() -> None:
     report = plan.reports[0]
     assert report.suspicious_coordinates == 1307
     assert report.suspicious_coordinate_distinct_addresses == 397
-    assert plan.records[0].payload["latitude"] is None
-    assert plan.records[0].payload["coordinate_status"] == "suspicious_default"
+    assert plan.records[0].payload["latitude"] is not None
+    assert plan.records[0].payload["coordinate_status"] == "generated_fallback"
 
 
 def test_source_files_are_not_rewritten_by_read_only_plan() -> None:

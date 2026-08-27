@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -96,6 +96,13 @@ describe("browser API client", () => {
     expect(errorText(makeError("LOCATION_UNRESOLVED"))).toBe("Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.");
     expect(errorText(makeError("NO_DRIVER"))).toBe("Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.");
     expect(errorText(makeError("IDEMPOTENCY_KEY_REQUIRED"))).toBe("Thao tác giỏ hàng chưa được gửi đầy đủ. Bạn hãy thử lại.");
+  });
+
+  it("does not report a profile update as successful when the saved phone is missing from the response", async () => {
+    const fetchMock = jest.fn(async () => jsonResponse(200, { data: { full_name: "An", email: "an@example.test", role: "customer" } }));
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(updateProfile({ full_name: "An", phone: "0911111111" })).rejects.toMatchObject({ code: "PROFILE_PHONE_NOT_PERSISTED" });
   });
 
   it("sends the idempotency key required by Food cart mutations", async () => {

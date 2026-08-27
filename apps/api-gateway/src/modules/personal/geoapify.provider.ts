@@ -93,6 +93,22 @@ export class GeoapifyProvider {
     return suggestions;
   }
 
+  async reverse(coordinate: GeoCoordinate): Promise<GeoapifyGeocodeCandidate[]> {
+    const cacheKey = `reverse:${coordinate.latitude.toFixed(6)},${coordinate.longitude.toFixed(6)}`;
+    const cached = this.cached<GeoapifyGeocodeCandidate[]>(cacheKey);
+    if (cached) return cached;
+
+    const payload = await this.request('/geocode/reverse', {
+      lat: coordinate.latitude.toFixed(6),
+      lon: coordinate.longitude.toFixed(6),
+      limit: '1',
+    });
+    const results = isRecord(payload) && Array.isArray(payload.results) ? payload.results : [];
+    const candidates = results.map((item) => parseGeocode(item)).filter((item): item is GeoapifyGeocodeCandidate => item !== undefined);
+    this.cache.set(cacheKey, { expiresAt: Date.now() + this.cacheTtlMs, value: candidates });
+    return candidates;
+  }
+
   async route(origin: GeoCoordinate, destination: GeoCoordinate, mode = 'drive'): Promise<GeoapifyRoute> {
     const cacheKey = `route:${mode}:${origin.latitude.toFixed(6)},${origin.longitude.toFixed(6)}:${destination.latitude.toFixed(6)},${destination.longitude.toFixed(6)}`;
     const cached = this.cached<GeoapifyRoute>(cacheKey);

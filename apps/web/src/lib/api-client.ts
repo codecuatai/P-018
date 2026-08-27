@@ -161,8 +161,17 @@ export function getProfile(): Promise<AuthUser> {
   return request<AuthUser>("/api/v1/users/me", { method: "GET" });
 }
 
-export function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
-  return request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+export async function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
+  const updated = await request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+  if (patch.phone && updated.phone !== patch.phone) {
+    throw new ApiError({
+      code: "PROFILE_PHONE_NOT_PERSISTED",
+      detail: "Hồ sơ không trả về số điện thoại vừa lưu.",
+      status: 502,
+      retryable: true,
+    });
+  }
+  return updated;
 }
 
 export function listSavedAddresses(): Promise<{ items: SavedAddress[] }> {
@@ -175,6 +184,10 @@ export function createSavedAddress(value: Omit<SavedAddress, "id" | "created_at"
 
 export function updateSavedAddress(id: string, value: Partial<SavedAddress>): Promise<SavedAddress> {
   return request(`/api/v1/addresses/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) });
+}
+
+export function setSavedAddressDefault(id: string): Promise<SavedAddress> {
+  return request(`/api/v1/addresses/${encodeURIComponent(id)}/default`, { method: "POST" });
 }
 
 export function deleteSavedAddress(id: string): Promise<{ deleted: boolean }> {
@@ -193,12 +206,24 @@ export function setDefaultHealthcarePatient(id: number): Promise<HealthcarePatie
   return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}/default`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("patient-default") });
 }
 
+export function updateHealthcarePatient(id: number, value: Partial<Pick<HealthcarePatient, "name" | "phone" | "relationship">>): Promise<HealthcarePatient> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "PATCH", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("patient-update") });
+}
+
+export function unlinkHealthcarePatient(id: number): Promise<{ deleted: boolean; id: number; replacement_default_id: number | null }> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("patient-unlink") });
+}
+
 export function resolveAddress(addressText: string): Promise<GeocodeResult> {
   return request("/api/v1/location/geocode", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
 }
 
 export function autocompleteAddress(addressText: string): Promise<{ provider: string; query: string; suggestions: GeocodeResult["candidates"] }> {
   return request("/api/v1/location/autocomplete", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
+}
+
+export function reverseGeocodeAddress(latitude: number, longitude: number): Promise<GeocodeResult> {
+  return request("/api/v1/location/reverse-geocode", { method: "POST", body: JSON.stringify({ latitude, longitude }) });
 }
 
 export function routeLocation(origin: RouteResult["origin"], destination: RouteResult["destination"]): Promise<RouteResult> {
@@ -671,6 +696,8 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("IDEMPOTENCY_KEY_REUSED")) {
     return "Yêu cầu giỏ hàng đã được dùng cho dữ liệu khác. Bạn hãy thử lại.";
   }
+  if (source.includes("PROFILE_PHONE_NOT_PERSISTED")) return "Chưa xác nhận được số điện thoại đã được lưu. Dữ liệu của bạn vẫn được giữ lại, hãy thử lại.";
+  if (source.includes("PHONE_INVALID")) return "Số điện thoại không hợp lệ. Hãy kiểm tra lại số Việt Nam của bạn.";
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
   if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";
   if (source.includes("UNAUTHORIZED") || source.includes("FORBIDDEN") || source.includes("AUTHENTICATION")) {

@@ -178,11 +178,11 @@
 .activity-meta span { display: inline-flex; align-items: center; gap: 4px; }
 .activity-meta span:last-child { color: var(--color-success-ink); font-weight: 700; }
 
-.profile-grid { display: grid; grid-template-columns: minmax(230px, 0.55fr) minmax(0, 1fr); gap: 15px; }
+.profile-grid { display: grid; grid-template-columns: minmax(230px, 0.48fr) minmax(0, 1.52fr); gap: 15px; }
 .profile-identity,
 .profile-details,
 .settings-card,
-.route-shell { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 13px; }
+.route-shell { min-width: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 13px; }
 .profile-identity { display: flex; flex-direction: column; align-items: flex-start; padding: 24px; }
 .profile-avatar { display: grid; width: 60px; height: 60px; place-items: center; margin-bottom: 20px; color: var(--color-primary-strong); background: #EAF4FA; border: 1px solid #CBE1ED; border-radius: 15px; }
 .profile-identity h2 { margin: 8px 0 0; color: var(--color-navy); font-size: 1.1rem; letter-spacing: -0.03em; overflow-wrap: anywhere; }
@@ -231,6 +231,10 @@
 .patient-name { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--color-navy); font-size: 0.82rem; }
 .patient-row p { margin: 6px 0 0; color: var(--color-ink); font-size: 0.75rem; }
 .patient-row small { display: block; margin-top: 6px; color: var(--color-muted); font-size: 0.67rem; }
+.patient-form-actions,
+.patient-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.patient-form-actions .button { margin-top: 0; }
+.patient-actions { justify-content: flex-end; }
 .address-form { display: grid; gap: 12px; padding: 17px; background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 10px; }
 .address-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .address-form-actions .button { margin-top: 0; }
@@ -322,7 +326,7 @@
 .form-field select,
 .profile-form select,
 .ride-form select { width: 100%; min-height: 43px; padding: 10px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; }
-.profile-form { max-width: 560px; }
+.profile-form { max-width: none; min-width: 0; }
 .profile-form .form-field { margin-top: 15px; }
 .profile-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .profile-form .button { margin-top: 18px; }
@@ -358,7 +362,7 @@
 .location-candidate:hover { border-color: var(--color-primary); background: var(--surface-ice); }
 .location-candidate strong { font-size: 0.76rem; }
 .location-candidate small { color: var(--color-muted); font-size: 0.68rem; }
-.xone-map { min-height: 230px; padding: 13px; margin: 16px 0; background: #EAF1F3; border-color: #C9DCE2; border-radius: 12px; overflow: hidden; }
+.xone-map { position: relative; z-index: 0; isolation: isolate; min-height: 230px; padding: 13px; margin: 16px 0; background: #EAF1F3; border-color: #C9DCE2; border-radius: 12px; overflow: hidden; }
 .xone-map-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--color-muted); font-size: 0.68rem; }
 .xone-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .xone-map small { color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; }
@@ -537,12 +541,21 @@
 .history-pagination { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .history-pagination .button { min-height: 34px; margin-top: 0; padding: 7px 10px; font-size: 0.68rem; }
 .service-detail-flow { display: grid; gap: 17px; }
-.service-detail-heading { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr); align-items: stretch; gap: 20px; padding: 18px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; }
+.service-detail-heading { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 20px; width: 100%; max-width: 960px; margin-inline: auto; padding: 18px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-sizing: border-box; }
 .service-detail-heading h2 { margin: 7px 0 0; color: var(--color-navy); font-size: 1.3rem; letter-spacing: -0.04em; }
 .service-detail-heading p { max-width: 590px; margin: 7px 0 0; color: var(--color-muted); font-size: 0.77rem; line-height: 1.55; }
 .service-detail-heading > div:first-child { min-width: 0; }
-.service-detail-heading > div:first-child > .authoritative-image { width: min(100%, 300px); margin-bottom: 12px; }
+.service-detail-heading > div:first-child > .authoritative-image { width: 100%; margin-bottom: 12px; }
+.restaurant-service-detail-heading > .service-detail-copy > .authoritative-image { max-width: none; aspect-ratio: 4 / 3; }
+.restaurant-service-detail-heading > .xone-map-location-detail { align-self: start; width: 100%; height: auto; min-height: 0; aspect-ratio: 1 / 1; }
+.restaurant-service-detail-heading > .xone-map-location-detail > .xone-map-leaflet,
+.restaurant-service-detail-heading > .xone-map-location-detail > .xone-map-fallback { height: 100%; min-height: 0; }
 .service-detail-heading .xone-map { width: 100%; min-width: 0; min-height: 0; margin: 0; padding: 8px; }
+.service-detail-heading.no-map { grid-template-columns: minmax(0, 1fr); }
+.service-detail-heading.no-map .service-detail-copy { width: min(100%, 720px); margin-inline: auto; }
+.service-detail-heading.no-map .authoritative-image { margin-inline: auto; }
+.map-fallback-banner { display: flex; min-height: 0; align-items: center; gap: 10px; width: 100%; max-width: 720px; margin: 14px 0 0; padding: 11px 13px; color: var(--color-navy); background: var(--surface-sand); border: 1px solid var(--color-border); border-radius: 10px; font-size: 0.76rem; line-height: 1.45; text-align: left; }
+.map-fallback-banner svg { flex: 0 0 auto; color: var(--color-primary); }
 .food-product-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(285px, 0.42fr); gap: 15px; align-items: start; }
 .menu-panel,
 .transaction-panel,
@@ -588,14 +601,50 @@
 .cart-summary dt { color: var(--color-muted); font-size: 0.69rem; }
 .cart-summary dd { margin: 0; color: var(--color-ink); font-size: 0.7rem; font-weight: 750; text-align: right; }
 .food-delivery-address { margin-top: 10px; }
+.food-address-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--color-navy); font-size: 0.76rem; font-weight: 760; }
+.food-address-heading small { color: var(--color-muted); font-size: 0.65rem; font-weight: 500; }
+.food-saved-addresses { display: grid; gap: 7px; margin-top: 8px; }
+.food-saved-address { display: grid; gap: 3px; padding: 10px 11px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; text-align: left; }
+.food-saved-address:hover,
+.food-saved-address.is-selected { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }
+.food-saved-address strong { font-size: 0.72rem; }
+.food-saved-address span { color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; }
+.food-address-selected { display: grid; gap: 4px; padding: 9px 10px; margin-top: 8px; background: var(--surface-ice); border: 1px solid #C9D8F5; border-radius: 8px; }
+.food-address-selected span { color: var(--color-muted); font-size: 0.62rem; }
+.food-address-selected strong { color: var(--color-primary-strong); font-size: 0.7rem; }
+.food-address-selected input { min-height: 32px; padding: 7px 8px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.68rem; }
+.address-inline-list { display: grid; gap: 8px; margin-bottom: 9px; }
+.address-inline-row { display: flex; align-items: stretch; gap: 8px; padding: 9px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 9px; }
+.address-inline-row.is-selected { background: var(--surface-ice); border-color: #B8CFF5; }
+.address-inline-select { display: grid; flex: 1; gap: 3px; min-width: 0; padding: 0; color: var(--color-ink); background: transparent; border: 0; text-align: left; }
+.address-inline-select strong { color: var(--color-primary-strong); font-size: 0.72rem; }
+.address-inline-select span { overflow: hidden; color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.address-inline-new { position: relative; z-index: 2; display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.address-dropdown { position: relative; z-index: 1000; min-width: 0; flex: 1; }
+.address-dropdown-trigger { display: flex; width: 100%; height: 40px; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; padding: 9px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; font: inherit; font-size: 0.8rem; text-align: left; }
+.address-dropdown-trigger:hover,
+.address-dropdown-trigger[aria-expanded="true"] { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(49 94 245 / 12%); }
+.address-dropdown-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.address-dropdown-trigger > svg { flex: 0 0 auto; color: var(--color-primary-strong); }
+.address-dropdown-menu { position: absolute; z-index: 1001; top: calc(100% + 5px); right: 0; left: 0; display: grid; gap: 5px; max-height: min(280px, 45vh); overflow-x: hidden; overflow-y: auto; padding: 7px; background: #FFFFFF; border: 1px solid var(--color-border-strong); border-radius: 9px; box-shadow: 0 12px 28px rgb(16 42 67 / 15%); isolation: isolate; }
+.address-dropdown-menu > input { width: 100%; min-height: 36px; box-sizing: border-box; padding: 8px 9px; border: 1px solid var(--color-border-strong); border-radius: 7px; font: inherit; font-size: 0.75rem; }
+.address-dropdown-option { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 7px; width: 100%; padding: 8px 9px; color: var(--color-ink); background: transparent; border: 1px solid transparent; border-radius: 7px; text-align: left; }
+.address-dropdown-option:hover,
+.address-dropdown-option.is-selected { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }
+.address-dropdown-option strong { grid-column: 1 / -1; font-size: 0.72rem; }
+.address-dropdown-option span { min-width: 0; overflow: hidden; color: var(--color-muted); font-size: 0.68rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.address-dropdown-suggestions { display: grid; gap: 4px; padding-top: 4px; border-top: 1px solid var(--color-border); }
+.address-inline-new > .button { box-sizing: border-box; height: 40px; min-height: 40px; margin-top: 0; flex: 0 0 auto; }
 .food-address-toggle { margin-top: 7px; }
 .food-address-form { display: grid; gap: 9px; padding: 11px; margin-top: 9px; background: #F7FAFC; border: 1px solid #D6E2E8; border-radius: 8px; }
 .food-address-form > label,
 .food-address-form > .food-address-field { display: grid; gap: 5px; color: var(--color-navy); font-size: 0.68rem; font-weight: 720; }
 .food-address-form input { width: 100%; min-height: 36px; padding: 8px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 7px; font-size: 0.72rem; font-weight: 400; }
-.food-address-search { display: flex; gap: 6px; }
+.food-address-search { display: flex; align-items: stretch; gap: 6px; }
 .food-address-search input { min-width: 0; flex: 1; }
-.food-address-search .button { min-height: 36px; margin-top: 0; padding: 7px 9px; }
+.food-address-search input,
+.food-address-search .button { box-sizing: border-box; height: 36px; min-height: 36px; margin-top: 0; }
+.food-address-search .button { padding: 7px 9px; }
 .food-address-candidates { display: grid; gap: 5px; }
 .food-address-candidates button { padding: 8px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 7px; font-size: 0.68rem; text-align: left; }
 .food-address-candidates button.is-active { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }
@@ -623,6 +672,7 @@
 .success-card .button { width: max-content; margin-top: 5px; }
 .transaction-grid,
 .healthcare-flow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 0.44fr); gap: 15px; align-items: start; }
+.transaction-grid { width: 100%; max-width: 960px; margin-inline: auto; box-sizing: border-box; }
 .service-context-panel { color: var(--color-muted); background: var(--surface-ice); }
 .service-context-panel p { margin: 9px 0 15px; font-size: 0.74rem; line-height: 1.6; }
 .history-resume-payment { width: 100%; margin-top: 14px; }
@@ -691,6 +741,10 @@
 .address-suggestion { display: block; width: 100%; padding: 11px 13px; color: var(--color-ink); background: transparent; border: 0; border-bottom: 1px solid var(--color-border); text-align: left; font-size: 0.73rem; line-height: 1.4; word-break: break-word; cursor: pointer; transition: background-color 120ms ease; }
 .address-suggestion:last-child { border-bottom: 0; }
 .address-suggestion:hover, .address-suggestion:focus-visible { background: #F1F7F8; outline: 0; }
+.ride-form { position: relative; z-index: 1; }
+.ride-quote-submit { position: relative; z-index: 2; }
+.ride-form .address-autocomplete { z-index: 3; }
+.ride-form .address-suggestions { position: relative; z-index: 20; top: auto; right: auto; left: auto; margin-top: 4px; }
 .ride-result { display: grid; gap: 7px; }
 .xone-map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .xone-map-toolbar small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -750,6 +804,7 @@
   .service-detail-heading { grid-template-columns: minmax(0, 1fr); }
   .service-detail-heading .xone-map { width: 100%; }
   .service-detail-heading > div:first-child > .authoritative-image { width: 100%; }
+  .service-detail-heading.no-map { grid-template-columns: minmax(0, 1fr); }
   .healthcare-summary { position: static; }
 }
 
@@ -789,6 +844,13 @@
 .xone-map-leaflet .leaflet-control-zoom a { color: var(--color-navy); }
 .xone-map-toolbar button:disabled { cursor: not-allowed; opacity: 0.45; }
 .xone-map-fallback { display: grid; gap: 7px; min-height: 220px; align-content: center; padding: 20px; color: var(--color-muted); background: #F7FAFC; border: 1px dashed #BFCFDB; border-radius: 8px; text-align: center; }
+.xone-map-location-detail { position: relative; display: block; height: 100%; min-height: 320px; padding: 0; margin: 0; overflow: hidden; background: transparent; border: 0; border-radius: 12px; box-shadow: 0 10px 28px rgb(10 37 64 / 12%); }
+.xone-map-location-detail .xone-map-leaflet,
+.xone-map-location-detail .xone-map-fallback { width: 100%; height: 100%; min-height: 320px; border: 0; border-radius: inherit; }
+.xone-map-location-detail .xone-map-fallback { border: 1px dashed #BFCFDB; }
+.xone-location-pin { background: transparent; border: 0; }
+.xone-location-pin > span { position: relative; display: grid; width: 30px; height: 30px; place-items: center; background: #E07A3F; border: 3px solid #FFFFFF; border-radius: 50% 50% 50% 0; box-shadow: 0 5px 14px rgb(10 37 64 / 24%); transform: rotate(-45deg); }
+.xone-location-pin i { display: block; width: 8px; height: 8px; background: #FFFFFF; border-radius: 50%; }
 .xone-map-fallback strong { color: var(--color-navy); font-size: 0.8rem; }
 .xone-map-fallback span { font-size: 0.7rem; line-height: 1.45; }
 .xone-map-fallback dl { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin: 3px 0 0; }
@@ -2006,11 +2068,37 @@
 }
 
 /* Restaurant follows the same map-first interaction contract as Ride. */
-.service-detail-dialog-restaurant { display: flex; flex-direction: column; width: min(96vw, 1420px); height: min(94vh, 980px); max-height: calc(100dvh - 24px); padding: 16px; overflow: hidden; }
+.service-detail-dialog-restaurant { display: flex; flex-direction: column; width: min(96vw, 1240px); height: min(94vh, 980px); max-height: calc(100dvh - 24px); padding: 16px; overflow: hidden; }
 .service-detail-dialog-restaurant > .auth-dialog-close { z-index: 1300; }
+.restaurant-compact-detail { display: grid; gap: 18px; width: min(100%, 760px); margin: auto; padding: 8px 4px 16px; overflow-y: auto; }
+.restaurant-compact-detail > .detail-image { width: min(100%, 460px); max-height: 300px; margin-inline: auto; object-fit: cover; border-radius: 12px; }
+.restaurant-compact-copy { display: grid; gap: 10px; min-width: 0; }
+.restaurant-compact-copy h3 { margin: 0; color: var(--color-navy); font-size: 1.15rem; }
+.restaurant-compact-copy > p { margin: -4px 0 0; color: var(--color-muted); font-size: 0.76rem; line-height: 1.55; }
+.restaurant-compact-copy .map-fallback-banner { max-width: none; margin-top: 0; }
+.compact-detail-info-button { justify-self: start; margin-top: 2px; }
+.restaurant-detail-container { width: 100%; max-width: 960px; margin-inline: auto; }
+.restaurant-detail-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(320px, auto); align-items: stretch; gap: 32px; min-width: 0; min-height: 0; padding: 0; overflow-y: auto; }
+.restaurant-detail-layout > .restaurant-detail-card,
+.restaurant-detail-layout > .restaurant-detail-map { width: 100%; max-width: none; min-width: 0; margin: 0; }
+.restaurant-detail-card { display: flex; min-width: 0; flex-direction: column; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: 0 10px 28px rgb(10 37 64 / 10%); }
+.restaurant-detail-card > .detail-image { width: 100%; height: 220px; flex: 0 0 auto; object-fit: cover; border-radius: 0; }
+.restaurant-detail-card-copy { display: grid; flex: 1 1 auto; align-content: start; gap: 12px; min-width: 0; padding: 20px; }
+.restaurant-detail-card-copy h3 { margin: 0; color: var(--color-navy); font-size: 1.2rem; line-height: 1.25; }
+.restaurant-detail-card-copy > p { margin: -4px 0 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.55; }
+.restaurant-detail-card-copy .consumer-detail-grid { margin-top: 2px; }
+.restaurant-detail-map { display: flex; align-self: stretch; min-width: 0; min-height: 320px; overflow: hidden; border-radius: 16px; box-shadow: 0 10px 28px rgb(10 37 64 / 10%); }
+.restaurant-detail-square-map { align-self: start; min-height: 0; aspect-ratio: 1 / 1; }
+.restaurant-detail-map > .xone-map-location-detail { flex: 1 1 auto; min-width: 0; min-height: 0; border-radius: 0; box-shadow: none; }
+.restaurant-detail-map > .xone-map-location-detail > .xone-map-leaflet,
+.restaurant-detail-map > .xone-map-location-detail > .xone-map-fallback { inset: 0; border-radius: 0; }
 .restaurant-map-detail { display: block; height: 100%; min-height: 0; overflow-y: auto; padding: 0 4px 12px 0; }
-.restaurant-map-stage { display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; overflow: hidden; background: #FFF7F9; border: 1px solid #E7C9D5; border-radius: 16px; }
-.restaurant-map-canvas { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; border-radius: 16px; }
+.restaurant-map-stage { display: flex; height: min(78vh, 760px); min-height: 0; flex-direction: column; overflow: hidden; background: transparent; border: 0; border-radius: 16px; }
+.restaurant-map-stage.is-unavailable { height: auto; min-height: 0; overflow: visible; background: transparent; border: 0; }
+.restaurant-map-stage.is-unavailable .restaurant-map-canvas { overflow: visible; }
+.restaurant-map-stage.is-unavailable .restaurant-map-empty { height: auto; min-height: 0; padding: 12px 14px; justify-content: start; color: var(--color-muted); background: var(--surface-mist); border: 1px solid var(--color-border); border-radius: 10px; text-align: left; }
+.restaurant-map-detail-no-map .restaurant-map-info-panel { position: relative; top: auto; right: auto; width: 100%; max-height: none; margin-top: 12px; }
+.restaurant-map-canvas { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; border-radius: 16px; box-shadow: 0 12px 34px rgb(10 37 64 / 14%); }
 .restaurant-map-canvas > .xone-map { position: relative; display: block; height: 100%; min-height: 0; padding: 0; margin: 0; overflow: hidden; background: transparent; border: 0; border-radius: 16px; }
 .restaurant-map-canvas > .xone-map > .xone-map-toolbar { position: absolute; z-index: 600; top: 14px; right: 14px; left: 14px; min-height: 0; pointer-events: none; }
 .restaurant-map-canvas > .xone-map > .xone-map-toolbar small,
@@ -2020,7 +2108,7 @@
 .restaurant-map-canvas > .xone-map > .xone-map-toolbar > span { pointer-events: auto; }
 .restaurant-map-canvas > .xone-map > .xone-map-toolbar button { width: 32px; height: 32px; background: rgb(255 255 255 / 94%); border-color: rgb(217 224 231 / 92%); border-radius: 8px; box-shadow: 0 4px 14px rgb(10 37 64 / 12%); }
 .restaurant-map-canvas > .xone-map > .xone-map-leaflet,
-.restaurant-map-canvas > .xone-map > .xone-map-fallback { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; min-height: 0; border: 1px solid #E7C9D5; border-radius: 16px; }
+.restaurant-map-canvas > .xone-map > .xone-map-fallback { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; min-height: 0; border: 0; border-radius: 16px; }
 .restaurant-map-canvas > .xone-map > .xone-map-toolbar,
 .restaurant-map-canvas > .xone-map > .xone-map-legend,
 .restaurant-map-canvas > .xone-map > small:last-child { z-index: 700; }
@@ -2033,10 +2121,18 @@
 .restaurant-map-info-panel > p { margin: -5px 0 0; color: var(--color-muted); font-size: 0.72rem; line-height: 1.45; }
 .restaurant-map-select { width: 100%; margin-top: 2px; }
 
+@media (max-width: 820px) {
+  .restaurant-detail-layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .restaurant-detail-map { min-height: 340px; }
+}
+
 @media (max-width: 560px) {
   .service-detail-dialog-restaurant { width: calc(100vw - 12px); height: calc(100dvh - 12px); max-height: calc(100dvh - 12px); padding: 10px; }
+  .restaurant-detail-map { min-height: 300px; }
+  .restaurant-detail-card-copy { padding: 16px; }
   .restaurant-map-detail { padding: 0 0 10px; }
   .restaurant-map-stage { height: calc(100dvh - 96px); min-height: 460px; border-radius: 14px; }
+  .restaurant-map-stage.is-unavailable { height: auto; min-height: 0; }
   .restaurant-map-canvas,
   .restaurant-map-canvas > .xone-map,
   .restaurant-map-canvas > .xone-map > .xone-map-leaflet,
@@ -2048,4 +2144,77 @@
   .restaurant-map-canvas > .xone-map > small:last-child { right: 10px; bottom: 10px; max-width: 46%; padding: 6px 8px; font-size: 0.58rem; }
   .restaurant-map-info-button { top: 10px; right: 84px; }
   .restaurant-map-info-panel { top: 54px; right: 10px; width: calc(100% - 20px); max-height: calc(100% - 64px); }
+}
+
+@media (max-width: 320px) {
+  .ride-map-canvas,
+  .active-ride-map,
+  .quote-result > .xone-map { overflow-y: auto; }
+
+  .ride-map-canvas > .xone-map,
+  .active-ride-map > .xone-map,
+  .quote-result > .xone-map {
+    display: grid;
+    grid-template-rows: auto minmax(240px, 1fr) auto;
+    gap: 6px;
+    height: auto;
+    min-height: 100%;
+    padding: 6px;
+    overflow: visible;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar,
+  .active-ride-map > .xone-map > .xone-map-toolbar,
+  .quote-result > .xone-map > .xone-map-toolbar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    padding: 0;
+    pointer-events: auto;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar small,
+  .active-ride-map > .xone-map > .xone-map-toolbar small,
+  .quote-result > .xone-map > .xone-map-toolbar small {
+    max-width: none;
+    padding: 6px 8px;
+    white-space: normal;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-toolbar button,
+  .active-ride-map > .xone-map > .xone-map-toolbar button,
+  .quote-result > .xone-map > .xone-map-toolbar button { width: 28px; height: 28px; }
+
+  .ride-map-canvas > .xone-map > .xone-map-leaflet,
+  .ride-map-canvas > .xone-map > .xone-map-fallback,
+  .active-ride-map > .xone-map > .xone-map-leaflet,
+  .active-ride-map > .xone-map > .xone-map-fallback,
+  .quote-result > .xone-map > .xone-map-leaflet,
+  .quote-result > .xone-map > .xone-map-fallback {
+    position: relative;
+    inset: auto;
+    height: 240px;
+    min-height: 240px;
+  }
+
+  .ride-map-canvas > .xone-map > .xone-map-legend,
+  .active-ride-map > .xone-map > .xone-map-legend,
+  .quote-result > .xone-map > .xone-map-legend {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 5px 8px;
+    width: 100%;
+    max-width: none;
+    padding: 6px 8px;
+  }
+
+  .ride-map-canvas .leaflet-bottom.leaflet-right,
+  .active-ride-map .leaflet-bottom.leaflet-right,
+  .quote-result > .xone-map .leaflet-bottom.leaflet-right { right: 4px; bottom: 4px; max-width: calc(100% - 8px); }
+
+  .ride-map-canvas .leaflet-control-attribution,
+  .active-ride-map .leaflet-control-attribution,
+  .quote-result > .xone-map .leaflet-control-attribution { max-width: 100%; font-size: 7px; line-height: 1.15; white-space: normal; }
 }
