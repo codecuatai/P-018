@@ -11,7 +11,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $envPath = (Resolve-Path (Join-Path $repoRoot $EnvFile)).Path
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker is required." }
-if ($Password.Length -lt 15 -or $Password.Length -gt 128) { throw "Password must contain 15-128 characters." }
+if ($Password.Length -lt 8 -or $Password.Length -gt 128) { throw "Password must contain 8-128 characters." }
 if ($Email -notmatch '^\S+@\S+\.\S+$') { throw "Email is not valid." }
 
 Push-Location $repoRoot

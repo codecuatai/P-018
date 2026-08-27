@@ -87,6 +87,7 @@ export interface ProductOpsStore {
   deleteFavorite(id: string, actorId: string): Promise<boolean>;
   findFavorite(actorId: string, domain: FavoriteDomain, resourceId: string): Promise<FavoriteRecord | undefined>;
   listFeedback(actorId: string): Promise<FeedbackRecord[]>;
+  listAllFeedback(options?: { domain?: ProductOpsDomain; ratingMin?: number; ratingMax?: number; fromTime?: string; toTime?: string; actorId?: string; page?: number; pageSize?: number }): Promise<{ items: FeedbackRecord[]; total: number; stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> } }>;
   upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord>;
   createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord>;
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }>;
@@ -171,6 +172,49 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
 
   async listFeedback(actorId: string): Promise<FeedbackRecord[]> {
     return [...this.feedback.values()].filter((item) => item.actorId === actorId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).map(clone);
+  }
+
+  async listAllFeedback(options: {
+    domain?: ProductOpsDomain;
+    ratingMin?: number;
+    ratingMax?: number;
+    fromTime?: string;
+    toTime?: string;
+    actorId?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}): Promise<{
+    items: FeedbackRecord[];
+    total: number;
+    stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> };
+  }> {
+    let list = [...this.feedback.values()];
+    if (options.actorId) list = list.filter((i) => i.actorId === options.actorId);
+    if (options.domain) list = list.filter((i) => i.domain === options.domain);
+    if (options.ratingMin !== undefined) list = list.filter((i) => i.rating >= options.ratingMin!);
+    if (options.ratingMax !== undefined) list = list.filter((i) => i.rating <= options.ratingMax!);
+    if (options.fromTime) list = list.filter((i) => Date.parse(i.createdAt) >= Date.parse(options.fromTime!));
+    if (options.toTime) list = list.filter((i) => Date.parse(i.createdAt) <= Date.parse(options.toTime!));
+
+    const total = list.length;
+    const avgRating = total > 0 ? Number((list.reduce((sum, item) => sum + item.rating, 0) / total).toFixed(2)) : 0;
+
+    const byDomain: Record<string, { count: number; averageRating: number }> = {};
+    for (const item of list) {
+      if (!byDomain[item.domain]) byDomain[item.domain] = { count: 0, averageRating: 0 };
+      byDomain[item.domain].count += 1;
+      byDomain[item.domain].averageRating += item.rating;
+    }
+    for (const dom of Object.keys(byDomain)) {
+      byDomain[dom].averageRating = Number((byDomain[dom].averageRating / byDomain[dom].count).toFixed(2));
+    }
+
+    list.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
+    const page = Math.max(options.page ?? 1, 1);
+    const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
+    const items = list.slice((page - 1) * pageSize, page * pageSize).map(clone);
+
+    return { items, total, stats: { averageRating: avgRating, byDomain } };
   }
 
   async upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord> {
@@ -285,6 +329,49 @@ export class PostgresProductOpsStore implements ProductOpsStore {
   async deleteFavorite(id: string, actorId: string): Promise<boolean> { const result = await this.pool.query('DELETE FROM user_favorites WHERE id=$1 AND actor_id=$2', [id, actorId]); return Boolean(result.rowCount); }
   async findFavorite(actorId: string, domain: FavoriteDomain, resourceId: string): Promise<FavoriteRecord | undefined> { const result = await this.pool.query('SELECT * FROM user_favorites WHERE actor_id=$1 AND domain=$2 AND resource_id=$3', [actorId, domain, resourceId]); return result.rows[0] ? this.favoriteFromRow(result.rows[0]) : undefined; }
   async listFeedback(actorId: string): Promise<FeedbackRecord[]> { const result = await this.pool.query('SELECT * FROM service_feedback WHERE actor_id=$1 ORDER BY updated_at DESC', [actorId]); return result.rows.map((row) => this.feedbackFromRow(row)); }
+
+  async listAllFeedback(options: { domain?: ProductOpsDomain; ratingMin?: number; ratingMax?: number; fromTime?: string; toTime?: string; actorId?: string; page?: number; pageSize?: number } = {}): Promise<{ items: FeedbackRecord[]; total: number; stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> } }> {
+    const where: string[] = [];
+    const values: unknown[] = [];
+    if (options.actorId) { values.push(options.actorId); where.push(`actor_id=$${values.length}`); }
+    if (options.domain) { values.push(options.domain); where.push(`domain=$${values.length}`); }
+    if (options.ratingMin !== undefined) { values.push(options.ratingMin); where.push(`rating >= $${values.length}`); }
+    if (options.ratingMax !== undefined) { values.push(options.ratingMax); where.push(`rating <= $${values.length}`); }
+    if (options.fromTime) { values.push(options.fromTime); where.push(`created_at >= $${values.length}`); }
+    if (options.toTime) { values.push(options.toTime); where.push(`created_at <= $${values.length}`); }
+
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const statsQuery = await this.pool.query(
+      `SELECT count(*)::int AS total, COALESCE(AVG(rating), 0)::float AS avg_rating FROM service_feedback ${clause}`,
+      values,
+    );
+    const domainStatsQuery = await this.pool.query(
+      `SELECT domain, count(*)::int AS count, COALESCE(AVG(rating), 0)::float AS avg_rating FROM service_feedback ${clause} GROUP BY domain`,
+      values,
+    );
+
+    const total = Number(statsQuery.rows[0]?.total ?? 0);
+    const averageRating = Number(Number(statsQuery.rows[0]?.avg_rating ?? 0).toFixed(2));
+    const byDomain: Record<string, { count: number; averageRating: number }> = {};
+    for (const row of domainStatsQuery.rows) {
+      byDomain[String(row.domain)] = { count: Number(row.count), averageRating: Number(Number(row.avg_rating).toFixed(2)) };
+    }
+
+    const page = Math.max(options.page ?? 1, 1);
+    const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100);
+    const pageValues = [...values, pageSize, (page - 1) * pageSize];
+    const rowsQuery = await this.pool.query(
+      `SELECT * FROM service_feedback ${clause} ORDER BY updated_at DESC LIMIT $${pageValues.length - 1} OFFSET $${pageValues.length}`,
+      pageValues,
+    );
+
+    return {
+      items: rowsQuery.rows.map((row) => this.feedbackFromRow(row)),
+      total,
+      stats: { averageRating, byDomain },
+    };
+  }
+
   async upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord> { const result = await this.pool.query('INSERT INTO service_feedback (id,actor_id,domain,resource_type,resource_id,rating,comment,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (actor_id,domain,resource_type,resource_id) DO UPDATE SET rating=EXCLUDED.rating,comment=EXCLUDED.comment,updated_at=EXCLUDED.updated_at RETURNING *', [value.id, value.actorId, value.domain, value.resourceType, value.resourceId, value.rating, value.comment ?? null, value.createdAt, value.updatedAt]); return this.feedbackFromRow(result.rows[0]); }
 
   async createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord> {
@@ -359,6 +446,7 @@ export class CoreProductOpsStore implements OnModuleDestroy {
   deleteFavorite(id: string, actorId: string): Promise<boolean> { return this.repository.deleteFavorite(id, actorId); }
   findFavorite(actorId: string, domain: FavoriteDomain, resourceId: string): Promise<FavoriteRecord | undefined> { return this.repository.findFavorite(actorId, domain, resourceId); }
   listFeedback(actorId: string): Promise<FeedbackRecord[]> { return this.repository.listFeedback(actorId); }
+  listAllFeedback(options?: { domain?: ProductOpsDomain; ratingMin?: number; ratingMax?: number; fromTime?: string; toTime?: string; actorId?: string; page?: number; pageSize?: number }): Promise<{ items: FeedbackRecord[]; total: number; stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> } }> { return this.repository.listAllFeedback(options); }
   upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord> { return this.repository.upsertFeedback(value); }
   createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord> { return this.repository.createSupportTicket(value, event); }
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }> { return this.repository.listSupportTickets(actorId, options); }

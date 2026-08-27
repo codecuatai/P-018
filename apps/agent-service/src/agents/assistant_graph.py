@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Any, Literal, TypedDict
@@ -25,6 +26,7 @@ from src.agents.assistant.planning.planner import CoreAPlanner
 from src.agents.assistant.understanding import semantic_turn_from_plan
 from src.config import get_settings
 from src.observability import (
+    GenerationUsage,
     SafeObservationMetadata,
     extract_generation_usage,
     format_human_plan_output,
@@ -192,8 +194,11 @@ class AssistantState(TypedDict, total=False):
     decision_source: str
     model: str
     fallback_model: str
+    usage: dict[str, Any] | None
     error: str
 
+
+_LAST_USAGE_VAR: ContextVar[GenerationUsage | None] = ContextVar("last_usage", default=None)
 
 MODEL_DIAGNOSTICS: dict[str, Any] = {
     "last_model_call_at": None,
@@ -1859,6 +1864,7 @@ async def _invoke_structured(
             )
             parsed = _parse_model(raw, schema)
             usage = extract_generation_usage(raw)
+            _LAST_USAGE_VAR.set(usage)
             runtime = (
                 llm_diagnostics(settings)
                 if isinstance(model, GeminiAdapter)
@@ -1891,6 +1897,7 @@ async def _invoke_structured(
             )
             return parsed
         except Exception as error:
+            _LAST_USAGE_VAR.set(None)
             generation_observation.update(
                 metadata=SafeObservationMetadata(
                     invocation="structured",
@@ -2073,7 +2080,18 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                 list(state.get("authoritative_results", [])),
                 llm=model if use_model else None,
             )
-            return {"assistant_message": message, "decision_source": source}
+            raw_usage = _LAST_USAGE_VAR.get()
+            usage_dict = {
+                "prompt_tokens": raw_usage.input_tokens or 0,
+                "completion_tokens": raw_usage.output_tokens or 0,
+                "total_tokens": raw_usage.total_tokens or 0,
+            } if isinstance(raw_usage, GenerationUsage) and source == "model" else None
+            return {
+                "assistant_message": message,
+                "decision_source": source,
+                "usage": usage_dict,
+                "model": llm_diagnostics(settings).get("last_model_used") or settings.gemini_model,
+            }
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
             plan = _apply_plan_guards(plan, str(state.get("query", "")), state.get("conversation_state", {}))
@@ -2117,10 +2135,17 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             logger.info(
                 "assistant.model_decision.accepted model=%s tasks=%d", runtime["last_model_used"], len(plan.tasks)
             )
+            raw_usage = _LAST_USAGE_VAR.get()
+            usage_dict = {
+                "prompt_tokens": raw_usage.input_tokens or 0,
+                "completion_tokens": raw_usage.output_tokens or 0,
+                "total_tokens": raw_usage.total_tokens or 0,
+            } if isinstance(raw_usage, GenerationUsage) else None
             return {
                 **_typed_pipeline_result(plan, state, "model"),
                 "model": runtime["last_model_used"] or settings.gemini_model,
                 "fallback_model": settings.gemini_fallback_model,
+                "usage": usage_dict,
             }
         except Exception as error:  # validation/provider errors use the bounded semantic fallback
             MODEL_DIAGNOSTICS.update(

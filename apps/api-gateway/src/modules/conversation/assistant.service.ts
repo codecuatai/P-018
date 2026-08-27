@@ -13,6 +13,7 @@ import {
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
+import { estimateTokenCostUsd } from '../core/token-pricing.util';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolProposal, ToolService } from '../tools/tool.module';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
@@ -627,6 +628,37 @@ export class AssistantService {
     @Optional() private readonly rideClient?: RideClient,
   ) {}
 
+  private async recordUsageFromAgentResponse(
+    agentResponse: JsonObject,
+    actorId?: string,
+    feature: string = 'assistant',
+  ): Promise<void> {
+    try {
+      const rawUsage = agentResponse.usage;
+      if (!isRecord(rawUsage)) return;
+      const promptTokens = Number(rawUsage.prompt_tokens ?? rawUsage.input ?? 0) || 0;
+      const completionTokens = Number(rawUsage.completion_tokens ?? rawUsage.output ?? 0) || 0;
+      const totalTokens = Number(rawUsage.total_tokens ?? rawUsage.total ?? (promptTokens + completionTokens)) || 0;
+      if (totalTokens <= 0) return;
+
+      const model = typeof agentResponse.model === 'string' ? agentResponse.model : 'gemini-1.5-flash';
+      const estimatedCostUsd = estimateTokenCostUsd(model, promptTokens, completionTokens);
+      await this.store.recordTokenUsage({
+        id: `tok_${randomUUID()}`,
+        actorId: actorId || undefined,
+        model,
+        provider: 'google',
+        feature,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        estimatedCostUsd,
+      });
+    } catch {
+      // Non-blocking observability
+    }
+  }
+
   private validateCoreAHandoff(planner: JsonObject): void {
     const rawDecision = planner.planning_decision;
     if (!isRecord(rawDecision)) {
@@ -1175,6 +1207,7 @@ export class AssistantService {
       },
       correlationId,
     );
+    await this.recordUsageFromAgentResponse(planner, user.sub, 'assistant');
     this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
     const resolution = this.typedPlan(planner);
@@ -1746,6 +1779,7 @@ export class AssistantService {
         },
         correlationId,
       );
+      await this.recordUsageFromAgentResponse(response, userId, 'assistant');
       const candidate = safeText(response.assistant_message, fallback);
       return hasUnsupportedFinalSuccessClaim(candidate, tasks)
         ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')

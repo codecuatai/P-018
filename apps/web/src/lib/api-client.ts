@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActiveHistoryResult, AdminHealthCheck, AdminPayments, AdminSummary, AdminTransactionRecord, AdminUserRecord, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
+import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -235,8 +235,12 @@ export function getFoodRestaurant(id: string): Promise<Record<string, unknown>> 
   return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function getFoodMenu(id: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}/menu`, { method: "GET" });
+export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams();
+  if (pagination?.limit !== undefined) params.set("limit", String(pagination.limit));
+  if (pagination?.offset !== undefined) params.set("offset", String(pagination.offset));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}/menu${query}`, { method: "GET" });
 }
 
 export function createFoodCart(restaurantId: string): Promise<Record<string, unknown>> {
@@ -248,23 +252,23 @@ export function getFoodCart(cartId: string): Promise<Record<string, unknown>> {
 }
 
 export function addFoodCartItem(cartId: string, value: { menu_item_id: string; quantity: number; selected_options?: Array<{ group_id: string; option_id: string }>; note?: string }): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items`, { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("food-cart-item") });
 }
 
 export function updateFoodCartItem(cartId: string, itemId: string, value: { quantity: number; selected_options?: Array<{ group_id: string; option_id: string }> | null; note?: string }): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("food-cart-item-update") });
 }
 
 export function removeFoodCartItem(cartId: string, itemId: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("food-cart-item-remove") });
 }
 
 export function applyFoodVoucher(cartId: string, code: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "POST", body: JSON.stringify({ code }) });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "POST", body: JSON.stringify({ code }) }, { idempotencyKey: createIdempotencyKey("food-cart-voucher") });
 }
 
 export function removeFoodVoucher(cartId: string): Promise<Record<string, unknown>> {
-  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "DELETE" });
+  return request(`/api/v1/service-actions/food/cart/${encodeURIComponent(cartId)}/voucher`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("food-cart-voucher-remove") });
 }
 
 export function prepareFoodOrder(value: { cart_id: string; address_id: string }): Promise<Record<string, unknown>> {
@@ -473,6 +477,68 @@ export function updateAdminSupportTicket(id: string, patch: { status?: SupportTi
   return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("admin-support-update") });
 }
 
+export function getAdminUserServices(userId: string): Promise<AdminUserServiceSummary> {
+  return request(`/api/v1/admin/users/${encodeURIComponent(userId)}/services`, { method: "GET" });
+}
+
+export function getAdminUserFeedback(userId: string, page = 1, pageSize = 20): Promise<AdminFeedbackSummary> {
+  return request(`/api/v1/admin/users/${encodeURIComponent(userId)}/feedback?page=${page}&page_size=${pageSize}`, { method: "GET" });
+}
+
+export function getAdminAllFeedback(filters: { domain?: string; rating_min?: number; rating_max?: number; from_time?: string; to_time?: string; page?: number; page_size?: number } = {}): Promise<AdminFeedbackSummary> {
+  const query = new URLSearchParams();
+  if (filters.domain) query.set("domain", filters.domain);
+  if (filters.rating_min !== undefined) query.set("rating_min", String(filters.rating_min));
+  if (filters.rating_max !== undefined) query.set("rating_max", String(filters.rating_max));
+  if (filters.from_time) query.set("from_time", filters.from_time);
+  if (filters.to_time) query.set("to_time", filters.to_time);
+  query.set("page", String(filters.page ?? 1));
+  query.set("page_size", String(filters.page_size ?? 20));
+  return request(`/api/v1/admin/feedback?${query.toString()}`, { method: "GET" });
+}
+
+export function getAdminApiKeys(): Promise<{ items: AdminApiKeyRecord[] }> {
+  return request("/api/v1/admin/api-keys", { method: "GET" });
+}
+
+export function postAdminApiKey(body: { provider: string; label: string; key: string; expires_at?: string }): Promise<AdminApiKeyRecord> {
+  return request("/api/v1/admin/api-keys", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function rotateAdminApiKey(id: string, body: { key: string; expires_at?: string }): Promise<AdminApiKeyRecord> {
+  return request(`/api/v1/admin/api-keys/${encodeURIComponent(id)}/rotate`, { method: "PATCH", body: JSON.stringify(body) }, { idempotencyKey: createIdempotencyKey("admin-api-key-rotate") });
+}
+
+export function revokeAdminApiKey(id: string): Promise<AdminApiKeyRecord> {
+  return request(`/api/v1/admin/api-keys/${encodeURIComponent(id)}/revoke`, { method: "PATCH" }, { idempotencyKey: createIdempotencyKey("admin-api-key-revoke") });
+}
+
+export function testAdminApiKey(id: string): Promise<{ success: boolean; message: string; latency_ms?: number }> {
+  return request(`/api/v1/admin/api-keys/${encodeURIComponent(id)}/test`, { method: "POST" });
+}
+
+export function getAdminLogs(filters: { correlation_id?: string; actor_id?: string; action?: string; from_time?: string; to_time?: string; page?: number; page_size?: number } = {}): Promise<{ items: AdminLogEntry[]; total: number; page: number; page_size: number }> {
+  const query = new URLSearchParams();
+  if (filters.correlation_id) query.set("correlation_id", filters.correlation_id);
+  if (filters.actor_id) query.set("actor_id", filters.actor_id);
+  if (filters.action) query.set("action", filters.action);
+  if (filters.from_time) query.set("from_time", filters.from_time);
+  if (filters.to_time) query.set("to_time", filters.to_time);
+  query.set("page", String(filters.page ?? 1));
+  query.set("page_size", String(filters.page_size ?? 20));
+  return request(`/api/v1/admin/logs?${query.toString()}`, { method: "GET" });
+}
+
+export function getAdminTokenUsage(filters: { from_time?: string; to_time?: string; feature?: string; model?: string } = {}): Promise<AdminTokenUsageReport> {
+  const query = new URLSearchParams();
+  if (filters.from_time) query.set("from_time", filters.from_time);
+  if (filters.to_time) query.set("to_time", filters.to_time);
+  if (filters.feature) query.set("feature", filters.feature);
+  if (filters.model) query.set("model", filters.model);
+  const qs = query.toString();
+  return request(`/api/v1/admin/token-usage${qs ? `?${qs}` : ""}`, { method: "GET" });
+}
+
 export function listConversations(includeArchived = false, signal?: AbortSignal): Promise<{ items: ConversationRecord[] }> {
   return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" }, { signal });
 }
@@ -596,12 +662,27 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
   if (source.includes("GEOAPIFY") || source.includes("LOCATION_UNRESOLVED") || source.includes("REAL_ROUTE_REQUIRED")) return "Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.";
-  if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("IDEMPOTENCY") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
+  if (source.includes("STALE_ACTION") || source.includes("EXPIRED_SELECTION") || source.includes("NO LONGER AVAILABLE") || source.includes("ACTION_NOT_AVAILABLE") || source.includes("SELECTION_EXPIRED")) {
     return "Lựa chọn này vừa được cập nhật. Hãy chọn lại từ danh sách mới.";
+  }
+  if (source.includes("IDEMPOTENCY_KEY_REQUIRED") || source.includes("IDEMPOTENCY_KEY_INVALID")) {
+    return "Thao tác giỏ hàng chưa được gửi đầy đủ. Bạn hãy thử lại.";
+  }
+  if (source.includes("IDEMPOTENCY_KEY_REUSED")) {
+    return "Yêu cầu giỏ hàng đã được dùng cho dữ liệu khác. Bạn hãy thử lại.";
   }
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
   if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";
-  return "Mình chưa thể hoàn tất bước này. Bạn hãy gửi lại yêu cầu để mình làm mới thông tin nhé.";
+  if (source.includes("UNAUTHORIZED") || source.includes("FORBIDDEN") || source.includes("AUTHENTICATION")) {
+    return "Phiên đăng nhập đã hết hạn hoặc bạn không có quyền truy cập. Hãy đăng nhập lại.";
+  }
+  if (source.includes("UPSTREAM_UNAVAILABLE") || source.includes("ECONNREFUSED") || source.includes("INTERNAL_ERROR") || source.includes("FETCH FAILED")) {
+    return "Dịch vụ đang khởi động hoặc tạm thời gián đoạn. Vui lòng bấm 'Thử lại'.";
+  }
+  if (detail && detail.length > 4 && detail !== "Request failed." && detail !== "An unexpected error occurred.") {
+    return detail;
+  }
+  return "Không thể hoàn tất thao tác. Vui lòng bấm thử lại hoặc làm mới trang.";
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

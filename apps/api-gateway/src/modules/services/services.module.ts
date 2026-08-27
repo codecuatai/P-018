@@ -65,6 +65,16 @@ const catalog = [
   { key: 'healthcare', label: 'Lịch khám', description: 'Xem cơ sở, chuyên khoa và khung giờ phù hợp.', accent: 'healthcare' },
 ] as const;
 
+// Số bản ghi trả về khi client không gửi `limit`. Trước đây food/restaurant bị
+// hard-code là 4, khiến trang duyệt chỉ thấy 4/239 nhà hàng và không có trang 2.
+const DEFAULT_BROWSE_LIMIT = 12;
+// ride/healthcare giữ nguyên mặc định 6 như trước để không đổi hành vi ngoài phạm vi sửa.
+const DEFAULT_DEPARTMENT_BROWSE_LIMIT = 6;
+// Trần cứng: food-service khai báo `limit: int = Field(default=12, ge=1, le=100)`
+// và restaurant-service `Query(50, ge=1, le=100)`, nên vượt 100 sẽ bị 422.
+// Clamp tại gateway để lỗi không dội xuống người dùng.
+const MAX_BROWSE_LIMIT = 100;
+
 @Injectable()
 export class ServiceHubService {
   constructor(private readonly food: FoodClient, private readonly ride: RideClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient, private readonly locations: LocationService) {}
@@ -92,7 +102,8 @@ export class ServiceHubService {
 
   async browse(service: ServiceKey, actorId: string, correlationId: string, keyword?: string, origin?: { latitude: number; longitude: number }, pagination?: { page?: number; limit?: number; offset?: number }): Promise<{ items: JsonObject[]; total: number; page: number; limit: number; total_pages: number; source: string; partial: boolean }> {
     const page = pagination?.page && pagination.page > 0 ? pagination.page : 1;
-    const limit = pagination?.limit && pagination.limit > 0 ? pagination.limit : (service === 'food' || service === 'restaurant' ? 4 : 6);
+    const defaultLimit = service === 'food' || service === 'restaurant' ? DEFAULT_BROWSE_LIMIT : DEFAULT_DEPARTMENT_BROWSE_LIMIT;
+    const limit = pagination?.limit && pagination.limit > 0 ? Math.min(Math.trunc(pagination.limit), MAX_BROWSE_LIMIT) : defaultLimit;
     const offset = pagination?.offset !== undefined && pagination.offset >= 0 ? pagination.offset : (page - 1) * limit;
 
     if (service === 'food') {

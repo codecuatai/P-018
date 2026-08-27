@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
@@ -45,6 +45,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const railWidthRef = useRef(railWidth);
 
   // Resize Rail Logic
   useEffect(() => {
@@ -58,7 +59,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       const savedWidth = localStorage.getItem("xone_rail_width");
       if (savedWidth) {
         const parsed = parseInt(savedWidth, 10);
-        if (!isNaN(parsed) && parsed >= 220 && parsed <= 500) setRailWidth(parsed);
+        if (!Number.isNaN(parsed) && parsed >= 220 && parsed <= 500) {
+          railWidthRef.current = parsed;
+          setRailWidth(parsed);
+        }
       }
     } catch {}
 
@@ -75,21 +79,22 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     return () => window.removeEventListener("xone-toggle-rail", handleToggleEvent);
   }, []);
 
-  const handleRailMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleRailMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
     setIsResizingRail(true);
   };
 
   useEffect(() => {
     if (!isResizingRail) return;
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, 220), 500);
+    const handleMouseMove = (event: MouseEvent) => {
+      const newWidth = Math.min(Math.max(window.innerWidth - event.clientX, 220), 500);
+      railWidthRef.current = newWidth;
       setRailWidth(newWidth);
     };
     const handleMouseUp = () => {
       setIsResizingRail(false);
       try {
-        localStorage.setItem("xone_rail_width", String(railWidth));
+        localStorage.setItem("xone_rail_width", String(railWidthRef.current));
       } catch {}
     };
     window.addEventListener("mousemove", handleMouseMove);
@@ -98,7 +103,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [isResizingRail, railWidth]);
+  }, [isResizingRail]);
 
   function toggleRail(collapsed: boolean) {
     setRailCollapsed(collapsed);
@@ -354,7 +359,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         actionKeys.current[action.id] = idempotencyKey;
         response = await runAssistantAction(conversationId, action.id, idempotencyKey, { quantity: selection.quantity });
         consumedActionIds.current.add(action.id);
-        delete actionKeys.current[action.id];
       }
       const checkout = response?.actions.find((action) => action.kind === "food_checkout");
       let finalResponse = response;
@@ -363,9 +367,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         actionKeys.current[checkout.id] = checkoutKey;
         finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey);
         consumedActionIds.current.add(checkout.id);
-        delete actionKeys.current[checkout.id];
       }
       if (!finalResponse) throw new Error("FOOD_RESPONSE_EMPTY");
+      for (const selection of selections) delete actionKeys.current[selection.action.id];
+      if (checkout) delete actionKeys.current[checkout.id];
       setFoodSelections({});
       setFoodSelectionSubmitted(true);
       setMessages((current) => current.map((message) => message.id === pendingId
