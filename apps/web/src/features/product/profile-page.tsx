@@ -99,7 +99,7 @@ export function ProfilePage() {
     const normalizedPhone = normalizePhone(phone);
     if (normalizedPhone && !isValidVietnamesePhone(normalizedPhone)) {
       setFeedback("");
-      setError("Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam dạng 0xxxxxxxxx hoặc +84xxxxxxxxx.");
+      setError("Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam (10 số, bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84).");
       return;
     }
     setSaving(true); setFeedback(""); setError("");
