@@ -447,6 +447,33 @@ def create_patient(
     if cached is not None:
         return {"data": cached}
     try:
+        if request.relationship == "self":
+            existing_self_link = (
+                db.query(PatientUserLink)
+                .filter(
+                    PatientUserLink.actor_user_id == actor_id,
+                    PatientUserLink.relationship_type == "self",
+                )
+                .order_by(PatientUserLink.is_default.desc(), PatientUserLink.created_at.asc())
+                .first()
+            )
+            if existing_self_link is not None:
+                existing_self_link.patient.name = request.name.strip()
+                existing_self_link.patient.phone = request.phone.strip()
+                if request.blood_type is not None:
+                    existing_self_link.patient.blood_type = request.blood_type
+                if request.medical_history is not None:
+                    existing_self_link.patient.medical_history = request.medical_history
+                response = {
+                    "id": existing_self_link.patient.id,
+                    "name": existing_self_link.patient.name,
+                    "phone": existing_self_link.patient.phone,
+                    "relationship": existing_self_link.relationship_type,
+                    "is_default": existing_self_link.is_default,
+                }
+                _save_idempotency(db, key, actor_id, operation, request_hash, response)
+                db.commit()
+                return {"data": response}
         patient = Patient(name=request.name.strip(), phone=request.phone.strip(), blood_type=request.blood_type, medical_history=request.medical_history)
         db.add(patient)
         db.flush()
@@ -477,16 +504,15 @@ def set_default_patient(
     actor_id = _require_actor(x_actor_id)
     key = _require_idempotency_key(idempotency_key)
     operation = "healthcare.patient.default"
-    payload = {"patient_id": patient_id}
-    request_hash = _request_hash(operation, payload)
+    request_hash = _request_hash(operation, {"patient_id": patient_id})
     cached = _load_idempotency(db, key, actor_id, operation, request_hash)
     if cached is not None:
         return {"data": cached}
     link = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id, PatientUserLink.patient_id == patient_id).first()
     if link is None:
         raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_LINKED", "detail": "The patient is not linked to this account."})
-    for candidate in db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).all():
-        candidate.is_default = candidate.id == link.id
+    db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).update({"is_default": False})
+    link.is_default = True
     response = {"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": True}
     _save_idempotency(db, key, actor_id, operation, request_hash, response)
     db.commit()
@@ -520,7 +546,20 @@ def update_patient(
     if "phone" in payload:
         link.patient.phone = str(payload["phone"])
     if "relationship" in payload:
-        link.relationship_type = str(payload["relationship"])
+        target_rel = str(payload["relationship"])
+        if target_rel == "self":
+            existing_self = (
+                db.query(PatientUserLink)
+                .filter(
+                    PatientUserLink.actor_user_id == actor_id,
+                    PatientUserLink.relationship_type == "self",
+                    PatientUserLink.patient_id != patient_id,
+                )
+                .first()
+            )
+            if existing_self is not None:
+                raise HTTPException(status_code=409, detail={"code": "SELF_PATIENT_EXISTS", "detail": "Hồ sơ bản thân đã tồn tại trong tài khoản."})
+        link.relationship_type = target_rel
     response = {"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": link.is_default}
     _save_idempotency(db, key, actor_id, operation, request_hash, response)
     db.commit()

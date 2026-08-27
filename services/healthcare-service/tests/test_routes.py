@@ -454,6 +454,40 @@ def test_patient_links_are_actor_scoped_and_support_default_dependents() -> None
     assert remaining.status_code == 200
     assert remaining.json()["data"]["items"] == [{"id": 1, "name": "Bệnh nhân test", "phone": "0900000000", "relationship": "self", "is_default": True}]
 
+    # Re-linking self updates the existing profile instead of creating a duplicate
+    relink = client.post(
+        "/api/v1/patients",
+        headers=headers(key="patient-self-relink"),
+        json={"name": "Trần Văn Tài", "phone": "0912345678", "relationship": "self"},
+    )
+    assert relink.status_code == 200
+    assert relink.json()["data"]["id"] == 1
+    assert relink.json()["data"]["name"] == "Trần Văn Tài"
+    assert relink.json()["data"]["phone"] == "0912345678"
+    assert relink.json()["data"]["relationship"] == "self"
+
+    relinked_list = client.get("/api/v1/patients", headers=headers())
+    assert relinked_list.status_code == 200
+    assert len(relinked_list.json()["data"]["items"]) == 1
+    assert relinked_list.json()["data"]["items"][0]["name"] == "Trần Văn Tài"
+
+    # Adding a child then trying to patch relationship to self returns 409
+    child = client.post(
+        "/api/v1/patients",
+        headers=headers(key="patient-child-conflict"),
+        json={"name": "Bé con", "phone": "0988888888", "relationship": "child"},
+    )
+    assert child.status_code == 200
+    child_id = child.json()["data"]["id"]
+
+    conflict = client.patch(
+        f"/api/v1/patients/{child_id}",
+        headers=headers(key="patient-patch-self-conflict"),
+        json={"relationship": "self"},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "SELF_PATIENT_EXISTS"
+
     other_actor = client.get("/api/v1/patients", headers=headers(actor="actor-unlinked"))
     assert other_actor.status_code == 200
     assert other_actor.json()["data"]["items"] == []
@@ -464,3 +498,4 @@ def test_patient_links_are_actor_scoped_and_support_default_dependents() -> None
     )
     assert denied.status_code == 403
     assert denied.json()["detail"]["code"] == "PATIENT_NOT_LINKED"
+
