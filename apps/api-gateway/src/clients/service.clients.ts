@@ -705,6 +705,14 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}/default`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
   }
 
+  async updatePatient(actorId: string, correlationId: string, idempotencyKey: string, patientId: number, payload: JsonObject): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}`, { method: 'PATCH', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async unlinkPatient(actorId: string, correlationId: string, idempotencyKey: string, patientId: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
   get defaultPatientId(): number {
     if (this.config.get<string>('APP_ENV') === 'production') {
       throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A Healthcare patient link is required in production.' });

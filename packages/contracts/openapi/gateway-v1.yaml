@@ -623,6 +623,24 @@ paths:
         - {$ref: '#/components/parameters/PatientId'}
         - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
       responses: {'200': {description: Updated default patient}, '401': {description: Missing or invalid user token}, '404': {description: Patient is not linked to the actor}}
+  /api/v1/healthcare/patients/{patientId}:
+    patch:
+      summary: Update an actor-linked Healthcare patient profile
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PatientId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PatientPatchRequest'}}}
+      responses: {'200': {description: Updated patient profile}, '400': {description: Invalid patient or missing idempotency key}, '404': {description: Patient is not linked to the actor}}
+    delete:
+      summary: Unlink a Healthcare patient from the authenticated actor
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/PatientId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      responses: {'200': {description: Link removed while historical appointments remain}, '400': {description: Invalid patient or missing idempotency key}, '404': {description: Patient is not linked to the actor}}
 
   /api/v1/recommendations/rank:
     post:
@@ -1535,10 +1553,18 @@ components:
       additionalProperties: false
       properties:
         name: {type: string, minLength: 2, maxLength: 255}
-        phone: {type: string, minLength: 6, maxLength: 64}
+        phone: {type: string, minLength: 6, maxLength: 64, pattern: '^(0|\\+84)(3|5|7|8|9)\\d{8}$'}
         relationship: {type: string, enum: [self, child, parent, dependent]}
         blood_type: {type: string, maxLength: 16}
         medical_history: {type: string, maxLength: 4000}
+    PatientPatchRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 2, maxLength: 255}
+        phone: {type: string, minLength: 6, maxLength: 64, pattern: '^(0|\\+84)(3|5|7|8|9)\\d{8}$'}
+        relationship: {type: string, enum: [self, child, parent, dependent]}
     RecommendationRankRequest:
       type: object
       required: [candidates]

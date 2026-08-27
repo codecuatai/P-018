@@ -231,6 +231,10 @@
 .patient-name { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--color-navy); font-size: 0.82rem; }
 .patient-row p { margin: 6px 0 0; color: var(--color-ink); font-size: 0.75rem; }
 .patient-row small { display: block; margin-top: 6px; color: var(--color-muted); font-size: 0.67rem; }
+.patient-form-actions,
+.patient-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.patient-form-actions .button { margin-top: 0; }
+.patient-actions { justify-content: flex-end; }
 .address-form { display: grid; gap: 12px; padding: 17px; background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 10px; }
 .address-form-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .address-form-actions .button { margin-top: 0; }

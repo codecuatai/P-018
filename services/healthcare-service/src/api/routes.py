@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 
@@ -30,6 +30,17 @@ from src.models.medical import (
 
 router = APIRouter(prefix="/api/v1", tags=["healthcare"])
 
+_VIETNAMESE_MOBILE_PATTERN = r"^(?:0|\+84)(?:3|5|7|8|9)\d{8}$"
+
+
+def _normalize_phone(value: str) -> str:
+    return value.strip().replace(" ", "").replace(".", "").replace("(", "").replace(")", "").replace("-", "")
+
+
+def _is_valid_mobile_phone(value: str) -> bool:
+    import re
+    return re.fullmatch(_VIETNAMESE_MOBILE_PATTERN, value) is not None
+
 
 class HoldSlotRequest(BaseModel):
     slot_id: int = Field(ge=1)
@@ -47,6 +58,30 @@ class CreatePatientRequest(BaseModel):
     relationship: str = Field(default="self", pattern="^(self|child|parent|dependent)$")
     blood_type: str | None = Field(default=None, max_length=16)
     medical_history: str | None = Field(default=None, max_length=4000)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        normalized = _normalize_phone(value)
+        if not _is_valid_mobile_phone(normalized):
+            raise ValueError("Số điện thoại Việt Nam không hợp lệ.")
+        return normalized
+
+
+class PatientPatchRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=255)
+    phone: str | None = Field(default=None, min_length=6, max_length=64)
+    relationship: str | None = Field(default=None, pattern="^(self|child|parent|dependent)$")
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = _normalize_phone(value)
+        if not _is_valid_mobile_phone(normalized):
+            raise ValueError("Số điện thoại Việt Nam không hợp lệ.")
+        return normalized
 
 
 def _require_actor(x_actor_id: str | None) -> str:
@@ -453,6 +488,72 @@ def set_default_patient(
     for candidate in db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).all():
         candidate.is_default = candidate.id == link.id
     response = {"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": True}
+    _save_idempotency(db, key, actor_id, operation, request_hash, response)
+    db.commit()
+    return {"data": response}
+
+
+@router.patch("/patients/{patient_id}")
+def update_patient(
+    patient_id: int,
+    request: PatientPatchRequest,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
+    payload = request.model_dump(exclude_unset=True)
+    if not payload:
+        raise HTTPException(status_code=400, detail={"code": "PATIENT_PATCH_EMPTY", "detail": "At least one patient field is required."})
+    operation = "healthcare.patient.update"
+    request_hash = _request_hash(operation, {"patient_id": patient_id, **payload})
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
+    if cached is not None:
+        return {"data": cached}
+    link = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id, PatientUserLink.patient_id == patient_id).first()
+    if link is None:
+        raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_LINKED", "detail": "The patient is not linked to this account."})
+    if "name" in payload:
+        link.patient.name = str(payload["name"]).strip()
+    if "phone" in payload:
+        link.patient.phone = str(payload["phone"])
+    if "relationship" in payload:
+        link.relationship_type = str(payload["relationship"])
+    response = {"id": link.patient.id, "name": link.patient.name, "phone": link.patient.phone, "relationship": link.relationship_type, "is_default": link.is_default}
+    _save_idempotency(db, key, actor_id, operation, request_hash, response)
+    db.commit()
+    return {"data": response}
+
+
+@router.delete("/patients/{patient_id}")
+def unlink_patient(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    _internal_token: str = Depends(verify_internal_service_token),
+    x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, Any]:
+    actor_id = _require_actor(x_actor_id)
+    key = _require_idempotency_key(idempotency_key)
+    operation = "healthcare.patient.unlink"
+    request_hash = _request_hash(operation, {"patient_id": patient_id})
+    cached = _load_idempotency(db, key, actor_id, operation, request_hash)
+    if cached is not None:
+        return {"data": cached}
+    link = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id, PatientUserLink.patient_id == patient_id).first()
+    if link is None:
+        raise HTTPException(status_code=404, detail={"code": "PATIENT_NOT_LINKED", "detail": "The patient is not linked to this account."})
+    was_default = link.is_default
+    db.delete(link)
+    db.flush()
+    replacement = None
+    if was_default:
+        replacement = db.query(PatientUserLink).filter(PatientUserLink.actor_user_id == actor_id).order_by(PatientUserLink.created_at.asc(), PatientUserLink.id.asc()).first()
+        if replacement is not None:
+            replacement.is_default = True
+    response = {"deleted": True, "id": patient_id, "replacement_default_id": replacement.patient_id if replacement is not None else None}
     _save_idempotency(db, key, actor_id, operation, request_hash, response)
     db.commit()
     return {"data": response}

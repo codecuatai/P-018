@@ -206,6 +206,14 @@ export function setDefaultHealthcarePatient(id: number): Promise<HealthcarePatie
   return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}/default`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("patient-default") });
 }
 
+export function updateHealthcarePatient(id: number, value: Partial<Pick<HealthcarePatient, "name" | "phone" | "relationship">>): Promise<HealthcarePatient> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "PATCH", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("patient-update") });
+}
+
+export function unlinkHealthcarePatient(id: number): Promise<{ deleted: boolean; id: number; replacement_default_id: number | null }> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("patient-unlink") });
+}
+
 export function resolveAddress(addressText: string): Promise<GeocodeResult> {
   return request("/api/v1/location/geocode", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
 }

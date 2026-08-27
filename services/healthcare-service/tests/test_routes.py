@@ -424,6 +424,36 @@ def test_patient_links_are_actor_scoped_and_support_default_dependents() -> None
     assert selected.status_code == 200
     assert selected.json()["data"]["is_default"] is True
 
+    invalid = client.post(
+        "/api/v1/patients",
+        headers=headers(key="patient-invalid-phone"),
+        json={"name": "Số sai", "phone": "abc", "relationship": "dependent"},
+    )
+    assert invalid.status_code == 422
+
+    updated = client.patch(
+        f"/api/v1/patients/{dependent_id}",
+        headers=headers(key="patient-update"),
+        json={"name": "Người phụ thuộc đã sửa", "phone": "+84922222222", "relationship": "child"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["data"] == {
+        "id": dependent_id,
+        "name": "Người phụ thuộc đã sửa",
+        "phone": "+84922222222",
+        "relationship": "child",
+        "is_default": True,
+    }
+
+    unlinked = client.delete(f"/api/v1/patients/{dependent_id}", headers=headers(key="patient-unlink"))
+    assert unlinked.status_code == 200
+    assert unlinked.json()["data"]["deleted"] is True
+    assert unlinked.json()["data"]["replacement_default_id"] == 1
+
+    remaining = client.get("/api/v1/patients", headers=headers())
+    assert remaining.status_code == 200
+    assert remaining.json()["data"]["items"] == [{"id": 1, "name": "Bệnh nhân test", "phone": "0900000000", "relationship": "self", "is_default": True}]
+
     other_actor = client.get("/api/v1/patients", headers=headers(actor="actor-unlinked"))
     assert other_actor.status_code == 200
     assert other_actor.json()["data"]["items"] == []

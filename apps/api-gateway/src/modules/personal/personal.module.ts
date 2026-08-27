@@ -180,6 +180,8 @@ class PatientCreateDto {
   @IsString()
   @MinLength(6)
   @MaxLength(64)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
   phone!: string;
 
   @IsOptional()
@@ -195,6 +197,26 @@ class PatientCreateDto {
   @IsString()
   @MaxLength(4000)
   medical_history?: string;
+}
+
+class PatientPatchDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(64)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
+  phone?: string;
+
+  @IsOptional()
+  @IsIn(['self', 'child', 'parent', 'dependent'])
+  relationship?: 'self' | 'child' | 'parent' | 'dependent';
 }
 
 export interface LocationCoordinate {
@@ -578,6 +600,30 @@ export class HealthcarePatientController {
     const data = await this.healthcare.setDefaultPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId);
     return { data, meta: { request_id: request.correlationId } };
   }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() body: PatientPatchDto, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const patientId = Number(id);
+    const key = idempotencyKey?.trim();
+    if (!Number.isInteger(patientId) || patientId < 1) throw new BadRequestException({ code: 'PATIENT_ID_INVALID', detail: 'Patient id is invalid.', retryable: false });
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for this write.', retryable: false });
+    const data = await this.healthcare.updatePatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId, {
+      ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+      ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      ...(body.relationship !== undefined ? { relationship: body.relationship } : {}),
+    });
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Delete(':id')
+  async unlink(@Param('id') id: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const patientId = Number(id);
+    const key = idempotencyKey?.trim();
+    if (!Number.isInteger(patientId) || patientId < 1) throw new BadRequestException({ code: 'PATIENT_ID_INVALID', detail: 'Patient id is invalid.', retryable: false });
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for this write.', retryable: false });
+    const data = await this.healthcare.unlinkPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId);
+    return { data, meta: { request_id: request.correlationId } };
+  }
 }
 
 function assertCoordinatePair(latitude: number | undefined, longitude: number | undefined): void {
@@ -598,7 +644,7 @@ function clean(value: string | undefined): string | undefined {
 }
 
 function normalizePhone(value: string): string {
-  return value.replace(/[\s().-]/g, '');
+  return value.trim().replace(/[\s().-]/g, '');
 }
 
 function assertCoordinate(value: LocationCoordinate, name: string): void {
