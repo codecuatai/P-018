@@ -116,7 +116,17 @@ export class HistoryService {
     const requested = options.service ? [options.service] : names;
     const responses = await Promise.allSettled(requested.map((name) => {
       if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId });
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then(async (res) => {
+        const items = extractItems(res as JsonObject) as Array<JsonObject & { quote_id?: string }>;
+        const enriched = await Promise.all(items.map(async (item) => {
+          if (!item.quote_id) return item;
+          try {
+            const quote = await this.ride.getQuote(actorId, { correlationId }, item.quote_id);
+            return { ...quote, ...item };
+          } catch { return item; }
+        }));
+        return { items: enriched } as unknown as JsonObject;
+      });
       if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
       return this.healthcare.listAppointments(actorId, correlationId);
     }));
@@ -144,7 +154,17 @@ export class HistoryService {
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
     const responses = await Promise.allSettled(names.map((name) => {
       if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId });
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then(async (res) => {
+        const items = extractItems(res as JsonObject) as Array<JsonObject & { quote_id?: string }>;
+        const enriched = await Promise.all(items.map(async (item) => {
+          if (!item.quote_id) return item;
+          try {
+            const quote = await this.ride.getQuote(actorId, { correlationId }, item.quote_id);
+            return { ...quote, ...item };
+          } catch { return item; }
+        }));
+        return { items: enriched } as unknown as JsonObject;
+      });
       if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
       return this.healthcare.listAppointments(actorId, correlationId);
     }));
@@ -174,7 +194,16 @@ export class HistoryService {
       const publicOrder = publicHistoryResource(type, order);
       return payment ? { ...publicOrder, payment } : publicOrder;
     }
-    if (type === 'ride_booking') return this.ride.getBooking(actorId, { correlationId }, id).then((value) => publicHistoryResource(type, value as unknown as JsonObject));
+    if (type === 'ride_booking') return this.ride.getBooking(actorId, { correlationId }, id).then(async (value) => {
+      const booking = value as unknown as JsonObject & { quote_id?: string };
+      if (!booking.quote_id) return publicHistoryResource(type, booking);
+      try {
+        const quote = await this.ride.getQuote(actorId, { correlationId }, booking.quote_id);
+        return publicHistoryResource(type, { ...quote, ...booking });
+      } catch {
+        return publicHistoryResource(type, booking);
+      }
+    });
     if (type === 'restaurant_reservation') return this.restaurant.getReservation(id, actorId, correlationId).then((value) => publicHistoryResource(type, value));
     const appointmentId = Number(id);
     if (!Number.isInteger(appointmentId) || appointmentId < 1) throw new BadRequestException({ code: 'HISTORY_ID_INVALID', detail: 'Mã lịch khám không hợp lệ.', retryable: false });
@@ -265,12 +294,12 @@ function formatAmount(value: number): string {
 
 function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObject {
   const result = pickFields(resource, type === 'ride_booking'
-    ? ['status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'passenger_count', 'capacity_policy_version', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
+    ? ['id', 'status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'passenger_count', 'capacity_policy_version', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
     : type === 'food_order'
-      ? ['status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
+      ? ['id', 'status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
       : type === 'restaurant_reservation'
-        ? ['status', 'name', 'restaurant_name', 'address', 'location', 'reservation_time', 'start_at', 'booking_time', 'party_size', 'image_url']
-        : ['appointment_id', 'status', 'is_paid', 'patient_id', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'doctor_id', 'slot_id', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
+        ? ['id', 'status', 'name', 'restaurant_name', 'address', 'location', 'reservation_time', 'start_at', 'booking_time', 'party_size', 'image_url']
+        : ['id', 'appointment_id', 'status', 'is_paid', 'patient_id', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'doctor_id', 'slot_id', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
 
   if (type === 'ride_booking') {
     const driver = publicDriver(resource.driver);

@@ -35,3 +35,11 @@ export function calculatePollingInterval(
     return Math.min(Math.round(base * multiplier), 240_000);
   }
 }
+
+export function sameHistoryItems(left: HistoryItem[], right: HistoryItem[]): boolean {
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const next = right[index];
+    return item.id === next?.id && item.type === next?.type && item.status === next?.status && item.timestamp === next?.timestamp && JSON.stringify(item.resource) === JSON.stringify(next.resource);
+  });
+}

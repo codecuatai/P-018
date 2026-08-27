@@ -70,6 +70,7 @@ class BookingRow(Base):
     payment_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
     driver: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     driver_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    quote_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     driver_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
