@@ -524,6 +524,8 @@ export interface AssistantOption {
   price?: number;
   rating?: number;
   address?: string;
+  district?: string;
+  city?: string;
   latitude?: number;
   longitude?: number;
   facility?: AssistantFacility;
@@ -534,6 +536,8 @@ export interface AssistantRestaurant {
   name: string;
   location?: string;
   address?: string;
+  district?: string;
+  city?: string;
   cuisine?: string;
   rating?: number;
   latitude?: number;
@@ -543,6 +547,8 @@ export interface AssistantRestaurant {
 export interface AssistantFacility {
   name?: string;
   address?: string;
+  district?: string;
+  city?: string;
   latitude?: number;
   longitude?: number;
 }

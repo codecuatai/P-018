@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { errorText, resolveAddress } from "@/lib/api-client";
 import { executeServiceCancellation, isCancellableStatus } from "@/lib/cancellation-helpers";
-import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
+import { formatAddress, formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { HistoryItem } from "@/types";
 import { RideMapDetail } from "./ride-map-detail";
 import { FoodTrackingPanel } from "./food-tracking";
@@ -229,7 +229,7 @@ function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
   const resource = item.resource;
   const restaurant = isRecord(resource.restaurant) ? resource.restaurant : undefined;
   const name = nestedName(restaurant) || optionalText(resource.restaurant_name ?? resource.name, "Nhà hàng");
-  const address = optionalText(resource.address ?? restaurant?.address ?? restaurant?.location, "Địa chỉ nhà hàng chưa có");
+  const address = formatAddress(resource.address, restaurant?.address, restaurant?.location, resource.district, restaurant?.district, resource.city, restaurant?.city) || "Địa chỉ nhà hàng chưa có";
   const directPoint = pointFromRecord(restaurant) ?? pointFrom(resource.latitude, resource.longitude) ?? pointFromRecord(resource.location);
   const canResolve = Boolean(address) && !/chưa có|đang cập nhật/i.test(address);
 
@@ -247,10 +247,10 @@ function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
   }, [address, canResolve, directPoint?.latitude, directPoint?.longitude]);
 
   const location = resolvedPoint ? { ...resolvedPoint, label: name } : undefined;
-  return <div className="restaurant-map-detail">
-    <section className="restaurant-map-stage" aria-label="Bản đồ và thông tin đặt bàn">
+  return <div className={`restaurant-map-detail${location ? "" : " restaurant-map-detail-no-map"}`}>
+    <section className={`restaurant-map-stage${location ? "" : " is-unavailable"}`} aria-label="Bản đồ và thông tin đặt bàn">
       <div className="restaurant-map-canvas">
-        {location ? <XOneMap restaurant={location} density="active" label={`Vị trí ${name}`} /> : resolving ? <p className="inline-note restaurant-map-empty">Đang xác định vị trí từ địa chỉ nhà hàng…</p> : <p className="inline-note restaurant-map-empty">{address}</p>}
+        {location ? <XOneMap restaurant={location} variant="location-detail" density="active" label={`Vị trí ${name}`} /> : resolving ? <p className="inline-note restaurant-map-empty">Đang xác định vị trí từ địa chỉ nhà hàng…</p> : <p className="inline-note restaurant-map-empty">{address}</p>}
         <aside className="restaurant-map-info-panel" aria-label="Thông tin đặt bàn"><span className="eyebrow">ĐẶT BÀN ĐÃ XÁC NHẬN</span><h3>{name}</h3><p>{address}</p><div className="consumer-detail-grid"><Fact label="Thời gian" value={formatDateTime(resource.start_at ?? resource.reservation_time)} /><Fact label="Số khách" value={resource.party_size ? `${String(resource.party_size)} người` : "Chưa có"} /><Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} /><Fact label="Bàn" value={optionalText(resource.table_code, "Đã sắp xếp")} /><Fact label="Ẩm thực" value={optionalText(restaurant?.cuisine, "Theo thực đơn nhà hàng")} /><Fact label="Đánh giá" value={typeof restaurant?.rating === "number" ? `${String(restaurant.rating)} ★` : "Chưa có"} /><Fact label="Mức giá" value={optionalText(restaurant?.price_level, "Chưa có")} /><Fact label="Giờ mở cửa" value="Hằng ngày: 08:00–22:00" /></div></aside>
       </div>
     </section>
@@ -361,8 +361,11 @@ function pointFrom(latitude: unknown, longitude: unknown): XOnePoint | undefined
 
 function pointFromRecord(value: unknown): XOnePoint | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.suspicious === true) return undefined;
-  return pointFrom(value.latitude, value.longitude) ?? nestedPoint(value, "location");
+  if (value.suspicious === true || value.coordinate_status === "suspicious_default") return undefined;
+  return pointFrom(value.latitude, value.longitude)
+    ?? nestedPoint(value, "location")
+    ?? nestedPoint(value, "coordinates")
+    ?? nestedPoint(value, "coordinate");
 }
 
 function nestedPoint(value: unknown, key: string): XOnePoint | undefined {

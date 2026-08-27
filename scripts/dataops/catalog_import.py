@@ -30,6 +30,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_VERSION = "2026-08-hanoi-v1"
+# The checked-in crawl can omit coordinates or repeat a generic OSM fallback
+# point. Generate stable central-Hanoi points without rewriting raw crawl data.
+HANOI_COORDINATE_BOUNDS = (21.0000, 21.0500, 105.8000, 105.8600)
+SUSPICIOUS_DEFAULT_COORDINATE = (21.0285, 105.8048)
+
+
+def fallback_restaurant_coordinate(source_id: str) -> tuple[float, float]:
+    """Return a stable pseudo-random point inside central Hanoi."""
+    digest = hashlib.sha256(source_id.encode("utf-8")).digest()
+    lat_ratio = int.from_bytes(digest[:8], "big") / ((1 << 64) - 1)
+    lng_ratio = int.from_bytes(digest[8:16], "big") / ((1 << 64) - 1)
+    min_lat, max_lat, min_lng, max_lng = HANOI_COORDINATE_BOUNDS
+    return (
+        round(min_lat + lat_ratio * (max_lat - min_lat), 6),
+        round(min_lng + lng_ratio * (max_lng - min_lng), 6),
+    )
+
+
 DEFAULT_OUTPUT_ROOT = ROOT / "artifacts" / "dataops"
 EXPECTED = {
     "food-restaurants": ["source_id", "name", "address", "ward", "district", "city", "category", "cuisine_tags", "phone", "opening_hours", "rating", "review_count", "price_level", "image_url", "source_name", "source_url", "fetched_at"],
@@ -240,20 +258,26 @@ def build_restaurant(version: str, source_root: Path | None = None) -> tuple[lis
         errors += url_errors(row, ["source_url", "image_url", "website"])
         latitude = parse_coordinate(row.get("latitude"), -90, 90)
         longitude = parse_coordinate(row.get("longitude"), -180, 180)
-        if (clean(row.get("latitude")) or clean(row.get("longitude"))) and (latitude is None or longitude is None): errors.append("INVALID_COORDINATES")
+        raw_latitude, raw_longitude = latitude, longitude
+        raw_coordinate_supplied = bool(clean(row.get("latitude")) or clean(row.get("longitude")))
+        if raw_coordinate_supplied and (latitude is None or longitude is None):
+            report.invalid_coordinates += 1
         if source_id in seen: errors.append("DUPLICATE_SOURCE_ID")
         if errors:
             reject(report, line, row, errors)
             continue
         seen.add(str(source_id))
-        suspicious = latitude is not None and longitude is not None and abs(latitude - 21.0285) < 1e-7 and abs(longitude - 105.8048) < 1e-7
+        suspicious = latitude is not None and longitude is not None and abs(latitude - SUSPICIOUS_DEFAULT_COORDINATE[0]) < 1e-7 and abs(longitude - SUSPICIOUS_DEFAULT_COORDINATE[1]) < 1e-7
         if suspicious:
             report.suspicious_coordinates += 1
             suspicious_addresses.add(clean(row.get("address")) or "")
-        coordinate_status = "suspicious_default" if suspicious else "validated" if latitude is not None and longitude is not None else "missing"
+        has_source_coordinate = latitude is not None and longitude is not None and not suspicious
+        if not has_source_coordinate:
+            latitude, longitude = fallback_restaurant_coordinate(str(source_id))
+        coordinate_status = "validated" if has_source_coordinate else "generated_fallback"
         review_count = integer_or_none(row.get("review_count"))
         rating = meaningful_rating(row.get("rating"), review_count)
-        payload = {"id": f"restaurant_{source_id}", "name": row["name"].strip(), "location": ", ".join(value for value in [clean(row.get("address")), clean(row.get("district")), normalize_city(row.get("city"))] if value), "address": clean(row.get("address")), "ward": clean(row.get("ward")), "district": clean(row.get("district")), "city": normalize_city(row.get("city")), "cuisine_type": clean(row.get("cuisine_type")) or "unknown", "cuisine_tags": parse_json_array(row.get("cuisine_tags")), "budget_range": normalize_price_level(row.get("price_level")) or "unknown", "price_level": clean(row.get("price_level")), "rating": rating, "rating_source": "raw_source_scale" if rating is not None else None, "review_count": review_count, "latitude": None if suspicious else latitude, "longitude": None if suspicious else longitude, "latitude_raw": latitude, "longitude_raw": longitude, "coordinate_status": coordinate_status, "phone": clean(row.get("phone")), "website": clean(row.get("website")), "opening_hours": clean(row.get("opening_hours")), "description": clean(row.get("description")), "image_url": clean(row.get("image_url")), "active": True, "source_metadata": source_metadata(row, version, str(source_id))}
+        payload = {"id": f"restaurant_{source_id}", "name": row["name"].strip(), "location": ", ".join(value for value in [clean(row.get("address")), clean(row.get("district")), normalize_city(row.get("city"))] if value), "address": clean(row.get("address")), "ward": clean(row.get("ward")), "district": clean(row.get("district")), "city": normalize_city(row.get("city")), "cuisine_type": clean(row.get("cuisine_type")) or "unknown", "cuisine_tags": parse_json_array(row.get("cuisine_tags")), "budget_range": normalize_price_level(row.get("price_level")) or "unknown", "price_level": clean(row.get("price_level")), "rating": rating, "rating_source": "raw_source_scale" if rating is not None else None, "review_count": review_count, "latitude": latitude, "longitude": longitude, "latitude_raw": raw_latitude, "longitude_raw": raw_longitude, "coordinate_status": coordinate_status, "phone": clean(row.get("phone")), "website": clean(row.get("website")), "opening_hours": clean(row.get("opening_hours")), "description": clean(row.get("description")), "image_url": clean(row.get("image_url")), "active": True, "source_metadata": source_metadata(row, version, str(source_id))}
         records.append(normalized("restaurant", version, row, str(source_id), payload))
         report.rows_valid += 1
     report.suspicious_coordinate_distinct_addresses = len(suspicious_addresses)

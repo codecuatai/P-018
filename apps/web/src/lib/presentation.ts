@@ -81,6 +81,24 @@ export function optionalText(value: unknown, fallback = "Đang cập nhật"): s
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+/** Format catalog addresses without repeating comma-separated locality segments. */
+export function formatAddress(...parts: unknown[]): string {
+  const seen = new Set<string>();
+  const segments: string[] = [];
+  for (const part of parts) {
+    if (typeof part !== "string" && typeof part !== "number") continue;
+    for (const segment of String(part).split(",")) {
+      const value = segment.trim();
+      if (!value) continue;
+      const key = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("vi-VN");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      segments.push(value);
+    }
+  }
+  return segments.join(", ");
+}
+
 export function numberValue(value: unknown): number | undefined {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) ? numeric : undefined;
