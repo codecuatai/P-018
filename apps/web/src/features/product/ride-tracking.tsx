@@ -17,7 +17,7 @@ export type ParsedRideDriver = {
 };
 
 export function RideTrackingPanel(props: { bookingId: string; hideMap?: boolean; className?: string; polling?: boolean }) {
-  const trackingState = useRideTracking(props.bookingId, true);
+  const trackingState = useRideTracking(props.bookingId, props.polling ?? false);
   return <><RideTrackingPanelContent {...props} trackingState={trackingState} /><RideCancelButton bookingId={props.bookingId} status={trackingState.data?.status} /></>;
 }
 

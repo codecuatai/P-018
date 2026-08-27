@@ -93,7 +93,7 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   async function handleCancel() {
     setPending(true); setError("");
     try {
-      await executeServiceCancellation(item.type, item.resource.id ? item.resource : item.id);
+      await executeServiceCancellation(item.type, item.resource, item.id);
       setCancelled(true);
       onCancelled?.();
       window.dispatchEvent(new CustomEvent("xone-active-work-changed"));

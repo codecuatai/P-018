@@ -127,6 +127,7 @@ class RideApplication:
             updated_at=now,
             driver_id=None,
             tracking_started_at=None,
+            quote_snapshot=quote.snapshot(),
         )
         payload = booking.snapshot()
         try:

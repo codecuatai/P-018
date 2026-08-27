@@ -141,7 +141,6 @@ function FoodBrowse() {
       void openRestaurant({ id: initialResourceId });
     }
   }, [initialResourceId, items, selectedId, detailLoading]);
-
   const loadMenu = useCallback(async (id: string, targetPage: number): Promise<void> => {
     const requestId = menuRequestRef.current + 1;
     menuRequestRef.current = requestId;

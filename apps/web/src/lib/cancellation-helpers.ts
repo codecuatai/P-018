@@ -49,10 +49,29 @@ export function canRateStatus(status: string, type: HistoryType, resource?: Reco
 
 export async function executeServiceCancellation(
   type: HistoryType,
-  resourceOrId: Record<string, unknown> | string
+  resourceOrId: Record<string, unknown> | string,
+  fallbackId?: string
 ): Promise<Record<string, unknown>> {
   const resource = typeof resourceOrId === "object" && resourceOrId !== null ? resourceOrId : {};
-  const rawId = typeof resourceOrId === "string" ? resourceOrId : String(resource.id ?? resource.reservation_id ?? resource.appointment_id ?? resource.booking_id ?? resource.order_id ?? resource.resource_id ?? "");
+  let rawId = typeof resourceOrId === "string"
+    ? resourceOrId
+    : String(
+        resource.id ??
+        resource.reservation_id ??
+        resource.appointment_id ??
+        resource.booking_id ??
+        resource.order_id ??
+        resource.resource_id ??
+        ""
+      );
+
+  if (!rawId || rawId === "undefined" || rawId === "null") {
+    rawId = fallbackId ?? (typeof resourceOrId === "string" ? resourceOrId : "");
+  }
+
+  if (!rawId || rawId === "undefined" || rawId === "null") {
+    throw new Error("Không tìm thấy mã giao dịch để hủy.");
+  }
 
   if (type === "restaurant_reservation") {
     return await cancelRestaurantReservation(rawId);
