@@ -202,6 +202,35 @@ function numberValue(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
+function formatCatalogAddress(...parts: unknown[]): string | undefined {
+  const seen = new Set<string>();
+  const segments: string[] = [];
+  for (const part of parts) {
+    if (typeof part !== 'string' && typeof part !== 'number') continue;
+    for (const segment of String(part).split(',')) {
+      const value = segment.trim();
+      if (!value) continue;
+      const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('vi-VN');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      segments.push(value);
+    }
+  }
+  return segments.length ? segments.join(', ') : undefined;
+}
+
+function publicCoordinate(value: JsonObject): { latitude: number; longitude: number } | undefined {
+  if (value.coordinate_status === 'suspicious_default') return undefined;
+  const candidates: unknown[] = [value, value.location, value.coordinates, value.coordinate];
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const latitude = numberValue(candidate.latitude);
+    const longitude = numberValue(candidate.longitude);
+    if (latitude !== undefined && longitude !== undefined && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) return { latitude, longitude };
+  }
+  return undefined;
+}
+
 const DEFAULT_RESTAURANT_OPENING_HOURS: JsonObject[] = [{ day: 'Hằng ngày', open: '08:00', close: '22:00' }];
 
 function hasOpeningHours(value: unknown): boolean {
@@ -3245,13 +3274,11 @@ export class AssistantService {
   }
 
   private publicRestaurant(candidate: JsonObject): JsonObject {
-    const address = stringValue(candidate.address) ?? stringValue(candidate.location);
+    const address = formatCatalogAddress(candidate.address, candidate.location, candidate.district, candidate.city);
     const openingHours = hasOpeningHours(candidate.opening_hours)
       ? candidate.opening_hours
       : DEFAULT_RESTAURANT_OPENING_HOURS;
-    const hasTrustworthyCoordinate = candidate.coordinate_status !== 'suspicious_default'
-      && typeof candidate.latitude === 'number'
-      && typeof candidate.longitude === 'number';
+    const coordinate = publicCoordinate(candidate);
     return {
       name: stringValue(candidate.name) ?? 'Nhà hàng',
       location: address ?? 'Thông tin địa điểm đang được cập nhật',
@@ -3265,7 +3292,7 @@ export class AssistantService {
       ...(stringValue(candidate.price_level) ? { price_level: stringValue(candidate.price_level) } : {}),
       ...(stringValue(candidate.image_url) ? { image_url: stringValue(candidate.image_url) } : {}),
       opening_hours: openingHours,
-      ...(hasTrustworthyCoordinate ? { latitude: candidate.latitude, longitude: candidate.longitude } : {}),
+      ...(coordinate ? { latitude: coordinate.latitude, longitude: coordinate.longitude } : {}),
     };
   }
 

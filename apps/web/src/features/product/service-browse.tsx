@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Info, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,7 +46,7 @@ import { RideTrackingPanel } from "./ride-tracking";
 import { useRideTracking } from "./ride-tracking-cache";
 import { FoodTrackingPanel } from "./food-tracking";
 import { XOneMap } from "./xone-map";
-import { formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
+import { formatAddress, formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
 import { FavoriteToggle } from "./favorite-toggle";
 import { ServiceDetailDialog } from "@/components/ServiceDetailDialog";
 
@@ -533,7 +533,7 @@ function RestaurantBrowse() {
                 <AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} />
                 <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
                   <h2 style={{ textAlign: "left" }}>{display(item.name ?? "Nhà hàng")}</h2>
-                  <p style={{ textAlign: "left" }}>{display(item.location ?? item.address ?? "Địa chỉ đang được xác minh")}</p>
+                  <p style={{ textAlign: "left" }}>{formatAddress(item.address, item.location, item.district, item.city) || "Địa chỉ đang được xác minh"}</p>
                   <small style={{ textAlign: "left" }}>{display(item.cuisine_type ?? item.cuisine ?? "Ẩm thực chưa phân loại")} · {display(item.budget_range ?? "Mức giá chưa công bố")}</small>
                 </div>
                 <button className="button button-secondary" type="button" onClick={() => void open(item)}>
@@ -1070,7 +1070,22 @@ function AuthoritativeImage({ source, alt, compact = false }: { source: unknown;
   if (failed) return <div className={`${className} service-image-fallback`} role="img" aria-label={`${alt}: ảnh không khả dụng`}>Ảnh không khả dụng</div>;
   return <div className={className}><img src={source} alt={alt} loading="lazy" onError={() => setFailed(true)} /></div>;
 }
-function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKey }) { const point = pointFromRecord(item); const resourceId = idOf(item); return <div className="service-detail-heading"><div><AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} /><span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span><h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2><p>{display(item.address ?? item.location ?? item.description ?? "Địa chỉ đang cập nhật")}</p>{service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}</div>{point ? <XOneMap destination={point} label="Vị trí địa điểm" /> : <span className="field-hint">Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span>}</div>; }
+function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKey }) {
+  const point = pointFromRecord(item);
+  const resourceId = idOf(item);
+  const address = formatAddress(item.address, item.location, item.district, item.city) || "Địa chỉ đang cập nhật";
+  return <div className={`service-detail-heading${point ? "" : " no-map"}${service === "restaurant" ? " restaurant-service-detail-heading" : ""}`}>
+    <div className="service-detail-copy">
+      <AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} />
+      <span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span>
+      <h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2>
+      <p>{address}</p>
+      {service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}
+      {!point ? <div className="map-fallback-banner" role="status"><Info aria-hidden="true" size={17} /><span>Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span></div> : null}
+    </div>
+    {point && service === "restaurant" ? <XOneMap restaurant={point} variant="location-detail" label="Vị trí địa điểm" /> : point ? <XOneMap destination={point} label="Vị trí địa điểm" /> : null}
+  </div>;
+}
 function ConfirmationBox({ confirmation, checked, setChecked, onConfirm, loading, label }: { confirmation: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onConfirm: () => void; loading: boolean; label: string }) { return <div className="confirmation-box"><div><span className="eyebrow">XÁC NHẬN RÕ RÀNG</span><h3>{display(confirmation.title ?? "Kiểm tra lần cuối")}</h3><p>{display(confirmation.detail ?? "Các điều khoản hiện tại đã được kiểm tra từ nguồn đáng tin cậy.")}</p>{confirmation.preview ? <PreviewSummary preview={asRecord(confirmation.preview)} /> : null}</div><label className="confirmation-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /> <span>{label}</span></label><button className="button button-primary" type="button" onClick={onConfirm} disabled={loading || !checked}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận</button></div>; }
 function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND"); const address = asRecord(preview.address ?? preview.delivery_address); const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text; return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>; }
 function LoadingNote({ text }: { text: string }) { return <p className="inline-note service-loading-note" aria-live="polite"><Loader2 className="spinner" size={17} /> {text}</p>; }
@@ -1104,7 +1119,7 @@ function mentionsHanoi(value: string): boolean { const normalized = normalizeAdd
 function isHanoiInnerCityAddress(value: string): boolean { const normalized = normalizeAddress(value); return mentionsHanoi(value) && HANOI_INNER_DISTRICTS.some((district) => normalized.includes(district.key)); }
 function hanoiDistrict(value: string): string | undefined { const normalized = normalizeAddress(value); return HANOI_INNER_DISTRICTS.find((candidate) => normalized.includes(candidate.key))?.label; }
 function vehicleLabel(value: string): string { return ({ BIKE: "Xe máy", CAR_4: "Ô tô 4 chỗ", CAR_7: "Ô tô 7 chỗ" } as Record<string, string>)[value] ?? value; }
-function pointFromRecord(value: JsonRecord): Point | undefined { if (value.suspicious === true) return undefined; const latitude = Number(value.latitude); const longitude = Number(value.longitude); return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : undefined; }
+function pointFromRecord(value: JsonRecord): Point | undefined { if (value.suspicious === true || value.coordinate_status === "suspicious_default") return undefined; const candidates: unknown[] = [value, value.location, value.coordinates, value.coordinate]; for (const candidate of candidates) { if (!isRecord(candidate)) continue; const latitude = Number(candidate.latitude); const longitude = Number(candidate.longitude); if (Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) return { latitude, longitude }; } return undefined; }
 function candidatePoint(candidate: GeocodeCandidate): Point | undefined { return candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined; }
 function pointFromQuote(quote: RideQuote, kind: "pickup" | "dropoff"): Point | undefined { const latitude = kind === "pickup" ? quote.pickup_latitude : quote.dropoff_latitude; const longitude = kind === "pickup" ? quote.pickup_longitude : quote.dropoff_longitude; return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined; }
 function defaultDateTimeLocal(): string { const date = new Date(Date.now() + 60 * 60 * 1000); date.setMinutes(0, 0, 0); const pad = (value: number) => String(value).padStart(2, "0"); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; }

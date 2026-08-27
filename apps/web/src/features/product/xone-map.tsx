@@ -34,6 +34,7 @@ type XOneMapProps = {
   providerUnavailable?: boolean;
   locationDenied?: boolean;
   density?: "default" | "active";
+  variant?: "default" | "location-detail";
   label?: string;
 };
 
@@ -71,6 +72,7 @@ export function XOneMap({
   providerUnavailable = false,
   locationDenied = false,
   density = "default",
+  variant = "default",
   label = "Sơ đồ vị trí",
 }: XOneMapProps) {
   const mapNodeRef = useRef<HTMLDivElement>(null);
@@ -242,7 +244,9 @@ export function XOneMap({
       }
       const marker = existing ?? (key === "healthcare"
         ? L.marker(toLatLng(point), { icon: L.divIcon({ className: "xone-healthcare-marker", html: '<span aria-hidden="true"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map)
-        : L.circleMarker(toLatLng(point), { radius: key === "driver" || key === "current" ? 9 : 8, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 0.95 }).addTo(map));
+        : key === "restaurant" && variant === "location-detail"
+          ? L.marker(toLatLng(point), { icon: locationPinIcon(L) }).addTo(map)
+          : L.circleMarker(toLatLng(point), { radius: key === "driver" || key === "current" ? 9 : 8, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 0.95 }).addTo(map));
       if (existing) {
         animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion(), key === "driver" ? mapData.route : undefined);
       }
@@ -257,16 +261,16 @@ export function XOneMap({
       fitKeyRef.current = fitKey;
       map.fitBounds(L.latLngBounds(fitPoints.map(toLatLng)), { padding: [24, 24], maxZoom: 15 });
     }
-  }, [mapData, mapState]);
+  }, [mapData, mapState, variant]);
 
-  return <section className={`xone-map xone-map-${density}`} aria-label={label}>
-    <div className="xone-map-toolbar">
+  return <section className={`xone-map xone-map-${density}${variant === "location-detail" ? " xone-map-location-detail" : ""}`} aria-label={label}>
+    {variant === "default" ? <div className="xone-map-toolbar">
       <small>{routeProvider ? "Lộ trình đã được cập nhật" : "Bản đồ vị trí"}</small>
       <span>
         <button type="button" aria-label="Thu nhỏ bản đồ" onClick={() => mapRef.current?.zoomOut()} disabled={!canRenderMap}><Minus size={13} /></button>
         <button type="button" aria-label="Phóng to bản đồ" onClick={() => mapRef.current?.zoomIn()} disabled={!canRenderMap}><Plus size={13} /></button>
       </span>
-    </div>
+    </div> : null}
     {canRenderMap ? (
       <>
         <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} />
@@ -278,8 +282,12 @@ export function XOneMap({
         )}
       </>
     ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
-    {mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
+    {variant === "default" && mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
+}
+
+function locationPinIcon(L: LeafletApi) {
+  return L.divIcon({ className: "xone-location-pin", html: '<span aria-hidden="true"><i></i></span>', iconSize: [32, 40], iconAnchor: [16, 38], tooltipAnchor: [0, -34] });
 }
 
 function MapFallback({ label, points, providerUnavailable, locationDenied, routeProvider, routeStatus, routeDistanceMeters, routeDurationSeconds, onRetry }: { label: string; points: XOnePoint[]; providerUnavailable: boolean; locationDenied: boolean; routeProvider?: string; routeStatus?: string; routeDistanceMeters?: number | null; routeDurationSeconds?: number | null; onRetry: () => void }) {
