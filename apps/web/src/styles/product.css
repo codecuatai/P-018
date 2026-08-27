@@ -178,11 +178,11 @@
 .activity-meta span { display: inline-flex; align-items: center; gap: 4px; }
 .activity-meta span:last-child { color: var(--color-success-ink); font-weight: 700; }
 
-.profile-grid { display: grid; grid-template-columns: minmax(230px, 0.55fr) minmax(0, 1fr); gap: 15px; }
+.profile-grid { display: grid; grid-template-columns: minmax(230px, 0.48fr) minmax(0, 1.52fr); gap: 15px; }
 .profile-identity,
 .profile-details,
 .settings-card,
-.route-shell { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 13px; }
+.route-shell { min-width: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 13px; }
 .profile-identity { display: flex; flex-direction: column; align-items: flex-start; padding: 24px; }
 .profile-avatar { display: grid; width: 60px; height: 60px; place-items: center; margin-bottom: 20px; color: var(--color-primary-strong); background: #EAF4FA; border: 1px solid #CBE1ED; border-radius: 15px; }
 .profile-identity h2 { margin: 8px 0 0; color: var(--color-navy); font-size: 1.1rem; letter-spacing: -0.03em; overflow-wrap: anywhere; }
@@ -322,7 +322,7 @@
 .form-field select,
 .profile-form select,
 .ride-form select { width: 100%; min-height: 43px; padding: 10px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; }
-.profile-form { max-width: 560px; }
+.profile-form { max-width: none; min-width: 0; }
 .profile-form .form-field { margin-top: 15px; }
 .profile-form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .profile-form .button { margin-top: 18px; }
@@ -358,7 +358,7 @@
 .location-candidate:hover { border-color: var(--color-primary); background: var(--surface-ice); }
 .location-candidate strong { font-size: 0.76rem; }
 .location-candidate small { color: var(--color-muted); font-size: 0.68rem; }
-.xone-map { min-height: 230px; padding: 13px; margin: 16px 0; background: #EAF1F3; border-color: #C9DCE2; border-radius: 12px; overflow: hidden; }
+.xone-map { position: relative; z-index: 0; isolation: isolate; min-height: 230px; padding: 13px; margin: 16px 0; background: #EAF1F3; border-color: #C9DCE2; border-radius: 12px; overflow: hidden; }
 .xone-map-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--color-muted); font-size: 0.68rem; }
 .xone-map-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .xone-map small { color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; }
@@ -588,14 +588,50 @@
 .cart-summary dt { color: var(--color-muted); font-size: 0.69rem; }
 .cart-summary dd { margin: 0; color: var(--color-ink); font-size: 0.7rem; font-weight: 750; text-align: right; }
 .food-delivery-address { margin-top: 10px; }
+.food-address-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--color-navy); font-size: 0.76rem; font-weight: 760; }
+.food-address-heading small { color: var(--color-muted); font-size: 0.65rem; font-weight: 500; }
+.food-saved-addresses { display: grid; gap: 7px; margin-top: 8px; }
+.food-saved-address { display: grid; gap: 3px; padding: 10px 11px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; text-align: left; }
+.food-saved-address:hover,
+.food-saved-address.is-selected { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }
+.food-saved-address strong { font-size: 0.72rem; }
+.food-saved-address span { color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; }
+.food-address-selected { display: grid; gap: 4px; padding: 9px 10px; margin-top: 8px; background: var(--surface-ice); border: 1px solid #C9D8F5; border-radius: 8px; }
+.food-address-selected span { color: var(--color-muted); font-size: 0.62rem; }
+.food-address-selected strong { color: var(--color-primary-strong); font-size: 0.7rem; }
+.food-address-selected input { min-height: 32px; padding: 7px 8px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.68rem; }
+.address-inline-list { display: grid; gap: 8px; margin-bottom: 9px; }
+.address-inline-row { display: flex; align-items: stretch; gap: 8px; padding: 9px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 9px; }
+.address-inline-row.is-selected { background: var(--surface-ice); border-color: #B8CFF5; }
+.address-inline-select { display: grid; flex: 1; gap: 3px; min-width: 0; padding: 0; color: var(--color-ink); background: transparent; border: 0; text-align: left; }
+.address-inline-select strong { color: var(--color-primary-strong); font-size: 0.72rem; }
+.address-inline-select span { overflow: hidden; color: var(--color-muted); font-size: 0.68rem; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.address-inline-new { position: relative; z-index: 2; display: flex; gap: 8px; align-items: stretch; min-width: 0; }
+.address-dropdown { position: relative; z-index: 1000; min-width: 0; flex: 1; }
+.address-dropdown-trigger { display: flex; width: 100%; height: 40px; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; box-sizing: border-box; padding: 9px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; font: inherit; font-size: 0.8rem; text-align: left; }
+.address-dropdown-trigger:hover,
+.address-dropdown-trigger[aria-expanded="true"] { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(49 94 245 / 12%); }
+.address-dropdown-trigger > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.address-dropdown-trigger > svg { flex: 0 0 auto; color: var(--color-primary-strong); }
+.address-dropdown-menu { position: absolute; z-index: 1001; top: calc(100% + 5px); right: 0; left: 0; display: grid; gap: 5px; max-height: min(280px, 45vh); overflow-x: hidden; overflow-y: auto; padding: 7px; background: #FFFFFF; border: 1px solid var(--color-border-strong); border-radius: 9px; box-shadow: 0 12px 28px rgb(16 42 67 / 15%); isolation: isolate; }
+.address-dropdown-menu > input { width: 100%; min-height: 36px; box-sizing: border-box; padding: 8px 9px; border: 1px solid var(--color-border-strong); border-radius: 7px; font: inherit; font-size: 0.75rem; }
+.address-dropdown-option { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 7px; width: 100%; padding: 8px 9px; color: var(--color-ink); background: transparent; border: 1px solid transparent; border-radius: 7px; text-align: left; }
+.address-dropdown-option:hover,
+.address-dropdown-option.is-selected { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }
+.address-dropdown-option strong { grid-column: 1 / -1; font-size: 0.72rem; }
+.address-dropdown-option span { min-width: 0; overflow: hidden; color: var(--color-muted); font-size: 0.68rem; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.address-dropdown-suggestions { display: grid; gap: 4px; padding-top: 4px; border-top: 1px solid var(--color-border); }
+.address-inline-new > .button { box-sizing: border-box; height: 40px; min-height: 40px; margin-top: 0; flex: 0 0 auto; }
 .food-address-toggle { margin-top: 7px; }
 .food-address-form { display: grid; gap: 9px; padding: 11px; margin-top: 9px; background: #F7FAFC; border: 1px solid #D6E2E8; border-radius: 8px; }
 .food-address-form > label,
 .food-address-form > .food-address-field { display: grid; gap: 5px; color: var(--color-navy); font-size: 0.68rem; font-weight: 720; }
 .food-address-form input { width: 100%; min-height: 36px; padding: 8px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 7px; font-size: 0.72rem; font-weight: 400; }
-.food-address-search { display: flex; gap: 6px; }
+.food-address-search { display: flex; align-items: stretch; gap: 6px; }
 .food-address-search input { min-width: 0; flex: 1; }
-.food-address-search .button { min-height: 36px; margin-top: 0; padding: 7px 9px; }
+.food-address-search input,
+.food-address-search .button { box-sizing: border-box; height: 36px; min-height: 36px; margin-top: 0; }
+.food-address-search .button { padding: 7px 9px; }
 .food-address-candidates { display: grid; gap: 5px; }
 .food-address-candidates button { padding: 8px 9px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 7px; font-size: 0.68rem; text-align: left; }
 .food-address-candidates button.is-active { color: var(--color-primary-strong); background: var(--surface-ice); border-color: #B8CFF5; }

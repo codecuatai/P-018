@@ -71,6 +71,41 @@ describe('Geoapify provider boundary', () => {
     expect(geoapify.geocode).toHaveBeenCalledWith('an address with no result');
   });
 
+  it('reverse geocodes a coordinate through Geoapify', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      results: [{ lat: 21.0285, lon: 105.8048, formatted: 'Hồ Hoàn Kiếm, Hà Nội', rank: 1 }],
+    }), { status: 200 }));
+    const provider = new GeoapifyProvider(config({
+      GEOAPIFY_REAL_MODE: true,
+      GEOAPIFY_SERVER_API_KEY: 'test-key',
+      GEOAPIFY_API_BASE_URL: 'https://api.geoapify.com/v1',
+      GEOAPIFY_LANGUAGE: 'vi',
+      GEOAPIFY_COUNTRY_FILTER: 'vn',
+    }));
+
+    const result = await provider.reverse({ latitude: 21.0285, longitude: 105.8048 });
+
+    expect(result[0]).toMatchObject({ address_text: 'Hồ Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8048 });
+    const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(requestUrl.pathname).toBe('/v1/geocode/reverse');
+    expect(requestUrl.searchParams.get('lat')).toBe('21.028500');
+    expect(requestUrl.searchParams.get('lon')).toBe('105.804800');
+  });
+
+  it('uses the normal geocoder for autocomplete when Geoapify is disabled', async () => {
+    const geoapify = { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() };
+    const locations = new LocationService(
+      config({ APP_ENV: 'development', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: true }),
+      geoapify as never,
+    );
+
+    const result = await locations.autocomplete('Hồ Hoàn Kiếm');
+
+    expect(result.provider).toBe('deterministic-local-demo');
+    expect(result.suggestions).toHaveLength(1);
+    expect(geoapify.autocomplete).not.toHaveBeenCalled();
+  });
+
   it('uses semantic autocomplete when a full-text result misses an uppercase location code', async () => {
     const fetchMock = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({

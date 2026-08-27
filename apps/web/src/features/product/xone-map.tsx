@@ -318,9 +318,9 @@ function parseRoute(value?: string | null): XOnePoint[] {
 function sanitizePoint(value: unknown): XOnePoint | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
-  const latitude = candidate.latitude;
-  const longitude = candidate.longitude;
-  if (candidate.suspicious === true || typeof latitude !== "number" || typeof longitude !== "number" || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+  const latitude = typeof candidate.latitude === "number" || typeof candidate.latitude === "string" ? Number(candidate.latitude) : NaN;
+  const longitude = typeof candidate.longitude === "number" || typeof candidate.longitude === "string" ? Number(candidate.longitude) : NaN;
+  if (candidate.suspicious === true || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
   return { latitude, longitude, ...(typeof candidate.label === "string" ? { label: candidate.label } : {}) };
 }
 

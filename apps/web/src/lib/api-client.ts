@@ -177,6 +177,10 @@ export function updateSavedAddress(id: string, value: Partial<SavedAddress>): Pr
   return request(`/api/v1/addresses/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) });
 }
 
+export function setSavedAddressDefault(id: string): Promise<SavedAddress> {
+  return request(`/api/v1/addresses/${encodeURIComponent(id)}/default`, { method: "POST" });
+}
+
 export function deleteSavedAddress(id: string): Promise<{ deleted: boolean }> {
   return request(`/api/v1/addresses/${encodeURIComponent(id)}`, { method: "DELETE" }, { retryAuth: false });
 }
@@ -199,6 +203,10 @@ export function resolveAddress(addressText: string): Promise<GeocodeResult> {
 
 export function autocompleteAddress(addressText: string): Promise<{ provider: string; query: string; suggestions: GeocodeResult["candidates"] }> {
   return request("/api/v1/location/autocomplete", { method: "POST", body: JSON.stringify({ address_text: addressText }) });
+}
+
+export function reverseGeocodeAddress(latitude: number, longitude: number): Promise<GeocodeResult> {
+  return request("/api/v1/location/reverse-geocode", { method: "POST", body: JSON.stringify({ latitude, longitude }) });
 }
 
 export function routeLocation(origin: RouteResult["origin"], destination: RouteResult["destination"]): Promise<RouteResult> {

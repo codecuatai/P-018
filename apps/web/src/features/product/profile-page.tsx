@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, CircleUserRound, HeartPulse, Loader2, MapPinned, Save, Settings, ShieldCheck, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, CircleUserRound, ChevronDown, HeartPulse, Loader2, MapPinned, Save, Search, Settings, ShieldCheck, Plus } from "lucide-react";
 import { useEffect, useState, useCallback } from "react";
 
-import { errorText, listSavedAddresses, createSavedAddress, deleteSavedAddress, resolveAddress } from "@/lib/api-client";
-import type { SavedAddress } from "@/types";
+import { ApiError, autocompleteAddress, errorText, listSavedAddresses, createSavedAddress, setSavedAddressDefault, updateSavedAddress } from "@/lib/api-client";
+import type { GeocodeCandidate, SavedAddress } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
 import { AddressPage } from "./address-page";
+import { XOneMap } from "./xone-map";
 import { PatientPage } from "./patient-page";
 import { SettingsPage } from "./settings-page";
 
@@ -27,13 +28,22 @@ export function ProfilePage() {
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
   const [newAddressText, setNewAddressText] = useState("");
-  const [addressSaving, setAddressSaving] = useState(false);
-  const [addressError, setAddressError] = useState("");
+  const [addressCandidates, setAddressCandidates] = useState<GeocodeCandidate[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<GeocodeCandidate>();
+  const [addressProvider, setAddressProvider] = useState<string>();
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState<string>();
+  const [currentAddressPoint, setCurrentAddressPoint] = useState<{ latitude: number; longitude: number }>();
+  const [defaultAddressSaving, setDefaultAddressSaving] = useState(false);
+  const [addressDropdownOpen, setAddressDropdownOpen] = useState(false);
 
   const loadAddresses = useCallback(async () => {
     try {
       const res = await listSavedAddresses();
       setAddresses(res.items);
+      setSelectedSavedAddressId((currentId) => {
+        if (currentId && res.items.some((address) => address.id === currentId)) return currentId;
+        return res.items.find((address) => address.is_default)?.id;
+      });
     } catch (err) {
       console.error(err);
     }
@@ -50,12 +60,43 @@ export function ProfilePage() {
     setTimezone(user?.timezone ?? "Asia/Ho_Chi_Minh");
   }, [user]);
 
+  useEffect(() => {
+    const selected = addresses.find((address) => address.id === selectedSavedAddressId);
+    if (!selected) return;
+    setNewAddressText(selected.address_text);
+    setSelectedAddress({
+      address_text: selected.address_text,
+      latitude: selected.latitude ?? null,
+      longitude: selected.longitude ?? null,
+      confidence: 1,
+    });
+    setAddressProvider(selected.provider);
+    setCurrentAddressPoint(selected.latitude !== undefined && selected.longitude !== undefined ? { latitude: selected.latitude, longitude: selected.longitude } : undefined);
+  }, [addresses, selectedSavedAddressId]);
+
+  useEffect(() => {
+    const query = newAddressText.trim();
+    if (query.length < 3 || selectedAddress?.address_text === query) {
+      setAddressCandidates([]);
+      return;
+    }
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void autocompleteAddress(query).then((result) => {
+        if (!active) return;
+        setAddressProvider(result.provider);
+        setAddressCandidates(result.suggestions.filter((candidate) => candidate.latitude !== null && candidate.longitude !== null).slice(0, 5));
+      }).catch(() => { if (active) setAddressCandidates([]); });
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [newAddressText, selectedAddress]);
+
   async function save(): Promise<void> {
     if (!fullName.trim() || saving) return;
     setSaving(true); setFeedback(""); setError("");
     try {
-      await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim(), onboarding_completed: true });
-      if (newAddressText.trim()) { await handleAddAddress(); }
+      await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim() });
+      if (newAddressText.trim() && (selectedSavedAddressId || selectedAddress) && !(await handleSetDefaultAddress())) return;
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
       setError(errorText(reason));
@@ -72,40 +113,100 @@ export function ProfilePage() {
     finally { setOnboardingSaving(false); }
   }
 
-  async function handleAddAddress(): Promise<void> {
-    if (!newAddressText.trim() || addressSaving) return;
-    setAddressSaving(true);
-    setAddressError("");
+  async function handleSetDefaultAddress(): Promise<boolean> {
+    if (!newAddressText.trim() || defaultAddressSaving) return false;
+    setDefaultAddressSaving(true);
+    setError("");
     try {
-      const result = await resolveAddress(newAddressText.trim());
-      if (!result.candidates || result.candidates.length === 0) {
-        setAddressError("Không tìm thấy vị trí này trên bản đồ. Vui lòng nhập rõ số nhà, tên đường, phường/quận.");
-        return;
+      const savedAddress = addresses.find((address) => address.id === selectedSavedAddressId);
+      if (savedAddress) {
+        let updated: SavedAddress;
+        try {
+          updated = await setSavedAddressDefault(savedAddress.id);
+        } catch (reason) {
+          // Keep the action compatible with a gateway instance that predates
+          // the dedicated default-address endpoint.
+          if (!(reason instanceof ApiError) || ![404, 405].includes(reason.status)) throw reason;
+          updated = await updateSavedAddress(savedAddress.id, { is_default: true });
+        }
+        setAddresses((current) => current.map((address) => ({ ...address, is_default: address.id === updated.id })));
+        setSelectedSavedAddressId(updated.id);
+        setFeedback("Địa chỉ đã được lưu và đặt làm mặc định.");
+        await loadAddresses();
+        return true;
       }
-      const candidate = result.candidates[0];
+      const selectedText = selectedAddress?.address_text ? normalizeAddressText(selectedAddress.address_text) : "";
+      const inputText = normalizeAddressText(newAddressText);
+      const latitude = selectedAddress?.latitude === null || selectedAddress?.latitude === undefined ? undefined : Number(selectedAddress.latitude);
+      const longitude = selectedAddress?.longitude === null || selectedAddress?.longitude === undefined ? undefined : Number(selectedAddress.longitude);
+      if (!selectedAddress || selectedText !== inputText || latitude === undefined || longitude === undefined || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        setError("Hãy chọn một địa chỉ trong danh sách gợi ý để xác nhận vị trí trước khi thêm.");
+        return false;
+      }
       const created = await createSavedAddress({
-        label: `Địa chỉ ${addresses.length + 1}`,
-        address_text: candidate.address_text,
-        ...(candidate.latitude && candidate.longitude ? { latitude: candidate.latitude, longitude: candidate.longitude } : {}),
-        provider: result.provider,
-        source: candidate.latitude ? "geocoded" : "manual"
+        label: "Địa chỉ mặc định",
+        address_text: selectedAddress.address_text,
+        latitude,
+        longitude,
+        ...(addressProvider ? { provider: addressProvider } : {}),
+        source: "geocoded",
+        is_default: true,
       });
       setAddresses(prev => [created, ...prev]);
+      setSelectedSavedAddressId(created.id);
       setNewAddressText("");
+      setAddressCandidates([]);
+      setSelectedAddress(undefined);
+      setAddressProvider(undefined);
+      setCurrentAddressPoint(created.latitude !== undefined && created.longitude !== undefined ? { latitude: created.latitude, longitude: created.longitude } : undefined);
+      await loadAddresses();
+      setFeedback("Địa chỉ đã được lưu và đặt làm mặc định.");
+      return true;
     } catch (reason) {
-      setAddressError(errorText(reason));
+      setError(errorText(reason));
+      return false;
     } finally {
-      setAddressSaving(false);
+      setDefaultAddressSaving(false);
     }
   }
 
-  async function handleRemoveAddress(id: string): Promise<void> {
-    try {
-      await deleteSavedAddress(id);
-      setAddresses(prev => prev.filter(addr => addr.id !== id));
-    } catch (reason) {
-      setError(errorText(reason));
+  function chooseAddress(candidate: GeocodeCandidate): void {
+    setNewAddressText(candidate.address_text);
+    setSelectedAddress(candidate);
+    setSelectedSavedAddressId(undefined);
+    setAddressDropdownOpen(false);
+    setAddressCandidates([]);
+    setError("");
+    if (candidate.latitude !== null && candidate.longitude !== null) setCurrentAddressPoint({ latitude: candidate.latitude, longitude: candidate.longitude });
+  }
+
+  function chooseSavedAddress(address: SavedAddress): void {
+    setSelectedSavedAddressId(address.id);
+    setAddressDropdownOpen(false);
+    setNewAddressText(address.address_text);
+    setSelectedAddress({
+      address_text: address.address_text,
+      latitude: address.latitude ?? null,
+      longitude: address.longitude ?? null,
+      confidence: 1,
+    });
+    setAddressProvider(address.provider);
+    setCurrentAddressPoint(address.latitude !== undefined && address.longitude !== undefined ? { latitude: address.latitude, longitude: address.longitude } : undefined);
+    setError("");
+  }
+
+  function handleAddressInput(value: string): void {
+    const saved = addresses.find((address) => normalizeAddressText(address.address_text) === normalizeAddressText(value));
+    if (saved) {
+      chooseSavedAddress(saved);
+      return;
     }
+    setNewAddressText(value);
+    setSelectedAddress(undefined);
+    setSelectedSavedAddressId(undefined);
+    setCurrentAddressPoint(undefined);
+    setAddressProvider(undefined);
+    setError("");
   }
 
   return <section className="account-page" aria-labelledby="profile-title">
@@ -121,29 +222,38 @@ export function ProfilePage() {
 
           <div className="form-field">
             <span className="field-label" style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: "0.5rem", display: "block" }}>Địa chỉ giao hàng</span>
-            <div className="address-inline-list" style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.5rem" }}>
-              {addresses.map(addr => (
-                <div className="address-inline-row" key={addr.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  <input value={addr.address_text} disabled style={{ flex: 1 }} />
-                  <button type="button" className="icon-button danger" onClick={() => handleRemoveAddress(addr.id)} title="Xóa địa chỉ" aria-label="Xóa địa chỉ"><Trash2 size={16} /></button>
-                </div>
-              ))}
-            </div>
-            <div className="address-inline-new" style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-              <input
-                placeholder="Thêm số nhà, đường, quận/huyện..."
-                value={newAddressText}
-                onChange={e => setNewAddressText(e.target.value)}
-                style={{ flex: 1 }}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAddAddress(); } }}
-              />
-              <button type="button" className="button button-secondary" onClick={() => void handleAddAddress()} disabled={addressSaving || !newAddressText.trim()}>
-                {addressSaving ? <Loader2 className="spinner" size={16} /> : <Plus size={16} />}
-                Thêm
+            <div className="address-inline-new">
+              <div className="address-dropdown">
+                <button type="button" className="address-dropdown-trigger" onClick={() => setAddressDropdownOpen((open) => !open)} aria-expanded={addressDropdownOpen} aria-haspopup="listbox">
+                  <span>{newAddressText || "Chọn hoặc nhập địa chỉ giao hàng..."}</span><ChevronDown size={17} aria-hidden="true" />
+                </button>
+                {addressDropdownOpen ? <div className="address-dropdown-menu" role="listbox" aria-label="Chọn địa chỉ giao hàng">
+                  <input
+                    autoFocus
+                    placeholder="Nhập địa chỉ để tìm kiếm..."
+                    value={newAddressText}
+                    onChange={e => handleAddressInput(e.target.value)}
+                    aria-label="Tìm địa chỉ giao hàng"
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleSetDefaultAddress(); } }}
+                  />
+                  {[...addresses].sort((left, right) => Number(right.is_default) - Number(left.is_default)).map((address) => <button className={`address-dropdown-option ${selectedSavedAddressId === address.id ? "is-selected" : ""}`} type="button" role="option" aria-selected={selectedSavedAddressId === address.id} key={address.id} onClick={() => chooseSavedAddress(address)}><strong>{address.label}{address.is_default ? " · Mặc định" : ""}</strong><span>{address.address_text}</span></button>)}
+                  {addressCandidates.length ? <div className="address-dropdown-suggestions" role="group" aria-label="Gợi ý địa chỉ mới">{addressCandidates.map((candidate, index) => <button className="address-dropdown-option" role="option" type="button" key={`${candidate.address_text}-${index}`} onClick={() => chooseAddress(candidate)}><Search size={14} /><span>{candidate.address_text}</span></button>)}</div> : null}
+                  {!addresses.length && !addressCandidates.length ? <span className="field-hint">Chưa có địa chỉ lưu. Hãy nhập địa chỉ mới để tìm kiếm.</span> : null}
+                </div> : null}
+              </div>
+              <button type="button" className="button button-secondary" onClick={() => void handleSetDefaultAddress()} disabled={defaultAddressSaving || Boolean(addresses.find((address) => address.id === selectedSavedAddressId)?.is_default) || (!selectedSavedAddressId && !(selectedAddress?.latitude !== null && selectedAddress?.longitude !== null)) || !newAddressText.trim()}>
+                {defaultAddressSaving ? <Loader2 className="spinner" size={16} /> : <Plus size={16} />}
+                {addresses.find((address) => address.id === selectedSavedAddressId)?.is_default ? "Đang mặc định" : "Đặt làm mặc định"}
               </button>
             </div>
-            {addressError ? <p className="form-error" role="alert" style={{ marginTop: "0.5rem" }}>{addressError}</p> : null}
+            {selectedSavedAddressId ? <p className="field-hint">Đã chọn địa chỉ lưu sẵn. Bản đồ bên dưới hiển thị vị trí của địa chỉ này.</p> : null}
           </div>
+
+          {(() => {
+            const saved = addresses.find((address) => address.id === selectedSavedAddressId);
+            const point = saved?.latitude !== undefined && saved.longitude !== undefined ? { latitude: saved.latitude, longitude: saved.longitude } : selectedAddress && selectedAddress.latitude !== null && selectedAddress.longitude !== null ? { latitude: selectedAddress.latitude, longitude: selectedAddress.longitude } : currentAddressPoint;
+            return <XOneMap destination={point} label={saved ? `Vị trí ${saved.label}` : "Vị trí địa chỉ mới"} />;
+          })()}
 
           <label className="form-field"><span>Email</span><input value={user?.email ?? ""} disabled aria-describedby="email-note" /><small id="email-note" className="field-hint">Email chưa được thay đổi trong luồng này.</small></label>
           <div className="profile-form-row">
@@ -159,4 +269,8 @@ export function ProfilePage() {
     <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Ngôn ngữ, múi giờ và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
     {section === "addresses" ? <div className="profile-section-content"><AddressPage /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
   </section>;
+}
+
+function normalizeAddressText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi-VN");
 }

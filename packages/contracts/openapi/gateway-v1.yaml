@@ -570,6 +570,22 @@ paths:
               properties:
                 address_text: {type: string, minLength: 3, maxLength: 500}
       responses: {'200': {description: Candidate addresses with explicit resolution status}, '400': {description: Invalid address}, '401': {description: Missing or invalid user token}}
+  /api/v1/location/reverse-geocode:
+    post:
+      summary: Resolve a browser-provided coordinate to a human-readable address
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude]
+              additionalProperties: false
+              properties:
+                latitude: {$ref: '#/components/schemas/GeoPoint/properties/latitude'}
+                longitude: {$ref: '#/components/schemas/GeoPoint/properties/longitude'}
+      responses: {'200': {description: Reverse-geocoded candidate address with explicit resolution status}, '400': {description: Invalid coordinates}, '401': {description: Missing or invalid user token}}
   /api/v1/location/route:
     post:
       summary: Resolve a route from validated coordinates
