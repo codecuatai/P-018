@@ -466,7 +466,7 @@ function RestaurantBrowse() {
     }
   }
   async function cancel(): Promise<void> {
-    if (!reservation?.id) return;
+    if (!reservation?.id || reservation.status === "CANCELLED" || actionLoading) return;
     setActionLoading(true);
     setError("");
     try {
@@ -532,7 +532,7 @@ function RestaurantBrowse() {
                 <Check size={18} />
                 <strong style={{ textAlign: "left" }}>Đặt bàn đã hoàn tất</strong>
                 <span>{statusLabel(reservation.status ?? "CONFIRMED")}</span>
-                <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button>
+                {reservation.status !== "CANCELLED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button> : null}
               </div>
             ) : null}
             {error ? <ErrorNote message={error} onRetry={() => void check()} /> : null}
@@ -1121,7 +1121,23 @@ function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKe
   </div>;
 }
 function ConfirmationBox({ confirmation, checked, setChecked, onConfirm, loading, label }: { confirmation: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onConfirm: () => void; loading: boolean; label: string }) { return <div className="confirmation-box"><div><span className="eyebrow">XÁC NHẬN RÕ RÀNG</span><h3>{display(confirmation.title ?? "Kiểm tra lần cuối")}</h3><p>{display(confirmation.detail ?? "Các điều khoản hiện tại đã được kiểm tra từ nguồn đáng tin cậy.")}</p>{confirmation.preview ? <PreviewSummary preview={asRecord(confirmation.preview)} /> : null}</div><label className="confirmation-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /> <span>{label}</span></label><button className="button button-primary" type="button" onClick={onConfirm} disabled={loading || !checked}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận</button></div>; }
-function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND"); const address = asRecord(preview.address ?? preview.delivery_address); const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text; return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>; }
+function PreviewSummary({ preview }: { preview?: JsonRecord }) {
+  if (!preview) return null;
+  if (preview.restaurant_name) {
+    return <dl className="preview-summary">
+      <div><dt>Nhà hàng</dt><dd>{display(preview.restaurant_name)}</dd></div>
+      <div><dt>Thời lượng</dt><dd>{numberOf(preview.duration_minutes) || 120} phút</dd></div>
+      <div><dt>Yêu cầu đặc biệt</dt><dd>{display(preview.special_requests, "Không có")}</dd></div>
+      <div><dt>Hết hạn xác nhận</dt><dd>{formatDateTime(preview.confirmation_expires_at)}</dd></div>
+      {preview.hold_expires_at ? <div><dt>Hết hạn giữ bàn</dt><dd>{formatDateTime(preview.hold_expires_at)}</dd></div> : null}
+      <div><dt>Phiên bản</dt><dd>{display(preview.resource_version)}</dd></div>
+    </dl>;
+  }
+  const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND");
+  const address = asRecord(preview.address ?? preview.delivery_address);
+  const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text;
+  return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>;
+}
 function LoadingNote({ text }: { text: string }) { return <p className="inline-note service-loading-note" aria-live="polite"><Loader2 className="spinner" size={17} /> {text}</p>; }
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="error-panel" role="alert"><p>{message}</p><button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button></div>; }
 function EmptyNote({ title, body }: { title: string; body: string }) { return <div className="empty-state"><Search size={24} /><h2>{title}</h2><p>{body}</p></div>; }
