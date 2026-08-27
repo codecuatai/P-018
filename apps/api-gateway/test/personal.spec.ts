@@ -2,6 +2,18 @@ import { InMemoryCoreRepository } from '../src/modules/core/core.module';
 import { SavedAddressController } from '../src/modules/personal/personal.module';
 
 describe('saved address updates', () => {
+  it('accepts provider coordinates with more precision than the storage scale', async () => {
+    const store = new InMemoryCoreRepository();
+    const controller = new SavedAddressController(store as never, {} as never);
+
+    const response = await controller.create(
+      { label: 'Nhà', address_text: 'Địa chỉ Geoapify', latitude: 21.028511234, longitude: 105.804817987, is_default: true },
+      { user: { sub: 'actor-address' }, correlationId: 'cor-address-create' } as never,
+    ) as { data: Record<string, unknown> };
+
+    expect(response.data).toMatchObject({ latitude: 21.028511, longitude: 105.804818, is_default: true });
+  });
+
   it('updates a manual address and clears stale location metadata', async () => {
     const store = new InMemoryCoreRepository();
     await store.createSavedAddress({
