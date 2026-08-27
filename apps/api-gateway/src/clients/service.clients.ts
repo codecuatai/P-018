@@ -574,7 +574,7 @@ export class RestaurantClient extends InternalServiceClient {
 
   async listRestaurants(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
     const params = new URLSearchParams();
-    if (keyword) params.set('location', keyword);
+    if (keyword) params.set('q', keyword);
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
     const query = params.toString() ? `?${params.toString()}` : '';

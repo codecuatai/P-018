@@ -25,6 +25,25 @@ function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function nonBlankString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function restaurantConfirmationDetail(startAt: unknown, partySize: unknown): string {
+  const parsed = typeof startAt === 'string' ? Date.parse(startAt) : Number.NaN;
+  const formattedStart = Number.isFinite(parsed)
+    ? new Intl.DateTimeFormat('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }).format(new Date(parsed))
+    : String(startAt ?? 'Thời gian đang cập nhật');
+  return `${formattedStart} · ${String(partySize)} người`;
+}
+
 function healthcareFinalStateError(appointment: JsonObject): { code: string; detail: string } | null {
   if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
   if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment has been cancelled.' };
@@ -129,6 +148,11 @@ export class ConfirmationService {
     }
 
     let snapshot = resource ?? {};
+    let restaurantRecord: JsonObject | undefined;
+    if (action === 'CREATE_RESTAURANT_RESERVATION') {
+      restaurantRecord = await this.restaurant.getRestaurant(String(args.restaurant_id), user.sub, correlationId);
+      snapshot = { ...snapshot, restaurant: restaurantRecord };
+    }
     if (action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
       const appointmentId = Number(args.appointment_id);
       const authoritativeAppointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
@@ -166,6 +190,23 @@ export class ConfirmationService {
     };
     await this.store.createConfirmation(confirmation);
     await this.store.audit({ action: 'domain_confirmation.created', actorId: user.sub, resourceId: confirmation.id, correlationId, metadata: { action, workflow_id: tool.workflow_id } });
+    const presentation = action === 'CREATE_RESTAURANT_RESERVATION'
+      ? {
+          title: `Xác nhận đặt bàn tại ${nonBlankString(restaurantRecord?.name) ?? 'nhà hàng đã chọn'}`,
+          detail: restaurantConfirmationDetail(args.start_at, args.party_size),
+          preview: {
+            restaurant_name: nonBlankString(restaurantRecord?.name) ?? 'Nhà hàng đã chọn',
+            start_at: args.start_at,
+            party_size: Number(args.party_size),
+            duration_minutes: Number(args.duration_minutes ?? 120),
+            special_requests: nonBlankString(args.special_requests),
+            hold_id: args.hold_id,
+            resource_version: confirmation.quoteVersion,
+            confirmation_expires_at: new Date(confirmation.expiresAt).toISOString(),
+            ...(nonBlankString(snapshot.expires_at) ? { hold_expires_at: nonBlankString(snapshot.expires_at) } : {}),
+          },
+        }
+      : {};
     return {
       id: confirmation.id,
       action: confirmation.action,
@@ -179,6 +220,7 @@ export class ConfirmationService {
       currency: confirmation.currency,
       expires_at: new Date(confirmation.expiresAt).toISOString(),
       ...(Object.keys(snapshot).length ? { resource: snapshot } : {}),
+      ...presentation,
     };
   }
 
