@@ -37,13 +37,21 @@ describe('ProductOpsService', () => {
   });
 
   it('requires a completed authoritative resource before accepting feedback', async () => {
-    const { service, ride } = makeService();
+    const { service, ride, restaurant, healthcare } = makeService();
     (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'IN_PROGRESS' });
 
     await expect(service.createFeedback('actor-1', 'cor-1', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
 
     (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'COMPLETED' });
     await expect(service.createFeedback('actor-1', 'cor-2', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).resolves.toMatchObject({ resourceId: 'ride-1', rating: 5 });
+
+    // Restaurant: CONFIRMED or future SEATED should be rejected
+    (restaurant.listReservations as jest.Mock).mockResolvedValue({ items: [{ id: 'res-1', status: 'CONFIRMED', start_at: '2099-01-01T19:00:00Z' }] });
+    await expect(service.createFeedback('actor-1', 'cor-3', { domain: 'restaurant', resourceType: 'restaurant_reservation', resourceId: 'res-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
+
+    // Healthcare: PAYMENT_CONFIRMED or CONFIRMED in future should be rejected
+    (healthcare.getAppointment as jest.Mock).mockResolvedValue({ appointment_id: 101, actor_id: 'actor-1', status: 'PAYMENT_CONFIRMED', start_time: '2099-01-01T09:00:00Z' });
+    await expect(service.createFeedback('actor-1', 'cor-4', { domain: 'healthcare', resourceType: 'healthcare_appointment', resourceId: '101', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
   });
 
   it('returns the same support ticket for a retried idempotency key', async () => {
