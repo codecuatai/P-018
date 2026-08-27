@@ -109,8 +109,8 @@ def seed_data():
     db.commit()
 
     print("Seeding TimeSlots...")
-    tomorrow = datetime.now() + timedelta(days=1)
-    base_time = tomorrow.replace(hour=8, minute=0, second=0, microsecond=0)
+    now = datetime.now()
+    base_time = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
 
     slots = []
     for doc in docs:

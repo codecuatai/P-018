@@ -205,7 +205,10 @@ paths:
     get:
       summary: Read an authoritative Food menu through the Gateway
       security: [{bearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/RestaurantId'}]
+      parameters:
+        - {$ref: '#/components/parameters/RestaurantId'}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
         '200': {description: Food menu for the restaurant}
         '401': {description: Missing or invalid user token}
@@ -452,7 +455,7 @@ paths:
         - {$ref: '#/components/parameters/HistoryType'}
         - {$ref: '#/components/parameters/ResourceId'}
       responses:
-        '200': {description: Authoritative transaction detail}
+        '200': {description: Authoritative transaction detail. Healthcare details include safe normalized facility, doctor, department, patient, slot, payment-state, and location fields when available.}
         '400': {description: Invalid history type or resource id}
         '401': {description: Missing or invalid user token}
         '404': {description: Resource not found}

@@ -2,6 +2,9 @@ import { Injectable, Module, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient } from 'pg';
 import { CoreProductOpsStore } from './product-ops.store';
+import { MemoryCandidate, MemoryItem, RetrievedMemory, rankMemories } from './memory';
+import { CoreMigrationService } from './core-migration.service';
+import { decryptSecret, encryptSecret } from './crypto.util';
 
 export type PaymentMethod = 'bank_transfer' | 'card' | 'e_wallet';
 export type PaymentStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'TIMED_OUT' | 'UNKNOWN';
@@ -259,6 +262,73 @@ export interface AssistantActionSuccessCommit {
   response: Record<string, unknown>;
 }
 
+export type ApiKeyProvider = 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other';
+export type ApiKeyStatus = 'active' | 'disabled' | 'expired';
+
+export interface ApiKeyRecord {
+  id: string;
+  provider: ApiKeyProvider;
+  label: string;
+  last4: string;
+  keyCiphertext?: string;
+  keyIv?: string;
+  keyAuthTag?: string;
+  lastIdempotencyKey?: string;
+  lastRequestHash?: string;
+  status: ApiKeyStatus;
+  environment: string;
+  expiresAt?: string;
+  updatedAt: string;
+  updatedBy: string;
+  createdAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  actorId?: string;
+  resourceId?: string;
+  correlationId?: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface TokenUsageEntry {
+  id: string;
+  actorId?: string;
+  model: string;
+  provider: string;
+  feature: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+  recordedAt: string;
+}
+
+export interface TokenUsageReport {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  total_estimated_cost_usd: number;
+  by_feature: Record<string, { prompt: number; completion: number; total: number; cost: number }>;
+  by_model: Record<string, { prompt: number; completion: number; total: number; cost: number }>;
+  daily_trends: Array<{
+    date: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    estimated_cost_usd: number;
+  }>;
+  top_consumers: Array<{
+    actor_id: string;
+    total_tokens: number;
+    estimated_cost_usd: number;
+  }>;
+}
+
+export interface ConversationTurnRecord { id: string; conversationId: string; actorId: string; sequenceNo: number; role: 'user' | 'assistant'; contentRedacted: string; createdAt: string }
+
 export interface CoreRepository {
   createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord>;
   getConfirmation(id: string): Promise<ConfirmationRecord | undefined>;
@@ -313,6 +383,17 @@ export interface CoreRepository {
   claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim>;
   commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord>;
   completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void>;
+  listConversationTurns(conversationId: string, actorId: string, limit?: number): Promise<ConversationTurnRecord[]>;
+  promoteMemory(actorId: string, conversationId: string | undefined, candidate: MemoryCandidate, options?: { id?: string; userConfirmed?: boolean }): Promise<MemoryItem>;
+  retrieveMemories(actorId: string, query?: { key?: string; namespace?: string; limit?: number }): Promise<RetrievedMemory[]>;
+  queryApiKeys(): Promise<ApiKeyRecord[]>;
+  getApiKeyRecord(id: string): Promise<ApiKeyRecord | undefined>;
+  createApiKeyRecord(value: { id: string; provider: ApiKeyProvider; label: string; last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; environment?: string; expiresAt?: string; updatedBy: string }): Promise<ApiKeyRecord>;
+  rotateApiKeyRecord(id: string, value: { last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; expiresAt?: string; updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined>;
+  revokeApiKeyRecord(id: string, value: { updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined>;
+  queryAuditLogs(filters?: { actorId?: string; action?: string; correlationId?: string; fromTime?: string; toTime?: string; page?: number; pageSize?: number }): Promise<{ items: AuditLogEntry[]; total: number }>;
+  recordTokenUsage(value: { id: string; actorId?: string; model: string; provider?: string; feature: string; promptTokens: number; completionTokens: number; totalTokens: number; estimatedCostUsd?: number }): Promise<void>;
+  queryTokenUsage(filters?: { fromTime?: string; toTime?: string; feature?: string; model?: string }): Promise<TokenUsageReport>;
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void>;
   checkHealth(): Promise<boolean>;
   close(): Promise<void>;
@@ -333,6 +414,10 @@ export class InMemoryCoreRepository implements CoreRepository {
   private readonly assistantActionExecutions = new Map<string, AssistantActionExecutionRecord>();
   private readonly multiServiceWorkflows = new Map<string, MultiServiceWorkflowRecord>();
   private readonly workflowReconciliations = new Map<string, WorkflowReconciliationRecord>();
+  private readonly turns = new Map<string, ConversationTurnRecord>();
+  private readonly memories = new Map<string, MemoryItem>();
+  private readonly apiKeys = new Map<string, ApiKeyRecord>();
+  private readonly tokenUsages: TokenUsageEntry[] = [];
   private readonly audits: Array<Record<string, unknown>> = [];
 
   async createConfirmation(value: ConfirmationRecord): Promise<ConfirmationRecord> { const saved = { ...value, status: value.status ?? 'PENDING', version: value.version ?? 0 }; this.confirmations.set(saved.id, clone(saved)); return clone(saved); }
@@ -450,7 +535,7 @@ export class InMemoryCoreRepository implements CoreRepository {
     return clone(value);
   }
   async deleteSavedAddress(id: string, actorId: string): Promise<boolean> { const value = this.savedAddresses.get(id); if (!value || value.actorId !== actorId) return false; this.savedAddresses.delete(id); if (value.isDefault) { const replacement = [...this.savedAddresses.values()].find((candidate) => candidate.actorId === actorId); if (replacement) replacement.isDefault = true; } return true; }
-  async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { const existing = this.conversations.get(value.conversationId); if (existing && existing.actorId !== value.actorId) throw new Error('FORBIDDEN'); const now = new Date().toISOString(); const next: ConversationRecord = existing ? clone(existing) : { conversationId: value.conversationId, actorId: value.actorId, messages: [], state: {}, version: 0, status: 'ACTIVE', createdAt: now }; next.messages.push(clone(value.userMessage), clone(value.assistantMessage)); next.state = { ...next.state, ...clone(value.stateUpdates) }; next.version = (next.version ?? 0) + 1; next.status = 'ACTIVE'; next.updatedAt = now; next.lastMessageAt = now; this.conversations.set(next.conversationId, clone(next)); return projectConversationRecord(clone(next)); }
+  async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { const existing = this.conversations.get(value.conversationId); if (existing && existing.actorId !== value.actorId) throw new Error('FORBIDDEN'); const now = new Date().toISOString(); const next: ConversationRecord = existing ? clone(existing) : { conversationId: value.conversationId, actorId: value.actorId, messages: [], state: {}, version: 0, status: 'ACTIVE', createdAt: now }; next.messages.push(clone(value.userMessage), clone(value.assistantMessage)); next.state = { ...next.state, ...clone(value.stateUpdates) }; next.version = (next.version ?? 0) + 1; next.status = 'ACTIVE'; next.updatedAt = now; next.lastMessageAt = now; this.conversations.set(next.conversationId, clone(next)); const base = (next.version - 1) * 2; for (const [offset, message] of [value.userMessage, value.assistantMessage].entries()) { const turn: ConversationTurnRecord = { id: `turn_${crypto.randomUUID()}`, conversationId: value.conversationId, actorId: value.actorId, sequenceNo: base + offset + 1, role: message.role, contentRedacted: message.content.slice(0, 4000), createdAt: now }; this.turns.set(turn.id, turn); } return projectConversationRecord(clone(next)); }
   async mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void> { const existing = this.conversations.get(conversationId); if (existing && existing.actorId !== actorId) throw new Error('FORBIDDEN'); const now = new Date().toISOString(); if (!existing) { this.conversations.set(conversationId, { conversationId, actorId, messages: [], state: clone(stateUpdates), version: 1, status: 'ACTIVE', createdAt: now, updatedAt: now, lastMessageAt: now }); return; } existing.state = { ...existing.state, ...clone(stateUpdates) }; existing.version = (existing.version ?? 0) + 1; existing.updatedAt = now; }
   private assistantActionKey(actorId: string, conversationId: string, actionId: string): string { return JSON.stringify([actorId, conversationId, actionId]); }
   async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> { const value = this.assistantActionExecutions.get(this.assistantActionKey(actorId, conversationId, actionId)); return value ? clone(value) : undefined; }
@@ -528,6 +613,195 @@ export class InMemoryCoreRepository implements CoreRepository {
     existing.updatedAt = new Date().toISOString();
     existing.completedAt = status === 'FAILED_FINAL' ? new Date().toISOString() : undefined;
   }
+  async listConversationTurns(conversationId: string, actorId: string, limit = 20): Promise<ConversationTurnRecord[]> { return [...this.turns.values()].filter((t) => t.conversationId === conversationId && t.actorId === actorId).sort((a, b) => b.sequenceNo - a.sequenceNo).slice(0, limit).reverse().map(clone); }
+  async promoteMemory(actorId: string, conversationId: string | undefined, candidate: MemoryCandidate, options?: { id?: string; userConfirmed?: boolean }): Promise<MemoryItem> {
+    if (candidate.privacyClass === 'sensitive') throw new Error('SENSITIVE_MEMORY_REQUIRES_DOMAIN_OWNER');
+    const now = new Date().toISOString(); const existing = [...this.memories.values()].find((m) => m.actorId === actorId && m.namespace === candidate.namespace && m.key === candidate.key && m.status === 'ACTIVE');
+    if (existing) existing.status = 'SUPERSEDED';
+    const item: MemoryItem = { id: options?.id ?? `mem_${crypto.randomUUID()}`, actorId, conversationId, memoryType: candidate.memoryType, namespace: candidate.namespace, key: candidate.key, typedValue: clone(candidate.typedValue), normalizedText: candidate.normalizedText, confidence: Math.max(0, Math.min(1, candidate.confidence)), salience: Math.max(0, Math.min(1, candidate.salience ?? 0)), sourceTurnId: candidate.sourceTurnId, validFrom: now, validUntil: candidate.validUntil, supersedesId: existing?.id, userConfirmed: options?.userConfirmed ?? false, privacyClass: candidate.privacyClass ?? 'standard', status: candidate.requiresConfirmation ? 'CANDIDATE' : 'ACTIVE', createdAt: now };
+    this.memories.set(item.id, clone(item)); return clone(item);
+  }
+  async retrieveMemories(actorId: string, query?: { key?: string; namespace?: string; limit?: number }): Promise<RetrievedMemory[]> { return rankMemories([...this.memories.values()], { actorId, key: query?.key, namespace: query?.namespace }).slice(0, query?.limit ?? 8).map(clone); }
+
+  async queryApiKeys(): Promise<ApiKeyRecord[]> {
+    return [...this.apiKeys.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).map(clone);
+  }
+
+  async getApiKeyRecord(id: string): Promise<ApiKeyRecord | undefined> {
+    const key = this.apiKeys.get(id);
+    return key ? clone(key) : undefined;
+  }
+
+  async createApiKeyRecord(value: { id: string; provider: ApiKeyProvider; label: string; last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; environment?: string; expiresAt?: string; updatedBy: string }): Promise<ApiKeyRecord> {
+    const now = new Date().toISOString();
+    const record: ApiKeyRecord = {
+      id: value.id,
+      provider: value.provider,
+      label: value.label,
+      last4: value.last4,
+      keyCiphertext: value.keyCiphertext,
+      keyIv: value.keyIv,
+      keyAuthTag: value.keyAuthTag,
+      status: 'active',
+      environment: value.environment ?? 'development',
+      expiresAt: value.expiresAt,
+      updatedAt: now,
+      updatedBy: value.updatedBy,
+      createdAt: now,
+    };
+    this.apiKeys.set(value.id, clone(record));
+    return clone(record);
+  }
+
+  async rotateApiKeyRecord(id: string, value: { last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; expiresAt?: string; updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> {
+    const existing = this.apiKeys.get(id);
+    if (!existing) return undefined;
+    if (value.idempotencyKey && existing.lastIdempotencyKey === value.idempotencyKey) {
+      if (existing.lastRequestHash === value.requestHash) {
+        return { record: clone(existing), replayed: true };
+      }
+      throw new Error('IDEMPOTENCY_KEY_REUSED');
+    }
+    existing.last4 = value.last4;
+    if (value.keyCiphertext) existing.keyCiphertext = value.keyCiphertext;
+    if (value.keyIv) existing.keyIv = value.keyIv;
+    if (value.keyAuthTag) existing.keyAuthTag = value.keyAuthTag;
+    if (value.expiresAt) existing.expiresAt = value.expiresAt;
+    if (value.idempotencyKey) existing.lastIdempotencyKey = value.idempotencyKey;
+    if (value.requestHash) existing.lastRequestHash = value.requestHash;
+    existing.updatedBy = value.updatedBy;
+    existing.updatedAt = new Date().toISOString();
+    return { record: clone(existing), replayed: false };
+  }
+
+  async revokeApiKeyRecord(id: string, value: { updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> {
+    const existing = this.apiKeys.get(id);
+    if (!existing) return undefined;
+    if (value.idempotencyKey && existing.lastIdempotencyKey === value.idempotencyKey) {
+      if (existing.lastRequestHash === value.requestHash) {
+        return { record: clone(existing), replayed: true };
+      }
+      throw new Error('IDEMPOTENCY_KEY_REUSED');
+    }
+    existing.status = 'disabled';
+    if (value.idempotencyKey) existing.lastIdempotencyKey = value.idempotencyKey;
+    if (value.requestHash) existing.lastRequestHash = value.requestHash;
+    existing.updatedBy = value.updatedBy;
+    existing.updatedAt = new Date().toISOString();
+    return { record: clone(existing), replayed: false };
+  }
+
+  async queryAuditLogs(filters: { actorId?: string; action?: string; correlationId?: string; fromTime?: string; toTime?: string; page?: number; pageSize?: number } = {}): Promise<{ items: AuditLogEntry[]; total: number }> {
+    let list = this.audits.map((a, index) => ({
+      id: `audit_${index + 1}`,
+      action: String(a.action ?? ''),
+      actorId: a.actorId ? String(a.actorId) : undefined,
+      resourceId: a.resourceId ? String(a.resourceId) : undefined,
+      correlationId: a.correlationId ? String(a.correlationId) : undefined,
+      metadata: (a.metadata && typeof a.metadata === 'object' ? a.metadata : {}) as Record<string, unknown>,
+      createdAt: typeof a.createdAt === 'string' ? a.createdAt : new Date().toISOString(),
+    }));
+    if (filters.actorId) list = list.filter((i) => i.actorId === filters.actorId);
+    if (filters.action) list = list.filter((i) => i.action === filters.action);
+    if (filters.correlationId) list = list.filter((i) => i.correlationId === filters.correlationId);
+    if (filters.fromTime) list = list.filter((i) => Date.parse(i.createdAt) >= Date.parse(filters.fromTime!));
+    if (filters.toTime) list = list.filter((i) => Date.parse(i.createdAt) <= Date.parse(filters.toTime!));
+    const total = list.length;
+    const page = Math.max(filters.page ?? 1, 1);
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 1), 100);
+    const items = list.slice((page - 1) * pageSize, page * pageSize).map(clone);
+    return { items, total };
+  }
+
+  async recordTokenUsage(value: { id: string; actorId?: string; model: string; provider?: string; feature: string; promptTokens: number; completionTokens: number; totalTokens: number; estimatedCostUsd?: number }): Promise<void> {
+    this.tokenUsages.push({
+      id: value.id,
+      actorId: value.actorId,
+      model: value.model,
+      provider: value.provider ?? 'google',
+      feature: value.feature,
+      promptTokens: value.promptTokens,
+      completionTokens: value.completionTokens,
+      totalTokens: value.totalTokens,
+      estimatedCostUsd: value.estimatedCostUsd ?? 0,
+      recordedAt: new Date().toISOString(),
+    });
+  }
+
+  async queryTokenUsage(filters: { fromTime?: string; toTime?: string; feature?: string; model?: string } = {}): Promise<TokenUsageReport> {
+    let list = [...this.tokenUsages];
+    if (filters.feature) list = list.filter((i) => i.feature === filters.feature);
+    if (filters.model) list = list.filter((i) => i.model === filters.model);
+    if (filters.fromTime) list = list.filter((i) => Date.parse(i.recordedAt) >= Date.parse(filters.fromTime!));
+    if (filters.toTime) list = list.filter((i) => Date.parse(i.recordedAt) <= Date.parse(filters.toTime!));
+
+    let totalPrompt = 0;
+    let totalCompletion = 0;
+    let totalTokens = 0;
+    let totalCost = 0;
+    const byFeature: Record<string, { prompt: number; completion: number; total: number; cost: number }> = {};
+    const byModel: Record<string, { prompt: number; completion: number; total: number; cost: number }> = {};
+    const dailyMap: Record<string, { prompt: number; completion: number; total: number; cost: number }> = {};
+    const actorMap: Record<string, { total: number; cost: number }> = {};
+
+    for (const item of list) {
+      totalPrompt += item.promptTokens;
+      totalCompletion += item.completionTokens;
+      totalTokens += item.totalTokens;
+      totalCost += item.estimatedCostUsd;
+
+      if (!byFeature[item.feature]) byFeature[item.feature] = { prompt: 0, completion: 0, total: 0, cost: 0 };
+      byFeature[item.feature].prompt += item.promptTokens;
+      byFeature[item.feature].completion += item.completionTokens;
+      byFeature[item.feature].total += item.totalTokens;
+      byFeature[item.feature].cost += item.estimatedCostUsd;
+
+      if (!byModel[item.model]) byModel[item.model] = { prompt: 0, completion: 0, total: 0, cost: 0 };
+      byModel[item.model].prompt += item.promptTokens;
+      byModel[item.model].completion += item.completionTokens;
+      byModel[item.model].total += item.totalTokens;
+      byModel[item.model].cost += item.estimatedCostUsd;
+
+      const dateStr = item.recordedAt.slice(0, 10);
+      if (!dailyMap[dateStr]) dailyMap[dateStr] = { prompt: 0, completion: 0, total: 0, cost: 0 };
+      dailyMap[dateStr].prompt += item.promptTokens;
+      dailyMap[dateStr].completion += item.completionTokens;
+      dailyMap[dateStr].total += item.totalTokens;
+      dailyMap[dateStr].cost += item.estimatedCostUsd;
+
+      if (item.actorId) {
+        if (!actorMap[item.actorId]) actorMap[item.actorId] = { total: 0, cost: 0 };
+        actorMap[item.actorId].total += item.totalTokens;
+        actorMap[item.actorId].cost += item.estimatedCostUsd;
+      }
+    }
+
+    const dailyTrends = Object.entries(dailyMap).map(([date, val]) => ({
+      date,
+      prompt_tokens: val.prompt,
+      completion_tokens: val.completion,
+      total_tokens: val.total,
+      estimated_cost_usd: Number(val.cost.toFixed(6)),
+    })).sort((a, b) => a.date.localeCompare(b.date));
+
+    const topConsumers = Object.entries(actorMap).map(([actor_id, val]) => ({
+      actor_id,
+      total_tokens: val.total,
+      estimated_cost_usd: Number(val.cost.toFixed(6)),
+    })).sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 10);
+
+    return {
+      total_prompt_tokens: totalPrompt,
+      total_completion_tokens: totalCompletion,
+      total_tokens: totalTokens,
+      total_estimated_cost_usd: Number(totalCost.toFixed(6)),
+      by_feature: byFeature,
+      by_model: byModel,
+      daily_trends: dailyTrends,
+      top_consumers: topConsumers,
+    };
+  }
+
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { this.audits.push(clone(value)); }
   async checkHealth(): Promise<boolean> { return true; }
   async close(): Promise<void> {}
@@ -627,13 +901,202 @@ export class PostgresCoreRepository implements CoreRepository {
   async createSavedAddress(value: SavedAddressRecord): Promise<SavedAddressRecord> { return this.transaction(async (client) => { if (value.isDefault) await client.query('UPDATE user_addresses SET is_default=false,updated_at=now() WHERE actor_id=$1', [value.actorId]); const result = await client.query('INSERT INTO user_addresses (id,actor_id,label,address_text,city,district,ward,latitude,longitude,provider,source,is_default,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13) RETURNING *', [value.id,value.actorId,value.label,value.addressText,value.city ?? null,value.district ?? null,value.ward ?? null,value.latitude ?? null,value.longitude ?? null,value.provider ?? null,value.source,value.isDefault,value.createdAt]); return this.addressFromRow(result.rows[0]); }); }
   async updateSavedAddress(id: string, actorId: string, patch: SavedAddressPatch): Promise<SavedAddressRecord | undefined> { return this.transaction(async (client) => { if (patch.isDefault === true) await client.query('UPDATE user_addresses SET is_default=false,updated_at=now() WHERE actor_id=$1', [actorId]); const fields: string[] = []; const values: unknown[] = []; const add = (column: string, value: unknown): void => { fields.push(`${column}=$${values.length + 1}`); values.push(value); }; const mapping: Array<[keyof SavedAddressPatch, string]> = [['label','label'],['addressText','address_text'],['city','city'],['district','district'],['ward','ward'],['latitude','latitude'],['longitude','longitude'],['provider','provider'],['source','source'],['isDefault','is_default']]; for (const [key, column] of mapping) if (patch[key] !== undefined) add(column, patch[key] ?? null); if (!fields.length) return this.getSavedAddress(id, actorId); values.push(id, actorId); const result = await client.query(`UPDATE user_addresses SET ${fields.join(',')},updated_at=now() WHERE id=$${values.length - 1} AND actor_id=$${values.length} RETURNING *`, values); return result.rows[0] ? this.addressFromRow(result.rows[0]) : undefined; }); }
   async deleteSavedAddress(id: string, actorId: string): Promise<boolean> { return this.transaction(async (client) => { const deleted = await client.query('DELETE FROM user_addresses WHERE id=$1 AND actor_id=$2 RETURNING is_default', [id,actorId]); if (!deleted.rowCount) return false; if (deleted.rows[0].is_default === true) await client.query('UPDATE user_addresses SET is_default=true,updated_at=now() WHERE id=(SELECT id FROM user_addresses WHERE actor_id=$1 ORDER BY updated_at DESC LIMIT 1)', [actorId]); return true; }); }
-  async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { return this.transaction(async (client) => { const result = await client.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version,last_message_at) VALUES ($1,$2,$3::jsonb,$4::jsonb,1,now()) ON CONFLICT (conversation_id) DO UPDATE SET messages=conversation_states.messages || EXCLUDED.messages,state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,status=\'ACTIVE\',archived_at=NULL,last_message_at=now(),updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id RETURNING *', [value.conversationId,value.actorId,JSON.stringify([value.userMessage,value.assistantMessage]),JSON.stringify(value.stateUpdates)]); const row = result.rows[0]; if (!row) throw new Error('FORBIDDEN'); return this.conversationFromRow(row); }); }
+  async appendConversationTurn(value: { conversationId: string; actorId: string; userMessage: ConversationRecord['messages'][number]; assistantMessage: ConversationRecord['messages'][number]; stateUpdates: Record<string, unknown> }): Promise<ConversationRecord> { return this.transaction(async (client) => { const result = await client.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version,last_message_at) VALUES ($1,$2,$3::jsonb,$4::jsonb,1,now()) ON CONFLICT (conversation_id) DO UPDATE SET messages=conversation_states.messages || EXCLUDED.messages,state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,status=\'ACTIVE\',archived_at=NULL,last_message_at=now(),updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id RETURNING *', [value.conversationId,value.actorId,JSON.stringify([value.userMessage,value.assistantMessage]),JSON.stringify(value.stateUpdates)]); const row = result.rows[0]; if (!row) throw new Error('FORBIDDEN'); const start = (Number(row.version) - 1) * 2; await client.query('INSERT INTO conversation_turns (id,conversation_id,actor_id,sequence_no,role,content_redacted) VALUES ($1,$2,$3,$4,$5,$6),($7,$2,$3,$8,$9,$10)', [`turn_${crypto.randomUUID()}`, value.conversationId, value.actorId, start + 1, value.userMessage.role, value.userMessage.content.slice(0, 4000), `turn_${crypto.randomUUID()}`, start + 2, value.assistantMessage.role, value.assistantMessage.content.slice(0, 4000)]); return this.conversationFromRow(row); }); }
   async mergeConversationState(conversationId: string, actorId: string, stateUpdates: Record<string, unknown>): Promise<void> { await this.pool.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version) VALUES ($1,$2,\'[]\'::jsonb,$3::jsonb,1) ON CONFLICT (conversation_id) DO UPDATE SET state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id', [conversationId,actorId,JSON.stringify(stateUpdates)]); }
+  async listConversationTurns(conversationId: string, actorId: string, limit = 20): Promise<ConversationTurnRecord[]> { const result = await this.pool.query('SELECT * FROM conversation_turns WHERE conversation_id=$1 AND actor_id=$2 ORDER BY sequence_no DESC LIMIT $3', [conversationId, actorId, limit]); return result.rows.reverse().map((row) => ({ id: String(row.id), conversationId: String(row.conversation_id), actorId: String(row.actor_id), sequenceNo: Number(row.sequence_no), role: row.role as 'user' | 'assistant', contentRedacted: String(row.content_redacted), createdAt: new Date(String(row.created_at)).toISOString() })); }
+  async promoteMemory(actorId: string, conversationId: string | undefined, candidate: MemoryCandidate, options?: { id?: string; userConfirmed?: boolean }): Promise<MemoryItem> { if (candidate.privacyClass === 'sensitive') throw new Error('SENSITIVE_MEMORY_REQUIRES_DOMAIN_OWNER'); return this.transaction(async (client) => { const active = await client.query('SELECT id FROM memory_items WHERE actor_id=$1 AND namespace=$2 AND key=$3 AND status=\'ACTIVE\' FOR UPDATE', [actorId, candidate.namespace, candidate.key]); const supersedesId = active.rows[0]?.id ?? null; if (supersedesId) await client.query("UPDATE memory_items SET status='SUPERSEDED' WHERE id=$1", [supersedesId]); const id = options?.id ?? `mem_${crypto.randomUUID()}`; const status = candidate.requiresConfirmation ? 'CANDIDATE' : 'ACTIVE'; const result = await client.query('INSERT INTO memory_items (id,actor_id,conversation_id,memory_type,namespace,key,typed_value,normalized_text,confidence,salience,source_turn_id,valid_until,supersedes_id,user_confirmed,privacy_class,status) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *', [id, actorId, conversationId ?? null, candidate.memoryType, candidate.namespace, candidate.key, JSON.stringify(candidate.typedValue), candidate.normalizedText ?? null, candidate.confidence, candidate.salience ?? 0, candidate.sourceTurnId ?? null, candidate.validUntil ?? null, supersedesId, options?.userConfirmed ?? false, candidate.privacyClass ?? 'standard', status]); const row = result.rows[0]; return { id: String(row.id), actorId: String(row.actor_id), conversationId: row.conversation_id ? String(row.conversation_id) : undefined, memoryType: row.memory_type, namespace: String(row.namespace), key: String(row.key), typedValue: row.typed_value, normalizedText: row.normalized_text ? String(row.normalized_text) : undefined, confidence: Number(row.confidence), salience: Number(row.salience), sourceTurnId: row.source_turn_id ? String(row.source_turn_id) : undefined, validFrom: new Date(String(row.valid_from)).toISOString(), validUntil: row.valid_until ? new Date(String(row.valid_until)).toISOString() : undefined, supersedesId: row.supersedes_id ? String(row.supersedes_id) : undefined, userConfirmed: row.user_confirmed === true, privacyClass: row.privacy_class, status: row.status, createdAt: new Date(String(row.created_at)).toISOString() }; }); }
+  async retrieveMemories(actorId: string, query?: { key?: string; namespace?: string; limit?: number }): Promise<RetrievedMemory[]> { const result = await this.pool.query(`SELECT * FROM memory_items WHERE actor_id=$1 AND status='ACTIVE' AND (valid_until IS NULL OR valid_until > now()) ${query?.namespace ? 'AND namespace=$2' : ''} ${query?.key ? `AND key=$${query?.namespace ? 3 : 2}` : ''} ORDER BY user_confirmed DESC,confidence DESC,salience DESC,created_at DESC LIMIT $${(query?.namespace ? 1 : 0) + (query?.key ? 1 : 0) + 2}`, [actorId, ...(query?.namespace ? [query.namespace] : []), ...(query?.key ? [query.key] : []), query?.limit ?? 8]); return result.rows.map((row) => ({ id: String(row.id), actorId: String(row.actor_id), conversationId: row.conversation_id ? String(row.conversation_id) : undefined, memoryType: row.memory_type, namespace: String(row.namespace), key: String(row.key), typedValue: row.typed_value, normalizedText: row.normalized_text ? String(row.normalized_text) : undefined, confidence: Number(row.confidence), salience: Number(row.salience), sourceTurnId: row.source_turn_id ? String(row.source_turn_id) : undefined, validFrom: new Date(String(row.valid_from)).toISOString(), validUntil: row.valid_until ? new Date(String(row.valid_until)).toISOString() : undefined, supersedesId: row.supersedes_id ? String(row.supersedes_id) : undefined, userConfirmed: row.user_confirmed === true, privacyClass: row.privacy_class, status: row.status, createdAt: new Date(String(row.created_at)).toISOString(), whyRetrieved: query?.key ? 'exact_key' : 'scoped_rank' })); }
   private assistantActionExecutionFromRow(row: Record<string, unknown>): AssistantActionExecutionRecord { const response = row.response_json; return { actorId: String(row.actor_id), conversationId: String(row.conversation_id), actionId: String(row.action_id), idempotencyKey: String(row.idempotency_key), requestHash: String(row.request_hash), status: row.status as AssistantActionExecutionStatus, ...(response && typeof response === 'object' && !Array.isArray(response) ? { response: response as Record<string, unknown> } : {}), createdAt: new Date(String(row.created_at)).toISOString(), updatedAt: new Date(String(row.updated_at ?? row.created_at)).toISOString(), processingExpiresAt: row.processing_expires_at ? new Date(String(row.processing_expires_at)).toISOString() : undefined, completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : undefined }; }
   async getAssistantActionExecution(actorId: string, conversationId: string, actionId: string): Promise<AssistantActionExecutionRecord | undefined> { const result = await this.pool.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3', [actorId, conversationId, actionId]); return result.rows[0] ? this.assistantActionExecutionFromRow(result.rows[0]) : undefined; }
   async claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim> { return this.transaction(async (client) => { const inserted = await client.query("INSERT INTO assistant_action_executions (actor_id,conversation_id,action_id,idempotency_key,request_hash,status,processing_expires_at,updated_at) VALUES ($1,$2,$3,$4,$5,'PROCESSING',now()+interval '30 seconds',now()) ON CONFLICT (actor_id,conversation_id,action_id) DO NOTHING", [actorId,conversationId,actionId,idempotencyKey,requestHash]); const result = await client.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 FOR UPDATE', [actorId,conversationId,actionId]); const row = result.rows[0] as Record<string, unknown> | undefined; if (!row) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_FOUND'); const execution = this.assistantActionExecutionFromRow(row); if (execution.idempotencyKey !== idempotencyKey) return { state: 'ACTION_NOT_AVAILABLE' as const, execution }; if (execution.requestHash !== requestHash) return { state: 'IDEMPOTENCY_KEY_REUSED' as const, execution }; if (execution.status === 'SUCCEEDED') return { state: 'SUCCEEDED' as const, execution }; if (execution.status === 'FAILED_FINAL') return { state: 'FAILED_FINAL' as const, execution }; const stale = execution.status === 'FAILED_RETRYABLE' || (execution.status === 'PROCESSING' && Boolean(execution.processingExpiresAt) && Date.parse(execution.processingExpiresAt!) <= Date.now()); if (stale) { const reclaimed = await client.query("UPDATE assistant_action_executions SET status='PROCESSING',response_json=NULL,completed_at=NULL,processing_expires_at=now()+interval '30 seconds',updated_at=now() WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 RETURNING *", [actorId,conversationId,actionId]); return { state: 'CLAIMED' as const, execution: this.assistantActionExecutionFromRow(reclaimed.rows[0]) }; } return { state: inserted.rowCount ? 'CLAIMED' as const : 'PROCESSING' as const, execution }; }); }
   async commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord> { return this.transaction(async (client) => { const receipt = await client.query('SELECT * FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 FOR UPDATE', [value.actorId,value.conversationId,value.actionId]); const row = receipt.rows[0] as Record<string, unknown> | undefined; if (!row || String(row.idempotency_key) !== value.idempotencyKey || String(row.request_hash) !== value.requestHash || row.status !== 'PROCESSING') throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING'); const conversation = await client.query('INSERT INTO conversation_states (conversation_id,actor_id,messages,state,version) VALUES ($1,$2,$3::jsonb,$4::jsonb,1) ON CONFLICT (conversation_id) DO UPDATE SET messages=conversation_states.messages || EXCLUDED.messages,state=conversation_states.state || EXCLUDED.state,version=conversation_states.version+1,updated_at=now() WHERE conversation_states.actor_id=EXCLUDED.actor_id RETURNING *', [value.conversationId,value.actorId,JSON.stringify([value.userMessage,value.assistantMessage]),JSON.stringify(value.stateUpdates)]); const conversationRow = conversation.rows[0] as Record<string, unknown> | undefined; if (!conversationRow) throw new Error('FORBIDDEN'); const completed = await client.query("UPDATE assistant_action_executions SET status='SUCCEEDED',response_json=$1::jsonb,completed_at=now(),processing_expires_at=NULL,updated_at=now() WHERE actor_id=$2 AND conversation_id=$3 AND action_id=$4 AND idempotency_key=$5 AND request_hash=$6 AND status='PROCESSING' RETURNING action_id", [JSON.stringify(value.response),value.actorId,value.conversationId,value.actionId,value.idempotencyKey,value.requestHash]); if (!completed.rowCount) throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_PROCESSING'); return this.conversationFromRow(conversationRow); }); }
   async completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void> { await this.transaction(async (client) => { const result = await client.query("UPDATE assistant_action_executions SET status=$1,response_json=$2::jsonb,completed_at=CASE WHEN $1 = 'FAILED_FINAL' THEN now() ELSE NULL END,processing_expires_at=NULL,updated_at=now() WHERE actor_id=$3 AND conversation_id=$4 AND action_id=$5 AND idempotency_key=$6 AND request_hash=$7 AND status='PROCESSING' RETURNING action_id", [status,response ? JSON.stringify(response) : null,actorId,conversationId,actionId,idempotencyKey,requestHash]); if (!result.rowCount) { const existing = await client.query('SELECT status FROM assistant_action_executions WHERE actor_id=$1 AND conversation_id=$2 AND action_id=$3 AND idempotency_key=$4 AND request_hash=$5', [actorId,conversationId,actionId,idempotencyKey,requestHash]); if (existing.rows[0]?.status === status) return; throw new Error('ASSISTANT_ACTION_EXECUTION_NOT_FOUND'); } }); }
+  private apiKeyFromRow(row: Record<string, unknown>): ApiKeyRecord {
+    return {
+      id: String(row.id),
+      provider: row.provider as ApiKeyProvider,
+      label: String(row.label),
+      last4: String(row.last4),
+      keyCiphertext: row.key_ciphertext ? String(row.key_ciphertext) : undefined,
+      keyIv: row.key_iv ? String(row.key_iv) : undefined,
+      keyAuthTag: row.key_auth_tag ? String(row.key_auth_tag) : undefined,
+      lastIdempotencyKey: row.last_idempotency_key ? String(row.last_idempotency_key) : undefined,
+      lastRequestHash: row.last_request_hash ? String(row.last_request_hash) : undefined,
+      status: row.status as ApiKeyStatus,
+      environment: String(row.environment ?? 'development'),
+      expiresAt: row.expires_at ? new Date(String(row.expires_at)).toISOString() : undefined,
+      updatedAt: new Date(String(row.updated_at)).toISOString(),
+      updatedBy: String(row.updated_by),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    };
+  }
+
+  async queryApiKeys(): Promise<ApiKeyRecord[]> {
+    const result = await this.pool.query('SELECT * FROM api_key_records ORDER BY updated_at DESC');
+    return result.rows.map((row) => this.apiKeyFromRow(row));
+  }
+
+  async getApiKeyRecord(id: string): Promise<ApiKeyRecord | undefined> {
+    const result = await this.pool.query('SELECT * FROM api_key_records WHERE id=$1', [id]);
+    return result.rows[0] ? this.apiKeyFromRow(result.rows[0]) : undefined;
+  }
+
+  async createApiKeyRecord(value: { id: string; provider: ApiKeyProvider; label: string; last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; environment?: string; expiresAt?: string; updatedBy: string }): Promise<ApiKeyRecord> {
+    const result = await this.pool.query(
+      'INSERT INTO api_key_records (id,provider,label,last4,key_ciphertext,key_iv,key_auth_tag,status,environment,expires_at,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *',
+      [value.id, value.provider, value.label, value.last4, value.keyCiphertext ?? null, value.keyIv ?? null, value.keyAuthTag ?? null, 'active', value.environment ?? 'development', value.expiresAt ?? null, value.updatedBy],
+    );
+    return this.apiKeyFromRow(result.rows[0]);
+  }
+
+  async rotateApiKeyRecord(id: string, value: { last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; expiresAt?: string; updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> {
+    return this.transaction(async (client) => {
+      const existingResult = await client.query('SELECT * FROM api_key_records WHERE id=$1 FOR UPDATE', [id]);
+      const existingRow = existingResult.rows[0];
+      if (!existingRow) return undefined;
+      const existing = this.apiKeyFromRow(existingRow);
+
+      if (value.idempotencyKey && existing.lastIdempotencyKey === value.idempotencyKey) {
+        if (existing.lastRequestHash === value.requestHash) {
+          return { record: existing, replayed: true };
+        }
+        throw new Error('IDEMPOTENCY_KEY_REUSED');
+      }
+
+      const result = await client.query(
+        'UPDATE api_key_records SET last4=$1,key_ciphertext=COALESCE($2,key_ciphertext),key_iv=COALESCE($3,key_iv),key_auth_tag=COALESCE($4,key_auth_tag),expires_at=COALESCE($5,expires_at),updated_by=$6,last_idempotency_key=$7,last_request_hash=$8,updated_at=now() WHERE id=$9 RETURNING *',
+        [value.last4, value.keyCiphertext ?? null, value.keyIv ?? null, value.keyAuthTag ?? null, value.expiresAt ?? null, value.updatedBy, value.idempotencyKey ?? null, value.requestHash ?? null, id],
+      );
+      return result.rows[0] ? { record: this.apiKeyFromRow(result.rows[0]), replayed: false } : undefined;
+    });
+  }
+
+  async revokeApiKeyRecord(id: string, value: { updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> {
+    return this.transaction(async (client) => {
+      const existingResult = await client.query('SELECT * FROM api_key_records WHERE id=$1 FOR UPDATE', [id]);
+      const existingRow = existingResult.rows[0];
+      if (!existingRow) return undefined;
+      const existing = this.apiKeyFromRow(existingRow);
+
+      if (value.idempotencyKey && existing.lastIdempotencyKey === value.idempotencyKey) {
+        if (existing.lastRequestHash === value.requestHash) {
+          return { record: existing, replayed: true };
+        }
+        throw new Error('IDEMPOTENCY_KEY_REUSED');
+      }
+
+      const result = await client.query(
+        "UPDATE api_key_records SET status='disabled',updated_by=$1,last_idempotency_key=$2,last_request_hash=$3,updated_at=now() WHERE id=$4 RETURNING *",
+        [value.updatedBy, value.idempotencyKey ?? null, value.requestHash ?? null, id],
+      );
+      return result.rows[0] ? { record: this.apiKeyFromRow(result.rows[0]), replayed: false } : undefined;
+    });
+  }
+
+  async queryAuditLogs(filters: { actorId?: string; action?: string; correlationId?: string; fromTime?: string; toTime?: string; page?: number; pageSize?: number } = {}): Promise<{ items: AuditLogEntry[]; total: number }> {
+    const where: string[] = [];
+    const values: unknown[] = [];
+    if (filters.actorId) { values.push(filters.actorId); where.push(`actor_id=$${values.length}`); }
+    if (filters.action) { values.push(filters.action); where.push(`action=$${values.length}`); }
+    if (filters.correlationId) { values.push(filters.correlationId); where.push(`correlation_id=$${values.length}`); }
+    if (filters.fromTime) { values.push(filters.fromTime); where.push(`created_at >= $${values.length}`); }
+    if (filters.toTime) { values.push(filters.toTime); where.push(`created_at <= $${values.length}`); }
+
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const countResult = await this.pool.query(`SELECT count(*)::int AS count FROM audit_events ${clause}`, values);
+    const total = Number(countResult.rows[0]?.count ?? 0);
+
+    const page = Math.max(filters.page ?? 1, 1);
+    const pageSize = Math.min(Math.max(filters.pageSize ?? 20, 1), 100);
+    const pageValues = [...values, pageSize, (page - 1) * pageSize];
+    const rowsResult = await this.pool.query(
+      `SELECT id, action, actor_id, resource_id, correlation_id, metadata, created_at FROM audit_events ${clause} ORDER BY created_at DESC LIMIT $${pageValues.length - 1} OFFSET $${pageValues.length}`,
+      pageValues,
+    );
+
+    return {
+      items: rowsResult.rows.map((row) => ({
+        id: String(row.id),
+        action: String(row.action),
+        actorId: row.actor_id ? String(row.actor_id) : undefined,
+        resourceId: row.resource_id ? String(row.resource_id) : undefined,
+        correlationId: row.correlation_id ? String(row.correlation_id) : undefined,
+        metadata: (row.metadata && typeof row.metadata === 'object' ? row.metadata : {}) as Record<string, unknown>,
+        createdAt: new Date(String(row.created_at)).toISOString(),
+      })),
+      total,
+    };
+  }
+
+  async recordTokenUsage(value: { id: string; actorId?: string; model: string; provider?: string; feature: string; promptTokens: number; completionTokens: number; totalTokens: number; estimatedCostUsd?: number }): Promise<void> {
+    await this.pool.query(
+      'INSERT INTO agent_token_usage (id,actor_id,model,provider,feature,prompt_tokens,completion_tokens,total_tokens,estimated_cost_usd) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [value.id, value.actorId ?? null, value.model, value.provider ?? 'google', value.feature, value.promptTokens, value.completionTokens, value.totalTokens, value.estimatedCostUsd ?? null],
+    );
+  }
+
+  async queryTokenUsage(filters: { fromTime?: string; toTime?: string; feature?: string; model?: string } = {}): Promise<TokenUsageReport> {
+    const where: string[] = [];
+    const values: unknown[] = [];
+    if (filters.feature) { values.push(filters.feature); where.push(`feature=$${values.length}`); }
+    if (filters.model) { values.push(filters.model); where.push(`model=$${values.length}`); }
+    if (filters.fromTime) { values.push(filters.fromTime); where.push(`recorded_at >= $${values.length}`); }
+    if (filters.toTime) { values.push(filters.toTime); where.push(`recorded_at <= $${values.length}`); }
+
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const totalsQuery = await this.pool.query(
+      `SELECT COALESCE(SUM(prompt_tokens),0)::int AS total_prompt, COALESCE(SUM(completion_tokens),0)::int AS total_comp, COALESCE(SUM(total_tokens),0)::int AS total_toks, COALESCE(SUM(estimated_cost_usd),0)::float AS total_cost FROM agent_token_usage ${clause}`,
+      values,
+    );
+    const byFeatureQuery = await this.pool.query(
+      `SELECT feature, COALESCE(SUM(prompt_tokens),0)::int AS prompt, COALESCE(SUM(completion_tokens),0)::int AS comp, COALESCE(SUM(total_tokens),0)::int AS total, COALESCE(SUM(estimated_cost_usd),0)::float AS cost FROM agent_token_usage ${clause} GROUP BY feature`,
+      values,
+    );
+    const byModelQuery = await this.pool.query(
+      `SELECT model, COALESCE(SUM(prompt_tokens),0)::int AS prompt, COALESCE(SUM(completion_tokens),0)::int AS comp, COALESCE(SUM(total_tokens),0)::int AS total, COALESCE(SUM(estimated_cost_usd),0)::float AS cost FROM agent_token_usage ${clause} GROUP BY model`,
+      values,
+    );
+    const dailyQuery = await this.pool.query(
+      `SELECT to_char(recorded_at, 'YYYY-MM-DD') AS date, COALESCE(SUM(prompt_tokens),0)::int AS prompt, COALESCE(SUM(completion_tokens),0)::int AS comp, COALESCE(SUM(total_tokens),0)::int AS total, COALESCE(SUM(estimated_cost_usd),0)::float AS cost FROM agent_token_usage ${clause} GROUP BY 1 ORDER BY 1 ASC`,
+      values,
+    );
+    const topConsumersQuery = await this.pool.query(
+      `SELECT actor_id, COALESCE(SUM(total_tokens),0)::int AS total, COALESCE(SUM(estimated_cost_usd),0)::float AS cost FROM agent_token_usage ${clause ? clause + ' AND actor_id IS NOT NULL' : 'WHERE actor_id IS NOT NULL'} GROUP BY actor_id ORDER BY total DESC LIMIT 10`,
+      values,
+    );
+
+    const totals = totalsQuery.rows[0] ?? {};
+    const by_feature: Record<string, { prompt: number; completion: number; total: number; cost: number }> = {};
+    for (const r of byFeatureQuery.rows) {
+      by_feature[String(r.feature)] = { prompt: Number(r.prompt), completion: Number(r.comp), total: Number(r.total), cost: Number(Number(r.cost).toFixed(6)) };
+    }
+    const by_model: Record<string, { prompt: number; completion: number; total: number; cost: number }> = {};
+    for (const r of byModelQuery.rows) {
+      by_model[String(r.model)] = { prompt: Number(r.prompt), completion: Number(r.comp), total: Number(r.total), cost: Number(Number(r.cost).toFixed(6)) };
+    }
+
+    return {
+      total_prompt_tokens: Number(totals.total_prompt ?? 0),
+      total_completion_tokens: Number(totals.total_comp ?? 0),
+      total_tokens: Number(totals.total_toks ?? 0),
+      total_estimated_cost_usd: Number(Number(totals.total_cost ?? 0).toFixed(6)),
+      by_feature,
+      by_model,
+      daily_trends: dailyQuery.rows.map((r) => ({
+        date: String(r.date),
+        prompt_tokens: Number(r.prompt),
+        completion_tokens: Number(r.comp),
+        total_tokens: Number(r.total),
+        estimated_cost_usd: Number(Number(r.cost).toFixed(6)),
+      })),
+      top_consumers: topConsumersQuery.rows.map((r) => ({
+        actor_id: String(r.actor_id),
+        total_tokens: Number(r.total),
+        estimated_cost_usd: Number(Number(r.cost).toFixed(6)),
+      })),
+    };
+  }
+
   async audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { await this.pool.query('INSERT INTO audit_events (action,actor_id,resource_id,correlation_id,metadata) VALUES ($1,$2,$3,$4,$5::jsonb)', [value.action,value.actorId ?? null,value.resourceId ?? null,value.correlationId ?? null,JSON.stringify(value.metadata ?? {})]); }
   async checkHealth(): Promise<boolean> { try { await this.pool.query('SELECT 1'); return true; } catch { return false; } }
   async close(): Promise<void> { await this.pool.end(); }
@@ -696,10 +1159,21 @@ export class CoreStore implements OnModuleDestroy {
   claimAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string): Promise<AssistantActionExecutionClaim> { return this.repository.claimAssistantActionExecution(actorId, conversationId, actionId, idempotencyKey, requestHash); }
   commitAssistantActionSuccess(value: AssistantActionSuccessCommit): Promise<ConversationRecord> { return this.repository.commitAssistantActionSuccess(value); }
   completeAssistantActionExecution(actorId: string, conversationId: string, actionId: string, idempotencyKey: string, requestHash: string, status: Exclude<AssistantActionExecutionStatus, 'SUCCEEDED'>, response?: Record<string, unknown>): Promise<void> { return this.repository.completeAssistantActionExecution(actorId, conversationId, actionId, idempotencyKey, requestHash, status, response); }
+  listConversationTurns(conversationId: string, actorId: string, limit?: number): Promise<ConversationTurnRecord[]> { return this.repository.listConversationTurns(conversationId, actorId, limit); }
+  promoteMemory(actorId: string, conversationId: string | undefined, candidate: MemoryCandidate, options?: { id?: string; userConfirmed?: boolean }): Promise<MemoryItem> { return this.repository.promoteMemory(actorId, conversationId, candidate, options); }
+  retrieveMemories(actorId: string, query?: { key?: string; namespace?: string; limit?: number }): Promise<RetrievedMemory[]> { return this.repository.retrieveMemories(actorId, query); }
+  queryApiKeys(): Promise<ApiKeyRecord[]> { return this.repository.queryApiKeys(); }
+  getApiKeyRecord(id: string): Promise<ApiKeyRecord | undefined> { return this.repository.getApiKeyRecord(id); }
+  createApiKeyRecord(value: { id: string; provider: ApiKeyProvider; label: string; last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; environment?: string; expiresAt?: string; updatedBy: string }): Promise<ApiKeyRecord> { return this.repository.createApiKeyRecord(value); }
+  rotateApiKeyRecord(id: string, value: { last4: string; keyCiphertext?: string; keyIv?: string; keyAuthTag?: string; expiresAt?: string; updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> { return this.repository.rotateApiKeyRecord(id, value); }
+  revokeApiKeyRecord(id: string, value: { updatedBy: string; idempotencyKey?: string; requestHash?: string }): Promise<{ record: ApiKeyRecord; replayed: boolean } | undefined> { return this.repository.revokeApiKeyRecord(id, value); }
+  queryAuditLogs(filters?: { actorId?: string; action?: string; correlationId?: string; fromTime?: string; toTime?: string; page?: number; pageSize?: number }): Promise<{ items: AuditLogEntry[]; total: number }> { return this.repository.queryAuditLogs(filters); }
+  recordTokenUsage(value: { id: string; actorId?: string; model: string; provider?: string; feature: string; promptTokens: number; completionTokens: number; totalTokens: number; estimatedCostUsd?: number }): Promise<void> { return this.repository.recordTokenUsage(value); }
+  queryTokenUsage(filters?: { fromTime?: string; toTime?: string; feature?: string; model?: string }): Promise<TokenUsageReport> { return this.repository.queryTokenUsage(filters); }
   audit(value: { action: string; actorId?: string; correlationId?: string; resourceId?: string; metadata?: Record<string, unknown> }): Promise<void> { return this.repository.audit(value); }
   checkHealth(): Promise<boolean> { return this.repository.checkHealth(); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }
 }
 
-@Module({ providers: [CoreStore, CoreProductOpsStore], exports: [CoreStore, CoreProductOpsStore] })
+@Module({ providers: [CoreStore, CoreProductOpsStore, CoreMigrationService], exports: [CoreStore, CoreProductOpsStore, CoreMigrationService] })
 export class CoreModule {}

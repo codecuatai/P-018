@@ -612,6 +612,23 @@ describe('Unified assistant orchestration', () => {
     }));
   });
 
+  it('does not send terminal task history back to the planner', async () => {
+    const conversation = {
+      conversationId: 'conversation-terminal-projection', actorId: user.sub, messages: [],
+      state: { tasks: [
+        { id: 'done', domain: 'ride', goal: 'done', normalized_request: 'done', extracted_slots: {}, depends_on: [], phase: 'COMPLETED', revision: 1 },
+        { id: 'active', domain: 'food', goal: 'active', normalized_request: 'active', extracted_slots: {}, depends_on: [], phase: 'NEEDS_INFO', revision: 1 },
+      ], actions: [] },
+    };
+    const store = { getConversation: jest.fn(async () => conversation), listSavedAddresses: jest.fn().mockResolvedValue([]), appendConversationTurn: jest.fn(async () => conversation) };
+    const agent = { assistantChat: jest.fn().mockResolvedValue({ plan: { tasks: [] } }) };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+    await service.chat(user, 'Xin chao', conversation.conversationId, 'cor-terminal-projection');
+    const state = agent.assistantChat.mock.calls[0][0].conversation_state as { tasks: Array<Record<string, unknown>> };
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0]).toMatchObject({ task_ref: 1, domain: 'food', phase: 'NEEDS_INFO' });
+  });
+
   it('invalidates a pending action when the same task receives changed details', async () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     let planningTurn = 0;
@@ -2032,4 +2049,39 @@ describe('Unified assistant orchestration', () => {
     expect(result.discardedIds.size).toBe(0);
     expect(tasks[0].phase).toBe('IN_PROGRESS');
   });
+
+  it('records token usage when agent response contains usage metadata', async () => {
+    const recordTokenUsage = jest.fn();
+    const service = new AssistantService(
+      { recordTokenUsage } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = service as unknown as {
+      recordUsageFromAgentResponse: (res: Record<string, unknown>, actorId?: string, feat?: string) => Promise<void>;
+    };
+
+    await internal.recordUsageFromAgentResponse(
+      {
+        model: 'gemini-1.5-flash',
+        usage: { prompt_tokens: 150, completion_tokens: 50, total_tokens: 200 },
+      },
+      'user_123',
+      'assistant',
+    );
+
+    expect(recordTokenUsage).toHaveBeenCalledTimes(1);
+    const callArg = recordTokenUsage.mock.calls[0][0];
+    expect(callArg.actorId).toBe('user_123');
+    expect(callArg.model).toBe('gemini-1.5-flash');
+    expect(callArg.feature).toBe('assistant');
+    expect(callArg.promptTokens).toBe(150);
+    expect(callArg.completionTokens).toBe(50);
+    expect(callArg.totalTokens).toBe(200);
+    expect(callArg.estimatedCostUsd).toBeGreaterThan(0);
+  });
 });
+

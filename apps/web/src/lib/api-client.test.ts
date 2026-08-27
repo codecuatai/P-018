@@ -1,4 +1,4 @@
-import { ApiError, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -95,5 +95,26 @@ describe("browser API client", () => {
     expect(errorText(makeError("SLOT_UNAVAILABLE"))).toBe("Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.");
     expect(errorText(makeError("LOCATION_UNRESOLVED"))).toBe("Hiện chưa tải được thông tin vị trí. Bạn thử lại giúp mình nhé.");
     expect(errorText(makeError("NO_DRIVER"))).toBe("Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.");
+    expect(errorText(makeError("IDEMPOTENCY_KEY_REQUIRED"))).toBe("Thao tác giỏ hàng chưa được gửi đầy đủ. Bạn hãy thử lại.");
+  });
+
+  it("sends the idempotency key required by Food cart mutations", async () => {
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(new Headers(init?.headers).get("Idempotency-Key")).toMatch(/^food-cart-item-/);
+      return jsonResponse(200, { data: { id: "cart-1", items: [] } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(addFoodCartItem("cart-1", { menu_item_id: "food_menu_item_1", quantity: 1 })).resolves.toEqual({ id: "cart-1", items: [] });
+  });
+
+  it("preserves the Healthcare department page size in the browse request", async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/api/v1/services/healthcare?q=neurology&limit=100&offset=0");
+      return jsonResponse(200, { data: { items: [], source: "healthcare-service", partial: false } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(browseService("healthcare", "neurology", { limit: 100, offset: 0 })).resolves.toEqual({ items: [], source: "healthcare-service", partial: false });
   });
 });

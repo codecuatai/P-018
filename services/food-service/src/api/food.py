@@ -97,8 +97,13 @@ async def restaurant(restaurant_id: str, food: FoodApplicationService = Depends(
 
 
 @router.get("/restaurants/{restaurant_id}/menu", dependencies=[Depends(require_internal)])
-async def menu(restaurant_id: str, food: FoodApplicationService = Depends(service)):
-    return {"data": await food.menu(restaurant_id)}
+async def menu(
+    restaurant_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    food: FoodApplicationService = Depends(service),
+):
+    return {"data": await food.menu(restaurant_id, limit=limit, offset=offset)}
 
 
 @router.get("/menu-items/{menu_item_id}", dependencies=[Depends(require_internal)])

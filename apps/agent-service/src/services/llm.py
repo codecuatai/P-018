@@ -1,7 +1,9 @@
 import threading
+import time
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
+import httpx
 from pydantic import BaseModel
 
 from src.config import get_settings
@@ -38,32 +40,143 @@ MODEL_RUNTIME_DIAGNOSTICS: dict[str, Any] = {
     "last_model_call_category": None,
     "last_model_call_invocation": None,
     "keys_configured_count": 0,
+    "admin_keys_count": 0,
+    "env_keys_count": 0,
+    "keys_in_cooldown_count": 0,
 }
 
 
 class GeminiKeyPool:
-    """Thread-safe Round Robin selector and failover sequence for Gemini API keys."""
+    """Thread-safe dynamic key pool with Round Robin rotation, cooldown tracking, and Gateway sync."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._index = 0
+        self._admin_keys: list[str] = []
+        self._last_fetched_at: float = 0.0
+        self._cooldowns: dict[str, float] = {}
 
     def reset(self) -> None:
         with self._lock:
             self._index = 0
+            self._admin_keys = []
+            self._last_fetched_at = 0.0
+            self._cooldowns.clear()
+
+    def set_admin_keys(self, keys: list[str]) -> None:
+        with self._lock:
+            self._admin_keys = [k.strip() for k in keys if isinstance(k, str) and k.strip()]
+            self._last_fetched_at = time.time()
+
+    @property
+    def admin_keys(self) -> list[str]:
+        with self._lock:
+            return list(self._admin_keys)
+
+    @property
+    def admin_keys_count(self) -> int:
+        with self._lock:
+            return len(self._admin_keys)
+
+    @property
+    def cooldown_count(self) -> int:
+        now = time.time()
+        with self._lock:
+            return sum(1 for exp in self._cooldowns.values() if exp > now)
+
+    def has_any_keys(self, settings: Any) -> bool:
+        return len(self.get_effective_keys(settings)) > 0
+
+    def get_effective_keys(self, settings: Any) -> list[str]:
+        """Admin keys prioritized first, followed by .env keys, deduplicated."""
+        with self._lock:
+            admin = list(self._admin_keys)
+        env_keys = list(getattr(settings, "api_keys", []))
+        if not env_keys:
+            single = str(getattr(settings, "gemini_api_key", "")).strip()
+            if single:
+                env_keys = [single]
+        merged: list[str] = []
+        for k in admin:
+            k_clean = k.strip()
+            if k_clean and k_clean not in merged:
+                merged.append(k_clean)
+        for k in env_keys:
+            k_clean = k.strip()
+            if k_clean and k_clean not in merged:
+                merged.append(k_clean)
+        return merged
+
+    async def refresh_admin_keys(self, settings: Any) -> list[str]:
+        gateway_url = str(getattr(settings, "api_gateway_url", "http://api-gateway:3000")).rstrip("/")
+        token = str(getattr(settings, "internal_service_token", ""))
+        url = f"{gateway_url}/internal/api-keys/active?provider=gemini"
+        headers = {"X-Internal-Service-Token": token}
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_keys = data.get("data", {}).get("keys", [])
+                    cleaned = [k.strip() for k in raw_keys if isinstance(k, str) and k.strip()]
+                    with self._lock:
+                        self._admin_keys = cleaned
+                        self._last_fetched_at = time.time()
+                    return cleaned
+        except Exception:
+            pass
+        with self._lock:
+            self._last_fetched_at = time.time()
+            return list(self._admin_keys)
+
+    async def refresh_if_needed(self, settings: Any) -> None:
+        ttl = int(getattr(settings, "gemini_key_cache_ttl_seconds", 30))
+        now = time.time()
+        with self._lock:
+            needs_refresh = (now - self._last_fetched_at) >= ttl
+        if needs_refresh:
+            await self.refresh_admin_keys(settings)
+
+    def mark_key_failure(self, key: str, category: ProviderErrorCategory) -> None:
+        if category == "quota_or_rate_limit":
+            duration = 60.0
+        elif category == "authentication_or_permission":
+            duration = 120.0
+        elif category in {"temporary_provider_failure", "timeout_or_network"}:
+            duration = 30.0
+        else:
+            duration = 15.0
+
+        with self._lock:
+            self._cooldowns[key] = time.time() + duration
+
+    def mark_key_success(self, key: str) -> None:
+        with self._lock:
+            self._cooldowns.pop(key, None)
 
     def get_keys_for_invocation(self, settings: Any) -> list[str]:
-        """Return available keys ordered starting from the current round-robin turn."""
-        keys = getattr(settings, "api_keys", [])
-        if not keys:
-            single = str(getattr(settings, "gemini_api_key", "")).strip()
-            keys = [single] if single else []
+        """Return available keys ordered starting from current round-robin turn with cooldown fallback."""
+        keys = self.get_effective_keys(settings)
         if not keys:
             return []
+        now = time.time()
         with self._lock:
-            start_index = self._index % len(keys)
-            self._index = (self._index + 1) % len(keys)
-        return keys[start_index:] + keys[:start_index]
+            # Clean expired cooldowns
+            expired = [k for k, exp in self._cooldowns.items() if now >= exp]
+            for k in expired:
+                del self._cooldowns[k]
+
+            healthy = [k for k in keys if k not in self._cooldowns]
+            cooldown = [k for k in keys if k in self._cooldowns]
+
+            if healthy:
+                start_index = self._index % len(healthy)
+                self._index = (self._index + 1) % len(healthy)
+                ordered_healthy = healthy[start_index:] + healthy[:start_index]
+                ordered_cooldown = sorted(cooldown, key=lambda k: self._cooldowns.get(k, 0.0))
+                return ordered_healthy + ordered_cooldown
+            else:
+                return sorted(keys, key=lambda k: self._cooldowns.get(k, 0.0))
 
 
 KEY_POOL = GeminiKeyPool()
@@ -72,12 +185,13 @@ KEY_POOL = GeminiKeyPool()
 def llm_diagnostics(settings: Any | None = None) -> dict[str, Any]:
     """Return safe runtime diagnostics without error text, prompts, or secrets."""
     current = settings or get_settings()
-    configured_keys = getattr(current, "api_keys", [])
-    if not configured_keys and getattr(current, "gemini_api_key", ""):
-        configured_keys = [current.gemini_api_key]
+    configured_keys = KEY_POOL.get_effective_keys(current)
     MODEL_RUNTIME_DIAGNOSTICS["configured_primary"] = str(getattr(current, "gemini_model", ""))
     MODEL_RUNTIME_DIAGNOSTICS["configured_fallback"] = str(getattr(current, "gemini_fallback_model", ""))
     MODEL_RUNTIME_DIAGNOSTICS["keys_configured_count"] = len(configured_keys)
+    MODEL_RUNTIME_DIAGNOSTICS["admin_keys_count"] = KEY_POOL.admin_keys_count
+    MODEL_RUNTIME_DIAGNOSTICS["env_keys_count"] = len(getattr(current, "api_keys", []))
+    MODEL_RUNTIME_DIAGNOSTICS["keys_in_cooldown_count"] = KEY_POOL.cooldown_count
     return dict(MODEL_RUNTIME_DIAGNOSTICS)
 
 
@@ -213,9 +327,7 @@ def _record_model_call(
 ) -> None:
     error_status = provider_status_code(error) if error else None
     error_category = provider_error_category(error) if error else None
-    configured_keys = getattr(settings, "api_keys", [])
-    if not configured_keys and getattr(settings, "gemini_api_key", ""):
-        configured_keys = [settings.gemini_api_key]
+    configured_keys = KEY_POOL.get_effective_keys(settings)
     MODEL_RUNTIME_DIAGNOSTICS.update(
         {
             "configured_primary": str(settings.gemini_model),
@@ -231,6 +343,9 @@ def _record_model_call(
             "last_model_call_category": error_category,
             "last_model_call_invocation": invocation,
             "keys_configured_count": len(configured_keys),
+            "admin_keys_count": KEY_POOL.admin_keys_count,
+            "env_keys_count": len(getattr(settings, "api_keys", [])),
+            "keys_in_cooldown_count": KEY_POOL.cooldown_count,
         }
     )
 
@@ -287,7 +402,7 @@ class GeminiAdapter:
 
     def _model(self, model_name: str | None = None, api_key: str | None = None) -> Any:
         settings = get_settings()
-        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
+        if not api_key and not KEY_POOL.has_any_keys(settings) and not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return None
         target_model = model_name or settings.gemini_model
         import inspect
@@ -302,7 +417,8 @@ class GeminiAdapter:
 
     async def ainvoke(self, prompt: str) -> Any:
         settings = get_settings()
-        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
+        await KEY_POOL.refresh_if_needed(settings)
+        if not KEY_POOL.has_any_keys(settings) and not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return ""
         model_names = gemini_model_names(settings)
         keys = KEY_POOL.get_keys_for_invocation(settings)
@@ -316,15 +432,18 @@ class GeminiAdapter:
             for key_index, api_key in enumerate(keys):
                 try:
                     response: Any = await self._model(model_name, api_key=api_key).ainvoke(prompt)
+                    KEY_POOL.mark_key_success(api_key)
                     _record_model_call(
                         settings, model_name, "success", "raw", fallback_model_attempted=fallback_attempted
                     )
                     return response
                 except Exception as error:
                     last_error = error
+                    category = provider_error_category(error)
+                    KEY_POOL.mark_key_failure(api_key, category)
                     # If this key hit quota/rate limit or temporary failure, and other keys remain, fail over to next key
                     if (
-                        provider_error_category(error)
+                        category
                         in {
                             "quota_or_rate_limit",
                             "temporary_provider_failure",
@@ -354,7 +473,8 @@ class GeminiAdapter:
 
     async def ainvoke_structured(self, prompt: str, schema: type[BaseModel]) -> Any:
         settings = get_settings()
-        if not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
+        await KEY_POOL.refresh_if_needed(settings)
+        if not KEY_POOL.has_any_keys(settings) and not getattr(settings, "has_gemini_api_key", bool(settings.gemini_api_key)):
             return ""
         model_names = gemini_model_names(settings)
         keys = KEY_POOL.get_keys_for_invocation(settings)
@@ -380,6 +500,7 @@ class GeminiAdapter:
                         # the Assistant schema before accepting it.
                         invocation = "raw"
                         result = await model.ainvoke(prompt)
+                        KEY_POOL.mark_key_success(api_key)
                         _record_model_call(
                             settings,
                             model_name,
@@ -389,14 +510,17 @@ class GeminiAdapter:
                             structured_output_fallback_used=True,
                         )
                         return result
+                    KEY_POOL.mark_key_success(api_key)
                     _record_model_call(
                         settings, model_name, "success", "structured", fallback_model_attempted=fallback_attempted
                     )
                     return result
                 except Exception as error:
                     last_error = error
+                    category = provider_error_category(error)
+                    KEY_POOL.mark_key_failure(api_key, category)
                     if (
-                        provider_error_category(error)
+                        category
                         in {
                             "quota_or_rate_limit",
                             "temporary_provider_failure",
@@ -428,15 +552,17 @@ class GeminiAdapter:
 def get_llm_config() -> dict[str, str]:
     settings = get_settings()
     runtime = llm_diagnostics(settings)
-    configured_keys = getattr(settings, "api_keys", [])
-    if not configured_keys and getattr(settings, "gemini_api_key", ""):
-        configured_keys = [settings.gemini_api_key]
+    configured_keys = KEY_POOL.get_effective_keys(settings)
     return {
         "model": settings.gemini_model,
         "fallback_model": settings.gemini_fallback_model,
         "api_key_configured": "true" if configured_keys else "false",
         "keys_configured_count": str(len(configured_keys)),
+        "admin_keys_count": str(KEY_POOL.admin_keys_count),
+        "env_keys_count": str(len(getattr(settings, "api_keys", []))),
+        "keys_in_cooldown_count": str(KEY_POOL.cooldown_count),
         "last_model_used": str(runtime["last_model_used"] or ""),
         "fallback_used": "true" if runtime["fallback_used"] else "false",
         "last_model_call_status": str(runtime["last_model_call_status"]),
     }
+

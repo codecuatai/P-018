@@ -10,14 +10,15 @@ volume. Apply deliberate migrations or role changes for an existing database;
 do not delete a user's volume automatically.
 
 Core owns additive migrations `001_core_vertical_slice.sql` through
-`013_core_admin_support_idempotency.sql`. Migration 007 stores safe Assistant
+`016_core_token_usage.sql`. Migration 007 stores safe Assistant
 action receipts for durable same-key replay, migration 008 adds retryable
 failures plus a bounded processing lease, migration 009 adds Core-owned users,
 Argon2id credentials, refresh-session generations and one-time reset-token
 hashes, migration 010 adds profile/saved-address/conversation context, and
 migration 011 persists multi-service workflow plans and step idempotency;
-migration 012 adds Product/Ops records and migration 013 adds idempotency
-evidence for Admin support updates.
+migration 012 adds Product/Ops records, migration 013 adds idempotency
+evidence for Admin support updates, migration 015 adds encrypted Admin API-key
+metadata, and migration 016 adds Core-owned token-usage aggregates.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
 `0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
 `003a`, `004`, and `005`; and
@@ -36,11 +37,18 @@ repair state.
 
 | Owner | Current baseline | Next migration convention |
 | --- | --- | --- |
-| Core/Gateway | `001` through `013` SQL | `014` or greater, additive SQL |
+| Core/Gateway | `001` through `016` SQL | `017` or greater, additive SQL |
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
 | Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
 | Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
 | Ride | Alembic through `20260814_0005_route_geometry` | a new Alembic revision from `head` |
+
+In development, Gateway runs the owned Core SQL migrations during bootstrap when
+`APP_ENV=development` and `CORE_AUTO_MIGRATE=true`; Compose defaults this flag to
+true. The migration runner takes a PostgreSQL advisory lock, records applied
+filenames in `core_migrations_log`, and fails startup when the packaged migration
+directory is missing or empty. Production must explicitly keep this flag false
+and use its deployment migration step instead.
 
 Run `python scripts/check-migration-parity.py` after changing migration helpers.
 The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`

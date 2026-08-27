@@ -150,7 +150,10 @@ function HistoryResourceRow({ item }: { item: HistoryItem }) {
 
 function historySummary(item: HistoryItem): { title: string; detail: string } {
   const resource = item.resource;
-  if (item.type === "ride_booking") return { title: `${optionalText(resource.pickup_address ?? resource.pickup, "Điểm đón")} → ${optionalText(resource.dropoff_address ?? resource.dropoff, "Điểm đến")}`, detail: `${formatMoney(resource.amount ?? resource.fare, String(resource.currency ?? "VND"))} · ${optionalText(resource.vehicle_type ?? resource.vehicle)}` };
+  if (item.type === "ride_booking") {
+    const snap = (typeof resource.quote === "object" && resource.quote !== null ? resource.quote : typeof resource.snapshot === "object" && resource.snapshot !== null ? resource.snapshot : resource) as Record<string, unknown>;
+    return { title: `${optionalText(snap.pickup_address ?? snap.pickup ?? resource.pickup_address ?? resource.pickup, "Điểm đón")} → ${optionalText(snap.dropoff_address ?? snap.dropoff ?? resource.dropoff_address ?? resource.dropoff, "Điểm đến")}`, detail: `${formatMoney(snap.amount ?? snap.fare ?? resource.amount ?? resource.fare, String(snap.currency ?? resource.currency ?? "VND"))} · ${optionalText(snap.vehicle_type ?? snap.vehicle ?? resource.vehicle_type ?? resource.vehicle)}` };
+  }
   if (item.type === "food_order") return { title: nestedName(resource.restaurant) || optionalText(resource.restaurant_name, "Đơn đồ ăn"), detail: `${itemsCount(resource.items)} · ${formatMoney(resource.total ?? resource.amount, String(resource.currency ?? "VND"))}` };
   if (item.type === "restaurant_reservation") return { title: nestedName(resource.restaurant) || optionalText(resource.name, "Đặt bàn"), detail: `${formatDateTime(resource.start_at ?? resource.reservation_time)} · ${resource.party_size ? `${String(resource.party_size)} người` : "Số khách đang cập nhật"}` };
   return { title: nestedName(resource.facility) || optionalText(resource.facility_name, "Lịch khám"), detail: `${optionalText(resource.department)} · ${optionalText(resource.doctor_name ?? resource.doctor)} · ${formatDateTime(resource.start_time ?? resource.appointment_time)}` };

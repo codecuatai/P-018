@@ -13,6 +13,7 @@ import {
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
+import { estimateTokenCostUsd } from '../core/token-pricing.util';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolProposal, ToolService } from '../tools/tool.module';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
@@ -627,6 +628,37 @@ export class AssistantService {
     @Optional() private readonly rideClient?: RideClient,
   ) {}
 
+  private async recordUsageFromAgentResponse(
+    agentResponse: JsonObject,
+    actorId?: string,
+    feature: string = 'assistant',
+  ): Promise<void> {
+    try {
+      const rawUsage = agentResponse.usage;
+      if (!isRecord(rawUsage)) return;
+      const promptTokens = Number(rawUsage.prompt_tokens ?? rawUsage.input ?? 0) || 0;
+      const completionTokens = Number(rawUsage.completion_tokens ?? rawUsage.output ?? 0) || 0;
+      const totalTokens = Number(rawUsage.total_tokens ?? rawUsage.total ?? (promptTokens + completionTokens)) || 0;
+      if (totalTokens <= 0) return;
+
+      const model = typeof agentResponse.model === 'string' ? agentResponse.model : 'gemini-1.5-flash';
+      const estimatedCostUsd = estimateTokenCostUsd(model, promptTokens, completionTokens);
+      await this.store.recordTokenUsage({
+        id: `tok_${randomUUID()}`,
+        actorId: actorId || undefined,
+        model,
+        provider: 'google',
+        feature,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        estimatedCostUsd,
+      });
+    } catch {
+      // Non-blocking observability
+    }
+  }
+
   private validateCoreAHandoff(planner: JsonObject): void {
     const rawDecision = planner.planning_decision;
     if (!isRecord(rawDecision)) {
@@ -895,14 +927,19 @@ export class AssistantService {
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
     
-    const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
+    // Terminal tasks remain durable history, but must not be planner context.
+    // Keep original refs so a discard directive still addresses the stored task.
+    const activeEntries = state.tasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase));
+    const activeTasks = activeEntries.map(({ task }) => task);
     const activeDomains = Array.from(new Set(activeTasks.map((t) => t.domain)));
     const focusTask = activeTasks.find((t) => t.phase === 'NEEDS_INFO' || t.phase === 'AWAITING_CONFIRMATION') ?? activeTasks[0];
     const activeDomain = focusTask ? focusTask.domain : undefined;
     const workflowPhase = focusTask ? focusTask.phase : undefined;
     
     const workingMemory = {
-      active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
+      active_task_refs: activeEntries.map(({ index }) => index),
       active_domain: activeDomain,
       active_domains: activeDomains,
       workflow_phase: workflowPhase,
@@ -917,7 +954,7 @@ export class AssistantService {
     return {
       working_memory: workingMemory,
       conversation_summary: conversationSummary,
-      tasks: state.tasks.slice(0, 8).map((task, index) => {
+      tasks: activeEntries.slice(0, 8).map(({ task, index }) => {
         const pendingActions = Array.from(new Set(state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind)));
         const pendingChoice = this.plannerPendingChoice(task);
         return {
@@ -1124,6 +1161,9 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
+    const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
+      ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
+      : [];
     const foldedMessage = plainText(message);
     if (textHasAny(foldedMessage, ['huy chuyen', 'huy dat xe', 'huy cuoc', 'huy xe', 'dung dat xe'])) {
       const activeRideIndex = state.tasks.findIndex((t) => t.domain === 'ride' && t.phase !== 'COMPLETED' && t.phase !== 'FAILED' && t.phase !== 'DISCARDED');
@@ -1155,7 +1195,7 @@ export class AssistantService {
         user_id: user.sub,
         message,
         messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses },
+        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ memory_id: memory.id, namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, source_turn_id: memory.sourceTurnId, why_retrieved: memory.whyRetrieved })) },
         user_profile: {
           id: user.id ?? user.sub,
           name: user.full_name ?? '',
@@ -1167,6 +1207,7 @@ export class AssistantService {
       },
       correlationId,
     );
+    await this.recordUsageFromAgentResponse(planner, user.sub, 'assistant');
     this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
     const resolution = this.typedPlan(planner);
@@ -1738,6 +1779,7 @@ export class AssistantService {
         },
         correlationId,
       );
+      await this.recordUsageFromAgentResponse(response, userId, 'assistant');
       const candidate = safeText(response.assistant_message, fallback);
       return hasUnsupportedFinalSuccessClaim(candidate, tasks)
         ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')
