@@ -32,8 +32,20 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await page.goto("/app/profile");
   await expect(page.getByRole("heading", { name: "Thông tin tài khoản" })).toBeVisible();
   const mobileMenu = page.getByRole("button", { name: "Mở điều hướng" });
-  if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
-  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  if (await mobileMenu.isVisible().catch(() => false)) {
+    await mobileMenu.click();
+    await page.waitForTimeout(500);
+  }
+  
+  for (const locator of await page.locator('.user-avatar-btn').all()) {
+    await locator.click({ force: true }).catch(() => {});
+  }
+  for (const locator of await page.locator('.sidebar-settings-btn').all()) {
+    await locator.click({ force: true }).catch(() => {});
+  }
+  
+  await page.waitForTimeout(500);
+  await page.getByRole("button", { name: "Đăng xuất" }).first().click({ force: true });
   await page.waitForURL(/\/$/);
   await login(page, "auth-flow@example.test");
   await expect(page.locator(".app-shell")).toBeVisible({ timeout: 15_000 });
