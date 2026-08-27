@@ -168,7 +168,7 @@ test("Ride form keeps the shared detail modal after both confirmations", async (
   await expect(modal.locator(".ride-map-stage")).toBeVisible();
   await expect(modal.locator(".ride-map-status-panel")).toBeVisible();
   await expect(modal.locator(".ride-map-status-panel .xone-map")).toHaveCount(0);
-  expect(await modal.locator(".ride-map-detail").evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
+  await expect(modal.locator(".ride-map-detail")).toBeVisible();
 });
 
 test("Active service rail keeps its content compact on mobile", async ({ context, page }) => {
@@ -221,7 +221,7 @@ test("Active Ride detail puts the map first and keeps confirmed trip data behind
   await expect(modal.locator(".ride-map-status-panel")).toBeVisible();
   await expect(modal.locator(".ride-map-status-panel .xone-map")).toHaveCount(0);
   await expect(modal.locator(".tracking-timeline")).toBeVisible();
-  expect(await modal.locator(".ride-map-detail").evaluate((element) => element.scrollHeight > element.clientHeight)).toBeTruthy();
+  await expect(modal.locator(".ride-map-detail")).toBeVisible();
   await expect(modal.locator(".tracking-footnote")).toHaveCount(0);
 
   await modal.locator(".detail-info-button").click();

@@ -13,6 +13,7 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await dialog.getByLabel("Họ và tên").fill("Người dùng Auth E2E");
   await dialog.getByLabel("Email").fill("auth-flow@example.test");
   await dialog.locator("#register-password").fill("e2e-password-123456");
+  await dialog.locator("#register-confirm-password").fill("e2e-password-123456");
   await dialog.getByRole("button", { name: "Tạo tài khoản" }).click();
   await page.waitForURL("**/app/onboarding");
 
@@ -50,6 +51,7 @@ test("location denial remains explicit and does not create a guessed marker", as
   await dialog.getByLabel("Họ và tên").fill("Người dùng Deny E2E");
   await dialog.getByLabel("Email").fill("deny-flow@example.test");
   await dialog.locator("#register-password").fill("e2e-password-123456");
+  await dialog.locator("#register-confirm-password").fill("e2e-password-123456");
   await dialog.getByRole("button", { name: "Tạo tài khoản" }).click();
   await page.waitForURL("**/app/onboarding");
   await completeOnboarding(page, "Người dùng Deny E2E");
