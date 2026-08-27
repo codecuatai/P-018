@@ -1,5 +1,21 @@
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { InMemoryCoreRepository } from '../src/modules/core/core.module';
-import { SavedAddressController } from '../src/modules/personal/personal.module';
+import { ProfilePatchDto, SavedAddressController } from '../src/modules/personal/personal.module';
+
+describe('profile phone validation', () => {
+  it('accepts Vietnamese mobile numbers and normalizes presentation separators', async () => {
+    const errors = await validate(plainToInstance(ProfilePatchDto, { phone: '091 111-1111' }));
+
+    expect(errors).toHaveLength(0);
+    expect(plainToInstance(ProfilePatchDto, { phone: '091 111-1111' }).phone).toBe('0911111111');
+  });
+
+  it('rejects invalid phone numbers but allows clearing the optional field', async () => {
+    await expect(validate(plainToInstance(ProfilePatchDto, { phone: '0123456789' }))).resolves.not.toHaveLength(0);
+    await expect(validate(plainToInstance(ProfilePatchDto, { phone: '' }))).resolves.toHaveLength(0);
+  });
+});
 
 describe('saved address updates', () => {
   it('accepts provider coordinates with more precision than the storage scale', async () => {

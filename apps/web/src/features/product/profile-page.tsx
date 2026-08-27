@@ -96,9 +96,15 @@ export function ProfilePage() {
 
   async function save(): Promise<void> {
     if (!fullName.trim() || saving) return;
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone && !isValidVietnamesePhone(normalizedPhone)) {
+      setFeedback("");
+      setError("Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam dạng 0xxxxxxxxx hoặc +84xxxxxxxxx.");
+      return;
+    }
     setSaving(true); setFeedback(""); setError("");
     try {
-      await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim() });
+      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone, language: language.trim(), timezone: timezone.trim() });
       if (newAddressText.trim() && (selectedSavedAddressId || selectedAddress) && !(await handleSetDefaultAddress())) return;
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
@@ -275,4 +281,12 @@ export function ProfilePage() {
 
 function normalizeAddressText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi-VN");
+}
+
+function normalizePhone(value: string): string {
+  return value.trim().replace(/[\s().-]/g, "");
+}
+
+function isValidVietnamesePhone(value: string): boolean {
+  return /^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/.test(value);
 }
