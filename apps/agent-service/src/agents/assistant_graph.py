@@ -7,7 +7,6 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Any, Literal, TypedDict
-from zoneinfo import ZoneInfo
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -24,6 +23,7 @@ from src.agents.assistant.contracts import (
 from src.agents.assistant.planning import default_capability_snapshot
 from src.agents.assistant.planning.planner import CoreAPlanner
 from src.agents.assistant.understanding import semantic_turn_from_plan
+from src.agents.assistant.understanding.temporal import PRODUCT_TIMEZONE, TemporalContext
 from src.config import get_settings
 from src.observability import (
     GenerationUsage,
@@ -64,7 +64,7 @@ FORBIDDEN_MODEL_FIELDS = {
     "cart_version",
     "reservation_code",
 }
-TIMEZONE = "Asia/Bangkok"
+TIMEZONE = PRODUCT_TIMEZONE
 STRUCTURED_CONVERSATION_RULES = """
 Structured safety rules — these ALWAYS take precedence:
 - interaction_mode=chitchat: social turns only, tasks=[].
@@ -76,6 +76,7 @@ Structured safety rules — these ALWAYS take precedence:
 - Never fabricate doctor names, restaurant names, food items, prices, or booking IDs.
 - Ask only for information required by the next executable capability. Start discovery with any sufficient signal (dish/cuisine/location); defer party size, exact time, delivery address, and payment details until the user selects or explicitly requests the committing step. Reuse profile, saved addresses, prior selections, safe defaults, and authoritative results before asking.
 - Maximum 1 clarification_question per response turn.
+- Context precedence is fixed: explicit current-turn values, fresh UI context, authoritative conversation facts, saved profile context, then retrieved-memory hints. Never let a lower-precedence value overwrite a higher-precedence value.
 """.strip()
 
 XONE_SYSTEM_PROMPT = """Bạn là X-One — Trợ lý ảo đa dịch vụ thông minh, thân thiện và linh hoạt tại Việt Nam.
@@ -186,6 +187,7 @@ class AssistantState(TypedDict, total=False):
     capability_snapshot: dict[str, Any]
     authoritative_results: list[dict[str, Any]]
     user_profile: dict[str, Any]
+    current_location: dict[str, Any]
     mode: Literal["plan", "compose"]
     plan: dict[str, Any]
     semantic_turn: dict[str, Any]
@@ -224,6 +226,9 @@ def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
         plan.tasks,
         interaction_mode=plan.interaction_mode,
         discarded_task_refs=plan.discarded_task_refs,
+        user_message=str(state.get("query", "")),
+        conversation_state=(state.get("conversation_state", {}) if isinstance(state.get("conversation_state"), dict) else {}),
+        current_location=(state.get("current_location", {}) if isinstance(state.get("current_location"), dict) else {}),
     )
     raw_context = state.get("conversation_state", {})
     context_tasks: list[PlannerTaskContext] = []
@@ -408,7 +413,7 @@ def model_diagnostics() -> dict[str, Any]:
 
 
 def _now() -> datetime:
-    return datetime.now(ZoneInfo(TIMEZONE))
+    return TemporalContext.now()
 
 
 def _plain(value: str) -> str:
@@ -611,46 +616,8 @@ def _has_explicit_clock(text: str) -> bool:
 
 
 def _time_slot(text: str, now: datetime | None = None) -> str | None:
-    current = now or _now()
-    lowered = _plain(text)
-    explicit_date: datetime.date | None = None
-    date_match = re.search(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b", lowered)
-    if date_match:
-        day, month, year = (int(value) for value in date_match.groups())
-        if year < 100:
-            year += 2000
-        try:
-            explicit_date = datetime(year, month, day, tzinfo=current.tzinfo).date()
-        except ValueError:
-            return None
-    hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|toi|trua|am|pm)?", lowered)
-    hour: int | None = None
-    minute = 0
-    if hour_match:
-        hour = int(hour_match.group(1))
-        minute = int(hour_match.group(2) or 0)
-        period = hour_match.group(3)
-        if period in {"toi", "pm"} and hour < 12:
-            hour += 12
-        if period == "trua" and hour < 11:
-            hour += 12
-    elif "sang mai" in lowered:
-        hour = 8
-    elif "toi nay" in lowered:
-        hour = 19
-    elif "trua nay" in lowered:
-        hour = 12
-    if hour is None or hour > 23:
-        return None
-    day = explicit_date or current.date()
-    if explicit_date is None and "ngay kia" in lowered:
-        day += timedelta(days=2)
-    elif explicit_date is None and ("mai" in lowered or "ngay mai" in lowered):
-        day += timedelta(days=1)
-    candidate = datetime(day.year, day.month, day.day, hour, minute, tzinfo=current.tzinfo)
-    if explicit_date is None and candidate <= current and "mai" not in lowered:
-        candidate += timedelta(days=1)
-    return candidate.isoformat()
+    resolution = TemporalContext.resolve_clock(text, now)
+    return resolution.value.isoformat() if resolution.value is not None else None
 
 
 def _healthcare_requested_date(text: str, now: datetime | None = None) -> str | None:
@@ -813,7 +780,7 @@ def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: 
                 if not slots.get(key):
                     missing.append(key)
     if domain == "ride":
-        for key in ("pickup_address",):
+        for key in ("pickup_address", "vehicle_type"):
             if not slots.get(key):
                 missing.append(key)
         # A dependent ride may receive its destination from an authoritative
@@ -1082,12 +1049,79 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
     return None
 
 
+def _temporal_boundary_plan(text: str) -> AssistantPlan | None:
+    utility = TemporalContext.utility_response(text)
+    if utility is not None:
+        return AssistantPlan(interaction_mode="chitchat", assistant_message=utility)
+    lowered = _plain(text)
+    if not _has_any(
+        lowered,
+        ("dat", "giu ban", "goi xe", "lich kham", "kham", "nha hang", "giao", "ship"),
+    ):
+        return None
+    resolution = TemporalContext.resolve_clock(text)
+    if resolution.past_explicit:
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=(
+                "Thời điểm bạn nêu đã qua nên mình chưa thể tạo yêu cầu dịch vụ. "
+                "Bạn cho mình một ngày hoặc giờ trong tương lai nhé."
+            ),
+        )
+    if resolution.ambiguous_past_clock and _has_explicit_clock(text):
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=(
+                "Giờ bạn nêu hôm nay đã qua. Bạn muốn dùng giờ đó vào ngày mai phải không?"
+            ),
+            needs_clarification=True,
+            clarification_question="Bạn muốn dùng giờ đó vào ngày mai phải không?",
+        )
+    return None
+
+
+def _ride_cancellation_plan(text: str, conversation_state: dict[str, Any] | None) -> AssistantPlan | None:
+    lowered = _plain(text)
+    if not _has_any(lowered, ("huy chuyen", "huy dat xe", "huy cuoc", "huy xe", "cancel ride")):
+        return None
+    raw_tasks = conversation_state.get("tasks", []) if isinstance(conversation_state, dict) else []
+    active = next(
+        (
+            item
+            for item in raw_tasks
+            if isinstance(item, dict)
+            and item.get("domain") == "ride"
+            and item.get("phase") not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+        ),
+        None,
+    )
+    if active is None:
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message="Mình chưa thấy chuyến xe đang hoạt động trong cuộc trò chuyện này để chuẩn bị hủy.",
+        )
+    slots = active.get("extracted_slots") if isinstance(active.get("extracted_slots"), dict) else {}
+    task = PlannedTask(
+        domain="ride",
+        goal="Chuẩn bị hủy chuyến xe đang hoạt động",
+        normalized_request=text[:2000],
+        extracted_slots=dict(slots),
+    )
+    return AssistantPlan(
+        assistant_message="Mình đã chuẩn bị bước hủy chuyến. Bạn kiểm tra rồi xác nhận hủy bằng nút bên dưới nhé.",
+        tasks=[task],
+    )
+
+
 def deterministic_plan(message: str, conversation_state: dict[str, Any] | None = None) -> AssistantPlan:
     """Conservative offline fallback used only when the provider is unavailable."""
     text = message.strip()
     lowered = _plain(text)
     previous = conversation_state or {}
     previous_tasks = previous.get("tasks", []) if isinstance(previous.get("tasks", []), list) else []
+    cancellation_plan = _ride_cancellation_plan(text, previous)
+    if cancellation_plan is not None:
+        return cancellation_plan
     unsupported = _has_any(lowered, ("may bay", "chuyen bay", "flight", "khach san", "hotel", "tau hoa", "train"))
     if unsupported:
         return AssistantPlan(
@@ -1281,6 +1315,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "start_at": "thời gian",
             "pickup_address": "điểm đón",
             "dropoff_address": "điểm đến",
+            "vehicle_type": "loại xe (xe máy, ô tô 4 chỗ hoặc ô tô 7 chỗ)",
         }
         question = "Bạn cho mình biết thêm " + " và ".join(labels.get(value, value) for value in missing[:2]) + " nhé?"
         return AssistantPlan(
@@ -1340,7 +1375,7 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
         return {}
     raw_tasks = value.get("tasks", [])
     if not isinstance(raw_tasks, list):
-        return {}
+        raw_tasks = []
     tasks: list[dict[str, Any]] = []
     for index, raw_task in enumerate(raw_tasks[:8]):
         if not isinstance(raw_task, dict):
@@ -1388,7 +1423,43 @@ def _planner_safe_state(value: Any) -> dict[str, Any]:
             if isinstance(kind, str) and isinstance(count, int) and 0 <= count <= 20:
                 safe_task["pending_choice"] = {"kind": kind[:80], "count": count}
         tasks.append(safe_task)
-    return {"tasks": tasks}
+    safe_state: dict[str, Any] = {"tasks": tasks}
+    raw_addresses = value.get("saved_addresses", [])
+    if isinstance(raw_addresses, list):
+        addresses: list[dict[str, Any]] = []
+        for raw in raw_addresses[:12]:
+            if not isinstance(raw, dict):
+                continue
+            address = {
+                key: raw[key]
+                for key in (
+                    "label",
+                    "address_text",
+                    "latitude",
+                    "longitude",
+                    "city",
+                    "district",
+                    "ward",
+                    "is_default",
+                    "provider",
+                    "source",
+                )
+                if isinstance(raw.get(key), str | int | float | bool)
+            }
+            if address.get("label") and address.get("address_text"):
+                addresses.append(address)
+        if addresses:
+            safe_state["saved_addresses"] = addresses
+    memories = value.get("retrieved_memories", [])
+    if isinstance(memories, list):
+        safe_memories = [_safe_model_value(item) for item in memories[:8]]
+        safe_state["retrieved_memories"] = [item for item in safe_memories if item]
+    selected = value.get("selected_resource")
+    if isinstance(selected, dict):
+        safe_selected = _safe_model_value(selected)
+        if safe_selected:
+            safe_state["selected_resource"] = safe_selected
+    return safe_state
 
 
 def _safe_model_value(value: Any, depth: int = 0) -> Any:
@@ -1472,7 +1543,7 @@ def _normalized_datetime(value: Any) -> str | None:
         return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
-    return parsed.astimezone(ZoneInfo(TIMEZONE)).isoformat()
+    return parsed.astimezone(TemporalContext.timezone).isoformat()
 
 
 def _normalized_local_date(value: Any) -> str | None:
@@ -1503,6 +1574,14 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
     if domain == "ride":
         for name in ("pickup_address", "dropoff_address"):
             text_slot(name, 300)
+        for name in ("pickup_latitude", "dropoff_latitude"):
+            coordinate = slots.get(name)
+            if isinstance(coordinate, int | float) and not isinstance(coordinate, bool) and -90 <= coordinate <= 90:
+                normalized[name] = float(coordinate)
+        for name in ("pickup_longitude", "dropoff_longitude"):
+            coordinate = slots.get(name)
+            if isinstance(coordinate, int | float) and not isinstance(coordinate, bool) and -180 <= coordinate <= 180:
+                normalized[name] = float(coordinate)
         vehicle = slots.get("vehicle_type")
         if vehicle in {"BIKE", "CAR_4", "CAR_7"}:
             normalized["vehicle_type"] = vehicle
@@ -1703,6 +1782,92 @@ def _merge_explicit_semantics(plan: AssistantPlan, message: str) -> AssistantPla
     return plan.model_copy(update={"tasks": tasks})
 
 
+def _fresh_current_location(value: Any, now: datetime | None = None) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or value.get("source") != "device":
+        return None
+    latitude = value.get("latitude")
+    longitude = value.get("longitude")
+    captured_at = value.get("captured_at")
+    if (
+        not isinstance(latitude, int | float)
+        or isinstance(latitude, bool)
+        or not -90 <= latitude <= 90
+        or not isinstance(longitude, int | float)
+        or isinstance(longitude, bool)
+        or not -180 <= longitude <= 180
+        or not isinstance(captured_at, str)
+    ):
+        return None
+    try:
+        captured = datetime.fromisoformat(captured_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if captured.tzinfo is None or captured.utcoffset() is None:
+        return None
+    age_seconds = ((now or _now()) - captured.astimezone(TemporalContext.timezone)).total_seconds()
+    if age_seconds < -300 or age_seconds > 900:
+        return None
+    address_text = value.get("address_text")
+    return {
+        "latitude": float(latitude),
+        "longitude": float(longitude),
+        "address_text": address_text.strip()[:300] if isinstance(address_text, str) and address_text.strip() else "Vị trí hiện tại",
+    }
+
+
+def _apply_context_precedence(
+    plan: AssistantPlan,
+    message: str,
+    conversation_state: dict[str, Any] | None,
+    current_location: dict[str, Any] | None,
+) -> AssistantPlan:
+    """Fill missing semantic slots without overriding the current turn."""
+    state = conversation_state if isinstance(conversation_state, dict) else {}
+    raw_addresses = state.get("saved_addresses", [])
+    saved_addresses = [item for item in raw_addresses if isinstance(item, dict)] if isinstance(raw_addresses, list) else []
+    lowered = _plain(message)
+    fresh_location = _fresh_current_location(current_location)
+    tasks: list[PlannedTask] = []
+    for task in plan.tasks:
+        slots = dict(task.extracted_slots)
+        matched_address: dict[str, Any] | None = None
+        for address in saved_addresses:
+            label = address.get("label")
+            if not isinstance(label, str) or not label.strip():
+                continue
+            label_plain = _plain(label).strip()
+            if label_plain and (label_plain in lowered or (label_plain == "nha" and "home" in lowered)):
+                matched_address = address
+                break
+        if task.domain == "ride":
+            for prefix in ("pickup", "dropoff"):
+                slot_name = f"{prefix}_address"
+                current_value = slots.get(slot_name)
+                selected = matched_address if isinstance(current_value, str) and matched_address else None
+                if selected and _plain(str(current_value)).strip() not in {_plain(str(selected.get("label", ""))).strip(), "home", "nha"}:
+                    selected = None
+                if selected and isinstance(selected.get("address_text"), str):
+                    slots[slot_name] = selected["address_text"]
+                    if isinstance(selected.get("latitude"), int | float):
+                        slots[f"{prefix}_latitude"] = float(selected["latitude"])
+                    if isinstance(selected.get("longitude"), int | float):
+                        slots[f"{prefix}_longitude"] = float(selected["longitude"])
+            if not slots.get("pickup_address") and fresh_location:
+                slots["pickup_address"] = fresh_location["address_text"]
+                slots["pickup_latitude"] = fresh_location["latitude"]
+                slots["pickup_longitude"] = fresh_location["longitude"]
+        elif task.domain == "food":
+            if matched_address and isinstance(matched_address.get("address_text"), str):
+                if not slots.get("location") or _plain(str(slots.get("location"))).strip() in {"home", "nha"}:
+                    slots["location"] = matched_address["address_text"]
+            elif not slots.get("location") and fresh_location:
+                slots["location"] = fresh_location["address_text"]
+        elif task.domain == "restaurant" and not slots.get("location") and fresh_location:
+            slots["location"] = fresh_location["address_text"]
+        tasks.append(task.model_copy(update={"extracted_slots": slots}))
+    return plan.model_copy(update={"tasks": tasks})
+
+
 def _enforce_reference_dependencies(plan: AssistantPlan, message: str) -> AssistantPlan:
     """Make the high-risk semantic reference boundary deterministic.
 
@@ -1754,10 +1919,12 @@ def _apply_plan_guards(
     plan: AssistantPlan,
     message: str,
     conversation_state: dict[str, Any] | None,
+    current_location: dict[str, Any] | None = None,
 ) -> AssistantPlan:
     """Apply deterministic safety and planning rules to every planner path."""
     plan = _merge_explicit_context_actions(plan, message, conversation_state)
     plan = _merge_explicit_semantics(plan, message)
+    plan = _apply_context_precedence(plan, message, conversation_state, current_location)
     plan = _enforce_reference_dependencies(plan, message)
     if _requires_route_advisory(message, plan):
         question = "Bạn muốn đi 1 xe 7 chỗ đón theo tuyến hay nhiều xe riêng? Mình sẽ lập các chặng sau khi bạn chọn phương án."
@@ -1820,6 +1987,7 @@ def _model_prompt(state: AssistantState) -> str:
         "message": state.get("query", ""),
         "recent_messages": recent_messages,
         "conversation_state": _planner_safe_state(state.get("conversation_state", {})),
+        "current_location": _fresh_current_location(state.get("current_location")),
         "user_profile": _safe_slots(state.get("user_profile", {})) if state.get("user_profile") else None,
         "response_schema": response_schema,
         "max_tasks": 4,
@@ -2092,9 +2260,17 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                 "usage": usage_dict,
                 "model": llm_diagnostics(settings).get("last_model_used") or settings.gemini_model,
             }
+        temporal_boundary = _temporal_boundary_plan(str(state.get("query", "")))
+        if temporal_boundary is not None:
+            return _typed_pipeline_result(temporal_boundary, state, "deterministic")
         if not use_model:
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
-            plan = _apply_plan_guards(plan, str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = _apply_plan_guards(
+                plan,
+                str(state.get("query", "")),
+                state.get("conversation_state", {}),
+                state.get("current_location"),
+            )
             logger.info("assistant.model_decision.degraded reason=provider_not_configured tasks=%d", len(plan.tasks))
             if settings.agent_model_mode == "gemini":
                 with get_telemetry().observation(
@@ -2110,10 +2286,13 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             return _typed_pipeline_result(plan, state, "deterministic")
         try:
             message = str(state.get("query", ""))
+            cancellation_boundary = _ride_cancellation_plan(message, state.get("conversation_state"))
+            if cancellation_boundary is not None:
+                return _typed_pipeline_result(cancellation_boundary, state, "deterministic")
             # Apply the same explicit out-of-scope boundary before invoking a
             # generative model; prompt-only enforcement is not sufficient.
             explicit_boundary = _conversation_only_plan(message, _plain(message))
-            if explicit_boundary is not None and explicit_boundary.interaction_mode == "unsupported":
+            if explicit_boundary is not None:
                 return _typed_pipeline_result(explicit_boundary, state, "deterministic")
             plan = _sanitize_plan(
                 await _invoke_structured(
@@ -2123,7 +2302,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                     purpose="plan",
                 )
             )
-            plan = _apply_plan_guards(plan, message, state.get("conversation_state"))
+            plan = _apply_plan_guards(plan, message, state.get("conversation_state"), state.get("current_location"))
             MODEL_DIAGNOSTICS.update(
                 {
                     "last_model_call_at": _now().isoformat(),
@@ -2167,7 +2346,12 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             ):
                 pass
             plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
-            plan = _apply_plan_guards(plan, str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = _apply_plan_guards(
+                plan,
+                str(state.get("query", "")),
+                state.get("conversation_state", {}),
+                state.get("current_location"),
+            )
             return _typed_pipeline_result(plan, state, "deterministic")
 
     graph = StateGraph(AssistantState)

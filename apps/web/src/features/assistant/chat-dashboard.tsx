@@ -4,12 +4,13 @@ import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plu
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
-import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
-import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
+import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type DeviceCurrentLocation, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
+import { deviceLocationFromPosition } from "./current-location";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
@@ -40,6 +41,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
+  const [currentLocation, setCurrentLocation] = useState<DeviceCurrentLocation>();
 
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
@@ -122,6 +124,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setMessages([]);
     setFoodSelections({});
     setFoodSelectionSubmitted(false);
+    setCurrentLocation(undefined);
     const entryContext = initialConversationId ? undefined : readEntryContext();
     if (initialConversationId) {
       void getConversation(initialConversationId).then((detail) => {
@@ -277,7 +280,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setSending(true);
     try {
       const requestStartedAt = Date.now();
-      const response = await sendAssistantMessage(text, conversationId);
+      const response = await sendAssistantMessage(text, conversationId, currentLocation);
       await holdHealthcareDemoResponse(response, requestStartedAt);
       setConversationId(response.conversation_id);
       if (response.items.some((item) => item.kind === "food_options") && response.actions.some((action) => action.kind === "select_food_item")) {
@@ -384,7 +387,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     } finally { setSending(false); setActiveActionId(undefined); }
   }
 
-  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
+  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setCurrentLocation(undefined); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
   
   async function handleLocate(): Promise<void> {
     if (!("geolocation" in navigator)) {
@@ -397,7 +400,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     try {
       const position = await getCurrentPosition();
       const address = await fetchAddress(position);
-      setComposer((previous) => previous + (previous ? " " : "") + address);
+      setCurrentLocation(deviceLocationFromPosition(position, address));
       inputRef.current?.focus();
     } catch {
       setLocateError("Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập và thử lại.");
@@ -454,7 +457,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 value={composer}
               />
               <div className="composer-actions">
-                <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Lấy vị trí hiện tại" title="Lấy vị trí hiện tại">
+                <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Chia sẻ vị trí hiện tại" aria-pressed={Boolean(currentLocation)} title="Chia sẻ vị trí hiện tại">
                   {isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}
                 </button>
                 <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
@@ -466,6 +469,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
               </div>
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
+            {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
             <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
           </div>
         </div>
@@ -612,50 +616,13 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
-const REVERSE_GEOCODE_TIMEOUT_MS = 8_000;
-
-// Reverse geocode through Nominatim (OpenStreetMap) for house-number level detail.
-// The request is aborted after REVERSE_GEOCODE_TIMEOUT_MS so a slow or unreachable
-// provider can never leave the composer's locate button spinning.
-async function fetchAddress(position: GeolocationPosition): Promise<string> {
-  const lat = position.coords.latitude;
-  const lon = position.coords.longitude;
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), REVERSE_GEOCODE_TIMEOUT_MS);
-
+async function fetchAddress(position: GeolocationPosition): Promise<string | undefined> {
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=vi`,
-      { signal: controller.signal },
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      const addr = data.address;
-      
-      if (addr) {
-        const houseNumber = addr.house_number ? `Số ${addr.house_number}` : "";
-        const road = addr.road || "";
-        const streetInfo = [houseNumber, road].filter(Boolean).join(" ");
-        
-        const district = addr.county || addr.suburb || addr.city_district || "";
-        const city = addr.city || addr.province || addr.state || "";
-        
-        const rawAddress = [streetInfo, district, city].filter(Boolean).join(", ");
-        const uniqueParts = [...new Set(rawAddress.split(", ").map(s => s.trim()))].filter(Boolean);
-        
-        if (uniqueParts.length > 0) {
-          return uniqueParts.join(", ");
-        }
-      }
-    }
-    throw new Error("Không có dữ liệu chi tiết");
-    
-  } catch (error) {
-    console.warn("Lỗi API Nominatim, fallback về tọa độ thô:", error);
-    return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-  } finally {
-    window.clearTimeout(timer);
+    const result = await reverseGeocodeAddress(position.coords.latitude, position.coords.longitude);
+    return result.candidates.find((candidate) => candidate.address_text.trim())?.address_text;
+  } catch {
+    // Coordinates remain usable structured context when reverse geocoding is unavailable.
+    return undefined;
   }
 }
 

@@ -50,8 +50,8 @@ filenames in `core_migrations_log`, and fails startup when the packaged migratio
 directory is missing or empty. Production must explicitly keep this flag false
 and use its deployment migration step instead.
 
-Run `python scripts/check-migration-parity.py` after changing migration helpers.
-The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
+Run `python scripts/database/check-migration-parity.py` after changing migration helpers.
+The full launcher runs `scripts/database/migrate.ps1 .env` or `scripts/database/migrate.sh .env`
 after Compose health checks and can run the same additive migrations repeatedly.
 It stops on the first owner/path failure and never deletes a volume. Seeds are
 not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.

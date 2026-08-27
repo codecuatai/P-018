@@ -2,7 +2,7 @@
 
 `apps/` contains user-facing applications and central orchestration: gateway, agent, web, and mobile. `services/` contains domain-owned boundaries; an entry can be planned, skeletal, in-process, or independently deployable as documented in [current state](current-state.md). `packages/` contains versioned contracts, generated TypeScript clients, and non-business shared configuration; generated clients are regenerated from contracts and must not be hand-edited.
 
-`tests/` holds cross-service contract/integration/E2E/evaluation suites; unit tests stay with their owner. `infra/` holds local runtime bootstrap only. `scripts/` holds reproducible developer/CI helpers. Root documentation defines the architecture; service-specific run instructions live in `services/README.md`.
+`tests/` holds cross-service contract/integration/E2E/evaluation suites; unit tests stay with their owner. `infra/` holds local runtime bootstrap only. `scripts/` holds reproducible developer/CI helpers grouped by responsibility under `local/`, `database/`, `data/`, `quality/`, `setup/`, `ai-logging/`, `admin/`, and `integrations/`; see `scripts/README.md` for the command map. Root documentation defines the architecture; service-specific run instructions live in `services/README.md`.
 
 ```text
 apps/          gateway, agent, web, mobile

@@ -12,9 +12,9 @@ actual browser run.
 Run the changed-scope checks before handoff:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
-python scripts/check-migration-parity.py
+python scripts/database/check-migration-parity.py
 
 corepack pnpm --dir apps/api-gateway install --frozen-lockfile
 corepack pnpm --dir apps/api-gateway run lint

@@ -1087,6 +1087,19 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        current_location:
+          $ref: '#/components/schemas/DeviceCurrentLocation'
+    DeviceCurrentLocation:
+      type: object
+      required: [latitude, longitude, captured_at, source]
+      additionalProperties: false
+      properties:
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+        address_text: {type: string, maxLength: 500}
+        accuracy_meters: {type: number, minimum: 0, maximum: 100000}
+        captured_at: {type: string, format: date-time}
+        source: {type: string, enum: [device]}
     AssistantActionRequest:
       type: object
       required: [conversation_id, action_id]
@@ -1129,7 +1142,7 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, ride_cancel, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
               label: {type: string}
               target_index: {type: integer, minimum: 0}
         completed:

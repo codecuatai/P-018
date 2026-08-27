@@ -31,7 +31,7 @@ capture.
 ## QA Trello evidence upload
 
 `TRELLO_API_KEY` and `TRELLO_API_TOKEN` are optional host-only credentials for
-the narrowly scoped `scripts/trello-upload.ps1` helper. They are never mapped
+the narrowly scoped `scripts/integrations/trello-upload.ps1` helper. They are never mapped
 into Compose, an application container, or browser-visible configuration. The
 helper accepts only a card ID and a repository-local evidence file path, tests
 the credentials internally, uploads one attachment, verifies that attachment

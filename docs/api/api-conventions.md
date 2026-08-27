@@ -43,6 +43,20 @@ The Gateway validates required reservation confirmation fields and normalizes
 legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
 domain timezone before exposing an ISO 8601 value.
 
+`AssistantChatRequest.current_location` is optional, ephemeral UI context. It
+contains validated device latitude/longitude, capture time, optional accuracy,
+and optional reverse-geocoded display text; it is forwarded Web → Gateway →
+Agent for the current conversation turn and is never written to the saved
+address profile. The Agent accepts it only while fresh. Context precedence is
+deterministic: explicit current-turn values, current UI context, authoritative
+conversation facts, saved profile context, then retrieved-memory hints. A
+lower-precedence source never overwrites a higher-precedence value, and every
+semantic slot carries its source. Product-facing date/time interpretation uses
+`Asia/Ho_Chi_Minh`; an already-passed clock time is clarified instead of being
+silently moved to tomorrow. Ride discovery/creation requires an explicit
+vehicle type. Cancellation of an existing ride is proposed through Core A and
+executed only by the Gateway action boundary after user confirmation.
+
 Conversation-only chitchat/advisory turns return safe assistant text without
 replaying prior cards or actions, while pending workflow state remains
 available for a later service turn. A context switch may retire eligible

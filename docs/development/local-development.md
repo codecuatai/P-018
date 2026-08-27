@@ -8,17 +8,17 @@ The complete local stack uses one Compose interpolation file only: root
 Windows PowerShell:
 
 ```powershell
-./scripts/start-all.ps1
+./scripts/local/start-all.ps1
 # Optional: deterministic local demo data
-./scripts/start-all.ps1 -SeedDemo
+./scripts/local/start-all.ps1 -SeedDemo
 ```
 
 Linux/macOS:
 
 ```bash
-./scripts/start-all.sh
+./scripts/local/start-all.sh
 # Optional: deterministic local demo data
-./scripts/start-all.sh --seed-demo
+./scripts/local/start-all.sh --seed-demo
 ```
 
 The launcher copies root `.env.example` only when root `.env` does not exist;
@@ -30,11 +30,11 @@ startup. Existing `.env` files from older layouts must be reconciled manually
 because setup deliberately preserves them.
 
 For an explicit disposable/template verification, PowerShell supports
-`./scripts/start-all.ps1 -EnvFile .env.example`; normal local use remains root
+`./scripts/local/start-all.ps1 -EnvFile .env.example`; normal local use remains root
 `.env`. Validate without revealing values with:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 ```
 
@@ -44,7 +44,7 @@ When a QA card needs an evidence attachment, use the host-only helper with
 non-sensitive arguments only:
 
 ```powershell
-./scripts/trello-upload.ps1 -CardId e3nGtVrF -FilePath artifacts/qa-audit/BUG-LANDING-001-HORIZONTAL-OVERFLOW-320.png
+./scripts/integrations/trello-upload.ps1 -CardId e3nGtVrF -FilePath artifacts/qa-audit/BUG-LANDING-001-HORIZONTAL-OVERFLOW-320.png
 ```
 
 The helper reads only its two private Trello credentials internally from root
@@ -75,8 +75,8 @@ When running services manually, apply owned migrations and deterministic seeds
 explicitly:
 
 ```powershell
-./scripts/migrate.ps1 .env.example
-./scripts/seed.ps1 .env.example
+./scripts/database/migrate.ps1 .env.example
+./scripts/database/seed.ps1 .env.example
 ```
 
 The helpers preserve PostgreSQL volumes and do not perform destructive resets.
@@ -87,14 +87,14 @@ The release-candidate workflow runs the seven application processes directly
 and uses the existing PostgreSQL container only as database infrastructure:
 
 ```powershell
-./scripts/local-dev.ps1 -EnvFile .env.example -WaitSeconds 90
-./scripts/local-health.ps1
-./scripts/seed-local.ps1 -EnvFile .env.example
-./scripts/local-acceptance.ps1 -EnvFile .env.example
-./scripts/local-stop.ps1
+./scripts/local/local-dev.ps1 -EnvFile .env.example -WaitSeconds 90
+./scripts/local/local-health.ps1
+./scripts/database/seed-local.ps1 -EnvFile .env.example
+./scripts/local/local-acceptance.ps1 -EnvFile .env.example
+./scripts/local/local-stop.ps1
 ```
 
-`local-dev.ps1` validates the environment, checks the PostgreSQL port, starts
+`local/local-dev.ps1` validates the environment, checks the PostgreSQL port, starts
 Gateway, Agent, Food, Ride, Restaurant, Healthcare and Web in separate
 PowerShell processes, records only those process IDs in ignored
 `.local-runtime/processes.json`, and waits for `localhost:3000` and

@@ -27,6 +27,7 @@ import {
 type Domain = 'ride' | 'food' | 'restaurant' | 'healthcare';
 type TaskPhase = 'PLANNING' | 'NEEDS_INFO' | 'IN_PROGRESS' | 'AWAITING_CONFIRMATION' | 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'DISCARDED';
 type InteractionMode = 'service' | 'chitchat' | 'advisory' | 'unsupported';
+type Operation = 'DISCOVER' | 'CREATE' | 'STATUS' | 'UPDATE' | 'CANCEL';
 type ReplanDirective = 'CONTINUE' | 'ASK_USER' | 'REFRESH_AUTHORITY' | 'REQUOTE_OR_REPREVIEW' | 'WAIT_AND_RETRY_SAME_KEY' | 'BLOCK_DEPENDENTS' | 'TERMINAL_FAILURE' | 'RECONCILIATION_REQUIRED';
 type PlannedCapabilityStep = {
   step_kind: 'CAPABILITY' | 'WAIT_FOR_CONFIRMATION';
@@ -38,7 +39,7 @@ type PlannedCapabilityStep = {
   requires_authority: JsonObject[];
 };
 
-type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'healthcare_cancel' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm' | 'food_payment';
+type ActionKind = 'select_restaurant' | 'restaurant_confirm' | 'ride_service' | 'ride_payment' | 'ride_cancel' | 'select_healthcare_slot' | 'healthcare_payment' | 'healthcare_confirm' | 'healthcare_cancel' | 'select_food_item' | 'food_cart_increment' | 'food_cart_decrement' | 'food_cart_remove' | 'food_checkout' | 'food_confirm' | 'food_payment';
 
 function isFoodCartAction(kind: ActionKind): boolean {
   return kind === 'food_cart_increment' || kind === 'food_cart_decrement' || kind === 'food_cart_remove' || kind === 'food_checkout';
@@ -65,6 +66,7 @@ type StoredAction = {
 type StoredTask = {
   id: string;
   domain: Domain;
+  operation: Operation;
   goal: string;
   normalized_request: string;
   extracted_slots: Record<string, unknown>;
@@ -124,6 +126,15 @@ export type AssistantActionRequest = {
   quantity?: number;
 };
 
+export type DeviceCurrentLocation = {
+  latitude: number;
+  longitude: number;
+  address_text?: string;
+  accuracy_meters?: number;
+  captured_at: string;
+  source: 'device';
+};
+
 export type AssistantResponse = {
   conversation_id: string;
   message: string;
@@ -135,6 +146,7 @@ export type AssistantResponse = {
 
 type AgentPlanTask = {
   domain?: unknown;
+  operation?: unknown;
   goal?: unknown;
   normalized_request?: unknown;
   extracted_slots?: unknown;
@@ -232,8 +244,6 @@ function publicCoordinate(value: JsonObject): { latitude: number; longitude: num
   return undefined;
 }
 
-const DEFAULT_RESTAURANT_OPENING_HOURS: JsonObject[] = [{ day: 'Hằng ngày', open: '08:00', close: '22:00' }];
-
 function hasOpeningHours(value: unknown): boolean {
   if (Array.isArray(value)) return value.some((entry) => hasOpeningHours(entry));
   if (isRecord(value)) return Object.values(value).some((entry) => hasOpeningHours(entry));
@@ -280,7 +290,7 @@ function stableHash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(stableJson(value))).digest('hex');
 }
 
-const HEALTHCARE_TIMEZONE = 'Asia/Bangkok';
+const HEALTHCARE_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const HEALTHCARE_NEAREST_SLOT_WINDOW_MINUTES = 120;
 const HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES = 20;
 
@@ -568,6 +578,7 @@ function storedState(value: unknown): AssistantState {
   const tasks = arrayValue(value.tasks).filter(isRecord).map((task) => ({
     id: stringValue(task.id) ?? `task_${randomUUID().slice(0, 8)}`,
     domain: ['ride', 'food', 'restaurant', 'healthcare'].includes(String(task.domain)) ? task.domain as Domain : 'food',
+    operation: ['DISCOVER', 'CREATE', 'STATUS', 'UPDATE', 'CANCEL'].includes(String(task.operation)) ? task.operation as Operation : 'DISCOVER',
     goal: stringValue(task.goal) ?? 'Tiếp tục yêu cầu',
     normalized_request: stringValue(task.normalized_request) ?? '',
     extracted_slots: sanitizedSlots(task.extracted_slots),
@@ -610,7 +621,7 @@ function storedState(value: unknown): AssistantState {
     ...(stringValue(action.cart_id) ? { cart_id: action.cart_id as string } : {}),
     ...(stringValue(action.cart_item_id) ? { cart_item_id: action.cart_item_id as string } : {}),
     ...(numberValue(action.quantity) !== undefined ? { quantity: numberValue(action.quantity) } : {}),
-  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'healthcare_cancel', 'select_food_item', 'food_cart_increment', 'food_cart_decrement', 'food_cart_remove', 'food_checkout', 'food_confirm', 'food_payment'].includes(action.kind)) as StoredAction[];
+  })).filter((action) => action.task_id && ['select_restaurant', 'restaurant_confirm', 'ride_service', 'ride_payment', 'ride_cancel', 'select_healthcare_slot', 'healthcare_payment', 'healthcare_confirm', 'healthcare_cancel', 'select_food_item', 'food_cart_increment', 'food_cart_decrement', 'food_cart_remove', 'food_checkout', 'food_confirm', 'food_payment'].includes(action.kind)) as StoredAction[];
   const decisionSource = stringValue(value.decision_source);
   return {
     tasks,
@@ -844,6 +855,7 @@ export class AssistantService {
         : undefined;
       return {
         domain: task.domain,
+        operation: task.operation,
         goal: task.goal,
         normalized_request: task.normalized_request,
         extracted_slots: this.semanticSlotValues(task.semantic_slots),
@@ -882,7 +894,7 @@ export class AssistantService {
       const slotValue = raw.value;
       const source = stringValue(raw.source);
       if (
-        ['USER_EXPLICIT', 'CONVERSATION_REFERENCE', 'INFERRED_PREFERENCE'].includes(source ?? '')
+        ['USER_EXPLICIT', 'CONVERSATION_REFERENCE', 'AUTHORITATIVE_CONTEXT', 'INFERRED_PREFERENCE'].includes(source ?? '')
         && (typeof slotValue === 'string' || typeof slotValue === 'number' || typeof slotValue === 'boolean')
       ) {
         result[field] = slotValue;
@@ -899,13 +911,14 @@ export class AssistantService {
       department: 'khoa khám',
       pickup_address: 'điểm đón',
       dropoff_address: 'điểm đến',
+      vehicle_type: 'loại xe (xe máy, ô tô 4 chỗ hoặc ô tô 7 chỗ)',
       'query|dish_query': 'món bạn muốn tìm',
       'location|cuisine_query|cuisine_type|cuisine': 'khu vực hoặc loại món',
       selection_domain: 'bạn muốn chọn đồ ăn hay lịch khám',
     };
     const values = fields
       .filter((field): field is string => typeof field === 'string')
-      .map((field) => labels[field] ?? field)
+      .map((field) => field.startsWith('constraint:') ? 'cách xử lý ràng buộc quan trọng bạn vừa nêu' : labels[field] ?? field)
       .slice(0, 2);
     return values.length
       ? `Bạn cho mình biết thêm ${values.join(' và ')} nhé?`
@@ -989,6 +1002,7 @@ export class AssistantService {
         return {
           task_ref: index,
           domain: task.domain,
+          operation: task.operation,
           goal: this.plannerText(task.goal),
           normalized_request: this.plannerText(task.normalized_request),
           phase: task.phase,
@@ -1124,6 +1138,7 @@ export class AssistantService {
   private planFromTask(task: StoredTask): AgentPlanTask {
     return {
       domain: task.domain,
+      operation: task.operation,
       goal: task.goal,
       normalized_request: task.normalized_request || task.goal,
       extracted_slots: sanitizedSlots(task.extracted_slots),
@@ -1185,39 +1200,27 @@ export class AssistantService {
     message: string,
     requestedConversationId: string | undefined,
     correlationId: string,
+    currentLocation?: DeviceCurrentLocation,
   ): Promise<AssistantResponse> {
     const conversationId = requestedConversationId ?? `conv_${randomUUID()}`;
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
-    const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
+    const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 12).map((address) => ({
+      id: address.id,
+      label: address.label,
+      address_text: address.addressText,
+      ...(address.city ? { city: address.city } : {}),
+      ...(address.district ? { district: address.district } : {}),
+      ...(address.ward ? { ward: address.ward } : {}),
+      ...(address.latitude !== undefined ? { latitude: address.latitude } : {}),
+      ...(address.longitude !== undefined ? { longitude: address.longitude } : {}),
+      ...(address.provider ? { provider: address.provider } : {}),
+      source: address.source,
+      is_default: address.isDefault,
+    }));
     const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
       ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
       : [];
-    const foldedMessage = plainText(message);
-    if (textHasAny(foldedMessage, ['huy chuyen', 'huy dat xe', 'huy cuoc', 'huy xe', 'dung dat xe'])) {
-      const activeRideIndex = state.tasks.findIndex((t) => t.domain === 'ride' && t.phase !== 'COMPLETED' && t.phase !== 'FAILED' && t.phase !== 'DISCARDED');
-      if (activeRideIndex >= 0) {
-        const activeRide = state.tasks[activeRideIndex];
-        const result = isRecord(activeRide.authoritative?.result) ? activeRide.authoritative.result : undefined;
-        const booking = [activeRide.authoritative?.booking, result?.booking].find(isRecord);
-        const bookingId = stringValue(booking?.id);
-        if (bookingId && !this.rideClient) {
-          throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride cancellation is temporarily unavailable.' });
-        }
-        if (bookingId && this.rideClient) {
-          const cancelResult = await this.rideClient.cancelBooking(user.sub, `${correlationId}:cancel`, { correlationId }, bookingId, '{}');
-          activeRide.phase = 'COMPLETED';
-          activeRide.revision += 1;
-          activeRide.authoritative = rideAuthority(cancelResult);
-          activeRide.public_item = this.rideItem(cancelResult, activeRide);
-          return this.persistTurn(conversationId, user, message, 'Đã hủy chuyến xe thành công.', state, [], state.actions);
-        } else {
-          activeRide.phase = 'DISCARDED';
-          activeRide.revision += 1;
-          return this.persistTurn(conversationId, user, message, 'Đã hủy yêu cầu đặt xe.', state, [], state.actions);
-        }
-      }
-    }
     const planner = await this.agent.assistantChat(
       {
         conversation_id: conversationId,
@@ -1231,6 +1234,7 @@ export class AssistantService {
           email: user.email,
           saved_addresses: savedAddresses,
         },
+        ...(currentLocation ? { current_location: currentLocation } : {}),
         capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
@@ -1907,6 +1911,9 @@ export class AssistantService {
       const domain = candidate.domain;
       if (domain !== 'ride' && domain !== 'food' && domain !== 'restaurant' && domain !== 'healthcare') continue;
       const request = stringValue(candidate.normalized_request) ?? '';
+      const operation: Operation = ['DISCOVER', 'CREATE', 'STATUS', 'UPDATE', 'CANCEL'].includes(String(candidate.operation))
+        ? candidate.operation as Operation
+        : 'DISCOVER';
       const retrySameKey = replanDirective === 'WAIT_AND_RETRY_SAME_KEY';
       const sameRequest = next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED' && (!request || task.normalized_request === request));
       // A new destination or pickup is an update to the active journey, not a
@@ -1944,6 +1951,7 @@ export class AssistantService {
         }
         if (requestedPhase !== undefined) match.phase = requestedPhase;
         match.goal = stringValue(candidate.goal) ?? match.goal;
+        match.operation = operation;
         match.normalized_request = request || match.normalized_request;
         match.missing_information = arrayValue(candidate.missing_information) as string[];
         match.planned_step = candidate.planned_step;
@@ -1953,6 +1961,7 @@ export class AssistantService {
       const created: StoredTask = {
         id: `task_${randomUUID().replaceAll('-', '').slice(0, 12)}`,
         domain,
+        operation,
         goal: stringValue(candidate.goal) ?? 'Tiếp tục yêu cầu',
         normalized_request: request,
         extracted_slots: slots,
@@ -2296,6 +2305,26 @@ export class AssistantService {
         // Ignore errors and proceed
       }
     }
+    if (task.operation === 'CANCEL') {
+      if (!existingBookingId) {
+        return {
+          phase: 'NEEDS_INFO',
+          publicItem: { kind: 'clarification', question: 'Mình chưa có chuyến xe đang hoạt động để chuẩn bị hủy.' },
+        };
+      }
+      const publicItem = {
+        kind: 'ride_cancellation_confirmation',
+        booking: this.rideItem({ booking: existingBooking }, task),
+        note: 'Chuyến chỉ được hủy sau khi bạn xác nhận bằng nút bên dưới.',
+      };
+      return {
+        phase: 'AWAITING_CONFIRMATION',
+        authoritative: task.authoritative,
+        publicItem,
+        items: [publicItem],
+        actions: [this.actionFor(task, 'ride_cancel', {})],
+      };
+    }
     const slots = { ...task.extracted_slots };
     let healthcareFacility: JsonObject | undefined;
     const dependency = task.depends_on.map((id) => allTasks.find((candidate) => candidate.id === id)).find((candidate) => candidate?.domain === 'restaurant');
@@ -2354,6 +2383,12 @@ export class AssistantService {
         return { phase: 'FAILED' as TaskPhase, authoritative: { appointment: dependentHealthcareAppointment }, publicItem, items: [publicItem] };
       }
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };
+    }
+    if (!['BIKE', 'CAR_4', 'CAR_7'].includes(String(slots.vehicle_type))) {
+      return {
+        phase: 'NEEDS_INFO',
+        items: [{ kind: 'clarification', question: 'Bạn muốn xe máy, ô tô 4 chỗ hay ô tô 7 chỗ?' }],
+      };
     }
     // RideConversationService creates a workflow when no id is supplied. Do not
     // manufacture an id here: a generated id would be treated as an existing
@@ -3016,6 +3051,26 @@ export class AssistantService {
           : 'Thanh toán đã được ghi nhận và chuyến xe đã được cập nhật.';
       return { phase: isTerminalRideBookingStatus(status) ? 'COMPLETED' : 'IN_PROGRESS', message, publicItem: this.rideItem(result, task), authoritative: rideAuthority(result) };
     }
+    if (action.kind === 'ride_cancel') {
+      const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
+      const booking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
+      const bookingId = stringValue(booking?.id);
+      if (!bookingId) throw new ConflictException({ code: 'RIDE_BOOKING_NOT_FOUND', detail: 'Chuyến xe này không còn sẵn sàng để hủy.' });
+      if (!this.rideClient) throw new ServiceUnavailableException({ code: 'RIDE_CLIENT_UNAVAILABLE', detail: 'Ride cancellation is temporarily unavailable.' });
+      const cancellation = await this.rideClient.cancelBooking(
+        user.sub,
+        idempotencyKey,
+        { correlationId },
+        bookingId,
+        '{}',
+      );
+      return {
+        phase: 'COMPLETED',
+        message: 'Đã hủy chuyến xe thành công.',
+        publicItem: this.rideItem({ booking: cancellation }, task),
+        authoritative: rideAuthority({ booking: cancellation }),
+      };
+    }
     if (action.kind === 'select_healthcare_slot') {
       const doctors = arrayValue(task.authoritative?.doctors).filter(isRecord);
       const doctorIndex = action.doctor_index ?? action.selection_index ?? 0;
@@ -3275,6 +3330,7 @@ export class AssistantService {
       restaurant_confirm: 'Xác nhận đặt bàn',
       ride_service: 'Xác nhận chuyến xe',
       ride_payment: 'Xác nhận thanh toán',
+      ride_cancel: 'Xác nhận hủy chuyến',
       select_healthcare_slot: 'Chọn lịch này',
       healthcare_payment: 'Xác nhận thanh toán',
       healthcare_confirm: 'Xác nhận lịch khám',
@@ -3309,9 +3365,7 @@ export class AssistantService {
 
   private publicRestaurant(candidate: JsonObject): JsonObject {
     const address = formatCatalogAddress(candidate.address, candidate.location, candidate.district, candidate.city);
-    const openingHours = hasOpeningHours(candidate.opening_hours)
-      ? candidate.opening_hours
-      : DEFAULT_RESTAURANT_OPENING_HOURS;
+    const openingHours = hasOpeningHours(candidate.opening_hours) ? candidate.opening_hours : undefined;
     const coordinate = publicCoordinate(candidate);
     return {
       name: stringValue(candidate.name) ?? 'Nhà hàng',
@@ -3325,7 +3379,7 @@ export class AssistantService {
       ...(typeof candidate.review_count === 'number' ? { review_count: candidate.review_count } : {}),
       ...(stringValue(candidate.price_level) ? { price_level: stringValue(candidate.price_level) } : {}),
       ...(stringValue(candidate.image_url) ? { image_url: stringValue(candidate.image_url) } : {}),
-      opening_hours: openingHours,
+      ...(openingHours !== undefined ? { opening_hours: openingHours } : {}),
       ...(coordinate ? { latitude: coordinate.latitude, longitude: coordinate.longitude } : {}),
     };
   }
@@ -3468,15 +3522,39 @@ export class AssistantService {
   }
 
   private authoritativeRideRouteContext(
-    _slots: Record<string, unknown>,
+    slots: Record<string, unknown>,
     facility?: JsonObject,
     restaurant?: JsonObject,
   ): RideRouteContext | undefined {
+    const context: RideRouteContext = {};
+    const pickupLatitude = numberValue(slots.pickup_latitude);
+    const pickupLongitude = numberValue(slots.pickup_longitude);
+    if (
+      pickupLatitude !== undefined
+      && pickupLongitude !== undefined
+      && pickupLatitude >= -90
+      && pickupLatitude <= 90
+      && pickupLongitude >= -180
+      && pickupLongitude <= 180
+    ) {
+      context.pickup_latitude = pickupLatitude;
+      context.pickup_longitude = pickupLongitude;
+    }
     const destination = facility ?? restaurant;
-    const latitude = numberValue(destination?.latitude);
-    const longitude = numberValue(destination?.longitude);
-    if (latitude === undefined || longitude === undefined || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
-    return { dropoff_latitude: latitude, dropoff_longitude: longitude };
+    const latitude = numberValue(destination?.latitude) ?? numberValue(slots.dropoff_latitude);
+    const longitude = numberValue(destination?.longitude) ?? numberValue(slots.dropoff_longitude);
+    if (
+      latitude !== undefined
+      && longitude !== undefined
+      && latitude >= -90
+      && latitude <= 90
+      && longitude >= -180
+      && longitude <= 180
+    ) {
+      context.dropoff_latitude = latitude;
+      context.dropoff_longitude = longitude;
+    }
+    return Object.keys(context).length ? context : undefined;
   }
 
   private foodData(data: JsonObject): JsonObject {

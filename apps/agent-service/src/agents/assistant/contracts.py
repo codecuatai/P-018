@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StrictStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 
 class StrictModel(BaseModel):
@@ -40,7 +40,7 @@ class SlotSource(StrEnum):
     INFERRED_PREFERENCE = "INFERRED_PREFERENCE"
 
 
-SlotValue: TypeAlias = StrictStr | StrictInt | StrictBool
+SlotValue: TypeAlias = StrictStr | StrictInt | StrictFloat | StrictBool
 
 
 class SemanticSlot(StrictModel):
@@ -51,7 +51,11 @@ class SemanticSlot(StrictModel):
 
 class RideSemanticSlots(StrictModel):
     pickup_address: SemanticSlot | None = None
+    pickup_latitude: SemanticSlot | None = None
+    pickup_longitude: SemanticSlot | None = None
     dropoff_address: SemanticSlot | None = None
+    dropoff_latitude: SemanticSlot | None = None
+    dropoff_longitude: SemanticSlot | None = None
     vehicle_type: SemanticSlot | None = None
     passenger_count: SemanticSlot | None = None
     promo_code: SemanticSlot | None = None
@@ -110,6 +114,7 @@ class SemanticReference(StrictModel):
         "saved_address",
         "previous_task",
         "previous_result",
+        "current_location",
     ]
     target_task_ref: int | None = Field(default=None, ge=0)
     target_domain: Domain | None = None
@@ -122,6 +127,17 @@ class SemanticAmbiguity(StrictModel):
     detail: str = Field(min_length=1, max_length=500)
 
 
+class ConstraintStrength(StrEnum):
+    HARD = "HARD"
+    SOFT = "SOFT"
+
+
+class SemanticConstraint(StrictModel):
+    strength: ConstraintStrength
+    text: str = Field(min_length=1, max_length=500)
+    actionable: bool = False
+
+
 class SemanticIntent(StrictModel):
     intent_ref: int = Field(ge=0, le=3)
     domain: Domain
@@ -130,6 +146,7 @@ class SemanticIntent(StrictModel):
     normalized_request: str = Field(min_length=1, max_length=2000)
     slots: DomainSlots
     references: list[SemanticReference] = Field(default_factory=list, max_length=8)
+    constraints: list[SemanticConstraint] = Field(default_factory=list, max_length=8)
     explicit_confirmation_language: bool = False
 
     @model_validator(mode="after")
@@ -312,6 +329,7 @@ class CoreAPlannedTask(StrictModel):
     goal: str = Field(min_length=1, max_length=500)
     normalized_request: str = Field(min_length=1, max_length=2000)
     semantic_slots: DomainSlots
+    constraints: list[SemanticConstraint] = Field(default_factory=list, max_length=8)
     depends_on: list[int] = Field(default_factory=list, max_length=4)
     missing_information: list[str] = Field(default_factory=list, max_length=16)
     missing_authority: list[AuthorityRequirement] = Field(default_factory=list, max_length=16)

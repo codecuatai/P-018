@@ -9,6 +9,7 @@ from src.agents.assistant.contracts import (
     AuthorityRequirement,
     CapabilitySnapshot,
     ConfirmationGate,
+    ConstraintStrength,
     CoreAInput,
     Domain,
     FactType,
@@ -22,6 +23,7 @@ from src.agents.assistant.contracts import (
     RestaurantSemanticSlots,
     RideSemanticSlots,
     RiskLevel,
+    SemanticConstraint,
     SemanticIntent,
     SemanticReference,
     SemanticSlot,
@@ -128,6 +130,48 @@ def test_food_discovery_selects_observed_read_capability() -> None:
     assert step.step_kind == StepKind.CAPABILITY
     assert step.risk_ceiling == RiskLevel.READ
     assert step.confirmation_gate == ConfirmationGate.NONE
+
+
+def test_ride_requires_an_explicit_vehicle_type_before_quoting() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RIDE,
+        operation=Operation.CREATE,
+        goal="Đặt xe",
+        normalized_request="Đặt xe từ VinUni đến Hồ Gươm",
+        slots=RideSemanticSlots(
+            pickup_address=slot("VinUni"),
+            dropoff_address=slot("Hồ Gươm"),
+        ),
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.NEEDS_INFO
+    assert task.missing_information == ["vehicle_type"]
+    assert task.steps == []
+
+
+def test_unhandled_hard_constraint_cannot_become_ready() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.DISCOVER,
+        goal="Tìm món",
+        normalized_request="Tìm bún nhưng bị dị ứng đậu phộng",
+        slots=FoodSemanticSlots(query=slot("bún")),
+        constraints=[
+            SemanticConstraint(
+                strength=ConstraintStrength.HARD,
+                text="dị ứng đậu phộng",
+                actionable=False,
+            )
+        ],
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.NEEDS_INFO
+    assert task.missing_information == ["constraint:dị ứng đậu phộng"]
+    assert task.steps == []
 
 
 def test_food_selection_advances_to_add_to_cart_capability() -> None:

@@ -109,10 +109,10 @@ jobs:
               - '.env.example'
               - 'docker-compose.yml'
               - 'infra/**'
-              - 'scripts/validate-env-config.py'
-              - 'scripts/check-migration-parity.py'
-              - 'scripts/migrate.sh'
-              - 'scripts/migrate.ps1'
+              - 'scripts/quality/validate-env-config.py'
+              - 'scripts/database/check-migration-parity.py'
+              - 'scripts/database/migrate.sh'
+              - 'scripts/database/migrate.ps1'
               - 'apps/api-gateway/migrations/**'
               - 'apps/agent-service/migrations/**'
               - 'services/**/migrations/**'
@@ -378,9 +378,9 @@ jobs:
         with:
           python-version: '3.11'
       - name: Validate environment configuration
-        run: python scripts/validate-env-config.py
+        run: python scripts/quality/validate-env-config.py
       - name: Validate migration parity
-        run: python scripts/check-migration-parity.py
+        run: python scripts/database/check-migration-parity.py
       - name: Validate Docker Compose configuration
         run: docker compose --env-file .env.example config --quiet
 
@@ -449,7 +449,7 @@ jobs:
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               echo "Applying database migrations..."
               docker compose --env-file .env up -d postgres
-              sh scripts/migrate.sh .env
+              sh scripts/database/migrate.sh .env
               docker compose --env-file .env up -d --remove-orphans
 
               echo "Verifying container status..."
@@ -528,7 +528,7 @@ jobs:
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               echo "Applying database migrations..."
               docker compose --env-file .env up -d postgres
-              sh scripts/migrate.sh .env
+              sh scripts/database/migrate.sh .env
               docker compose --env-file .env up -d --remove-orphans
 
               echo "Verifying container status..."

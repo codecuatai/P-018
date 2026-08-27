@@ -67,12 +67,12 @@ test commands. A Gemini key is needed only for the real-LLM evaluation.
 
    ```powershell
    Copy-Item .env.example .env
-   ./scripts/start-all.ps1
+   ./scripts/local/start-all.ps1
    ```
 
    ```bash
    cp .env.example .env
-   ./scripts/start-all.sh
+   ./scripts/local/start-all.sh
    ```
 
 2. The launcher validates the template, builds and starts Compose, waits for
@@ -88,7 +88,7 @@ For deterministic demo data, explicitly add `-SeedDemo` (PowerShell) or
 reads a private `.env`, use:
 
 ```powershell
-./scripts/start-all.ps1 -EnvFile .env.example
+./scripts/local/start-all.ps1 -EnvFile .env.example
 ```
 
 The full onboarding, standalone-development, migration, and troubleshooting
@@ -133,9 +133,9 @@ The launcher reports the Web and Gateway URLs after successful health checks.
 For static configuration checks that do not read your private `.env`:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
-python scripts/check-migration-parity.py
+python scripts/database/check-migration-parity.py
 ```
 
 Run targeted automated checks using the commands in the

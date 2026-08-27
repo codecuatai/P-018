@@ -190,7 +190,7 @@ Update together:
 - Agent standalone example with placeholders only;
 - explicit `docker-compose.yml` mapping for Agent only;
 - `Settings` validation and tests;
-- `scripts/validate-env-config.py` expectations;
+- `scripts/quality/validate-env-config.py` expectations;
 - environment and Agent architecture documentation.
 
 Do not introduce a shared `env_file`.
@@ -306,8 +306,8 @@ is zero.
 - Full Agent pytest suite.
 - Core A deterministic and provider-backed release evaluations.
 - Ruff on changed Python files.
-- `python scripts/validate-env-config.py`.
-- `python scripts/check-migration-parity.py`.
+- `python scripts/quality/validate-env-config.py`.
+- `python scripts/database/check-migration-parity.py`.
 - `docker compose --env-file .env.example config --quiet` after placeholders
   are restored.
 - Static scan proving there is no Langfuse callback attached to full graph

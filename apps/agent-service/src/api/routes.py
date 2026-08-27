@@ -266,6 +266,11 @@ async def assistant_chat(
                     "capability_snapshot": request.capability_snapshot,
                     "authoritative_results": request.authoritative_results,
                     "user_profile": request.user_profile,
+                    "current_location": (
+                        request.current_location.model_dump(mode="json")
+                        if request.current_location is not None
+                        else None
+                    ),
                     "mode": request.mode,
                 }
             )

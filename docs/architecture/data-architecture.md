@@ -52,7 +52,7 @@ audit side effect.
 
 The additive local seed adds only recognizable demo records: Healthcare
 department/doctor/slot rows and 36 synthetic Ride drivers with complete
-vehicle/license fields. `scripts/demo-reset.ps1` deletes mutable records only
+vehicle/license fields. `scripts/database/demo-reset.ps1` deletes mutable records only
 for explicitly matched actors and preserves catalogs and dataset versions by
 default. Local geocode fallback coordinates and accelerated Ride tracking are
 configuration flags, not production data or domain authority.

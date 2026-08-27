@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
+import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, DeviceCurrentLocation, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -620,10 +620,10 @@ export function resetPassword(token: string, newPassword: string): Promise<{ pas
   return request("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }, { includeAuth: false, retryAuth: false });
 }
 
-export function sendAssistantMessage(message: string, conversationId?: string): Promise<AssistantResponse> {
+export function sendAssistantMessage(message: string, conversationId?: string, currentLocation?: DeviceCurrentLocation): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/chat", {
     method: "POST",
-    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}) }),
+    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}), ...(currentLocation ? { current_location: currentLocation } : {}) }),
   });
 }
 

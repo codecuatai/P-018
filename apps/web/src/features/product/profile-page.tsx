@@ -19,8 +19,6 @@ export function ProfilePage() {
   const section = searchParams?.get("section");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
-  const [language, setLanguage] = useState("vi");
-  const [timezone, setTimezone] = useState("Asia/Ho_Chi_Minh");
   const [saving, setSaving] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -59,8 +57,6 @@ export function ProfilePage() {
   useEffect(() => {
     setFullName(user?.full_name ?? "");
     setPhone(user?.phone ?? "");
-    setLanguage(user?.language ?? "vi");
-    setTimezone(user?.timezone ?? "Asia/Ho_Chi_Minh");
   }, [user]);
 
   useEffect(() => {
@@ -104,7 +100,7 @@ export function ProfilePage() {
     }
     setSaving(true); setFeedback(""); setError("");
     try {
-      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone, language: language.trim(), timezone: timezone.trim() });
+      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone });
       if (newAddressText.trim() && (selectedSavedAddressId || selectedAddress) && !(await handleSetDefaultAddress())) return;
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
@@ -264,17 +260,13 @@ export function ProfilePage() {
           })()}
 
           <label className="form-field"><span>Email</span><input value={user?.email ?? ""} disabled aria-describedby="email-note" /><small id="email-note" className="field-hint">Email chưa được thay đổi trong luồng này.</small></label>
-          <div className="profile-form-row">
-            <label className="form-field"><span>Ngôn ngữ</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label>
-            <label className="form-field"><span>Múi giờ</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Ho_Chi_Minh">Hà Nội</option><option value="UTC">UTC</option></select></label>
-          </div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           {feedback ? <p className="form-success" role="status">{feedback}</p> : null}
           <button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !fullName.trim()}>{saving ? <Loader2 className="spinner" size={16} /> : <Save size={16} />}{saving ? "Đang lưu…" : "Lưu thay đổi"}</button>
         </div>
       </article>
     </div>
-    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Ngôn ngữ, múi giờ và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
+    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Quản lý mật khẩu và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
     {section === "addresses" ? <div className="profile-section-content"><AddressPage /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
   </section>;
 }

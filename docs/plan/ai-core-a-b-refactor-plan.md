@@ -1894,7 +1894,7 @@ pnpm build
 Root checks:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 ```
 

@@ -143,7 +143,7 @@ describe('Unified assistant orchestration', () => {
           plan: {
             tasks: [
               { domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Đặt bàn tối nay ở Hà Nội', extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' } },
-              { domain: 'ride', goal: 'Tìm xe tới nhà hàng', normalized_request: 'Đặt xe từ VinUni tới nhà hàng đó', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'nhà hàng đó' }, depends_on: [0] },
+              { domain: 'ride', goal: 'Tìm xe tới nhà hàng', normalized_request: 'Đặt xe 4 chỗ từ VinUni tới nhà hàng đó', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'nhà hàng đó', vehicle_type: 'CAR_4' }, depends_on: [0] },
             ],
           },
         }),
@@ -612,6 +612,57 @@ describe('Unified assistant orchestration', () => {
     }));
   });
 
+  it('forwards rich saved-address and ephemeral current-location context to the Agent', async () => {
+    const store = {
+      getConversation: jest.fn().mockResolvedValue(undefined),
+      listSavedAddresses: jest.fn().mockResolvedValue([{
+        id: 'address-home',
+        actorId: user.sub,
+        label: 'Nhà',
+        addressText: '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',
+        city: 'Hà Nội',
+        district: 'Thanh Xuân',
+        ward: 'Thượng Đình',
+        latitude: 21.0,
+        longitude: 105.81,
+        provider: 'core-geocoder',
+        source: 'geocoded',
+        isDefault: true,
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-01T00:00:00Z',
+      }]),
+      appendConversationTurn: jest.fn().mockResolvedValue(undefined),
+    };
+    const agent = { assistantChat: jest.fn().mockResolvedValue({ plan: { tasks: [] } }) };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+    const currentLocation = {
+      latitude: 21.0285,
+      longitude: 105.8542,
+      accuracy_meters: 8,
+      captured_at: '2026-08-27T03:00:00.000Z',
+      source: 'device' as const,
+    };
+
+    await service.chat(user, 'Gọi xe tới Hồ Gươm bằng xe máy', undefined, 'cor-location', currentLocation);
+
+    const payload = agent.assistantChat.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.current_location).toEqual(currentLocation);
+    expect((payload.conversation_state as { saved_addresses: unknown[] }).saved_addresses[0]).toEqual(expect.objectContaining({
+      id: 'address-home',
+      label: 'Nhà',
+      address_text: '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',
+      latitude: 21.0,
+      longitude: 105.81,
+      city: 'Hà Nội',
+      district: 'Thanh Xuân',
+      ward: 'Thượng Đình',
+      is_default: true,
+      source: 'geocoded',
+    }));
+    expect(payload.user_profile).not.toHaveProperty('language');
+    expect(payload.user_profile).not.toHaveProperty('timezone');
+  });
+
   it('does not send terminal task history back to the planner', async () => {
     const conversation = {
       conversationId: 'conversation-terminal-projection', actorId: user.sub, messages: [],
@@ -723,6 +774,89 @@ describe('Unified assistant orchestration', () => {
     expect(task?.phase).toBe('IN_PROGRESS');
     expect((task?.authoritative as Record<string, unknown>)?.booking).toEqual(expect.objectContaining({ status: 'SEARCHING_DRIVER' }));
     expect(ride.hydrateWorkflow).toHaveBeenCalledWith(expect.any(String), 'ride-flow', expect.objectContaining({ quoteId: 'quote-1', bookingId: 'booking-1' }), expect.any(String));
+  });
+
+  it('routes ride cancellation through Core A and an explicit Gateway action', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-ride-cancel';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'ride-cancel-task',
+        domain: 'ride',
+        operation: 'CREATE',
+        goal: 'Đặt xe',
+        normalized_request: 'Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ',
+        extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4' },
+        depends_on: [],
+        phase: 'IN_PROGRESS',
+        revision: 1,
+        authoritative: { booking: { id: 'booking-cancel-1', version: 2, status: 'SEARCHING_DRIVER' } },
+      }],
+      actions: [],
+    });
+    const cancellationTask = coreATaskFixture({
+      domain: 'ride',
+      operation: 'CANCEL',
+      goal: 'Hủy chuyến xe',
+      normalized_request: 'Hủy chuyến xe',
+      extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm', vehicle_type: 'CAR_4' },
+      steps: [{
+        step_ref: 0,
+        purpose: 'Chuẩn bị hủy booking',
+        step_kind: 'CAPABILITY',
+        capability: 'ride.booking.cancel.prepare',
+        phase: 'CANCELLATION_PREVIEW',
+        requires_semantic_fields: [],
+        requires_authority: [],
+        depends_on_steps: [],
+        risk_ceiling: 'REVERSIBLE_WRITE',
+        confirmation_gate: 'CANCELLATION',
+      }],
+    }, 0);
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Bạn xác nhận hủy chuyến nhé.' }
+        : {
+          plan: { assistant_message: 'Bạn xác nhận hủy chuyến nhé.', tasks: [] },
+          planning_decision: versionedDecision({ tasks: [cancellationTask] }),
+        }),
+    };
+    const rideClient = {
+      getBooking: jest.fn().mockResolvedValue({ id: 'booking-cancel-1', version: 2, status: 'SEARCHING_DRIVER' }),
+      cancelBooking: jest.fn().mockResolvedValue({ id: 'booking-cancel-1', version: 3, status: 'CANCELLED' }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      {} as never,
+      undefined,
+      undefined,
+      rideClient as never,
+    );
+
+    const preview = await service.chat(user, 'Hủy chuyến xe', conversationId, 'cor-cancel-preview');
+
+    expect(rideClient.cancelBooking).not.toHaveBeenCalled();
+    expect(preview.actions).toEqual([expect.objectContaining({ kind: 'ride_cancel' })]);
+
+    const cancelled = await service.act(
+      user,
+      { conversation_id: conversationId, action_id: preview.actions[0].id },
+      'cor-cancel-execute',
+      'ride-cancel-key',
+    );
+    expect(rideClient.cancelBooking).toHaveBeenCalledWith(
+      user.sub,
+      'ride-cancel-key',
+      { correlationId: 'cor-cancel-execute' },
+      'booking-cancel-1',
+      '{}',
+    );
+    expect(cancelled.message).toContain('hủy chuyến');
   });
 
   it('keeps Restaurant party size while a follow-up changes cuisine and time', async () => {
@@ -1073,18 +1207,18 @@ describe('Unified assistant orchestration', () => {
     expect(selected.items[0]).toMatchObject({ kind: 'restaurant_unavailable', options: [{ name: 'Quán không ảnh', target_index: 1 }] });
     const unavailable = selected.items[0] as Record<string, unknown>;
     const options = unavailable.options as Array<Record<string, unknown>>;
-    expect(options[0].opening_hours).toEqual([{ day: 'Hằng ngày', open: '08:00', close: '22:00' }]);
+    expect(options[0]).not.toHaveProperty('opening_hours');
     expect(selected.actions).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'select_restaurant', target_index: 1 })]));
   });
 
-  it('uses the demo opening hours when a restaurant only returns an updating placeholder', () => {
+  it('omits restaurant opening hours when the source only returns a placeholder', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const publicRestaurant = (service as unknown as { publicRestaurant(candidate: Record<string, unknown>): Record<string, unknown> }).publicRestaurant.bind(service);
 
     expect(publicRestaurant({
       name: 'Nhà hàng đang cập nhật giờ',
       opening_hours: 'Đang cập nhật: Đang cập nhật–Đang cập nhật',
-    }).opening_hours).toEqual([{ day: 'Hằng ngày', open: '08:00', close: '22:00' }]);
+    })).not.toHaveProperty('opening_hours');
   });
 
   it('uses the authoritative Food payment and omits it when Food does not return one', async () => {
@@ -1108,7 +1242,7 @@ describe('Unified assistant orchestration', () => {
         ? { assistant_message: 'Mình đã chuẩn bị lịch khám và báo giá xe.' }
         : { plan: { tasks: [
           { domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh', extracted_slots: { department: 'thần kinh', start_at: '2099-01-02T10:00:00+07:00' } },
-          { domain: 'ride', goal: 'Đi tới cơ sở khám', normalized_request: 'Đặt xe từ VinUni tới lịch khám', extracted_slots: { pickup_address: 'VinUni' }, depends_on: [0] },
+          { domain: 'ride', goal: 'Đi tới cơ sở khám', normalized_request: 'Đặt xe 4 chỗ từ VinUni tới lịch khám', extracted_slots: { pickup_address: 'VinUni', vehicle_type: 'CAR_4' }, depends_on: [0] },
         ] } }),
     };
     const healthcare = {

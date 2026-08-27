@@ -30,6 +30,15 @@ export interface SavedAddress {
   updated_at: string;
 }
 
+export interface DeviceCurrentLocation {
+  latitude: number;
+  longitude: number;
+  address_text?: string;
+  accuracy_meters?: number;
+  captured_at: string;
+  source: "device";
+}
+
 export interface HealthcarePatient {
   id: number;
   name: string;
@@ -467,6 +476,7 @@ export type AssistantActionKind =
   | "restaurant_confirm"
   | "ride_service"
   | "ride_payment"
+  | "ride_cancel"
   | "select_healthcare_slot"
   | "healthcare_payment"
   | "healthcare_confirm"
@@ -491,6 +501,7 @@ export type AssistantAction =
   | AssistantActionOf<"restaurant_confirm">
   | AssistantActionOf<"ride_service">
   | AssistantActionOf<"ride_payment">
+  | AssistantActionOf<"ride_cancel">
   | AssistantActionOf<"select_healthcare_slot">
   | AssistantActionOf<"healthcare_payment">
   | AssistantActionOf<"healthcare_confirm">

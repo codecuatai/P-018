@@ -4,6 +4,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
+from src.agents.assistant.understanding.temporal import TemporalContext
 from src.agents.assistant_graph import (
     AssistantComposition,
     AssistantPlan,
@@ -205,7 +206,7 @@ def test_healthcare_then_ride_uses_dependency_without_guessing_destination() -> 
 
 
 def test_healthcare_day_after_tomorrow_is_a_calendar_filter_not_a_stale_clock() -> None:
-    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Bangkok"))
+    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
     assert _healthcare_requested_date("đổi lịch sang ngày kia", now) == "2026-08-17"
     assert _time_slot("10 giờ ngày kia", now) == "2026-08-17T10:00:00+07:00"
 
@@ -228,6 +229,22 @@ def test_healthcare_day_after_tomorrow_is_a_calendar_filter_not_a_stale_clock() 
     slots = follow_up.tasks[0].extracted_slots
     assert slots["appointment_date"] == _healthcare_requested_date("ngày kia")
     assert "start_at" not in slots
+
+
+def test_past_clock_is_not_silently_shifted_to_tomorrow() -> None:
+    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    resolution = TemporalContext.resolve_clock("đặt bàn lúc 9 giờ", now)
+
+    assert resolution.value is None
+    assert resolution.ambiguous_past_clock is True
+
+
+def test_explicit_past_date_is_rejected_by_temporal_policy() -> None:
+    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    resolution = TemporalContext.resolve_clock("đặt lịch ngày 14/08/2026 lúc 10 giờ", now)
+
+    assert resolution.value is None
+    assert resolution.past_explicit is True
 
 
 def test_follow_up_updates_existing_task_instead_of_creating_random_task() -> None:
@@ -387,7 +404,7 @@ def test_restaurant_follow_up_adds_cuisine_without_dropping_party_or_location() 
     first = deterministic_plan("Tối nay tìm nhà hàng cho 2 người ở Hà Nội")
     state = {"tasks": [task.model_dump() for task in first.tasks]}
 
-    follow_up = deterministic_plan("tôi muốn ăn lẩu lúc 9 giờ tối nay", state)
+    follow_up = deterministic_plan("tôi muốn ăn lẩu lúc 9 giờ tối mai", state)
 
     assert domains(follow_up) == ["restaurant"]
     slots = follow_up.tasks[0].extracted_slots
@@ -641,7 +658,7 @@ async def test_deterministic_graph_runs_the_same_typed_core_a_pipeline() -> None
     graph = build_assistant_graph()
     result = await graph.ainvoke(
         {
-            "query": "Đặt xe từ VinUni đến Hồ Gươm",
+            "query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
             "conversation_state": {},
         }
     )
@@ -658,7 +675,7 @@ async def test_gateway_facts_advance_core_a_without_entering_model_input() -> No
     graph = build_assistant_graph()
     result = await graph.ainvoke(
         {
-            "query": "Đặt xe từ VinUni đến Hồ Gươm",
+            "query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
             "conversation_state": {
                 "tasks": [
                     {
@@ -684,6 +701,98 @@ async def test_gateway_facts_advance_core_a_without_entering_model_input() -> No
     step = result["planning_decision"]["tasks"][0]["steps"][0]
     assert step["capability"] == "ride.booking.prepare"
     assert "quote_trusted" not in result["plan"]["tasks"][0]["extracted_slots"].values()
+
+
+@pytest.mark.asyncio
+async def test_fresh_device_location_fills_missing_ride_pickup_with_provenance() -> None:
+    graph = build_assistant_graph()
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe đến Hồ Gươm bằng xe máy",
+            "conversation_state": {},
+            "current_location": {
+                "latitude": 21.0285,
+                "longitude": 105.8542,
+                "address_text": "Phố Đinh Tiên Hoàng, Hoàn Kiếm",
+                "accuracy_meters": 12,
+                "captured_at": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).isoformat(),
+                "source": "device",
+            },
+        }
+    )
+
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    semantic = result["semantic_turn"]["intents"][0]
+    assert slots["pickup_address"] == "Phố Đinh Tiên Hoàng, Hoàn Kiếm"
+    assert slots["pickup_latitude"] == 21.0285
+    assert semantic["slots"]["pickup_address"]["source"] == "AUTHORITATIVE_CONTEXT"
+    assert semantic["references"][0]["reference_type"] == "current_location"
+
+
+@pytest.mark.asyncio
+async def test_explicit_pickup_wins_over_device_location() -> None:
+    graph = build_assistant_graph()
+    result = await graph.ainvoke(
+        {
+            "query": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
+            "conversation_state": {},
+            "current_location": {
+                "latitude": 21.0285,
+                "longitude": 105.8542,
+                "captured_at": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).isoformat(),
+                "source": "device",
+            },
+        }
+    )
+
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    assert slots["pickup_address"] == "VinUni"
+    assert "pickup_latitude" not in slots
+
+
+@pytest.mark.asyncio
+async def test_time_utility_turn_has_no_service_task() -> None:
+    result = await build_assistant_graph().ainvoke(
+        {"query": "Bây giờ là mấy giờ?", "conversation_state": {}}
+    )
+
+    assert result["planning_decision"]["tasks"] == []
+    assert result["planning_decision"]["interaction_mode"] == "chitchat"
+    assert "giờ Việt Nam" in result["assistant_message"]
+
+
+@pytest.mark.asyncio
+async def test_ride_cancellation_uses_typed_core_a_capability() -> None:
+    result = await build_assistant_graph().ainvoke(
+        {
+            "query": "Hủy chuyến xe này",
+            "conversation_state": {
+                "tasks": [{
+                    "task_ref": 0,
+                    "domain": "ride",
+                    "phase": "IN_PROGRESS",
+                    "goal": "Đặt xe",
+                    "normalized_request": "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
+                    "extracted_slots": {
+                        "pickup_address": "VinUni",
+                        "dropoff_address": "Hồ Gươm",
+                        "vehicle_type": "CAR_4",
+                    },
+                    "facts": [{
+                        "fact_type": "booking_state",
+                        "field": "booking_id",
+                        "value": "booking-1",
+                        "resource_version": 2,
+                    }],
+                }]
+            },
+        }
+    )
+
+    task = result["planning_decision"]["tasks"][0]
+    assert task["operation"] == "CANCEL"
+    assert task["steps"][0]["capability"] == "ride.booking.cancel.prepare"
+    assert task["steps"][0]["confirmation_gate"] == "CANCELLATION"
 
 
 @pytest.mark.asyncio
