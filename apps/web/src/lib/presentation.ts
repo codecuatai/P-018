@@ -1,7 +1,7 @@
 export type DisplayValue = string | number | null | undefined;
 
 const STATUS_LABELS: Record<string, string> = {
-  QUOTE_CREATED: "Đã tạo chuyến",
+  QUOTE_CREATED: "Đã có báo giá",
   AWAITING_CONFIRMATION: "Chờ bạn xác nhận",
   SEARCHING_DRIVER: "Đang tìm tài xế",
   DRIVER_ASSIGNED: "Đã có tài xế",
