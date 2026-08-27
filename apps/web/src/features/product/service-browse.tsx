@@ -344,6 +344,7 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
 
 function RestaurantBrowse() {
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
   const [selected, setSelected] = useState<JsonRecord>();
   const [loading, setLoading] = useState(false);
@@ -358,23 +359,32 @@ function RestaurantBrowse() {
   const [checked, setChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const searchRequestRef = useRef(0);
   const pageSize = 4;
 
   const load = useCallback(async (query = "") => {
+    const requestId = ++searchRequestRef.current;
     setLoading(true);
     setError("");
     setPage(1);
     try {
-      setItems((await browseService("restaurant", query)).items);
+      const result = await browseService("restaurant", query);
+      if (requestId !== searchRequestRef.current) return;
+      setItems(result.items);
     } catch (reason) {
+      if (requestId !== searchRequestRef.current) return;
       setError(errorText(reason));
     } finally {
-      setLoading(false);
+      if (requestId === searchRequestRef.current) setLoading(false);
     }
   }, []);
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [keyword]);
+  useEffect(() => { void load(debouncedKeyword); }, [debouncedKeyword, load]);
   useEffect(() => {
     if (!initialResourceId || selected || detailLoading) return;
     const match = items.find((item) => idOf(item) === initialResourceId);
@@ -539,7 +549,7 @@ function RestaurantBrowse() {
 
   return (
     <>
-      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
+      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" showSubmit={false} />
       {loading ? (
         <LoadingNote text="Đang tải nhà hàng…" />
       ) : error ? (
@@ -592,7 +602,10 @@ function RestaurantBrowse() {
           ) : null}
         </>
       ) : (
-        <EmptyNote title="Bạn muốn đặt bàn như thế nào?" body="Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp." />
+        <EmptyNote
+          title={debouncedKeyword ? "Không tìm thấy kết quả phù hợp" : "Bạn muốn đặt bàn như thế nào?"}
+          body={debouncedKeyword ? "Thử một tên nhà hàng, khu vực hoặc loại ẩm thực khác." : "Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp."}
+        />
       )}
     </>
   );
@@ -1083,7 +1096,7 @@ function AddressAutocompleteField({ id, label, value, placeholder, onChange, onS
   </div>;
 }
 
-function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit: () => void; placeholder: string }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} /><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button></div></form>; }
+function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder, showSubmit = true }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit?: () => void; placeholder: string; showSubmit?: boolean }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} />{showSubmit ? <button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button> : null}</div></form>; }
 function AuthoritativeImage({ source, alt, compact = false }: { source: unknown; alt: string; compact?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (typeof source !== "string" || !source.trim()) return null;
