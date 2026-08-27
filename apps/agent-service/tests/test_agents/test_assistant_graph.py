@@ -8,8 +8,12 @@ from src.agents.assistant_graph import (
     AssistantComposition,
     AssistantPlan,
     PlannedTask,
+    _apply_plan_guards,
+    _bounded_authoritative_results,
     _healthcare_requested_date,
+    _merge_explicit_context_actions,
     _model_prompt,
+    _safe_composed_message,
     _time_slot,
     build_assistant_graph,
     compose_response,
@@ -19,6 +23,132 @@ from src.agents.assistant_graph import (
 
 def domains(plan: AssistantPlan) -> list[str]:
     return [task.domain for task in plan.tasks]
+
+
+def test_completed_tasks_are_not_discard_targets() -> None:
+    state = {
+        "tasks": [
+            {"domain": "ride", "phase": "COMPLETED", "goal": "old ride", "extracted_slots": {}},
+            {"domain": "food", "phase": "IN_PROGRESS", "goal": "food", "extracted_slots": {}},
+        ]
+    }
+    plan = deterministic_plan("Thôi không đặt đồ ăn nữa, tìm nhà hàng giúp tôi", state)
+    assert 0 not in plan.discarded_task_refs
+
+
+def test_multi_intent_long_request_is_bounded_and_keeps_domains() -> None:
+    plan = deterministic_plan(
+        "Tìm bún chả giao về nhà và đồng thời tìm lịch khám thần kinh sáng mai, "
+        "nếu có nhà hàng phù hợp thì đặt bàn cho bốn người tối thứ bảy."
+    )
+    assert len(plan.tasks) <= 4
+    assert {task.domain for task in plan.tasks} >= {"food", "healthcare", "restaurant"}
+
+
+def test_restaurant_discovery_does_not_require_booking_details() -> None:
+    plan = deterministic_plan("Tìm nhà hàng món Nhật giúp tôi")
+    restaurant_tasks = [task for task in plan.tasks if task.domain == "restaurant"]
+    assert restaurant_tasks
+    assert "party_size" not in restaurant_tasks[0].missing_information
+    assert "start_at" not in restaurant_tasks[0].missing_information
+
+
+def test_planner_schema_requires_reasoning_first() -> None:
+    parsed = json.loads(_model_prompt({"query": "Đặt xe", "messages": [], "conversation_state": {}}))
+    assert parsed["response_schema"]["required"][0] == "reasoning"
+
+
+def test_followup_ride_retains_unfinished_healthcare_anchor() -> None:
+    ride = PlannedTask(
+        domain="ride",
+        goal="Đặt chặng xe",
+        normalized_request="Đón từ nhà ra bến xe",
+        extracted_slots={"pickup_address": "Nhà", "dropoff_address": "Bến xe"},
+    )
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[ride]),
+        "Đặt xe đón từ nhà ra bến xe rồi đi viện",
+        {
+            "tasks": [
+                {
+                    "domain": "healthcare",
+                    "phase": "NEEDS_INFO",
+                    "goal": "Đặt lịch khám thần kinh",
+                    "extracted_slots": {"department": "than kinh", "appointment_date": "tomorrow"},
+                }
+            ]
+        },
+    )
+    assert [task.domain for task in plan.tasks] == ["healthcare", "ride"]
+    assert plan.tasks[1].depends_on == [0]
+
+
+def test_deterministic_guard_path_retains_healthcare_anchor() -> None:
+    plan = deterministic_plan(
+        "Đặt xe đón từ nhà ra bến xe rồi đi viện",
+        {"tasks": [{"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám thần kinh", "extracted_slots": {"department": "than kinh"}}]},
+    )
+    guarded = _apply_plan_guards(plan, "Đặt xe đón từ nhà ra bến xe rồi đi viện", {"tasks": [{"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám thần kinh", "extracted_slots": {"department": "than kinh"}}]})
+    assert [task.domain for task in guarded.tasks] == ["healthcare", "ride"]
+    assert guarded.tasks[1].depends_on == [0]
+
+
+def test_complex_group_route_enters_advisory_before_ride_fanout() -> None:
+    plan = _apply_plan_guards(
+        deterministic_plan("4 người ở Cầu Giấy, Hoàn Kiếm, Đống Đa, Tây Hồ tối nay gọi xe đi ăn"),
+        "4 người ở Cầu Giấy, Hoàn Kiếm, Đống Đa, Tây Hồ tối nay gọi xe đi ăn",
+        {},
+    )
+    assert plan.interaction_mode == "advisory"
+    assert plan.tasks == []
+    assert plan.needs_clarification is True
+
+
+def test_followup_ride_retains_restaurant_anchor_without_inventing_destination() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(tasks=[PlannedTask(
+            domain="ride",
+            goal="Đi tới nhà hàng đó",
+            normalized_request="Gọi xe từ VinUni tới nhà hàng đó",
+            extracted_slots={"pickup_address": "VinUni", "dropoff_address": "nhà hàng đó"},
+        )]),
+        "Gọi xe từ VinUni tới nhà hàng đó",
+        {"tasks": [{"domain": "restaurant", "phase": "PLANNING", "goal": "Tìm nhà hàng lẩu", "normalized_request": "Tìm nhà hàng lẩu ở Hoàn Kiếm", "extracted_slots": {"location": "Hoàn Kiếm", "cuisine_query": "lẩu"}}]},
+    )
+    assert [task.domain for task in guarded.tasks] == ["restaurant", "ride"]
+    assert guarded.tasks[1].depends_on == [0]
+    assert "dropoff_address" not in guarded.tasks[1].extracted_slots
+    assert guarded.tasks[0].normalized_request == "Tìm nhà hàng lẩu ở Hoàn Kiếm"
+
+
+def test_multiple_active_anchors_require_selection_instead_of_wrong_dependency() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(tasks=[PlannedTask(domain="ride", goal="Gọi xe", normalized_request="Gọi xe", extracted_slots={})]),
+        "Gọi xe giúp mình",
+        {"tasks": [
+            {"domain": "healthcare", "phase": "NEEDS_INFO", "goal": "Khám", "extracted_slots": {}},
+            {"domain": "restaurant", "phase": "PLANNING", "goal": "Ăn tối", "extracted_slots": {}},
+        ]},
+    )
+    assert guarded.interaction_mode == "advisory"
+    assert guarded.tasks == []
+    assert guarded.needs_clarification is True
+
+
+def test_composer_result_projection_limits_choices_and_fields() -> None:
+    results = _bounded_authoritative_results([{
+        "kind": "restaurant_options",
+        "options": [{"name": str(index), "id": f"secret-{index}"} for index in range(8)],
+        "price": 999999,
+    }])
+    assert len(results) == 1
+    assert len(results[0]["options"]) == 3
+    assert "price" not in results[0]
+
+
+def test_composer_cannot_claim_success_without_confirmation_result() -> None:
+    safe = _safe_composed_message("Đã đặt thành công rồi.", [{"kind": "ride_quote"}])
+    assert "đã đặt thành công" not in safe.casefold()
 
 
 def test_deterministic_fallback_supports_single_ride() -> None:
@@ -284,6 +414,15 @@ def test_unsupported_request_is_safe() -> None:
     assert "chưa hỗ trợ" in plan.assistant_message
 
 
+def test_programming_request_is_declined_as_out_of_scope() -> None:
+    plan = deterministic_plan('Sửa giúp tôi đoạn Python prints("hello")')
+
+    assert plan.interaction_mode == "unsupported"
+    assert plan.tasks == []
+    assert "Python" not in plan.assistant_message
+    assert "đặt xe" in plan.assistant_message
+
+
 class FakePlanner:
     async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
         assert schema is AssistantPlan
@@ -305,6 +444,30 @@ class FakePlanner:
                 ),
             ],
         )
+
+
+class OutOfScopeLeakingPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message='Dùng print("hello") nhé.',
+            interaction_mode="advisory",
+        )
+
+
+@pytest.mark.asyncio
+async def test_model_cannot_answer_explicit_programming_request() -> None:
+    graph = build_assistant_graph(llm=OutOfScopeLeakingPlanner())
+    result = await graph.ainvoke(
+        {
+            "query": 'Sửa giúp tôi đoạn Python prints("hello")',
+            "conversation_state": {},
+        }
+    )
+
+    assert result["plan"]["interaction_mode"] == "unsupported"
+    assert result["plan"]["tasks"] == []
+    assert "print(" not in result["assistant_message"]
 
 
 class PartialRidePlanner:
@@ -450,6 +613,27 @@ async def test_composition_prompt_excludes_raw_user_injection() -> None:
     assert composer.payload is not None
     assert "user_message" not in composer.payload
     assert "TOOL RESULT" not in json.dumps(composer.payload)
+    instruction = str(composer.payload["instruction"])
+    assert "Do not mention FAILED, DISCARDED, or old COMPLETED tasks" in instruction
+    assert "Summarize every task" not in instruction
+
+
+@pytest.mark.asyncio
+async def test_composition_prompt_excludes_terminal_history() -> None:
+    composer = CapturingComposer()
+    await compose_response(
+        "Tìm món ăn",
+        [
+            {"domain": "healthcare", "phase": "FAILED", "goal": "old failed"},
+            {"domain": "restaurant", "phase": "COMPLETED", "goal": "old completed"},
+            {"domain": "food", "phase": "IN_PROGRESS", "goal": "current food"},
+        ],
+        [],
+        llm=composer,
+    )
+
+    assert composer.payload is not None
+    assert [task["goal"] for task in composer.payload["tasks"]] == ["current food"]
 
 
 @pytest.mark.asyncio

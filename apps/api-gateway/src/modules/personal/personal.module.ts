@@ -87,14 +87,14 @@ class SavedAddressDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 6 })
+  @IsNumber()
   @Min(-90)
   @Max(90)
   latitude?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 6 })
+  @IsNumber()
   @Min(-180)
   @Max(180)
   longitude?: number;
@@ -143,14 +143,14 @@ class SavedAddressPatchDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 6 })
+  @IsNumber()
   @Min(-90)
   @Max(90)
   latitude?: number;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 6 })
+  @IsNumber()
   @Min(-180)
   @Max(180)
   longitude?: number;
@@ -281,6 +281,36 @@ export class LocationService {
     }
   }
 
+  async reverseGeocode(coordinate: LocationCoordinate): Promise<GeocodeResult> {
+    assertCoordinate(coordinate, 'location');
+    if (this.geoapify.enabled) {
+      const candidates = await this.geoapify.reverse(coordinate);
+      return {
+        provider: 'geoapify',
+        status: candidates.length ? 'RESOLVED' : 'NEEDS_CONFIRMATION',
+        query: `${coordinate.latitude},${coordinate.longitude}`,
+        candidates: candidates.map((candidate) => ({ address_text: candidate.address_text, latitude: candidate.latitude, longitude: candidate.longitude, confidence: candidate.confidence })),
+      };
+    }
+
+    const providerUrl = this.geocodingProviderUrl();
+    if (!providerUrl) {
+      return { provider: 'manual-reverse-geocoding', status: 'NEEDS_CONFIRMATION', query: `${coordinate.latitude},${coordinate.longitude}`, candidates: [] };
+    }
+
+    try {
+      const url = new URL('/reverse', providerUrl);
+      url.searchParams.set('lat', String(coordinate.latitude));
+      url.searchParams.set('lon', String(coordinate.longitude));
+      url.searchParams.set('format', 'jsonv2');
+      const payload = await this.fetchJson(url, 'GEOCODING_PROVIDER_TOKEN');
+      const candidate = this.parseGeocodeCandidate(payload);
+      return { provider: 'configured-geocoding-provider', status: candidate ? 'RESOLVED' : 'NEEDS_CONFIRMATION', query: `${coordinate.latitude},${coordinate.longitude}`, candidates: candidate ? [candidate] : [] };
+    } catch {
+      return { provider: 'configured-geocoding-provider-unavailable', status: 'NEEDS_CONFIRMATION', query: `${coordinate.latitude},${coordinate.longitude}`, candidates: [], retryable: true };
+    }
+  }
+
   async route(origin: LocationCoordinate, destination: LocationCoordinate): Promise<RouteResult> {
     assertCoordinate(origin, 'origin');
     assertCoordinate(destination, 'destination');
@@ -331,9 +361,12 @@ export class LocationService {
   async autocomplete(addressText: string): Promise<AutocompleteResult> {
     const query = addressText.trim().replace(/\s+/g, ' ');
     if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Address query is too short.', retryable: false });
-    if (!this.geoapify.enabled) return { provider: 'disabled', query, suggestions: [] };
-    const suggestions = await this.geoapify.autocomplete(query);
-    return { provider: 'geoapify', query, suggestions };
+    if (this.geoapify.enabled) {
+      const suggestions = await this.geoapify.autocomplete(query);
+      return { provider: 'geoapify', query, suggestions };
+    }
+    const result = await this.geocode(query);
+    return { provider: result.provider, query, suggestions: result.candidates };
   }
 
   private geocodingProviderUrl(): URL | undefined { return this.configuredProviderUrl('GEOCODING_PROVIDER_URL'); }
@@ -341,11 +374,14 @@ export class LocationService {
 
   private localDeterministicCandidate(query: string): GeocodeCandidate | undefined {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
-    const normalized = query.toLowerCase();
-    const coordinates = normalized.includes('nguyễn huệ') || normalized.includes('nguyen hue') || normalized.includes('lê lợi') || normalized.includes('le loi') || normalized.includes('quận 1') || normalized.includes('quan 1')
-      ? { latitude: 10.7758, longitude: 106.7004 }
-      : { latitude: 21.0285, longitude: 105.8048 };
-    return { address_text: query, ...coordinates, confidence: 0.5 };
+    const normalized = foldLocalAddress(query);
+    const fixtures: Array<{ matches: string[]; latitude: number; longitude: number }> = [
+      { matches: ['ho hoan kiem', 'ho guom'], latitude: 21.0285, longitude: 105.8048 },
+      { matches: ['vinuni'], latitude: 20.9914, longitude: 105.945975 },
+      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], latitude: 10.7758, longitude: 106.7004 },
+    ];
+    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`)));
+    return fixture ? { address_text: query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
   }
 
   private configuredProviderUrl(name: 'GEOCODING_PROVIDER_URL' | 'ROUTING_PROVIDER_URL'): URL | undefined {
@@ -424,14 +460,18 @@ export class SavedAddressController {
   @Post()
   async create(@Body() body: SavedAddressDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     assertCoordinatePair(body.latitude, body.longitude);
+    const latitude = roundCoordinate(body.latitude);
+    const longitude = roundCoordinate(body.longitude);
     const now = new Date().toISOString();
-    const saved = await this.store.createSavedAddress({ id: `addr_${randomUUID().replaceAll('-', '').slice(0, 16)}`, actorId: request.user.sub, label: body.label.trim(), addressText: body.address_text.trim(), city: clean(body.city), district: clean(body.district), ward: clean(body.ward), latitude: body.latitude, longitude: body.longitude, provider: clean(body.provider), source: body.source ?? 'manual', isDefault: body.is_default === true, createdAt: now, updatedAt: now });
+    const saved = await this.store.createSavedAddress({ id: `addr_${randomUUID().replaceAll('-', '').slice(0, 16)}`, actorId: request.user.sub, label: body.label.trim(), addressText: body.address_text.trim(), city: clean(body.city), district: clean(body.district), ward: clean(body.ward), latitude, longitude, provider: clean(body.provider), source: body.source ?? 'manual', isDefault: body.is_default === true, createdAt: now, updatedAt: now });
     return { data: toPublicAddress(saved), meta: { request_id: request.correlationId } };
   }
 
   @Patch(':id')
   async patch(@Param('id') id: string, @Body() body: SavedAddressPatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     assertCoordinatePair(body.latitude, body.longitude);
+    const latitude = roundCoordinate(body.latitude);
+    const longitude = roundCoordinate(body.longitude);
     const current = await this.store.getSavedAddress(id, request.user.sub);
     if (!current) throw new BadRequestException({ code: 'ADDRESS_NOT_FOUND', detail: 'Không tìm thấy địa chỉ thuộc tài khoản hiện tại.', retryable: false });
     const nextAddressText = body.address_text?.trim();
@@ -442,8 +482,8 @@ export class SavedAddressController {
       ...(body.city !== undefined ? { city: clean(body.city) ?? null } : addressChanged ? { city: null } : {}),
       ...(body.district !== undefined ? { district: clean(body.district) ?? null } : addressChanged ? { district: null } : {}),
       ...(body.ward !== undefined ? { ward: clean(body.ward) ?? null } : addressChanged ? { ward: null } : {}),
-      ...(body.latitude !== undefined ? { latitude: body.latitude } : addressChanged ? { latitude: null } : {}),
-      ...(body.longitude !== undefined ? { longitude: body.longitude } : addressChanged ? { longitude: null } : {}),
+      ...(body.latitude !== undefined ? { latitude } : addressChanged ? { latitude: null } : {}),
+      ...(body.longitude !== undefined ? { longitude } : addressChanged ? { longitude: null } : {}),
       ...(body.provider !== undefined ? { provider: clean(body.provider) ?? null } : addressChanged ? { provider: null } : {}),
       ...(body.source !== undefined ? { source: body.source } : addressChanged ? { source: body.latitude !== undefined ? 'geocoded' : 'manual' } : {}),
       ...(body.is_default !== undefined ? { isDefault: body.is_default } : {}),
@@ -481,6 +521,14 @@ export class LocationController {
   @Post('geocode')
   async geocode(@Body() body: { address_text?: string }): Promise<object> {
     return { data: await this.locations.geocode(typeof body.address_text === 'string' ? body.address_text : '') };
+  }
+
+  @Post('reverse-geocode')
+  async reverseGeocode(@Body() body: { latitude?: number; longitude?: number }): Promise<object> {
+    const latitude = numberValue(body.latitude);
+    const longitude = numberValue(body.longitude);
+    if (latitude === undefined || longitude === undefined) throw new BadRequestException({ code: 'COORDINATES_REQUIRED', detail: 'Cần có vĩ độ và kinh độ.', retryable: false });
+    return { data: await this.locations.reverseGeocode({ latitude, longitude }) };
   }
 
   @Post('route')
@@ -532,6 +580,14 @@ export class HealthcarePatientController {
 
 function assertCoordinatePair(latitude: number | undefined, longitude: number | undefined): void {
   if ((latitude === undefined) !== (longitude === undefined)) throw new BadRequestException({ code: 'COORDINATE_PAIR_REQUIRED', detail: 'Vĩ độ và kinh độ phải được gửi cùng nhau.', retryable: false });
+}
+
+function foldLocalAddress(value: string): string {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function roundCoordinate(value: number | undefined): number | undefined {
+  return value === undefined ? undefined : Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function clean(value: string | undefined): string | undefined {

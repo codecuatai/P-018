@@ -10,7 +10,7 @@ import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
 import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
-const MIN_PASSWORD_LENGTH = 15;
+const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
@@ -96,6 +96,128 @@ export class AuthService {
     }
     const issued = await this.createSessionFor(account, metadata);
     await this.audit('LOGIN_SUCCESS', account.id, correlationId, issued.session.familyId);
+    return issued;
+  }
+
+  getGoogleAuthUrl(): string {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    const callbackUrl = this.config.get<string>('GOOGLE_CALLBACK_URL');
+    if (!clientId || !callbackUrl) {
+      throw new BadRequestException({ code: 'GOOGLE_AUTH_NOT_CONFIGURED', detail: 'Chức năng đăng nhập Google chưa được cấu hình trên hệ thống.', retryable: false });
+    }
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: callbackUrl,
+      response_type: 'code',
+      scope: 'openid email profile',
+      access_type: 'offline',
+      prompt: 'consent select_account',
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  async loginWithGoogle(input: { code: string; redirectUri?: string }, metadata: AuthRequestMetadata, correlationId: string): Promise<IssuedAuthSession> {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    const clientSecret = this.config.get<string>('GOOGLE_CLIENT_SECRET');
+    const callbackUrl = this.config.get<string>('GOOGLE_CALLBACK_URL');
+    if (!clientId || !clientSecret) {
+      throw new BadRequestException({ code: 'GOOGLE_AUTH_NOT_CONFIGURED', detail: 'Chức năng đăng nhập Google chưa được cấu hình trên hệ thống.', retryable: false });
+    }
+    const redirectUri = input.redirectUri || callbackUrl;
+    if (!redirectUri) {
+      throw new BadRequestException({ code: 'GOOGLE_REDIRECT_URI_MISSING', detail: 'Thiếu thông tin redirect URI.', retryable: false });
+    }
+
+    let tokenData: { access_token?: string; id_token?: string };
+    try {
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: input.code,
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        await this.audit('GOOGLE_AUTH_EXCHANGE_FAILED', undefined, correlationId, undefined, { error: errorText });
+        throw new UnauthorizedException({ code: 'GOOGLE_AUTH_FAILED', detail: 'Mã xác thực Google không hợp lệ hoặc đã hết hạn.', retryable: false });
+      }
+      tokenData = (await response.json()) as { access_token?: string; id_token?: string };
+    } catch (error) {
+      if (error instanceof UnauthorizedException || error instanceof BadRequestException) throw error;
+      throw new UnauthorizedException({ code: 'GOOGLE_AUTH_FAILED', detail: 'Không thể kết nối đến máy chủ Google OAuth.', retryable: false });
+    }
+
+    if (!tokenData.access_token) {
+      throw new UnauthorizedException({ code: 'GOOGLE_AUTH_FAILED', detail: 'Không nhận được mã truy cập từ Google.', retryable: false });
+    }
+
+    let profile: { sub: string; email: string; email_verified?: boolean; name?: string; picture?: string };
+    try {
+      const userinfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (!userinfoResponse.ok) {
+        throw new UnauthorizedException({ code: 'GOOGLE_AUTH_FAILED', detail: 'Không thể lấy thông tin người dùng từ Google.', retryable: false });
+      }
+      profile = (await userinfoResponse.json()) as { sub: string; email: string; email_verified?: boolean; name?: string; picture?: string };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      throw new UnauthorizedException({ code: 'GOOGLE_AUTH_FAILED', detail: 'Lỗi khi lấy thông tin người dùng Google.', retryable: false });
+    }
+
+    if (!profile.email || profile.email_verified === false) {
+      throw new UnauthorizedException({ code: 'GOOGLE_EMAIL_UNVERIFIED', detail: 'Tài khoản Google của bạn chưa được xác thực email.', retryable: false });
+    }
+
+    const emailNormalized = normalizeEmail(profile.email);
+    let account = await this.store.getUserByEmailNormalized(emailNormalized);
+    if (account) {
+      if (account.status !== 'active') {
+        await this.audit('LOGIN_FAILURE', account.id, correlationId, undefined, { reason: 'account_disabled' });
+        throw new UnauthorizedException({ code: 'ACCOUNT_DISABLED', detail: 'Tài khoản của bạn đã bị vô hiệu hóa.', retryable: false });
+      }
+      if (profile.picture && !account.avatarUrl) {
+        await this.store.updateProfile(account.id, { avatarUrl: profile.picture });
+      }
+    } else {
+      const now = new Date().toISOString();
+      const newAccount: AuthAccount = {
+        id: randomUUID(),
+        email: emailNormalized,
+        emailNormalized,
+        fullName: normalizeFullName(profile.name || emailNormalized.split('@')[0]),
+        avatarUrl: profile.picture,
+        role: 'customer',
+        status: 'active',
+        passwordHash: await argon2.hash(randomBytes(32).toString('hex'), ARGON2_OPTIONS),
+        passwordChangedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+      const initial = this.newSession(newAccount.id, randomUUID(), metadata);
+      try {
+        await this.store.createUserWithSession(newAccount, initial.session);
+      } catch (error) {
+        if (error instanceof DuplicateAuthEmailError) {
+          account = await this.store.getUserByEmailNormalized(emailNormalized);
+        } else {
+          throw error;
+        }
+      }
+      if (!account) {
+        const issued = this.issueFor(newAccount, initial.session, initial.refreshToken);
+        await this.audit('REGISTER_GOOGLE', newAccount.id, correlationId, issued.session.familyId);
+        return issued;
+      }
+    }
+
+    const issued = await this.createSessionFor(account, metadata);
+    await this.audit('LOGIN_GOOGLE_SUCCESS', account.id, correlationId, issued.session.familyId);
     return issued;
   }
 

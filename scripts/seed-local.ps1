@@ -4,35 +4,9 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $envPath = (Resolve-Path (Join-Path $repoRoot $EnvFile)).Path
 
-function Invoke-Utf8PostgresSeed {
-    param([Parameter(Mandatory = $true)][string]$SqlPath)
-
-    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = "docker"
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardInput = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $arguments = @("compose", "--env-file", $envPath, "exec", "-T", "postgres", "psql", "-U", "food_user", "-d", "xone_food", "-v", "ON_ERROR_STOP=1")
-    $startInfo.Arguments = ($arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join " "
-
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $startInfo
-    [void]$process.Start()
-    $sql = [System.IO.File]::ReadAllText((Resolve-Path (Join-Path $repoRoot $SqlPath)).Path, [System.Text.Encoding]::UTF8)
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($sql)
-    $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-    $process.StandardInput.Close()
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
-    $process.WaitForExit()
-    if ($stdout) { Write-Output $stdout.TrimEnd() }
-    if ($process.ExitCode -ne 0) { throw "Food seed failed: $($stderr.Trim())" }
-}
-
 function Invoke-LocalPython {
     param(
-        [Parameter(Mandatory = $true)][ValidateSet("ride", "restaurant", "healthcare")][string]$Kind,
+        [Parameter(Mandatory = $true)][ValidateSet("food", "ride", "restaurant", "healthcare")][string]$Kind,
         [Parameter(Mandatory = $true)][string]$DatabaseKey,
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
         [Parameter(Mandatory = $true)][string[]]$Arguments
@@ -47,11 +21,14 @@ function Invoke-LocalPython {
 Push-Location $repoRoot
 try {
     if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { throw "Environment file was not found: $EnvFile" }
-    Invoke-Utf8PostgresSeed -SqlPath "services/food-service/seeds/001_demo_hanoi.sql"
+    & python (Join-Path $repoRoot "scripts\dataops\catalog_import.py") food --apply
+    if ($LASTEXITCODE -ne 0) { throw "Food catalog import failed." }
+    & python (Join-Path $repoRoot "scripts\dataops\catalog_import.py") restaurant --apply
+    if ($LASTEXITCODE -ne 0) { throw "Restaurant catalog import failed." }
+    & python (Join-Path $repoRoot "scripts\dataops\catalog_import.py") healthcare --apply
+    if ($LASTEXITCODE -ne 0) { throw "Healthcare catalog import failed." }
     Invoke-LocalPython -Kind "restaurant" -DatabaseKey "RESTAURANT_DATABASE_URL" -WorkingDirectory "services\restaurant-service" -Arguments @("-m", "seeds.seed")
-    Invoke-LocalPython -Kind "healthcare" -DatabaseKey "HEALTHCARE_DATABASE_URL" -WorkingDirectory "services\healthcare-service" -Arguments @("-m", "seeds.seed_demo_catalog")
-    Invoke-LocalPython -Kind "ride" -DatabaseKey "RIDE_DATABASE_URL" -WorkingDirectory "services\ride-service" -Arguments @("seeds/seed_demo_drivers.py")
-    Write-Host "Deterministic local demo data seeded additively. Existing catalog, bookings, and imported rows were preserved."
+    Write-Host "Local discovery catalogs imported into PostgreSQL without fixed Food, Restaurant, Healthcare, or Ride demo records."
 } finally {
     Pop-Location
 }

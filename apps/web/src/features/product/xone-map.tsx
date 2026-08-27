@@ -1,6 +1,6 @@
 "use client";
 
-import { Minus, Plus } from "lucide-react";
+import { Minus, Plus, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 
 import { statusLabel } from "@/lib/presentation";
@@ -51,6 +51,8 @@ const MARKER_STYLES: Record<MarkerKey, { color: string; label: string }> = {
   healthcare: { color: "#A54D86", label: "Cơ sở y tế" },
 };
 const TILE_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · <a href="https://www.geoapify.com/">Geoapify</a> · <a href="https://openmaptiles.org/">OpenMapTiles</a>';
+const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
 export function XOneMap({
   origin,
@@ -96,14 +98,17 @@ export function XOneMap({
     return { route: parsedRoute, markers, points };
   }, [current, destination, driver, healthcare, origin, restaurant, routeGeometry, routePolyline, user]);
 
-  const mapTargetAvailable = !providerUnavailable && mapData.points.length > 0 && mapState !== "error";
+  const hasTargetPoints = !providerUnavailable && mapData.points.length > 0;
+  const canRenderMap = hasTargetPoints && mapState !== "error";
 
   useEffect(() => {
-    if (providerUnavailable || !mapData.points.length) {
-      setMapState("error");
-      return;
+    if (hasTargetPoints && mapState === "error") {
+      setMapState("loading");
     }
-    if (mapState === "error" || !mapTargetAvailable || !mapNodeRef.current) {
+  }, [hasTargetPoints]);
+
+  useEffect(() => {
+    if (!hasTargetPoints || !mapNodeRef.current) {
       return;
     }
 
@@ -126,15 +131,34 @@ export function XOneMap({
         mapRef.current = map;
         leafletRef.current = L;
         const browserKey = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_API_KEY?.trim();
-        const style = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim() || "osm-bright";
-        if (!browserKey || browserKey.includes("__PASTE_")) throw new Error("map-key-unavailable");
-        const tileUrl = `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(browserKey)}`;
-        const tileLayer = L.tileLayer(tileUrl, { attribution: TILE_ATTRIBUTION, maxZoom: 19 });
+        const configuredStyle = process.env.NEXT_PUBLIC_GEOAPIFY_MAP_STYLE?.trim();
+        const style = !configuredStyle || configuredStyle === "osm-bright" ? "osm-bright-smooth" : configuredStyle;
+        // Geoapify is optional. Without a usable browser key the map still renders
+        // on public OpenStreetMap tiles instead of failing outright.
+        const usableKey = browserKey && !browserKey.includes("__PASTE_") ? browserKey : undefined;
+        let onOsmTiles = usableKey === undefined;
+        const tileUrl = usableKey
+          ? `${TILE_BASE_URL}/${encodeURIComponent(style)}/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(usableKey)}`
+          : OSM_TILE_URL;
+        const tileLayer = L.tileLayer(tileUrl, { attribution: onOsmTiles ? OSM_ATTRIBUTION : TILE_ATTRIBUTION, maxZoom: 19 });
         tileLayerRef.current = tileLayer;
-        tileLayer.on("tileerror", () => { if (!disposed) setMapState("error"); });
+        tileLayer.on("tileerror", () => {
+          if (!onOsmTiles) {
+            onOsmTiles = true;
+            tileLayer.setUrl(OSM_TILE_URL);
+            tileLayer.options.attribution = OSM_ATTRIBUTION;
+            map.attributionControl?.removeAttribution(TILE_ATTRIBUTION);
+            map.attributionControl?.addAttribution(OSM_ATTRIBUTION);
+          } else if (!disposed) {
+            setMapState("error");
+          }
+        });
         tileLayer.addTo(map);
-        resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
-        resizeTimer = window.setTimeout(() => invalidateMapSize(map), 120);
+        map.whenReady(() => {
+          invalidateMapSize(map);
+          resizeFrame = window.requestAnimationFrame(() => invalidateMapSize(map));
+          resizeTimer = window.setTimeout(() => invalidateMapSize(map), 250);
+        });
         if (!disposed) setMapState("ready");
       } catch {
         if (!disposed) setMapState("error");
@@ -160,7 +184,9 @@ export function XOneMap({
       polylineRef.current = undefined;
       fitKeyRef.current = "";
     };
-  }, [mapTargetAvailable, providerUnavailable, retryVersion]);
+    // `mapState` is intentionally excluded: changing loading -> ready must not
+    // tear down the map before the marker/fit-bounds effect can observe it.
+  }, [hasTargetPoints, retryVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -216,14 +242,8 @@ export function XOneMap({
       }
       const marker = existing ?? (key === "healthcare"
         ? L.marker(toLatLng(point), { icon: L.divIcon({ className: "xone-healthcare-marker", html: '<span aria-hidden="true"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }) }).addTo(map)
-        : L.circleMarker(toLatLng(point), { radius: key === "current" || key === "driver" ? 8 : 7, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map));
-      const isStationaryMarker = key === "origin" || key === "destination" || key === "restaurant" || key === "healthcare";
-      if (!existing || isStationaryMarker) {
-        const frame = markerAnimationRefs.current[key];
-        if (frame !== undefined) window.cancelAnimationFrame(frame);
-        delete markerAnimationRefs.current[key];
-        marker.setLatLng(toLatLng(point));
-      } else {
+        : L.circleMarker(toLatLng(point), { radius: key === "driver" || key === "current" ? 9 : 8, color: "#FFFFFF", weight: 2, fillColor: color, fillOpacity: 0.95 }).addTo(map));
+      if (existing) {
         animateMarker(marker, key, toLatLng(point), markerAnimationRefs, prefersReducedMotion(), key === "driver" ? mapData.route : undefined);
       }
       marker.unbindTooltip();
@@ -239,7 +259,6 @@ export function XOneMap({
     }
   }, [mapData, mapState]);
 
-  const canRenderMap = mapTargetAvailable;
   return <section className={`xone-map xone-map-${density}`} aria-label={label}>
     <div className="xone-map-toolbar">
       <small>{routeProvider ? "Lộ trình đã được cập nhật" : "Bản đồ vị trí"}</small>
@@ -248,7 +267,17 @@ export function XOneMap({
         <button type="button" aria-label="Phóng to bản đồ" onClick={() => mapRef.current?.zoomIn()} disabled={!canRenderMap}><Plus size={13} /></button>
       </span>
     </div>
-    {canRenderMap ? <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} /> : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
+    {canRenderMap ? (
+      <>
+        <div ref={mapNodeRef} className={`xone-map-leaflet xone-map-leaflet-${density}`} data-map-state={mapState} role="img" aria-label={`${label}: bản đồ nền và các điểm đã xác minh`} />
+        {mapState === "loading" && (
+          <div className="xone-map-loading-overlay">
+            <LoaderCircle className="spinner" size={28} style={{ color: "var(--color-primary-strong)" }} />
+            <span style={{ marginTop: "10px", fontSize: "0.75rem", color: "var(--color-navy)", fontWeight: 700 }}>Đang tải bản đồ...</span>
+          </div>
+        )}
+      </>
+    ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
     {mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
 }
@@ -261,11 +290,14 @@ function MapFallback({ label, points, providerUnavailable, locationDenied, route
       : points.length
         ? "Bản đồ nền chưa tải được trong môi trường hiện tại."
         : "Chưa có tọa độ đã xác minh.";
-  return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`}>
-    <strong>{providerUnavailable || points.length ? "Hiện chưa tải được bản đồ." : reason}</strong>
-    {providerUnavailable || points.length ? <button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button> : null}
-    <span>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
-    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl><div><dt>Lộ trình</dt><dd>{routeStatus ? statusLabel(routeStatus) : "Đã cập nhật"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
+  
+  const isErrorWithPoints = providerUnavailable || points.length > 0;
+
+  return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 20px", minHeight: "160px" }}>
+    <strong style={{ color: "var(--color-navy)", fontSize: "0.85rem" }}>{isErrorWithPoints ? "Hiện chưa tải được bản đồ." : reason}</strong>
+    {isErrorWithPoints ? <button className="button button-secondary" type="button" onClick={onRetry} style={{ marginTop: "12px" }}>Thử lại</button> : null}
+    <span style={{ marginTop: "8px", color: "var(--color-muted)", fontSize: "0.75rem", maxWidth: "300px" }}>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
+    {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl style={{ marginTop: "16px" }}><div><dt>Lộ trình</dt><dd>{routeStatus ? statusLabel(routeStatus) : "Đã cập nhật"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
   </div>;
 }
 
@@ -286,9 +318,9 @@ function parseRoute(value?: string | null): XOnePoint[] {
 function sanitizePoint(value: unknown): XOnePoint | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
-  const latitude = candidate.latitude;
-  const longitude = candidate.longitude;
-  if (candidate.suspicious === true || typeof latitude !== "number" || typeof longitude !== "number" || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+  const latitude = typeof candidate.latitude === "number" || typeof candidate.latitude === "string" ? Number(candidate.latitude) : NaN;
+  const longitude = typeof candidate.longitude === "number" || typeof candidate.longitude === "string" ? Number(candidate.longitude) : NaN;
+  if (candidate.suspicious === true || !Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
   return { latitude, longitude, ...(typeof candidate.label === "string" ? { label: candidate.label } : {}) };
 }
 

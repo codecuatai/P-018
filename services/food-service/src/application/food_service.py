@@ -18,6 +18,12 @@ from src.domain.policies import (
 from src.domain.quotes import build_authoritative_quote, price_item
 from src.repositories.food import FoodRepository, ident
 
+# Số món tối đa quét được cho một nhà hàng khi dựng thực đơn. Nhà hàng lớn nhất
+# trong dataset 2026-08-hanoi-v1 có 1.786 món, nên 5.000 là mức dự phòng an toàn:
+# đủ để `total` phản ánh đúng số món thật thay vì bị cắt âm thầm.
+MENU_SCAN_CAP = 5000
+DEFAULT_MENU_PAGE_SIZE = 100
+
 
 class FoodApplicationService:
     def __init__(self, repository: FoodRepository, settings: Settings, random_value: Any | None = None) -> None:
@@ -72,16 +78,40 @@ class FoodApplicationService:
     async def search(self, **filters: Any) -> list[dict]:
         return await self.repository.search(**filters)
 
+    async def list_restaurants(
+        self,
+        keyword: str = "",
+        district: str | None = None,
+        category: str | None = None,
+        open_only: bool = True,
+        limit: int = 12,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        return await self.repository.list_restaurants(
+            keyword=keyword,
+            district=district,
+            category=category,
+            open_only=open_only,
+            limit=limit,
+            offset=offset,
+        )
+
     async def restaurant(self, restaurant_id: str) -> dict:
         restaurant = await self.repository.get_restaurant(restaurant_id)
         if restaurant is None:
             raise DomainError("NOT_FOUND", "Không tìm thấy nhà hàng.")
         return restaurant
 
-    async def menu(self, restaurant_id: str) -> dict:
+    async def menu(self, restaurant_id: str, limit: int = DEFAULT_MENU_PAGE_SIZE, offset: int = 0) -> dict:
         restaurant = await self.restaurant(restaurant_id)
-        items = [result["item"] for result in await self.repository.search(restaurant_id=restaurant_id, limit=100)]
-        return {"restaurant": restaurant, "items": items}
+        all_items = [result["item"] for result in await self.repository.search(restaurant_id=restaurant_id, limit=MENU_SCAN_CAP)]
+        return {
+            "restaurant": restaurant,
+            "items": all_items[offset : offset + limit],
+            "total": len(all_items),
+            "limit": limit,
+            "offset": offset,
+        }
 
     async def menu_item(self, item_id: str) -> dict:
         item = await self.repository.get_menu_item(item_id)

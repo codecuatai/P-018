@@ -100,7 +100,10 @@ export class ProductOpsService {
     const restaurantId = stringAt(oldOrder, ['restaurant_id']) ?? objectString(oldOrder.restaurant, 'id');
     if (!restaurantId) throw new ConflictException({ code: 'REORDER_CONTEXT_UNAVAILABLE', detail: 'Đơn cũ thiếu thông tin nhà hàng để đặt lại.', retryable: false });
     const currentRestaurant = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(restaurantId)}`, correlationId, actorId);
-    const currentMenu = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(restaurantId)}/menu`, correlationId, actorId);
+    // Phải lấy trọn thực đơn: `available` bên dưới dùng để quyết định món cũ còn bán
+    // hay không. Với mặc định 100 món, mọi món từ thứ 101 trở đi của 52 nhà hàng có
+    // thực đơn lớn sẽ bị báo sai là hết hàng khi người dùng đặt lại đơn.
+    const currentMenu = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(restaurantId)}/menu?limit=500`, correlationId, actorId);
     const menuItems = arrayAt(currentMenu, 'items');
     const available = new Set(menuItems.map((item) => String(item.id ?? '')));
     const unavailable: JsonObject[] = [];

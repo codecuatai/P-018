@@ -13,6 +13,7 @@ import {
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
+import { estimateTokenCostUsd } from '../core/token-pricing.util';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolProposal, ToolService } from '../tools/tool.module';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
@@ -627,6 +628,37 @@ export class AssistantService {
     @Optional() private readonly rideClient?: RideClient,
   ) {}
 
+  private async recordUsageFromAgentResponse(
+    agentResponse: JsonObject,
+    actorId?: string,
+    feature: string = 'assistant',
+  ): Promise<void> {
+    try {
+      const rawUsage = agentResponse.usage;
+      if (!isRecord(rawUsage)) return;
+      const promptTokens = Number(rawUsage.prompt_tokens ?? rawUsage.input ?? 0) || 0;
+      const completionTokens = Number(rawUsage.completion_tokens ?? rawUsage.output ?? 0) || 0;
+      const totalTokens = Number(rawUsage.total_tokens ?? rawUsage.total ?? (promptTokens + completionTokens)) || 0;
+      if (totalTokens <= 0) return;
+
+      const model = typeof agentResponse.model === 'string' ? agentResponse.model : 'gemini-1.5-flash';
+      const estimatedCostUsd = estimateTokenCostUsd(model, promptTokens, completionTokens);
+      await this.store.recordTokenUsage({
+        id: `tok_${randomUUID()}`,
+        actorId: actorId || undefined,
+        model,
+        provider: 'google',
+        feature,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        estimatedCostUsd,
+      });
+    } catch {
+      // Non-blocking observability
+    }
+  }
+
   private validateCoreAHandoff(planner: JsonObject): void {
     const rawDecision = planner.planning_decision;
     if (!isRecord(rawDecision)) {
@@ -839,6 +871,7 @@ export class AssistantService {
       pickup_address: 'điểm đón',
       dropoff_address: 'điểm đến',
       'query|dish_query': 'món bạn muốn tìm',
+      'location|cuisine_query|cuisine_type|cuisine': 'khu vực hoặc loại món',
       selection_domain: 'bạn muốn chọn đồ ăn hay lịch khám',
     };
     const values = fields
@@ -894,14 +927,19 @@ export class AssistantService {
   private plannerSafeState(state: AssistantState): JsonObject {
     const taskIndexes = new Map(state.tasks.map((task, index) => [task.id, index]));
     
-    const activeTasks = state.tasks.filter((t) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(t.phase));
+    // Terminal tasks remain durable history, but must not be planner context.
+    // Keep original refs so a discard directive still addresses the stored task.
+    const activeEntries = state.tasks
+      .map((task, index) => ({ task, index }))
+      .filter(({ task }) => ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase));
+    const activeTasks = activeEntries.map(({ task }) => task);
     const activeDomains = Array.from(new Set(activeTasks.map((t) => t.domain)));
     const focusTask = activeTasks.find((t) => t.phase === 'NEEDS_INFO' || t.phase === 'AWAITING_CONFIRMATION') ?? activeTasks[0];
     const activeDomain = focusTask ? focusTask.domain : undefined;
     const workflowPhase = focusTask ? focusTask.phase : undefined;
     
     const workingMemory = {
-      active_task_refs: activeTasks.map((t) => taskIndexes.get(t.id)).filter((ref) => ref !== undefined),
+      active_task_refs: activeEntries.map(({ index }) => index),
       active_domain: activeDomain,
       active_domains: activeDomains,
       workflow_phase: workflowPhase,
@@ -916,7 +954,7 @@ export class AssistantService {
     return {
       working_memory: workingMemory,
       conversation_summary: conversationSummary,
-      tasks: state.tasks.slice(0, 8).map((task, index) => {
+      tasks: activeEntries.slice(0, 8).map(({ task, index }) => {
         const pendingActions = Array.from(new Set(state.actions.filter((action) => action.task_id === task.id).map((action) => action.kind)));
         const pendingChoice = this.plannerPendingChoice(task);
         return {
@@ -1030,23 +1068,11 @@ export class AssistantService {
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
     const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
+    // The Agent plan is the typed semantic decision. Do not reclassify it with
+    // a second keyword classifier in the Gateway; heuristics are only for
+    // short follow-up turns where the Agent intentionally returned no tasks.
+    if (planned.length) return { tasks: planned };
     const folded = plainText(message);
-    const explicitDomains = new Set<Domain>();
-    if (textHasAny(folded, ['pho', 'bun', 'com', 'mon an', 'do an', 'giao ve', 'giao toi', 'ship', 'dat mon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day'])) explicitDomains.add('food');
-    if (textHasAny(folded, ['dat ban', 'nha hang', 'an tai nha hang'])) explicitDomains.add('restaurant');
-    if (textHasAny(folded, ['lich kham', 'dat lich', 'bac si', 'kham', 'khoa', 'tam ly', 'than kinh', 'trieu chung'])) explicitDomains.add('healthcare');
-    if (textHasAny(folded, ['dat xe', 'goi xe', 'di tu', 'xe may', 'xe 4 cho', 'xe 7 cho'])) explicitDomains.add('ride');
-
-    if (explicitDomains.size) {
-      const explicitTasks = planned.filter((task) => explicitDomains.has(task.domain as Domain));
-      if (explicitTasks.length) return { tasks: explicitTasks };
-      if (explicitDomains.size === 1) {
-        const domain = [...explicitDomains][0];
-        const existing = active.find((task) => task.domain === domain);
-        if (existing) return { tasks: [this.planFromTask(existing)] };
-      }
-      return { tasks: planned };
-    }
 
     const targets = this.followUpDomains(active, actions, folded);
     if (targets.length > 1) {
@@ -1135,6 +1161,9 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText }));
+    const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
+      ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
+      : [];
     const foldedMessage = plainText(message);
     if (textHasAny(foldedMessage, ['huy chuyen', 'huy dat xe', 'huy cuoc', 'huy xe', 'dung dat xe'])) {
       const activeRideIndex = state.tasks.findIndex((t) => t.domain === 'ride' && t.phase !== 'COMPLETED' && t.phase !== 'FAILED' && t.phase !== 'DISCARDED');
@@ -1165,13 +1194,20 @@ export class AssistantService {
         conversation_id: conversationId,
         user_id: user.sub,
         message,
-        messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-12).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses },
+        messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
+        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ memory_id: memory.id, namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, source_turn_id: memory.sourceTurnId, why_retrieved: memory.whyRetrieved })) },
+        user_profile: {
+          id: user.id ?? user.sub,
+          name: user.full_name ?? '',
+          email: user.email,
+          saved_addresses: savedAddresses,
+        },
         capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
       correlationId,
     );
+    await this.recordUsageFromAgentResponse(planner, user.sub, 'assistant');
     this.validateCoreAHandoff(planner);
     const rawPlan = isRecord(planner.plan) ? planner.plan : {};
     const resolution = this.typedPlan(planner);
@@ -1245,22 +1281,20 @@ export class AssistantService {
 
     for (const task of merged) {
       if (task.phase === 'DISCARDED') continue;
-      if (task.phase === 'COMPLETED' && task.public_item) {
+      // Durable task history is not the response projection for this turn.
+      // Only tasks touched by the current plan may contribute cards/results;
+      // otherwise a previously completed (including domain-cancelled) task or
+      // an old failure is replayed on an unrelated request.
+      if (task.phase === 'COMPLETED' && task.public_item && merge.touchedIds.has(task.id)) {
         completed.push(task.public_item);
         continue;
       }
       if (!merge.touchedIds.has(task.id)) {
-        if (task.public_item) {
-          if (task.phase === 'FAILED') {
-            const isActiveDomain = merged.some((candidate) => candidate.domain === task.domain && merge.touchedIds.has(candidate.id));
-            const isSoleTask = merged.length === 1;
-            const hasDependents = merged.some((candidate) => candidate.depends_on?.includes(task.id));
-            if (isActiveDomain || isSoleTask || hasDependents) {
-              items.push(task.public_item);
-            }
-          } else {
-            items.push(task.public_item);
-          }
+        // Active work may remain visible so a user can continue it. Terminal
+        // history (completed, failed, blocked, or domain-cancelled) stays in
+        // storage but is never replayed into an unrelated turn.
+        if (task.public_item && ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)) {
+          items.push(task.public_item);
         }
         continue;
       }
@@ -1318,8 +1352,12 @@ export class AssistantService {
       merged,
       Object.fromEntries(merged.flatMap((task) => task.failure_code ? [[task.id, task.failure_code]] : [])),
     );
-    const baseMessage = this.messageFor(message, plan, merged, items, actions);
-    const activeTasks = merged.filter((task) => task.phase !== 'DISCARDED');
+    const presentationTasks = merged.filter((task) => task.phase !== 'DISCARDED' && (
+      merge.touchedIds.has(task.id)
+      || ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)
+    ));
+    const baseMessage = this.messageFor(message, plan, presentationTasks, items, actions);
+    const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
     const composed = planner.decision_source === 'deterministic'
       ? baseMessage
       : await this.compose(message, conversationId, user.sub, activeTasks, resultsForComposition, correlationId, baseMessage);
@@ -1741,6 +1779,7 @@ export class AssistantService {
         },
         correlationId,
       );
+      await this.recordUsageFromAgentResponse(response, userId, 'assistant');
       const candidate = safeText(response.assistant_message, fallback);
       return hasUnsupportedFinalSuccessClaim(candidate, tasks)
         ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')
@@ -2038,8 +2077,14 @@ export class AssistantService {
     const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
-    if (!location || !partySize || !startAt) {
-      const missing = [!location ? 'khu vực' : '', !partySize ? 'số người' : '', !startAt ? 'thời gian' : ''].filter(Boolean);
+    const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
+    const existing = task.authoritative;
+    const selection = stringValue(slots.selection);
+    const existingSelected = isRecord(existing?.selected);
+    const discoveryMissing = !location && !cuisineQuery;
+    const bookingDetailsMissing = Boolean(selection || existingSelected) && (!partySize || !startAt);
+    if (discoveryMissing || bookingDetailsMissing) {
+      const missing = [discoveryMissing ? 'khu vực hoặc loại món' : '', !partySize && (selection || existingSelected) ? 'số người' : '', !startAt && (selection || existingSelected) ? 'thời gian' : ''].filter(Boolean);
       const question = missing.length === 1 && missing[0] === 'thời gian'
         ? 'Bạn muốn đặt bàn lúc mấy giờ?'
         : `Bạn cho mình biết ${missing.join(' và ')} nhé?`;
@@ -2052,15 +2097,12 @@ export class AssistantService {
         items: [{ kind: 'clarification'}],
       };
     }
-    const existing = task.authoritative;
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
-    const selection = stringValue(slots.selection);
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
     const requestedIndex = selectionIndexFromText(task.latest_message, candidates);
     if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
     if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
     if (!candidates.length) {
-      const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
       const result = await this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
@@ -2483,6 +2525,21 @@ export class AssistantService {
         args = {};
         for (const key of ['keyword', 'district', 'category', 'max_price']) {
           if (semantic[key] !== undefined) args[key] = semantic[key];
+        }
+        // Agent vocabulary uses dish_query/query, while Food requires keyword.
+        // Resolve the delivery district from the actor-scoped address context so
+        // “nearby” means the same district as the requested delivery address.
+        if (!args.keyword) args.keyword = semantic.dish_query ?? semantic.query ?? context.dish_query ?? context.query ?? '';
+        if (!args.district) {
+          const addressId = stringValue(context.address_id);
+          const address = arrayValue(context.address_candidates).filter(isRecord).find((entry) => stringValue(entry.id) === addressId);
+          const district = stringValue(address?.district);
+          if (district) args.district = district;
+        }
+        const district = String(args.district ?? '').toLowerCase();
+        const centralDistricts = ['hoàn kiếm', 'ba đình', 'đống đa', 'hai bà trưng', 'tây hồ', 'cầu giấy'];
+        if (district && !centralDistricts.some((item) => district.includes(item))) {
+          throw new UnprocessableEntityException({ code: 'FOOD_OUTSIDE_CENTRAL_HANOI', detail: 'X-One hiện chỉ hỗ trợ đặt món trong khu vực trung tâm Hà Nội.' });
         }
       } else if (name === 'view_menu_item') {
         if (!menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current Food selection is required.' });

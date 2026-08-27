@@ -84,6 +84,8 @@ class AgentResponse(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict)
     response: str | None = None
     state_updates: dict[str, Any] = Field(default_factory=dict)
+    # Agent-turn status is deliberately separate from domain workflow phase.
+    turn_status: Literal["NEEDS_INPUT", "PROPOSAL_READY", "ERROR"] = "PROPOSAL_READY"
 
 
 class ChatResponse(BaseModel):
@@ -93,7 +95,7 @@ class ChatResponse(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
     tool_request: ToolRequest | None = None
-    status: Literal["NEEDS_INPUT", "TOOL_REQUEST_READY", "COMPLETED"] = "COMPLETED"
+    status: Literal["NEEDS_INPUT", "TOOL_REQUEST_READY", "PROPOSAL_READY", "COMPLETED", "ERROR"] = "PROPOSAL_READY"
 
 
 class ToolRequest(BaseModel):

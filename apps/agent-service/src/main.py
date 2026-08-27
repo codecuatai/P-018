@@ -7,6 +7,7 @@ from src.api.routes import router
 from src.config import get_settings
 from src.infrastructure.database import close_pool, persistence_ready
 from src.observability import initialize_telemetry, shutdown_telemetry
+from src.services.llm import KEY_POOL
 
 
 @asynccontextmanager
@@ -15,6 +16,10 @@ async def lifespan(app: FastAPI):
     initialize_telemetry(settings)
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     try:
+        try:
+            await KEY_POOL.refresh_admin_keys(settings)
+        except Exception:
+            pass
         yield
     finally:
         print("Shutting down...")
@@ -60,7 +65,7 @@ async def readiness() -> dict:
         "data": {
             "status": "ready",
             "service": "agent-service",
-            "llm_configured": bool(settings.gemini_api_key),
+            "llm_configured": bool(KEY_POOL.has_any_keys(settings) or getattr(settings, "has_gemini_api_key", settings.gemini_api_key)),
             "persistence_mode": settings.agent_persistence_mode,
         }
     }

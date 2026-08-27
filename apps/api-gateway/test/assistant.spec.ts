@@ -612,6 +612,23 @@ describe('Unified assistant orchestration', () => {
     }));
   });
 
+  it('does not send terminal task history back to the planner', async () => {
+    const conversation = {
+      conversationId: 'conversation-terminal-projection', actorId: user.sub, messages: [],
+      state: { tasks: [
+        { id: 'done', domain: 'ride', goal: 'done', normalized_request: 'done', extracted_slots: {}, depends_on: [], phase: 'COMPLETED', revision: 1 },
+        { id: 'active', domain: 'food', goal: 'active', normalized_request: 'active', extracted_slots: {}, depends_on: [], phase: 'NEEDS_INFO', revision: 1 },
+      ], actions: [] },
+    };
+    const store = { getConversation: jest.fn(async () => conversation), listSavedAddresses: jest.fn().mockResolvedValue([]), appendConversationTurn: jest.fn(async () => conversation) };
+    const agent = { assistantChat: jest.fn().mockResolvedValue({ plan: { tasks: [] } }) };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+    await service.chat(user, 'Xin chao', conversation.conversationId, 'cor-terminal-projection');
+    const state = agent.assistantChat.mock.calls[0][0].conversation_state as { tasks: Array<Record<string, unknown>> };
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0]).toMatchObject({ task_ref: 1, domain: 'food', phase: 'NEEDS_INFO' });
+  });
+
   it('invalidates a pending action when the same task receives changed details', async () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     let planningTurn = 0;
@@ -1922,6 +1939,94 @@ describe('Unified assistant orchestration', () => {
     expect(stored?.state.actions).toHaveLength(1);
   });
 
+  it('does not replay cancelled, discarded, or failed services on a later request', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-terminal-history';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [
+        {
+          id: 'cancelled-healthcare',
+          domain: 'healthcare',
+          goal: 'Khám thần kinh',
+          normalized_request: 'Đặt lịch khám thần kinh',
+          extracted_slots: { department: 'thần kinh' },
+          depends_on: [],
+          phase: 'COMPLETED',
+          revision: 2,
+          public_item: { kind: 'appointment', resource_id: 51, status: 'CANCELLED' },
+          authoritative: { cancellation: { status: 'success', appointment_id: 51 } },
+        },
+        {
+          id: 'discarded-ride',
+          domain: 'ride',
+          goal: 'Đặt xe',
+          normalized_request: 'Đặt xe tới Hồ Gươm',
+          extracted_slots: {},
+          depends_on: [],
+          phase: 'DISCARDED',
+          revision: 1,
+        },
+        {
+          id: 'failed-restaurant',
+          domain: 'restaurant',
+          goal: 'Tìm nhà hàng cũ',
+          normalized_request: 'Tìm nhà hàng cũ',
+          extracted_slots: { location: 'Hà Nội' },
+          depends_on: [],
+          phase: 'FAILED',
+          revision: 0,
+          failure_code: 'RESTAURANT_UNAVAILABLE',
+          public_item: { kind: 'task_error', code: 'RESTAURANT_UNAVAILABLE', retryable: false },
+        },
+      ],
+      actions: [],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: 'Mình đã tìm nhà hàng theo yêu cầu mới.',
+        decision_source: 'deterministic',
+        plan: {
+          tasks: [{
+            domain: 'restaurant',
+            goal: 'Tìm nhà hàng mới',
+            normalized_request: 'Tìm nhà hàng cho hai người tối nay',
+            extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+          }],
+        },
+      }),
+    };
+    const restaurant = {
+      executeTool: jest.fn().mockResolvedValue([
+        { id: 'rest-new', name: 'Nhà hàng mới', location: 'Hoàn Kiếm, Hà Nội', cuisine_type: 'Vietnamese' },
+      ]),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(
+      user,
+      'Tìm nhà hàng cho hai người tối nay.',
+      conversationId,
+      'cor-terminal-history',
+    );
+
+    expect(response.items.map((item) => item.kind)).toEqual(['restaurant_options']);
+    expect(response.completed).toEqual([]);
+    expect(response.message).not.toMatch(/hủy|không thể|chưa thể hoàn tất/i);
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.id === 'cancelled-healthcare')?.phase).toBe('COMPLETED');
+    expect(tasks.find((task) => task.id === 'discarded-ride')?.phase).toBe('DISCARDED');
+    expect(tasks.find((task) => task.id === 'failed-restaurant')?.phase).toBe('FAILED');
+  });
+
   it('does not discard an active authoritative Ride booking', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {
@@ -1944,4 +2049,39 @@ describe('Unified assistant orchestration', () => {
     expect(result.discardedIds.size).toBe(0);
     expect(tasks[0].phase).toBe('IN_PROGRESS');
   });
+
+  it('records token usage when agent response contains usage metadata', async () => {
+    const recordTokenUsage = jest.fn();
+    const service = new AssistantService(
+      { recordTokenUsage } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = service as unknown as {
+      recordUsageFromAgentResponse: (res: Record<string, unknown>, actorId?: string, feat?: string) => Promise<void>;
+    };
+
+    await internal.recordUsageFromAgentResponse(
+      {
+        model: 'gemini-1.5-flash',
+        usage: { prompt_tokens: 150, completion_tokens: 50, total_tokens: 200 },
+      },
+      'user_123',
+      'assistant',
+    );
+
+    expect(recordTokenUsage).toHaveBeenCalledTimes(1);
+    const callArg = recordTokenUsage.mock.calls[0][0];
+    expect(callArg.actorId).toBe('user_123');
+    expect(callArg.model).toBe('gemini-1.5-flash');
+    expect(callArg.feature).toBe('assistant');
+    expect(callArg.promptTokens).toBe(150);
+    expect(callArg.completionTokens).toBe(50);
+    expect(callArg.totalTokens).toBe(200);
+    expect(callArg.estimatedCostUsd).toBeGreaterThan(0);
+  });
 });
+

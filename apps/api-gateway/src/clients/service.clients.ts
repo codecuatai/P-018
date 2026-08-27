@@ -180,6 +180,44 @@ abstract class InternalServiceClient {
     }
   }
 
+  async probeReady(path = '/health/ready', correlationId?: string, timeoutMs?: number): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'content-type': 'application/json',
+          'x-internal-service-token': this.internalToken,
+          ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
+        },
+      });
+      if (response.status === 404 && path === '/health/ready') {
+        // Fallback to /health/live if readiness endpoint is not supported on older deployment
+        const liveRes = await fetch(`${this.baseUrl}/health/live`, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'content-type': 'application/json',
+            'x-internal-service-token': this.internalToken,
+            ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
+          },
+        }).catch(() => null);
+        if (liveRes && liveRes.ok) {
+          const liveBody = (await liveRes.json().catch(() => ({}))) as JsonObject;
+          const liveData = typeof liveBody.data === 'object' && liveBody.data !== null ? (liveBody.data as JsonObject) : liveBody;
+          return { ok: true, status: 200, body: { ...liveData, readiness_supported: false } };
+        }
+      }
+      const body = (await response.json().catch(() => ({}))) as JsonObject;
+      const data = typeof body.data === 'object' && body.data !== null ? (body.data as JsonObject) : body;
+      return { ok: response.ok, status: response.status, body: data };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   protected async request<T>(
     path: string,
     context: ServiceCallContext,
@@ -293,6 +331,10 @@ export class AgentClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
+  }
+
   async interpret(
     message: string,
     workflowId: string,
@@ -348,6 +390,10 @@ export class RideClient extends InternalServiceClient {
 
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
   }
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
@@ -489,6 +535,10 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
+  }
+
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
   async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
@@ -522,8 +572,12 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>(`/v1/reservations/${encodeURIComponent(reservationId)}/cancel`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
   }
 
-  async listRestaurants(actorId: string, correlationId: string, keyword?: string): Promise<JsonObject> {
-    const query = keyword ? `?location=${encodeURIComponent(keyword)}` : '';
+  async listRestaurants(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
+    const params = new URLSearchParams();
+    if (keyword) params.set('location', keyword);
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const query = params.toString() ? `?${params.toString()}` : '';
     return this.legacyRequest<JsonObject>(`/v1/restaurants${query}`, { method: 'GET' }, correlationId, actorId);
   }
 
@@ -594,6 +648,10 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
   }
 
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
+  }
+
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
   async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
@@ -606,8 +664,13 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>('/api/v1/appointments', { method: 'GET' }, correlationId, actorId);
   }
 
-  async listDepartments(actorId: string, correlationId: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/api/v1/departments', { method: 'GET' }, correlationId, actorId);
+  async listDepartments(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
+    const params = new URLSearchParams();
+    if (keyword) params.set('keyword', keyword);
+    if (limit !== undefined) params.set('limit', String(limit));
+    if (offset !== undefined) params.set('offset', String(offset));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return this.legacyRequest<JsonObject>(`/api/v1/departments${query}`, { method: 'GET' }, correlationId, actorId);
   }
 
   async listDoctors(actorId: string, correlationId: string, department: string): Promise<JsonObject> {
@@ -729,6 +792,10 @@ export class FoodClient extends InternalServiceClient {
 
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
   }
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }

@@ -28,6 +28,7 @@ describe('Core PostgreSQL persistence', () => {
       '011_core_multi_service_workflows.sql',
       '012_core_product_ops.sql',
       '013_core_admin_support_idempotency.sql',
+      '014_core_memory_system.sql',
     ]) await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
     await migrationPool.end();
     repository = new PostgresCoreRepository(databaseUrl);

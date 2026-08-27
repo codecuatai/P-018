@@ -73,14 +73,22 @@ async def ops_transactions(
 
 @router.get("/restaurants", dependencies=[Depends(require_internal)])
 async def restaurants(query: SearchQuery = Depends(), food: FoodApplicationService = Depends(service)):
-    results = await food.search(**query.model_dump())
-    grouped: dict[str, dict] = {}
-    for result in results:
-        restaurant = result["restaurant"]
-        grouped.setdefault(restaurant["id"], {**restaurant, "matching_items": []})["matching_items"].append(
-            result["item"]
-        )
-    return {"data": list(grouped.values())}
+    items, total = await food.list_restaurants(
+        keyword=query.keyword,
+        district=query.district,
+        category=query.category,
+        open_only=query.open_only,
+        limit=query.limit,
+        offset=query.offset,
+    )
+    return {
+        "data": {
+            "items": items,
+            "total": total,
+            "limit": query.limit,
+            "offset": query.offset,
+        }
+    }
 
 
 @router.get("/restaurants/{restaurant_id}", dependencies=[Depends(require_internal)])
@@ -89,8 +97,13 @@ async def restaurant(restaurant_id: str, food: FoodApplicationService = Depends(
 
 
 @router.get("/restaurants/{restaurant_id}/menu", dependencies=[Depends(require_internal)])
-async def menu(restaurant_id: str, food: FoodApplicationService = Depends(service)):
-    return {"data": await food.menu(restaurant_id)}
+async def menu(
+    restaurant_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    food: FoodApplicationService = Depends(service),
+):
+    return {"data": await food.menu(restaurant_id, limit=limit, offset=offset)}
 
 
 @router.get("/menu-items/{menu_item_id}", dependencies=[Depends(require_internal)])

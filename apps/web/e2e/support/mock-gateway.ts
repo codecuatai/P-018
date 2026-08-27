@@ -122,6 +122,15 @@ export class MockGateway {
       this.addresses.set(actor.sub, [address, ...current.map((item) => address.is_default ? { ...item, is_default: false } : item)]);
       return this.ok(route, address);
     }
+    const defaultAddressMatch = path.match(/^\/api\/v1\/addresses\/([^/]+)\/default$/);
+    if (defaultAddressMatch && method === "POST") {
+      const id = decodeURIComponent(defaultAddressMatch[1]);
+      const list = this.addresses.get(actor.sub) ?? [];
+      const item = list.find((candidate) => String(candidate.id) === id);
+      if (!item || this.options.foreignIds?.includes(id)) return this.denied(route, path);
+      this.addresses.set(actor.sub, list.map((candidate) => ({ ...candidate, is_default: candidate.id === id })));
+      return this.ok(route, { ...item, is_default: true, updated_at: isoNow() });
+    }
     const addressMatch = path.match(/^\/api\/v1\/addresses\/([^/]+)$/);
     if (addressMatch && ["GET", "PATCH", "DELETE"].includes(method)) {
       const id = decodeURIComponent(addressMatch[1]);
@@ -140,6 +149,17 @@ export class MockGateway {
       const body = await this.body(request);
       const query = String(body.address_text ?? "Địa chỉ E2E");
       return this.ok(route, { provider: "deterministic-fixture", status: "RESOLVED", query, candidates: [{ address_text: query, latitude: 10.7769, longitude: 106.7009, confidence: 0.99 }] });
+    }
+    if (path === "/api/v1/location/autocomplete" && method === "POST") {
+      const body = await this.body(request);
+      const query = String(body.address_text ?? "Địa chỉ E2E");
+      return this.ok(route, { provider: "deterministic-fixture", query, suggestions: [{ address_text: query, latitude: 10.7769, longitude: 106.7009, confidence: 0.99 }] });
+    }
+    if (path === "/api/v1/location/reverse-geocode" && method === "POST") {
+      const body = await this.body(request);
+      const latitude = Number(body.latitude ?? 10.7769);
+      const longitude = Number(body.longitude ?? 106.7009);
+      return this.ok(route, { provider: "deterministic-fixture", status: "RESOLVED", query: `${latitude},${longitude}`, candidates: [{ address_text: "Vị trí hiện tại, Thành phố Hồ Chí Minh", latitude, longitude, confidence: 0.99 }] });
     }
     if (path === "/api/v1/location/route" && method === "POST") {
       return this.ok(route, { provider: "deterministic-fixture", status: "ESTIMATED", distance_km: 2.4, duration_minutes: 12, route_distance_meters: 2400, route_duration_seconds: 720, route_polyline: JSON.stringify([{ latitude: 10.7769, longitude: 106.7009 }, { latitude: 10.779, longitude: 106.704 }]), origin: { latitude: 10.7769, longitude: 106.7009 }, destination: { latitude: 10.779, longitude: 106.704 }, route_snapshot_hash: "route-fixture-v1" });

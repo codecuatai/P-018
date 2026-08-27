@@ -8,12 +8,14 @@ import { XOneMark } from "@/components/XOneMark";
 import { useMarketingAuth, type AuthDialogMode } from "@/components/marketing/marketing-auth";
 import styles from "@/components/marketing/marketing-header.module.css";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { useAuth } from "@/providers/auth-provider";
 
 export function MarketingHeader() {
   const [raised, setRaised] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sentinel = useRef<HTMLSpanElement>(null);
   const { openAuth } = useMarketingAuth();
+  const { user } = useAuth();
 
   useEffect(() => {
     if (!sentinel.current || typeof IntersectionObserver === "undefined") return;
@@ -37,7 +39,16 @@ export function MarketingHeader() {
         </div>
         <div className={styles.navIsland}>
           <nav className={styles.nav} aria-label="Điều hướng chính"><a href="#dich-vu">Dịch vụ</a><a href="#cach-hoat-dong">Cách hoạt động</a><a href="#an-toan">An toàn</a></nav>
-          <div className={styles.actions}><button className={`text-link ${styles.authTrigger}`} type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></div>
+          <div className={styles.actions}>
+            {user ? (
+              <Link className="button button-primary" href="/app">Vào ứng dụng Chat</Link>
+            ) : (
+              <>
+                <button className={`text-link ${styles.authTrigger}`} type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button>
+                <button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button>
+              </>
+            )}
+          </div>
         </div>
         <div className={styles.mobileMenuIsland}>
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
@@ -47,8 +58,14 @@ export function MarketingHeader() {
                 <SheetClose asChild><a href="#dich-vu">Dịch vụ</a></SheetClose>
                 <SheetClose asChild><a href="#cach-hoat-dong">Cách hoạt động</a></SheetClose>
                 <SheetClose asChild><a href="#an-toan">An toàn</a></SheetClose>
-                <SheetClose asChild><button type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button></SheetClose>
-                <SheetClose asChild><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></SheetClose>
+                {user ? (
+                  <SheetClose asChild><Link className="button button-primary" href="/app">Vào ứng dụng Chat</Link></SheetClose>
+                ) : (
+                  <>
+                    <SheetClose asChild><button type="button" onClick={() => triggerAuth("login")}>Đăng nhập</button></SheetClose>
+                    <SheetClose asChild><button className="button button-primary" type="button" onClick={() => triggerAuth("register")}>Bắt đầu với X-One</button></SheetClose>
+                  </>
+                )}
               </nav>
             </SheetContent>
           </Sheet>

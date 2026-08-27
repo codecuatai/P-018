@@ -55,28 +55,28 @@
 .auth-motif > span:nth-of-type(2) { top: calc(50% - 5px); left: -5px; background: #B67A2D; }
 .auth-motif > span:nth-of-type(3) { top: calc(50% - 5px); right: 6%; background: var(--color-primary); }
 .auth-motif > span:nth-of-type(4) { bottom: 16%; left: -5px; background: #55B987; }
-.auth-card { padding: 30px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: var(--shadow-soft); }
+.auth-card { padding: 30px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: var(--shadow-soft); font-family: var(--font-sans); }
 .auth-card-heading { padding-bottom: 20px; margin-bottom: 21px; border-bottom: 1px solid var(--color-border); }
-.auth-card-heading h1 { margin: 9px 0 0; color: var(--color-navy); font-size: clamp(1.5rem, 2.4vw, 2rem); letter-spacing: -0.055em; line-height: 1.08; }
-.auth-card-heading p { margin: 11px 0 0; color: var(--color-muted); font-size: 0.83rem; line-height: 1.6; }
-.form-field { display: grid; gap: 7px; margin-top: 15px; color: var(--color-ink); font-size: 0.76rem; font-weight: 720; }
-.form-field input { width: 100%; min-height: 43px; padding: 10px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; font-size: 0.85rem; outline: 0; transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+.auth-card-heading h1 { margin: 9px 0 0; color: var(--color-navy); font-size: var(--text-2xl); letter-spacing: -0.05em; line-height: 1.15; }
+.auth-card-heading p { margin: 11px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: 1.6; }
+.form-field { display: grid; gap: 7px; margin-top: 15px; color: var(--color-ink); font-size: var(--text-sm); font-weight: 700; }
+.form-field input { width: 100%; min-height: 43px; padding: 10px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; font-family: inherit; font-size: var(--text-base); outline: 0; transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
 .form-field input:hover { border-color: #9EB5C8; }
 .form-field input:focus { background: var(--color-surface); border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(49 94 245 / 13%); }
 .password-input { display: flex; align-items: center; background: #FBFCFD; border: 1px solid var(--color-border-strong); border-radius: 8px; transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
 .password-input:focus-within { background: var(--color-surface); border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(49 94 245 / 13%); }
 .password-input input { border: 0; box-shadow: none !important; }
-.password-input button { display: grid; width: 38px; height: 38px; place-items: center; flex: 0 0 auto; color: var(--color-muted); background: transparent; border: 0; border-radius: 7px; }
+.password-input button { display: grid; width: 38px; height: 38px; place-items: center; flex: 0 0 auto; color: var(--color-muted); background: transparent; border: 0; border-radius: 7px; cursor: pointer; }
 .password-input button:hover { color: var(--color-primary-strong); background: #EDF6FB; }
 .form-row-end { display: flex; justify-content: flex-end; margin-top: 12px; margin-bottom: 12px;}
-.field-hint { margin: 8px 0 0; color: var(--color-muted); font-size: 0.69rem; line-height: 1.5; }
+.field-hint { margin: 8px 0 0; color: var(--color-muted); font-size: var(--text-xs); line-height: 1.5; }
 .form-error,
-.form-success { padding: 10px 11px; margin: 15px 0 0; border-radius: 8px; font-size: 0.75rem; line-height: 1.45; }
+.form-success { padding: 10px 11px; margin: 15px 0 0; border-radius: 8px; font-size: var(--text-sm); line-height: 1.45; }
 .form-error { color: #9F382F; background: var(--color-danger-surface); border: 1px solid #EFC7C2; }
 .form-success { color: var(--color-success-ink); background: #EFFAF4; border: 1px solid #C9EAD9; }
 .form-feedback-placeholder { min-height: 0; margin: 0; }
 .auth-card .button-wide { margin-top: 17px; }
-.auth-switch { margin: 20px 0 0; color: var(--color-muted); font-size: 0.77rem; text-align: center; }
+.auth-switch { margin: 20px 0 0; color: var(--color-muted); font-size: var(--text-sm); text-align: center; }
 .auth-switch a,
 .auth-switch button { color: var(--color-primary-strong); font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .auth-switch button { padding: 0; background: transparent; border: 0; font-size: inherit; }
@@ -107,4 +107,67 @@
   .auth-motif { min-height: 112px; padding-left: 34px; }
   .auth-motif svg { width: 74px; height: 74px; padding: 14px; border-radius: 14px; }
   .auth-card { padding: 21px 18px; border-radius: 13px; }
+}
+
+/* Google OAuth Button */
+.google-auth-wrapper {
+  margin-bottom: 16px;
+}
+
+.button-google-auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #1f2937;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 100ms ease;
+}
+
+.button-google-auth:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+.button-google-auth:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.button-google-auth:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  margin: 18px 0 14px;
+  text-align: center;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.auth-divider span {
+  padding: 0 12px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowRight, CalendarDays, CarFront, Stethoscope, Utensils } from "lucide-react";
+import { ArrowRight, CalendarDays, CarFront, PanelRightClose, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { resolveAddress } from "@/lib/api-client";
+import { errorText, resolveAddress } from "@/lib/api-client";
+import { executeServiceCancellation, isCancellableStatus } from "@/lib/cancellation-helpers";
 import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { HistoryItem } from "@/types";
 import { RideMapDetail } from "./ride-map-detail";
@@ -16,11 +17,36 @@ import { XOneMap, type XOnePoint } from "./xone-map";
 
 export type ContextRailMode = "idle" | "active" | "tracking" | "recovery";
 
-export function ContextRail({ mode, title, description, children }: { mode: ContextRailMode; title: string; description: string; children: ReactNode }) {
-  return <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra">
-    {mode !== "idle" ? <div className="context-rail-heading"><span className="eyebrow">ĐANG DIỄN RA</span><h2>{title}</h2><p>{description}</p></div> : null}
-    {children}
-  </aside>;
+export function ContextRail({
+  mode,
+  title,
+  description,
+  onCollapse,
+  style,
+  resizer,
+  children,
+}: {
+  mode: ContextRailMode;
+  title: string;
+  description: string;
+  onCollapse?: () => void;
+  style?: React.CSSProperties;
+  resizer?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra" style={style}>
+      {resizer}
+      <div className="context-rail-heading">
+        <div className="context-rail-heading-copy">
+          {mode !== "idle" ? <span className="eyebrow">ĐANG DIỄN RA</span> : <span className="eyebrow">TIỆN ÍCH</span>}
+          <h2>{title}</h2>
+          {description ? <p>{description}</p> : null}
+        </div>
+      </div>
+      {children}
+    </aside>
+  );
 }
 
 export function ActiveRideRailCard({ ride, onDetails }: { ride: HistoryItem; onDetails?: (item: HistoryItem) => void }) {
@@ -34,25 +60,125 @@ export function ActiveWorkRailCard({ item, onDetails, children }: { item: Histor
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const Icon = item.type === "ride_booking" ? CarFront : item.type === "food_order" ? Utensils : item.type === "restaurant_reservation" ? CalendarDays : Stethoscope;
   const detail = tracking?.driver ? driver.name + (driver.vehicle ? " · " + driver.vehicle : "") : item.detail || summaryFor(item);
-  return <article className="active-ride-rail-card">
-    <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={18} /></div>
-    <div><strong>{item.title || titleFor(item.type)}</strong><span>{detail}</span><small>{statusLabel(status)}</small></div>
-    <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={14} /></button>
-    {children}
+  const typeAccent = item.type === "ride_booking" ? "active-card-ride" : item.type === "food_order" ? "active-card-food" : item.type === "restaurant_reservation" ? "active-card-restaurant" : "active-card-healthcare";
+  return <article className={`active-ride-rail-card ${typeAccent}`}>
+    <div className="active-card-top-row">
+      <div className="active-ride-rail-icon" aria-hidden="true"><Icon size={16} /></div>
+      <div className="active-card-header-copy">
+        <strong>{item.title || titleFor(item.type)}</strong>
+        <span className="active-card-pulse-badge"><span className="pulse-dot" aria-hidden="true" />{statusLabel(status)}</span>
+      </div>
+    </div>
+    {detail && <div className="active-card-detail-line">{detail}</div>}
+    <div className="active-card-actions-row">
+      <button className="text-link" type="button" onClick={() => onDetails?.(item)}><span>Xem chi tiết</span><ArrowRight size={13} /></button>
+      {children}
+    </div>
   </article>;
 }
 
 export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: { item: HistoryItem; onDetails?: (item: HistoryItem) => void; onCancelled?: () => void }) {
   const [cancelled, setCancelled] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState("");
+
   const bookingId = item.type === "ride_booking" ? optionalText(item.resource.booking_id ?? item.resource.resource_id ?? item.resource.id, item.id) : undefined;
   const { data: tracking } = useRideTracking(bookingId);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
+  const canCancel = isCancellableStatus(item.type, status);
+
   if (cancelled) return null;
-  return <ActiveWorkRailCard item={item} onDetails={onDetails}>{item.type === "ride_booking" ? <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" /> : null}</ActiveWorkRailCard>;
+
+  async function handleCancel() {
+    setPending(true); setError("");
+    try {
+      await executeServiceCancellation(item.type, item.resource.id ? item.resource : item.id);
+      setCancelled(true);
+      onCancelled?.();
+      window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
+      if (item.type === "ride_booking") {
+        window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } }));
+      }
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      setPending(false);
+      setShowConfirm(false);
+    }
+  }
+
+  return <ActiveWorkRailCard item={item} onDetails={onDetails}>
+    {item.type === "ride_booking" ? (
+      <RideCancelButton bookingId={bookingId} status={status} onCancelled={() => { setCancelled(true); onCancelled?.(); window.dispatchEvent(new CustomEvent("xone-ride-cancelled", { detail: { id: item.id } })); }} className="active-ride-cancel" />
+    ) : canCancel ? (
+      showConfirm ? (
+        <div className="active-card-cancel-confirm">
+          <small>Hủy đặt?</small>
+          <button className="button button-danger text-button" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "..." : "Xác nhận"}</button>
+          <button className="button button-secondary text-button" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Đóng</button>
+        </div>
+      ) : (
+        <button className="button button-secondary text-button active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>Hủy</button>
+      )
+    ) : null}
+    {error ? <small className="form-error">{error}</small> : null}
+  </ActiveWorkRailCard>;
 }
 
-export function ConversationContextCards() {
-  return <p className="context-empty-state">Chưa có dịch vụ đang diễn ra.</p>;
+export function ConversationContextCards({ onServiceShortcut }: { onServiceShortcut?: (prompt: string) => void }) {
+  const services = [
+    {
+      icon: CarFront,
+      label: "Đi xe",
+      accent: "service-shortcut-ride",
+      prompt: "Đặt xe từ ",
+      description: "Xe 4 chỗ, 7 chỗ, nhanh chóng",
+    },
+    {
+      icon: Utensils,
+      label: "Đồ ăn",
+      accent: "service-shortcut-food",
+      prompt: "Tìm ",
+      description: "Giao hàng tận nơi",
+    },
+    {
+      icon: UtensilsCrossed,
+      label: "Nhà hàng",
+      accent: "service-shortcut-restaurant",
+      prompt: "Đặt bàn nhà hàng ",
+      description: "Ăn tối, tiệc, sự kiện",
+    },
+    {
+      icon: Stethoscope,
+      label: "Khám bệnh",
+      accent: "service-shortcut-healthcare",
+      prompt: "Đặt lịch khám ",
+      description: "Đặt hẹn bác sĩ nhanh",
+    },
+  ];
+
+  return (
+    <div className="service-shortcuts">
+      <span className="service-shortcuts-label">Bắt đầu từ đây</span>
+      <div className="service-shortcuts-grid">
+        {services.map(({ icon: Icon, label, accent, prompt, description }) => (
+          <button
+            key={label}
+            type="button"
+            className={`service-shortcut-card ${accent}`}
+            onClick={() => onServiceShortcut?.(prompt)}
+          >
+            <span className="service-shortcut-icon"><Icon size={16} aria-hidden="true" /></span>
+            <div className="service-shortcut-info">
+              <span className="service-shortcut-name">{label}</span>
+              <span className="service-shortcut-desc">{description}</span>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function ActiveWorkDetailDialog({ item, open, onOpenChange }: { item: HistoryItem | null; open: boolean; onOpenChange: (open: boolean) => void }) {

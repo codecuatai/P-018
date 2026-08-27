@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, inspect, text
+from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import verify_internal_service_token
@@ -91,6 +91,10 @@ def _active_catalog_version(db: Session) -> str | None:
             text("SELECT dataset_version FROM catalog_dataset_versions WHERE domain='healthcare' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1")
         ).scalar_one_or_none()
     except Exception:
+        # A failed optional catalog-version probe marks the SQLAlchemy
+        # transaction as rollback-only. Clear it before callers continue with
+        # the authoritative department query.
+        db.rollback()
         return None
 
 
@@ -218,8 +222,28 @@ def _resolve_patient(db: Session, patient_id: int | None, actor_id: str) -> Pati
     return patient
 
 
+def _facility_record_data(facility: HealthcareFacility) -> dict[str, Any]:
+    coordinates = {
+        "latitude": facility.latitude,
+        "longitude": facility.longitude,
+        "coordinate_status": "validated" if facility.latitude is not None and facility.longitude is not None else "missing",
+    }
+    return {
+        "source_id": facility.source_id,
+        "name": facility.name,
+        "address": facility.address,
+        "facility_type": facility.facility_type,
+        "ward": facility.ward,
+        "district": facility.district,
+        "city": facility.city,
+        **coordinates,
+        "phone": facility.phone,
+        "website": facility.website,
+        "source": facility.source_name or "healthcare_catalog",
+    }
+
+
 def _facility_data(db: Session | None = None, facility_source_id: str | None = None) -> dict[str, Any]:
-    facility = None
     if db is not None:
         query = db.query(HealthcareFacility).filter(HealthcareFacility.is_active.is_(True))
         active_version = _active_catalog_version(db)
@@ -228,25 +252,8 @@ def _facility_data(db: Session | None = None, facility_source_id: str | None = N
         if facility_source_id:
             query = query.filter(HealthcareFacility.source_id == facility_source_id)
         facility = query.order_by(HealthcareFacility.source_id).first()
-    if facility:
-        coordinates = {
-            "latitude": facility.latitude,
-            "longitude": facility.longitude,
-            "coordinate_status": "validated" if facility.latitude is not None and facility.longitude is not None else "missing",
-        }
-        return {
-            "source_id": facility.source_id,
-            "name": facility.name,
-            "address": facility.address,
-            "facility_type": facility.facility_type,
-            "ward": facility.ward,
-            "district": facility.district,
-            "city": facility.city,
-            **coordinates,
-            "phone": facility.phone,
-            "website": facility.website,
-            "source": facility.source_name or "healthcare_catalog",
-        }
+        if facility:
+            return _facility_record_data(facility)
     settings = get_settings()
     return {
         "name": settings.healthcare_facility_name,
@@ -298,22 +305,61 @@ def _appointment_data(appointment: Appointment, db: Session | None = None) -> di
 def get_departments(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
+    keyword: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
 ) -> dict[str, Any]:
     query = db.query(Department).filter(Department.is_active.is_(True))
     active_version = _active_catalog_version(db)
     if active_version:
         query = query.filter(Department.dataset_version == active_version)
-    departments = query.order_by(Department.name).all()
+    if keyword and keyword.strip():
+        k = f"%{keyword.strip()}%"
+        # specialty belongs to Doctor, not Department. Referencing it here
+        # generates invalid SQL on PostgreSQL and turns department browsing
+        # into a 500 whenever a keyword is supplied.
+        query = query.filter(or_(Department.name.ilike(k), Department.description.ilike(k)))
+    total = query.count()
+    # SQLAlchemy does not allow changing the ordering of a sliced query.
+    # Apply the deterministic ordering before LIMIT/OFFSET so paginated
+    # department requests work on PostgreSQL (and remain stable for ties).
+    query = query.order_by(Department.name, Department.id)
+    if offset is not None and offset > 0:
+        query = query.offset(offset)
+    if limit is not None and limit > 0:
+        query = query.limit(limit)
+    departments = query.all()
+    facility_ids = {
+        department.facility_source_id
+        for department in departments
+        if department.facility_source_id
+    }
+    facilities: dict[str, dict[str, Any]] = {}
+    if facility_ids:
+        facility_query = db.query(HealthcareFacility).filter(
+            HealthcareFacility.is_active.is_(True),
+            HealthcareFacility.source_id.in_(facility_ids),
+        )
+        if active_version:
+            facility_query = facility_query.filter(HealthcareFacility.dataset_version == active_version)
+        facilities = {facility.source_id: _facility_record_data(facility) for facility in facility_query.all()}
+    default_facility = _facility_data(db)
+    items = [
+        {
+            "id": department.id,
+            "name": department.name,
+            "description": department.description,
+            "facility": facilities.get(department.facility_source_id, default_facility),
+        }
+        for department in departments
+    ]
     return {
-        "data": [
-            {
-                "id": department.id,
-                "name": department.name,
-                "description": department.description,
-                "facility": _facility_data(db, department.facility_source_id),
-            }
-            for department in departments
-        ]
+        "data": {
+            "items": items,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
     }
 
 
@@ -437,7 +483,11 @@ def get_doctors_by_department(
         for doctor in doctor_query.order_by(Doctor.name).all():
             slots = (
                 db.query(TimeSlot)
-                .filter(TimeSlot.doctor_id == doctor.id, TimeSlot.status == SlotStatus.AVAILABLE.value)
+                .filter(
+                    TimeSlot.doctor_id == doctor.id,
+                    TimeSlot.status == SlotStatus.AVAILABLE.value,
+                    TimeSlot.start_time > func.now(),
+                )
                 .order_by(TimeSlot.start_time)
                 .all()
             )

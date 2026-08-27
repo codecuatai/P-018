@@ -1,15 +1,9 @@
-FROM node:22-alpine AS base
+FROM node:22-alpine AS builder
 WORKDIR /workspace
 RUN corepack enable
-
-FROM base AS dependencies
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json ./apps/web/package.json
 RUN pnpm install --filter p018-frontend-web... --frozen-lockfile
-
-FROM base AS builder
-COPY --from=dependencies /workspace/node_modules ./node_modules
-COPY --from=dependencies /workspace/apps/web/node_modules ./apps/web/node_modules
 COPY apps/web ./apps/web
 ARG NEXT_PUBLIC_API_URL=http://localhost:3000
 ARG NEXT_PUBLIC_HERO_VIDEO_URL=
@@ -31,8 +25,8 @@ ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /workspace/apps/web/.next/standalone ./
-COPY --from=builder /workspace/apps/web/.next/static ./.next/static
-COPY --from=builder /workspace/apps/web/public ./public
+COPY --from=builder /workspace/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder /workspace/apps/web/public ./apps/web/public
 # Copy dependencies so Next standalone and all nested package symlinks resolve cleanly.
 COPY --from=builder /workspace/node_modules ./node_modules
 # Replace broken pnpm relative symlinks to @swc/helpers with the actual physical files
@@ -46,9 +40,9 @@ RUN for d in /app/node_modules/.pnpm/next@*/node_modules; do \
     mkdir -p /app/node_modules/@swc && \
     rm -rf /app/node_modules/@swc/helpers && \
     cp -r /app/node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers /app/node_modules/@swc/helpers 2>/dev/null || true && \
-    mkdir -p /app/.next/cache && \
-    chown -R nextjs:nodejs /app
+    mkdir -p /app/apps/web/.next/cache && \
+    chown nextjs:nodejs /app/apps/web/.next/cache
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
-CMD ["node", "server.js"]
+CMD ["node", "apps/web/server.js"]

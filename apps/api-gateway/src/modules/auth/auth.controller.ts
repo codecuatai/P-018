@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import type { Response } from 'express';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -20,7 +20,18 @@ class RegisterDto {
   full_name!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   password!: string;
+}
+
+class GoogleAuthDto {
+  @IsString()
+  code!: string;
+
+  @IsString()
+  @IsOptional()
+  redirect_uri?: string;
 }
 
 class LoginDto {
@@ -37,6 +48,8 @@ class ChangePasswordDto {
   current_password!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   new_password!: string;
 }
 
@@ -52,12 +65,27 @@ class ResetPasswordDto {
   token!: string;
 
   @IsString()
+  @MinLength(8)
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
   new_password!: string;
 }
 
 @Controller('api/v1/auth')
 export class AuthController {
   constructor(private readonly auth: AuthService, private readonly config: ConfigService) {}
+
+  @Get('google/url')
+  googleAuthUrl(@Req() request: CorrelatedRequest): object {
+    const url = this.auth.getGoogleAuthUrl();
+    return { data: { url }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('google')
+  async googleAuth(@Body() body: GoogleAuthDto, @Req() request: CorrelatedRequest, @Res({ passthrough: true }) response: Response): Promise<object> {
+    const issued = await this.auth.loginWithGoogle({ code: body.code, redirectUri: body.redirect_uri }, requestMetadata(request), request.correlationId ?? 'cor_unknown');
+    setRefreshCookie(response, issued.refreshToken, this.auth.settings, this.config.getOrThrow<string>('APP_ENV'));
+    return authResponse(issued, request.correlationId);
+  }
 
   @Post('register')
   async register(@Body() body: RegisterDto, @Req() request: CorrelatedRequest, @Res({ passthrough: true }) response: Response): Promise<object> {

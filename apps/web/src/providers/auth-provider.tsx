@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, login as apiLogin, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
+import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, login as apiLogin, loginWithGoogle as apiLoginWithGoogle, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
 import type { AuthUser } from "@/types";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signed-out";
@@ -12,6 +12,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   status: AuthStatus;
   login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: (code: string, redirectUri?: string) => Promise<AuthUser>;
   register: (fullName: string, email: string, password: string) => Promise<AuthUser>;
   updateProfile: (patch: Parameters<typeof apiUpdateProfile>[0]) => Promise<AuthUser>;
   logout: () => Promise<void>;
@@ -82,6 +83,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return authenticated;
   }, []);
 
+  const loginWithGoogle = useCallback(async (code: string, redirectUri?: string) => {
+    const generation = ++authGeneration.current;
+    const authenticated = await apiLoginWithGoogle(code, redirectUri, () => authGeneration.current === generation);
+    if (authGeneration.current !== generation) return authenticated;
+    setUser(authenticated);
+    setStatus("authenticated");
+    return authenticated;
+  }, []);
+
   const register = useCallback(async (fullName: string, email: string, password: string) => {
     const generation = ++authGeneration.current;
     const authenticated = await apiRegister(fullName, email, password, () => authGeneration.current === generation);
@@ -102,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
-  const value = useMemo<AuthContextValue>(() => ({ user, status, login, register, updateProfile, logout }), [login, logout, register, status, updateProfile, user]);
+  const value = useMemo<AuthContextValue>(() => ({ user, status, login, loginWithGoogle, register, updateProfile, logout }), [login, loginWithGoogle, logout, register, status, updateProfile, user]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
@@ -111,3 +121,8 @@ export function useAuth(): AuthContextValue {
   if (!value) throw new Error("useAuth must be used inside AuthProvider");
   return value;
 }
+
+export function useOptionalAuth(): AuthContextValue | undefined {
+  return useContext(AuthContext);
+}
+
