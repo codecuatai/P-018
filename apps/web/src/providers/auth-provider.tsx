@@ -3,10 +3,10 @@
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, login as apiLogin, loginWithGoogle as apiLoginWithGoogle, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
+import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, isRetryableError, login as apiLogin, loginWithGoogle as apiLoginWithGoogle, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
 import type { AuthUser } from "@/types";
 
-type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signed-out";
+type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signed-out" | "recoverable";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -16,6 +16,7 @@ interface AuthContextValue {
   register: (fullName: string, email: string, password: string) => Promise<AuthUser>;
   updateProfile: (patch: Parameters<typeof apiUpdateProfile>[0]) => Promise<AuthUser>;
   logout: () => Promise<void>;
+  retrySession: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [status, setStatus] = useState<AuthStatus>("loading");
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
   const authGeneration = useRef(0);
 
   const clear = useCallback((nextStatus: AuthStatus = "unauthenticated") => {
@@ -55,10 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (getAccessToken()) return () => { mounted = false; };
 
     void (async () => {
-      const token = await refreshAccessToken();
+      const refreshed = await refreshAccessToken();
       if (!mounted || authGeneration.current !== generation) return;
-      if (!token) {
+      if (refreshed.outcome === "invalid") {
         setStatus("unauthenticated");
+        return;
+      }
+      if (refreshed.outcome === "transient" || !refreshed.token) {
+        setStatus("recoverable");
         return;
       }
       try {
@@ -67,12 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(restored);
           setStatus("authenticated");
         }
-      } catch {
-        if (mounted && authGeneration.current === generation) clear();
+      } catch (error) {
+        if (!mounted || authGeneration.current !== generation) return;
+        if (isRetryableError(error)) setStatus("recoverable");
+        else clear();
       }
     })();
     return () => { mounted = false; };
-  }, [clear, pathname]);
+  }, [clear, pathname, restoreAttempt]);
 
   const login = useCallback(async (email: string, password: string) => {
     const generation = ++authGeneration.current;
@@ -112,7 +120,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
-  const value = useMemo<AuthContextValue>(() => ({ user, status, login, loginWithGoogle, register, updateProfile, logout }), [login, loginWithGoogle, logout, register, status, updateProfile, user]);
+  const retrySession = useCallback(() => {
+    setStatus("loading");
+    setRestoreAttempt((attempt) => attempt + 1);
+  }, []);
+
+  const value = useMemo<AuthContextValue>(() => ({ user, status, login, loginWithGoogle, register, updateProfile, logout, retrySession }), [login, loginWithGoogle, logout, register, retrySession, status, updateProfile, user]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

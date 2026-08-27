@@ -55,6 +55,12 @@ describe('environment validation', () => {
     const validated = validateEnvironment(completeConfig);
     expect(validated.GATEWAY_BODY_LIMIT_BYTES).toBe(262144);
     expect(validated.GATEWAY_RATE_LIMIT_WINDOW_SECONDS).toBe(60);
+    expect(validated.AUTH_REFRESH_REUSE_GRACE_SECONDS).toBe(10);
+  });
+
+  it('accepts an explicitly bounded refresh reuse grace window', () => {
+    expect(validateEnvironment({ ...completeConfig, AUTH_REFRESH_REUSE_GRACE_SECONDS: '0' }).AUTH_REFRESH_REUSE_GRACE_SECONDS).toBe(0);
+    expect(() => validateEnvironment({ ...completeConfig, AUTH_REFRESH_REUSE_GRACE_SECONDS: '301' })).toThrow('AUTH_REFRESH_REUSE_GRACE_SECONDS must be an integer between 0 and 300');
   });
 
   it('accepts production configuration without demo credentials or a patient fallback', () => {

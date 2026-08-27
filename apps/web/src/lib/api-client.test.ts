@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -74,8 +74,90 @@ describe("browser API client", () => {
     await login("an@example.test", "a reliable local passphrase");
     releaseRefresh();
 
-    await expect(staleRefresh).resolves.toBe("login-access-token");
+    await expect(staleRefresh).resolves.toMatchObject({ outcome: "authenticated", token: "login-access-token" });
     expect(getAccessToken()).toBe("login-access-token");
+  });
+
+  it("attaches safe trigger correlation id to refresh request without credentials in url/body", async () => {
+    setAccessToken("stale-token");
+    let refreshTriggerId: string | null = null;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        refreshTriggerId = headers.get("X-Trigger-Correlation-Id");
+        expect(headers.get("X-Correlation-Id")).toMatch(/^cor-refresh/);
+        return jsonResponse(200, { data: { access_token: "fresh-token" } });
+      }
+      if (headers.get("Authorization") === "Bearer stale-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired" });
+      }
+      return jsonResponse(200, { data: { success: true } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await request<{ success: boolean }>("/api/v1/services/healthcare");
+    expect(refreshTriggerId).toMatch(/^cor-/);
+    expect(getAccessToken()).toBe("fresh-token");
+  });
+
+  it("does not call unauthorizedHandler when multiple concurrent requests resolve via in-flight refresh", async () => {
+    setAccessToken("expired-token");
+    const onUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse(200, { data: { access_token: "renewed-token" } });
+      }
+      if (headers.get("Authorization") === "Bearer expired-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_REQUIRED", detail: "expired" });
+      }
+      return jsonResponse(200, { data: { route: url } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const results = await Promise.all([
+      request<{ route: string }>("/api/v1/services/healthcare"),
+      request<{ route: string }>("/api/v1/healthcare/patients"),
+      request<{ route: string }>("/api/v1/notifications/unread-count"),
+    ]);
+
+    expect(results).toHaveLength(3);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("renewed-token");
+  });
+
+  it("does not wipe in-memory session on transient network error during refresh", async () => {
+    setAccessToken("active-token");
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) {
+        throw new TypeError("Failed to fetch");
+      }
+      return jsonResponse(200, { data: { ok: true } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const refreshed = await refreshAccessToken();
+    expect(refreshed).toMatchObject({ outcome: "transient", token: "active-token" });
+    expect(getAccessToken()).toBe("active-token");
+  });
+
+  it("preserves the session and returns a transient outcome when a protected request cannot refresh temporarily", async () => {
+    setAccessToken("expired-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) return jsonResponse(503, { code: "UPSTREAM_UNAVAILABLE", detail: "temporarily unavailable" });
+      return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired token" });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/services/healthcare")).rejects.toMatchObject({ code: "AUTH_REFRESH_TEMPORARY", retryable: true });
+    expect(mockUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("expired-session-token");
   });
 
   it("reads active work from the dedicated active-history endpoint", async () => {
@@ -123,5 +205,55 @@ describe("browser API client", () => {
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
     await expect(browseService("healthcare", "neurology", { limit: 100, offset: 0 })).resolves.toEqual({ items: [], source: "healthcare-service", partial: false });
+  });
+
+  it("preserves active session and does not invoke unauthorizedHandler when changePassword receives CURRENT_PASSWORD_INVALID", async () => {
+    setAccessToken("valid-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/change-password")) {
+        return jsonResponse(401, {
+          code: "CURRENT_PASSWORD_INVALID",
+          detail: "Mật khẩu hiện tại không đúng.",
+        });
+      }
+      return jsonResponse(200, { data: {} });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    let capturedError: unknown;
+    try {
+      await changePassword("wrong-current-password", "NewValidPass123!@#");
+    } catch (err) {
+      capturedError = err;
+    }
+
+    expect(capturedError).toBeInstanceOf(ApiError);
+    expect((capturedError as ApiError).code).toBe("CURRENT_PASSWORD_INVALID");
+    expect(errorText(capturedError)).toBe("Mật khẩu hiện tại không đúng.");
+    expect(mockUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("valid-session-token");
+  });
+
+  it("clears session and invokes unauthorizedHandler when token authentication fails and refresh is rejected", async () => {
+    setAccessToken("stale-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse(401, { code: "REFRESH_TOKEN_INVALID", detail: "refresh expired" });
+      }
+      return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired token" });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/services/food")).rejects.toBeInstanceOf(ApiError);
+    expect(mockUnauthorized).toHaveBeenCalledTimes(1);
+    expect(getAccessToken()).toBeNull();
   });
 });

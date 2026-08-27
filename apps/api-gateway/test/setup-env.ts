@@ -22,6 +22,7 @@ process.env.DEMO_AUTH_PASSWORD = 'Xone@123';
 process.env.DEMO_AUTH_USER_ID = 'usr_demo_001';
 process.env.AUTH_ACCESS_TOKEN_TTL_SECONDS = '900';
 process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS = '2592000';
+process.env.AUTH_REFRESH_REUSE_GRACE_SECONDS = '10';
 process.env.AUTH_RESET_TOKEN_TTL_SECONDS = '1800';
 process.env.AUTH_ISSUER = 'x-one';
 process.env.AUTH_AUDIENCE = 'x-one-web';
