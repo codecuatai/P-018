@@ -179,7 +179,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function Sidebar({ userEmail, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
   return <div className="sidebar-content">
-
+    {!compact && <Link className="brand-link sidebar-brand" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={30} /><span>X-One</span></Link>}
     <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới và xóa bớt ngữ cảnh cũ"><Plus size={16} /><span>Đoạn chat mới</span></Link>
     <nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => {
       const isAssistant = href === "/app";

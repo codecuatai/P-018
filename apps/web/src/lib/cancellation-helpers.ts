@@ -56,14 +56,14 @@ export async function executeServiceCancellation(
   let rawId = typeof resourceOrId === "string"
     ? resourceOrId
     : String(
-        resource.id ??
-        resource.reservation_id ??
-        resource.appointment_id ??
-        resource.booking_id ??
-        resource.order_id ??
-        resource.resource_id ??
-        ""
-      );
+      resource.id ??
+      resource.reservation_id ??
+      resource.appointment_id ??
+      resource.booking_id ??
+      resource.order_id ??
+      resource.resource_id ??
+      ""
+    );
 
   if (!rawId || rawId === "undefined" || rawId === "null") {
     rawId = fallbackId ?? (typeof resourceOrId === "string" ? resourceOrId : "");

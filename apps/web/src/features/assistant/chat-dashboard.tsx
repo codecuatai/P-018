@@ -414,7 +414,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           
           <div className="composer-wrap">
             <div className="composer-box">
-              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Tính năng đang được phát triển" disabled>
                 <PlusCircle size={20} />
               </button>
               <textarea
@@ -431,7 +431,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Lấy vị trí hiện tại" title="Lấy vị trí hiện tại">
                   {isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}
                 </button>
-                <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
+                <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Tính năng đang được phát triển" disabled>
                   <Mic size={18} />
                 </button>
                 <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">
