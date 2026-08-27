@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, CircleUserRound, ChevronDown, HeartPulse, Loader2, MapPinned, Save, Search, Settings, ShieldCheck, Plus } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
 import { ApiError, autocompleteAddress, errorText, listSavedAddresses, createSavedAddress, setSavedAddressDefault, updateSavedAddress } from "@/lib/api-client";
 import type { GeocodeCandidate, SavedAddress } from "@/types";
@@ -35,10 +35,13 @@ export function ProfilePage() {
   const [currentAddressPoint, setCurrentAddressPoint] = useState<{ latitude: number; longitude: number }>();
   const [defaultAddressSaving, setDefaultAddressSaving] = useState(false);
   const [addressDropdownOpen, setAddressDropdownOpen] = useState(false);
+  const addressLoadSequence = useRef(0);
 
   const loadAddresses = useCallback(async () => {
+    const sequence = ++addressLoadSequence.current;
     try {
       const res = await listSavedAddresses();
+      if (sequence !== addressLoadSequence.current) return;
       setAddresses(res.items);
       setSelectedSavedAddressId((currentId) => {
         if (currentId && res.items.some((address) => address.id === currentId)) return currentId;
@@ -129,10 +132,9 @@ export function ProfilePage() {
           if (!(reason instanceof ApiError) || ![404, 405].includes(reason.status)) throw reason;
           updated = await updateSavedAddress(savedAddress.id, { is_default: true });
         }
-        setAddresses((current) => current.map((address) => ({ ...address, is_default: address.id === updated.id })));
         setSelectedSavedAddressId(updated.id);
-        setFeedback("Địa chỉ đã được lưu và đặt làm mặc định.");
         await loadAddresses();
+        setFeedback("Địa chỉ đã được lưu và đặt làm mặc định.");
         return true;
       }
       const selectedText = selectedAddress?.address_text ? normalizeAddressText(selectedAddress.address_text) : "";
