@@ -83,6 +83,11 @@ job.txt
 .pnpm-store/
 plan.md
 work.md
+prompt.md
+fix.md
+report.md
+update.md
+artifacts
 
 # AI tools & Personal IDE Configs
 .codegraph/
