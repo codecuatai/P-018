@@ -1349,12 +1349,13 @@
 .admin-metric-warning .admin-metric-icon-box { background: #FEF3C7; color: #B45309; }
 .admin-metric-label { font-size: 0.68rem; font-weight: 650; color: #64748B; text-transform: uppercase; letter-spacing: 0.02em; }
 .admin-metric strong { color: #0F172A; font-size: 1.4rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1.1; margin: 4px 0 2px; }
+.admin-metric-subtext { font-size: 0.64rem; color: #64748B; margin-top: 3px; line-height: 1.35; font-weight: 500; }
 .admin-metric-hint { font-size: 0.62rem; color: #94A3B8; margin-top: 4px; }
 
 /* Health Status Hero Card */
 .admin-health-hero { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 100%); border: 1px solid #BBF7D0; border-radius: 12px; margin-bottom: 12px; }
 .admin-health-hero-left { display: flex; align-items: center; gap: 12px; }
-.admin-health-hero-badge { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 9px; background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; }
+.admin-health-hero-badge { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 999px; background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; }
 .admin-health-hero-title { font-size: 0.86rem; font-weight: 750; color: #166534; margin: 0; }
 .admin-health-hero-subtitle { font-size: 0.72rem; color: #15803D; margin: 2px 0 0; }
 
@@ -1401,10 +1402,10 @@
 .admin-card-title h3 { margin: 0; color: var(--color-navy); font-size: 0.82rem; }
 .admin-card-title span { color: var(--color-muted-soft); font-size: 0.62rem; }
 .admin-domain-list { display: grid; gap: 0; }
-.admin-domain-row { display: grid; grid-template-columns: auto minmax(86px, 0.3fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 11px 0; border-bottom: 1px solid #E7EDF1; }
+.admin-domain-row { display: grid; grid-template-columns: auto minmax(130px, 0.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid #E7EDF1; }
 .admin-domain-row:last-child { border-bottom: 0; }
-.admin-domain-row strong { color: var(--color-navy); font-size: 0.72rem; text-transform: capitalize; }
-.admin-domain-detail { min-width: 0; overflow: hidden; color: var(--color-muted); font-size: 0.65rem; text-overflow: ellipsis; white-space: nowrap; }
+.admin-domain-row strong { color: var(--color-navy); font-size: 0.74rem; font-weight: 680; }
+.admin-domain-detail { min-width: 0; color: #475569; font-size: 0.68rem; line-height: 1.35; }
 .admin-status-dot { display: inline-block; width: 7px; height: 7px; background: var(--color-muted-soft); border-radius: 50%; }
 .admin-status-dot.status-healthy { background: var(--color-success); box-shadow: 0 0 0 3px #E6F6ED; }
 .admin-status-dot.status-degraded { background: #D99024; box-shadow: 0 0 0 3px #FFF4D8; }
@@ -1429,9 +1430,10 @@
 .admin-health-row { display: grid; grid-template-columns: 20px minmax(140px, 1.2fr) 90px 100px minmax(130px, 1fr) auto; gap: 12px; align-items: center; width: 100%; }
 .admin-health-row strong { color: var(--color-navy); font-size: 0.76rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
 .admin-health-row span:not(.admin-status-dot) { color: var(--color-muted); font-family: var(--font-sans); font-size: 0.72rem; }
-.admin-health-row time { color: var(--color-muted-soft); font-size: 0.68rem; text-align: left; }
-.admin-health-list.is-compact .admin-health-row { grid-template-columns: 16px 1fr auto auto; }
+.admin-health-list.is-compact .admin-health-row { grid-template-columns: 16px 1fr auto auto auto; }
 .admin-health-list.is-compact .admin-health-row time { display: none; }
+.admin-health-row.is-compact-row { padding: 4px 6px; border-radius: 6px; transition: background 0.12s ease; }
+.admin-health-row.is-compact-row:hover { background: #F1F5F9; }
 .admin-latency-badge { display: inline-flex; align-items: center; justify-content: center; padding: 2px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; }
 .admin-latency-fast { background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; }
 .admin-latency-medium { background: #F0F9FF; color: #0369A1; border: 1px solid #BAE6FD; }

@@ -5,6 +5,24 @@ import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { VoiceService } from './voice.service';
 
+declare global {
+  namespace Express {
+    namespace Multer {
+      interface File {
+        fieldname?: string;
+        originalname: string;
+        encoding?: string;
+        mimetype: string;
+        size: number;
+        destination?: string;
+        filename?: string;
+        path?: string;
+        buffer: Buffer;
+      }
+    }
+  }
+}
+
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };
 
 @Controller('api/v1/voice')

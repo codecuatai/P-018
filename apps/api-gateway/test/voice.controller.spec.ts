@@ -1,3 +1,4 @@
+import 'multer';
 import { Test, TestingModule } from '@nestjs/testing';
 import { VoiceController } from '../src/modules/voice/voice.controller';
 import { VoiceService } from '../src/modules/voice/voice.service';
