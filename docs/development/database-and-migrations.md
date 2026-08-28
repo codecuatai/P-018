@@ -60,6 +60,9 @@ after Compose health checks and can run the same additive migrations repeatedly.
 Alembic migrations run in one-shot containers created from the current service
 images, so a deployment never executes a newly checked-in migration inside an
 older long-lived service container.
+Ride also contains a guarded compatibility path for databases that recorded
+the earlier short-lived `0007` revision; it verifies the quote snapshot schema
+before reconciling the Alembic version marker.
 It stops on the first owner/path failure and never deletes a volume. Seeds are
 not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
 
