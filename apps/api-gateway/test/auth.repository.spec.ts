@@ -92,4 +92,15 @@ describe('AuthStore refresh reuse grace window', () => {
     const issuedAtSeconds = Math.floor(T0 / 1_000);
     expect(await store.getActiveUserForSession('usr-grace', 'fam-3', issuedAtSeconds)).toMatchObject({ id: 'usr-grace' });
   });
+
+  it('treats a circular replacement chain as reuse instead of traversing forever', async () => {
+    const store = makeStore();
+    await store.createUser(account());
+    await store.createSession(session({ id: 'sess-cycle-a', refreshTokenHash: 'hash-cycle-a', familyId: 'fam-cycle', consumedAt: iso(0), replacedBySessionId: 'sess-cycle-b' }));
+    await store.createSession(session({ id: 'sess-cycle-b', refreshTokenHash: 'hash-cycle-b', familyId: 'fam-cycle', consumedAt: iso(0), replacedBySessionId: 'sess-cycle-a' }));
+
+    const replay = await store.rotateRefreshToken('hash-cycle-a', session({ id: 'sess-cycle-c', refreshTokenHash: 'hash-cycle-c', familyId: 'fam-cycle' }), iso(1_000));
+
+    expect(replay.state).toBe('REUSE_DETECTED');
+  });
 });

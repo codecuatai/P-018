@@ -6,6 +6,7 @@ process.env.GATEWAY_AUTH_LOGIN_RATE_LIMIT = '5';
 process.env.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT = '30';
 process.env.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT = '20';
 process.env.GATEWAY_FUTURE_AUTH_RATE_LIMIT = '5';
+process.env.GATEWAY_AUTH_REFRESH_RATE_LIMIT = '60';
 process.env.DATABASE_URL = 'postgresql://core_user:test-password@postgres:5432/xone_core';
 process.env.AGENT_SERVICE_URL = 'http://agent-service:8001';
 process.env.RIDE_SERVICE_URL = 'http://ride-service:8101';

@@ -25,6 +25,12 @@ function requiresAuthentication(pathname: string | null): boolean {
   return pathname === "/admin" || pathname === "/app" || pathname?.startsWith("/app/") === true;
 }
 
+const SESSION_RESTORE_RETRY_DELAYS_MS = [150, 300, 600] as const;
+
+function waitForSessionRestoreRetry(delayMs: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -57,27 +63,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (getAccessToken()) return () => { mounted = false; };
 
     void (async () => {
-      const refreshed = await refreshAccessToken();
-      if (!mounted || authGeneration.current !== generation) return;
-      if (refreshed.outcome === "invalid") {
-        setStatus("unauthenticated");
-        return;
-      }
-      if (refreshed.outcome === "transient" || !refreshed.token) {
-        setStatus("recoverable");
-        return;
-      }
-      try {
-        const restored = await getCurrentUser();
-        if (mounted && authGeneration.current === generation) {
-          setUser(restored);
-          setStatus("authenticated");
-        }
-      } catch (error) {
+      for (let attempt = 0; attempt <= SESSION_RESTORE_RETRY_DELAYS_MS.length; attempt += 1) {
+        const refreshed = await refreshAccessToken();
         if (!mounted || authGeneration.current !== generation) return;
-        if (isRetryableError(error)) setStatus("recoverable");
-        else clear();
+        if (refreshed.outcome === "invalid") {
+          setStatus("unauthenticated");
+          return;
+        }
+
+        if (refreshed.outcome === "authenticated" && refreshed.token) {
+          try {
+            const restored = await getCurrentUser();
+            if (mounted && authGeneration.current === generation) {
+              setUser(restored);
+              setStatus("authenticated");
+            }
+            return;
+          } catch (error) {
+            if (!mounted || authGeneration.current !== generation) return;
+            if (!isRetryableError(error)) {
+              clear();
+              return;
+            }
+          }
+        }
+
+        const delay = SESSION_RESTORE_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined) break;
+        await waitForSessionRestoreRetry(delay);
+        if (!mounted || authGeneration.current !== generation) return;
       }
+
+      if (mounted && authGeneration.current === generation) setStatus("recoverable");
     })();
     return () => { mounted = false; };
   }, [clear, pathname, restoreAttempt]);

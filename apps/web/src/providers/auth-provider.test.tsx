@@ -64,11 +64,24 @@ describe("AuthProvider", () => {
     expect(mockRefreshAccessToken).not.toHaveBeenCalled();
   });
 
-  it("does not redirect when session restoration is temporarily unavailable", async () => {
-    mockRefreshAccessToken.mockResolvedValueOnce({ outcome: "transient", token: null });
+  it("retries a transient refresh before exposing the recoverable state", async () => {
+    mockRefreshAccessToken
+      .mockResolvedValueOnce({ outcome: "transient", token: null })
+      .mockResolvedValueOnce({ outcome: "authenticated", token: "access-token" });
+    mockGetCurrentUser.mockResolvedValueOnce({ sub: "usr-1", email: "an@example.test", role: "customer" });
 
     render(<AuthProvider><StatusProbe /></AuthProvider>);
 
-    await waitFor(() => expect(screen.getByText("recoverable:none")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("authenticated:an@example.test")).toBeInTheDocument());
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the recoverable state after bounded transient restore retries", async () => {
+    mockRefreshAccessToken.mockResolvedValue({ outcome: "transient", token: null });
+
+    render(<AuthProvider><StatusProbe /></AuthProvider>);
+
+    await waitFor(() => expect(screen.getByText("recoverable:none")).toBeInTheDocument(), { timeout: 2500 });
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(4);
   });
 });

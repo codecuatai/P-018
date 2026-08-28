@@ -115,7 +115,7 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
       if (response.status === 401 && !options.suppressUnauthorized && isSessionAuthError(problem)) {
         // If a refresh is currently in flight (triggered by another concurrent request),
         // wait for it before giving up and clearing the session.
-        if (refreshInFlight && !options.retried) {
+        if (refreshInFlight) {
           const refreshed = await refreshInFlight;
           if (refreshed.outcome === "authenticated" && refreshed.token) return request<T>(path, init, { ...options, retried: true });
           if (refreshed.outcome === "transient") throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);

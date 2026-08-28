@@ -127,6 +127,28 @@ describe('Auth PostgreSQL persistence', () => {
     expect(live.rows.length).toBeGreaterThanOrEqual(1);
   });
 
+  integration('serializes simultaneous refreshes of the same cookie without duplicate sessions or family revocation', async () => {
+    const suffix = Date.now();
+    const issued = await service.register(
+      { fullName: 'Concurrent User', email: `concurrent-${suffix}@example.test`, password },
+      { userAgent: 'postgres-integration', ip: '127.0.0.1' },
+      `cor-auth-pg-concurrent-${suffix}`,
+    );
+
+    const [first, second] = await Promise.all([
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-a-${suffix}`),
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-b-${suffix}`),
+    ]);
+
+    expect(first.refreshToken).not.toBe(second.refreshToken);
+    expect(await service.authenticateAccessToken(first.accessToken)).toMatchObject({ sub: issued.user.sub });
+    expect(await service.authenticateAccessToken(second.accessToken)).toMatchObject({ sub: issued.user.sub });
+
+    const sessions = await pool.query('SELECT id, revoked_at FROM user_sessions WHERE user_id = $1 ORDER BY created_at ASC', [issued.user.sub]);
+    expect(sessions.rows).toHaveLength(3);
+    expect(sessions.rows.every((row) => row.revoked_at === null)).toBe(true);
+  });
+
   integration('stores a one-time reset hash and invalidates its existing sessions in PostgreSQL', async () => {
     const suffix = Date.now();
     const issued = await service.register(

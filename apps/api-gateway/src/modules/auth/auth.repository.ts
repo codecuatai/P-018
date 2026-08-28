@@ -173,8 +173,11 @@ export class InMemoryAuthRepository implements AuthRepository {
   private findBenignReplayPath(current: AuthSession, account: AuthAccount, now: string): AuthSession[] | undefined {
     if (!current.consumedAt || Date.parse(now) - Date.parse(current.consumedAt) > this.refreshReuseGraceMs || !isUsableStatus(account.status)) return undefined;
     const path: AuthSession[] = [];
+    const visited = new Set<string>();
     let cursor = this.sessionsById.get(current.id);
     for (let index = 0; cursor && index < 64; index += 1) {
+      if (visited.has(cursor.id)) return undefined;
+      visited.add(cursor.id);
       path.push(cursor);
       if (!cursor.consumedAt) {
         return !cursor.revokedAt && Date.parse(cursor.expiresAt) > Date.parse(now) ? path : undefined;
@@ -411,11 +414,14 @@ export class PostgresAuthRepository implements AuthRepository {
 
   private async lockReplayPath(client: PoolClient, current: AuthSession): Promise<AuthSession[]> {
     const path: AuthSession[] = [current];
+    const visited = new Set<string>([current.id]);
     let replacementId = current.replacedBySessionId;
     for (let index = 0; replacementId && index < 63; index += 1) {
+      if (visited.has(replacementId)) break;
       const result = await client.query('SELECT * FROM user_sessions WHERE id=$1 FOR UPDATE', [replacementId]);
       if (!result.rows[0]) break;
       const replacement = this.sessionFromRow(result.rows[0] as Record<string, unknown>);
+      visited.add(replacement.id);
       path.push(replacement);
       if (!replacement.consumedAt) break;
       replacementId = replacement.replacedBySessionId;

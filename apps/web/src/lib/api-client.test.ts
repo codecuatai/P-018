@@ -130,6 +130,57 @@ describe("browser API client", () => {
     expect(getAccessToken()).toBe("renewed-token");
   });
 
+  it("lets a retried request join a refresh that starts while its retry is in flight", async () => {
+    setAccessToken("expired-token");
+    const onUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized });
+    let releaseSecondRefresh!: () => void;
+    let secondRefreshStarted!: () => void;
+    let releaseRetriedRequest!: () => void;
+    let retriedRequestStarted!: () => void;
+    const secondRefreshGate = new Promise<void>((resolve) => { releaseSecondRefresh = resolve; });
+    const secondRefreshStartedGate = new Promise<void>((resolve) => { secondRefreshStarted = resolve; });
+    const retriedRequestGate = new Promise<void>((resolve) => { releaseRetriedRequest = resolve; });
+    const retriedRequestStartedGate = new Promise<void>((resolve) => { retriedRequestStarted = resolve; });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        if (fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/v1/auth/refresh")).length === 1) {
+          return jsonResponse(200, { data: { access_token: "first-renewed-token" } });
+        }
+        secondRefreshStarted();
+        await secondRefreshGate;
+        return jsonResponse(200, { data: { access_token: "second-renewed-token" } });
+      }
+      if (authorization === "Bearer expired-token") return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired" });
+      if (url.endsWith("/api/v1/services/healthcare") && authorization === "Bearer first-renewed-token") {
+        retriedRequestStarted();
+        await retriedRequestGate;
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired again" });
+      }
+      if (url.endsWith("/api/v1/notifications/unread-count") && authorization === "Bearer first-renewed-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired concurrently" });
+      }
+      expect(authorization).toBe("Bearer second-renewed-token");
+      return jsonResponse(200, { data: { ok: true } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const retriedRequest = request<{ ok: boolean }>("/api/v1/services/healthcare");
+    await retriedRequestStartedGate;
+    const concurrentRequest = request<{ ok: boolean }>("/api/v1/notifications/unread-count");
+    await secondRefreshStartedGate;
+    releaseRetriedRequest();
+    await Promise.resolve();
+    releaseSecondRefresh();
+
+    await expect(Promise.all([retriedRequest, concurrentRequest])).resolves.toEqual([{ ok: true }, { ok: true }]);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("second-renewed-token");
+  });
+
   it("does not wipe in-memory session on transient network error during refresh", async () => {
     setAccessToken("active-token");
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {

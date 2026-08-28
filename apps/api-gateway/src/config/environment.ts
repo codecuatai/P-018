@@ -21,6 +21,7 @@ const DEFAULT_AUTH_LOGIN_RATE_LIMIT = 5;
 const DEFAULT_ASSISTANT_CHAT_RATE_LIMIT = 30;
 const DEFAULT_ASSISTANT_ACTION_RATE_LIMIT = 20;
 const DEFAULT_FUTURE_AUTH_RATE_LIMIT = 5;
+const DEFAULT_AUTH_REFRESH_RATE_LIMIT = 60;
 const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
 const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS = 2_592_000;
 const DEFAULT_AUTH_REFRESH_REUSE_GRACE_SECONDS = 10;
@@ -167,6 +168,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   const assistantChatRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_CHAT_RATE_LIMIT', DEFAULT_ASSISTANT_CHAT_RATE_LIMIT, 10_000);
   const assistantActionRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_ACTION_RATE_LIMIT', DEFAULT_ASSISTANT_ACTION_RATE_LIMIT, 10_000);
   const futureAuthRateLimit = positiveInteger(config, 'GATEWAY_FUTURE_AUTH_RATE_LIMIT', DEFAULT_FUTURE_AUTH_RATE_LIMIT, 10_000);
+  const authRefreshRateLimit = positiveInteger(config, 'GATEWAY_AUTH_REFRESH_RATE_LIMIT', DEFAULT_AUTH_REFRESH_RATE_LIMIT, 10_000);
   const accessTokenTtlSeconds = positiveInteger(config, 'AUTH_ACCESS_TOKEN_TTL_SECONDS', DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS, 3_600);
   const refreshTokenTtlSeconds = positiveInteger(config, 'AUTH_REFRESH_TOKEN_TTL_SECONDS', DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS, 7_776_000);
   const refreshReuseGraceSeconds = nonNegativeInteger(config, 'AUTH_REFRESH_REUSE_GRACE_SECONDS', DEFAULT_AUTH_REFRESH_REUSE_GRACE_SECONDS, 300);
@@ -181,6 +183,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: assistantChatRateLimit,
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: assistantActionRateLimit,
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: futureAuthRateLimit,
+    GATEWAY_AUTH_REFRESH_RATE_LIMIT: authRefreshRateLimit,
     AUTH_ACCESS_TOKEN_TTL_SECONDS: accessTokenTtlSeconds,
     AUTH_REFRESH_TOKEN_TTL_SECONDS: refreshTokenTtlSeconds,
     AUTH_REFRESH_REUSE_GRACE_SECONDS: refreshReuseGraceSeconds,
@@ -233,7 +236,7 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
       { name: 'auth.register', method: 'POST', path: '/api/v1/auth/register', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.forgot-password', method: 'POST', path: '/api/v1/auth/forgot-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.reset-password', method: 'POST', path: '/api/v1/auth/reset-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
-      { name: 'auth.refresh', method: 'POST', path: '/api/v1/auth/refresh', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
+      { name: 'auth.refresh', method: 'POST', path: '/api/v1/auth/refresh', maxRequests: Number(validated.GATEWAY_AUTH_REFRESH_RATE_LIMIT), windowMs },
     ],
   };
 }
