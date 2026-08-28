@@ -2,7 +2,7 @@
 
 import { ArrowRight, Check, Home, LoaderCircle, LocateFixed, MapPinned, Search, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,11 +35,16 @@ export function OnboardingPage() {
   const [pending, setPending] = useState(false);
   const [locating, setLocating] = useState(false);
   const [addressSaved, setAddressSaved] = useState(false);
+  const initializedUserKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!fullName && user?.full_name) setFullName(user.full_name);
-    if (!phone && user?.phone) setPhone(user.phone);
-  }, [fullName, phone, user?.full_name, user?.phone]);
+    if (!user) return;
+    const userKey = user.sub || user.id || user.email;
+    if (initializedUserKeyRef.current === userKey) return;
+    initializedUserKeyRef.current = userKey;
+    if (user.full_name) setFullName(user.full_name);
+    if (user.phone) setPhone(user.phone);
+  }, [user]);
 
   function next(): void {
     setError("");
