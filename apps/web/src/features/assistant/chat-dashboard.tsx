@@ -634,7 +634,7 @@ async function fetchAddress(position: GeolocationPosition): Promise<string> {
 }
 
 async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {
-  const isHealthcareResponse = response.items.some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
+  const isHealthcareResponse = [...(response.completed ?? []), ...response.items].some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
     || response.actions.some((action) => action.kind.startsWith("healthcare_") || action.kind === "select_healthcare_slot");
   if (!isHealthcareResponse) return;
 

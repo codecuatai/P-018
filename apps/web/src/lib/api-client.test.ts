@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, getFoodMenu, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -123,5 +123,21 @@ describe("browser API client", () => {
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
     await expect(browseService("healthcare", "neurology", { limit: 100, offset: 0 })).resolves.toEqual({ items: [], source: "healthcare-service", partial: false });
+  });
+
+  it("paginates the restaurant menu through the Gateway service-actions route", async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/api/v1/service-actions/food/restaurants/res_pho_hanoi/menu?limit=6&offset=30");
+      return jsonResponse(200, { data: { restaurant: { id: "res_pho_hanoi" }, items: [], total: 136, limit: 6, offset: 30 } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(getFoodMenu("res_pho_hanoi", { limit: 6, offset: 30 })).resolves.toEqual({
+      restaurant: { id: "res_pho_hanoi" },
+      items: [],
+      total: 136,
+      limit: 6,
+      offset: 30,
+    });
   });
 });

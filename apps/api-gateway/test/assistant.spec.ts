@@ -165,7 +165,7 @@ describe('Unified assistant orchestration', () => {
       confirmService: jest.fn(),
       confirmPayment: jest.fn(),
     };
-    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'confirmation-1' }), executeDomain: jest.fn().mockResolvedValue({ reservation: { restaurant_name: 'Maison Hanoi', restaurant_location: '12 Hoan Kiem, Ha Noi', reservation_code: 'res-1', start_at: '2099-01-01T19:00:00+07:00', party_size: 2 } }), execute: jest.fn() };
+    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'confirmation-1' }), executeDomain: jest.fn().mockResolvedValue({ tool_result: { id: 'res-1', reservation_code: 'res-1', restaurant_id: 'rest-1', restaurant_name: 'Maison Hanoi', address: '12 Hoan Kiem, Ha Noi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00', status: 'CONFIRMED' } }), execute: jest.fn() };
     const service = new AssistantService(store as never, agent as never, restaurant as never, healthcare as never, ride as never, confirmations as never);
 
     const first = await service.chat(user, 'Tối nay tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới đó.', undefined, 'cor-1');
@@ -185,6 +185,9 @@ describe('Unified assistant orchestration', () => {
 
     const confirmed = await service.act(user, { conversation_id: first.conversation_id, action_id: selected.actions[0].id }, 'cor-3', 'restaurant-confirm-key');
     expect(confirmed.actions.map((action) => action.kind)).toEqual(['ride_service']);
+    expect(confirmed.workflow_status).toBe('RUNNING');
+    expect(confirmed.completed[0]).toEqual(expect.objectContaining({ kind: 'reservation', reservation_code: 'res-1', status: 'CONFIRMED', party_size: 2 }));
+    expect(confirmed.items[0]).toEqual(expect.objectContaining({ kind: 'ride_quote' }));
   });
 
   it('processes only the newly touched task and keeps an unrelated action cohort', async () => {
@@ -719,7 +722,7 @@ describe('Unified assistant orchestration', () => {
     const saved = await store.getConversation(first.conversation_id, user.sub);
     const task = (saved?.state.tasks as Array<Record<string, unknown>>).find((item) => item.domain === 'ride');
 
-    expect(paid.items[0].kind).toBe('ride_booking');
+    expect(paid.completed[0].kind).toBe('ride_booking');
     expect(task?.phase).toBe('IN_PROGRESS');
     expect((task?.authoritative as Record<string, unknown>)?.booking).toEqual(expect.objectContaining({ status: 'SEARCHING_DRIVER' }));
     expect(ride.hydrateWorkflow).toHaveBeenCalledWith(expect.any(String), 'ride-flow', expect.objectContaining({ quoteId: 'quote-1', bookingId: 'booking-1' }), expect.any(String));
@@ -1005,7 +1008,7 @@ describe('Unified assistant orchestration', () => {
 
     const cancelled = await service.act(user, { conversation_id: choices.conversation_id, action_id: cancel!.id }, 'cor-health-date-3', 'health-date-cancel-key');
     expect(healthcare.cancelAppointment).toHaveBeenCalledWith(user.sub, 'cor-health-date-3', 'health-date-cancel-key', 51);
-    expect(cancelled.items[0]).toMatchObject({ kind: 'appointment', status: 'CANCELLED' });
+    expect(cancelled.completed[0]).toMatchObject({ kind: 'appointment', status: 'CANCELLED' });
     expect(cancelled.actions).toEqual([]);
   });
 

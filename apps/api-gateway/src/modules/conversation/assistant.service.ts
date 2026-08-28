@@ -1341,7 +1341,12 @@ export class AssistantService {
         const result = await this.processTask(task, merged, user, conversationId, correlationId);
         task.phase = result.phase;
         if (result.authoritative) task.authoritative = result.authoritative;
-        if (result.publicItem) task.public_item = result.publicItem;
+        if (result.publicItem) {
+          task.public_item = result.publicItem;
+          // A task completed inside this turn yields its own success card in
+          // the completed projection while failures still land in items.
+          if (result.phase === 'COMPLETED') completed.push(result.publicItem);
+        }
         if (result.workflowId) task.workflow_id = result.workflowId;
         if (result.actions) actions.push(...result.actions);
         if (result.items) items.push(...result.items);
@@ -1464,7 +1469,13 @@ export class AssistantService {
         : state.actions.filter((candidate) => candidate.task_id !== task.id);
       if (result.nextActions) state.actions.push(...result.nextActions);
       if (result.nextAction) state.actions.push(result.nextAction);
-      const remainingItems = result.publicItem ? [result.publicItem] : [];
+      const remainingItems: JsonObject[] = [];
+      const completedItems: JsonObject[] = [];
+      if (result.publicItem && (result.phase === 'COMPLETED' || action.kind === 'ride_payment')) {
+        completedItems.push(result.publicItem);
+      } else if (result.publicItem) {
+        remainingItems.push(result.publicItem);
+      }
       const dependentActions: StoredAction[] = [];
       for (const dependent of state.tasks) {
         if (
@@ -1473,6 +1484,7 @@ export class AssistantService {
           || dependent.phase === 'COMPLETED'
           || !this.dependenciesReady(dependent, state.tasks)
         ) continue;
+        const pendingAction = state.actions.find((candidate) => candidate.task_id === dependent.id);
         state.actions = state.actions.filter((candidate) => candidate.task_id !== dependent.id);
         if (hasFailedDependency(dependent, state.tasks)) {
           dependent.phase = 'FAILED';
@@ -1488,7 +1500,8 @@ export class AssistantService {
           if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
           if (dependentResult.publicItem) {
             dependent.public_item = dependentResult.publicItem;
-            remainingItems.push(dependentResult.publicItem);
+            if (dependentResult.phase === 'COMPLETED') completedItems.push(dependentResult.publicItem);
+            else remainingItems.push(dependentResult.publicItem);
           }
           if (dependentResult.workflowId) dependent.workflow_id = dependentResult.workflowId;
           if (dependentResult.actions) {
@@ -1496,11 +1509,13 @@ export class AssistantService {
             state.actions.push(...dependentResult.actions);
           }
         } catch (error: unknown) {
+          const retryable = assistantActionFailureStatus(error) === 'FAILED_RETRYABLE';
           const code = publicFailureCode(error);
           dependent.phase = 'FAILED';
           dependent.failure_code = code;
-          const publicItem = buildTaskErrorItem(code, assistantActionFailureStatus(error) === 'FAILED_RETRYABLE');
+          const publicItem = buildTaskErrorItem(code, retryable, retryable && pendingAction ? { action_id: pendingAction.id } : undefined);
           dependent.public_item = publicItem;
+          if (retryable && pendingAction) state.actions.push(pendingAction);
           remainingItems.push(publicItem);
         }
       }
@@ -1508,9 +1523,12 @@ export class AssistantService {
         state.tasks,
         Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
       );
-      const message = dependentActions.length
-        ? `${result.message} Mình cũng đã chuẩn bị bước tiếp theo cho chuyến xe của bạn.`
-        : result.message;
+      const hasFailedDependent = remainingItems.some((item) => isRecord(item) && item.kind === 'task_error');
+      const message = hasFailedDependent
+        ? `${result.message} Một bước đi kèm chưa thể hoàn tất; các bước đã xác nhận vẫn được giữ nguyên. Bạn xem chi tiết bên dưới và thử lại bước đó nhé.`
+        : dependentActions.length
+          ? `${result.message} Mình cũng đã chuẩn bị bước tiếp theo cho chuyến xe của bạn.`
+          : result.message;
       const turn = this.buildTurn(
         request.conversation_id,
         user,
@@ -1519,7 +1537,7 @@ export class AssistantService {
         { ...state, tasks: state.tasks },
         remainingItems,
         state.actions,
-        result.publicItem && (result.phase === 'COMPLETED' || action.kind === 'ride_payment') ? [result.publicItem] : [],
+        completedItems,
         'INTERNAL_ACTION',
       );
       try {
@@ -1559,6 +1577,9 @@ export class AssistantService {
           state.tasks,
           Object.fromEntries(state.tasks.flatMap((candidate) => candidate.failure_code ? [[candidate.id, candidate.failure_code]] : [])),
         );
+        const completedItems = state.tasks
+          .filter((candidate) => candidate.id !== task.id && candidate.phase === 'COMPLETED' && isRecord(candidate.public_item))
+          .map((candidate) => candidate.public_item as JsonObject);
         const failedTurn = this.buildTurn(
           request.conversation_id,
           user,
@@ -1567,7 +1588,7 @@ export class AssistantService {
           state,
           [publicItem],
           state.actions,
-          [],
+          completedItems,
           'INTERNAL_ACTION',
         );
         try {
@@ -2974,11 +2995,25 @@ export class AssistantService {
     }
     if (action.kind === 'restaurant_confirm') {
       const result = await this.confirmations.executeDomain(action.confirmation_id ?? '', user, { workflow_id: action.workflow_id }, correlationId, idempotencyKey, 'CREATE_RESTAURANT_RESERVATION', action.workflow_id);
-      const reservation = isRecord(result.reservation) ? result.reservation : result;
+      // ConfirmationService wraps the domain result under tool_result; also
+      // accept the legacy direct reservation shape so confirmed payloads parse.
+      const toolResult = isRecord(result.tool_result) ? result.tool_result : undefined;
+      const toolData = toolResult && isRecord(toolResult.data) ? toolResult.data : toolResult;
+      const reservation = isRecord(result.reservation)
+        ? result.reservation
+        : isRecord(toolData?.reservation)
+          ? toolData.reservation
+          : toolData ?? result;
       const selected = isRecord(task.authoritative?.selected) ? task.authoritative.selected : undefined;
-      const restaurantName = stringValue(reservation.restaurant_name) ?? stringValue(selected?.name);
+      const restaurantSnapshot = isRecord(reservation.restaurant) ? reservation.restaurant : undefined;
+      const restaurantName = stringValue(reservation.restaurant_name)
+        ?? stringValue(restaurantSnapshot?.name)
+        ?? stringValue(selected?.name);
       if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'Mình chưa nhận được tên nhà hàng trong kết quả đặt bàn.' });
-      const restaurantLocation = stringValue(reservation.restaurant_location) ?? stringValue(selected?.location);
+      const restaurantLocation = stringValue(reservation.restaurant_location)
+        ?? stringValue(restaurantSnapshot?.location)
+        ?? stringValue(restaurantSnapshot?.address)
+        ?? stringValue(selected?.location);
       const reservationCode = stringValue(reservation.reservation_code);
       const reservationStartAt = publicDateTime(reservation.start_at);
       const reservationPartySize = numberValue(reservation.party_size);
@@ -3539,7 +3574,7 @@ export class AssistantService {
       'driver', 'doctor', 'department', 'start_time', 'price', 'payment_note', 'cart', 'pickup_stops', 'delivery_address', 'confirmation_state',
       'resource_id',
       'appointment_id', 'appointment', 'facility', 'alternative_slots', 'order', 'payment', 'preview',
-      'error_code', 'retryable', 'purpose', 'addresses', 'allow_new',
+      'error_code', 'retryable', 'action_id', 'purpose', 'addresses', 'allow_new',
     ]);
     const result: JsonObject = {};
     for (const [key, value] of Object.entries(item)) {

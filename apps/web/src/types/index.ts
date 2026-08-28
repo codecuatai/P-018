@@ -715,6 +715,7 @@ export interface AssistantAddressOptionsItem extends AssistantItemBase<"address_
 export interface AssistantTaskErrorItem extends AssistantItemBase<"task_error"> {
   error_code?: string;
   retryable?: boolean;
+  action_id?: string;
 }
 
 export type KnownAssistantItem =

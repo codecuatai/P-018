@@ -30,7 +30,7 @@ const TRUSTED_EXECUTION_ID_PATTERN = /^[A-Za-z0-9:_-]{1,160}$/;
 
 const definitions: ToolDefinition[] = [
   { name: 'search_food', description: 'Search food and restaurants.', input_schema: objectSchema([], { keyword: string, district: string, category: string, max_price: { type: 'integer' } }), output_schema: objectSchema([], { items: { type: 'array' } }), permission: 'read', confirmation_required: false, version: '1.0' },
-  { name: 'view_menu', description: 'View the authoritative restaurant menu.', input_schema: objectSchema(['restaurant_id'], { restaurant_id: string }), output_schema: objectSchema([], { restaurant: { type: 'object' }, items: { type: 'array' } }), permission: 'read', confirmation_required: false, version: '1.0' },
+  { name: 'view_menu', description: 'View the authoritative restaurant menu with server-side pagination.', input_schema: objectSchema(['restaurant_id'], { restaurant_id: string, limit: { type: 'integer', minimum: 1, maximum: 500 }, offset: { type: 'integer', minimum: 0 } }), output_schema: objectSchema([], { restaurant: { type: 'object' }, items: { type: 'array' }, total: { type: 'integer' }, limit: { type: 'integer' }, offset: { type: 'integer' } }), permission: 'read', confirmation_required: false, version: '1.0' },
   { name: 'view_menu_item', description: 'View a menu item and options.', input_schema: objectSchema(['menu_item_id'], { menu_item_id: string }), output_schema: objectSchema([], {}), permission: 'read', confirmation_required: false, version: '1.0' },
   { name: 'list_food_delivery_addresses', description: 'List addresses owned by the current actor, optionally filtered by label.', input_schema: objectSchema([], { label: string }), output_schema: objectSchema([], { addresses: { type: 'array' } }), permission: 'read', confirmation_required: false, version: '1.0' },
   { name: 'get_food_cart', description: 'Get the current user food cart.', input_schema: objectSchema(['cart_id'], { cart_id: string }), output_schema: objectSchema([], {}), permission: 'read', confirmation_required: false, version: '1.0' },
@@ -164,7 +164,13 @@ export class ToolService {
     validateArguments(definition, args);
     switch (name) {
       case 'search_food': { const params = new URLSearchParams({ keyword: String(args.keyword ?? '') }); if (typeof args.district === 'string') params.set('district', args.district); if (typeof args.category === 'string') params.set('category', args.category); if (typeof args.max_price === 'number') params.set('max_price', String(args.max_price)); return this.food.get(`/api/v1/food/search?${params.toString()}`, correlationId, actor.sub); }
-      case 'view_menu': return this.food.get(`/api/v1/restaurants/${String(args.restaurant_id)}/menu`, correlationId);
+      case 'view_menu': {
+        const params = new URLSearchParams();
+        if (typeof args.limit === 'number') params.set('limit', String(Math.min(Math.trunc(args.limit), 500)));
+        if (typeof args.offset === 'number') params.set('offset', String(Math.max(0, Math.trunc(args.offset))));
+        const query = params.toString() ? `?${params.toString()}` : '';
+        return this.food.get(`/api/v1/restaurants/${String(args.restaurant_id)}/menu${query}`, correlationId);
+      }
       case 'view_menu_item': return this.food.get(`/api/v1/menu-items/${String(args.menu_item_id)}`, correlationId);
       case 'list_food_delivery_addresses': {
         const saved = await this.store.listSavedAddresses(actor.sub);

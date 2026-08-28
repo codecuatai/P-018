@@ -28,6 +28,7 @@ export class MockGateway {
   readonly user: MockUser;
   readonly deniedRequests: string[] = [];
   readonly calls: Array<{ method: string; path: string; actor: string }> = [];
+  latestConversationId: string | null = null;
 
   private readonly options: MockGatewayOptions;
   private readonly users = new Map<string, MockUser>();
@@ -270,11 +271,42 @@ export class MockGateway {
   private async chat(route: Route, actor: MockUser): Promise<void> {
     const body = await this.body(route.request());
     const id = String(body.conversation_id ?? this.nextId("conversation"));
+    this.latestConversationId = id;
     const key = this.conversationKey(actor.sub, id);
     const conversation = this.conversations.get(key) ?? this.makeConversation(id, "Cuộc trò chuyện E2E", actor.sub);
     const message = String(body.message ?? "");
     (conversation.messages as JsonRecord[]).push({ role: "user", content: message, createdAt: isoNow() });
-    const response = { conversation_id: id, message: "Mình đã ghi nhận yêu cầu trong chế độ deterministic E2E.", items: [], actions: [], completed: [{ kind: "progress", title: "Đã lưu yêu cầu" }], workflow_status: "COMPLETED" };
+    const collapsible = message.includes("collapsible-e2e");
+    const response = collapsible
+      ? {
+          conversation_id: id,
+          message: "Mình đã chuẩn bị các thẻ dịch vụ để kiểm tra tính năng thu gọn.",
+          items: [
+            {
+              kind: "restaurant_options",
+              title: "Nhà hàng phù hợp",
+              options: [
+                { name: "Quán E2E 1", address: "12 Hoàn Kiếm, Hà Nội", cuisine: "Việt Nam" },
+                { name: "Quán E2E 2", address: "25 Tràng Tiền, Hà Nội", cuisine: "Việt Nam" },
+                { name: "Quán E2E 3", address: "8 Lý Thường Kiệt, Hà Nội", cuisine: "Việt Nam" },
+              ],
+            },
+            {
+              kind: "ride_quote",
+              title: "Ước tính chuyến đi",
+              pickup: "VinUni",
+              dropoff: "Hồ Gươm",
+              vehicle: "Xe 4 chỗ",
+              amount: 98000,
+              currency: "VND",
+              status: "QUOTE_CREATED",
+            },
+          ],
+          actions: [],
+          completed: [],
+          workflow_status: "RUNNING",
+        }
+      : { conversation_id: id, message: "Mình đã ghi nhận yêu cầu trong chế độ deterministic E2E.", items: [], actions: [], completed: [{ kind: "progress", title: "Đã lưu yêu cầu" }], workflow_status: "COMPLETED" };
     (conversation.messages as JsonRecord[]).push({ role: "assistant", content: response.message, createdAt: isoNow(), data: response });
     conversation.updatedAt = isoNow();
     this.conversations.set(key, conversation);
