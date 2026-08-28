@@ -6,3 +6,13 @@ export interface TranscribeResponseDto {
 export interface TextToSpeechRequestDto {
   text: string;
 }
+
+export interface UploadedAudioFile {
+  buffer: Buffer;
+  size: number;
+  mimetype: string;
+  originalname?: string;
+  fieldname?: string;
+  encoding?: string;
+}
+

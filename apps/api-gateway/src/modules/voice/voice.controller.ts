@@ -4,7 +4,7 @@ import { Response } from 'express';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
-import { TextToSpeechRequestDto } from './voice.dto';
+import { TextToSpeechRequestDto, UploadedAudioFile } from './voice.dto';
 import { VoiceService } from './voice.service';
 
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };
@@ -18,7 +18,7 @@ export class VoiceController {
   @HttpCode(200)
   @UseInterceptors(FileInterceptor('file'))
   async transcribe(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile() file: UploadedAudioFile,
     @Req() request: AuthenticatedRequest,
   ) {
     const result = await this.voiceService.transcribe(
@@ -49,3 +49,4 @@ export class VoiceController {
     response.send(audioBuffer);
   }
 }
+

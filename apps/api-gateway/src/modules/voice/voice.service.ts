@@ -1,6 +1,6 @@
 import { BadGatewayException, Injectable, PayloadTooLargeException, UnsupportedMediaTypeException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TranscribeResponseDto } from './voice.dto';
+import { TranscribeResponseDto, UploadedAudioFile } from './voice.dto';
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10 MiB
 const ACCEPTED_MIME_PREFIXES = ['audio/', 'video/webm'];
@@ -16,7 +16,7 @@ export class VoiceService {
     this.internalToken = this.config.getOrThrow<string>('INTERNAL_SERVICE_TOKEN');
   }
 
-  async transcribe(file: Express.Multer.File, correlationId: string, actorId: string): Promise<TranscribeResponseDto> {
+  async transcribe(file: UploadedAudioFile, correlationId: string, actorId: string): Promise<TranscribeResponseDto> {
     if (!file) {
       throw new BadRequestException({ code: 'FILE_REQUIRED', detail: 'Audio file is required.' });
     }
