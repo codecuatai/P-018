@@ -23,12 +23,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { getUnreadNotificationCount, listConversations, listNotifications } from "@/lib/api-client";
-import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
+import { getUnreadNotificationCount, listConversations, listNotifications, markAllNotificationsRead } from "@/lib/api-client";
+import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
@@ -209,27 +209,122 @@ function NotificationBell() {
   const { status } = useAuth();
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean }>>([]);
+  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; href?: string }>>([]);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
+
+  const refreshCount = useCallback(async (signal?: AbortSignal) => {
+    if (status !== "authenticated") { setCount(0); return; }
+    try {
+      const result = await getUnreadNotificationCount(signal);
+      setCount(result.unread_count);
+    } catch {}
+  }, [status]);
 
   useEffect(() => {
     if (status !== "authenticated") { setCount(0); return; }
-    let active = true;
     const controller = new AbortController();
-    void getUnreadNotificationCount(controller.signal).then((result) => { if (active) setCount(result.unread_count); }).catch(() => undefined);
-    return () => { active = false; controller.abort(); };
-  }, [status]);
+    void refreshCount(controller.signal);
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshCount();
+      }
+    }, 12_000);
+
+    const handleFocus = () => void refreshCount();
+    const handleNotificationsChanged = () => void refreshCount();
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+    };
+  }, [status, refreshCount]);
 
   useEffect(() => {
     if (!open || status !== "authenticated") return;
     let active = true;
-    void listNotifications().then((result) => {
-      if (active) setItems((result.items ?? []).slice(0, 6).map((item) => ({ id: item.id, title: item.title || "Thông báo", body: item.body || undefined, read: item.status === "READ" })));
+    void listNotifications("UNREAD").then(async (result) => {
+      if (!active) return;
+      const unreadList = result.items ?? [];
+      setItems(unreadList.slice(0, 6).map((item) => ({
+        id: item.id,
+        title: item.title || "Thông báo",
+        body: item.body || undefined,
+        href: item.resource_type && item.resource_id && ["food_order", "ride_booking", "restaurant_reservation", "healthcare_appointment"].includes(item.resource_type)
+          ? `/app/history/${item.resource_type}/${encodeURIComponent(item.resource_id)}`
+          : undefined,
+      })));
+      if (unreadList.length > 0) {
+        setCount(0);
+        try {
+          await markAllNotificationsRead();
+          emitNotificationsChanged();
+        } catch {}
+      }
     }).catch(() => undefined);
     return () => { active = false; };
   }, [open, status]);
 
-  return <div className="notification-bell-wrap" ref={ref}><button className="notification-bell-btn" type="button" aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`} onClick={() => setOpen((value) => !value)}><Bell size={18} />{count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}</button>{open && <div className="notification-popover" role="dialog" aria-label="Thông báo"><div className="notification-popover-header"><span>Thông báo</span>{count > 0 && <span className="notif-unread-count">{count} chưa đọc</span>}<button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}><X size={14} /></button></div><div className="notification-popover-body">{items.length === 0 ? <p className="notif-empty">Không có thông báo mới.</p> : items.map((item) => <div key={item.id} className={`notif-item${item.read ? "" : " notif-unread"}`}>{!item.read && <span className="notif-dot" aria-hidden="true" />}<div className="notif-copy"><strong>{item.title}</strong>{item.body && <span>{item.body}</span>}</div></div>)}</div><div className="notification-popover-footer"><Link href="/app/notifications" onClick={() => setOpen(false)}>Xem tất cả thông báo →</Link></div></div>}</div>;
+  return (
+    <div className="notification-bell-wrap" ref={ref}>
+      <button
+        className="notification-bell-btn"
+        type="button"
+        aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Bell size={18} />
+        {count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+      </button>
+      {open && (
+        <div className="notification-popover" role="dialog" aria-label="Thông báo">
+          <div className="notification-popover-header">
+            <span>Thông báo</span>
+            {items.length > 0 && <span className="notif-unread-count">{items.length} mới</span>}
+            <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="notification-popover-body">
+            {items.length === 0 ? (
+              <p className="notif-empty">Không có thông báo mới.</p>
+            ) : (
+              items.map((item) => {
+                const inner = (
+                  <>
+                    <span className="notif-dot" aria-hidden="true" />
+                    <div className="notif-copy">
+                      <strong>{item.title}</strong>
+                      {item.body && <span>{item.body}</span>}
+                    </div>
+                  </>
+                );
+                return item.href ? (
+                  <Link key={item.id} href={item.href} className="notif-item notif-unread" onClick={() => setOpen(false)}>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={item.id} className="notif-item notif-unread">
+                    {inner}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="notification-popover-footer">
+            <Link href="/app/notifications" onClick={() => setOpen(false)}>
+              Xem tất cả thông báo →
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => Promise<void> }) {

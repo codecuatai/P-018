@@ -5,6 +5,7 @@ import { Bell, CheckCheck, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { errorText, listNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/api-client";
+import { emitNotificationsChanged } from "@/lib/conversation-events";
 import type { NotificationItem } from "@/types";
 
 export default function NotificationsPage() {
@@ -30,12 +31,22 @@ export default function NotificationsPage() {
   useEffect(() => { void load(); }, [load]);
 
   async function read(id: string): Promise<void> {
-    try { await markNotificationRead(id); setItems((current) => current.map((item) => item.id === id ? { ...item, status: "READ", read_at: new Date().toISOString() } : item)); setUnread((current) => Math.max(0, current - 1)); }
+    try {
+      await markNotificationRead(id);
+      setItems((current) => current.map((item) => item.id === id ? { ...item, status: "READ", read_at: new Date().toISOString() } : item));
+      setUnread((current) => Math.max(0, current - 1));
+      emitNotificationsChanged();
+    }
     catch (reason) { setError(errorText(reason)); }
   }
 
   async function readAll(): Promise<void> {
-    try { await markAllNotificationsRead(); setItems((current) => current.map((item) => ({ ...item, status: "READ" }))); setUnread(0); }
+    try {
+      await markAllNotificationsRead();
+      setItems((current) => current.map((item) => ({ ...item, status: "READ" })));
+      setUnread(0);
+      emitNotificationsChanged();
+    }
     catch (reason) { setError(errorText(reason)); }
   }
 
