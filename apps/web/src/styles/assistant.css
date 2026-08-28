@@ -97,6 +97,55 @@
 .send-button:disabled { opacity: 0.35; background: #94A3B8 !important; cursor: not-allowed; box-shadow: none; }
 .composer-hint { margin: 6px auto 0; text-align: center; color: #94A3B8; font-size: var(--text-xs); }
 .composer-error { margin: 6px auto 0; padding: 6px 12px; color: var(--color-danger); background: var(--color-danger-surface); border: 1px solid #F0CCC6; border-radius: 999px; font-size: var(--text-xs); text-align: center; }
+
+/* ── Voice Recording States ── */
+.composer-mic-btn.voice-listening {
+  color: #fff !important;
+  background: #ef4444 !important;
+  animation: pulse-recording 1.5s ease-in-out infinite;
+}
+
+.composer-mic-btn.voice-processing {
+  color: #fff !important;
+  background: #3B82F6 !important;
+  cursor: wait;
+}
+
+@keyframes pulse-recording {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.85; }
+}
+
+/* ── Voice Transcript Preview ── */
+.composer-wrap { position: relative; }
+.voice-transcript-preview {
+  position: absolute;
+  top: 100%;
+  left: 36px;
+  right: 36px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; font-size: 13px; color: #64748B;
+  background: #FEF2F2; border-radius: 0 0 20px 20px;
+  margin-top: -6px; border: 1px solid #FECACA; border-top: 0;
+  z-index: 1;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+.voice-indicator { animation: pulse-recording 1.5s ease-in-out infinite; }
+.voice-transcript-text { flex: 1; font-style: italic; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-duration { font-size: 11px; font-variant-numeric: tabular-nums; color: #ef4444; flex-shrink: 0; }
+.voice-cancel-btn { width: 20px; height: 20px; display: grid; place-items: center; border: 0; background: transparent; color: #94A3B8; cursor: pointer; border-radius: 50%; flex-shrink: 0; }
+.voice-cancel-btn:hover { color: #ef4444; background: #FEE2E2; }
+
+/* ── Voice Output (TTS) ── */
+.voice-output { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; }
+.voice-output-btn {
+  display: grid; width: 26px; height: 26px; place-items: center;
+  border: 0; background: transparent; color: #94A3B8;
+  border-radius: 50%; cursor: pointer; transition: all 140ms ease; font-size: 14px;
+}
+.voice-output-btn:hover { color: #3B82F6; background: #EFF6FF; }
+.voice-output-btn.active { color: #3B82F6; }
+.voice-speed-slider { width: 60px; height: 3px; accent-color: #3B82F6; }
 /* ─── Context rail (Right live activity) ──────────────────── */
 .assistant-layout { position: relative; display: grid; gap: 0; height: 100%; min-height: 0; flex: 1; align-items: stretch; background: #F8FAFC; }
 .assistant-layout.is-resizing-active { user-select: none; cursor: col-resize; }

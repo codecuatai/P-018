@@ -20,6 +20,7 @@ const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_AUTH_LOGIN_RATE_LIMIT = 5;
 const DEFAULT_ASSISTANT_CHAT_RATE_LIMIT = 30;
 const DEFAULT_ASSISTANT_ACTION_RATE_LIMIT = 20;
+const DEFAULT_VOICE_TRANSCRIBE_RATE_LIMIT = 20;
 const DEFAULT_FUTURE_AUTH_RATE_LIMIT = 5;
 const DEFAULT_AUTH_REFRESH_RATE_LIMIT = 60;
 const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
@@ -167,6 +168,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   const authLoginRateLimit = positiveInteger(config, 'GATEWAY_AUTH_LOGIN_RATE_LIMIT', DEFAULT_AUTH_LOGIN_RATE_LIMIT, 10_000);
   const assistantChatRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_CHAT_RATE_LIMIT', DEFAULT_ASSISTANT_CHAT_RATE_LIMIT, 10_000);
   const assistantActionRateLimit = positiveInteger(config, 'GATEWAY_ASSISTANT_ACTION_RATE_LIMIT', DEFAULT_ASSISTANT_ACTION_RATE_LIMIT, 10_000);
+  const voiceTranscribeRateLimit = positiveInteger(config, 'GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT', DEFAULT_VOICE_TRANSCRIBE_RATE_LIMIT, 10_000);
   const futureAuthRateLimit = positiveInteger(config, 'GATEWAY_FUTURE_AUTH_RATE_LIMIT', DEFAULT_FUTURE_AUTH_RATE_LIMIT, 10_000);
   const authRefreshRateLimit = positiveInteger(config, 'GATEWAY_AUTH_REFRESH_RATE_LIMIT', DEFAULT_AUTH_REFRESH_RATE_LIMIT, 10_000);
   const accessTokenTtlSeconds = positiveInteger(config, 'AUTH_ACCESS_TOKEN_TTL_SECONDS', DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS, 3_600);
@@ -182,6 +184,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     GATEWAY_AUTH_LOGIN_RATE_LIMIT: authLoginRateLimit,
     GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: assistantChatRateLimit,
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: assistantActionRateLimit,
+    GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT: voiceTranscribeRateLimit,
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: futureAuthRateLimit,
     GATEWAY_AUTH_REFRESH_RATE_LIMIT: authRefreshRateLimit,
     AUTH_ACCESS_TOKEN_TTL_SECONDS: accessTokenTtlSeconds,
@@ -233,6 +236,7 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
       { name: 'auth.google', method: 'POST', path: '/api/v1/auth/google', maxRequests: Number(validated.GATEWAY_AUTH_LOGIN_RATE_LIMIT), windowMs },
       { name: 'assistant.chat', method: 'POST', path: '/api/v1/assistant/chat', maxRequests: Number(validated.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT), windowMs },
       { name: 'assistant.actions', method: 'POST', path: '/api/v1/assistant/actions', maxRequests: Number(validated.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT), windowMs },
+      { name: 'voice.transcribe', method: 'POST', path: '/api/v1/voice/transcribe', maxRequests: Number(validated.GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT), windowMs },
       { name: 'auth.register', method: 'POST', path: '/api/v1/auth/register', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.forgot-password', method: 'POST', path: '/api/v1/auth/forgot-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.reset-password', method: 'POST', path: '/api/v1/auth/reset-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },

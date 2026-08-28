@@ -11,6 +11,9 @@ import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATI
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
+import { VoiceInput } from "@/components/voice-input";
+import { VoiceOutput } from "@/components/voice-output";
+import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
@@ -21,6 +24,9 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [conversationLoadError, setConversationLoadError] = useState("");
   const [conversationLoadNonce, setConversationLoadNonce] = useState(0);
   const [activeActionId, setActiveActionId] = useState<string>();
+  
+  const tts = useSpeechSynthesis();
+  const [ttsActiveMessageId, setTtsActiveMessageId] = useState<string | null>(null);
   const [activeItems, setActiveItems] = useState<HistoryItem[]>([]);
   const [activeRefreshNonce, setActiveRefreshNonce] = useState(0);
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
@@ -407,14 +413,27 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
             {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
             {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
-            {messages.map((message) => <MessageBubble key={message.id} message={message} onAction={(action) => void handleAction(action)} onFoodSelectionChange={handleFoodSelectionChange} foodSelections={foodSelections} onRetry={(text) => void send(text)} activeActionId={activeActionId} />)}
+            {messages.map((message, index) => (
+              <MessageBubble
+                key={message.id || index}
+                message={message}
+                onAction={handleAction}
+                onFoodSelectionChange={handleFoodSelectionChange}
+                foodSelections={foodSelections}
+                onRetry={(text) => void send(text)}
+                activeActionId={activeActionId}
+                tts={tts}
+                ttsActiveMessageId={ttsActiveMessageId}
+                setTtsActiveMessageId={setTtsActiveMessageId}
+              />
+            ))}
           </div>
           
           {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
           
           <div className="composer-wrap">
             <div className="composer-box">
-              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
+              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Tính năng đang được phát triển" disabled>
                 <PlusCircle size={20} />
               </button>
               <textarea
@@ -431,9 +450,14 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Lấy vị trí hiện tại" title="Lấy vị trí hiện tại">
                   {isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}
                 </button>
-                <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
-                  <Mic size={18} />
-                </button>
+                <VoiceInput
+                  onTranscript={(text) => {
+                    setComposer((prev) => (prev ? `${prev} ${text}` : text));
+                    inputRef.current?.focus();
+                  }}
+                  onError={(msg) => setLocateError(msg)} // Reuse the error display
+                  disabled={sending}
+                />
                 <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">
                   {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
                 </button>
@@ -566,9 +590,63 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
   );
 }
 
-function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
+function MessageBubble({ 
+  message, 
+  onAction, 
+  onFoodSelectionChange, 
+  foodSelections, 
+  onRetry, 
+  activeActionId,
+  tts,
+  ttsActiveMessageId,
+  setTtsActiveMessageId 
+}: { 
+  message: ChatMessage; 
+  onAction: (action: AssistantAction, input?: { quantity?: number }) => void; 
+  onFoodSelectionChange: (selection: FoodSelection) => void; 
+  foodSelections: Record<string, FoodSelection>; 
+  onRetry: (text: string) => void; 
+  activeActionId?: string;
+  tts: import("@/hooks/use-speech-synthesis").TtsControl;
+  ttsActiveMessageId: string | null;
+  setTtsActiveMessageId: (id: string | null) => void;
+}) {
   const assistant = message.role === "assistant";
-  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
+  return (
+    <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}>
+      <div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>
+        {assistant ? <Bot size={18} /> : <span>Bạn</span>}
+      </div>
+      <div className="message-content">
+        <div className="message-text">{message.text}</div>
+        {assistant && message.text && message.requestStatus !== "sending" && (
+          <VoiceOutput 
+            text={message.text} 
+            tts={tts}
+            messageId={message.id || message.text}
+            activeMessageId={ttsActiveMessageId}
+            onPlay={(id) => setTtsActiveMessageId(id)}
+          />
+        )}
+        {message.requestStatus === "sending" ? (
+          <div className="typing-indicator"><span /><span /><span /></div>
+        ) : null}
+        {message.response ? (
+          <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} />
+        ) : null}
+        {message.requestStatus === "error" && message.retryText ? (
+          <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}>
+            <RefreshCw size={14} /> Thử lại
+          </button>
+        ) : null}
+        {message.requestStatus === "error" && message.retryAction ? (
+          <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}>
+            <RefreshCw size={14} /> Thử lại
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {
