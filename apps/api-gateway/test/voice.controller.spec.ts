@@ -1,7 +1,7 @@
-import 'multer';
 import { Test, TestingModule } from '@nestjs/testing';
 import { VoiceController } from '../src/modules/voice/voice.controller';
 import { VoiceService } from '../src/modules/voice/voice.service';
+import { UploadedAudioFile } from '../src/modules/voice/voice.dto';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '../src/modules/auth/auth.guard';
 
@@ -38,7 +38,7 @@ describe('VoiceController', () => {
   });
 
   it('transcribe should call service and return data', async () => {
-    const file = { buffer: Buffer.from('test'), size: 4, mimetype: 'audio/webm', originalname: 'test.webm' } as Express.Multer.File;
+    const file: UploadedAudioFile = { buffer: Buffer.from('test'), size: 4, mimetype: 'audio/webm', originalname: 'test.webm' };
     const req = { correlationId: 'test-cor', user: { sub: 'user-123' } } as any;
     
     const result = await controller.transcribe(file, req);
