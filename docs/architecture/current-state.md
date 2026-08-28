@@ -230,6 +230,12 @@ Chromium run above is the current browser evidence.
   and 1440x1000; live Product `2/2`, Admin `1/1`, and the real transaction
   flow `1/1` passed with browser error listeners.
 - The 2026-08-16 isolated Gate G2 run provides the first private-key Gemini
-  evidence; the legacy `tests/e2e` batch is still not counted as acceptance
-  evidence because it hit the intentionally bounded process-local login
-  limiter and includes slow Assistant scenarios.
+  evidence. The `tests/e2e` batch was historically excluded from acceptance
+  because it hit the intentionally bounded process-local login limiter and
+  includes slow Assistant scenarios. As of 2026-08-28 it is a mandatory
+  `local-acceptance.ps1` step again: `tests/e2e/_helpers.py` reuses one access
+  token per base URL and user, so a full-suite run stays inside the limiter, and
+  `E2E_REQUIRE_GATEWAY=1` turns a missing Gateway URL into a usage error instead
+  of an all-skip pass. The step requires the Compose runtime and throws when the
+  stack is incomplete; `-SkipCrossServiceE2E` prints an explicit `UNVERIFIED`
+  line. It is still not wired into CI.

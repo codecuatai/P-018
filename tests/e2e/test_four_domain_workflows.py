@@ -3,25 +3,20 @@ from __future__ import annotations
 import os
 import subprocess
 from datetime import datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
+from _helpers import REPO_ROOT, compose_args, get_cached_token
+
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
-E2E_COMPOSE_PROJECT_NAME = os.getenv("E2E_COMPOSE_PROJECT_NAME", "p-018")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
 HEALTHCARE_DB_NAME = os.getenv("E2E_HEALTHCARE_DB_NAME", "xone_healthcare")
 HEALTHCARE_DB_USER = os.getenv("E2E_HEALTHCARE_DB_USER", "healthcare_user")
-REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
-
-
-def compose_args(*args: str) -> list[str]:
-    return ["docker", "compose", "-p", E2E_COMPOSE_PROJECT_NAME, "--env-file", ".env.example", *args]
 
 
 def unique_id(prefix: str) -> str:
@@ -35,10 +30,8 @@ def unique_restaurant_request() -> str:
     return f"dat ban cho 2 nguoi ngay {booking_at:%d/%m/%Y} luc 19h o Ha Noi"
 
 
-def login(client: httpx.Client) -> str:
-    response = client.post("/api/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
-    response.raise_for_status()
-    return str(response.json()["data"]["access_token"])
+def login(client: httpx.Client, email: str = DEMO_EMAIL, password: str = DEMO_PASSWORD) -> str:
+    return get_cached_token(client, email, password)
 
 
 def auth_headers(token: str, idempotency_key: str | None = None) -> dict[str, str]:
