@@ -3,6 +3,10 @@ export interface TranscribeResponseDto {
   provider: string;
 }
 
+export interface TextToSpeechRequestDto {
+  text: string;
+}
+
 export interface UploadedAudioFile {
   buffer: Buffer;
   size: number;
@@ -11,3 +15,4 @@ export interface UploadedAudioFile {
   fieldname?: string;
   encoding?: string;
 }
+
