@@ -4,7 +4,13 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/lib/password-policy"
 
 const mockChangePassword = jest.fn();
 const mockGetSessions = jest.fn();
+const mockLogin = jest.fn();
 const mockLogout = jest.fn();
+const mockReplace = jest.fn();
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace }),
+}));
 
 jest.mock("@/lib/api-client", () => ({
   changePassword: (...args: unknown[]) => mockChangePassword(...args),
@@ -17,6 +23,7 @@ jest.mock("@/lib/api-client", () => ({
 jest.mock("@/providers/auth-provider", () => ({
   useAuth: () => ({
     user: { email: "an@example.test", role: "customer" },
+    login: mockLogin,
     logout: mockLogout,
   }),
 }));
@@ -27,7 +34,9 @@ describe("SettingsPage password policy", () => {
   beforeEach(() => {
     mockChangePassword.mockReset();
     mockGetSessions.mockReset().mockResolvedValue({ items: [] });
-    mockLogout.mockReset();
+    mockLogin.mockReset().mockResolvedValue({ email: "an@example.test", role: "customer" });
+    mockLogout.mockReset().mockResolvedValue(undefined);
+    mockReplace.mockReset();
   });
 
   it("displays the canonical 8-128 character hint and not 15 characters", async () => {
@@ -37,6 +46,34 @@ describe("SettingsPage password policy", () => {
     expect(screen.queryByText(/15 ký tự/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("Mật khẩu mới")).toHaveAttribute("minlength", String(PASSWORD_MIN_LENGTH));
     expect(screen.getByLabelText("Mật khẩu mới")).toHaveAttribute("maxlength", String(PASSWORD_MAX_LENGTH));
+  });
+
+  it("paginates long active-session lists five items at a time", async () => {
+    mockGetSessions.mockResolvedValueOnce({
+      items: Array.from({ length: 12 }, (_, index) => ({
+        id: `session-${index + 1}`,
+        created_at: "2026-08-28T07:24:00.000Z",
+        last_used_at: "2026-08-28T07:24:00.000Z",
+        expires_at: "2026-09-27T07:24:00.000Z",
+        current: index === 0,
+        user_agent: `Thiết bị kiểm thử ${index + 1}`,
+      })),
+    });
+
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByRole("navigation", { name: "Phân trang phiên đăng nhập" })).toBeInTheDocument());
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getByText("Trang 1 / 3 · 12 phiên")).toBeInTheDocument();
+    expect(screen.getByText("Thiết bị kiểm thử 1")).toBeInTheDocument();
+    expect(screen.queryByText("Thiết bị kiểm thử 6")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sau" }));
+
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+    expect(screen.getByText("Trang 2 / 3 · 12 phiên")).toBeInTheDocument();
+    expect(screen.getByText("Thiết bị kiểm thử 6")).toBeInTheDocument();
+    expect(screen.queryByText("Thiết bị kiểm thử 1")).not.toBeInTheDocument();
   });
 
   it("rejects passwords shorter than 8 characters before calling API", async () => {
@@ -70,7 +107,24 @@ describe("SettingsPage password policy", () => {
     fireEvent.submit(screen.getByRole("button", { name: "Đổi mật khẩu" }).closest("form")!);
 
     await waitFor(() => expect(mockChangePassword).toHaveBeenCalledWith("CurrentPass123!", "ValidNewPass456#"));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Mật khẩu đã được cập nhật. Bạn cần đăng nhập lại để tiếp tục."));
+    expect(mockLogin).toHaveBeenCalledWith("an@example.test", "ValidNewPass456#");
+    expect(mockLogout).not.toHaveBeenCalled();
+    expect(mockReplace).toHaveBeenCalledWith("/app");
+    expect(screen.getByRole("status")).toHaveTextContent("Đang mở lại không gian chat");
+  });
+
+  it("falls back to the landing login when automatic re-authentication fails", async () => {
+    mockChangePassword.mockResolvedValueOnce(undefined);
+    mockLogin.mockRejectedValueOnce(new Error("login temporarily unavailable"));
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Bảo mật tài khoản" })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Mật khẩu hiện tại"), { target: { value: "CurrentPass123!" } });
+    fireEvent.change(screen.getByLabelText("Mật khẩu mới"), { target: { value: "ValidNewPass456#" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Đổi mật khẩu" }).closest("form")!);
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+    expect(mockLogout).toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("chưa thể mở lại phiên chat");
   });
 
   it("displays error specifically next to current password and keeps session when current password is wrong", async () => {
