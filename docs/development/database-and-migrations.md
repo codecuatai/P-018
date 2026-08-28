@@ -57,6 +57,9 @@ and use its deployment migration step instead.
 Run `python scripts/check-migration-parity.py` after changing migration helpers.
 The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
 after Compose health checks and can run the same additive migrations repeatedly.
+Alembic migrations run in one-shot containers created from the current service
+images, so a deployment never executes a newly checked-in migration inside an
+older long-lived service container.
 It stops on the first owner/path failure and never deletes a volume. Seeds are
 not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
 
