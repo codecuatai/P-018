@@ -91,4 +91,29 @@ describe("AdminDashboard", () => {
     fireEvent.click(checkbox);
     expect(checkbox.checked).toBe(false);
   });
+
+  it("allows an admin to send a customer-facing ticket reply", async () => {
+    const ticket = {
+      id: "ticket-admin-reply-1",
+      actor_id: "user-1",
+      subject: "Cần hỗ trợ",
+      description: "Tôi cần kiểm tra giao dịch.",
+      status: "RESOLVED" as const,
+      priority: "NORMAL" as const,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    (apiClient.getAdminSupportTickets as jest.Mock).mockResolvedValue({ items: [ticket], total: 1 });
+    (apiClient.addAdminSupportMessage as jest.Mock).mockResolvedValue({ ...ticket, events: [] });
+    window.history.replaceState(null, "", "#support");
+
+    render(<AdminDashboard />);
+
+    const reply = await screen.findByRole("textbox", { name: "Phản hồi ticket ticket-admin-reply-1" });
+    fireEvent.change(reply, { target: { value: "Cảm ơn bạn đã liên hệ với X-One." } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi phản hồi" }));
+
+    await waitFor(() => expect(apiClient.addAdminSupportMessage).toHaveBeenCalledWith("ticket-admin-reply-1", "Cảm ơn bạn đã liên hệ với X-One."));
+    window.history.replaceState(null, "", "");
+  });
 });

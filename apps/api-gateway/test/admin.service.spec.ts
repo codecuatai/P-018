@@ -160,6 +160,30 @@ describe('AdminService', () => {
     });
   });
 
+  describe('support replies', () => {
+    it('adds an admin message to the ticket timeline', async () => {
+      await productOps.createSupportTicket(
+        { id: 'ticket_admin_1', actorId: 'user_1', subject: 'Cần hỗ trợ', description: 'Nội dung', status: 'RESOLVED', priority: 'NORMAL', createdAt: '2026-08-28T10:00:00.000Z', updatedAt: '2026-08-28T10:00:00.000Z' },
+        { id: 'ticket-event-admin-1', ticketId: 'ticket_admin_1', actorId: 'user_1', eventType: 'CREATED', message: 'Nội dung', createdAt: '2026-08-28T10:00:00.000Z' },
+      );
+
+      const result = await service.addSupportMessage('ticket_admin_1', 'Cảm ơn bạn đã liên hệ.', 'admin_1', 'corr_admin_reply', 'idem_admin_reply_1');
+      expect(result?.id).toBe('ticket_admin_1');
+      expect((await productOps.getSupportTicket('ticket_admin_1'))?.events).toEqual(expect.arrayContaining([
+        expect.objectContaining({ eventType: 'MESSAGE', actorId: 'admin_1', message: 'Cảm ơn bạn đã liên hệ.' }),
+      ]));
+    });
+
+    it('rejects a changed message with the same idempotency key', async () => {
+      await productOps.createSupportTicket(
+        { id: 'ticket_admin_2', actorId: 'user_1', subject: 'Cần hỗ trợ', description: 'Nội dung', status: 'OPEN', priority: 'NORMAL', createdAt: '2026-08-28T10:00:00.000Z', updatedAt: '2026-08-28T10:00:00.000Z' },
+        { id: 'ticket-event-admin-2', ticketId: 'ticket_admin_2', actorId: 'user_1', eventType: 'CREATED', message: 'Nội dung', createdAt: '2026-08-28T10:00:00.000Z' },
+      );
+      await service.addSupportMessage('ticket_admin_2', 'Nội dung một.', 'admin_1', 'corr_admin_reply', 'idem_admin_reply_2');
+      await expect(service.addSupportMessage('ticket_admin_2', 'Nội dung hai.', 'admin_1', 'corr_admin_reply', 'idem_admin_reply_2')).rejects.toThrow(ConflictException);
+    });
+  });
+
   describe('API Key Management & Encryption', () => {
     it('should encrypt secret at rest and store last4 mask', async () => {
       const rawSecret = 'AIzaSyD-Secret1234567890';

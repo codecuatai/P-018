@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CoreProductOpsStore, FavoriteDomain, FeedbackRecord, NotificationRecord, ProductOpsDomain, SupportPriority, SupportTicketEventRecord, SupportTicketRecord, SupportTicketStatus } from '../core/product-ops.store';
@@ -89,8 +89,15 @@ export class ProductOpsService {
   async addSupportMessage(id: string, actorId: string, idempotencyKey: string, message: string): Promise<SupportTicketRecord> {
     const ticket = await this.getSupportTicket(id, actorId);
     if (ticket.status === 'CLOSED') throw new ConflictException({ code: 'SUPPORT_TICKET_CLOSED', detail: 'Yêu cầu hỗ trợ đã đóng.', retryable: false });
-    const event: SupportTicketEventRecord = { id: `ticket-event-${randomUUID()}`, ticketId: ticket.id, actorId, eventType: 'MESSAGE', message, idempotencyKey, createdAt: new Date().toISOString() };
-    const updated = await this.store.addSupportEvent(event, event.createdAt);
+    const requestHash = createHash('sha256').update(JSON.stringify({ message })).digest('hex');
+    const event: SupportTicketEventRecord = { id: `ticket-event-${randomUUID()}`, ticketId: ticket.id, actorId, eventType: 'MESSAGE', message, idempotencyKey, requestHash, createdAt: new Date().toISOString() };
+    let updated;
+    try {
+      updated = await this.store.addSupportEvent(event, event.createdAt, undefined, requestHash);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different support message.', retryable: false });
+      throw error;
+    }
     if (!updated) throw new NotFoundException({ code: 'SUPPORT_TICKET_NOT_FOUND', detail: 'Không tìm thấy yêu cầu hỗ trợ.', retryable: false });
     return updated;
   }

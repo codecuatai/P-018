@@ -20,6 +20,7 @@ describe('AdminController', () => {
       testApiKey: jest.fn().mockResolvedValue({ success: true, message: 'OK', latency_ms: 10 }),
       systemLogs: jest.fn().mockResolvedValue({ items: [], total: 0 }),
       userServiceSummary: jest.fn().mockResolvedValue({ user_id: 'u1', ride_count: 5 }),
+      addSupportMessage: jest.fn().mockResolvedValue({ id: 'ticket_1', status: 'RESOLVED' }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -68,6 +69,18 @@ describe('AdminController', () => {
       expect(mockAdminService.systemLogs).toHaveBeenCalledTimes(2);
       expect((logsRes as any).data.items).toEqual([]);
       expect((sysLogsRes as any).data.items).toEqual([]);
+    });
+  });
+
+  describe('Support replies', () => {
+    it('requires an idempotency key', async () => {
+      await expect(controller.supportMessage('ticket_1', { message: 'Cảm ơn bạn.' }, undefined, mockRequest)).rejects.toThrow(BadRequestException);
+    });
+
+    it('sends an admin reply and returns the updated ticket', async () => {
+      const response = await controller.supportMessage('ticket_1', { message: 'Cảm ơn bạn đã liên hệ.' }, 'idem_support_message_1', mockRequest);
+      expect(mockAdminService.addSupportMessage).toHaveBeenCalledWith('ticket_1', 'Cảm ơn bạn đã liên hệ.', 'admin_1', 'corr_test_1', 'idem_support_message_1');
+      expect((response as any).data).toEqual({ id: 'ticket_1', status: 'RESOLVED' });
     });
   });
 });
