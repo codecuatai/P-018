@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { stripMarkdownForTts } from '../lib/strip-markdown-for-tts';
+import { synthesizeVoice } from '../lib/api-client';
 
 export interface TtsControl {
   isSupported: boolean;
@@ -15,103 +16,126 @@ export interface TtsControl {
 }
 
 export function useSpeechSynthesis(): TtsControl {
-  const [isSupported, setIsSupported] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [rate, setRate] = useState(1);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      setIsSupported(false);
-      return;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const cleanup = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
     }
-    
-    const synth = window.speechSynthesis;
-    const updateVoices = () => setVoices(synth.getVoices());
-    
-    updateVoices();
-    synth.addEventListener('voiceschanged', updateVoices);
-    
-    return () => synth.removeEventListener('voiceschanged', updateVoices);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
+      audioRef.current = null;
+    }
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
   }, []);
-  
+
   const stop = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsPlaying(false);
-      setIsPaused(false);
-    }
-  }, []);
-  
+    cleanup();
+    setIsPlaying(false);
+    setIsPaused(false);
+  }, [cleanup]);
+
   const pause = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause();
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
       setIsPaused(true);
       setIsPlaying(false);
     }
   }, []);
-  
+
   const resume = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.resume();
+    if (audioRef.current && audioRef.current.paused && objectUrlRef.current) {
+      audioRef.current.play().catch(() => {
+        // Silently handle play failure
+      });
       setIsPaused(false);
       setIsPlaying(true);
     }
   }, []);
-  
+
   const speak = useCallback((text: string) => {
-    if (!isSupported) return;
-    
+    // Stop any current playback first
     stop();
-    
-    const synth = window.speechSynthesis;
+
     const cleanText = stripMarkdownForTts(text);
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    
-    // Attempt to find a Vietnamese voice, fallback to any available
-    const vnVoice = voices.find(v => v.lang.startsWith('vi')) || voices[0];
-    if (vnVoice) {
-      utterance.voice = vnVoice;
+    if (!cleanText) return;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setIsPlaying(true);
+    setIsPaused(false);
+
+    synthesizeVoice(cleanText, controller.signal)
+      .then((audioData) => {
+        // Check if we were cancelled while waiting
+        if (controller.signal.aborted) return;
+
+        const blob = new Blob([audioData], { type: 'audio/mpeg' });
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+
+        const audio = new Audio(url);
+        audio.playbackRate = rate;
+        audioRef.current = audio;
+
+        audio.onended = () => {
+          setIsPlaying(false);
+          setIsPaused(false);
+          cleanup();
+        };
+
+        audio.onerror = () => {
+          console.error('Audio playback error');
+          setIsPlaying(false);
+          setIsPaused(false);
+          cleanup();
+        };
+
+        audio.play().catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error('Audio play failed:', err);
+          }
+          setIsPlaying(false);
+          setIsPaused(false);
+          cleanup();
+        });
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        console.error('TTS API error:', err);
+        setIsPlaying(false);
+        setIsPaused(false);
+      });
+  }, [rate, stop, cleanup]);
+
+  // Update playback rate on existing audio when rate changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
     }
-    
-    utterance.lang = 'vi-VN';
-    utterance.rate = rate;
-    
-    utterance.onstart = () => {
-      setIsPlaying(true);
-      setIsPaused(false);
-    };
-    
-    utterance.onend = () => {
-      setIsPlaying(false);
-      setIsPaused(false);
-    };
-    
-    utterance.onerror = (e) => {
-      if (e.error !== 'canceled') {
-        console.error('SpeechSynthesis error:', e);
-      }
-      setIsPlaying(false);
-      setIsPaused(false);
-    };
-    
-    utteranceRef.current = utterance;
-    synth.speak(utterance);
-  }, [isSupported, voices, rate, stop]);
-  
+  }, [rate]);
+
   // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      cleanup();
     };
-  }, []);
+  }, [cleanup]);
 
   return {
-    isSupported,
+    isSupported: typeof window !== 'undefined',
     isPlaying,
     isPaused,
     rate,

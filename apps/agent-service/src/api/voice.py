@@ -1,18 +1,21 @@
-"""Speech-to-Text endpoint using Gemini Flash multimodal.
+"""Speech-to-Text and Text-to-Speech voice endpoints.
 
-Accepts audio upload (multipart/form-data, field name "file"),
-validates, and returns JSON transcript. Uses the KEY_POOL for reliability
-and rotation.
+STT: Accepts audio upload, transcribes via Gemini Flash multimodal.
+TTS: Accepts text, returns MP3 audio stream via Edge TTS (vi-VN-HoaiMyNeural).
 
 Design: stateless, idempotent, no audio retention.
 """
 from __future__ import annotations
 
+import io
 import logging
 import mimetypes
+import re
 from typing import Annotated
 
+import edge_tts
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from google import genai
 from google.genai import types as genai_types
 from pydantic import BaseModel
@@ -105,3 +108,77 @@ async def speech_to_text(
         raise HTTPException(status_code=502, detail="Voice transcription service temporarily unavailable.")
 
     return TranscriptResponse(text=text)
+
+
+# ---------------------------------------------------------------------------
+# Text-to-Speech (Edge TTS — vi-VN-HoaiMyNeural)
+# ---------------------------------------------------------------------------
+
+_TTS_VOICE = "vi-VN-HoaiMyNeural"
+_MAX_TTS_CHARS = 5000
+
+
+class TextToSpeechRequest(BaseModel):
+    text: str
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove markdown formatting so TTS reads clean prose."""
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)   # [text](url)
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)  # ![alt](url)
+    text = re.sub(r"```[\s\S]*?```", "", text)              # code blocks
+    text = re.sub(r"`([^`]+)`", r"\1", text)                # inline code
+    text = re.sub(r"(\*\*|__)(.*?)\1", r"\2", text)         # bold
+    text = re.sub(r"(\*|_)(.*?)\1", r"\2", text)            # italic
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)  # headings
+    text = re.sub(r"^[-*+]\s+", "", text, flags=re.MULTILINE)   # list markers
+    text = re.sub(r"^\d+\.\s+", "", text, flags=re.MULTILINE)   # ordered list
+    text = re.sub(r"\n{2,}", ". ", text)                    # paragraph breaks
+    return text.strip()
+
+
+@stt_tts_router.post("/text-to-speech")
+async def text_to_speech(
+    body: TextToSpeechRequest,
+    actor_id: str = Depends(require_actor),
+) -> StreamingResponse:
+    raw_text = (body.text or "").strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Text is required.")
+    if len(raw_text) > _MAX_TTS_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Text too long (max {_MAX_TTS_CHARS} characters).",
+        )
+
+    clean_text = _strip_markdown(raw_text)
+    if not clean_text:
+        raise HTTPException(status_code=400, detail="Text is empty after cleanup.")
+
+    try:
+        communicate = edge_tts.Communicate(clean_text, _TTS_VOICE)
+        audio_buffer = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_buffer.write(chunk["data"])
+
+        if audio_buffer.tell() == 0:
+            raise HTTPException(
+                status_code=502,
+                detail="TTS service returned empty audio.",
+            )
+
+        audio_buffer.seek(0)
+        return StreamingResponse(
+            audio_buffer,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "inline; filename=tts.mp3"},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Edge TTS synthesis failed", exc_info=e)
+        raise HTTPException(
+            status_code=502,
+            detail="Text-to-speech service temporarily unavailable.",
+        )

@@ -727,6 +727,67 @@ export async function transcribeVoice(
   }
 }
 
+export async function synthesizeVoice(
+  text: string,
+  signal?: AbortSignal,
+  retried = false
+): Promise<ArrayBuffer> {
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  signal?.addEventListener('abort', abortListener, { once: true });
+
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/json');
+  headers.set('X-Correlation-Id', createRequestId('cor'));
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/text-to-speech`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return synthesizeVoice(text, signal, true);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      const body = await parseJson(response);
+      const problem = problemFromResponse(body, response.status);
+      throw new ApiError(problem);
+    }
+
+    return await response.arrayBuffer();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError({
+        code: 'REQUEST_TIMEOUT',
+        detail: 'Đọc văn bản hơi chậm. Bạn thử lại nhé.',
+        status: 408, retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: 'SERVICE_UNAVAILABLE',
+      detail: 'Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau.',
+      status: 0, retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortListener);
+  }
+}
+
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return friendlyErrorMessage(error.code, error.detail);
   return "Không thể hoàn tất yêu cầu. Bạn thử lại nhé.";

@@ -74,4 +74,53 @@ export class VoiceService {
       clearTimeout(timeout);
     }
   }
+
+  async textToSpeech(text: string, correlationId: string, actorId: string): Promise<Buffer> {
+    const trimmed = (text || '').trim();
+    if (!trimmed) {
+      throw new BadRequestException({ code: 'TEXT_REQUIRED', detail: 'Text is required.' });
+    }
+    if (trimmed.length > 5000) {
+      throw new BadRequestException({ code: 'TEXT_TOO_LONG', detail: 'Text too long (max 5000 characters).' });
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+
+    try {
+      const response = await fetch(`${this.agentUrl}/api/v1/voice/text-to-speech`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Service-Token': this.internalToken,
+          'X-Actor-Id': actorId,
+          'X-Correlation-Id': correlationId,
+        },
+        body: JSON.stringify({ text: trimmed }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new BadGatewayException({
+          code: 'TTS_FAILED',
+          detail: errBody.detail || `Agent service returned ${response.status}`,
+        });
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error) {
+      this.logger.error(`TTS request failed: ${error}`);
+      if (error instanceof BadGatewayException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadGatewayException({
+        code: 'AGENT_SERVICE_UNAVAILABLE',
+        detail: 'Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau nhé.',
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
 }
