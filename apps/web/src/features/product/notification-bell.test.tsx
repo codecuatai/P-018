@@ -33,24 +33,25 @@ describe("NotificationBell behavior", () => {
     mockListConversations.mockResolvedValue({ items: [] });
   });
 
-  it("shows red badge with unread count, marks read and hides badge when opened, and clears viewed notifications on next open", async () => {
+  it("shows red badge with unread count, renders unread items in blue and read items in white, marks all read and keeps history", async () => {
     mockGetUnreadNotificationCount
-      .mockResolvedValueOnce({ unread_count: 3 })
+      .mockResolvedValueOnce({ unread_count: 2 })
       .mockResolvedValue({ unread_count: 0 });
+
     mockListNotifications.mockResolvedValueOnce({
       items: [
         { id: "notif-1", title: "Tài xế đã đến điểm đón", body: "Tài xế đang chờ bạn", status: "UNREAD", created_at: new Date().toISOString() },
-        { id: "notif-2", title: "Lịch khám đã được xác nhận", body: "Xem chi tiết trong lịch sử", status: "UNREAD", created_at: new Date().toISOString() },
+        { id: "notif-2", title: "Lịch khám đã được xác nhận", body: "Xem chi tiết trong lịch sử", status: "READ", created_at: new Date().toISOString() },
       ],
-      unread_count: 3,
+      unread_count: 1,
     });
-    mockMarkAllNotificationsRead.mockResolvedValue({ updated: 2 });
+    mockMarkAllNotificationsRead.mockResolvedValue({ updated: 1 });
 
     render(<AppShell><div>App Content</div></AppShell>);
 
-    // 1. Initially badge shows count 3
+    // 1. Initially badge shows count 2
     await waitFor(() => {
-      expect(screen.getAllByText("3")[0]).toBeInTheDocument();
+      expect(screen.getAllByText("2")[0]).toBeInTheDocument();
     });
 
     const bellBtn = screen.getAllByRole("button", { name: /Thông báo/i })[0];
@@ -60,16 +61,19 @@ describe("NotificationBell behavior", () => {
       fireEvent.click(bellBtn);
     });
 
-    // Popover is displayed with the 2 unread notifications
-    expect(screen.getByText("Tài xế đã đến điểm đón")).toBeInTheDocument();
-    expect(screen.getByText("Lịch khám đã được xác nhận")).toBeInTheDocument();
+    // Popover shows both notifications
+    const unreadItem = screen.getByText("Tài xế đã đến điểm đón").closest(".notif-item");
+    const readItem = screen.getByText("Lịch khám đã được xác nhận").closest(".notif-item");
+
+    expect(unreadItem).toHaveClass("notif-unread"); // Blue background
+    expect(readItem).not.toHaveClass("notif-unread"); // White background
 
     // markAllNotificationsRead was called
     expect(mockMarkAllNotificationsRead).toHaveBeenCalledTimes(1);
 
     // Red badge count on bell disappears (count is 0)
     await waitFor(() => {
-      expect(screen.queryAllByText("3")).toHaveLength(0);
+      expect(screen.queryAllByText("2")).toHaveLength(0);
     });
 
     // 3. User closes popover
@@ -78,9 +82,12 @@ describe("NotificationBell behavior", () => {
       fireEvent.click(closeBtn);
     });
 
-    // 4. When user re-opens the popover, listNotifications('UNREAD') returns 0 items
+    // 4. When user re-opens, notifications are still present but all are now marked READ (white)
     mockListNotifications.mockResolvedValueOnce({
-      items: [],
+      items: [
+        { id: "notif-1", title: "Tài xế đã đến điểm đón", body: "Tài xế đang chờ bạn", status: "READ", created_at: new Date().toISOString() },
+        { id: "notif-2", title: "Lịch khám đã được xác nhận", body: "Xem chi tiết trong lịch sử", status: "READ", created_at: new Date().toISOString() },
+      ],
       unread_count: 0,
     });
 
@@ -88,9 +95,12 @@ describe("NotificationBell behavior", () => {
       fireEvent.click(bellBtn);
     });
 
-    // Viewed notifications have disappeared, showing empty state
+    // Both items are still there and neither has notif-unread class (both are white background)
     await waitFor(() => {
-      expect(screen.getByText("Không có thông báo mới.")).toBeInTheDocument();
+      const item1 = screen.getByText("Tài xế đã đến điểm đón").closest(".notif-item");
+      const item2 = screen.getByText("Lịch khám đã được xác nhận").closest(".notif-item");
+      expect(item1).not.toHaveClass("notif-unread");
+      expect(item2).not.toHaveClass("notif-unread");
     });
   });
 });

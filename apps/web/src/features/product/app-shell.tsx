@@ -209,7 +209,7 @@ function NotificationBell() {
   const { status } = useAuth();
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; href?: string }>>([]);
+  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean; href?: string }>>([]);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
 
   const refreshCount = useCallback(async (signal?: AbortSignal) => {
@@ -248,18 +248,20 @@ function NotificationBell() {
   useEffect(() => {
     if (!open || status !== "authenticated") return;
     let active = true;
-    void listNotifications("UNREAD").then(async (result) => {
+    void listNotifications().then(async (result) => {
       if (!active) return;
-      const unreadList = result.items ?? [];
-      setItems(unreadList.slice(0, 6).map((item) => ({
+      const allItems = result.items ?? [];
+      const unreadCount = result.unread_count;
+      setItems(allItems.slice(0, 8).map((item) => ({
         id: item.id,
         title: item.title || "Thông báo",
         body: item.body || undefined,
+        read: item.status === "READ",
         href: item.resource_type && item.resource_id && ["food_order", "ride_booking", "restaurant_reservation", "healthcare_appointment"].includes(item.resource_type)
           ? `/app/history/${item.resource_type}/${encodeURIComponent(item.resource_id)}`
           : undefined,
       })));
-      if (unreadList.length > 0) {
+      if (unreadCount > 0) {
         setCount(0);
         try {
           await markAllNotificationsRead();
@@ -285,7 +287,9 @@ function NotificationBell() {
         <div className="notification-popover" role="dialog" aria-label="Thông báo">
           <div className="notification-popover-header">
             <span>Thông báo</span>
-            {items.length > 0 && <span className="notif-unread-count">{items.length} mới</span>}
+            {items.some((i) => !i.read) && (
+              <span className="notif-unread-count">{items.filter((i) => !i.read).length} chưa đọc</span>
+            )}
             <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}>
               <X size={14} />
             </button>
@@ -297,7 +301,7 @@ function NotificationBell() {
               items.map((item) => {
                 const inner = (
                   <>
-                    <span className="notif-dot" aria-hidden="true" />
+                    <span className={`notif-dot ${item.read ? "notif-dot-read" : ""}`} aria-hidden="true" />
                     <div className="notif-copy">
                       <strong>{item.title}</strong>
                       {item.body && <span>{item.body}</span>}
@@ -305,11 +309,11 @@ function NotificationBell() {
                   </>
                 );
                 return item.href ? (
-                  <Link key={item.id} href={item.href} className="notif-item notif-unread" onClick={() => setOpen(false)}>
+                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`} onClick={() => setOpen(false)}>
                     {inner}
                   </Link>
                 ) : (
-                  <div key={item.id} className="notif-item notif-unread">
+                  <div key={item.id} className={`notif-item ${item.read ? "" : "notif-unread"}`}>
                     {inner}
                   </div>
                 );
