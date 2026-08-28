@@ -4,27 +4,22 @@ import os
 import subprocess
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
+from _helpers import REPO_ROOT, compose_args, get_cached_token
+
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
-E2E_COMPOSE_PROJECT_NAME = os.getenv("E2E_COMPOSE_PROJECT_NAME", "p-018")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
-REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
 
 
 def unique_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
-
-
-def compose_args(*args: str) -> list[str]:
-    return ["docker", "compose", "-p", E2E_COMPOSE_PROJECT_NAME, "--env-file", ".env.example", *args]
 
 
 def restart_gateway() -> None:
@@ -55,10 +50,8 @@ def unique_restaurant_date() -> str:
     return booking_at.strftime("%d/%m/%Y")
 
 
-def login(client: httpx.Client) -> str:
-    response = client.post("/api/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
-    response.raise_for_status()
-    return str(response.json()["data"]["access_token"])
+def login(client: httpx.Client, email: str = DEMO_EMAIL, password: str = DEMO_PASSWORD) -> str:
+    return get_cached_token(client, email, password)
 
 
 def assistant_chat(client: httpx.Client, token: str, message: str, conversation_id: str | None = None) -> dict:

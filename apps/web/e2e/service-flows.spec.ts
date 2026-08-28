@@ -7,7 +7,7 @@ test("saved address can be updated manually without reusing stale coordinates", 
   gateway.seedAddress();
 
   await page.goto("/app/addresses");
-  await expect(page.getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
+  await expect(page.getByText("12 Nguyễn Huệ, Quận 1").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Sửa Nhà" }).click();
   await page.getByRole("textbox", { name: "Địa chỉ" }).fill("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội");
@@ -17,7 +17,7 @@ test("saved address can be updated manually without reusing stale coordinates", 
   await expect(update).toBeEnabled();
   await update.click();
 
-  await expect(page.getByText("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội")).toBeVisible();
+  await expect(page.getByText("181 Đường Nguyễn Trãi, Thanh Xuân, Hà Nội").first()).toBeVisible();
   expect(gateway.calls.filter((call) => call.path === "/api/v1/addresses/address-a" && call.method === "PATCH")).toHaveLength(1);
 });
 
@@ -33,7 +33,7 @@ test("Food browse → menu → cart → preview → explicit order → receipt/h
   await page.getByRole("button", { name: "Xác nhận" }).last().click();
   await expect(page.getByText("Đơn đã được tiếp nhận")).toBeVisible();
   await page.goto("/app/history");
-  await expect(page.getByText("Đơn đồ ăn")).toBeVisible();
+  await expect(page.getByText("Đơn đồ ăn", { exact: true }).first()).toBeVisible();
   expect(mock.id).toBe("address-a");
 });
 

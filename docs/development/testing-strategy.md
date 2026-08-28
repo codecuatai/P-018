@@ -152,7 +152,36 @@ responsive interaction, or browser-console result is counted.
   Admin dashboard and Ride tracking; auth login used 3 samples because the
   local login limiter is intentionally bounded.
 - Gemini remains intentionally unverified because no key is configured. The
-  full legacy `tests/e2e` batch is not reported as a pass: it hit the expected
-  process-local login limiter when every test logged in from one IP and also
-  contains slower Assistant scenarios. The targeted live browser and HTTP
-  acceptance above are the current evidence.
+  legacy `tests/integration/` placeholder directory was removed in favor of
+  service-owned PostgreSQL persistence suites and targeted live Playwright
+  acceptance. Token reuse caching is provided in `tests/e2e` to prevent login rate limiting.
+
+## Cross-service Compose layer - `tests/e2e`
+
+`tests/e2e` is the cross-service layer: it exercises the real Gateway together
+with Agent, Ride, Restaurant, Healthcare and Food over HTTP, and reaches into
+the stack with `docker compose exec`/`restart` to assert persistence, hold
+expiry reconciliation and idempotent replay across a Gateway restart. It
+therefore requires the Docker Compose runtime and cannot run against the
+direct-process runtime.
+
+Invocation is `python -m pytest tests/e2e -q`, or `corepack pnpm
+test:e2e:crossservice` from the root workspace. The root script is deliberately
+not called `test:e2e`, because `apps/web`'s `test:e2e` is the Playwright browser
+suite and the two layers must not be confused in scripts or CI.
+
+`scripts/local-acceptance.ps1` runs this suite as a mandatory step. It derives
+`E2E_GATEWAY_URL`, `E2E_COMPOSE_PROJECT_NAME`, `E2E_COMPOSE_ENV_FILE` and the
+demo credentials from the acceptance env file, and sets `E2E_REQUIRE_GATEWAY=1`.
+Two guards keep a non-run from being reported as a pass: the suite-level
+`pytest_configure` hook raises a `UsageError` when `E2E_REQUIRE_GATEWAY` is set
+without a Gateway URL, and the acceptance step throws when the Compose stack is
+incomplete. `-SkipCrossServiceE2E` remains available for a deliberate partial
+run and prints an explicit `UNVERIFIED` line naming what is not covered.
+
+Shared fixtures live in `tests/e2e/_helpers.py` and are imported absolutely
+(`from _helpers import ...`). `tests/e2e` has no `__init__.py`, so under
+pytest's default `prepend` import mode a relative import such as
+`from .conftest import ...` fails collection with "attempted relative import
+with no known parent package". `_helpers` also owns the access-token cache that
+keeps a full-suite run inside the Gateway's per-IP login limiter.
