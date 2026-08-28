@@ -20,8 +20,9 @@ class RegisterDto {
   full_name!: string;
 
   @IsString()
-  @MinLength(8)
-  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
+  @MinLength(8, { message: 'Mật khẩu phải có tối thiểu 8 ký tự.' })
+  @MaxLength(128, { message: 'Mật khẩu không được vượt quá 128 ký tự.' })
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt.' })
   password!: string;
 }
 
@@ -48,8 +49,9 @@ class ChangePasswordDto {
   current_password!: string;
 
   @IsString()
-  @MinLength(8)
-  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
+  @MinLength(8, { message: 'Mật khẩu phải có tối thiểu 8 ký tự.' })
+  @MaxLength(128, { message: 'Mật khẩu không được vượt quá 128 ký tự.' })
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt.' })
   new_password!: string;
 }
 
@@ -65,8 +67,9 @@ class ResetPasswordDto {
   token!: string;
 
   @IsString()
-  @MinLength(8)
-  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt' })
+  @MinLength(8, { message: 'Mật khẩu phải có tối thiểu 8 ký tự.' })
+  @MaxLength(128, { message: 'Mật khẩu không được vượt quá 128 ký tự.' })
+  @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt.' })
   new_password!: string;
 }
 
@@ -110,7 +113,7 @@ export class AuthController {
     assertTrustedAuthOrigin(request, this.config);
     const refreshToken = refreshTokenFromRequest(request, this.auth.settings.refreshCookieName);
     if (!refreshToken) throw new UnauthorizedException({ code: 'REFRESH_TOKEN_INVALID', detail: 'Phiên đăng nhập không còn hợp lệ.', retryable: false });
-    const issued = await this.auth.refresh(refreshToken, requestMetadata(request), request.correlationId ?? 'cor_unknown');
+    const issued = await this.auth.refresh(refreshToken, requestMetadata(request), request.correlationId ?? 'cor_unknown', safeTriggerCorrelationId(request.header('x-trigger-correlation-id')));
     setRefreshCookie(response, issued.refreshToken, this.auth.settings, this.config.getOrThrow<string>('APP_ENV'));
     return authResponse(issued, request.correlationId);
   }
@@ -206,6 +209,11 @@ export class AuthController {
 function requestMetadata(request: CorrelatedRequest): { userAgent?: string; ip?: string } {
   const userAgent = request.header('user-agent');
   return { ...(userAgent ? { userAgent } : {}), ...(request.ip ? { ip: request.ip } : {}) };
+}
+
+function safeTriggerCorrelationId(value: string | undefined): string | undefined {
+  if (!value || value.length > 128 || !/^[A-Za-z0-9:_-]+$/.test(value)) return undefined;
+  return value;
 }
 
 function authResponse(issued: IssuedAuthSession, correlationId: string | undefined): object {

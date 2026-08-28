@@ -7,6 +7,7 @@ type MockGatewayOptions = {
   onboardingComplete?: boolean;
   noDriver?: boolean;
   foreignIds?: string[];
+  synchronizeRefresh?: boolean;
 };
 
 type MockUser = {
@@ -32,6 +33,7 @@ export class MockGateway {
   private readonly options: MockGatewayOptions;
   private readonly users = new Map<string, MockUser>();
   private readonly tokens = new Map<string, string>();
+  private readonly refreshTokens = new Map<string, { userSub: string; consumed: boolean; replacement?: string }>();
   private readonly addresses = new Map<string, JsonRecord[]>();
   private readonly conversations = new Map<string, JsonRecord>();
   private readonly carts = new Map<string, JsonRecord>();
@@ -40,6 +42,9 @@ export class MockGateway {
   private readonly resources = new Map<string, JsonRecord>();
   private refreshUserSub: string | null;
   private sequence = 0;
+  private waitingRefreshes = 0;
+  private releaseRefreshes: (() => void) | undefined;
+  private readonly refreshPairReady: Promise<void> | undefined;
 
   constructor(options: MockGatewayOptions = {}) {
     this.options = options;
@@ -47,6 +52,12 @@ export class MockGateway {
     this.users.set(this.user.sub, this.user);
     this.refreshUserSub = options.autoLogin ? this.user.sub : null;
     this.addresses.set(this.user.sub, []);
+    if (options.autoLogin) {
+      this.seedRefreshToken(this.user.sub);
+      if (options.synchronizeRefresh) {
+        this.refreshPairReady = new Promise<void>((resolve) => { this.releaseRefreshes = resolve; });
+      }
+    }
   }
 
   async install(context: BrowserContext): Promise<void> {
@@ -66,6 +77,10 @@ export class MockGateway {
     return conversation;
   }
 
+  initialRefreshToken(): string | undefined {
+    return [...this.refreshTokens.keys()].at(-1);
+  }
+
   private async handle(route: Route): Promise<void> {
     const request = route.request();
     const url = new URL(request.url());
@@ -75,9 +90,28 @@ export class MockGateway {
     this.calls.push({ method, path, actor: actor?.sub ?? "anonymous" });
 
     if (path === "/api/v1/auth/refresh" && method === "POST") {
-      if (!this.refreshUserSub) return this.fail(route, 401, "AUTHENTICATION_REQUIRED", "No active session");
-      const user = this.users.get(this.refreshUserSub);
-      return user ? this.authSuccess(route, user) : this.fail(route, 401, "AUTHENTICATION_REQUIRED", "No active session");
+      if (this.refreshPairReady) await this.waitForRefreshPair();
+      const presented = this.cookieValue(request.headers().cookie, "xone_refresh");
+      const current = presented ? this.refreshTokens.get(presented) : undefined;
+      if (!current) return this.fail(route, 401, "REFRESH_TOKEN_INVALID", "No active session");
+      const replayPath: Array<{ token: string; session: { userSub: string; consumed: boolean; replacement?: string } }> = [];
+      let currentToken = presented!;
+      let session = current;
+      for (let index = 0; index < 64; index += 1) {
+        replayPath.push({ token: currentToken, session });
+        if (!session.consumed) break;
+        const replacementToken = session.replacement;
+        const replacement = replacementToken ? this.refreshTokens.get(replacementToken) : undefined;
+        if (!replacement) return this.fail(route, 401, "REFRESH_TOKEN_REUSED", "Refresh token reused");
+        currentToken = replacementToken!;
+        session = replacement;
+      }
+      if (session.consumed) return this.fail(route, 401, "REFRESH_TOKEN_REUSED", "Refresh token reused");
+      const user = this.users.get(session.userSub);
+      if (!user) return this.fail(route, 401, "REFRESH_TOKEN_INVALID", "No active session");
+      const nextRefreshToken = this.seedRefreshToken(session.userSub);
+      for (const entry of replayPath) { entry.session.consumed = true; entry.session.replacement = nextRefreshToken; }
+      return this.authSuccess(route, user, nextRefreshToken);
     }
     if (path === "/api/v1/auth/register" && method === "POST") {
       const body = await this.body(request);
@@ -331,9 +365,29 @@ export class MockGateway {
   private makeConversation(id: string, title: string, actorId = this.user.sub, serviceContext = ""): JsonRecord { return { conversationId: id, actorId, title, status: "ACTIVE", createdAt: isoNow(), updatedAt: isoNow(), messages: [], state: {}, ...(serviceContext ? { serviceContext } : {}) }; }
   private nextId(prefix: string): string { this.sequence += 1; return `${prefix}-${this.sequence}`; }
   private actorFor(authorization?: string): MockUser | undefined { const token = authorization?.replace(/^Bearer\s+/i, ""); const sub = token ? this.tokens.get(token) : undefined; return sub ? this.users.get(sub) : undefined; }
-  private authSuccess(route: Route, user: MockUser): Promise<void> { const token = `e2e-token-${user.sub}`; this.tokens.set(token, user.sub); return this.ok(route, { access_token: token, token_type: "bearer", expires_in: 3600, user }); }
+  private authSuccess(route: Route, user: MockUser, refreshToken = this.seedRefreshToken(user.sub)): Promise<void> {
+    const token = `e2e-token-${user.sub}`;
+    this.tokens.set(token, user.sub);
+    return this.ok(route, { access_token: token, token_type: "bearer", expires_in: 3600, user }, refreshToken);
+  }
+  private seedRefreshToken(userSub: string): string {
+    const token = `e2e-refresh-${userSub}-${++this.sequence}`;
+    this.refreshTokens.set(token, { userSub, consumed: false });
+    this.refreshUserSub = userSub;
+    return token;
+  }
+  private async waitForRefreshPair(): Promise<void> {
+    this.waitingRefreshes += 1;
+    if (this.waitingRefreshes === 2) this.releaseRefreshes?.();
+    while (this.waitingRefreshes < 2) await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  private cookieValue(header: string | undefined, name: string): string | undefined {
+    return header?.split(";").map((part) => part.trim()).map((part) => part.split("=")).find(([key]) => key === name)?.slice(1).join("=");
+  }
   private async body(request: { postData(): string | null }): Promise<JsonRecord> { const raw = request.postData(); if (!raw) return {}; try { const parsed: unknown = JSON.parse(raw); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as JsonRecord : {}; } catch { return {}; } }
-  private async ok(route: Route, data: unknown): Promise<void> { await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ data }) }); }
+  private async ok(route: Route, data: unknown, refreshToken?: string): Promise<void> {
+    await route.fulfill({ status: 200, contentType: "application/json", ...(refreshToken ? { headers: { "Set-Cookie": `xone_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax` } } : {}), body: JSON.stringify({ data }) });
+  }
   private async fail(route: Route, status: number, code: string, detail: string): Promise<void> { await route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ code, detail, retryable: status >= 500 }) }); }
   private async denied(route: Route, path: string): Promise<void> { this.deniedRequests.push(path); return this.fail(route, 403, "RESOURCE_FORBIDDEN", "Resource does not belong to this account"); }
   private conversationKey(sub: string, id: string): string { return `${sub}:${id}`; }
@@ -345,5 +399,7 @@ export class MockGateway {
 export async function installAuthenticatedFixture(context: BrowserContext, options: MockGatewayOptions = {}): Promise<MockGateway> {
   const gateway = new MockGateway({ autoLogin: true, onboardingComplete: true, ...options });
   await gateway.install(context);
+  const refreshToken = gateway.initialRefreshToken();
+  if (refreshToken) await context.addCookies([{ name: "xone_refresh", value: refreshToken, domain: "localhost", path: "/api/v1/auth", httpOnly: true, sameSite: "Lax" }]);
   return gateway;
 }

@@ -52,9 +52,17 @@ export interface ForgotPasswordResult {
   delivery_configured: boolean;
 }
 
+export type RefreshOutcome = "authenticated" | "invalid" | "transient";
+
+export interface RefreshResult {
+  outcome: RefreshOutcome;
+  token: string | null;
+  problem?: ApiProblem;
+}
+
 let accessToken: string | null = null;
 let unauthorizedHandler: (() => void) | undefined;
-let refreshInFlight: Promise<string | null> | undefined;
+let refreshInFlight: Promise<RefreshResult> | undefined;
 
 export function configureApiClient(options: { onUnauthorized?: () => void }): void {
   unauthorizedHandler = options.onUnauthorized;
@@ -89,7 +97,8 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (init.body !== undefined && init.body !== null) headers.set("Content-Type", "application/json");
-  headers.set("X-Correlation-Id", createRequestId("cor"));
+  const correlationId = createRequestId("cor");
+  headers.set("X-Correlation-Id", correlationId);
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
   if (options.includeAuth !== false && accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
@@ -99,10 +108,18 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
     if (!response.ok) {
       const problem = problemFromResponse(body, response.status);
       if (response.status === 401 && shouldRefresh(path, problem, options)) {
-        const refreshed = await refreshAccessToken();
-        if (refreshed) return request<T>(path, init, { ...options, retried: true });
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === "authenticated" && refreshed.token) return request<T>(path, init, { ...options, retried: true });
+        if (refreshed.outcome === "transient") throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
       }
-      if (response.status === 401 && !options.suppressUnauthorized) {
+      if (response.status === 401 && !options.suppressUnauthorized && isSessionAuthError(problem)) {
+        // If a refresh is currently in flight (triggered by another concurrent request),
+        // wait for it before giving up and clearing the session.
+        if (refreshInFlight) {
+          const refreshed = await refreshInFlight;
+          if (refreshed.outcome === "authenticated" && refreshed.token) return request<T>(path, init, { ...options, retried: true });
+          if (refreshed.outcome === "transient") throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
+        }
         clearAuthSession();
         unauthorizedHandler?.();
       }
@@ -125,8 +142,12 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   }
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
-  if (!refreshInFlight) refreshInFlight = rawRefresh().finally(() => { refreshInFlight = undefined; });
+export async function refreshAccessToken(triggerCorrelationId?: string): Promise<RefreshResult> {
+  if (!refreshInFlight) {
+    refreshInFlight = rawRefresh(triggerCorrelationId).finally(() => {
+      refreshInFlight = undefined;
+    });
+  }
   return refreshInFlight;
 }
 
@@ -601,7 +622,7 @@ export async function logoutAll(): Promise<void> {
 }
 
 export function changePassword(currentPassword: string, newPassword: string): Promise<{ password_changed: boolean; reauthentication_required: boolean }> {
-  return request("/api/v1/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }, { retryAuth: false });
+  return request("/api/v1/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }, { retryAuth: true });
 }
 
 export function getSessions(): Promise<{ items: AuthSessionSummary[] }> {
@@ -643,46 +664,103 @@ export function isRetryableError(error: unknown): boolean {
   return error instanceof ApiError && error.retryable;
 }
 
+const PUBLIC_AUTH_PATHS = new Set([
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/refresh",
+  "/api/v1/auth/forgot-password",
+  "/api/v1/auth/reset-password",
+  "/api/v1/auth/google",
+]);
+
 function shouldRefresh(path: string, problem: ApiProblem, options: RequestOptions): boolean {
-  if (options.retried || options.retryAuth === false || path.startsWith("/api/v1/auth/")) return false;
-  return problem.code === "AUTHENTICATION_FAILED" || problem.code === "AUTHENTICATION_REQUIRED";
+  if (options.retried || options.retryAuth === false || PUBLIC_AUTH_PATHS.has(path)) return false;
+  return problem.code === "AUTHENTICATION_FAILED" || problem.code === "AUTHENTICATION_REQUIRED" || problem.code === "UNAUTHORIZED";
 }
 
-async function rawRefresh(): Promise<string | null> {
+function isSessionAuthError(problem: ApiProblem): boolean {
+  if (problem.code === "CURRENT_PASSWORD_INVALID" || problem.code === "INVALID_CREDENTIALS") {
+    return false;
+  }
+  return (
+    problem.code === "AUTHENTICATION_FAILED" ||
+    problem.code === "AUTHENTICATION_REQUIRED" ||
+    problem.code === "UNAUTHORIZED" ||
+    problem.code === "SESSION_EXPIRED" ||
+    problem.code === "TOKEN_EXPIRED"
+  );
+}
+
+async function rawRefresh(triggerCorrelationId?: string): Promise<RefreshResult> {
   const tokenAtStart = accessToken;
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-Correlation-Id": createRequestId("cor-refresh"),
+    };
+    if (triggerCorrelationId) {
+      headers["X-Trigger-Correlation-Id"] = triggerCorrelationId;
+    }
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { Accept: "application/json", "X-Correlation-Id": createRequestId("cor") },
+      headers,
       credentials: "include",
     });
     const body = await parseJson(response);
+    const problem = problemFromResponse(body, response.status);
     if (!response.ok || !isRecord(body) || !isRecord(body.data) || typeof body.data.access_token !== "string") {
       // A login/register may have completed while this refresh was in flight.
       // Never clear the newer in-memory session because an older refresh failed.
       if (accessToken === tokenAtStart) {
-        clearAuthSession();
-        return null;
+        // Only clear the session if the server explicitly rejected the refresh token (401 or 403)
+        // rather than a temporary network or server issue (5xx or 429).
+        if (response.status === 401 || response.status === 403) {
+          clearAuthSession();
+          return { outcome: "invalid", token: null, problem };
+        }
+        return { outcome: "transient", token: accessToken, problem };
       }
-      return accessToken;
+      return accessToken
+        ? { outcome: "authenticated", token: accessToken, problem }
+        : { outcome: "transient", token: null, problem };
     }
-    if (accessToken !== tokenAtStart) return accessToken;
+    if (accessToken !== tokenAtStart) return accessToken
+      ? { outcome: "authenticated", token: accessToken }
+      : { outcome: "transient", token: null };
     setAccessToken(body.data.access_token);
-    return body.data.access_token;
+    return { outcome: "authenticated", token: body.data.access_token };
   } catch {
-    if (accessToken === tokenAtStart) {
-      clearAuthSession();
-      return null;
-    }
-    return accessToken;
+    // If the request was aborted (e.g. page navigation or teardown) or network dropped,
+    // do NOT wipe the in-memory session if it's still what we started with.
+    return {
+      outcome: "transient",
+      token: accessToken,
+      problem: { code: "AUTH_REFRESH_TEMPORARY", detail: "Session refresh temporarily unavailable.", status: 503, retryable: true },
+    };
   }
+}
+
+function temporaryRefreshError(requestId?: string): ApiError {
+  return new ApiError({
+    code: "AUTH_REFRESH_TEMPORARY",
+    detail: "Phiên đăng nhập đang được khôi phục. Bạn thử lại sau một chút nhé.",
+    status: 503,
+    retryable: true,
+    ...(requestId ? { requestId } : {}),
+  });
 }
 
 function friendlyErrorMessage(code: string, detail: string): string {
   const source = `${code} ${detail}`.toUpperCase();
+  if (source.includes("CURRENT_PASSWORD_INVALID") || (source.includes("INVALID_CREDENTIALS") && detail.includes("hiện tại"))) {
+    return "Mật khẩu hiện tại không đúng.";
+  }
   if (source.includes("INVALID_CREDENTIALS")) return "Email hoặc mật khẩu không đúng.";
   if (source.includes("ACCOUNT_ALREADY_EXISTS")) return "Email này đã được dùng để tạo tài khoản.";
-  if (source.includes("PASSWORD_POLICY")) return "Dùng mật khẩu hoặc cụm mật khẩu từ 8 ký tự trở lên.";
+  if (source.includes("PASSWORD_POLICY")) {
+    if (detail && detail.startsWith("Mật khẩu")) return detail;
+    return "Mật khẩu dài từ 8 đến 128 ký tự, bao gồm chữ, số và ký tự đặc biệt.";
+  }
   if (source.includes("RESET_TOKEN")) return "Liên kết đặt lại mật khẩu không còn hợp lệ. Bạn hãy yêu cầu liên kết mới.";
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
