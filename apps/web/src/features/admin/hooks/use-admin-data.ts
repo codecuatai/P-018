@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  addAdminSupportMessage,
   errorText,
   getAdminDatasets,
   getAdminPayments,
@@ -132,11 +133,30 @@ export function useAdminData() {
     }
   }, []);
 
+  const addTicketMessage = useCallback(async (id: string, message: string) => {
+    try {
+      const updated = await addAdminSupportMessage(id, message);
+      setData((current) => ({
+        ...current,
+        support: {
+          ...current.support,
+          data: current.support.data
+            ? { ...current.support.data, items: current.support.data.items.map((ticket) => ticket.id === id ? updated : ticket) }
+            : current.support.data,
+        },
+      }));
+      return updated;
+    } catch (error) {
+      setData((current) => ({ ...current, support: { ...current.support, error: errorText(error) } }));
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  return { ...data, refreshing, lastCheckedAt, load, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket };
+  return { ...data, refreshing, lastCheckedAt, load, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket, addTicketMessage };
 }
 
 function loadable<T>(result: PromiseSettledResult<T>): Loadable<T> {

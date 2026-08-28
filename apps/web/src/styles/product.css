@@ -310,13 +310,21 @@
 .settings-empty { display: flex; align-items: center; gap: 10px; padding: 19px 0; color: var(--color-muted); font-size: 0.79rem; }
 .settings-empty svg { color: var(--color-success-ink); }
 .settings-empty p { margin: 0; }
-.session-list { display: grid; gap: 9px; padding: 0; margin: 17px 0; list-style: none; }
-.session-list li { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 13px; background: #FBFCFD; border: 1px solid #E0E8EE; border-radius: 8px; }
-.session-list li > div { display: grid; min-width: 0; gap: 4px; }
+.session-list-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-top: 16px; color: var(--color-navy); }
+.session-list-summary span { font-size: 0.73rem; font-weight: 800; }
+.session-list-summary small { color: var(--color-muted-soft); font-size: 0.66rem; }
+.session-list { display: grid; gap: 9px; padding: 0; margin: 11px 0 0; list-style: none; }
+.session-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; padding: 13px; background: #FBFCFD; border: 1px solid #E0E8EE; border-radius: 8px; }
+.session-list li > div { display: grid; min-width: 0; flex: 1 1 auto; gap: 4px; }
+.session-row-heading { display: flex !important; align-items: center; flex-wrap: wrap; gap: 7px; }
 .session-list strong { color: var(--color-navy); font-size: 0.78rem; }
-.session-list span { overflow: hidden; color: var(--color-muted); font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.session-list span { color: var(--color-muted); font-size: 0.7rem; line-height: 1.4; overflow-wrap: anywhere; }
+.session-list .session-current-badge { padding: 3px 6px; color: var(--color-success-ink); background: var(--surface-mist); border: 1px solid #C8E3DE; border-radius: 999px; font-size: 0.6rem; font-weight: 800; line-height: 1.2; white-space: nowrap; }
 .session-list small { color: var(--color-muted-soft); font-size: 0.65rem; line-height: 1.4; }
 .session-list .button { min-height: 34px; padding: 7px 9px; flex: 0 0 auto; font-size: 0.68rem; }
+.session-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.session-pagination > span { color: var(--color-muted); font-size: 0.7rem; font-weight: 700; text-align: center; }
+.session-pagination .button { min-height: 34px; margin-top: 0; padding: 7px 10px; font-size: 0.68rem; }
 .inline-button { padding: 0; color: inherit; background: transparent; border: 0; font: inherit; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
 .route-shell { padding: 28px; }
 .route-shell .text-link,
@@ -788,8 +796,11 @@
   .profile-details,
   .settings-card,
   .route-shell { padding: 18px; }
+  .session-list-summary { align-items: flex-start; flex-direction: column; gap: 3px; }
   .session-list li { align-items: flex-start; flex-direction: column; }
   .session-list .button { width: 100%; }
+  .session-pagination { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; }
+  .session-pagination .button { padding-inline: 8px; }
   .service-grid { grid-template-columns: 1fr; }
   .service-card { min-height: 0; padding: 18px; }
 }

@@ -30,7 +30,7 @@ with engine.begin() as connection:
             },
             {
                 "id": "rest-002",
-                "name": "Sakura Sushi House",
+                "name": "Tokachiya Ramen",
                 "location": "District 3, Ho Chi Minh City",
                 "cuisine_type": "Japanese",
                 "budget_range": "$$",
@@ -58,6 +58,46 @@ with engine.begin() as connection:
                 "timezone": "Asia/Ho_Chi_Minh",
                 "active": True,
             },
+            {
+                "id": "rest-cha-ca",
+                "name": "Chả Cá Văn Miếu",
+                "location": "Dong Da, Hanoi",
+                "cuisine_type": "Vietnamese",
+                "budget_range": "$$",
+                "rating": 4.7,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chay",
+                "name": "Nhà hàng Chay An Nhiên",
+                "location": "District 1, Ho Chi Minh City",
+                "cuisine_type": "Vegetarian",
+                "budget_range": "$$",
+                "rating": 4.5,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chay-accented",
+                "name": "Chảy Bistro",
+                "location": "District 2, Ho Chi Minh City",
+                "cuisine_type": "Fusion",
+                "budget_range": "$$",
+                "rating": 4.4,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chao",
+                "name": "Chảo Đỏ",
+                "location": "District 3, Ho Chi Minh City",
+                "cuisine_type": "Vietnamese",
+                "budget_range": "$$",
+                "rating": 4.3,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
         ],
     )
 RestaurantRepository(os.environ["DATABASE_URL"]).seed()
@@ -77,6 +117,34 @@ def test_search_restaurants():
     hanoi_res = client.get("/v1/restaurants?location=Hà Nội", headers=AUTH)
     assert hanoi_res.status_code == 200
     assert len(hanoi_res.json()["data"]["items"]) >= 2
+
+
+def test_generic_search_matches_name_location_and_cuisine_without_accents():
+    name_res = client.get("/v1/restaurants?q=Tokachiya%20Ramen", headers=AUTH)
+    location_res = client.get("/v1/restaurants?q=ha%20noi", headers=AUTH)
+    cuisine_res = client.get("/v1/restaurants?q=japanese", headers=AUTH)
+
+    assert name_res.status_code == 200
+    assert [item["id"] for item in name_res.json()["data"]["items"]] == ["rest-002"]
+    assert location_res.status_code == 200
+    assert {"rest-003", "rest-004"} <= {item["id"] for item in location_res.json()["data"]["items"]}
+    assert cuisine_res.status_code == 200
+    assert [item["id"] for item in cuisine_res.json()["data"]["items"]] == ["rest-002"]
+
+
+def test_generic_search_uses_smart_diacritic_substring_matching():
+    accented_res = client.get("/v1/restaurants", params={"q": "chả"}, headers=AUTH)
+    unaccented_res = client.get("/v1/restaurants", params={"q": "cha"}, headers=AUTH)
+
+    assert accented_res.status_code == 200
+    accented_ids = {item["id"] for item in accented_res.json()["data"]["items"]}
+    assert "rest-cha-ca" in accented_ids
+    assert "rest-chay" not in accented_ids
+    assert {"rest-chay-accented", "rest-chao"} <= accented_ids
+
+    assert unaccented_res.status_code == 200
+    unaccented_ids = {item["id"] for item in unaccented_res.json()["data"]["items"]}
+    assert {"rest-cha-ca", "rest-chay", "rest-chay-accented", "rest-chao"} <= unaccented_ids
 
 
 def test_consumer_discovery_searches_authoritative_fields_and_hides_only_placeholders():

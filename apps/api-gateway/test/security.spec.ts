@@ -30,6 +30,17 @@ describe('Gateway security baseline', () => {
     expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
 
+  it('allows the safe refresh trigger correlation header through CORS preflight', async () => {
+    const response = await request(app.getHttpServer())
+      .options('/api/v1/auth/refresh')
+      .set('Origin', 'http://localhost:5173')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'x-correlation-id,x-trigger-correlation-id')
+      .expect(204);
+
+    expect(response.headers['access-control-allow-headers']).toContain('X-Trigger-Correlation-Id');
+  });
+
   it('adds baseline security headers', async () => {
     const response = await request(app.getHttpServer()).get('/health/live').expect(200);
 

@@ -16,6 +16,14 @@ The canonical route inventory is [api-inventory.md](api-inventory.md). Shared pr
 
 The shared `Address` contract requires `id`, `label`, `address_text`, `latitude`, `longitude`, and `city`; `ward` and `district` remain optional. The canonical actor-owned saved-address resource is Gateway `/api/v1/addresses`, persisted in Core migration `010_core_personal_context.sql`. Food still accepts an immutable `address_snapshot` on quote/preview/order calls and validates the actor before using it; its legacy `/api/v1/addresses` shape is not Core authority.
 
+Restaurant discovery keeps the explicit `location`, `cuisine_type`, and
+`budget_range` filters for typed workflow callers. Its additive `q` query
+parameter is the generic consumer-search contract and performs a
+case-insensitive substring match across restaurant name, location, or cuisine
+type. A query containing Vietnamese diacritics is accent-sensitive; a query
+without diacritics remains accent-insensitive, so `cha` can match `chả`,
+`chảy`, `chảo`, or `chay` while `chả` does not match `chay`.
+
 A saved or default address is reusable context, not implicit permission to choose
 a Food delivery destination. Checkout asks where the order should be delivered
 before resolving a saved-address label or accepting a new concrete address. If
@@ -62,6 +70,10 @@ Errors use RFC-7807-inspired JSON: `type`, `title`, `status`, `code`, safe `deta
 The minimum public success contract is `{ data, meta: { request_id } }`. A list uses `{ data: { items }, meta: { request_id, pagination: { cursor, has_more } } }`. Extra safe metadata such as `timestamp` or a compatibility `actor_id` may remain on an existing endpoint, but must not contain credentials, raw prompts, internal confirmation IDs, provider payloads, or chain-of-thought.
 
 `X-Correlation-Id` is accepted/generated for every request. `X-Workflow-Id` and `X-Tool-Call-Id` apply to orchestrated workflows. Internal calls require service authentication. Standard status codes apply: 200/201 success, 202 accepted, 400/401/403/404/409/422 client errors, and 429/5xx only where appropriate.
+
+The browser may send the bounded `X-Trigger-Correlation-Id` header on refresh so
+parallel restore requests can be correlated safely; it is trace metadata only
+and must never contain a token or cookie.
 
 ## Authentication contract
 

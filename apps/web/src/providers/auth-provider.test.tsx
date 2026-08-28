@@ -14,6 +14,7 @@ jest.mock("@/lib/api-client", () => ({
   configureApiClient: jest.fn(),
   getAccessToken: mockGetAccessToken,
   getCurrentUser: mockGetCurrentUser,
+  isRetryableError: (error: unknown) => Boolean(error && typeof error === "object" && "retryable" in error && (error as { retryable?: unknown }).retryable === true),
   login: jest.fn(),
   logout: jest.fn(),
   refreshAccessToken: mockRefreshAccessToken,
@@ -35,7 +36,7 @@ describe("AuthProvider", () => {
   });
 
   it("restores the authenticated user from the opaque refresh cookie", async () => {
-    mockRefreshAccessToken.mockResolvedValueOnce("access-token");
+    mockRefreshAccessToken.mockResolvedValueOnce({ outcome: "authenticated", token: "access-token" });
     mockGetCurrentUser.mockResolvedValueOnce({ sub: "usr-1", email: "an@example.test", role: "customer" });
 
     render(<AuthProvider><StatusProbe /></AuthProvider>);
@@ -46,7 +47,7 @@ describe("AuthProvider", () => {
   });
 
   it("does not expose a protected route as authenticated when refresh fails", async () => {
-    mockRefreshAccessToken.mockResolvedValueOnce(null);
+    mockRefreshAccessToken.mockResolvedValueOnce({ outcome: "invalid", token: null });
 
     render(<AuthProvider><StatusProbe /></AuthProvider>);
 
@@ -61,5 +62,26 @@ describe("AuthProvider", () => {
 
     await waitFor(() => expect(screen.getByText("unauthenticated:none")).toBeInTheDocument());
     expect(mockRefreshAccessToken).not.toHaveBeenCalled();
+  });
+
+  it("retries a transient refresh before exposing the recoverable state", async () => {
+    mockRefreshAccessToken
+      .mockResolvedValueOnce({ outcome: "transient", token: null })
+      .mockResolvedValueOnce({ outcome: "authenticated", token: "access-token" });
+    mockGetCurrentUser.mockResolvedValueOnce({ sub: "usr-1", email: "an@example.test", role: "customer" });
+
+    render(<AuthProvider><StatusProbe /></AuthProvider>);
+
+    await waitFor(() => expect(screen.getByText("authenticated:an@example.test")).toBeInTheDocument());
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the recoverable state after bounded transient restore retries", async () => {
+    mockRefreshAccessToken.mockResolvedValue({ outcome: "transient", token: null });
+
+    render(<AuthProvider><StatusProbe /></AuthProvider>);
+
+    await waitFor(() => expect(screen.getByText("recoverable:none")).toBeInTheDocument(), { timeout: 2500 });
+    expect(mockRefreshAccessToken).toHaveBeenCalledTimes(4);
   });
 });
