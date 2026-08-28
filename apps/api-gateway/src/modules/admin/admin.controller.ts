@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Headers, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
@@ -21,6 +21,10 @@ class SupportQuery extends PageQuery {
 class SupportUpdateDto {
   @IsOptional() @IsIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']) status?: SupportTicketStatus;
   @IsOptional() @IsIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']) priority?: SupportPriority;
+}
+
+class SupportMessageDto {
+  @IsNotEmpty() @IsString() @MaxLength(5000) message!: string;
 }
 
 class AllFeedbackQuery extends PageQuery {
@@ -161,6 +165,14 @@ export class AdminController {
   async updateSupport(@Param('id') id: string, @Body() body: SupportUpdateDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AdminRequest): Promise<object> {
     if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc cho cập nhật support.', retryable: false });
     const ticket = await this.admin.updateSupport(id, body, request.user.sub, correlation(request), idempotencyKey.trim());
+    if (!ticket) throw new NotFoundException({ code: 'SUPPORT_TICKET_NOT_FOUND', detail: 'Support ticket không tồn tại.', retryable: false });
+    return this.reply(ticket, request);
+  }
+
+  @Post('support-tickets/:id/messages')
+  async supportMessage(@Param('id') id: string, @Body() body: SupportMessageDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AdminRequest): Promise<object> {
+    if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc khi gửi phản hồi support.', retryable: false });
+    const ticket = await this.admin.addSupportMessage(id, body.message.trim(), request.user.sub, correlation(request), idempotencyKey.trim());
     if (!ticket) throw new NotFoundException({ code: 'SUPPORT_TICKET_NOT_FOUND', detail: 'Support ticket không tồn tại.', retryable: false });
     return this.reply(ticket, request);
   }

@@ -523,6 +523,10 @@ export function updateAdminSupportTicket(id: string, patch: { status?: SupportTi
   return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("admin-support-update") });
 }
 
+export function addAdminSupportMessage(id: string, message: string): Promise<SupportTicket> {
+  return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify({ message }) }, { idempotencyKey: createIdempotencyKey("admin-support-message") });
+}
+
 export function getAdminUserServices(userId: string): Promise<AdminUserServiceSummary> {
   return request(`/api/v1/admin/users/${encodeURIComponent(userId)}/services`, { method: "GET" });
 }

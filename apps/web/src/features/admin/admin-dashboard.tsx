@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock3,
   CreditCard,
   Database,
   ExternalLink,
@@ -26,6 +27,7 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  Send,
   Server,
   Shield,
   ShieldAlert,
@@ -37,6 +39,7 @@ import {
   Stethoscope,
   Ticket,
   UserCheck,
+  UserRound,
   Users,
   Utensils,
   UtensilsCrossed,
@@ -71,6 +74,8 @@ import type { Loadable, MainTabId, SubTabId } from "./admin.types";
 import { useAdminData } from "./hooks/use-admin-data";
 import { useAdminNavigation } from "./hooks/use-admin-navigation";
 
+import styles from "./admin-support.module.css";
+
 export function AdminDashboard() {
   const auth = useOptionalAuth();
   const user = auth?.user;
@@ -96,6 +101,7 @@ export function AdminDashboard() {
     refreshing,
     lastCheckedAt,
     load,
+    addTicketMessage,
     refreshHealth,
     refreshTransactions,
     refreshWorkflows,
@@ -444,7 +450,7 @@ export function AdminDashboard() {
               {activeMainTab === "support" && (
                 <>
                   {currentSubTabId === "support-queue" && (
-                    <SupportSubtab support={support} onUpdateTicket={updateTicket} onRetry={() => void load()} />
+                    <SupportSubtab support={support} onUpdateTicket={updateTicket} onAddMessage={addTicketMessage} onRetry={() => void load()} />
                   )}
                   {currentSubTabId === "feedback-ratings" && <FeedbackSection />}
                 </>
@@ -1381,19 +1387,28 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
 function SupportSubtab({
   support,
   onUpdateTicket,
+  onAddMessage,
   onRetry,
 }: {
   support: Loadable<{ items: SupportTicket[]; total: number }>;
   onUpdateTicket: (id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) => Promise<void>;
+  onAddMessage: (id: string, message: string) => Promise<SupportTicket>;
   onRetry: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const allItems = support.data?.items ?? [];
+
+  const queueStats = useMemo(() => ({
+    OPEN: allItems.filter((ticket) => ticket.status === "OPEN").length,
+    IN_PROGRESS: allItems.filter((ticket) => ticket.status === "IN_PROGRESS").length,
+    RESOLVED: allItems.filter((ticket) => ticket.status === "RESOLVED").length,
+    CLOSED: allItems.filter((ticket) => ticket.status === "CLOSED").length,
+  }), [allItems]);
 
   const filteredItems = useMemo(() => {
-    const items = support.data?.items ?? [];
-    return items.filter((ticket) => {
+    return allItems.filter((ticket) => {
       const q = search.toLowerCase();
       const matchSearch =
         !search ||
@@ -1405,59 +1420,91 @@ function SupportSubtab({
       const matchPriority = priorityFilter === "all" || ticket.priority === priorityFilter;
       return matchSearch && matchStatus && matchPriority;
     });
-  }, [support.data?.items, search, statusFilter, priorityFilter]);
+  }, [allItems, search, statusFilter, priorityFilter]);
+
+  const hasFilters = Boolean(search || statusFilter !== "all" || priorityFilter !== "all");
 
   return (
-    <section className="admin-section" id="support" aria-labelledby="support-title">
-      <SectionHeading icon={<LifeBuoy size={17} />} title="Support queue" id="support-title" />
+    <section className={`admin-section ${styles.queue}`} id="support" aria-labelledby="support-title">
+      <div className={styles.sectionHead}>
+        <div>
+          <SectionHeading icon={<LifeBuoy size={17} />} title="Support queue" id="support-title" />
+          <p className={styles.sectionDescription}>Tập trung vào các yêu cầu cần xử lý và cập nhật trạng thái ngay tại đây.</p>
+        </div>
+        <span className={styles.resultCount}>{filteredItems.length} ticket{filteredItems.length === 1 ? "" : "s"}</span>
+      </div>
+
+      <div className={styles.queueStats} aria-label="Tóm tắt trạng thái ticket">
+        {(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const).map((status) => (
+          <button
+            className={`${styles.queueStat} ${statusFilter === status ? styles.queueStatActive : ""}`}
+            type="button"
+            key={status}
+            aria-pressed={statusFilter === status}
+            onClick={() => setStatusFilter(statusFilter === status ? "all" : status)}
+          >
+            <span>{status === "OPEN" ? "Mới" : status === "IN_PROGRESS" ? "Đang xử lý" : status === "RESOLVED" ? "Đã xử lý" : "Đã đóng"}</span>
+            <strong>{queueStats[status]}</strong>
+          </button>
+        ))}
+      </div>
 
       {/* Filter Bar */}
-      <div className="admin-filter-bar">
+      <div className={`admin-filter-bar ${styles.filterBar}`}>
         <div className="admin-filter-left">
-          <div className="admin-search-input-wrap">
-            <Search size={14} className="search-icon" />
-            <input
-              type="text"
-              placeholder="Tìm ticket theo tiêu đề, ID hoặc người gửi..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              aria-label="Tìm kiếm ticket"
-            />
-            {search && (
-              <button type="button" className="clear-btn" onClick={() => setSearch("")} aria-label="Xóa tìm kiếm">
-                <X size={11} />
-              </button>
-            )}
+          <div className={styles.filterField}>
+            <span>Tìm trong ticket</span>
+            <div className={`admin-search-input-wrap ${styles.searchWrap}`}>
+              <Search size={14} className="search-icon" />
+              <input
+                type="text"
+                placeholder="Tiêu đề, mã ticket hoặc người gửi…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Tìm kiếm ticket"
+              />
+              {search && (
+                <button type="button" className="clear-btn" onClick={() => setSearch("")} aria-label="Xóa tìm kiếm">
+                  <X size={11} />
+                </button>
+              )}
+            </div>
           </div>
 
-          <select
-            className="admin-select-filter"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Lọc theo trạng thái"
-          >
-            <option value="all">Tất cả trạng thái</option>
-            <option value="OPEN">Mở (Open)</option>
-            <option value="IN_PROGRESS">Đang xử lý</option>
-            <option value="RESOLVED">Đã giải quyết</option>
-            <option value="CLOSED">Đã đóng</option>
-          </select>
+          <label className={styles.filterField}>
+            <span>Trạng thái</span>
+            <select
+              className={`admin-select-filter ${styles.filterSelect}`}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Lọc theo trạng thái"
+            >
+              <option value="all">Tất cả</option>
+              <option value="OPEN">Mới</option>
+              <option value="IN_PROGRESS">Đang xử lý</option>
+              <option value="RESOLVED">Đã xử lý</option>
+              <option value="CLOSED">Đã đóng</option>
+            </select>
+          </label>
 
-          <select
-            className="admin-select-filter"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-            aria-label="Lọc theo mức độ ưu tiên"
-          >
-            <option value="all">Tất cả mức ưu tiên</option>
-            <option value="LOW">Thấp (Low)</option>
-            <option value="NORMAL">Thường (Normal)</option>
-            <option value="HIGH">Cao (High)</option>
-            <option value="URGENT">Khẩn cấp (Urgent)</option>
-          </select>
+          <label className={styles.filterField}>
+            <span>Ưu tiên</span>
+            <select
+              className={`admin-select-filter ${styles.filterSelect}`}
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              aria-label="Lọc theo mức độ ưu tiên"
+            >
+              <option value="all">Tất cả</option>
+              <option value="LOW">Thấp</option>
+              <option value="NORMAL">Thường</option>
+              <option value="HIGH">Cao</option>
+              <option value="URGENT">Khẩn cấp</option>
+            </select>
+          </label>
         </div>
         <div className="admin-filter-right">
-          <span>{filteredItems.length} tickets</span>
+          {hasFilters ? <button className={`button button-secondary ${styles.clearFilters}`} type="button" onClick={() => { setSearch(""); setStatusFilter("all"); setPriorityFilter("all"); }}><X size={13} /> Xóa bộ lọc</button> : <span className={styles.filterHint}>Lọc theo mã, người gửi hoặc trạng thái</span>}
         </div>
       </div>
 
@@ -1470,9 +1517,9 @@ function SupportSubtab({
               <p>Thử tìm kiếm với từ khóa khác hoặc điều chỉnh bộ lọc.</p>
             </div>
           ) : (
-            <div className="admin-support-list">
+            <div className={`admin-support-list ${styles.ticketList}`}>
               {filteredItems.map((ticket) => (
-                <SupportRow key={ticket.id} ticket={ticket} onUpdate={onUpdateTicket} />
+                <SupportRow key={ticket.id} ticket={ticket} onUpdate={onUpdateTicket} onAddMessage={onAddMessage} />
               ))}
             </div>
           )
@@ -1681,26 +1728,59 @@ function DataTable({ caption, headers, rows }: { caption: string; headers: strin
   );
 }
 
+const QUICK_REPLIES = [
+  "Cảm ơn bạn đã liên hệ với X-One.",
+  "X-One đã ghi nhận và đang kiểm tra giúp bạn.",
+  "Bạn có thể phản hồi thêm thông tin tại đây nếu cần.",
+] as const;
+
 function SupportRow({
   ticket,
   onUpdate,
+  onAddMessage,
 }: {
   ticket: SupportTicket;
   onUpdate: (id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) => Promise<void>;
+  onAddMessage: (id: string, message: string) => Promise<SupportTicket>;
 }) {
+  const [message, setMessage] = useState("");
+  const [messagePending, setMessagePending] = useState(false);
+  const [messageError, setMessageError] = useState("");
+
+  async function submitMessage(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!message.trim() || messagePending || ticket.status === "CLOSED") return;
+    setMessagePending(true);
+    setMessageError("");
+    try {
+      await onAddMessage(ticket.id, message.trim());
+      setMessage("");
+    } catch {
+      setMessageError("Không thể gửi phản hồi. Vui lòng thử lại.");
+    } finally {
+      setMessagePending(false);
+    }
+  }
+
   return (
-    <article className="admin-support-row">
-      <div>
-        <span className="eyebrow">{ticket.id}</span>
+    <article className={`admin-support-row ${styles.ticketCard}`}>
+      <div className={styles.ticketMain}>
+        <div className={styles.ticketMeta}>
+          <span className={styles.ticketId}>{ticket.id}</span>
+          <span className={`${styles.statusTag} ${styles[`status${ticket.status}`]}`}>{supportStatusLabel(ticket.status)}</span>
+          <span className={`${styles.priorityTag} ${styles[`priority${ticket.priority}`]}`}>{priorityLabel(ticket.priority)}</span>
+        </div>
         <h3>{ticket.subject}</h3>
-        <p>{ticket.description}</p>
-        <small>
-          {ticket.actor_id} · {formatDate(ticket.updated_at)}
-        </small>
+        <p className={styles.ticketDescription}>{ticket.description}</p>
+        <div className={styles.ticketFooter}>
+          <span><UserRound size={14} /> {ticket.actor_id}</span>
+          <time dateTime={ticket.updated_at}><Clock3 size={14} /> Cập nhật {formatDate(ticket.updated_at)}</time>
+        </div>
       </div>
-      <div className="admin-support-controls">
+      <div className={styles.ticketControls}>
+        <div className={styles.controlsHeading}><Sliders size={15} /><span>Điều phối ticket</span></div>
         <label>
-          Trạng thái
+          <span>Trạng thái</span>
           <select
             value={ticket.status}
             onChange={(event) => void onUpdate(ticket.id, { status: event.target.value as SupportTicketStatus })}
@@ -1712,7 +1792,7 @@ function SupportRow({
           </select>
         </label>
         <label>
-          Ưu tiên
+          <span>Ưu tiên</span>
           <select
             value={ticket.priority}
             onChange={(event) => void onUpdate(ticket.id, { priority: event.target.value as SupportPriority })}
@@ -1724,8 +1804,26 @@ function SupportRow({
           </select>
         </label>
       </div>
+      {ticket.status !== "CLOSED" ? <form className={styles.replyForm} onSubmit={(event) => void submitMessage(event)}>
+        <div className={styles.replyHeading}><MessageSquare size={15} /><span>Phản hồi khách hàng</span></div>
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={5000} rows={3} placeholder="Nhập lời cảm ơn hoặc phản hồi cho khách hàng…" aria-label={`Phản hồi ticket ${ticket.id}`} />
+        <div className={styles.quickReplies} aria-label="Mẫu phản hồi nhanh">
+          <span>Gợi ý:</span>
+          {QUICK_REPLIES.map((reply) => <button key={reply} type="button" onClick={() => setMessage(reply)}>{reply}</button>)}
+        </div>
+        <div className={styles.replyFooter}><span>Khách sẽ thấy nội dung này trong timeline.</span><button className="button button-primary" type="submit" disabled={messagePending || !message.trim()}><Send size={14} />{messagePending ? "Đang gửi…" : "Gửi phản hồi"}</button></div>
+        {messageError ? <p className={styles.replyError} role="alert">{messageError}</p> : null}
+      </form> : <p className={styles.closedNote}>Ticket đã đóng, không thể gửi thêm phản hồi.</p>}
     </article>
   );
+}
+
+function supportStatusLabel(value: SupportTicketStatus): string {
+  return value === "OPEN" ? "Mở" : value === "IN_PROGRESS" ? "Đang xử lý" : value === "RESOLVED" ? "Đã xử lý" : "Đã đóng";
+}
+
+function priorityLabel(value: SupportPriority): string {
+  return value === "LOW" ? "Thấp" : value === "NORMAL" ? "Thường" : value === "HIGH" ? "Cao" : "Khẩn";
 }
 
 function RelativeTimeDisplay({ timestamp }: { timestamp: number | null }) {
