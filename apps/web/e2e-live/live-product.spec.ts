@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const defaultPassword = "XOne-local-E2E-pass";
+const defaultPassword = "XOne-local-E2E-pass-2026";
 let expectedSignedOutAuthCleanup = false;
 
 async function completeOnboarding(page: Page, name: string): Promise<void> {

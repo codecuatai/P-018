@@ -1,4 +1,4 @@
-import { validateEnvironment } from '../src/config/environment';
+import { getGatewaySecurityConfig, validateEnvironment } from '../src/config/environment';
 
 describe('environment validation', () => {
   const completeConfig = {
@@ -11,6 +11,7 @@ describe('environment validation', () => {
     GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: '30',
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: '20',
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: '5',
+    GATEWAY_AUTH_REFRESH_RATE_LIMIT: '60',
     DATABASE_URL: 'postgresql://core_user:password@postgres:5432/xone_core',
     AGENT_SERVICE_URL: 'http://agent-service:8001',
     RIDE_SERVICE_URL: 'http://ride-service:8101',
@@ -55,6 +56,19 @@ describe('environment validation', () => {
     const validated = validateEnvironment(completeConfig);
     expect(validated.GATEWAY_BODY_LIMIT_BYTES).toBe(262144);
     expect(validated.GATEWAY_RATE_LIMIT_WINDOW_SECONDS).toBe(60);
+    expect(validated.GATEWAY_AUTH_REFRESH_RATE_LIMIT).toBe(60);
+    expect(validated.AUTH_REFRESH_REUSE_GRACE_SECONDS).toBe(10);
+  });
+
+  it('keeps refresh recovery on its own rate-limit profile', () => {
+    const profiles = getGatewaySecurityConfig(completeConfig).rateLimitProfiles;
+    expect(profiles.find((profile) => profile.name === 'auth.refresh')?.maxRequests).toBe(60);
+    expect(profiles.find((profile) => profile.name === 'auth.register')?.maxRequests).toBe(5);
+  });
+
+  it('accepts an explicitly bounded refresh reuse grace window', () => {
+    expect(validateEnvironment({ ...completeConfig, AUTH_REFRESH_REUSE_GRACE_SECONDS: '0' }).AUTH_REFRESH_REUSE_GRACE_SECONDS).toBe(0);
+    expect(() => validateEnvironment({ ...completeConfig, AUTH_REFRESH_REUSE_GRACE_SECONDS: '301' })).toThrow('AUTH_REFRESH_REUSE_GRACE_SECONDS must be an integer between 0 and 300');
   });
 
   it('accepts production configuration without demo credentials or a patient fallback', () => {

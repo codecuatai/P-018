@@ -11,7 +11,7 @@ import { PasswordResetDelivery } from '../src/modules/auth/password-reset.delive
 
 const databaseUrl = process.env.CORE_TEST_DATABASE_URL;
 const integration = databaseUrl ? it : it.skip;
-const password = 'a reliable local passphrase';
+const password = 'a reliable local passphrase 123!@#';
 
 jest.setTimeout(30_000);
 
@@ -94,13 +94,59 @@ describe('Auth PostgreSQL persistence', () => {
     expect(persisted.rows[0].refresh_token_hash).toMatch(/^[a-f0-9]{64}$/);
 
     const rotated = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-refresh-${suffix}`);
+    // Explicitly revoke the family before replaying the original cookie. This
+    // keeps the persistence test deterministic while the repository's normal
+    // grace window remains enabled for the benign concurrent-request case.
+    const rotatedAgain = await service.refresh(rotated.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-refresh2-${suffix}`);
+    await service.logout(rotatedAgain.refreshToken, `cor-auth-pg-logout-${suffix}`);
     await expect(service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-replay-${suffix}`))
       .rejects.toMatchObject({ response: expect.objectContaining({ code: 'REFRESH_TOKEN_REUSED' }) });
-    expect(await service.authenticateAccessToken(rotated.accessToken)).toBeUndefined();
+    expect(await service.authenticateAccessToken(rotatedAgain.accessToken)).toBeUndefined();
 
     const sessions = await pool.query('SELECT revoked_at, revoked_reason FROM user_sessions WHERE user_id = $1', [issued.user.sub]);
-    expect(sessions.rows).toHaveLength(2);
-    expect(sessions.rows.every((row) => row.revoked_at && row.revoked_reason === 'refresh_token_reuse')).toBe(true);
+    expect(sessions.rows).toHaveLength(3);
+    expect(sessions.rows.every((row) => row.revoked_at && row.revoked_reason === 'logout')).toBe(true);
+  });
+
+  integration('tolerates a benign in-grace replay of a consumed refresh token without revoking the family', async () => {
+    const suffix = Date.now();
+    const issued = await service.register(
+      { fullName: 'Lê Cẩm', email: `cam-${suffix}@example.test`, password },
+      { userAgent: 'postgres-integration', ip: '127.0.0.1' },
+      `cor-auth-pg-grace-${suffix}`,
+    );
+
+    const rotated = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-grace-refresh-${suffix}`);
+    // Immediate replay of the initial token: replacement is still fresh and we
+    // are inside the grace window, so the family rolls forward instead of dying.
+    const rolled = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-grace-replay-${suffix}`);
+    expect(rolled.refreshToken).not.toBe(rotated.refreshToken);
+    expect(await service.authenticateAccessToken(rotated.accessToken)).toMatchObject({ sub: issued.user.sub });
+
+    const live = await pool.query('SELECT id FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL', [issued.user.sub]);
+    expect(live.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  integration('serializes simultaneous refreshes of the same cookie without duplicate sessions or family revocation', async () => {
+    const suffix = Date.now();
+    const issued = await service.register(
+      { fullName: 'Concurrent User', email: `concurrent-${suffix}@example.test`, password },
+      { userAgent: 'postgres-integration', ip: '127.0.0.1' },
+      `cor-auth-pg-concurrent-${suffix}`,
+    );
+
+    const [first, second] = await Promise.all([
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-a-${suffix}`),
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-b-${suffix}`),
+    ]);
+
+    expect(first.refreshToken).not.toBe(second.refreshToken);
+    expect(await service.authenticateAccessToken(first.accessToken)).toMatchObject({ sub: issued.user.sub });
+    expect(await service.authenticateAccessToken(second.accessToken)).toMatchObject({ sub: issued.user.sub });
+
+    const sessions = await pool.query('SELECT id, revoked_at FROM user_sessions WHERE user_id = $1 ORDER BY created_at ASC', [issued.user.sub]);
+    expect(sessions.rows).toHaveLength(3);
+    expect(sessions.rows.every((row) => row.revoked_at === null)).toBe(true);
   });
 
   integration('stores a one-time reset hash and invalidates its existing sessions in PostgreSQL', async () => {
@@ -118,7 +164,7 @@ describe('Auth PostgreSQL persistence', () => {
     expect(tokenRow.rows[0].token_hash).not.toBe(reset.devResetToken);
     expect(tokenRow.rows[0].token_hash).toMatch(/^[a-f0-9]{64}$/);
 
-    await service.resetPassword(reset.devResetToken!, 'new reliable local passphrase', `cor-reset-complete-pg-${suffix}`);
+    await service.resetPassword(reset.devResetToken!, 'new reliable local passphrase 123!@#', `cor-reset-complete-pg-${suffix}`);
     const completed = await pool.query(
       `SELECT reset.used_at, session.revoked_at, session.revoked_reason
        FROM password_reset_tokens reset

@@ -80,6 +80,7 @@ paths:
       security: []
       parameters:
         - $ref: '#/components/parameters/Origin'
+        - $ref: '#/components/parameters/TriggerCorrelationId'
       responses:
         '201': {$ref: '#/components/responses/AuthIssued'}
         '401': {$ref: '#/components/responses/Error'}
@@ -210,6 +211,12 @@ components:
       required: false
       schema: {type: string, format: uri}
       description: Required for cookie-authenticated state changes unless a trusted Referer is present.
+    TriggerCorrelationId:
+      name: X-Trigger-Correlation-Id
+      in: header
+      required: false
+      schema: {type: string, maxLength: 128, pattern: '^[A-Za-z0-9:_-]+$'}
+      description: Optional bounded trace metadata for correlating a refresh with the triggering request; never contains credentials.
     SessionId:
       name: sessionId
       in: path
@@ -245,7 +252,7 @@ components:
       properties:
         full_name: {type: string, minLength: 1, maxLength: 160}
         email: {type: string, format: email, maxLength: 320}
-        password: {type: string, minLength: 8, maxLength: 128, format: password}
+        password: {type: string, minLength: 8, maxLength: 128, pattern: '^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,128}$', format: password, description: "Must be 8-128 characters long and contain letters, numbers, and special characters."}
     GoogleAuthRequest:
       type: object
       additionalProperties: false
@@ -266,7 +273,7 @@ components:
       required: [current_password, new_password]
       properties:
         current_password: {type: string, format: password}
-        new_password: {type: string, minLength: 8, maxLength: 128, format: password}
+        new_password: {type: string, minLength: 8, maxLength: 128, pattern: '^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,128}$', format: password, description: "Must be 8-128 characters long and contain letters, numbers, and special characters."}
     ForgotPasswordRequest:
       type: object
       additionalProperties: false
@@ -279,7 +286,7 @@ components:
       required: [token, new_password]
       properties:
         token: {type: string, minLength: 1, maxLength: 512}
-        new_password: {type: string, minLength: 8, maxLength: 128, format: password}
+        new_password: {type: string, minLength: 8, maxLength: 128, pattern: '^(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9]).{8,128}$', format: password, description: "Must be 8-128 characters long and contain letters, numbers, and special characters."}
     AuthUser:
       type: object
       additionalProperties: false
