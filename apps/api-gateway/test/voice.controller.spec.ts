@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { VoiceController } from '../src/modules/voice/voice.controller';
 import { VoiceService } from '../src/modules/voice/voice.service';
 import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '../src/modules/auth/auth.guard';
 
 describe('VoiceController', () => {
   let controller: VoiceController;
@@ -22,7 +23,10 @@ describe('VoiceController', () => {
           useValue: { getOrThrow: jest.fn() },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: jest.fn(() => true) })
+      .compile();
 
     controller = module.get<VoiceController>(VoiceController);
     service = module.get<VoiceService>(VoiceService);
