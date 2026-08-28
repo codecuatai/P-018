@@ -22,6 +22,11 @@ _LEGACY_QUOTE_SNAPSHOT_REVISION = "0007"
 _QUOTE_SNAPSHOT_REVISION = "20260827_0007"
 _QUOTE_SNAPSHOT_PREVIOUS_REVISION = "20260816_0006"
 
+# A prior deploy stamped revision 20260828_0008 into alembic_version, but the
+# corresponding migration file was never committed. The codebase HEAD is
+# 20260827_0007, so Alembic cannot locate '20260828_0008' in its revision graph.
+_PHANTOM_0008_REVISION = "20260828_0008"
+
 
 def _normalize_legacy_quote_snapshot_revision(connection) -> None:
     """Reconcile the short-lived legacy 0007 revision safely.
@@ -76,6 +81,45 @@ def _normalize_legacy_quote_snapshot_revision(connection) -> None:
     connection.commit()
 
 
+def _normalize_phantom_0008_revision(connection) -> None:
+    """Fix a phantom 20260828_0008 revision that was stamped by a prior deploy.
+
+    The migration file for 20260828_0008 was never committed. The current HEAD
+    is 20260827_0007 which already includes the quote_snapshot column. Rewrite
+    the version marker back to the canonical head so Alembic can resolve its
+    revision graph.
+    """
+
+    inspector = inspect(connection)
+    if not inspector.has_table("alembic_version"):
+        return
+
+    phantom_exists = connection.execute(
+        text(
+            "SELECT 1 FROM alembic_version "
+            "WHERE version_num = :phantom LIMIT 1"
+        ),
+        {"phantom": _PHANTOM_0008_REVISION},
+    ).scalar_one_or_none()
+    if phantom_exists is None:
+        connection.commit()
+        return
+
+    # The phantom 0008 was a descendant of 0007, so the quote_snapshot column
+    # should already exist. Point back to the canonical head.
+    connection.execute(
+        text(
+            "UPDATE alembic_version SET version_num = :target "
+            "WHERE version_num = :phantom"
+        ),
+        {
+            "phantom": _PHANTOM_0008_REVISION,
+            "target": _QUOTE_SNAPSHOT_REVISION,
+        },
+    )
+    connection.commit()
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -96,6 +140,7 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         _normalize_legacy_quote_snapshot_revision(connection)
+        _normalize_phantom_0008_revision(connection)
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()
