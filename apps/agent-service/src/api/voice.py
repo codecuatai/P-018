@@ -49,7 +49,7 @@ async def speech_to_text(
     actor_id: str = Depends(require_actor),
 ) -> TranscriptResponse:
     settings = get_settings()
-    
+
     await KEY_POOL.refresh_if_needed(settings)
     keys = KEY_POOL.get_keys_for_invocation(settings)
     if not keys:
@@ -67,7 +67,7 @@ async def speech_to_text(
 
     text = ""
     last_error: Exception | None = None
-    
+
     for key in keys:
         try:
             client = genai.Client(api_key=key)
