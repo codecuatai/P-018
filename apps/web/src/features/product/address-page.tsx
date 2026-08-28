@@ -1,14 +1,21 @@
 "use client";
 
 import { LocateFixed, MapPinned, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
-import { autocompleteAddress, createSavedAddress, deleteSavedAddress, errorText, listSavedAddresses, resolveAddress, reverseGeocodeAddress, updateSavedAddress } from "@/lib/api-client";
+import { autocompleteAddress, createSavedAddress, deleteSavedAddress, errorText, resolveAddress, reverseGeocodeAddress, updateSavedAddress } from "@/lib/api-client";
 import type { GeocodeCandidate, SavedAddress } from "@/types";
 
 import { XOneMap } from "./xone-map";
 
 type Coordinates = { latitude: number; longitude: number };
+
+type AddressPageProps = {
+  items: SavedAddress[];
+  loading: boolean;
+  onReload: () => Promise<void>;
+  onItemsChange: Dispatch<SetStateAction<SavedAddress[]>>;
+};
 
 function normalizeCoordinates(value: Coordinates): Coordinates {
   const latitude = Number(value.latitude);
@@ -16,8 +23,7 @@ function normalizeCoordinates(value: Coordinates): Coordinates {
   return { latitude: Number(latitude.toFixed(6)), longitude: Number(longitude.toFixed(6)) };
 }
 
-export function AddressPage() {
-  const [items, setItems] = useState<SavedAddress[]>([]);
+export function AddressPage({ items, loading, onReload, onItemsChange }: AddressPageProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [originalAddressText, setOriginalAddressText] = useState("");
   const [label, setLabel] = useState("Nhà");
@@ -25,27 +31,12 @@ export function AddressPage() {
   const [coordinates, setCoordinates] = useState<Coordinates>();
   const [provider, setProvider] = useState<string>();
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [locationNote, setLocationNote] = useState("");
   const autocompleteSequence = useRef(0);
   const skipAutocompleteQuery = useRef("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setItems((await listSavedAddresses()).items);
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     const query = addressText.trim();
@@ -184,12 +175,12 @@ export function AddressPage() {
           ...(provider ? { provider } : {}),
           source: coordinates ? "geocoded" : "manual",
         });
-        setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+        onItemsChange((current) => current.map((item) => item.id === updated.id ? updated : item));
       } else {
         const created = await createSavedAddress({ label: label.trim(), address_text: addressText.trim(), ...(coordinates ?? {}), ...(provider ? { provider } : {}), source: coordinates ? "geocoded" : "manual" });
-        setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+        onItemsChange((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       }
-      await load();
+      await onReload();
       resetForm();
     } catch (reason) {
       setError(errorText(reason));
@@ -201,7 +192,7 @@ export function AddressPage() {
   async function remove(item: SavedAddress): Promise<void> {
     try {
       await deleteSavedAddress(item.id);
-      setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+      onItemsChange((current) => current.filter((candidate) => candidate.id !== item.id));
       if (editingId === item.id) resetForm();
     } catch (reason) {
       setError(errorText(reason));
@@ -211,7 +202,7 @@ export function AddressPage() {
   async function makeDefault(item: SavedAddress): Promise<void> {
     try {
       const updated = await updateSavedAddress(item.id, { is_default: true });
-      setItems((current) => current.map((candidate) => ({ ...candidate, is_default: candidate.id === updated.id })));
+      onItemsChange((current) => current.map((candidate) => ({ ...candidate, is_default: candidate.id === updated.id })));
     } catch (reason) {
       setError(errorText(reason));
     }
@@ -220,7 +211,7 @@ export function AddressPage() {
   return <section className="route-shell" aria-labelledby="addresses-title">
     <header className="section-heading">
       <div><span className="eyebrow">ĐỊA CHỈ</span><h1 id="addresses-title">Địa chỉ đã lưu</h1><p>Địa chỉ thuộc tài khoản Core của bạn. Tọa độ chỉ xuất hiện khi đã được xác nhận bởi nguồn định vị.</p></div>
-      <button className="icon-button" type="button" onClick={() => void load()} aria-label="Tải lại địa chỉ"><RefreshCw size={18} /></button>
+      <button className="icon-button" type="button" onClick={() => void onReload()} aria-label="Tải lại địa chỉ"><RefreshCw size={18} /></button>
     </header>
     <div className="address-form">
       <div className="address-form-heading"><div><strong>{editingId ? "Chỉnh sửa địa chỉ" : "Thêm địa chỉ"}</strong>{editingId ? <p className="inline-note">Đang sửa địa chỉ đã lưu.</p> : null}</div>{editingId ? <button className="text-button" type="button" onClick={resetForm}><X size={15} /> Hủy sửa</button> : null}</div>
