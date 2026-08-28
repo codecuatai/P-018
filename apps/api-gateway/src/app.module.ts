@@ -18,6 +18,7 @@ import { ServicesModule } from './modules/services/services.module';
 import { ReliabilityModule } from './modules/workflow/reliability.module';
 import { ProductOpsModule } from './modules/product-ops/product-ops.controller';
 import { AdminModule } from './modules/admin/admin.module';
+import { VoiceModule } from './modules/voice/voice.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AdminModule } from './modules/admin/admin.module';
     AuditModule,
     ProductOpsModule,
     AdminModule,
+    VoiceModule,
   ],
 })
 export class AppModule {}
