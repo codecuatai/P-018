@@ -71,8 +71,10 @@
 .form-row-end { display: flex; justify-content: flex-end; margin-top: 12px; margin-bottom: 12px;}
 .field-hint { margin: 8px 0 0; color: var(--color-muted); font-size: var(--text-xs); line-height: 1.5; }
 .form-error,
+.form-notice,
 .form-success { padding: 10px 11px; margin: 15px 0 0; border-radius: 8px; font-size: var(--text-sm); line-height: 1.45; }
 .form-error { color: #9F382F; background: var(--color-danger-surface); border: 1px solid #EFC7C2; }
+.form-notice { color: #854D0E; background: #FEF9C3; border: 1px solid #FEF08A; }
 .form-success { color: var(--color-success-ink); background: #EFFAF4; border: 1px solid #C9EAD9; }
 .form-feedback-placeholder { min-height: 0; margin: 0; }
 .auth-card .button-wide { margin-top: 17px; }

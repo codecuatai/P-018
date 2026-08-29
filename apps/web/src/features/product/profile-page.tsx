@@ -25,6 +25,7 @@ export function ProfilePage() {
   const [error, setError] = useState("");
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(true);
   const [newAddressText, setNewAddressText] = useState("");
   const [addressCandidates, setAddressCandidates] = useState<GeocodeCandidate[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<GeocodeCandidate>();
@@ -37,6 +38,7 @@ export function ProfilePage() {
 
   const loadAddresses = useCallback(async () => {
     const sequence = ++addressLoadSequence.current;
+    setAddressesLoading(true);
     try {
       const res = await listSavedAddresses();
       if (sequence !== addressLoadSequence.current) return;
@@ -47,6 +49,8 @@ export function ProfilePage() {
       });
     } catch (err) {
       console.error(err);
+    } finally {
+      if (sequence === addressLoadSequence.current) setAddressesLoading(false);
     }
   }, []);
 
@@ -267,7 +271,7 @@ export function ProfilePage() {
       </article>
     </div>
     <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Quản lý mật khẩu và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
-    {section === "addresses" ? <div className="profile-section-content"><AddressPage /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
+    {section === "addresses" ? <div className="profile-section-content"><AddressPage items={addresses} loading={addressesLoading} onReload={loadAddresses} onItemsChange={setAddresses} /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
   </section>;
 }
 

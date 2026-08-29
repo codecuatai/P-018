@@ -495,7 +495,7 @@ export class PersonalProfileController {
   async patch(@Body() body: ProfilePatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const updated = await this.auth.updateProfile(request.user, {
       ...(body.full_name !== undefined ? { fullName: body.full_name.trim() } : {}),
-      ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      ...(body.phone !== undefined ? { phone: normalizePhone(body.phone) } : {}),
       ...(body.avatar_url !== undefined ? { avatarUrl: body.avatar_url.trim() } : {}),
       ...(body.language !== undefined ? { language: body.language.trim() } : {}),
       ...(body.timezone !== undefined ? { timezone: body.timezone.trim() } : {}),

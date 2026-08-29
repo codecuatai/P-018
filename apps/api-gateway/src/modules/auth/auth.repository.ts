@@ -10,6 +10,22 @@ export class DuplicateAuthEmailError extends Error {
   }
 }
 
+// A refresh response can be lost in transit when the client aborts the request
+// mid-flight (hard navigation, reload, or tab teardown while the page is still
+// restoring its in-memory session). The server may have already committed the
+// rotation, so the browser keeps the old cookie and replays it on the next
+// load. Within this short grace window such a replay — of a just-consumed token
+// whose replacement session is still untouched — is treated as that benign
+// race and rolled forward. Outside the window, or once the replacement has
+// already been used or revoked, genuine reuse detection still applies.
+export const REFRESH_REUSE_GRACE_MS = 10_000;
+
+function resolveReuseGraceMs(raw: unknown): number {
+  const parsed = Number(raw ?? REFRESH_REUSE_GRACE_MS / 1_000);
+  if (!Number.isFinite(parsed)) return REFRESH_REUSE_GRACE_MS;
+  return Math.min(Math.max(parsed, 0), 300) * 1_000;
+}
+
 export type RefreshRotation =
   | { state: 'ROTATED'; account: AuthAccount; session: AuthSession }
   | { state: 'REUSE_DETECTED'; account: AuthAccount; familyId: string }
@@ -55,6 +71,8 @@ export class InMemoryAuthRepository implements AuthRepository {
   private readonly sessionsById = new Map<string, AuthSession>();
   private readonly sessionsByRefreshHash = new Map<string, string>();
   private readonly resetTokens = new Map<string, { id: string; userId: string; tokenHash: string; expiresAt: string; createdAt: string; usedAt?: string }>();
+
+  constructor(private readonly refreshReuseGraceMs = REFRESH_REUSE_GRACE_MS) {}
 
   async createUser(account: AuthAccount): Promise<AuthAccount> {
     if (this.usersByEmail.has(account.emailNormalized)) throw new DuplicateAuthEmailError();
@@ -117,7 +135,23 @@ export class InMemoryAuthRepository implements AuthRepository {
     if (!current) return { state: 'INVALID' };
     const account = await this.getUserById(current.userId);
     if (!account) return { state: 'INVALID' };
-    if (current.revokedAt || current.consumedAt) {
+    // A revoked member is always a genuine replay: the family was already
+    // torn down by logout, prior reuse, password change, or another revoke.
+    if (current.revokedAt) {
+      await this.revokeAllInFamily(current.userId, current.familyId, 'refresh_token_reuse', now);
+      return { state: 'REUSE_DETECTED', account, familyId: current.familyId };
+    }
+    if (current.consumedAt) {
+      const replayPath = this.findBenignReplayPath(current, account, now);
+      if (replayPath) {
+        for (const session of replayPath) {
+          session.consumedAt ??= now;
+          session.lastUsedAt = now;
+          session.replacedBySessionId = nextSession.id;
+        }
+        await this.createSession(nextSession);
+        return { state: 'ROTATED', account, session: clone(nextSession) };
+      }
       await this.revokeAllInFamily(current.userId, current.familyId, 'refresh_token_reuse', now);
       return { state: 'REUSE_DETECTED', account, familyId: current.familyId };
     }
@@ -132,6 +166,23 @@ export class InMemoryAuthRepository implements AuthRepository {
     storedCurrent.replacedBySessionId = nextSession.id;
     await this.createSession(nextSession);
     return { state: 'ROTATED', account, session: clone(nextSession) };
+  }
+
+  private findBenignReplayPath(current: AuthSession, account: AuthAccount, now: string): AuthSession[] | undefined {
+    if (!current.consumedAt || Date.parse(now) - Date.parse(current.consumedAt) > this.refreshReuseGraceMs || !isUsableStatus(account.status)) return undefined;
+    const path: AuthSession[] = [];
+    const visited = new Set<string>();
+    let cursor = this.sessionsById.get(current.id);
+    for (let index = 0; cursor && index < 64; index += 1) {
+      if (visited.has(cursor.id)) return undefined;
+      visited.add(cursor.id);
+      path.push(cursor);
+      if (!cursor.consumedAt) {
+        return !cursor.revokedAt && Date.parse(cursor.expiresAt) > Date.parse(now) ? path : undefined;
+      }
+      cursor = cursor.replacedBySessionId ? this.sessionsById.get(cursor.replacedBySessionId) : undefined;
+    }
+    return undefined;
   }
 
   async revokeFamilyByRefreshHash(refreshTokenHash: string, reason: string, now: string): Promise<{ account: AuthAccount; familyId: string } | undefined> {
@@ -214,7 +265,7 @@ export class InMemoryAuthRepository implements AuthRepository {
 export class PostgresAuthRepository implements AuthRepository {
   private readonly pool: Pool;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, private readonly refreshReuseGraceMs = REFRESH_REUSE_GRACE_MS) {
     this.pool = new Pool({ connectionString: databaseUrl, max: 4 });
   }
 
@@ -321,7 +372,24 @@ export class PostgresAuthRepository implements AuthRepository {
       if (!row) return { state: 'INVALID' };
       const account = this.accountFromRow(row);
       const current = this.sessionFromRow(row);
-      if (current.revokedAt || current.consumedAt) {
+      if (current.revokedAt) {
+        await this.revokeFamilyWithClient(client, current.userId, current.familyId, 'refresh_token_reuse', now);
+        return { state: 'REUSE_DETECTED', account, familyId: current.familyId };
+      }
+      if (current.consumedAt) {
+        const replayPath = await this.lockReplayPath(client, current);
+        if (this.isBenignReplay(current, replayPath, account, now)) {
+          await client.query(
+            'UPDATE user_sessions SET consumed_at=COALESCE(consumed_at,$1),last_used_at=$1,replaced_by_session_id=$2 WHERE id=ANY($3::uuid[])',
+            [now, nextSession.id, replayPath.map((session) => session.id)],
+          );
+          const inserted = await client.query(
+            `INSERT INTO user_sessions (id,user_id,refresh_token_hash,token_family_id,expires_at,created_at,last_used_at,user_agent,ip_hash)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+            [nextSession.id, nextSession.userId, nextSession.refreshTokenHash, nextSession.familyId, nextSession.expiresAt, nextSession.createdAt, nextSession.lastUsedAt, nextSession.userAgent ?? null, nextSession.ipHash ?? null],
+          );
+          return { state: 'ROTATED', account, session: this.sessionFromRow(inserted.rows[0] as Record<string, unknown>) };
+        }
         await this.revokeFamilyWithClient(client, current.userId, current.familyId, 'refresh_token_reuse', now);
         return { state: 'REUSE_DETECTED', account, familyId: current.familyId };
       }
@@ -340,6 +408,31 @@ export class PostgresAuthRepository implements AuthRepository {
       );
       return { state: 'ROTATED', account, session: this.sessionFromRow(inserted.rows[0] as Record<string, unknown>) };
     });
+  }
+
+  private async lockReplayPath(client: PoolClient, current: AuthSession): Promise<AuthSession[]> {
+    const path: AuthSession[] = [current];
+    const visited = new Set<string>([current.id]);
+    let replacementId = current.replacedBySessionId;
+    for (let index = 0; replacementId && index < 63; index += 1) {
+      if (visited.has(replacementId)) break;
+      const result = await client.query('SELECT * FROM user_sessions WHERE id=$1 FOR UPDATE', [replacementId]);
+      if (!result.rows[0]) break;
+      const replacement = this.sessionFromRow(result.rows[0] as Record<string, unknown>);
+      visited.add(replacement.id);
+      path.push(replacement);
+      if (!replacement.consumedAt) break;
+      replacementId = replacement.replacedBySessionId;
+    }
+    return path;
+  }
+
+  private isBenignReplay(current: AuthSession, path: AuthSession[], account: AuthAccount, now: string): boolean {
+    const candidate = path.at(-1);
+    if (!candidate || candidate.id === current.id || !current.consumedAt) return false;
+    const withinGrace = Date.parse(now) - Date.parse(current.consumedAt) <= this.refreshReuseGraceMs;
+    const candidateUsable = !candidate.revokedAt && !candidate.consumedAt && Date.parse(candidate.expiresAt) > Date.parse(now);
+    return withinGrace && candidateUsable && isUsableStatus(account.status);
   }
 
   async revokeFamilyByRefreshHash(refreshTokenHash: string, reason: string, now: string): Promise<{ account: AuthAccount; familyId: string } | undefined> {
@@ -494,14 +587,15 @@ export class AuthStore implements OnModuleDestroy {
   readonly repository: AuthRepository;
 
   constructor(config: ConfigService) {
+    const refreshReuseGraceMs = resolveReuseGraceMs(config.get<number>('AUTH_REFRESH_REUSE_GRACE_SECONDS'));
     // A PostgreSQL URL is accepted only by the explicit integration-test seam.
     // Normal unit/HTTP tests remain isolated and never accidentally touch a DB.
     const integrationDatabaseUrl = process.env.NODE_ENV === 'test' ? process.env.AUTH_TEST_DATABASE_URL : undefined;
     this.repository = integrationDatabaseUrl
-      ? new PostgresAuthRepository(integrationDatabaseUrl)
+      ? new PostgresAuthRepository(integrationDatabaseUrl, refreshReuseGraceMs)
       : process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID
-        ? new InMemoryAuthRepository()
-        : new PostgresAuthRepository(config.getOrThrow<string>('DATABASE_URL'));
+        ? new InMemoryAuthRepository(refreshReuseGraceMs)
+        : new PostgresAuthRepository(config.getOrThrow<string>('DATABASE_URL'), refreshReuseGraceMs);
   }
 
   createUser(account: AuthAccount): Promise<AuthAccount> { return this.repository.createUser(account); }

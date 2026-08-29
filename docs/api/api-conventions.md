@@ -90,6 +90,10 @@ The minimum public success contract is `{ data, meta: { request_id } }`. A list 
 
 `X-Correlation-Id` is accepted/generated for every request. `X-Workflow-Id` and `X-Tool-Call-Id` apply to orchestrated workflows. Internal calls require service authentication. Standard status codes apply: 200/201 success, 202 accepted, 400/401/403/404/409/422 client errors, and 429/5xx only where appropriate.
 
+The browser may send the bounded `X-Trigger-Correlation-Id` header on refresh so
+parallel restore requests can be correlated safely; it is trace metadata only
+and must never contain a token or cookie.
+
 ## Authentication contract
 
 The Phase 1 authentication contract is versioned in

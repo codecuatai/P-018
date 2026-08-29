@@ -74,8 +74,71 @@ describe("browser API client", () => {
     await login("an@example.test", "a reliable local passphrase");
     releaseRefresh();
 
-    await expect(staleRefresh).resolves.toBe("login-access-token");
+    await expect(staleRefresh).resolves.toMatchObject({ outcome: "authenticated", token: "login-access-token" });
     expect(getAccessToken()).toBe("login-access-token");
+  });
+
+  it("lets a retried request join a refresh that starts while its retry is in flight", async () => {
+    setAccessToken("expired-token");
+    const onUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized });
+    let releaseSecondRefresh!: () => void;
+    let secondRefreshStarted!: () => void;
+    let releaseRetriedRequest!: () => void;
+    let retriedRequestStarted!: () => void;
+    const secondRefreshGate = new Promise<void>((resolve) => { releaseSecondRefresh = resolve; });
+    const secondRefreshStartedGate = new Promise<void>((resolve) => { secondRefreshStarted = resolve; });
+    const retriedRequestGate = new Promise<void>((resolve) => { releaseRetriedRequest = resolve; });
+    const retriedRequestStartedGate = new Promise<void>((resolve) => { retriedRequestStarted = resolve; });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        if (fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/v1/auth/refresh")).length === 1) {
+          return jsonResponse(200, { data: { access_token: "first-renewed-token" } });
+        }
+        secondRefreshStarted();
+        await secondRefreshGate;
+        return jsonResponse(200, { data: { access_token: "second-renewed-token" } });
+      }
+      if (authorization === "Bearer expired-token") return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired" });
+      if (url.endsWith("/api/v1/services/healthcare") && authorization === "Bearer first-renewed-token") {
+        retriedRequestStarted();
+        await retriedRequestGate;
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired again" });
+      }
+      if (url.endsWith("/api/v1/notifications/unread-count") && authorization === "Bearer first-renewed-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired concurrently" });
+      }
+      expect(authorization).toBe("Bearer second-renewed-token");
+      return jsonResponse(200, { data: { ok: true } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const retriedRequest = request<{ ok: boolean }>("/api/v1/services/healthcare");
+    await retriedRequestStartedGate;
+    const concurrentRequest = request<{ ok: boolean }>("/api/v1/notifications/unread-count");
+    await secondRefreshStartedGate;
+    releaseRetriedRequest();
+    await Promise.resolve();
+    releaseSecondRefresh();
+
+    await expect(Promise.all([retriedRequest, concurrentRequest])).resolves.toEqual([{ ok: true }, { ok: true }]);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("second-renewed-token");
+  });
+
+  it("does not log out for a non-session 401 such as a wrong current password", async () => {
+    setAccessToken("active-token");
+    const onUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized });
+    const fetchMock = jest.fn(async () => jsonResponse(401, { code: "CURRENT_PASSWORD_INVALID", detail: "Mật khẩu hiện tại không đúng." }));
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/auth/change-password", { method: "POST" })).rejects.toMatchObject({ code: "CURRENT_PASSWORD_INVALID" });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("active-token");
   });
 
   it("reads active work from the dedicated active-history endpoint", async () => {

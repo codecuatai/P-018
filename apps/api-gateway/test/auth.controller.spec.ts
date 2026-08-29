@@ -51,6 +51,28 @@ describe('real auth HTTP contract', () => {
     const nextCookie = rotated.headers['set-cookie']?.[0];
     expect(nextCookie).toContain('xone_refresh=');
 
+    // A replay inside the grace window is treated as a lost-response race.
+    const benignReplay = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', origin)
+      .set('Cookie', initialCookie!)
+      .expect(201);
+    const rolledCookie = benignReplay.headers['set-cookie']?.[0];
+    expect(rolledCookie).toContain('xone_refresh=');
+
+    // Explicit family revocation makes replaying the initial token genuine reuse.
+    const rotatedAgain = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', origin)
+      .set('Cookie', rolledCookie!)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', origin)
+      .set('Cookie', rotatedAgain.headers['set-cookie']?.[0]!)
+      .expect(200);
+
     const replay = await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
       .set('Origin', origin)
@@ -60,8 +82,68 @@ describe('real auth HTTP contract', () => {
 
     await request(app.getHttpServer())
       .get('/api/v1/auth/me')
-      .set('Authorization', `Bearer ${rotated.body.data.access_token}`)
+      .set('Authorization', `Bearer ${rotatedAgain.body.data.access_token}`)
       .expect(401);
+  });
+
+ it("round-trips a normalized phone through profile PATCH and auth/me reload", async () => {
+    const registered = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ full_name: 'Nguyễn An', email: 'phone-roundtrip@example.test', password })
+      .expect(201);
+    const token = registered.body.data.access_token as string;
+
+    const patched = await request(app.getHttpServer())
+      .patch('/api/v1/users/me')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ phone: '091 111-1111' })
+      .expect(200);
+    expect(patched.body.data.phone).toBe('0911111111');
+
+    // AuthGuard reloads the authoritative account from the repository on every request.
+    const reloaded = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(200);
+    expect(reloaded.body.data.phone).toBe('0911111111');
+  });
+
+  it("creates a verified saved address through Gateway with actor-scoped fallback metadata", async () => {
+    const first = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ full_name: 'Address Owner', email: 'address-owner@example.test', password })
+      .expect(201);
+    const second = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ full_name: 'Other Owner', email: 'address-other@example.test', password })
+      .expect(201);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/addresses')
+      .set('Authorization', 'Bearer ' + (first.body.data.access_token as string))
+      .send({
+        label: 'Cơ quan',
+        address_text: '181 Nguyễn Trãi, Thanh Xuân',
+        latitude: 20.995,
+        longitude: 105.812,
+        provider: 'deterministic-fallback',
+        source: 'geocoded',
+        is_default: true,
+      })
+      .expect(201);
+    expect(created.body.data).toMatchObject({ provider: 'deterministic-fallback', source: 'geocoded', is_default: true });
+
+    const own = await request(app.getHttpServer())
+      .get('/api/v1/addresses')
+      .set('Authorization', 'Bearer ' + (first.body.data.access_token as string))
+      .expect(200);
+    const foreign = await request(app.getHttpServer())
+      .get('/api/v1/addresses')
+      .set('Authorization', 'Bearer ' + (second.body.data.access_token as string))
+      .expect(200);
+    expect(own.body.data.items).toHaveLength(1);
+    expect(own.body.data.items[0]).toMatchObject({ provider: 'deterministic-fallback', source: 'geocoded' });
+    expect(foreign.body.data.items).toHaveLength(0);
   });
 
   it('rejects missing or foreign Origin evidence for cookie-authenticated refresh/logout', async () => {
