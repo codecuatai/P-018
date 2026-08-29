@@ -387,7 +387,11 @@ export class LocationService {
     if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Address query is too short.', retryable: false });
     if (this.geoapify.enabled) {
       const suggestions = await this.geoapify.autocomplete(query);
-      return { provider: 'geoapify', query, suggestions };
+      if (suggestions.length) return { provider: 'geoapify', query, suggestions };
+    }
+    const local = this.localDeterministicSuggestions(query);
+    if (local.length) {
+      return { provider: 'deterministic-local-demo', query, suggestions: local };
     }
     const result = await this.geocode(query);
     return { provider: result.provider, query, suggestions: result.candidates };
@@ -399,13 +403,52 @@ export class LocationService {
   private localDeterministicCandidate(query: string): GeocodeCandidate | undefined {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
     const normalized = foldLocalAddress(query);
-    const fixtures: Array<{ matches: string[]; latitude: number; longitude: number }> = [
-      { matches: ['ho hoan kiem', 'ho guom'], latitude: 21.0285, longitude: 105.8048 },
-      { matches: ['vinuni'], latitude: 20.9914, longitude: 105.945975 },
-      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], latitude: 10.7758, longitude: 106.7004 },
+    const fixtures: Array<{ matches: string[]; formatted?: string; latitude: number; longitude: number }> = [
+      { matches: ['ho hoan kiem', 'ho guom'], formatted: 'Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8048 },
+      { matches: ['vinuni', 'vinhomes ocean park'], formatted: 'VinUniversity, Vinhomes Ocean Park, Gia Lâm, Hà Nội', latitude: 20.9914, longitude: 105.945975 },
+      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], formatted: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh', latitude: 10.7758, longitude: 106.7004 },
+      { matches: ['51 tam khuong', 'tam khuong', '51 5am', 'khuong thuong', 'dong da'], formatted: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội', latitude: 21.0062, longitude: 105.8286 },
+      { matches: ['chua boc', 'quang trung'], formatted: 'Chùa Bộc, Phường Quang Trung, Quận Đống Đa, Hà Nội', latitude: 21.0078, longitude: 105.8282 },
+      { matches: ['tay son', 'nga tu so'], formatted: 'Tây Sơn, Phường Ngã Tư Sở, Quận Đống Đa, Hà Nội', latitude: 21.0112, longitude: 105.8235 },
+      { matches: ['thai ha', 'trung liet'], formatted: 'Thái Hà, Phường Trung Liệt, Quận Đống Đa, Hà Nội', latitude: 21.0135, longitude: 105.8198 },
+      { matches: ['nguyen trai', 'thanh xuan'], formatted: 'Nguyễn Trãi, Quận Thanh Xuân, Hà Nội', latitude: 20.9984, longitude: 105.8123 },
+      { matches: ['cau giay', 'xuan thuy', 'duy tan'], formatted: 'Cầu Giấy, Quận Cầu Giấy, Hà Nội', latitude: 21.0333, longitude: 105.7939 },
+      { matches: ['ba dinh', 'ngoc ha', '34 ngoc ha', 'doi can'], formatted: '34 Ngọc Hà, Phường Ngọc Hà, Quận Ba Đình, Hà Nội', latitude: 21.0378, longitude: 105.8315 },
     ];
-    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`)));
-    return fixture ? { address_text: query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
+    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`) || normalized.includes(value) || value.includes(normalized)));
+    return fixture ? { address_text: fixture.formatted ?? query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
+  }
+
+  private localDeterministicSuggestions(query: string): GeocodeCandidate[] {
+    if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return [];
+    const normalized = foldLocalAddress(query);
+    const fixtures: Array<{ matches: string[]; formatted: string; latitude: number; longitude: number }> = [
+      { matches: ['51 tam khuong', 'tam khuong', '51 5am', 'khuong thuong', 'dong da'], formatted: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội', latitude: 21.0062, longitude: 105.8286 },
+      { matches: ['chua boc', 'quang trung'], formatted: 'Chùa Bộc, Phường Quang Trung, Quận Đống Đa, Hà Nội', latitude: 21.0078, longitude: 105.8282 },
+      { matches: ['tay son', 'nga tu so'], formatted: 'Tây Sơn, Phường Ngã Tư Sở, Quận Đống Đa, Hà Nội', latitude: 21.0112, longitude: 105.8235 },
+      { matches: ['thai ha', 'trung liet'], formatted: 'Thái Hà, Phường Trung Liệt, Quận Đống Đa, Hà Nội', latitude: 21.0135, longitude: 105.8198 },
+      { matches: ['ho hoan kiem', 'ho guom', 'hoan kiem'], formatted: 'Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8542 },
+      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1', 'nguyen hue'], formatted: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh', latitude: 10.7758, longitude: 106.7004 },
+      { matches: ['nguyen trai', 'thanh xuan'], formatted: 'Nguyễn Trãi, Quận Thanh Xuân, Hà Nội', latitude: 20.9984, longitude: 105.8123 },
+      { matches: ['cau giay', 'xuan thuy', 'duy tan'], formatted: 'Cầu Giấy, Quận Cầu Giấy, Hà Nội', latitude: 21.0333, longitude: 105.7939 },
+      { matches: ['ba dinh', 'ngoc ha', '34 ngoc ha', 'doi can'], formatted: '34 Ngọc Hà, Phường Ngọc Hà, Quận Ba Đình, Hà Nội', latitude: 21.0378, longitude: 105.8315 },
+      { matches: ['vinuni', 'vinhomes ocean park', 'gia lam'], formatted: 'VinUniversity, Vinhomes Ocean Park, Gia Lâm, Hà Nội', latitude: 20.9914, longitude: 105.945975 },
+    ];
+    const matches = fixtures.filter((item) => item.matches.some((value) => normalized === value || normalized.includes(value) || value.includes(normalized)) || foldLocalAddress(item.formatted).includes(normalized));
+    if (matches.length > 0) {
+      return matches.map((item) => ({ address_text: item.formatted, latitude: item.latitude, longitude: item.longitude, confidence: 0.9 }));
+    }
+    const single = this.localDeterministicCandidate(query);
+    if (single) return [single];
+    const hash = Math.abs(normalized.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0));
+    const deltaLat = ((hash % 1000) / 1000 - 0.5) * 0.04;
+    const deltaLng = (((hash >> 3) % 1000) / 1000 - 0.5) * 0.04;
+    return [{
+      address_text: `${query.trim()}, Hà Nội`,
+      latitude: Number((21.0285 + deltaLat).toFixed(6)),
+      longitude: Number((105.8542 + deltaLng).toFixed(6)),
+      confidence: 0.6,
+    }];
   }
 
   private configuredProviderUrl(name: 'GEOCODING_PROVIDER_URL' | 'ROUTING_PROVIDER_URL'): URL | undefined {
