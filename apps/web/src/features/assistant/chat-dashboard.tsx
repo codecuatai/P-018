@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plus, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -427,9 +427,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           
           <div className="composer-wrap">
             <div className="composer-box">
-              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Thêm">
-                <PlusCircle size={20} />
-              </button>
               <textarea
                 ref={inputRef}
                 aria-label="Nhập yêu cầu"
@@ -444,8 +441,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 <button className="location-button" type="button" disabled={isLocating} onClick={() => void handleLocate()} aria-label="Chia sẻ vị trí hiện tại" aria-pressed={Boolean(currentLocation)} title="Chia sẻ vị trí hiện tại">
                   {isLocating ? <Loader2 className="spinner" size={18} /> : <LocateFixed size={18} />}
                 </button>
-                <button className="composer-mic-btn" type="button" aria-label="Nhập bằng giọng nói" title="Giọng nói">
-                  <Mic size={18} />
+                <button className="composer-mic-btn" type="button" disabled aria-label="Nhập bằng giọng nói — Sắp có" title="Sắp có">
+                  <Mic size={18} aria-hidden="true" />
                 </button>
                 <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">
                   {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}

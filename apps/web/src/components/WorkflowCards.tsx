@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CarFront, Check, ChevronLeft, ChevronRight, CircleDollarSign, MapPin, Minus, Plus, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
+import { CalendarDays, CarFront, Check, CircleDollarSign, MapPin, Minus, Plus, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -76,18 +76,15 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
     return rawSelectionActions.find((action) => action.target_index === targetIndex) ?? rawSelectionActions[index];
   });
   const [detail, setDetail] = useState<AssistantOption | null>(null);
-  const [page, setPage] = useState(1);
-  const pageSize = 4;
+  const [showAll, setShowAll] = useState(false);
   const allOptions = item.options ?? [];
-  const totalPages = Math.max(1, Math.ceil(allOptions.length / pageSize));
-  const paginatedOptions = allOptions
-    .map((option, originalIndex) => ({ option, originalIndex }))
-    .slice((page - 1) * pageSize, page * pageSize);
+  const visibleOptions = (showAll ? allOptions : allOptions.slice(0, 4))
+    .map((option, originalIndex) => ({ option, originalIndex }));
 
   return <><article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Nhà hàng" title={item.title} />
     {allOptions.length ? <>
       <div className="option-list">
-        {paginatedOptions.map(({ option, originalIndex }) => <div className="option-row" key={`${String(option.name)}-${originalIndex}`}>
+        {visibleOptions.map(({ option, originalIndex }) => <div className="option-row" key={`${String(option.name)}-${originalIndex}`}>
           <OptionImage source={option.image_url} alt={optionalText(option.name, "Nhà hàng")} compact />
           <div>
             <strong>{text(option.name, "Nhà hàng")}</strong>
@@ -100,35 +97,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
           </div>
         </div>)}
       </div>
-      {totalPages > 1 ? (
-        <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-          <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
-            Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} quán)
-          </span>
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={() => setPage((c) => Math.max(1, c - 1))}
-              disabled={page <= 1}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
-              aria-label="Trang trước"
-            >
-              <ChevronLeft size={13} /> Trước
-            </button>
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
-              disabled={page >= totalPages}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
-              aria-label="Trang sau"
-            >
-              Sau <ChevronRight size={13} />
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={allOptions.length} />
     </> : <p className="card-note">Mình đang cập nhật thêm lựa chọn cho bạn.</p>}
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
   </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="restaurant" option={detail} primaryAction={actionForRestaurantOption(detail, allOptions, rawSelectionActions, disabledActionId, onAction, setDetail)} /></>;
@@ -261,14 +230,18 @@ function HealthcareCard({ item, actions, onAction, disabledActionId }: { item: A
   const selectionActions = actions.filter((action) => action.kind === "select_healthcare_slot");
   const [detail, setDetail] = useState<AssistantOption | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<Record<string, number>>({});
+  const [showAll, setShowAll] = useState(false);
   const groups = groupHealthcareOptions(item.options ?? []);
+  const departments = item.departments ?? [];
+  const visibleGroups = showAll ? groups : groups.slice(0, 4);
+  const visibleDepartments = showAll ? departments : departments.slice(0, 4);
   return <><article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} />
-    {groups.length ? <div className="healthcare-doctor-groups">{groups.map((group) => {
+    {groups.length ? <><div className="healthcare-doctor-groups">{visibleGroups.map((group) => {
       const selectedIndex = selectedSlots[group.key] ?? group.options[0]?.index;
       const selected = group.options.find((candidate) => candidate.index === selectedIndex);
       const action = selectedIndex === undefined ? undefined : healthcareSelectionAction(selectionActions, selectedIndex);
       return <section className="healthcare-doctor-group" key={group.key}><div className="healthcare-doctor-heading"><div><strong>{group.doctor}</strong><span>{text(group.facility, "Cơ sở đang cập nhật")} · {text(group.department, "Khoa khám")}</span></div><small>{group.options.length} khung giờ</small></div><label className="healthcare-slot-select">Khung giờ<select aria-label={"Khung giờ của " + group.doctor} value={selectedIndex ?? ""} onChange={(event) => setSelectedSlots((current) => ({ ...current, [group.key]: Number(event.target.value) }))}>{group.options.map((candidate) => <option value={candidate.index} key={candidate.index}>{formatDateTime(candidate.option.start_time)}{candidate.option.price !== undefined ? " · " + formatMoney(candidate.option.price, "VND") : ""}</option>)}</select></label>{selected ? <div className="healthcare-slot-detail"><span>{formatDateTime(selected.option.start_time)}{selected.option.price !== undefined ? " · " + formatMoney(selected.option.price, "VND") : ""}</span><div className="option-actions">{action ? <button className="small-action" type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}>Chọn lịch</button> : null}<button className="small-action" type="button" onClick={() => setDetail(selected.option)}>Xem chi tiết</button></div></div> : null}</section>;
-    })}</div> : item.departments?.length ? <div className="option-list">{item.departments.map((department, index) => <div className="option-row" key={String(department.name) + "-" + index}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhấn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
+    })}</div><DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={groups.length} /></> : departments.length ? <><div className="option-list">{visibleDepartments.map((department, index) => <div className="option-row" key={String(department.name) + "-" + index}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhấn tên khoa để xem lịch trống.")}</span></div></div>)}</div><DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={departments.length} /></> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
   </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="healthcare" option={detail} primaryAction={actionForHealthcareOption(detail, groups, selectionActions, disabledActionId, onAction, setDetail)} /></>;
 }
@@ -298,13 +271,10 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
   const paymentAction = actions.find((action) => action.kind === "food_payment");
   const [detail, setDetail] = useState<AssistantOption | null>(null);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [page, setPage] = useState(1);
-  const pageSize = 4;
+  const [showAll, setShowAll] = useState(false);
   const allOptions = item.options ?? [];
-  const totalPages = Math.max(1, Math.ceil(allOptions.length / pageSize));
-  const paginatedOptions = allOptions
-    .map((option, originalIndex) => ({ option, originalIndex }))
-    .slice((page - 1) * pageSize, page * pageSize);
+  const visibleOptions = (showAll ? allOptions : allOptions.slice(0, 4))
+    .map((option, originalIndex) => ({ option, originalIndex }));
 
   const updateQuantity = (key: string, action: AssistantAction | undefined, quantity: number, commit: boolean): void => {
     const next = Math.max(0, Math.min(50, Number.isFinite(quantity) ? Math.trunc(quantity) : 0));
@@ -314,7 +284,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
     void commit;
   };
   const orderId = item.order?.id;
-  return <><article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{allOptions.length ? <><div className="food-option-list">{paginatedOptions.map(({ option, originalIndex }) => {
+  return <><article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{allOptions.length ? <><div className="food-option-list">{visibleOptions.map(({ option, originalIndex }) => {
     const key = `${String(option.name ?? option.title ?? originalIndex)}-${originalIndex}`;
     const action = selectionActions[originalIndex];
     const quantity = foodSelections?.[action?.id ?? ""]?.quantity ?? quantities[key] ?? 0;
@@ -332,35 +302,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
         <button className="small-action" type="button" onClick={() => setDetail(option)}>Xem chi tiết</button>
       </div>
     </div>;
-  })}</div>{totalPages > 1 ? (
-    <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-      <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
-        Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} món)
-      </span>
-      <div style={{ display: "flex", gap: "6px" }}>
-        <button
-          className="button button-secondary"
-          type="button"
-          onClick={() => setPage((c) => Math.max(1, c - 1))}
-          disabled={page <= 1}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
-          aria-label="Trang trước"
-        >
-          <ChevronLeft size={13} /> Trước
-        </button>
-        <button
-          className="button button-secondary"
-          type="button"
-          onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
-          disabled={page >= totalPages}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
-          aria-label="Trang sau"
-        >
-          Sau <ChevronRight size={13} />
-        </button>
-      </div>
-    </div>
-  ) : null}</> : item.kind === "food_cart" ? <p className="card-note" role="status">Giỏ hàng đã được cập nhật ở khu vực bên trên ô chat.</p> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{item.kind === "food_confirmation" ? <FoodConfirmation item={item} confirmationAction={confirmationAction} paymentAction={paymentAction} onAction={onAction} disabledActionId={disabledActionId} /> : null}{item.order ? <><div className="metric-row"><Metric label="Đơn hàng" value="Đã tiếp nhận" /><Metric label="Trạng thái" value={statusLabel(item.order.status)} /></div>{orderId ? <FoodTrackingPanel orderId={orderId} /> : null}</> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận." : "")}</p> : null}</article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="food" option={detail} /></>;
+  })}</div><DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={allOptions.length} /></> : item.kind === "food_cart" ? <p className="card-note" role="status">Giỏ hàng đã được cập nhật ở khu vực bên trên ô chat.</p> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{item.kind === "food_confirmation" ? <FoodConfirmation item={item} confirmationAction={confirmationAction} paymentAction={paymentAction} onAction={onAction} disabledActionId={disabledActionId} /> : null}{item.order ? <><div className="metric-row"><Metric label="Đơn hàng" value="Đã tiếp nhận" /><Metric label="Trạng thái" value={statusLabel(item.order.status)} /></div>{orderId ? <FoodTrackingPanel orderId={orderId} /> : null}</> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận." : "")}</p> : null}</article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="food" option={detail} /></>;
 }
 
 function FoodConfirmation({ item, confirmationAction, paymentAction, onAction, disabledActionId }: { item: AssistantFoodItem; confirmationAction?: AssistantAction; paymentAction?: AssistantAction; onAction: ActionHandler; disabledActionId?: string }) {
@@ -394,6 +336,11 @@ export function FoodCartDock({ total, onConfirm, disabled }: { total: number; on
       <button className="card-action" type="button" onClick={onConfirm} disabled={Boolean(disabled) || total <= 0}><CircleDollarSign size={15} /> Xác nhận</button>
     </div>
   </section>;
+}
+
+function DisclosureToggle({ expanded, onToggle, count }: { expanded: boolean; onToggle: () => void; count: number }) {
+  if (count <= 4) return null;
+  return <button className="small-action card-disclosure" type="button" aria-expanded={expanded} onClick={onToggle}>{expanded ? "Thu gọn" : "Hiện tất cả"}</button>;
 }
 
 function RideLiveStatus({ tracking }: { tracking: import("../types").RideTracking }): ReactNode {

@@ -42,6 +42,78 @@ describe("FoodCartDock", () => {
   });
 });
 
+describe("Result disclosure", () => {
+  it("shows four Restaurant rows by default and keeps the original action index", () => {
+    const options = Array.from({ length: 5 }, (_, index) => ({
+      name: `Nhà hàng ${index + 1}`,
+      address: `Địa chỉ ${index + 1}`,
+      target_index: index,
+    }));
+    const actions = options.map((_, index) => ({ id: `restaurant-${index}`, kind: "select_restaurant" as const, label: "Chọn nhà hàng này", target_index: index }));
+    const onAction = jest.fn();
+
+    render(<AssistantCards response={{ conversation_id: "restaurant-disclosure", message: "", completed: [], items: [{ kind: "restaurant_options", title: "Nhà hàng", options }], actions }} onAction={onAction} />);
+
+    expect(screen.getByText("Nhà hàng 4")).toBeInTheDocument();
+    expect(screen.queryByText("Nhà hàng 5")).not.toBeInTheDocument();
+    const disclosure = screen.getByRole("button", { name: "Hiện tất cả" });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(disclosure);
+    expect(screen.getByText("Nhà hàng 5")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Thu gọn" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(within(screen.getByText("Nhà hàng 5").closest(".option-row") as HTMLElement).getByRole("button", { name: "Chọn quán" }));
+    expect(onAction).toHaveBeenCalledWith(actions[4]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Thu gọn" }));
+    expect(screen.queryByText("Nhà hàng 5")).not.toBeInTheDocument();
+  });
+
+  it("shows four Food rows by default and binds selection to the original option", () => {
+    const options = Array.from({ length: 5 }, (_, index) => ({ name: `Món ${index + 1}`, price: 50000 + index }));
+    const actions = options.map((_, index) => ({ id: `food-${index}`, kind: "select_food_item" as const, label: "Chọn món này", target_index: index }));
+    const onFoodSelectionChange = jest.fn();
+
+    render(<AssistantCards response={{ conversation_id: "food-disclosure", message: "", completed: [], items: [{ kind: "food_options", title: "Món ăn", options }], actions }} onAction={jest.fn()} onFoodSelectionChange={onFoodSelectionChange} />);
+
+    expect(screen.queryByText("Món 5")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hiện tất cả" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tăng Món 5" }));
+
+    expect(onFoodSelectionChange).toHaveBeenCalledWith(expect.objectContaining({ action: actions[4], option: options[4], quantity: 1 }));
+  });
+
+  it("shows four Healthcare form rows by default and preserves the slot target index", () => {
+    const options = Array.from({ length: 5 }, (_, index) => ({
+      doctor: `Bác sĩ ${index + 1}`,
+      facility: { name: `Bệnh viện ${index + 1}` },
+      department: "Thần kinh",
+      start_time: `2099-01-0${index + 1}T09:00:00Z`,
+      target_index: index,
+    }));
+    const actions = options.map((_, index) => ({ id: `health-${index}`, kind: "select_healthcare_slot" as const, label: "Chọn lịch này", target_index: index }));
+    const onAction = jest.fn();
+
+    render(<AssistantCards response={{ conversation_id: "healthcare-disclosure", message: "", completed: [], items: [{ kind: "healthcare_options", title: "Lịch khám", options }], actions }} onAction={onAction} />);
+
+    expect(screen.getByText("Bác sĩ 4")).toBeInTheDocument();
+    expect(screen.queryByText("Bác sĩ 5")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hiện tất cả" }));
+    const fifthDoctor = screen.getByText("Bác sĩ 5").closest("section") as HTMLElement;
+    fireEvent.click(within(fifthDoctor).getByRole("button", { name: "Chọn lịch" }));
+
+    expect(onAction).toHaveBeenCalledWith(actions[4]);
+  });
+
+  it("keeps an active Food confirmation control visible while options are collapsed", () => {
+    const options = Array.from({ length: 5 }, (_, index) => ({ name: `Món xác nhận ${index + 1}`, price: 50000 }));
+    render(<AssistantCards response={{ conversation_id: "food-confirmation-disclosure", message: "", completed: [], items: [{ kind: "food_confirmation", title: "Xác nhận đơn", options }], actions: [{ id: "food-confirm", kind: "food_confirm", label: "Xác nhận đơn" }] }} onAction={jest.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Xác nhận thông tin đơn" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hiện tất cả" })).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
 describe("Ride cancellation card", () => {
   it("shows ordered intermediate stops in the public Ride confirmation card", () => {
     const { container } = render(<AssistantCards response={{
