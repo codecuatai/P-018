@@ -39,6 +39,15 @@ def _operation(text: str) -> Operation:
     return Operation.DISCOVER
 
 
+def _operation_for_task(domain: Domain, normalized_request: str, slots: Mapping[str, Any]) -> Operation:
+    operation = _operation(normalized_request)
+    # A material stopover changes an unconfirmed route, so it must re-quote
+    # rather than use the unavailable booking-update capability.
+    if domain == Domain.RIDE and slots.get("stopover_address") is not None:
+        return Operation.UPDATE
+    return operation
+
+
 def _context_values(conversation_state: Mapping[str, Any], current_location: Mapping[str, Any]) -> set[object]:
     values: set[object] = set()
     for address in conversation_state.get("saved_addresses", []):
@@ -222,7 +231,7 @@ def semantic_turn_from_plan(
             SemanticIntent(
                 intent_ref=intent_ref,
                 domain=domain,
-                operation=_operation(normalized),
+                operation=_operation_for_task(domain, normalized, extracted),
                 goal=goal,
                 normalized_request=normalized,
                 slots=_slots(

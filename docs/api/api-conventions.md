@@ -43,18 +43,28 @@ The Gateway validates required reservation confirmation fields and normalizes
 legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
 domain timezone before exposing an ISO 8601 value.
 
-`AssistantChatRequest.current_location` is optional, ephemeral UI context. It
-contains validated device latitude/longitude, capture time, optional accuracy,
-and optional reverse-geocoded display text; it is forwarded Web → Gateway →
-Agent for the current conversation turn and is never written to the saved
-address profile. The Agent accepts it only while fresh. Context precedence is
+`AssistantChatRequest.current_location` and
+`AssistantActionRequest.current_location` are optional, ephemeral UI context.
+They contain validated device latitude/longitude, capture time, optional
+accuracy, and optional reverse-geocoded display text. The Web client resends
+the value with a selected/confirmation action when a dependent Ride quote is
+prepared; it is never written to the saved
+address profile. While the device-share context remains active, the Web also
+resends the same request-scoped location on a later stopover chat so Gateway
+can re-quote without turning the device position into a durable address. The
+Agent accepts it only while fresh. Context precedence is
 deterministic: explicit current-turn values, current UI context, authoritative
 conversation facts, saved profile context, then retrieved-memory hints. A
 lower-precedence source never overwrites a higher-precedence value, and every
 semantic slot carries its source. Product-facing date/time interpretation uses
 `Asia/Ho_Chi_Minh`; an already-passed clock time is clarified instead of being
 silently moved to tomorrow. Ride discovery/creation requires an explicit
-vehicle type. Cancellation of an existing ride is proposed through Core A and
+vehicle type. A Ride quote may include at most two resolved intermediate stops;
+the stops form part of the authoritative quote/confirmation payload, so a
+material route change requires a fresh quote and service-details confirmation.
+The fresh quote replaces the public Ride service action; replaying the prior
+action returns `409 ACTION_NOT_AVAILABLE` and cannot confirm the old route.
+Cancellation of an existing ride is proposed through Core A and
 executed only by the Gateway action boundary after user confirmation.
 
 Conversation-only chitchat/advisory turns return safe assistant text without

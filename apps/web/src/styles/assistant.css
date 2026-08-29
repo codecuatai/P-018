@@ -192,6 +192,8 @@
 .route-stop-copy { display: grid; gap: 2px; min-width: 0; }
 .route-stop-label { color: #94A3B8; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
 .route-stop-address { color: var(--color-navy); font-size: 0.95rem; font-weight: 750; line-height: 1.35; }
+.route-stopover-group { display: grid; gap: 8px; }
+.stopover-dot { background: var(--color-primary); border-color: var(--color-primary); }
 
 .ride-ticket-specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 8px 4px; }
 .ride-spec-item { display: grid; gap: 2px; padding: 0; background: transparent; border: 0; }

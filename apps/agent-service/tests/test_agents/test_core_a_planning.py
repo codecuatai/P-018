@@ -151,6 +151,22 @@ def test_ride_requires_an_explicit_vehicle_type_before_quoting() -> None:
     assert task.steps == []
 
 
+def test_ride_stopover_update_requotes_instead_of_proposing_booking_update() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RIDE,
+        operation=Operation.UPDATE,
+        goal="Them diem dung truoc khi den dich",
+        normalized_request="Ghe qua Cong vien Nghia Do truoc khi den quan",
+        slots=RideSemanticSlots(stopover_address=slot("Cong vien Nghia Do")),
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.READY
+    assert task.steps[0].capability == "ride.quote.create"
+    assert task.steps[0].phase.value == "QUOTE_OR_PREVIEW"
+
+
 def test_unhandled_hard_constraint_cannot_become_ready() -> None:
     intent = SemanticIntent(
         intent_ref=0,

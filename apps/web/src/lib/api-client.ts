@@ -627,10 +627,20 @@ export function sendAssistantMessage(message: string, conversationId?: string, c
   });
 }
 
-export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }): Promise<AssistantResponse> {
+export function runAssistantAction(
+  conversationId: string,
+  actionId: string,
+  idempotencyKey: string,
+  input?: { quantity?: number; currentLocation?: DeviceCurrentLocation },
+): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/actions", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}) }),
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      action_id: actionId,
+      ...(input?.quantity ? { quantity: input.quantity } : {}),
+      ...(input?.currentLocation ? { current_location: input.currentLocation } : {}),
+    }),
   }, { idempotencyKey });
 }
 

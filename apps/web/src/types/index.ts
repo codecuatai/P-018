@@ -612,6 +612,7 @@ export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "rid
   resource_id?: string;
   pickup?: string;
   dropoff?: string;
+  stopovers?: Array<{ address: string }>;
   vehicle?: string;
   distance_km?: number;
   amount?: number;

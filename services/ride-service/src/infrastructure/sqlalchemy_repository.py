@@ -163,6 +163,7 @@ class SqlAlchemyRideRepository:
         for name, value in booking.__dict__.items():
             setattr(row, name, value)
         row.driver_snapshot = booking.driver
+        row.quote_snapshot = booking.quote_snapshot
 
     def get_idempotency(self, actor_id: str, operation: str, key: str) -> IdempotencyRecord | None:
         row = self.session.scalar(
@@ -260,6 +261,7 @@ def _quote_from_row(row: QuoteRow) -> Quote:
         tariff_snapshot=row.tariff_snapshot,
         passenger_count=row.passenger_count,
         capacity_policy_version=row.capacity_policy_version,
+        stopovers=row.stopovers or [],
     )
 
 
@@ -281,6 +283,7 @@ def _booking_from_row(row: BookingRow) -> Booking:
         tracking_started_at=row.tracking_started_at,
         passenger_count=row.passenger_count,
         capacity_policy_version=row.capacity_policy_version,
+        quote_snapshot=row.quote_snapshot,
     )
 
 

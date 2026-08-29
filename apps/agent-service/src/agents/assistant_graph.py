@@ -75,6 +75,7 @@ Structured safety rules — these ALWAYS take precedence:
 - Never fabricate live weather, traffic, or real-time facts unless explicitly provided in context.
 - Never fabricate doctor names, restaurant names, food items, prices, or booking IDs.
 - Ask only for information required by the next executable capability. Start discovery with any sufficient signal (dish/cuisine/location); defer party size, exact time, delivery address, and payment details until the user selects or explicitly requests the committing step. Reuse profile, saved addresses, prior selections, safe defaults, and authoritative results before asking.
+- A Ride route may contain one user-requested intermediate stop. For a change such as "detour via <place> before the destination", emit that place only as `stopover_address`; preserve the existing pickup, destination, and vehicle from authoritative conversation context. A changed stop requires a fresh quote and a new service-details confirmation. Never invent a stop, coordinates, price, or availability.
 - Maximum 1 clarification_question per response turn.
 - Context precedence is fixed: explicit current-turn values, fresh UI context, authoritative conversation facts, saved profile context, then retrieved-memory hints. Never let a lower-precedence value overwrite a higher-precedence value.
 """.strip()
@@ -112,6 +113,7 @@ Quy tắc ứng xử và bóc tách tác vụ:
 XONE_SYSTEM_PROMPT += """
 
 Before building tasks, read user_profile, conversation_state.tasks, retrieved_memories, and recent_messages. Retrieved memories are contextual hints only: use them to resolve intent/preferences, never as authority for current prices, availability, orders, bookings, payments, or exact sensitive facts. Preserve COMPLETED tasks as history; only discard an in-progress task when the user explicitly abandons it. Map saved address phrases such as home to the matching saved-address label. For ambiguous or missing addresses, ask one clarification question or use location_query; never invent an exact address. Analyze intent, service count, dependencies, and required slots internally before emitting JSON. ride requires pickup_address and dropoff_address; food requires dish_query; restaurant requires location or cuisine_query; healthcare requires department. Maximum 4 tasks. Never claim success unless authoritative_results proves it.
+For restaurant discovery, retain the user's stated cuisine, area, and time as semantic slots; do not create a reservation until a concrete restaurant is selected and the required party size/time are available. For an unconfirmed Ride route change that adds an intermediate stop, use `operation=UPDATE` and `stopover_address`; retain the active ride task rather than creating an unrelated ride.
 Food delivery and restaurant services are limited to central Hanoi (Hoàn Kiếm, Ba Đình, Đống Đa, Hai Bà Trưng, Tây Hồ, Cầu Giấy). For another city or district, return interaction_mode="unsupported" with a brief polite Vietnamese refusal. For nearby food, use the user's selected delivery address district; do not claim nearby results until the Food search tool returns authoritative items.
 Requests about programming, mathematics, politics, schoolwork, computer repair, or other non-X-One topics are unsupported: return interaction_mode="unsupported", tasks=[], and a brief Vietnamese refusal. Do not answer the unrelated question or provide code/instructions.
 """
@@ -438,12 +440,12 @@ def _is_direct_healthcare_request(text: str) -> bool:
     return healthcare and not other_service
 
 
-def _number(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | None:
-    match = re.search(r"\b([1-9][0-9]?)\b", text)
+def _party_size(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | None:
+    match = re.search(r"\b([1-9][0-9]?)\s*(?:nguoi|khach|ban)\b", text)
     if match:
         return int(match.group(1))
     for word, value in words:
-        if re.search(rf"\b{word}\b", text):
+        if re.search(rf"\b{word}\s+(?:nguoi|khach|ban)\b", text):
             return value
     return None
 
@@ -456,17 +458,27 @@ _MAX_LOCATION_LENGTH = 160
 
 
 def _location(text: str) -> str | None:
-    match = _LOCATION_PATTERN.search(text[:_MAX_HEURISTIC_INPUT_LENGTH])
-    if not match:
-        return None
-    result = match.group(1).strip()
-    result = re.split(
-        r"\b(?:roi|sau do|va|rồi|sau đó|và|lúc|luc|vào|vao|ngày|ngay|tối|toi|sáng|sang|trưa|trua)\b",
-        result,
-        maxsplit=1,
-        flags=re.IGNORECASE,
-    )[0]
-    return result.strip() or None
+    location_patterns = (
+        re.compile(r"\b(?:gần|gan)\b\s+([^,.!?;]+)", re.IGNORECASE),
+        _LOCATION_PATTERN,
+    )
+    for candidate in (text, _plain(text)):
+        bounded = candidate[:_MAX_HEURISTIC_INPUT_LENGTH]
+        for pattern in location_patterns:
+            for match in pattern.finditer(bounded):
+                result = match.group(1).strip()
+                result = re.split(
+                    r"\b(?:roi|sau do|va|rồi|sau đó|và|lúc|luc|vào|vao|ngày|ngay|tối|toi|sáng|sang|trưa|trua|có|co|quán|quan|cho|xong|đồng\s+thời|dong\s+thoi|nhà\s*hàng|nha\s*hang)\b",
+                    result,
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0]
+                result = re.sub(r"^(?:gần|gan)\s+", "", result, flags=re.IGNORECASE).strip()
+                if _plain(result).strip() in {"do", "day", "nha hang do", "quan do"}:
+                    continue
+                if result:
+                    return result
+    return None
 
 
 def _looks_like_short_location_reply(text: str) -> bool:
@@ -610,6 +622,22 @@ def _changed_route_slot(text: str, slot: str) -> str | None:
     return _changed_route_slots(text).get(slot)
 
 
+def _stopover_address(text: str) -> str | None:
+    """Extract one explicit intermediate stop for the offline fallback only."""
+
+    marker = r"(?:tạt\s+qua|tat\s+qua|ghé\s+qua|ghe\s+qua|dừng\s+(?:ở|o|tại|tai)|dung\s+(?:o|tai))"
+    suffix = r"(?=\s+(?:rồi|roi|trước\s+khi|truoc\s+khi|mới|moi|đến|den)\b|[,.!?]|$)"
+    for candidate in (text, _plain(text)):
+        match = re.search(rf"\b{marker}\s+(?:chỗ\s+|cho\s+|địa\s+điểm\s+|dia\s+diem\s+)?(?P<value>.+?){suffix}", candidate, re.IGNORECASE)
+        if not match:
+            continue
+        value = re.sub(r"\s+(?:giúp\s+(?:tôi|mình)|giup\s+(?:toi|minh)|để|de)\b.*$", "", match.group("value"), flags=re.IGNORECASE)
+        value = _clean_changed_route_value(value)
+        if value:
+            return value
+    return None
+
+
 def _has_explicit_clock(text: str) -> bool:
     lowered = _plain(text)
     return bool(re.search(r"\b\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)\b", lowered))
@@ -645,7 +673,7 @@ def _healthcare_requested_date(text: str, now: datetime | None = None) -> str | 
 def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
     lowered = _plain(text)
     slots: dict[str, Any] = {}
-    party_size = _number(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4), ("nam", 5)))
+    party_size = _party_size(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4), ("nam", 5)))
     if domain == "restaurant" and party_size is not None and _has_any(lowered, ("nguoi", "khach", "ban")):
         slots["party_size"] = party_size
     if domain == "ride":
@@ -657,6 +685,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["pickup_address"] = pickup
         if dropoff:
             slots["dropoff_address"] = dropoff
+        stopover = _stopover_address(text)
+        if stopover:
+            slots["stopover_address"] = stopover
         if "4 cho" in lowered or "bon cho" in lowered:
             slots["vehicle_type"] = "CAR_4"
         elif "7 cho" in lowered or "bay cho" in lowered:
@@ -682,9 +713,10 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             if start_at:
                 slots["start_at"] = start_at
         if domain == "restaurant":
-            cuisine_match = re.search(r"(?:muon an|thich an|an)\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
+            cuisine_match = re.search(r"\b(?:muon an|thich an|an|quan|nha hang)\b\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
             if cuisine_match:
-                cuisine = re.split(r"\b(?:luc|vao|toi|sang|trua)\b", cuisine_match.group(1), maxsplit=1)[0].strip()
+                cuisine = re.split(r"\b(?:luc|vao|toi|sang|trua|nao|co|con|ban)\b", cuisine_match.group(1), maxsplit=1)[0].strip()
+                cuisine = re.sub(r"^an\s+", "", cuisine).strip()
                 if cuisine and cuisine not in {"tai nha hang", "nha hang"}:
                     slots["cuisine_query"] = cuisine
     if domain == "food":
@@ -866,6 +898,9 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "doi phuong tien",
         "thay phuong tien",
         "loai xe",
+        "tat qua",
+        "ghe qua",
+        "diem dung",
     )
 
     matches: list[int] = []
@@ -1161,6 +1196,9 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "doi phuong tien",
             "thay phuong tien",
             "loai xe",
+            "tat qua",
+            "ghe qua",
+            "diem dung",
             "xe may",
             "xac nhan",
             "xe 4 cho",
@@ -1186,7 +1224,10 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "gan day",
         ),
     )
-    explicit_restaurant = _has_any(lowered, ("dat ban", "nha hang", "an tai nha hang", "an toi tai"))
+    explicit_restaurant = _has_any(
+        lowered,
+        ("dat ban", "nha hang", "an tai nha hang", "an toi tai", "con ban", "ban trong", "dat cho"),
+    )
     explicit_food = _has_any(
         lowered,
         (
@@ -1218,9 +1259,11 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
     explicit_healthcare = _has_any(
         lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung")
     )
-    explicit_ride = _has_any(lowered, ("dat xe", "goi xe", "di tu", "tu ")) and (
-        _route(text)[0] is not None or "xe" in lowered
-    )
+    explicit_ride = (
+        _has_any(lowered, ("dat xe", "goi xe", "muon xe", "can xe", "di tu", "tu ")) and (
+            _route(text)[0] is not None or "xe" in lowered
+        )
+    ) or _stopover_address(text) is not None
 
     tasks: list[PlannedTask] = []
     if explicit_restaurant:
@@ -1235,11 +1278,26 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         )
     if explicit_ride:
         ride_slots = _semantic_slots(text, "ride")
+        # A stopover-only follow-up is a material edit to the active route. The
+        # offline fallback retains the existing semantic route so Core A can
+        # request a fresh quote instead of asking for the same endpoints again.
+        if ride_slots.get("stopover_address") and not ride_slots.get("pickup_address") and not ride_slots.get("dropoff_address"):
+            active_ride = next(
+                (
+                    item for item in previous_tasks
+                    if isinstance(item, dict)
+                    and item.get("domain") == "ride"
+                    and item.get("phase") not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+                ),
+                None,
+            )
+            if isinstance(active_ride, dict) and isinstance(active_ride.get("extracted_slots"), dict):
+                ride_slots = {**active_ride["extracted_slots"], **ride_slots}
         dropoff = str(ride_slots.get("dropoff_address", ""))
         placeholder_destination = _plain(dropoff).strip() in {"do", "toi do", "den do", "nha hang do"}
         references_prior_destination = (not dropoff or placeholder_destination) and _has_any(
             lowered,
-            ("nha hang do", "toi do", "dua toi toi do", "sau do", "roi dat xe", "sau do dat xe"),
+            ("nha hang do", "toi do", "qua do", "dua toi toi do", "sau do", "roi dat xe", "sau do dat xe"),
         )
         dependencies = [
             index
@@ -1283,7 +1341,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
                     ):
                         slots["location"] = text
                     if domain == "restaurant":
-                        party_size = _number(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4)))
+                        party_size = _party_size(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4)))
                         if party_size is not None and _has_any(lowered, ("nguoi", "khach", "ban")):
                             slots["party_size"] = party_size
                     tasks.append(
@@ -1572,7 +1630,7 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
             normalized[name] = item.strip()
 
     if domain == "ride":
-        for name in ("pickup_address", "dropoff_address"):
+        for name in ("pickup_address", "dropoff_address", "stopover_address"):
             text_slot(name, 300)
         for name in ("pickup_latitude", "dropoff_latitude"):
             coordinate = slots.get(name)
@@ -1591,8 +1649,8 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         text_slot("promo_code", 50)
     elif domain == "restaurant":
         text_slot("location", 300)
+        text_slot("cuisine_type", 200)
         text_slot("cuisine_query", 200)
-        text_slot("cuisine", 200)
         party_size = slots.get("party_size")
         if isinstance(party_size, int) and not isinstance(party_size, bool) and 1 <= party_size <= 20:
             normalized["party_size"] = party_size
@@ -1690,6 +1748,43 @@ def _merge_explicit_context_actions(
         and str(value.get("phase", "PLANNING")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
     }
     discarded_refs = sorted((set(plan.discarded_task_refs).intersection(allowed_model_refs)).union(deterministic_refs))
+    explicit_stopover = _stopover_address(message)
+    active_ride = next(
+        (
+            value for value in raw_tasks[:8]
+            if isinstance(value, dict)
+            and str(value.get("domain", "")) == "ride"
+            and str(value.get("phase", "PLANNING")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+        ),
+        None,
+    )
+    if explicit_stopover and active_ride:
+        # A stopover sentence is a material edit to the active Ride route,
+        # even when a provider latches onto a nearby anchor noun such as
+        # “quán” and returns a new Restaurant task. Preserve the active route
+        # slots and let Gateway resolve the authoritative destination again.
+        active_slots = _domain_slots("ride", active_ride.get("extracted_slots", {}))
+        active_slots["stopover_address"] = explicit_stopover
+        model_ride = next((task for task in plan.tasks if task.domain == "ride"), None)
+        if model_ride is None:
+            goal = str(active_ride.get("goal") or "Cập nhật chuyến xe").strip()[:500]
+            normalized_request = str(active_ride.get("goal") or "Cập nhật chuyến xe với điểm dừng").strip()[:2000]
+            model_ride = PlannedTask(
+                domain="ride",
+                goal=goal or "Cập nhật chuyến xe",
+                normalized_request=normalized_request or "Cập nhật chuyến xe với điểm dừng",
+                extracted_slots=active_slots,
+            )
+        else:
+            model_ride = model_ride.model_copy(update={"extracted_slots": active_slots, "depends_on": []})
+        return plan.model_copy(
+            update={
+                "tasks": [model_ride],
+                "interaction_mode": "service",
+                "needs_clarification": False,
+                "clarification_question": None,
+            }
+        )
     # Retain unfinished anchor tasks when a follow-up turn only adds travel
     # details. The planner may omit them due to recency bias, but Gateway
     # needs the original healthcare/restaurant task to remain addressable.

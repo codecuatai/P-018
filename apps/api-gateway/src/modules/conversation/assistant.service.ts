@@ -124,6 +124,7 @@ export type AssistantActionRequest = {
   conversation_id: string;
   action_id: string;
   quantity?: number;
+  current_location?: DeviceCurrentLocation;
 };
 
 export type DeviceCurrentLocation = {
@@ -1218,6 +1219,10 @@ export class AssistantService {
       source: address.source,
       is_default: address.isDefault,
     }));
+    // The planner only needs labels to resolve a user reference. Coordinates,
+    // IDs, and full saved-address values remain in the Gateway and are resolved
+    // only when an authorized domain action is prepared.
+    const plannerSavedAddresses = savedAddresses.map((address) => ({ label: address.label }));
     const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
       ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
       : [];
@@ -1227,12 +1232,10 @@ export class AssistantService {
         user_id: user.sub,
         message,
         messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: { ...this.plannerSafeState(state), saved_addresses: savedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ memory_id: memory.id, namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, source_turn_id: memory.sourceTurnId, why_retrieved: memory.whyRetrieved })) },
+        conversation_state: { ...this.plannerSafeState(state), saved_addresses: plannerSavedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, why_retrieved: memory.whyRetrieved })) },
         user_profile: {
-          id: user.id ?? user.sub,
           name: user.full_name ?? '',
-          email: user.email,
-          saved_addresses: savedAddresses,
+          saved_addresses: plannerSavedAddresses,
         },
         ...(currentLocation ? { current_location: currentLocation } : {}),
         capability_snapshot: CAPABILITY_SNAPSHOT,
@@ -1242,11 +1245,17 @@ export class AssistantService {
     );
     await this.recordUsageFromAgentResponse(planner, user.sub, 'assistant');
     this.validateCoreAHandoff(planner);
-    const rawPlan = isRecord(planner.plan) ? planner.plan : {};
     const resolution = this.typedPlan(planner);
     const discardedTaskRefs = resolution.discardedTaskRefs;
     const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
-    const plan: JsonObject = { ...rawPlan, ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}) };
+    // `planning_decision` is the only planning authority on the production
+    // path. The Agent still returns `plan` for compatibility with older
+    // consumers, but its clarification field can disagree with Core A's
+    // validated typed decision and must never block dispatch here.
+    const plan: JsonObject = {
+      ...(stringValue(planner.assistant_message) ? { assistant_message: stringValue(planner.assistant_message) } : {}),
+      ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}),
+    };
     const planTasks = resolution.tasks;
     const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
     for (const taskId of discardResult.discardedIds) merge.touchedIds.add(taskId);
@@ -1294,7 +1303,13 @@ export class AssistantService {
       // authoritative choice, and public action exactly as persisted.
       return this.persistTurn(conversationId, user, message, safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'), state, [], state.actions);
     }
-    if (stringValue(plan.clarification_question)) {
+    const hasRunnablePlannedTask = merged.some((task) => (
+      merge.touchedIds.has(task.id)
+      && ['PLANNING', 'IN_PROGRESS'].includes(task.phase)
+      && !hasFailedDependency(task, merged)
+      && this.dependenciesReady(task, merged)
+    ));
+    if (stringValue(plan.clarification_question) && !hasRunnablePlannedTask) {
       const clarificationState: AssistantState = {
         ...state,
         tasks: merged.slice(0, 8),
@@ -1342,7 +1357,7 @@ export class AssistantService {
       }
       if (!this.dependenciesReady(task, merged)) continue;
       try {
-        const result = await this.processTask(task, merged, user, conversationId, correlationId);
+        const result = await this.processTask(task, merged, user, conversationId, correlationId, currentLocation);
         task.phase = result.phase;
         if (result.authoritative) task.authoritative = result.authoritative;
         if (result.publicItem) task.public_item = result.publicItem;
@@ -1405,7 +1420,12 @@ export class AssistantService {
     correlationId: string,
     idempotencyKey: string,
   ): Promise<AssistantResponse> {
-    const requestHash = stableHash({ conversation_id: request.conversation_id, action_id: request.action_id, ...(request.quantity !== undefined ? { quantity: request.quantity } : {}) });
+    const requestHash = stableHash({
+      conversation_id: request.conversation_id,
+      action_id: request.action_id,
+      ...(request.quantity !== undefined ? { quantity: request.quantity } : {}),
+      ...(request.current_location ? { current_location: request.current_location } : {}),
+    });
     const conversation = await this.store.getConversation(request.conversation_id, user.sub);
     if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.' });
     const state = storedState(conversation.state);
@@ -1468,7 +1488,7 @@ export class AssistantService {
         : state.actions.filter((candidate) => candidate.task_id !== task.id);
       if (result.nextActions) state.actions.push(...result.nextActions);
       if (result.nextAction) state.actions.push(result.nextAction);
-      const remainingItems = result.publicItem ? [result.publicItem] : [];
+      const remainingItems = result.publicItem ? [result.publicItem] : (result.items ?? []);
       const dependentActions: StoredAction[] = [];
       for (const dependent of state.tasks) {
         if (
@@ -1487,7 +1507,7 @@ export class AssistantService {
           continue;
         }
         try {
-          const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId);
+          const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId, request.current_location);
           dependent.phase = dependentResult.phase;
           if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
           if (dependentResult.publicItem) {
@@ -1980,7 +2000,17 @@ export class AssistantService {
       const target = next.find((task) => task.id === plannedIds[index]);
       if (!target) continue;
       const dependencies = arrayValue(planned[index].depends_on).map((value) => numberValue(value)).filter((value): value is number => value !== undefined);
-      target.depends_on = dependencies.map((dependency) => plannedIds[dependency]).filter((value): value is string => Boolean(value && value !== target.id));
+      const mappedDependencies = dependencies.map((dependency) => plannedIds[dependency]).filter((value): value is string => Boolean(value && value !== target.id));
+      // A Ride route update may be planned as a single task even though the
+      // existing route is still anchored to a completed Restaurant task.
+      // Keep that durable dependency when the new typed plan has no separate
+      // anchor task to map; otherwise the destination would be lost before
+      // the fresh quote is prepared.
+      const preserveExistingRideDependencies = target.domain === 'ride'
+        && target.operation === 'UPDATE'
+        && target.depends_on.length > 0
+        && mappedDependencies.length === 0;
+      target.depends_on = preserveExistingRideDependencies ? target.depends_on : mappedDependencies;
     }
     return { tasks: next, touchedIds };
   }
@@ -2045,6 +2075,7 @@ export class AssistantService {
     user: AuthUser,
     conversationId: string,
     correlationId: string,
+    currentLocation?: DeviceCurrentLocation,
   ): Promise<TaskProcessResult> {
     const planned = task.planned_step;
     if (planned?.step_kind === 'WAIT_FOR_CONFIRMATION') {
@@ -2090,7 +2121,7 @@ export class AssistantService {
 
     let result: TaskProcessResult;
     if (task.domain === 'restaurant') result = await this.processRestaurant(task, user, conversationId, correlationId);
-    else if (task.domain === 'ride') result = await this.processRide(task, allTasks, user, conversationId, correlationId);
+    else if (task.domain === 'ride') result = await this.processRide(task, allTasks, user, conversationId, correlationId, currentLocation);
     else if (task.domain === 'healthcare') result = await this.processHealthcare(task, user, conversationId, correlationId);
     else result = await this.processFood(task, user, conversationId, correlationId);
     if (!planned?.capability) return result;
@@ -2288,7 +2319,14 @@ export class AssistantService {
     return { kind: "address_options", title: `Chọn ${label}`, purpose, addresses, allow_new: true, note: `Bạn có thể chọn ${label} đã lưu hoặc nhập một địa chỉ mới cụ thể.` };
   }
 
-  private async processRide(task: StoredTask, allTasks: StoredTask[], user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
+  private async processRide(
+    task: StoredTask,
+    allTasks: StoredTask[],
+    user: AuthUser,
+    conversationId: string,
+    correlationId: string,
+    currentLocation?: DeviceCurrentLocation,
+  ): Promise<TaskProcessResult> {
     const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
     const existingBooking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
     const existingBookingId = stringValue(existingBooking?.id);
@@ -2356,6 +2394,15 @@ export class AssistantService {
     }
     let pickup = stringValue(slots.pickup_address);
     let dropoff = stringValue(slots.dropoff_address);
+    let stopover = stringValue(slots.stopover_address);
+    // A browser location is request-scoped.  It is used only to form the
+    // current Ride quote, not copied into saved addresses or the durable task
+    // slots. The Web client resends it for explicit actions while sharing is on.
+    if (!pickup && currentLocation) {
+      pickup = currentLocation.address_text?.trim() || 'Vị trí thiết bị hiện tại';
+      slots.pickup_latitude = currentLocation.latitude;
+      slots.pickup_longitude = currentLocation.longitude;
+    }
     const savedAddresses = await this.store.listSavedAddresses(user.sub);
     const sortedAddresses = [...savedAddresses].sort((a, b) => (b.label?.length ?? 0) - (a.label?.length ?? 0));
     if (pickup) {
@@ -2366,9 +2413,14 @@ export class AssistantService {
       const match = sortedAddresses.find((a) => plainText(dropoff!).includes(plainText(a.label)));
       if (match) dropoff = match.addressText;
     }
+    if (stopover) {
+      const match = sortedAddresses.find((a) => plainText(stopover!).includes(plainText(a.label)));
+      if (match) stopover = match.addressText;
+    }
     // Update slots so the resolved address persists
     if (pickup) slots.pickup_address = pickup;
     if (dropoff) slots.dropoff_address = dropoff;
+    if (stopover) slots.stopover_address = stopover;
     const passengerCount = numberValue(slots.passenger_count) ?? 1;
     if (!Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 20) {
       return { phase: 'NEEDS_INFO' as TaskPhase, items: [{ kind: 'clarification'}] };
@@ -2401,6 +2453,7 @@ export class AssistantService {
       stringValue(previousQuote.pickup_address) !== pickup
       || stringValue(previousQuote.dropoff_address) !== dropoff
       || numberValue(previousQuote.passenger_count) !== passengerCount
+      || stringValue(arrayValue(previousQuote.stopovers).filter(isRecord)[0]?.address) !== stopover
     ));
     const workflowId = routeChanged
       ? undefined
@@ -2412,16 +2465,30 @@ export class AssistantService {
     if (!routeChanged && task.workflow_id && references && typeof hydrate === 'function') {
       await hydrate.call(this.ride, user.sub, task.workflow_id, references, correlationId);
     }
-    const request = `Đặt xe từ ${pickup} đến ${dropoff}${slots.vehicle_type === 'BIKE' ? ' bằng xe máy' : slots.vehicle_type === 'CAR_4' ? ' bằng xe 4 chỗ' : slots.vehicle_type === 'CAR_7' ? ' bằng xe 7 chỗ' : ''} cho ${passengerCount} người`;
     const selectedRestaurant = dependency?.authoritative?.selected;
     const routeContext = this.authoritativeRideRouteContext(
       slots,
       healthcareFacility,
       isRecord(selectedRestaurant) ? selectedRestaurant : undefined,
     );
-    const result = routeContext
-      ? await this.ride.chat(user.sub, request, workflowId, correlationId, routeContext)
-      : await this.ride.chat(user.sub, request, workflowId, correlationId);
+    const quoteFromSemantic = (this.ride as unknown as {
+      quoteFromSemantic?: RideWorkflowService['quoteFromSemantic'];
+    }).quoteFromSemantic;
+    const result = typeof quoteFromSemantic === 'function'
+      ? await quoteFromSemantic.call(this.ride, user.sub, workflowId, correlationId, {
+        pickupAddress: pickup,
+        dropoffAddress: dropoff,
+        vehicleType: slots.vehicle_type as 'BIKE' | 'CAR_4' | 'CAR_7',
+        passengerCount,
+        ...(stringValue(slots.promo_code) ? { promoCode: stringValue(slots.promo_code) } : {}),
+        ...(stopover ? { stopoverAddress: stopover } : {}),
+      }, routeContext)
+      // Transitional test-double fallback only. The registered production
+      // service always exposes quoteFromSemantic, so its main path never
+      // forwards ordinary language to a second Ride interpreter.
+      : routeContext
+        ? await this.ride.chat(user.sub, `Đặt xe từ ${pickup} đến ${dropoff}`, workflowId, correlationId, routeContext)
+        : await this.ride.chat(user.sub, `Đặt xe từ ${pickup} đến ${dropoff}`, workflowId, correlationId);
     const quote = isRecord(result.quote) ? result.quote : undefined;
     if (healthcareDependency && quote) {
       const heldAppointment = dependentHealthcareAppointment;
@@ -2996,7 +3063,7 @@ export class AssistantService {
     };
   }
 
-  private async executeAction(action: StoredAction, task: StoredTask, user: AuthUser, conversationId: string, correlationId: string, idempotencyKey: string): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; authoritative?: JsonObject; nextAction?: StoredAction; nextActions?: StoredAction[] }> {
+  private async executeAction(action: StoredAction, task: StoredTask, user: AuthUser, conversationId: string, correlationId: string, idempotencyKey: string): Promise<{ phase: TaskPhase; message: string; publicItem?: JsonObject; items?: JsonObject[]; authoritative?: JsonObject; nextAction?: StoredAction; nextActions?: StoredAction[] }> {
     if (action.kind === 'select_restaurant') {
       const candidates = arrayValue(task.authoritative?.candidates).filter(isRecord);
       const selected = candidates[action.selection_index ?? 0];
@@ -3005,11 +3072,19 @@ export class AssistantService {
       task.authoritative = { ...task.authoritative, selected };
       task.phase = 'IN_PROGRESS';
       const result = await this.processRestaurant(task, user, conversationId, correlationId);
-      return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ bàn. Bạn kiểm tra lại rồi xác nhận nhé.' : 'Mình đã cập nhật lựa chọn nhà hàng.', publicItem: result.publicItem, authoritative: result.authoritative, nextAction: result.actions?.[0] };
+      return { phase: result.phase, message: result.phase === 'AWAITING_CONFIRMATION' ? 'Mình đã tạm giữ bàn. Bạn kiểm tra lại rồi xác nhận nhé.' : 'Mình đã cập nhật lựa chọn nhà hàng.', publicItem: result.publicItem, items: result.items, authoritative: result.authoritative, nextActions: result.actions };
     }
     if (action.kind === 'restaurant_confirm') {
       const result = await this.confirmations.executeDomain(action.confirmation_id ?? '', user, { workflow_id: action.workflow_id }, correlationId, idempotencyKey, 'CREATE_RESTAURANT_RESERVATION', action.workflow_id);
-      const reservation = isRecord(result.reservation) ? result.reservation : result;
+      // ConfirmationService wraps the authoritative domain response under
+      // `tool_result`.  Keep the legacy direct `reservation` shape as a
+      // compatibility fallback for test doubles and older callers, but never
+      // validate the wrapper itself as if it were a reservation.
+      const reservation = isRecord(result.tool_result)
+        ? result.tool_result
+        : isRecord(result.reservation)
+          ? result.reservation
+          : result;
       const selected = isRecord(task.authoritative?.selected) ? task.authoritative.selected : undefined;
       const restaurantName = stringValue(reservation.restaurant_name) ?? stringValue(selected?.name);
       if (!restaurantName) throw new ConflictException({ code: 'RESERVATION_RESULT_INVALID', detail: 'Mình chưa nhận được tên nhà hàng trong kết quả đặt bàn.' });
@@ -3289,7 +3364,10 @@ export class AssistantService {
 
   private messageFor(message: string, plan: JsonObject, tasks: StoredTask[], items: JsonObject[], actions: StoredAction[]): string {
     const clarification = stringValue(plan.clarification_question);
-    if (clarification) return clarification;
+    // A dependent task may be missing information while an earlier task is
+    // already executable. Surface the ready result first; retain the
+    // clarification for a turn with no executable public result.
+    if (clarification && !items.length && !actions.length) return clarification;
     if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
     const activeTasks = tasks.filter((task) => task.phase !== 'DISCARDED');
     if (actions.length) return activeTasks.length > 1
@@ -3481,6 +3559,7 @@ export class AssistantService {
       ...(typeof quote.route_distance_meters === 'number' ? { route_distance_meters: quote.route_distance_meters } : {}),
       ...(typeof quote.route_duration_seconds === 'number' ? { route_duration_seconds: quote.route_duration_seconds } : {}),
       ...(Array.isArray(quote.route_geometry) ? { route_geometry: quote.route_geometry } : {}),
+      ...(Array.isArray(quote.stopovers) && quote.stopovers.length ? { stopovers: quote.stopovers } : {}),
       ...(typeof quote.pickup_latitude === 'number' ? { pickup_latitude: quote.pickup_latitude } : {}),
       ...(typeof quote.pickup_longitude === 'number' ? { pickup_longitude: quote.pickup_longitude } : {}),
       ...(typeof quote.dropoff_latitude === 'number' ? { dropoff_latitude: quote.dropoff_latitude } : {}),
@@ -3610,7 +3689,7 @@ export class AssistantService {
     const allowed = new Set([
       'kind', 'title', 'note', 'question', 'options', 'departments', 'restaurant',
       'reservation_code', 'party_size', 'start_at', 'status', 'expires_at',
-      'pickup', 'dropoff', 'vehicle', 'amount', 'currency', 'duration_minutes',
+      'pickup', 'dropoff', 'stopovers', 'vehicle', 'amount', 'currency', 'duration_minutes',
       'route_distance_meters', 'route_duration_seconds', 'route_geometry',
       'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude',
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',
@@ -3653,6 +3732,12 @@ export class AssistantService {
           ...(typeof point.latitude === 'number' ? { latitude: point.latitude } : {}),
           ...(typeof point.longitude === 'number' ? { longitude: point.longitude } : {}),
         })).filter((point) => typeof point.latitude === 'number' && typeof point.longitude === 'number');
+      } else if (key === 'stopovers') {
+        result[key] = arrayValue(value).filter(isRecord).flatMap((stop) => (
+          typeof stop.address === 'string'
+            ? [{ address: stop.address }]
+            : []
+        ));
       } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
         result[key] = value;
       }

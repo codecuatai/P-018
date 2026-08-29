@@ -143,7 +143,7 @@ describe('Unified assistant orchestration', () => {
           plan: {
             tasks: [
               { domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Đặt bàn tối nay ở Hà Nội', extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' } },
-              { domain: 'ride', goal: 'Tìm xe tới nhà hàng', normalized_request: 'Đặt xe 4 chỗ từ VinUni tới nhà hàng đó', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'nhà hàng đó', vehicle_type: 'CAR_4' }, depends_on: [0] },
+              { domain: 'ride', goal: 'Tìm xe tới nhà hàng', normalized_request: 'Đặt xe 4 chỗ tới nhà hàng đó', extracted_slots: { dropoff_address: 'nhà hàng đó', vehicle_type: 'CAR_4' }, depends_on: [0] },
             ],
           },
         }),
@@ -157,34 +157,124 @@ describe('Unified assistant orchestration', () => {
     };
     const healthcare = { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 };
     const ride = {
-      chat: jest.fn().mockResolvedValue({
+      quoteFromSemantic: jest.fn().mockResolvedValue({
         workflow_id: 'ride-flow-1',
         stage: 'SERVICE_CONFIRMATION',
-        quote: { pickup_address: 'VinUni', dropoff_address: '12 Hoan Kiem, Ha Noi', vehicle_type: 'CAR_4', amount: 52000, currency: 'VND', duration_minutes: 18, expires_at: '2099-01-01T18:00:00+07:00' },
+        quote: { pickup_address: 'Vị trí thiết bị hiện tại', dropoff_address: '12 Hoan Kiem, Ha Noi', vehicle_type: 'CAR_4', amount: 52000, currency: 'VND', duration_minutes: 18, expires_at: '2099-01-01T18:00:00+07:00' },
       }),
+      chat: jest.fn(),
       confirmService: jest.fn(),
       confirmPayment: jest.fn(),
     };
-    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'confirmation-1' }), executeDomain: jest.fn().mockResolvedValue({ reservation: { restaurant_name: 'Maison Hanoi', restaurant_location: '12 Hoan Kiem, Ha Noi', reservation_code: 'res-1', start_at: '2099-01-01T19:00:00+07:00', party_size: 2 } }), execute: jest.fn() };
+    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'confirmation-1' }), executeDomain: jest.fn().mockResolvedValue({ action: 'CREATE_RESTAURANT_RESERVATION', tool_result: { restaurant_name: 'Maison Hanoi', restaurant_location: '12 Hoan Kiem, Ha Noi', reservation_code: 'res-1', start_at: '2099-01-01T19:00:00+07:00', party_size: 2 } }), execute: jest.fn() };
     const service = new AssistantService(store as never, agent as never, restaurant as never, healthcare as never, ride as never, confirmations as never);
 
-    const first = await service.chat(user, 'Tối nay tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới đó.', undefined, 'cor-1');
+    const deviceLocation = { latitude: 21.0285, longitude: 105.8048, captured_at: '2026-08-27T03:00:00.000Z', source: 'device' as const };
+    const first = await service.chat(user, 'Tối nay tìm nhà hàng cho 2 người rồi gọi xe từ vị trí hiện tại tới đó.', undefined, 'cor-1', deviceLocation);
     expect(first.conversation_id).toMatch(/^conv_/);
     expect(first.items[0].kind).toBe('restaurant_options');
     expect(first.actions[0].kind).toBe('select_restaurant');
-    expect(ride.chat).not.toHaveBeenCalled();
+    expect(ride.quoteFromSemantic).not.toHaveBeenCalled();
     expect(confirmations.prepareDomainConfirmation).not.toHaveBeenCalled();
 
-    const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-2', 'idempotency-1');
+    const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id, current_location: deviceLocation }, 'cor-2', 'idempotency-1');
     expect(restaurant.executeTool).toHaveBeenCalledTimes(3);
-    expect(ride.chat).toHaveBeenCalledWith('actor-assistant', expect.stringContaining('12 Hoan Kiem, Ha Noi'), expect.any(String), 'cor-2');
+    expect(ride.quoteFromSemantic).toHaveBeenCalledWith(
+      'actor-assistant',
+      expect.any(String),
+      'cor-2',
+      expect.objectContaining({ pickupAddress: 'Vị trí thiết bị hiện tại', dropoffAddress: '12 Hoan Kiem, Ha Noi', vehicleType: 'CAR_4' }),
+      expect.objectContaining({ pickup_latitude: 21.0285, pickup_longitude: 105.8048 }),
+    );
     expect(confirmations.prepareDomainConfirmation).toHaveBeenCalledTimes(1);
     expect(selected.actions.map((action) => action.kind)).toEqual(['restaurant_confirm']);
     expect(confirmations.executeDomain).not.toHaveBeenCalled();
     expect(ride.confirmService).not.toHaveBeenCalled();
 
-    const confirmed = await service.act(user, { conversation_id: first.conversation_id, action_id: selected.actions[0].id }, 'cor-3', 'restaurant-confirm-key');
+    const confirmed = await service.act(user, { conversation_id: first.conversation_id, action_id: selected.actions[0].id, current_location: deviceLocation }, 'cor-3', 'restaurant-confirm-key');
     expect(confirmed.actions.map((action) => action.kind)).toEqual(['ride_service']);
+  });
+
+  it('dispatches a ready restaurant task while retaining a dependent ride clarification', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã chuẩn bị các lựa chọn.' }
+        : {
+          assistant_message: 'Mình sẽ tìm nhà hàng trước và hỏi vị trí đón xe sau.',
+          decision_source: 'deterministic',
+          planning_decision: {
+            contract_version: 'core-a.v1',
+            capability_catalog_version: 'gateway-observed.v1',
+            workflow_relation: 'DEPENDENT_TASKS',
+            interaction_mode: 'service',
+            confirmation_invalidated: false,
+            discarded_task_refs: [],
+            blocked_task_refs: [],
+            tasks: [
+              {
+                task_ref: 0,
+                domain: 'restaurant',
+                operation: 'DISCOVER',
+                goal: 'Tìm quán lẩu gần Cầu Giấy',
+                normalized_request: 'Tìm quán lẩu gần Cầu Giấy',
+                semantic_slots: {
+                  location: { value: 'Cầu Giấy', source: 'USER_EXPLICIT' },
+                  cuisine_query: { value: 'lẩu', source: 'USER_EXPLICIT' },
+                },
+                depends_on: [],
+                missing_information: [],
+                missing_authority: [],
+                disposition: 'READY',
+                steps: [],
+              },
+              {
+                task_ref: 1,
+                domain: 'ride',
+                operation: 'CREATE',
+                goal: 'Đặt xe 4 chỗ đến nhà hàng đã chọn',
+                normalized_request: 'Đặt xe 4 chỗ đến nhà hàng đã chọn',
+                semantic_slots: {
+                  vehicle_type: { value: 'CAR_4', source: 'USER_EXPLICIT' },
+                },
+                depends_on: [0],
+                missing_information: ['pickup_address'],
+                missing_authority: [],
+                disposition: 'NEEDS_INFO',
+                steps: [],
+              },
+            ],
+          },
+        }),
+      chat: jest.fn(),
+    };
+    const restaurant = {
+      executeTool: jest.fn().mockResolvedValue([
+        { id: 'rest-partial-1', name: 'Lẩu Cầu Giấy', location: 'Cầu Giấy, Hà Nội', cuisine_type: 'Lẩu' },
+      ]),
+    };
+    const healthcare = { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 };
+    const ride = { quoteFromSemantic: jest.fn(), chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const confirmations = { prepareDomainConfirmation: jest.fn(), executeDomain: jest.fn(), execute: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, restaurant as never, healthcare as never, ride as never, confirmations as never);
+
+    const response = await service.chat(
+      user,
+      'Tìm quán lẩu gần Cầu Giấy rồi cần xe 4 chỗ đến đó.',
+      undefined,
+      'cor-partial-ready',
+    );
+
+    expect(response.items.map((item) => item.kind)).toEqual(['restaurant_options']);
+    expect(response.actions.map((action) => action.kind)).toEqual(['select_restaurant']);
+    expect(response.message).not.toContain('số người');
+    expect(ride.quoteFromSemantic).not.toHaveBeenCalled();
+    const saved = await store.getConversation(response.conversation_id, user.sub);
+    const tasks = (saved?.state.tasks ?? []) as Array<Record<string, unknown>>;
+    expect(tasks.map((task) => [task.domain, task.phase])).toEqual([
+      ['restaurant', 'NEEDS_INFO'],
+      ['ride', 'NEEDS_INFO'],
+    ]);
   });
 
   it('processes only the newly touched task and keeps an unrelated action cohort', async () => {
@@ -612,7 +702,7 @@ describe('Unified assistant orchestration', () => {
     }));
   });
 
-  it('forwards rich saved-address and ephemeral current-location context to the Agent', async () => {
+  it('forwards saved-address labels and ephemeral current-location context to the Agent', async () => {
     const store = {
       getConversation: jest.fn().mockResolvedValue(undefined),
       listSavedAddresses: jest.fn().mockResolvedValue([{
@@ -647,18 +737,7 @@ describe('Unified assistant orchestration', () => {
 
     const payload = agent.assistantChat.mock.calls[0][0] as Record<string, unknown>;
     expect(payload.current_location).toEqual(currentLocation);
-    expect((payload.conversation_state as { saved_addresses: unknown[] }).saved_addresses[0]).toEqual(expect.objectContaining({
-      id: 'address-home',
-      label: 'Nhà',
-      address_text: '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',
-      latitude: 21.0,
-      longitude: 105.81,
-      city: 'Hà Nội',
-      district: 'Thanh Xuân',
-      ward: 'Thượng Đình',
-      is_default: true,
-      source: 'geocoded',
-    }));
+    expect((payload.conversation_state as { saved_addresses: unknown[] }).saved_addresses[0]).toEqual({ label: 'Nhà' });
     expect(payload.user_profile).not.toHaveProperty('language');
     expect(payload.user_profile).not.toHaveProperty('timezone');
   });
@@ -1563,6 +1642,7 @@ describe('Unified assistant orchestration', () => {
         : {
           decision_source: 'deterministic',
           plan: {
+            clarification_question: 'Legacy clarification must not block typed dispatch.',
             tasks: [{
               domain: 'ride',
               goal: 'Legacy task must not run',

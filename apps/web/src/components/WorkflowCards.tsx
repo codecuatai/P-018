@@ -178,6 +178,16 @@ function RideCard({ item, children, actions, onAction, disabledActionId }: { ite
               <strong className="route-stop-address">{text(item.pickup, "Điểm đón chưa rõ")}</strong>
             </div>
           </div>
+          {item.stopovers?.map((stop, index) => <div key={`${stop.address}-${index}`} className="route-stopover-group">
+            <div className="route-connector" />
+            <div className="route-stop stopover-stop">
+              <span className="route-dot stopover-dot" />
+              <div className="route-stop-copy">
+                <span className="route-stop-label">ĐIỂM DỪNG {index + 1}</span>
+                <strong className="route-stop-address">{stop.address}</strong>
+              </div>
+            </div>
+          </div>)}
           <div className="route-connector" />
           <div className="route-stop dropoff-stop">
             <span className="route-dot dropoff-dot" />

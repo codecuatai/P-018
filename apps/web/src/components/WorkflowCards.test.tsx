@@ -43,6 +43,28 @@ describe("FoodCartDock", () => {
 });
 
 describe("Ride cancellation card", () => {
+  it("shows an intermediate stop in the public Ride confirmation card", () => {
+    render(<AssistantCards response={{
+      conversation_id: "conversation-stopover",
+      message: "",
+      actions: [],
+      completed: [],
+      items: [{
+        kind: "ride_booking",
+        title: "Kiểm tra chuyến xe",
+        pickup: "Vị trí hiện tại",
+        stopovers: [{ address: "Công viên Nghĩa Đô" }],
+        dropoff: "Nhà hàng đã chọn",
+        vehicle: "Xe 4 chỗ",
+        amount: 139000,
+        currency: "VND",
+      }],
+    } as AssistantResponse} onAction={jest.fn()} />);
+
+    expect(screen.getByText("ĐIỂM DỪNG 1")).toBeInTheDocument();
+    expect(screen.getByText("Công viên Nghĩa Đô")).toBeInTheDocument();
+  });
+
   it("keeps the cancellation control inside the Ride card", () => {
     const response = {
       conversation_id: "conversation-1",

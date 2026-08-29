@@ -1113,6 +1113,12 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 50
+        current_location:
+          $ref: '#/components/schemas/DeviceCurrentLocation'
     AssistantEnvelope:
       type: object
       required: [data, meta]
@@ -1222,6 +1228,14 @@ components:
         title: {type: string}
         pickup: {type: string}
         dropoff: {type: string}
+        stopovers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [address]
+            properties:
+              address: {type: string}
         vehicle: {type: string}
         amount: {type: integer}
         currency: {type: string}

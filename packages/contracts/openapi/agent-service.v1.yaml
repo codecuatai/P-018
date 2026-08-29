@@ -228,6 +228,7 @@ components:
         dropoff_address: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         dropoff_latitude: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         dropoff_longitude: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        stopover_address: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         vehicle_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         passenger_count: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         promo_code: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
@@ -245,6 +246,7 @@ components:
       properties:
         location: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         cuisine_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        cuisine_query: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         budget_range: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         party_size: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         start_at: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}

@@ -61,6 +61,15 @@ export type RideRouteContext = {
   dropoff_longitude?: number;
 };
 
+export type SemanticRideRequest = {
+  pickupAddress: string;
+  dropoffAddress: string;
+  vehicleType: 'BIKE' | 'CAR_4' | 'CAR_7';
+  passengerCount: number;
+  promoCode?: string;
+  stopoverAddress?: string;
+};
+
 export type PublicWorkflow = {
   workflow_id: string;
   response: string;
@@ -162,6 +171,119 @@ export class RideConversationService {
         ? 'ride.booking.confirm'
         : null;
     this.workflows.set(workflowId, workflow);
+  }
+
+  /**
+   * Creates an authoritative quote from already validated Core-B/Core-A
+   * semantics. It deliberately does not send the original chat message to a
+   * second Ride interpreter.
+   */
+  async quoteFromSemantic(
+    actorId: string,
+    requestedWorkflowId: string | undefined,
+    correlationId: string,
+    request: SemanticRideRequest,
+    routeContext?: RideRouteContext,
+  ): Promise<PublicWorkflow> {
+    const workflow = this.resolveWorkflow(actorId, requestedWorkflowId);
+    const safeRouteContext = validatedRouteContext(routeContext);
+    if (workflow.booking && isActiveRideStatus(workflow.booking.status)) {
+      throw new ConflictException('Chuyến xe hiện tại đã bắt đầu. Hãy hoàn tất hoặc hủy chuyến trước khi đổi hành trình.');
+    }
+    if (!this.locations) {
+      throw new BadGatewayException({ code: 'LOCATION_SERVICE_UNAVAILABLE', detail: 'Mình chưa thể xác định tuyến đường lúc này. Bạn thử lại giúp mình nhé.', retryable: true });
+    }
+    const pickup = await this.resolveAddress(
+      request.pickupAddress,
+      safeRouteContext.pickup_latitude,
+      safeRouteContext.pickup_longitude,
+    );
+    const dropoff = await this.resolveAddress(
+      request.dropoffAddress,
+      safeRouteContext.dropoff_latitude,
+      safeRouteContext.dropoff_longitude,
+    );
+    const stopover = request.stopoverAddress ? await this.resolveAddress(request.stopoverAddress) : undefined;
+    const points = [pickup, ...(stopover ? [stopover] : []), dropoff];
+    const segments = await Promise.all(points.slice(0, -1).map((origin, index) => this.locations!.route(origin.coordinate, points[index + 1].coordinate)));
+    const realMode = this.locations.realMode;
+    if (segments.some((route) => (
+      route.status !== 'RESOLVED'
+      || !route.route_distance_meters
+      || route.route_distance_meters <= 0
+      || !route.route_duration_seconds
+      || route.route_duration_seconds <= 0
+      || !route.route_geometry
+      || route.route_geometry.length < 2
+      || (realMode && route.provider !== 'geoapify')
+    ))) {
+      throw new BadGatewayException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí hoặc đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+    }
+    const routeGeometry = segments.flatMap((route, index) => index ? route.route_geometry!.slice(1) : route.route_geometry!);
+    const routeDistanceMeters = segments.reduce((total, route) => total + (route.route_distance_meters ?? 0), 0);
+    const routeDurationSeconds = segments.reduce((total, route) => total + (route.route_duration_seconds ?? 0), 0);
+    const primaryRoute = segments[0];
+    if (!primaryRoute) {
+      throw new BadGatewayException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hành trình chưa có đủ chặng đường để báo giá.', retryable: true });
+    }
+    const routeProvider = segments.map((route) => route.provider).every((provider) => provider === primaryRoute.provider)
+      ? primaryRoute.provider
+      : 'composed-route';
+    const routeSnapshotHash = digest(JSON.stringify({
+      pickup: pickup.coordinate,
+      stopovers: stopover ? [stopover.coordinate] : [],
+      dropoff: dropoff.coordinate,
+      routeDistanceMeters,
+      routeDurationSeconds,
+      routeProvider,
+    }));
+    const quote = await this.ride.createQuote(
+      actorId,
+      idempotencyKey(workflow.id, 'quote', String(workflow.context.ride.revision + 1)),
+      this.callContext(correlationId, workflow, 'quote_' + (workflow.context.ride.revision + 1)),
+      {
+        pickup_address: pickup.address,
+        dropoff_address: dropoff.address,
+        vehicle_type: request.vehicleType,
+        passenger_count: request.passengerCount,
+        ...(request.promoCode ? { promo_code: request.promoCode } : {}),
+        pickup_latitude: pickup.coordinate.latitude,
+        pickup_longitude: pickup.coordinate.longitude,
+        dropoff_latitude: dropoff.coordinate.latitude,
+        dropoff_longitude: dropoff.coordinate.longitude,
+        route_provider: routeProvider,
+        route_distance_meters: routeDistanceMeters,
+        route_duration_seconds: routeDurationSeconds,
+        route_geometry: routeGeometry,
+        route_snapshot_hash: routeSnapshotHash,
+        stopovers: stopover ? [{ address: stopover.address, latitude: stopover.coordinate.latitude, longitude: stopover.coordinate.longitude }] : [],
+      },
+    );
+    workflow.quote = quote;
+    workflow.booking = null;
+    workflow.pendingOperation = null;
+    workflow.stage = 'SERVICE_CONFIRMATION';
+    workflow.context.active_domain = 'ride';
+    workflow.context.ride.pickup_address = quote.pickup_address;
+    workflow.context.ride.dropoff_address = quote.dropoff_address;
+    workflow.context.ride.vehicle_type = quote.vehicle_type;
+    workflow.context.ride.passenger_count = quote.passenger_count;
+    workflow.context.ride.latest_quote_id = quote.id;
+    workflow.context.ride.latest_booking_id = null;
+    workflow.context.ride.quote_version = quote.quote_version;
+    workflow.context.ride.quote_amount = quote.amount;
+    workflow.context.ride.quote_currency = quote.currency;
+    workflow.context.ride.quote_expires_at = quote.expires_at;
+    workflow.context.ride.pending_action = 'ride.booking.prepare';
+    workflow.context.ride.revision += 1;
+    return this.view(
+      workflow,
+      stopover
+        ? 'Mình đã cập nhật báo giá với điểm dừng thêm. Bạn kiểm tra lại toàn bộ hành trình và giá trước khi xác nhận nhé.'
+        : 'Mình đã nhận báo giá chính thức từ Ride. Hãy kiểm tra hành trình và giá trước khi xác nhận dịch vụ.',
+      'quote_ride',
+      [],
+    );
   }
 
   async chat(
@@ -397,6 +519,7 @@ export class RideConversationService {
         currency: quote.currency,
         passenger_count: quote.passenger_count,
         capacity_policy_version: quote.capacity_policy_version,
+        ...(quote.stopovers?.length ? { stopovers: quote.stopovers } : {}),
       },
       quote,
     );

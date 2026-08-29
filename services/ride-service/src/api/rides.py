@@ -96,6 +96,7 @@ def create_quote(
             route_duration_seconds=payload.route_duration_seconds,
             route_geometry=payload.route_geometry,
             route_snapshot_hash=payload.route_snapshot_hash,
+            stopovers=[item.model_dump() for item in payload.stopovers],
         ),
         idempotency_key,
     )

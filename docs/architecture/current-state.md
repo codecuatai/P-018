@@ -1,6 +1,6 @@
 # Current Architecture State
 
-This is the canonical, filesystem-backed status for X-One as of 2026-08-20.
+This is the canonical, filesystem-backed status for X-One as of 2026-08-29.
 It supersedes earlier Phase 0 descriptions that referred to a Vite Web demo or
 demo-only public authentication. Historic work evidence belongs in
 `WORKLOG.md`; it is not a claim about the current implementation.
@@ -14,6 +14,34 @@ demo-only public authentication. Historic work evidence belongs in
 - **planned**: no runnable/wired implementation exists.
 - **unverified**: source/configuration exists but this worktree has not yet
   completed the named runtime acceptance check.
+
+## Mandatory Restaurant → Ride demo verification - 2026-08-29
+
+The rebuilt local Compose runtime passed the required HTTP flow through the
+real Gateway with an isolated test actor and real Geoapify route mode. The
+safe milestone evidence was:
+
+- Restaurant discovery returned 6 `restaurant_options` and did not auto-select.
+- Selecting a restaurant produced a `restaurant_confirmation` and a
+  dependent Ride quote using the shared device pickup, `CAR_4`, and zero
+  stopovers.
+- Confirming the restaurant produced the reservation and the Ride service
+  form/action.
+- The explicit stopover turn produced a fresh Ride quote with exactly one
+  stopover and a new `ride_service` action; replaying the old action returned
+  `409 ACTION_NOT_AVAILABLE`.
+- Ride service confirmation produced the separate payment confirmation; final
+  payment confirmation returned the domain status `SEARCHING_DRIVER`.
+
+The Web sends `current_location` again on the dependent action and stopover
+turn while the device-share context is active. It remains request-scoped and
+is not saved as a durable address. This is acceptance evidence for the
+mandatory demo only, not certification of every `prompt.md` gate: the native
+Core-B semantic boundary still has a transitional `AssistantPlan` →
+`SemanticTurn` bridge, the 30-case/provider matrices, browser 10/10 run,
+latency evidence, outage/restart and rollback exercises remain unverified.
+The in-app browser automation runtime is unavailable because
+`browser-client.mjs` is missing.
 
 ## Gate G2 audit snapshot - 2026-08-16
 
@@ -95,6 +123,14 @@ business logic are prohibited.
   cover all four domains. Gateway now requires `planning_decision`,
   `core-a.v1`, and the exact observed capability-catalog version on every turn;
   absent, partially versioned, unversioned, or mismatched handoffs fail closed.
+- Gateway uses the validated typed `planning_decision` as the execution
+  authority. A ready Restaurant task may run while a dependent Ride task is
+  retained as `NEEDS_INFO`; a legacy compatibility clarification cannot erase
+  that runnable anchor task.
+- The deterministic Assistant fallback parses party size only from contextual
+  party phrases, ignores calendar digits and reference pronouns as locations,
+  and recognizes equivalent Ride wording such as “muốn xe 4 chỗ”. The current
+  device location remains ephemeral and is supplied by the Gateway request.
 - Restaurant availability returns a 30-second authoritative snapshot with a
   distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
   Core A does not treat freshness-required authority without a future expiry as
@@ -115,6 +151,9 @@ business logic are prohibited.
   single Gateway correlation chain can plan, execute Food, and compose without
   a false `RUN_METADATA_CONFLICT`. Ride interpretation also receives the
   required actor assertion through the typed Agent client.
+- Agent metadata persistence retries once after a dead PostgreSQL connection
+  (`PoolTimeout`/connection shutdown) and exposes only a safe unavailable error
+  if the retry also fails; it does not retry data conflicts.
 
 Local remediation verification passed Agent `196` tests (`1` PostgreSQL test
 skipped), Gateway `176` tests (`7` PostgreSQL/integration tests skipped),
@@ -148,8 +187,8 @@ those gates run successfully.
 | Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
 | Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
 | Agent persistence | implemented | `apps/agent-service/migrations/002_agent_run_metadata.sql`, `src/application/run_metadata_store.py`, `src/infrastructure/database.py` | Production defaults to required PostgreSQL, performs no runtime DDL, and persists only allowlisted actor/workflow/run metadata, phase, capability names, latency and safe error code. The develop-branch `001_agent_workflow_states.sql` migration remains immutable history but has no runtime writer. Memory mode is explicit test/development configuration. Live PostgreSQL restart/reconnect acceptance remains unverified in this worktree. |
-| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
-| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py` and `20260816_0006_passenger_capacity.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, and actor-scoped history. Passenger-count/capacity policy is implemented and targeted tests pass, but migration apply/rollback and live Compose E2E for revision 0006 remain unverified in this worktree. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
+| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/`, mandatory HTTP demo on 2026-08-29 | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; the required Restaurant → Ride → stopover → payment flow passed through the real Gateway. Durable conversation data is Core-owned and model output remains typed/untrusted. Full `prompt.md` matrices and native Core-B replacement gate remain unverified. |
+| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py`, `20260816_0006_passenger_capacity.py`, preserved `20260827_0007_quote_snapshot.py`, and `20260828_0008_quote_stopovers.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, actor-scoped history, immutable booking quote snapshots, and bounded route stopovers. Migration apply `0007 → 0008` and the mandatory real HTTP demo passed; full provider matrix, browser E2E, outage/restart and rollback remain unverified. Disposable HTTP proof returned the final domain status `SEARCHING_DRIVER`, which is non-terminal and not a claim that a completed ride already exists. |
 | Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, Gateway and Agent parity tests | Version-2 inventory has 46 canonical entries. Parity is checked in both directions; runtime-only compatibility names require a named owner and expiry. The Agent emits semantic typed proposals only and has no execution/domain client. |
 | Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
 | Catalog data pipeline | implemented | `scripts/data/data_pipeline.py`, `scripts/data/catalog/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |

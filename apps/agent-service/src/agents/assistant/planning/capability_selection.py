@@ -189,6 +189,12 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
             ),
         }[task.domain]
     if task.operation == Operation.UPDATE:
+        if task.domain == Domain.RIDE and getattr(task.semantic_slots, "stopover_address", None) is not None:
+            return StepChoice(
+                "ride.quote.create",
+                PlanningPhase.QUOTE_OR_PREVIEW,
+                "Tạo lại quote Ride với điểm dừng trung gian",
+            )
         return {
             Domain.FOOD: StepChoice(
                 "get_food_cart",

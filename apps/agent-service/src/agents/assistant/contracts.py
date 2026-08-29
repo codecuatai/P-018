@@ -56,6 +56,7 @@ class RideSemanticSlots(StrictModel):
     dropoff_address: SemanticSlot | None = None
     dropoff_latitude: SemanticSlot | None = None
     dropoff_longitude: SemanticSlot | None = None
+    stopover_address: SemanticSlot | None = None
     vehicle_type: SemanticSlot | None = None
     passenger_count: SemanticSlot | None = None
     promo_code: SemanticSlot | None = None
@@ -64,6 +65,7 @@ class RideSemanticSlots(StrictModel):
 class RestaurantSemanticSlots(StrictModel):
     location: SemanticSlot | None = None
     cuisine_type: SemanticSlot | None = None
+    cuisine_query: SemanticSlot | None = None
     budget_range: SemanticSlot | None = None
     party_size: SemanticSlot | None = None
     start_at: SemanticSlot | None = None

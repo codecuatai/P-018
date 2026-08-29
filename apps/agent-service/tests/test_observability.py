@@ -15,7 +15,6 @@ from langfuse.types import (
     OtelSpanIdentifier,
 )
 from pydantic import ValidationError
-from src.agents import assistant_graph
 from src.observability.contracts import (
     GenerationUsage,
     SafeObservationMetadata,
@@ -28,6 +27,8 @@ from src.observability.telemetry import (
     initialize_telemetry,
     mask_otel_spans,
 )
+
+from src.agents import assistant_graph
 
 
 class RecordingHandle(ObservationHandle):

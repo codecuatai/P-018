@@ -69,7 +69,8 @@ the release test.
 
 - `ride.quote.create` is Agent-proposable and executes through
   `RideConversationService`/`RideClient`; Ride remains authoritative for the
-  tariff, route snapshot, expiry, and quote version.
+  tariff, route snapshot, bounded stopovers, expiry, and quote version. A
+  stopover change produces a new quote rather than a booking update.
 - `ride.booking.prepare` and `ride.booking.confirm` are Gateway actions with
   two explicit confirmations. The final result exposes the Ride booking
   status, including `NO_DRIVER`, rather than inferring success.

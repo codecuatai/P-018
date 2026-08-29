@@ -67,14 +67,14 @@ class TemporalContext:
         elif "hom qua" in lowered:
             explicit_date = current.date() - timedelta(days=1)
 
-        hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|toi|trua|am|pm)?", lowered)
+        hour_match = re.search(r"\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|chieu|toi|trua|am|pm)?", lowered)
         hour: int | None = None
         minute = 0
         if hour_match:
             hour = int(hour_match.group(1))
             minute = int(hour_match.group(2) or 0)
             period = hour_match.group(3)
-            if period in {"toi", "pm"} and hour < 12:
+            if period in {"chieu", "toi", "pm"} and hour < 12:
                 hour += 12
             if period == "trua" and hour < 11:
                 hour += 12

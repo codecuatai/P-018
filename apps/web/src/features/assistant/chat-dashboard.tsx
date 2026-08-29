@@ -306,7 +306,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setSending(true);
     setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
     try {
-      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, input);
+      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, {
+        ...input,
+        ...(currentLocation ? { currentLocation } : {}),
+      });
       consumedActionIds.current.add(action.id);
       delete actionKeys.current[action.id];
       const keepMutationInTurn = action.kind === "select_food_item" || action.kind === "food_cart_increment" || action.kind === "food_cart_decrement" || action.kind === "food_cart_remove";
@@ -360,7 +363,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         const action = selection.action;
         const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey("assistant-select_food_item");
         actionKeys.current[action.id] = idempotencyKey;
-        response = await runAssistantAction(conversationId, action.id, idempotencyKey, { quantity: selection.quantity });
+        response = await runAssistantAction(conversationId, action.id, idempotencyKey, {
+          quantity: selection.quantity,
+          ...(currentLocation ? { currentLocation } : {}),
+        });
         consumedActionIds.current.add(action.id);
       }
       const checkout = response?.actions.find((action) => action.kind === "food_checkout");
@@ -368,7 +374,12 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       if (checkout) {
         const checkoutKey = actionKeys.current[checkout.id] ?? createIdempotencyKey("assistant-food_checkout");
         actionKeys.current[checkout.id] = checkoutKey;
-        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey);
+        finalResponse = await runAssistantAction(
+          conversationId,
+          checkout.id,
+          checkoutKey,
+          currentLocation ? { currentLocation } : undefined,
+        );
         consumedActionIds.current.add(checkout.id);
       }
       if (!finalResponse) throw new Error("FOOD_RESPONSE_EMPTY");

@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, sendAssistantMessage, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, runAssistantAction, sendAssistantMessage, setAccessToken, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -112,6 +112,32 @@ describe("browser API client", () => {
       accuracy_meters: 10,
       captured_at: "2026-08-27T03:00:00.000Z",
       source: "device",
+    });
+  });
+
+  it("resends shared device location with a selected assistant action", async () => {
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual({
+        conversation_id: "conv-1",
+        action_id: "action-restaurant-1",
+        current_location: {
+          latitude: 21.0285,
+          longitude: 105.8042,
+          captured_at: "2026-08-27T03:00:00.000Z",
+          source: "device",
+        },
+      });
+      return jsonResponse(200, { data: { conversation_id: "conv-1", message: "ok", items: [], actions: [], completed: [], workflow_status: "RUNNING" } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await runAssistantAction("conv-1", "action-restaurant-1", "action-key", {
+      currentLocation: {
+        latitude: 21.0285,
+        longitude: 105.8042,
+        captured_at: "2026-08-27T03:00:00.000Z",
+        source: "device",
+      },
     });
   });
 

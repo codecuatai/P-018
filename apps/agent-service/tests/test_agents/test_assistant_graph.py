@@ -195,6 +195,41 @@ def test_deterministic_fallback_marks_restaurant_ride_dependency() -> None:
     assert plan.tasks[1].depends_on == [0]
 
 
+def test_demo_restaurant_then_ride_request_keeps_cuisine_area_time_and_dependency() -> None:
+    plan = deterministic_plan(
+        "Bạn kiểm tra giúp tôi xem tầm 5 giờ chiều nay ở gần Cầu Giấy có quán lẩu nào còn bàn không, xong rồi đặt xe 4 chỗ qua đó giúp tôi luôn."
+    )
+
+    assert domains(plan) == ["restaurant", "ride"]
+    restaurant, ride = plan.tasks
+    assert restaurant.extracted_slots["location"] == "Cầu Giấy"
+    assert restaurant.extracted_slots["cuisine_query"] == "lau"
+    assert ride.depends_on == [0]
+    assert ride.extracted_slots["vehicle_type"] == "CAR_4"
+    assert "dropoff_address" not in ride.extracted_slots
+
+
+def test_restaurant_slots_ignore_calendar_digits_and_reference_destination() -> None:
+    plan = deterministic_plan(
+        "Tìm quán lẩu còn bàn gần Cầu Giấy ngày 28/09/2026 lúc 19h cho 2 người, "
+        "đồng thời muốn xe 4 chỗ đến đó."
+    )
+
+    restaurant, ride = plan.tasks
+    assert restaurant.extracted_slots["location"] == "Cầu Giấy"
+    assert restaurant.extracted_slots["party_size"] == 2
+    assert "T19:00:00" in restaurant.extracted_slots["start_at"]
+    assert ride.extracted_slots["vehicle_type"] == "CAR_4"
+
+
+def test_afternoon_clock_resolves_at_17h_when_still_in_the_future() -> None:
+    now = datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+
+    resolution = TemporalContext.resolve_clock("tầm 5 giờ chiều nay", now)
+
+    assert resolution.value == datetime(2026, 8, 15, 17, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+
+
 def test_healthcare_then_ride_uses_dependency_without_guessing_destination() -> None:
     plan = deterministic_plan("Đặt lịch khám thần kinh sáng mai rồi đặt xe từ VinUni đưa tôi tới đó.")
     assert domains(plan) == ["healthcare", "ride"]
@@ -355,6 +390,56 @@ def test_ride_destination_change_is_a_follow_up_with_only_the_route_slot_changed
     assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "trường đại học công nghệ UET"
     assert follow_up.tasks[0].extracted_slots["pickup_address"] == "VinUni"
     assert follow_up.tasks[0].extracted_slots["vehicle_type"] == "CAR_4"
+
+
+def test_ride_stopover_follow_up_preserves_the_existing_route() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan(
+        "Trước khi đến nơi, tạt qua chỗ công viên Nghĩa Đô giúp tôi để đón bạn rồi mới đến điểm đến.",
+        state,
+    )
+
+    assert domains(follow_up) == ["ride"]
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["stopover_address"].casefold() == "công viên nghĩa đô"
+    assert slots["pickup_address"] == "VinUni"
+    assert slots["dropoff_address"] == "Hồ Gươm"
+    assert slots["vehicle_type"] == "CAR_4"
+
+
+def test_model_guard_turns_anchor_misclassification_into_active_ride_stopover_update() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(tasks=[PlannedTask(
+            domain="restaurant",
+            goal="Tìm nhà hàng",
+            normalized_request="Tìm nhà hàng gần quán",
+            extracted_slots={"location": "đó", "cuisine_query": "thịt tạt qua công viên"},
+        )]),
+        "Trước khi đến quán thì tạt qua Công viên Nghĩa Đô nhé.",
+        {
+            "tasks": [{
+                "domain": "ride",
+                "phase": "AWAITING_CONFIRMATION",
+                "goal": "Tìm chuyến xe phù hợp",
+                "extracted_slots": {
+                    "pickup_address": "Vị trí hiện tại",
+                    "pickup_latitude": 21.0285,
+                    "pickup_longitude": 105.8042,
+                    "vehicle_type": "CAR_4",
+                },
+                "depends_on": [0],
+            }]
+        },
+    )
+
+    assert domains(guarded) == ["ride"]
+    assert guarded.needs_clarification is False
+    slots = guarded.tasks[0].extracted_slots
+    assert slots["stopover_address"].casefold() == "công viên nghĩa đô"
+    assert slots["pickup_address"] == "Vị trí hiện tại"
+    assert slots["vehicle_type"] == "CAR_4"
 
 
 def test_ride_follow_up_replaces_both_endpoints_and_vehicle_type() -> None:

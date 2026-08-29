@@ -83,6 +83,7 @@ export type RideQuote = {
   route_geometry?: Array<{ latitude: number; longitude: number }> | null;
   route_snapshot_hash?: string | null;
   tariff_snapshot?: Record<string, unknown> | null;
+  stopovers?: Array<{ address: string; latitude: number; longitude: number }>;
 };
 
 export type RideBooking = {
@@ -1044,6 +1045,13 @@ function parseQuote(data: Record<string, unknown>): RideQuote {
     ...(routeGeometry ? { route_geometry: routeGeometry, route_polyline: typeof data.route_polyline === 'string' ? data.route_polyline : JSON.stringify(routeGeometry) } : {}),
     ...(typeof data.route_snapshot_hash === 'string' || data.route_snapshot_hash === null ? { route_snapshot_hash: data.route_snapshot_hash as string | null } : {}),
     ...(isRecord(data.tariff_snapshot) || data.tariff_snapshot === null ? { tariff_snapshot: data.tariff_snapshot as Record<string, unknown> | null } : {}),
+    ...(Array.isArray(data.stopovers) ? {
+      stopovers: data.stopovers.filter(isRecord).flatMap((stop) => (
+        typeof stop.address === 'string' && typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
+          ? [{ address: stop.address, latitude: stop.latitude, longitude: stop.longitude }]
+          : []
+      )),
+    } : {}),
   };
 }
 

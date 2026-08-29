@@ -70,6 +70,14 @@ class AssistantActionBody {
   @Min(1)
   @Max(50)
   quantity?: number;
+
+  // Device location is supplied again with an explicit action so a dependent
+  // Ride quote can use it after the user selects/confirms another service.
+  // It is request-scoped and never written into the saved-address profile.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceCurrentLocationBody)
+  current_location?: DeviceCurrentLocationBody;
 }
 
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };

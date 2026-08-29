@@ -46,4 +46,19 @@ describe('Assistant action idempotency header', () => {
     await controller.action({ conversation_id: 'conv-1', action_id: 'act-1' }, '  k  ', request);
     expect(service.act).toHaveBeenCalledWith(request.user, { conversation_id: 'conv-1', action_id: 'act-1' }, 'cor-1', 'k');
   });
+
+  it('forwards the browser location again with an explicit action', async () => {
+    const service = { act: jest.fn().mockResolvedValue(response) };
+    const controller = new AssistantController(service as never);
+    const location = {
+      latitude: 21.0285,
+      longitude: 105.8542,
+      captured_at: '2026-08-27T03:00:00.000Z',
+      source: 'device' as const,
+    };
+
+    await controller.action({ conversation_id: 'conv-1', action_id: 'act-1', current_location: location }, 'action-key', request);
+
+    expect(service.act).toHaveBeenCalledWith(request.user, { conversation_id: 'conv-1', action_id: 'act-1', current_location: location }, 'cor-1', 'action-key');
+  });
 });

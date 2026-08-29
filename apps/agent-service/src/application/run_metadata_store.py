@@ -3,12 +3,17 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Protocol
 
+import psycopg
+from psycopg_pool import PoolTimeout
 from pydantic import BaseModel, ConfigDict, Field
 from src.config import get_settings
-from src.infrastructure.database import AgentPersistenceUnavailableError, get_async_pool
+from src.infrastructure.database import AgentPersistenceUnavailableError, get_async_pool, reset_pool
+
+logger = logging.getLogger(__name__)
 
 
 class RunMetadata(BaseModel):
@@ -74,6 +79,22 @@ class PostgresAgentRunMetadataStore:
     """PostgreSQL adapter for the explicitly migrated Agent metadata table."""
 
     async def record(self, metadata: RunMetadata) -> RunMetadata:
+        for attempt in range(2):
+            try:
+                return await self._record_once(metadata)
+            except (PoolTimeout, psycopg.OperationalError, psycopg.InterfaceError) as exc:
+                await reset_pool()
+                if attempt == 1:
+                    raise AgentPersistenceUnavailableError(
+                        "Agent metadata database connection failed."
+                    ) from exc
+                logger.warning(
+                    "Agent metadata write recovered after connection reset: %s",
+                    type(exc).__name__,
+                )
+        raise AgentPersistenceUnavailableError("Agent metadata database connection failed.")
+
+    async def _record_once(self, metadata: RunMetadata) -> RunMetadata:
         pool = await get_async_pool()
         if pool is None:
             raise AgentPersistenceUnavailableError("PostgreSQL persistence is required.")
