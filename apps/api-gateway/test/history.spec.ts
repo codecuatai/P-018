@@ -1,4 +1,4 @@
-import { HistoryService, isHistoryResourceActive } from '../src/modules/history/history.module';
+import { HistoryQueryDto, HistoryService, isHistoryResourceActive } from '../src/modules/history/history.module';
 
 describe('history active semantics', () => {
   const now = new Date('2026-08-15T05:00:00.000Z');
@@ -62,6 +62,62 @@ describe('active history', () => {
     const service = new HistoryService(food as never, ride as never, restaurant as never, healthcare as never, {} as never);
 
     await expect(service.active('actor-1', 'cor-history')).resolves.toMatchObject({ partial: true, unavailable: ['food_order'], items: [] });
+  });
+
+  it('hydrates Ride history and detail from the authoritative quote snapshot', async () => {
+    const quote = {
+      id: 'quote-1',
+      quote_version: 'quote-v7',
+      tariff_version: 'tariff-v3',
+      pickup_address: 'Điểm đón cũ',
+      dropoff_address: 'Nhà hàng cũ',
+      vehicle_type: 'BIKE',
+      distance_km: 7.2,
+      duration_minutes: 15,
+      amount: 68_000,
+      currency: 'VND',
+      route_provider: 'geoapify',
+      route_distance_meters: 7_200,
+      route_duration_seconds: 900,
+      route_geometry: [{ latitude: 21.01, longitude: 105.8 }, { latitude: 21.03, longitude: 105.82 }],
+      route_snapshot_hash: 'route-hash-v7',
+      stopovers: [{ address: 'Công viên Nghĩa Đô', latitude: 21.04, longitude: 105.79 }],
+    };
+    const ride = {
+      listBookings: jest.fn().mockResolvedValue({ items: [{ id: 'ride-1', quote_id: 'quote-1', status: 'COMPLETED', updated_at: '2099-01-01T10:00:00Z' }] }),
+      getBooking: jest.fn().mockResolvedValue({ id: 'ride-1', quote_id: 'quote-1', status: 'COMPLETED', updated_at: '2099-01-01T10:00:00Z' }),
+      getQuote: jest.fn().mockResolvedValue(quote),
+    };
+    const service = new HistoryService({} as never, ride as never, {} as never, {} as never, {} as never);
+    const options = new HistoryQueryDto();
+    options.service = 'ride_booking';
+
+    const list = await service.list('actor-1', 'cor-history', options);
+    expect(ride.getQuote).toHaveBeenCalledWith('actor-1', { correlationId: 'cor-history' }, 'quote-1');
+    expect(list.items[0].resource).toMatchObject({
+      id: 'ride-1',
+      quote_id: 'quote-1',
+      quote_version: 'quote-v7',
+      tariff_version: 'tariff-v3',
+      amount: 68_000,
+      currency: 'VND',
+      route_snapshot_hash: 'route-hash-v7',
+      route_geometry: quote.route_geometry,
+      stopovers: quote.stopovers,
+    });
+
+    const detail = await service.get('ride_booking', 'ride-1', 'actor-1', 'cor-history');
+    expect(detail).toMatchObject({
+      id: 'ride-1',
+      quote_id: 'quote-1',
+      quote_version: 'quote-v7',
+      tariff_version: 'tariff-v3',
+      pickup_address: 'Điểm đón cũ',
+      dropoff_address: 'Nhà hàng cũ',
+      route_snapshot_hash: 'route-hash-v7',
+      route_geometry: quote.route_geometry,
+      stopovers: quote.stopovers,
+    });
   });
 
   it('projects nested Healthcare appointment data into display-ready fields', async () => {

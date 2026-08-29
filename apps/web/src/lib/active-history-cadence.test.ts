@@ -1,7 +1,29 @@
-import { calculatePollingInterval, isRealtimeHistoryItem } from "./active-history-cadence";
+import { calculatePollingInterval, isRealtimeHistoryItem, sameHistoryItems } from "./active-history-cadence";
 import type { HistoryItem } from "@/types";
 
 describe("active history cadence & backoff rate limiter", () => {
+  const itemFor = (type: HistoryItem["type"], status: string): HistoryItem => ({
+    id: `${type}-${status}`,
+    type,
+    title: status,
+    status,
+    detail: status,
+    timestamp: "2026-08-27T19:00:00Z",
+    source: type,
+    resource: { id: `${type}-${status}`, status },
+  });
+
+  const rideActiveStatuses = [
+    "AWAITING_CONFIRMATION", "AWAITING_PAYMENT_CONFIRMATION", "SEARCHING_DRIVER", "DRIVER_ASSIGNED", "DRIVER_TO_PICKUP",
+    "DRIVER_ARRIVED", "IN_PROGRESS", "ARRIVED_DESTINATION",
+  ];
+  const rideTerminalStatuses = ["COMPLETED", "NO_DRIVER", "FAILED", "PAYMENT_FAILED", "CANCELLED"];
+  const foodActiveStatuses = [
+    "DRAFT", "AWAITING_CONFIRMATION", "PAYMENT_PENDING", "PAID", "RESTAURANT_CONFIRMING",
+    "RESTAURANT_ACCEPTED", "PREPARING", "READY_FOR_PICKUP", "DRIVER_ASSIGNED", "PICKED_UP", "DELIVERING", "REFUND_PENDING",
+  ];
+  const foodTerminalStatuses = ["DELIVERED", "PAYMENT_FAILED", "RESTAURANT_REJECTED", "CANCELLED", "REFUNDED"];
+
   const futureReservation: HistoryItem = {
     id: "rest_res_01",
     type: "restaurant_reservation",
@@ -27,6 +49,29 @@ describe("active history cadence & backoff rate limiter", () => {
   test("correctly identifies realtime vs scheduled items", () => {
     expect(isRealtimeHistoryItem(rideInTransit)).toBe(true);
     expect(isRealtimeHistoryItem(futureReservation)).toBe(false);
+  });
+
+  test.each(rideActiveStatuses)("polls every active Ride status: %s", (status) => {
+    expect(isRealtimeHistoryItem(itemFor("ride_booking", status))).toBe(true);
+  });
+
+  test.each(rideTerminalStatuses)("does not fast-poll terminal Ride status: %s", (status) => {
+    expect(isRealtimeHistoryItem(itemFor("ride_booking", status))).toBe(false);
+  });
+
+  test.each(foodActiveStatuses)("polls every active Food status: %s", (status) => {
+    expect(isRealtimeHistoryItem(itemFor("food_order", status))).toBe(true);
+  });
+
+  test.each(foodTerminalStatuses)("does not fast-poll terminal Food status: %s", (status) => {
+    expect(isRealtimeHistoryItem(itemFor("food_order", status))).toBe(false);
+  });
+
+  test("compares history snapshots including resource changes", () => {
+    const left = [itemFor("ride_booking", "DRIVER_ASSIGNED")];
+    const equivalent = left.map((item) => ({ ...item, resource: { ...item.resource } }));
+    expect(sameHistoryItems(left, equivalent)).toBe(true);
+    expect(sameHistoryItems(left, [{ ...left[0], resource: { ...left[0].resource, current_location: { latitude: 21, longitude: 105 } } }])).toBe(false);
   });
 
   test("calculates initial polling interval based on item types", () => {

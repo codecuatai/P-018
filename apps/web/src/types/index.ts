@@ -117,6 +117,12 @@ export interface RideTracking {
   updated_at?: string;
 }
 
+export interface RideStopover {
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface RideQuote {
   id: string;
   status: "QUOTE_CREATED" | "AWAITING_CONFIRMATION" | "CONSUMED" | "EXPIRED" | string;
@@ -139,6 +145,8 @@ export interface RideQuote {
   route_duration_seconds?: number | null;
   route_polyline?: string | null;
   route_geometry?: Array<{ latitude: number; longitude: number }> | null;
+  route_snapshot_hash?: string | null;
+  stopovers?: RideStopover[];
 }
 
 export interface FoodTracking {

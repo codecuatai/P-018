@@ -102,6 +102,25 @@ export type RideBooking = {
   updated_at: string;
   driver_id?: string | null;
   tracking_started_at?: string | null;
+  pickup_address?: string | null;
+  dropoff_address?: string | null;
+  vehicle_type?: 'BIKE' | 'CAR_4' | 'CAR_7' | string | null;
+  distance_km?: number | null;
+  duration_minutes?: number | null;
+  tariff_version?: string | null;
+  expires_at?: string | null;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  dropoff_latitude?: number | null;
+  dropoff_longitude?: number | null;
+  route_provider?: string | null;
+  route_distance_meters?: number | null;
+  route_duration_seconds?: number | null;
+  route_polyline?: string | null;
+  route_geometry?: Array<{ latitude: number; longitude: number }> | null;
+  route_snapshot_hash?: string | null;
+  tariff_snapshot?: Record<string, unknown> | null;
+  stopovers?: Array<{ address: string; latitude: number; longitude: number }>;
 };
 
 export type ConfirmationEvidence = {
@@ -1085,6 +1104,9 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
   ) {
     throw new Error('Ride returned an invalid booking contract.');
   }
+  const routeGeometry = Array.isArray(data.route_geometry)
+    ? data.route_geometry.filter(isRecord).filter((point) => typeof point.latitude === 'number' && typeof point.longitude === 'number').map((point) => ({ latitude: point.latitude as number, longitude: point.longitude as number }))
+    : undefined;
   return {
     id: data.id,
     quote_id: data.quote_id,
@@ -1101,6 +1123,31 @@ function parseBooking(data: Record<string, unknown>): RideBooking {
     updated_at: data.updated_at,
     ...(typeof data.driver_id === 'string' || data.driver_id === null ? { driver_id: data.driver_id as string | null } : {}),
     ...(typeof data.tracking_started_at === 'string' || data.tracking_started_at === null ? { tracking_started_at: data.tracking_started_at as string | null } : {}),
+    ...(typeof data.pickup_address === 'string' || data.pickup_address === null ? { pickup_address: data.pickup_address as string | null } : {}),
+    ...(typeof data.dropoff_address === 'string' || data.dropoff_address === null ? { dropoff_address: data.dropoff_address as string | null } : {}),
+    ...(typeof data.vehicle_type === 'string' || data.vehicle_type === null ? { vehicle_type: data.vehicle_type as RideBooking['vehicle_type'] } : {}),
+    ...(typeof data.distance_km === 'number' || data.distance_km === null ? { distance_km: data.distance_km as number | null } : {}),
+    ...(typeof data.duration_minutes === 'number' || data.duration_minutes === null ? { duration_minutes: data.duration_minutes as number | null } : {}),
+    ...(typeof data.tariff_version === 'string' || data.tariff_version === null ? { tariff_version: data.tariff_version as string | null } : {}),
+    ...(typeof data.expires_at === 'string' || data.expires_at === null ? { expires_at: data.expires_at as string | null } : {}),
+    ...(typeof data.pickup_latitude === 'number' || data.pickup_latitude === null ? { pickup_latitude: data.pickup_latitude as number | null } : {}),
+    ...(typeof data.pickup_longitude === 'number' || data.pickup_longitude === null ? { pickup_longitude: data.pickup_longitude as number | null } : {}),
+    ...(typeof data.dropoff_latitude === 'number' || data.dropoff_latitude === null ? { dropoff_latitude: data.dropoff_latitude as number | null } : {}),
+    ...(typeof data.dropoff_longitude === 'number' || data.dropoff_longitude === null ? { dropoff_longitude: data.dropoff_longitude as number | null } : {}),
+    ...(typeof data.route_provider === 'string' || data.route_provider === null ? { route_provider: data.route_provider as string | null } : {}),
+    ...(typeof data.route_distance_meters === 'number' || data.route_distance_meters === null ? { route_distance_meters: data.route_distance_meters as number | null } : {}),
+    ...(typeof data.route_duration_seconds === 'number' || data.route_duration_seconds === null ? { route_duration_seconds: data.route_duration_seconds as number | null } : {}),
+    ...(typeof data.route_polyline === 'string' || data.route_polyline === null ? { route_polyline: data.route_polyline as string | null } : {}),
+    ...(routeGeometry ? { route_geometry: routeGeometry } : {}),
+    ...(typeof data.route_snapshot_hash === 'string' || data.route_snapshot_hash === null ? { route_snapshot_hash: data.route_snapshot_hash as string | null } : {}),
+    ...(isRecord(data.tariff_snapshot) || data.tariff_snapshot === null ? { tariff_snapshot: data.tariff_snapshot as Record<string, unknown> | null } : {}),
+    ...(Array.isArray(data.stopovers) ? {
+      stopovers: data.stopovers.filter(isRecord).flatMap((stop) => (
+        typeof stop.address === 'string' && typeof stop.latitude === 'number' && typeof stop.longitude === 'number'
+          ? [{ address: stop.address, latitude: stop.latitude, longitude: stop.longitude }]
+          : []
+      )),
+    } : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import { formatAddress, formatDateTime, formatMoney, statusLabel } from "./prese
 
 describe("consumer presentation helpers", () => {
   it("translates known internal statuses without echoing the enum", () => {
+    expect(statusLabel("QUOTE_CREATED")).toBe("Đã có báo giá");
     expect(statusLabel("SEARCHING_DRIVER")).toBe("Đang tìm tài xế");
     expect(statusLabel("AWAITING_CONFIRMATION")).toBe("Chờ bạn xác nhận");
     expect(statusLabel("SEARCHING_DRIVER")).not.toContain("SEARCHING_DRIVER");

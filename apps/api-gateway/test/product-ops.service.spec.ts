@@ -5,8 +5,8 @@ import { ProductOpsService } from '../src/modules/product-ops/product-ops.servic
 function makeService() {
   const store = new InMemoryProductOpsStore();
   const food = { listOrders: jest.fn().mockResolvedValue({ items: [] }), getOrder: jest.fn() } as unknown as FoodClient;
-  const ride = { listBookings: jest.fn().mockResolvedValue({ items: [] }), getBooking: jest.fn() } as unknown as RideClient;
-  const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }), getRestaurant: jest.fn() } as unknown as RestaurantClient;
+  const ride = { listBookings: jest.fn().mockResolvedValue({ items: [] }), getBooking: jest.fn(), getQuote: jest.fn(), createQuote: jest.fn() } as unknown as RideClient;
+  const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }), getRestaurant: jest.fn(), getReservation: jest.fn() } as unknown as RestaurantClient;
   const healthcare = { listAppointments: jest.fn().mockResolvedValue({ items: [] }), getFacility: jest.fn(), getAppointment: jest.fn() } as unknown as HealthcareClient;
   return { service: new ProductOpsService(store as never, food, ride, restaurant, healthcare), store, food, ride, restaurant, healthcare };
 }
@@ -37,13 +37,63 @@ describe('ProductOpsService', () => {
   });
 
   it('requires a completed authoritative resource before accepting feedback', async () => {
-    const { service, ride } = makeService();
+    const { service, ride, restaurant, healthcare } = makeService();
     (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'IN_PROGRESS' });
 
     await expect(service.createFeedback('actor-1', 'cor-1', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
 
     (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-1', actor_id: 'actor-1', status: 'COMPLETED' });
     await expect(service.createFeedback('actor-1', 'cor-2', { domain: 'ride', resourceType: 'ride_booking', resourceId: 'ride-1', rating: 5 })).resolves.toMatchObject({ resourceId: 'ride-1', rating: 5 });
+
+    (restaurant.getReservation as jest.Mock).mockResolvedValue({ id: 'res-1', actor_id: 'actor-1', status: 'CONFIRMED', start_at: '2099-01-01T19:00:00Z' });
+    await expect(service.createFeedback('actor-1', 'cor-3', { domain: 'restaurant', resourceType: 'restaurant_reservation', resourceId: 'res-1', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
+
+    (healthcare.getAppointment as jest.Mock).mockResolvedValue({ appointment_id: 101, actor_id: 'actor-1', status: 'PAYMENT_CONFIRMED', start_time: '2099-01-01T09:00:00Z' });
+    await expect(service.createFeedback('actor-1', 'cor-4', { domain: 'healthcare', resourceType: 'healthcare_appointment', resourceId: '101', rating: 5 })).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESOURCE_NOT_COMPLETED' }) });
+  });
+
+  it('creates a fresh Ride quote while retaining the historical route snapshot', async () => {
+    const { service, ride } = makeService();
+    (ride.getBooking as jest.Mock).mockResolvedValue({ id: 'ride-old', quote_id: 'quote-old' });
+    (ride.getQuote as jest.Mock).mockResolvedValue({
+      id: 'quote-old',
+      pickup_address: 'Điểm đón cũ',
+      dropoff_address: 'Nhà hàng cũ',
+      vehicle_type: 'BIKE',
+      passenger_count: 2,
+      pickup_latitude: 21.01,
+      pickup_longitude: 105.8,
+      dropoff_latitude: 21.03,
+      dropoff_longitude: 105.82,
+      route_provider: 'geoapify',
+      route_distance_meters: 7200,
+      route_duration_seconds: 900,
+      route_geometry: [{ latitude: 21.01, longitude: 105.8 }, { latitude: 21.03, longitude: 105.82 }],
+      route_snapshot_hash: 'route-old',
+      stopovers: [{ address: 'Công viên Nghĩa Đô', latitude: 21.04, longitude: 105.79 }],
+    });
+    (ride.createQuote as jest.Mock).mockResolvedValue({ id: 'quote-new', amount: 68000, currency: 'VND' });
+
+    const result = await service.prepareRideRebook('actor-1', 'cor-rebook', 'rebook-key', 'ride-old');
+
+    expect(result).toMatchObject({ kind: 'ride_rebook', old_booking_id: 'ride-old', quote: { id: 'quote-new' }, auto_booked: false });
+    expect(ride.createQuote).toHaveBeenCalledWith(
+      'actor-1',
+      'rebook-key',
+      expect.objectContaining({ correlationId: 'cor-rebook' }),
+      expect.objectContaining({
+        pickup_address: 'Điểm đón cũ',
+        dropoff_address: 'Nhà hàng cũ',
+        vehicle_type: 'BIKE',
+        passenger_count: 2,
+        route_provider: 'geoapify',
+        route_distance_meters: 7200,
+        route_duration_seconds: 900,
+        route_geometry: [{ latitude: 21.01, longitude: 105.8 }, { latitude: 21.03, longitude: 105.82 }],
+        route_snapshot_hash: 'route-old',
+        stopovers: [{ address: 'Công viên Nghĩa Đô', latitude: 21.04, longitude: 105.79 }],
+      }),
+    );
   });
 
   it('returns the same support ticket for a retried idempotency key', async () => {

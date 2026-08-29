@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ServiceBrowse } from "@/features/product/service-browse";
 import * as apiClient from "@/lib/api-client";
@@ -22,6 +22,7 @@ const listSavedAddressesMock = apiClient.listSavedAddresses as jest.MockedFuncti
 const listFavoritesMock = apiClient.listFavorites as jest.MockedFunction<typeof apiClient.listFavorites>;
 const listHealthcareDoctorsMock = apiClient.listHealthcareDoctors as jest.MockedFunction<typeof apiClient.listHealthcareDoctors>;
 const listHealthcarePatientsMock = apiClient.listHealthcarePatients as jest.MockedFunction<typeof apiClient.listHealthcarePatients>;
+const autocompleteAddressMock = apiClient.autocompleteAddress as jest.MockedFunction<typeof apiClient.autocompleteAddress>;
 
 describe("ServiceBrowse pagination and healthcare loading", () => {
   beforeEach(() => {
@@ -180,5 +181,80 @@ describe("ServiceBrowse pagination and healthcare loading", () => {
     expect(await screen.findByRole("heading", { name: "Lẩu Cầu Giấy" })).toBeInTheDocument();
     expect(screen.getByText(/Số 1 Cầu Giấy, Hà Nội/)).toBeInTheDocument();
     expect(screen.getByTestId("xone-map")).toHaveTextContent("Vị trí địa điểm");
+  });
+
+  describe("Ride address autocomplete", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    it("debounces the latest query, filters unresolved results, and preserves the selected point", async () => {
+      const validCandidates = Array.from({ length: 6 }, (_, index) => ({
+        address_text: `Số ${index + 1} Cầu Giấy, Hà Nội`,
+        latitude: 21.03 + index / 1000,
+        longitude: 105.79 + index / 1000,
+        confidence: 0.9,
+      }));
+      autocompleteAddressMock.mockResolvedValue({
+        provider: "geoapify",
+        query: "VinUni",
+        suggestions: [{ address_text: "Không có tọa độ", latitude: null, longitude: null, confidence: 0.2 }, ...validCandidates],
+      });
+
+      render(<ServiceBrowse service="ride" />);
+      const pickup = screen.getByLabelText("Điểm đi");
+      fireEvent.change(pickup, { target: { value: "Vi" } });
+      act(() => jest.advanceTimersByTime(299));
+      expect(autocompleteAddressMock).not.toHaveBeenCalled();
+
+      fireEvent.change(pickup, { target: { value: "VinUni" } });
+      act(() => jest.advanceTimersByTime(300));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(autocompleteAddressMock).toHaveBeenCalledTimes(1);
+      expect(autocompleteAddressMock).toHaveBeenCalledWith("VinUni");
+      const listbox = screen.getByRole("listbox", { name: "Gợi ý điểm đi" });
+      expect(within(listbox).getAllByRole("option")).toHaveLength(5);
+      expect(within(listbox).queryByText("Không có tọa độ")).not.toBeInTheDocument();
+
+      fireEvent.click(within(listbox).getByRole("option", { name: "Số 1 Cầu Giấy, Hà Nội" }));
+      expect(pickup).toHaveValue("Số 1 Cầu Giấy, Hà Nội");
+      expect(screen.queryByRole("listbox", { name: "Gợi ý điểm đi" })).not.toBeInTheDocument();
+    });
+
+    it("ignores a stale response after the user changes the address query", async () => {
+      type AutocompleteResponse = Awaited<ReturnType<typeof apiClient.autocompleteAddress>>;
+      let resolveFirst: ((value: AutocompleteResponse) => void) | undefined;
+      let resolveSecond: ((value: AutocompleteResponse) => void) | undefined;
+      autocompleteAddressMock.mockImplementation((query) => new Promise((resolve) => {
+        if (query === "Vin") resolveFirst = resolve;
+        else resolveSecond = resolve;
+      }));
+
+      render(<ServiceBrowse service="ride" />);
+      const pickup = screen.getByLabelText("Điểm đi");
+      fireEvent.change(pickup, { target: { value: "Vin" } });
+      act(() => jest.advanceTimersByTime(300));
+      fireEvent.change(pickup, { target: { value: "VinUni" } });
+      act(() => jest.advanceTimersByTime(300));
+      expect(autocompleteAddressMock).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        resolveFirst?.({ provider: "geoapify", query: "Vin", suggestions: [{ address_text: "Kết quả cũ", latitude: 21, longitude: 105, confidence: 0.8 }] });
+        await Promise.resolve();
+      });
+      expect(screen.queryByText("Kết quả cũ")).not.toBeInTheDocument();
+
+      await act(async () => {
+        resolveSecond?.({ provider: "geoapify", query: "VinUni", suggestions: [{ address_text: "Kết quả mới", latitude: 21.01, longitude: 105.81, confidence: 0.9 }] });
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("option", { name: "Kết quả mới" })).toBeInTheDocument();
+    });
   });
 });

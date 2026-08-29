@@ -4,8 +4,8 @@ import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plu
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
-import { createConversation, createIdempotencyKey, errorText, getActiveHistory, getConversation, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
-import { calculatePollingInterval } from "@/lib/active-history-cadence";
+import { createConversation, createIdempotencyKey, errorText, getConversation, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
 import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type DeviceCurrentLocation, type HistoryItem } from "@/types";
 
@@ -163,9 +163,11 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   useEffect(() => {
     let active = true;
     let timer: number | undefined;
-    let request: AbortController | undefined;
-    let lastFetchTime = 0;
-    let consecutiveUnchanged = 0;
+    let requestSignalController: AbortController | undefined;
+
+    const unsubscribe = subscribeActiveHistoryShared(user.sub, (items) => {
+      if (active) setActiveItems(items);
+    });
 
     const scheduleNext = (interval: number) => {
       if (timer !== undefined) window.clearTimeout(timer);
@@ -174,49 +176,21 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       }
     };
 
-    const refresh = async (resetBackoff = false): Promise<void> => {
-      if (!active || document.hidden || request) return;
-
-      const now = Date.now();
-      const timeSinceLastFetch = now - lastFetchTime;
-      // Enforce minimum 5s gap between requests under any circumstance
-      if (lastFetchTime > 0 && timeSinceLastFetch < 5000) {
-        const remainingDelay = 5000 - timeSinceLastFetch;
-        scheduleNext(remainingDelay);
-        return;
-      }
-
-      if (resetBackoff) {
-        consecutiveUnchanged = 0;
-      }
-
-      request = new AbortController();
-      lastFetchTime = Date.now();
-
+    const refresh = async (force = false): Promise<void> => {
+      if (!active || document.hidden || requestSignalController) return;
+      requestSignalController = new AbortController();
       try {
-        const result = await getActiveHistory(request.signal);
-        if (!active) return;
-
-        let currentItems: HistoryItem[] = [];
-        setActiveItems((previous) => {
-          const isSame = sameHistoryItems(previous, result.items);
-          if (isSame) {
-            consecutiveUnchanged += 1;
-          } else {
-            consecutiveUnchanged = 0;
-          }
-          currentItems = result.items;
-          return isSame ? previous : result.items;
+        const { items, nextInterval } = await fetchActiveHistoryShared(user.sub, {
+          force,
+          signal: requestSignalController.signal,
         });
-
-        const nextInterval = calculatePollingInterval(currentItems, consecutiveUnchanged);
+        if (!active) return;
+        setActiveItems(items);
         scheduleNext(nextInterval);
       } catch {
-        // Keep the last known active work visible during a transient network failure.
-        const fallbackInterval = calculatePollingInterval([], consecutiveUnchanged);
-        scheduleNext(fallbackInterval);
+        scheduleNext(60_000);
       } finally {
-        request = undefined;
+        requestSignalController = undefined;
       }
     };
 
@@ -225,14 +199,12 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         if (timer !== undefined) window.clearTimeout(timer);
         timer = undefined;
       } else {
-        void refresh(true);
+        void refresh(false);
       }
     };
 
     const handleWindowFocus = () => {
-      if (!document.hidden) {
-        void refresh(true);
-      }
+      if (!document.hidden) void refresh(false);
     };
 
     const handleActiveWorkChanged = () => {
@@ -248,7 +220,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     return () => {
       active = false;
       if (timer !== undefined) window.clearTimeout(timer);
-      request?.abort();
+      requestSignalController?.abort();
+      unsubscribe();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("xone-active-work-changed", handleActiveWorkChanged);
@@ -651,14 +624,6 @@ function makeId(prefix: string): string { return `${prefix}-${globalThis.crypto?
 function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date); }
 
 type EntryContext = { service: "food" | "ride" | "restaurant" | "healthcare"; label: string; prompt: string };
-
-function sameHistoryItems(left: HistoryItem[], right: HistoryItem[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every((item, index) => {
-    const next = right[index];
-    return item.id === next?.id && item.type === next?.type && item.status === next?.status && item.timestamp === next?.timestamp && JSON.stringify(item.resource) === JSON.stringify(next.resource);
-  });
-}
 
 function readEntryContext(): EntryContext | undefined {
   if (typeof window === "undefined") return undefined;

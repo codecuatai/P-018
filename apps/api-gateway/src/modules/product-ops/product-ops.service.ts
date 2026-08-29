@@ -144,6 +144,12 @@ export class ProductOpsService {
       ...(quote.pickup_longitude !== undefined ? { pickup_longitude: quote.pickup_longitude } : {}),
       ...(quote.dropoff_latitude !== undefined ? { dropoff_latitude: quote.dropoff_latitude } : {}),
       ...(quote.dropoff_longitude !== undefined ? { dropoff_longitude: quote.dropoff_longitude } : {}),
+      ...(quote.route_provider ? { route_provider: quote.route_provider } : {}),
+      ...(quote.route_distance_meters !== undefined && quote.route_distance_meters !== null ? { route_distance_meters: quote.route_distance_meters } : {}),
+      ...(quote.route_duration_seconds !== undefined && quote.route_duration_seconds !== null ? { route_duration_seconds: quote.route_duration_seconds } : {}),
+      ...(quote.route_geometry?.length ? { route_geometry: quote.route_geometry } : {}),
+      ...(quote.route_snapshot_hash ? { route_snapshot_hash: quote.route_snapshot_hash } : {}),
+      ...(quote.stopovers ? { stopovers: quote.stopovers } : {}),
     });
     return { kind: 'ride_rebook', old_booking_id: bookingId, quote: nextQuote, auto_booked: false };
   }
