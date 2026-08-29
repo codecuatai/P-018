@@ -74,29 +74,18 @@ describe("AgentProgressIndicator", () => {
     expect(screen.getByText("Có lỗi")).toBeInTheDocument();
   });
 
-  it("shows retry and stop only after long wait and only when handlers are supplied", () => {
+  it("keeps retry long-wait-only and never renders a stop control", () => {
     const onRetry = jest.fn();
-    const onStop = jest.fn();
-    render(<AgentProgressIndicator startedAt={Date.now()} onRetry={onRetry} onStop={onStop} />);
+    render(<AgentProgressIndicator startedAt={Date.now()} onRetry={onRetry} />);
     expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Dừng yêu cầu" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop generating" })).not.toBeInTheDocument();
 
     act(() => {
       jest.advanceTimersByTime(15000);
     });
     fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
-    fireEvent.click(screen.getByRole("button", { name: "Dừng yêu cầu" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
-    expect(onStop).toHaveBeenCalledTimes(1);
-  });
-
-  it("never shows retry or stop when no handlers are provided", () => {
-    render(<AgentProgressIndicator startedAt={Date.now()} />);
-    act(() => {
-      jest.advanceTimersByTime(15000);
-    });
-    expect(screen.queryByRole("button", { name: "Thử lại" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Dừng yêu cầu" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop generating" })).not.toBeInTheDocument();
   });
 
   it("clears its interval when unmounted", () => {

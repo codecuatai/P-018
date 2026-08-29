@@ -778,7 +778,7 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   response?: AssistantResponse;
-  requestStatus?: "sending" | "sent" | "error";
+  requestStatus?: "sending" | "sent" | "error" | "stopped";
   retryText?: string;
   retryAction?: AssistantAction;
   pendingStartedAt?: number;

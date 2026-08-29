@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Clock, RefreshCw } from "lucide-react";
+import { Clock, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { genericActivityEntries, genericProgressStep } from "@/lib/progress-filter";
@@ -26,18 +26,17 @@ function formatElapsed(elapsedMs: number): string {
  * time, a real elapsed timer, and (when provided) a timeline built only from
  * data the backend actually returned. No fake percentages are rendered.
  *
- * "Stop request" is only offered when the caller supplies onStop (the backend
- * has no cancellation endpoint today), and "Retry" only when onRetry is
- * supplied — the caller is responsible for guaranteeing idempotency (e.g. by
- * re-using the original idempotency key for the failed action).
+ * "Retry" stays long-wait-only and requires an onRetry handler — the caller
+ * is responsible for guaranteeing idempotency (e.g. by re-using the original
+ * idempotency key for the failed action). The square "Stop generating" control
+ * lives in the chat composer, not in this panel, so the panel has no onStop.
  */
-export function AgentProgressIndicator({ startedAt, activity, contextLabel, longWaitMs = DEFAULT_LONG_WAIT_MS, onRetry, onStop }: {
+export function AgentProgressIndicator({ startedAt, activity, contextLabel, longWaitMs = DEFAULT_LONG_WAIT_MS, onRetry }: {
   startedAt: number;
   activity?: ActivityEntry[];
   contextLabel?: string;
   longWaitMs?: number;
   onRetry?: () => void;
-  onStop?: () => void;
 }) {
   const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - startedAt));
   const [activityOpen, setActivityOpen] = useState(false);
@@ -67,11 +66,10 @@ export function AgentProgressIndicator({ startedAt, activity, contextLabel, long
         </p>
       </div>
       <p className="agent-progress-meta"><Clock size={13} aria-hidden="true" /> Đã chờ {formatElapsed(elapsedMs)}</p>
-      {isLongWait && !onRetry && !onStop ? <p className="agent-progress-note">Bạn có thể tiếp tục chờ. Nếu yêu cầu kết thúc bằng lỗi, mình sẽ đề xuất cách thử lại an toàn.</p> : null}
-      {isLongWait && (onRetry || onStop) ? (
+      {isLongWait && !onRetry ? <p className="agent-progress-note">Bạn có thể tiếp tục chờ hoặc dừng tạo phản hồi bất cứ lúc nào.</p> : null}
+      {isLongWait && onRetry ? (
         <div className="agent-progress-actions">
-          {onRetry ? <button className="progress-action-button" type="button" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" /> Thử lại</button> : null}
-          {onStop ? <button className="progress-action-button is-stop" type="button" onClick={onStop}><Ban size={14} aria-hidden="true" /> Dừng yêu cầu</button> : null}
+          <button className="progress-action-button" type="button" onClick={onRetry}><RefreshCw size={14} aria-hidden="true" /> Thử lại</button>
         </div>
       ) : null}
       <ActivityTimeline entries={timelineEntries} open={activityOpen} onToggle={() => setActivityOpen((value) => !value)} />

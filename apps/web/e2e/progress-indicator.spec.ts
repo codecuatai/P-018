@@ -42,3 +42,30 @@ test("progress indicator: live stages, expandable timeline, seamless partial-suc
   await expect(page.getByText("RIDE_NO_DRIVER")).toBeVisible();
   await expect(page.getByRole("button", { name: "Thử lại bước này" })).toBeVisible();
 });
+test("stop generating aborts the request, shows a neutral stopped state, and re-enables input", async ({ context, page }) => {
+  const gateway = await installAuthenticatedFixture(context, { email: "stop@example.test" });
+  await page.goto("/app");
+  await page.getByLabel("Nhập yêu cầu").fill("progress-e2e");
+  await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
+
+  // The square stop button replaces the send button in the composer while loading,
+  // before any long-wait threshold, and is gone from the progress bubble itself.
+  const progress = page.locator(".agent-progress");
+  await expect(progress).toBeVisible();
+  await expect(progress.getByRole("button", { name: "Stop generating" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Gửi yêu cầu" })).toHaveCount(0);
+  const stop = page.getByRole("button", { name: "Stop generating" });
+  await expect(stop).toBeVisible();
+  await stop.click();
+
+  // No red error: the turn settles into a neutral stopped message and the
+  // composer becomes usable again for a new prompt.
+  await expect(progress).not.toBeVisible();
+  await expect(page.getByText("Đã dừng tạo câu trả lời.")).toBeVisible();
+  await expect(page.locator(".chat-message.is-stopped")).toBeVisible();
+  const composer = page.getByLabel("Nhập yêu cầu");
+  await expect(composer).toBeEnabled();
+  await composer.fill("tin nhắn mới sau khi dừng");
+  await expect(composer).toHaveValue("tin nhắn mới sau khi dừng");
+  expect(gateway.latestConversationId).toBeTruthy();
+});
