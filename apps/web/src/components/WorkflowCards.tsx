@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CarFront, Check, ChevronLeft, ChevronRight, CircleDollarSign, MapPin, Minus, Plus, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
+import { CalendarDays, CarFront, Check, ChevronLeft, ChevronRight, CircleDollarSign, MapPin, Minus, Plus, RefreshCw, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { parseRideDriver } from "../features/product/ride-tracking";
 import { useRideTracking } from "../features/product/ride-tracking-cache";
 import { RideCancelButton } from "../features/product/ride-cancel-button";
 import { ServiceDetailDialog } from "./ServiceDetailDialog";
+import { CollapsibleAgentCard } from "./CollapsibleAgentCard";
 import { FoodTrackingPanel } from "../features/product/food-tracking";
 import { isKnownAssistantItem, type AssistantAction, type AssistantAddressOptionsItem, type AssistantHealthcareItem, type AssistantHealthcareOptionsItem, type AssistantItem, type AssistantRestaurantConfirmationItem, type AssistantRestaurantOptionsItem, type AssistantResponse, type AssistantRideItem, type AssistantRideTimingConflictItem, type AssistantFoodItem, type AssistantOption, type AssistantTaskErrorItem } from "../types";
 import { formatDateTime, formatMoney, optionalText, statusLabel } from "../lib/presentation";
@@ -25,43 +26,71 @@ type FoodSelectionChangeHandler = (selection: FoodSelection) => void;
 export function AssistantCards({ response, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { response: AssistantResponse; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
   const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
+    {(response.completed ?? []).map((item, index) => <AssistantCard key={`completed-${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
   </div>;
 }
-
 function AssistantCard({ item, actions, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { item: AssistantItem; actions: AssistantAction[]; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
   if (!isKnownAssistantItem(item)) return <FallbackCard item={item} />;
   switch (item.kind) {
     case "restaurant_options":
-    case "restaurant_unavailable":
-      return <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+    case "restaurant_unavailable": {
+      const restaurantOptions = item.options ?? [];
+      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, "Chọn nhà hàng")} summary={restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."}>
+        <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
+      </CollapsibleAgentCard>;
+    }
     case "restaurant_confirmation":
-    case "reservation":
-      return <RestaurantConfirmation item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+    case "reservation": {
+      const reservationSummary = [text(item.restaurant?.name), item.party_size ? `${item.party_size} người` : undefined].filter(Boolean).join(" · ");
+      return <CollapsibleAgentCard label="Đặt bàn" title={text(item.title, "Xác nhận đặt bàn")} status={item.status ? statusLabel(item.status) : undefined} summary={reservationSummary}>
+        <RestaurantConfirmation item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
+      </CollapsibleAgentCard>;
+    }
     case "ride_quote":
-    case "ride_booking":
-      return <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+    case "ride_booking": {
+      const rideSummary = [text(item.pickup), text(item.dropoff)].filter(Boolean).join(" → ");
+      return <CollapsibleAgentCard label="Chuyến xe" title={text(item.title, "Chuyến xe")} status={item.status ? statusLabel(item.status) : undefined} summary={rideSummary || "Đang cập nhật hành trình"}>
+        <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
+      </CollapsibleAgentCard>;
+    }
     case "ride_timing_conflict":
-      return <RideTimingConflictCard item={item} />;
+      return <CollapsibleAgentCard label="Chuyến xe" title={text(item.title, "Chuyến xe")} summary="Cần cập nhật lịch khám hoặc điểm đón để thử lại.">
+        <RideTimingConflictCard item={item} />
+      </CollapsibleAgentCard>;
     case "healthcare_options":
-    case "healthcare_no_availability":
-      return <HealthcareCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+    case "healthcare_no_availability": {
+      const healthcareSlots = item.options ?? [];
+      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám phù hợp")} summary={healthcareSlots.length ? `${healthcareSlots.length} khung giờ khả dụng` : "Chưa có lịch trống phù hợp."}>
+        <HealthcareCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
+      </CollapsibleAgentCard>;
+    }
     case "appointment":
     case "healthcare_confirmation":
-    case "appointment_confirmed":
-      return <HealthcareAppointment item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
+    case "appointment_confirmed": {
+      const appointment = item.appointment;
+      const appointmentTime = item.start_time ?? appointment?.start_time;
+      const appointmentSummary = [text(item.doctor ?? appointment?.doctor_name), appointmentTime ? formatDateTime(appointmentTime) : undefined].filter(Boolean).join(" · ");
+      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám")} status={item.status ?? appointment?.status ? statusLabel(item.status ?? appointment?.status) : undefined} summary={appointmentSummary}>
+        <HealthcareAppointment item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
+      </CollapsibleAgentCard>;
+    }
     case "food_options":
     case "food_confirmation":
     case "food_order":
     case "food_empty":
-    case "food_cart":
-      return <FoodCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />;
+    case "food_cart": {
+      const foodItems = item.options ?? [];
+      return <CollapsibleAgentCard label="Đồ ăn" title={text(item.title, "Món ăn")} status={item.order?.status ? statusLabel(item.order.status) : undefined} summary={foodItems.length ? `${foodItems.length} món phù hợp` : item.kind === "food_cart" ? "Giỏ hàng đã được cập nhật." : "Đang lấy danh sách món ăn."}>
+        <FoodCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />
+      </CollapsibleAgentCard>;
+    }
     case "progress":
     case "clarification":
       return <SimpleCard item={item} />;
     case "task_error":
-      return <TaskErrorCard item={item} />;
+      return <TaskErrorCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />;
     case "address_options":
       return <AddressOptionsCard item={item} />;
     default:
@@ -447,7 +476,7 @@ function AddressOptionsCard({ item }: { item: AssistantAddressOptionsItem }) {
   </article>;
 }
 
-function TaskErrorCard({ item }: { item: AssistantTaskErrorItem }) {
+function TaskErrorCard({ item, actions, onAction, disabledActionId }: { item: AssistantTaskErrorItem; actions: AssistantAction[]; onAction: ActionHandler; disabledActionId?: string }) {
   const requiresPatientProfile = item.error_code === "PATIENT_LINK_REQUIRED";
   if (requiresPatientProfile) {
     return (
@@ -459,9 +488,16 @@ function TaskErrorCard({ item }: { item: AssistantTaskErrorItem }) {
       </div>
     );
   }
-  return <p className="task-error-hint">Bạn hãy thử lại nhé.</p>;
+  const retryAction = item.retryable ? actions.find((candidate) => candidate.id === item.action_id) : undefined;  const title = text(item.title, "Không thể hoàn tất bước này");
+  const note = text(item.note, item.error_code ? `Không thể hoàn tất bước này (${item.error_code}). Bạn hãy thử lại nhé.` : "Bạn hãy thử lại nhé.");
+  return (
+    <div className="task-error-notice">
+      <p className="task-error-hint"><strong>{title}.</strong> {note}</p>
+      {item.error_code ? <span className="task-error-code">{item.error_code}</span> : null}
+      {retryAction ? <button className="small-action task-error-action" type="button" onClick={() => onAction(retryAction)} disabled={Boolean(disabledActionId)}><RefreshCw size={14} /> Thử lại bước này</button> : null}
+    </div>
+  );
 }
-
 function FallbackCard({ item }: { item: { title: string; note?: string; question?: string } }) {
   return <article className="assistant-card card-simple"><CardHeading icon={<SparkIcon />} label="X-One" title={item.title} /><p>{text(item.note ?? item.question, "Mình đã nhận thông tin mới và sẽ cập nhật ở bước tiếp theo.")}</p></article>;
 }

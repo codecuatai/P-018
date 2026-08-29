@@ -715,6 +715,7 @@ export interface AssistantAddressOptionsItem extends AssistantItemBase<"address_
 export interface AssistantTaskErrorItem extends AssistantItemBase<"task_error"> {
   error_code?: string;
   retryable?: boolean;
+  action_id?: string;
 }
 
 export type KnownAssistantItem =
@@ -758,15 +759,30 @@ export interface AssistantResponse {
   workflow_status?: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED";
 }
 
+export type ActivityService = "ride" | "food" | "restaurant" | "healthcare" | "general";
+
+export type ActivityStatus = "pending" | "running" | "completed" | "retrying" | "error";
+
+export interface ActivityEntry {
+  id: string;
+  service: ActivityService;
+  label: string;
+  step: string;
+  status: ActivityStatus;
+  detail?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   timestamp: string;
   response?: AssistantResponse;
-  requestStatus?: "sending" | "sent" | "error";
+  requestStatus?: "sending" | "sent" | "error" | "stopped";
   retryText?: string;
   retryAction?: AssistantAction;
+  pendingStartedAt?: number;
+  activity?: ActivityEntry[];
 }
 
 export interface SessionActivity {

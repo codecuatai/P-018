@@ -1,10 +1,12 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
-import { createConversation, createIdempotencyKey, errorText, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
+import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { actionActivity, buildActivityFromResponse } from "@/lib/progress-filter";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
@@ -53,6 +55,13 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const railWidthRef = useRef(railWidth);
+  const activeRequestController = useRef<AbortController | null>(null);
+
+  // Abort any in-flight assistant request when the chat screen unmounts so a
+  // pending fetch can never keep the request (or its timers) alive after navigation.
+  useEffect(() => {
+    return () => activeRequestController.current?.abort();
+  }, []);
 
   // Resize Rail Logic
   useEffect(() => {
@@ -248,16 +257,26 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     try { setMessages(toChatMessages(await getConversation(id), consumedActionIds.current)); } catch { /* The received response remains visible. */ }
   }
 
+  // Stopping only aborts the HTTP request on this device. Side effects the
+  // backend already committed (confirmed bookings, payments) are not rolled
+  // back — true workflow cancellation will require a backend cancel endpoint.
+  function handleStopGenerating(): void {
+    activeRequestController.current?.abort();
+  }
+
   async function send(textOverride?: string): Promise<void> {
     const text = (textOverride ?? composer).trim();
     if (!text || sending) return;
     const pendingId = makeId("assistant");
-    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    const pendingStartedAt = Date.now();
+    const controller = new AbortController();
+    activeRequestController.current = controller;
+    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt }]);
     setComposer("");
     setSending(true);
     try {
       const requestStartedAt = Date.now();
-      const response = await sendAssistantMessage(text, conversationId);
+      const response = await sendAssistantMessage(text, conversationId, controller.signal);
       await holdHealthcareDemoResponse(response, requestStartedAt);
       setConversationId(response.conversation_id);
       if (response.items.some((item) => item.kind === "food_options") && response.actions.some((action) => action.kind === "select_food_item")) {
@@ -269,9 +288,16 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
+      if (isAbortError(error)) {
+        setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: "Đã dừng tạo câu trả lời.", requestStatus: "stopped" as const } : item));
+        return;
+      }
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: errorText(error), requestStatus: "error", retryText: text } : item));
       setComposer(text);
-    } finally { setSending(false); }
+    } finally {
+      if (activeRequestController.current === controller) activeRequestController.current = null;
+      setSending(false);
+    }
   }
 
   async function handleAction(action: AssistantAction, input?: { quantity?: number }): Promise<void> {
@@ -279,11 +305,15 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey(`assistant-${action.kind}`);
     actionKeys.current[action.id] = idempotencyKey;
     const pendingId = makeId("action");
+    const sourceResponse = messages.find((message) => message.response?.actions.some((candidate) => candidate.id === action.id))?.response;
+    const activity = sourceResponse ? buildActivityFromResponse(sourceResponse, actionActivity(action)) : undefined;
+    const controller = new AbortController();
+    activeRequestController.current = controller;
     setActiveActionId(action.id);
     setSending(true);
-    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt: Date.now(), activity }]);
     try {
-      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, input);
+      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, input, controller.signal);
       consumedActionIds.current.add(action.id);
       delete actionKeys.current[action.id];
       const keepMutationInTurn = action.kind === "select_food_item" || action.kind === "food_cart_increment" || action.kind === "food_cart_decrement" || action.kind === "food_cart_remove";
@@ -301,6 +331,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
+      if (isAbortError(error)) {
+        setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: "Đã dừng thực hiện bước này.", requestStatus: "stopped" as const } : message));
+        return;
+      }
       const retryable = isRetryableError(error);
       if (!retryable) consumedActionIds.current.add(action.id);
       setMessages((current) => current.map((message) => {
@@ -311,7 +345,11 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         void syncConversation(conversationId);
         setActiveRefreshNonce((value) => value + 1);
       }
-    } finally { setSending(false); setActiveActionId(undefined); }
+    } finally {
+      if (activeRequestController.current === controller) activeRequestController.current = null;
+      setSending(false);
+      setActiveActionId(undefined);
+    }
   }
 
   function handleFoodSelectionChange(selection: FoodSelection): void {
@@ -328,24 +366,30 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     const selections = Object.values(foodSelections).filter((selection) => selection.quantity > 0);
     if (!conversationId || sending || activeActionId || !selections.length) return;
     const pendingId = makeId("food-confirm");
+    const controller = new AbortController();
+    activeRequestController.current = controller;
     setSending(true);
     setActiveActionId("food-selection-confirm");
-    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang chuẩn bị form xác nhận đơn…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang chuẩn bị form xác nhận đơn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt: Date.now() }]);
     try {
       let response;
       for (const selection of selections) {
         const action = selection.action;
         const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey("assistant-select_food_item");
         actionKeys.current[action.id] = idempotencyKey;
-        response = await runAssistantAction(conversationId, action.id, idempotencyKey, { quantity: selection.quantity });
+        response = await runAssistantAction(conversationId, action.id, idempotencyKey, { quantity: selection.quantity }, controller.signal);
         consumedActionIds.current.add(action.id);
+      }
+      if (controller.signal.aborted) {
+        setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: "Đã dừng tạo đơn.", requestStatus: "stopped" as const } : message));
+        return;
       }
       const checkout = response?.actions.find((action) => action.kind === "food_checkout");
       let finalResponse = response;
       if (checkout) {
         const checkoutKey = actionKeys.current[checkout.id] ?? createIdempotencyKey("assistant-food_checkout");
         actionKeys.current[checkout.id] = checkoutKey;
-        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey);
+        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey, undefined, controller.signal);
         consumedActionIds.current.add(checkout.id);
       }
       if (!finalResponse) throw new Error("FOOD_RESPONSE_EMPTY");
@@ -360,8 +404,16 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       emitConversationsChanged();
       setActiveRefreshNonce((value) => value + 1);
     } catch (error) {
+      if (isAbortError(error)) {
+        setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: "Đã dừng tạo đơn.", requestStatus: "stopped" as const } : message));
+        return;
+      }
       setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: errorText(error), requestStatus: "error" } : message));
-    } finally { setSending(false); setActiveActionId(undefined); }
+    } finally {
+      if (activeRequestController.current === controller) activeRequestController.current = null;
+      setSending(false);
+      setActiveActionId(undefined);
+    }
   }
 
   function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
@@ -458,9 +510,17 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                   onError={(msg) => setLocateError(msg)} // Reuse the error display
                   disabled={sending}
                 />
-                <button className="send-button" type="button" onClick={() => void send()} disabled={sending || !composer.trim()} aria-label="Gửi yêu cầu">
-                  {sending ? <Loader2 className="spinner" size={16} /> : <ArrowUp size={16} />}
-                </button>
+                {sending ? (
+                  <button className="send-button is-stop" type="button" onClick={handleStopGenerating} aria-label="Stop generating" title="Stop generating">
+                    <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false">
+                      <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button className="send-button" type="button" onClick={() => void send()} disabled={!composer.trim()} aria-label="Gửi yêu cầu">
+                    <ArrowUp size={16} />
+                  </button>
+                )}
               </div>
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
@@ -613,7 +673,7 @@ function MessageBubble({
 }) {
   const assistant = message.role === "assistant";
   return (
-    <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}>
+    <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}${message.requestStatus === "stopped" ? " is-stopped" : ""}`}>
       <div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>
         {assistant ? <Bot size={18} /> : <span>Bạn</span>}
       </div>
@@ -628,9 +688,7 @@ function MessageBubble({
             onPlay={(id) => setTtsActiveMessageId(id)}
           />
         )}
-        {message.requestStatus === "sending" ? (
-          <div className="typing-indicator"><span /><span /><span /></div>
-        ) : null}
+        {message.requestStatus === "sending" ? message.pendingStartedAt !== undefined ? <AgentProgressIndicator startedAt={message.pendingStartedAt} activity={message.activity} /> : <div className="typing-indicator"><span /><span /><span /></div> : null}
         {message.response ? (
           <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} />
         ) : null}
@@ -712,7 +770,7 @@ async function fetchAddress(position: GeolocationPosition): Promise<string> {
 }
 
 async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {
-  const isHealthcareResponse = response.items.some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
+  const isHealthcareResponse = [...(response.completed ?? []), ...response.items].some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
     || response.actions.some((action) => action.kind.startsWith("healthcare_") || action.kind === "select_healthcare_slot");
   if (!isHealthcareResponse) return;
 

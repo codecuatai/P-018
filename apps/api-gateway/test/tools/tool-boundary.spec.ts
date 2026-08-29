@@ -67,6 +67,37 @@ describe('Gateway-only tool execution boundary', () => {
     expect(food.get).not.toHaveBeenCalled();
   });
 
+  it('dispatches view_menu with server-side pagination and keeps the legacy no-query call', async () => {
+    const service = new ToolService(food as never, confirmations as never, store as never);
+    const actor = { sub: 'usr_one', email: 'one@example.test', role: 'customer' };
+
+    await service.executeProposal(
+      proposal({ capability_name: 'view_menu', semantic_arguments: { limit: 50, offset: 100 } }),
+      { restaurant_id: 'res_pho_hanoi', limit: 50, offset: 100 },
+      actor,
+      'cor_one',
+      'conv_one',
+      'food:test-menu:r0:p0',
+    );
+
+    expect(food.get).toHaveBeenCalledWith(
+      '/api/v1/restaurants/res_pho_hanoi/menu?limit=50&offset=100',
+      'cor_one',
+    );
+
+    jest.clearAllMocks();
+    await service.executeProposal(
+      proposal({ capability_name: 'view_menu', semantic_arguments: {} }),
+      { restaurant_id: 'res_pho_hanoi' },
+      actor,
+      'cor_one',
+      'conv_one',
+      'food:test-menu:r0:p0',
+    );
+
+    expect(food.get).toHaveBeenCalledWith('/api/v1/restaurants/res_pho_hanoi/menu', 'cor_one');
+  });
+
   it('binds Food write idempotency to the Gateway-owned execution ID', async () => {
     const service = new ToolService(food as never, confirmations as never, store as never);
 

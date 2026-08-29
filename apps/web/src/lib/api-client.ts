@@ -94,6 +94,7 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   const abortListener = () => controller.abort();
   options.signal?.addEventListener("abort", abortListener, { once: true });
+  if (options.signal?.aborted) controller.abort();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (init.body !== undefined && init.body !== null) headers.set("Content-Type", "application/json");
@@ -133,6 +134,10 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
+      // A caller-supplied signal means the user cancelled on purpose: rethrow the
+      // raw AbortError so the UI can mark the turn as stopped. The internal
+      // timeout keeps mapping to a retryable REQUEST_TIMEOUT.
+      if (options.signal?.aborted) throw error;
       throw new ApiError({ code: "REQUEST_TIMEOUT", detail: "X-One phản hồi hơi chậm. Bạn thử lại nhé.", status: 408, retryable: true });
     }
     throw new ApiError({ code: "SERVICE_UNAVAILABLE", detail: "X-One đang gặp sự cố kết nối. Bạn thử lại sau một chút nhé.", status: 0, retryable: true });
@@ -281,7 +286,15 @@ export function getFoodRestaurant(id: string): Promise<Record<string, unknown>> 
   return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<Record<string, unknown>> {
+export interface FoodMenuPage {
+  restaurant: Record<string, unknown>;
+  items: Record<string, unknown>[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<FoodMenuPage> {
   const params = new URLSearchParams();
   if (pagination?.limit !== undefined) params.set("limit", String(pagination.limit));
   if (pagination?.offset !== undefined) params.set("offset", String(pagination.offset));
@@ -652,18 +665,18 @@ export function resetPassword(token: string, newPassword: string): Promise<{ pas
   return request("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }, { includeAuth: false, retryAuth: false });
 }
 
-export function sendAssistantMessage(message: string, conversationId?: string): Promise<AssistantResponse> {
+export function sendAssistantMessage(message: string, conversationId?: string, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/chat", {
     method: "POST",
     body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}) }),
-  });
+  }, { signal });
 }
 
-export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }): Promise<AssistantResponse> {
+export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/actions", {
     method: "POST",
     body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}) }),
-  }, { idempotencyKey });
+  }, { idempotencyKey, signal });
 }
 
 export async function transcribeVoice(
@@ -812,6 +825,10 @@ const PUBLIC_AUTH_PATHS = new Set([
   "/api/v1/auth/reset-password",
   "/api/v1/auth/google",
 ]);
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) return error.name === "AbortError";
+  return (error as { name?: unknown })?.name === "AbortError";
+}
 
 function shouldRefresh(path: string, problem: ApiProblem, options: RequestOptions): boolean {
   if (options.retried || options.retryAuth === false || PUBLIC_AUTH_PATHS.has(path)) return false;

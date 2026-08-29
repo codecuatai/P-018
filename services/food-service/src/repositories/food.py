@@ -51,6 +51,7 @@ AdvanceDecision = Callable[[dict], tuple[FoodOrderStatus, str | None, datetime |
 
 class FoodRepository(Protocol):
     async def search(self, **filters) -> list[dict]: ...
+    async def list_menu_items(self, restaurant_id: str, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]: ...
     async def list_restaurants(
         self,
         keyword: str = "",
@@ -414,6 +415,13 @@ class InMemoryFoodRepository:
         start = int(filters.get("offset", 0) or 0)
         limit = int(filters.get("limit", 12) or 12)
         return [{"item": entry["item"], "restaurant": entry["restaurant"]} for entry in result[start : start + limit]]
+
+    async def list_menu_items(self, restaurant_id: str, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
+        items = sorted(
+            (deepcopy(item) for item in self.items.values() if item.get("restaurant_id") == restaurant_id),
+            key=lambda item: str(item.get("id", "")),
+        )
+        return items[offset : offset + limit], len(items)
 
     async def list_restaurants(
         self,
@@ -978,6 +986,25 @@ class PostgresFoodRepository:
             {"item": full_items.get(str(entry["item"]["id"]), entry["item"]), "restaurant": entry["restaurant"]}
             for entry in window
         ]
+
+    async def list_menu_items(self, restaurant_id: str, limit: int = 20, offset: int = 0) -> tuple[list[dict], int]:
+        pool = self._require_pool()
+        active_version = await pool.fetchval(
+            "SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1"
+        )
+        predicates = "record_type='menu_item' AND is_active=TRUE AND data->>'restaurant_id'=$1"
+        args: list[object] = [restaurant_id]
+        if active_version:
+            predicates += " AND dataset_version=$2"
+            args.append(active_version)
+        total = int(await pool.fetchval(f"SELECT count(*)::int FROM food_catalog WHERE {predicates}", *args) or 0)
+        rows = await pool.fetch(
+            f"SELECT data FROM food_catalog WHERE {predicates} ORDER BY id LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
+            *args,
+            limit,
+            offset,
+        )
+        return [_safe_catalog_record("menu_item", _json_object(row["data"])) for row in rows], total
 
     async def list_restaurants(
         self,

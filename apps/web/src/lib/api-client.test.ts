@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, getFoodMenu, isAbortError, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -306,5 +306,49 @@ describe("browser API client", () => {
     await expect(request("/api/v1/services/food")).rejects.toBeInstanceOf(ApiError);
     expect(mockUnauthorized).toHaveBeenCalledTimes(1);
     expect(getAccessToken()).toBeNull();
+  });
+
+  it("paginates the restaurant menu through the Gateway service-actions route", async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/api/v1/service-actions/food/restaurants/res_pho_hanoi/menu?limit=6&offset=30");
+      return jsonResponse(200, { data: { restaurant: { id: "res_pho_hanoi" }, items: [], total: 136, limit: 6, offset: 30 } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(getFoodMenu("res_pho_hanoi", { limit: 6, offset: 30 })).resolves.toEqual({
+      restaurant: { id: "res_pho_hanoi" },
+      items: [],
+      total: 136,
+      limit: 6,
+      offset: 30,
+    });
+  });
+  it("rethrows a raw AbortError when the caller aborts, unlike the internal timeout", async () => {
+    const controller = new AbortController();
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal;
+      await new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const pending = request("/api/v1/assistant/chat", { method: "POST" }, { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(isAbortError(new DOMException("Aborted", "AbortError"))).toBe(true);
+    expect(isAbortError(new Error("plain failure"))).toBe(false);
+  });
+
+  it("maps the internal timeout to a retryable REQUEST_TIMEOUT ApiError", async () => {
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal;
+      await new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/assistant/chat", { method: "POST" }, { timeoutMs: 5 })).rejects.toMatchObject({ code: "REQUEST_TIMEOUT", retryable: true });
   });
 });
