@@ -4,7 +4,9 @@ import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Mic, Plu
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
+import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
 import { createConversation, createIdempotencyKey, errorText, getConversation, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { actionActivity, buildActivityFromResponse } from "@/lib/progress-filter";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
@@ -246,7 +248,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     const text = (textOverride ?? composer).trim();
     if (!text || sending) return;
     const pendingId = makeId("assistant");
-    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    const pendingStartedAt = Date.now();
+    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt }]);
     setComposer("");
     setSending(true);
     try {
@@ -273,9 +276,11 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey(`assistant-${action.kind}`);
     actionKeys.current[action.id] = idempotencyKey;
     const pendingId = makeId("action");
+    const sourceResponse = messages.find((message) => message.response?.actions.some((candidate) => candidate.id === action.id))?.response;
+    const activity = sourceResponse ? buildActivityFromResponse(sourceResponse, actionActivity(action)) : undefined;
     setActiveActionId(action.id);
     setSending(true);
-    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt: Date.now(), activity }]);
     try {
       const response = await runAssistantAction(conversationId, action.id, idempotencyKey, input);
       consumedActionIds.current.add(action.id);
@@ -324,7 +329,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     const pendingId = makeId("food-confirm");
     setSending(true);
     setActiveActionId("food-selection-confirm");
-    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang chuẩn bị form xác nhận đơn…", timestamp: new Date().toISOString(), requestStatus: "sending" }]);
+    setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang chuẩn bị form xác nhận đơn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt: Date.now() }]);
     try {
       let response;
       for (const selection of selections) {
@@ -568,7 +573,7 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
 
 function MessageBubble({ message, onAction, onFoodSelectionChange, foodSelections, onRetry, activeActionId }: { message: ChatMessage; onAction: (action: AssistantAction, input?: { quantity?: number }) => void; onFoodSelectionChange: (selection: FoodSelection) => void; foodSelections: Record<string, FoodSelection>; onRetry: (text: string) => void; activeActionId?: string }) {
   const assistant = message.role === "assistant";
-  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
+  return <article className={`chat-message ${message.role} ${message.requestStatus === "error" ? "has-error" : ""}`}><div className={`message-avatar${assistant ? " message-avatar-assistant" : ""}`}>{assistant ? <Bot size={18} /> : <span>Bạn</span>}</div><div className="message-content"><div className="message-text">{message.text}</div>{message.requestStatus === "sending" ? message.pendingStartedAt !== undefined ? <AgentProgressIndicator startedAt={message.pendingStartedAt} activity={message.activity} /> : <div className="typing-indicator"><span /><span /><span /></div> : null}{message.response ? <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} /> : null}{message.requestStatus === "error" && message.retryText ? <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}><RefreshCw size={14} /> Thử lại</button> : null}{message.requestStatus === "error" && message.retryAction ? <button className="retry-button" type="button" onClick={() => onAction(message.retryAction!)} disabled={Boolean(activeActionId)}><RefreshCw size={14} /> Thử lại</button> : null}</div></article>;
 }
 
 function hasFoodSelectionForm(messages: ChatMessage[]): boolean {

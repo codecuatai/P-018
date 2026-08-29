@@ -277,7 +277,23 @@ export class MockGateway {
     const message = String(body.message ?? "");
     (conversation.messages as JsonRecord[]).push({ role: "user", content: message, createdAt: isoNow() });
     const collapsible = message.includes("collapsible-e2e");
-    const response = collapsible
+    const progressFixture = message.includes("progress-e2e");
+    if (progressFixture) {
+      // Slow deterministic response so the progress indicator stays observable in E2E.
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+    }
+    const response = progressFixture
+      ? {
+          conversation_id: id,
+          message: "Mình đã đặt bàn thành công, nhưng chưa thể đặt chuyến xe.",
+          items: [
+            { kind: "task_error", title: "Không thể đặt chuyến xe", note: "Chưa tìm được tài xế phù hợp.", error_code: "RIDE_NO_DRIVER", retryable: true, action_id: "action-ride-retry" },
+          ],
+          actions: [{ id: "action-ride-retry", kind: "ride_service", label: "Thử lại đặt chuyến xe" }],
+          completed: [{ kind: "reservation", title: "Đặt bàn tại Quán E2E", restaurant: { name: "Quán E2E" }, status: "CONFIRMED" }],
+          workflow_status: "PARTIAL_SUCCESS",
+        }
+      : collapsible
       ? {
           conversation_id: id,
           message: "Mình đã chuẩn bị các thẻ dịch vụ để kiểm tra tính năng thu gọn.",
