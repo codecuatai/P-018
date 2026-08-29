@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.4.0
+  version: 1.6.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -47,6 +47,59 @@ paths:
         '400': {description: Missing or blank Idempotency-Key}
         '422': {description: Invalid Idempotency-Key or request}
         '409': {description: Action is stale or confirmation precondition failed}
+  /api/v1/voice/transcribe:
+    post:
+      summary: Transcribe a bounded audio upload
+      description: >
+        Stateless speech-to-text fallback for clients that cannot use the
+        browser Web Speech API. Audio is forwarded to the Agent service and is
+        not retained by X-One.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              additionalProperties: false
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Audio clip, up to 10 MiB.
+      responses:
+        '200':
+          description: Transcribed audio
+          content:
+            application/json: {schema: {$ref: '#/components/schemas/VoiceTranscriptionEnvelope'}}
+        '400': {description: Missing or empty audio file}
+        '401': {description: Missing or invalid user token}
+        '413': {description: Audio file exceeds the 10 MiB limit}
+        '415': {description: Unsupported audio media type}
+        '502': {description: Speech-to-text provider unavailable}
+  /api/v1/voice/text-to-speech:
+    post:
+      summary: Synthesize assistant text as audio
+      description: >
+        Stateless text-to-speech for assistant responses. The Gateway forwards
+        bounded text to the Agent voice provider and does not retain the text
+        or generated audio.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TextToSpeechRequest'}
+      responses:
+        '200':
+          description: Synthesized MPEG audio
+          content:
+            audio/mpeg:
+              schema: {type: string, format: binary}
+        '400': {description: Missing or overlong text}
+        '401': {description: Missing or invalid user token}
+        '502': {description: Text-to-speech provider unavailable}
 
   /api/v1/healthcare-workflows/chat:
     post:
@@ -1083,6 +1136,28 @@ components:
       required: false
       schema: {type: integer, minimum: 1, maximum: 100, default: 20}
   schemas:
+    VoiceTranscriptionEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/VoiceTranscription'
+        meta:
+          type: object
+          additionalProperties: true
+    VoiceTranscription:
+      type: object
+      required: [text, provider]
+      additionalProperties: false
+      properties:
+        text: {type: string}
+        provider: {type: string}
+    TextToSpeechRequest:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: {type: string, minLength: 1, maxLength: 5000}
     AssistantChatRequest:
       type: object
       required: [message]

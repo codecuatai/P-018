@@ -669,6 +669,167 @@ export function runAssistantAction(
   }, { idempotencyKey });
 }
 
+export async function transcribeVoice(
+  audioBlob: Blob,
+  signal?: AbortSignal,
+  retried = false,
+): Promise<{ text: string; provider: string }> {
+  const form = new FormData();
+  form.append("file", audioBlob, "recording.webm");
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener("abort", abortListener, { once: true });
+
+  const correlationId = createRequestId("cor");
+  const headers = new Headers({
+    Accept: "application/json",
+    "X-Correlation-Id": correlationId,
+  });
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/transcribe`, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: controller.signal,
+      credentials: "include",
+    });
+    const body = await parseJson(response);
+
+    if (!response.ok) {
+      const problem = problemFromResponse(body, response.status);
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === "authenticated" && refreshed.token) {
+          return transcribeVoice(audioBlob, signal, true);
+        }
+        if (refreshed.outcome === "transient") {
+          throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      throw new ApiError(problem);
+    }
+
+    const data = isRecord(body) && isRecord(body.data) ? body.data : undefined;
+    if (!data || typeof data.text !== "string" || typeof data.provider !== "string") {
+      throw new ApiError({
+        code: "INVALID_RESPONSE",
+        detail: "X-One nhận được dữ liệu giọng nói không hợp lệ.",
+        status: response.status,
+        retryable: false,
+      });
+    }
+    return { text: data.text, provider: data.provider };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError({
+        code: "REQUEST_TIMEOUT",
+        detail: "Nhận dạng giọng nói hơi chậm. Bạn thử lại nhé.",
+        status: 408,
+        retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: "SERVICE_UNAVAILABLE",
+      detail: "Dịch vụ giọng nói đang gặp sự cố. Bạn thử lại sau.",
+      status: 0,
+      retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortListener);
+  }
+}
+
+export async function synthesizeVoice(
+  text: string,
+  signal?: AbortSignal,
+  retried = false,
+): Promise<ArrayBuffer> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new ApiError({
+      code: "TEXT_REQUIRED",
+      detail: "Nội dung đọc không được để trống.",
+      status: 400,
+      retryable: false,
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener("abort", abortListener, { once: true });
+
+  const correlationId = createRequestId("cor");
+  const headers = new Headers({
+    Accept: "audio/mpeg",
+    "Content-Type": "application/json",
+    "X-Correlation-Id": correlationId,
+  });
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/text-to-speech`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ text: trimmed }),
+      signal: controller.signal,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const body = await parseJson(response);
+      const problem = problemFromResponse(body, response.status);
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === "authenticated" && refreshed.token) {
+          return synthesizeVoice(trimmed, signal, true);
+        }
+        if (refreshed.outcome === "transient") {
+          throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      throw new ApiError(problem);
+    }
+
+    return await response.arrayBuffer();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError({
+        code: "REQUEST_TIMEOUT",
+        detail: "Đọc văn bản hơi chậm. Bạn thử lại nhé.",
+        status: 408,
+        retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: "SERVICE_UNAVAILABLE",
+      detail: "Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau.",
+      status: 0,
+      retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abortListener);
+  }
+}
+
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return friendlyErrorMessage(error.code, error.detail);
   return "Không thể hoàn tất yêu cầu. Bạn thử lại nhé.";

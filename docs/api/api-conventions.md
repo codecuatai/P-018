@@ -31,6 +31,14 @@ before resolving a saved-address label or accepting a new concrete address. If
 coordinates and location metadata instead of applying a delivery quote to a
 stale point; the updated manual address remains saved and can be geocoded later.
 
+A browser voice fallback uses `POST /api/v1/voice/transcribe` with a
+`multipart/form-data` field named `file`. The Gateway accepts audio uploads up
+to 10 MiB, forwards them to the Agent's internal speech-to-text boundary, and
+does not retain the audio. Browsers with Web Speech API support may keep
+transcription local. Assistant voice output uses the authenticated
+`POST /api/v1/voice/text-to-speech` route with text limited to 5,000 characters;
+the Agent returns audio without retaining the request or generated media.
+
 The unified consumer conversation uses `POST /api/v1/assistant/chat` and
 `POST /api/v1/assistant/actions`, documented in
 [`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Its

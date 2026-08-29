@@ -10,6 +10,7 @@ describe('environment validation', () => {
     GATEWAY_AUTH_LOGIN_RATE_LIMIT: '5',
     GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: '30',
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: '20',
+    GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT: '20',
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: '5',
     GATEWAY_AUTH_REFRESH_RATE_LIMIT: '60',
     DATABASE_URL: 'postgresql://core_user:password@postgres:5432/xone_core',
@@ -58,6 +59,7 @@ describe('environment validation', () => {
     expect(validated.GATEWAY_BODY_LIMIT_BYTES).toBe(262144);
     expect(validated.GATEWAY_RATE_LIMIT_WINDOW_SECONDS).toBe(60);
     expect(validated.GATEWAY_AUTH_REFRESH_RATE_LIMIT).toBe(60);
+    expect(validated.GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT).toBe(20);
     expect(validated.AUTH_REFRESH_REUSE_GRACE_SECONDS).toBe(10);
   });
 
@@ -65,6 +67,8 @@ describe('environment validation', () => {
     const profiles = getGatewaySecurityConfig(completeConfig).rateLimitProfiles;
     expect(profiles.find((profile) => profile.name === 'auth.refresh')?.maxRequests).toBe(60);
     expect(profiles.find((profile) => profile.name === 'auth.register')?.maxRequests).toBe(5);
+    expect(profiles.find((profile) => profile.name === 'voice.transcribe')?.maxRequests).toBe(20);
+    expect(profiles.find((profile) => profile.name === 'voice.text_to_speech')?.maxRequests).toBe(20);
   });
 
   it('accepts an explicitly bounded refresh reuse grace window', () => {

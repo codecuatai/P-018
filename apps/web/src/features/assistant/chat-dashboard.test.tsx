@@ -1,13 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-import * as apiClient from "@/lib/api-client";
 import { ChatDashboard } from "./chat-dashboard";
 
 jest.mock("@/lib/api-client", () => ({
   createConversation: jest.fn(),
   createIdempotencyKey: jest.fn(() => "test-idempotency-key"),
-  errorText: jest.fn(() => "Lỗi thử nghiệm"),
+  errorText: jest.fn(() => "test error"),
   getConversation: jest.fn(),
   isRetryableError: jest.fn(() => false),
   reverseGeocodeAddress: jest.fn(),
@@ -25,6 +24,12 @@ jest.mock("@/components/WorkflowCards", () => ({
   FoodCartDock: () => null,
 }));
 
+jest.mock("@/components/voice-input", () => ({
+  VoiceInput: ({ disabled }: { disabled?: boolean }) => (
+    <button type="button" aria-label="voice-input" disabled={disabled}>Voice</button>
+  ),
+}));
+
 jest.mock("@/features/product/context-rail", () => ({
   ActiveWorkDetailDialog: () => null,
   ActiveWorkRailCardWithCancel: () => null,
@@ -32,18 +37,10 @@ jest.mock("@/features/product/context-rail", () => ({
   ConversationContextCards: () => null,
 }));
 
-describe("ChatDashboard non-Voice controls", () => {
-  it("hides the inactive plus control and keeps the mic disabled without an API call", () => {
+describe("ChatDashboard voice controls", () => {
+  it("renders an enabled voice input control", () => {
     render(<ChatDashboard user={{ sub: "user-m6", email: "m6@example.test", role: "USER" }} />);
 
-    expect(screen.queryByRole("button", { name: "Thêm tùy chọn" })).not.toBeInTheDocument();
-    const mic = screen.getByRole("button", { name: /Nhập bằng giọng nói.*Sắp có/ });
-    expect(mic).toBeDisabled();
-
-    fireEvent.click(mic);
-    fireEvent.keyDown(mic, { key: "Enter", code: "Enter" });
-
-    expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
-    expect(document.activeElement).not.toBe(mic);
+    expect(screen.getByRole("button", { name: "voice-input" })).toBeEnabled();
   });
 });

@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, runAssistantAction, sendAssistantMessage, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, runAssistantAction, sendAssistantMessage, setAccessToken, synthesizeVoice, transcribeVoice, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -255,5 +255,39 @@ describe("browser API client", () => {
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
     await expect(browseService("healthcare", "neurology", { limit: 100, offset: 0 })).resolves.toEqual({ items: [], source: "healthcare-service", partial: false });
+  });
+
+  it("uploads voice as multipart data without forcing a JSON content type", async () => {
+    setAccessToken("access-token");
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain("/api/v1/voice/transcribe");
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-token");
+      expect(new Headers(init?.headers).get("Content-Type")).toBeNull();
+      expect(init?.body).toBeInstanceOf(FormData);
+      return jsonResponse(200, { data: { text: "hello", provider: "gemini-flash" } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(transcribeVoice(new Blob(["audio"], { type: "audio/webm" }))).resolves.toEqual({ text: "hello", provider: "gemini-flash" });
+  });
+
+  it("requests assistant speech as audio without exposing the text in the URL", async () => {
+    setAccessToken("access-token");
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain("/api/v1/voice/text-to-speech");
+      expect(String(input)).not.toContain("Xin");
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-token");
+      expect(JSON.parse(String(init?.body))).toEqual({ text: "Xin chào" });
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+      } as Response;
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(synthesizeVoice("  Xin chào  ")).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
   });
 });
