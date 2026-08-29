@@ -945,6 +945,15 @@ paths:
         required: true
         content: {application/json: {schema: {type: object, additionalProperties: false, properties: {status: {type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]}, priority: {type: string, enum: [LOW, NORMAL, HIGH, URGENT]}}}}}
       responses: {'200': {description: Updated support ticket}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}}
+  /api/v1/admin/support-tickets/{id}/messages:
+    post:
+      summary: Add an administrator reply to a support ticket
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}, {$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [message], properties: {message: {type: string, minLength: 1, maxLength: 5000}}}}}
+      responses: {'200': {description: Updated support ticket and timeline}, '400': {description: Missing idempotency key or invalid message}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}, '409': {description: Ticket closed or idempotency conflict}}
 components:
   securitySchemes:
     bearerAuth:

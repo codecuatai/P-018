@@ -598,25 +598,74 @@ function RestaurantBrowse() {
   );
 }
 
+type HealthcareBrowseProps = {
+  resumeAppointmentId?: string;
+  departments: JsonRecord[];
+  departmentsLoading: boolean;
+  departmentsError: string;
+  onRefreshDepartments: () => void;
+  patients: HealthcarePatient[];
+  patientsLoading: boolean;
+  patientError: string;
+  onRefreshPatients: () => void;
+  onPatientCreated: (patient: HealthcarePatient) => void;
+};
+
 function HealthcareBrowseWithFavorite({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
-  const [facilityId, setFacilityId] = useState("");
-  useEffect(() => {
-    let active = true;
-    void browseService("healthcare", undefined, { limit: 100, offset: 0 }).then((result) => {
-      const facility = asRecord(asRecord(result.items[0])?.facility);
-      const id = facility?.source_id ?? facility?.id;
-      if (active && (typeof id === "string" || typeof id === "number")) setFacilityId(String(id));
-    }).catch(() => undefined);
-    return () => { active = false; };
+  const [departments, setDepartments] = useState<JsonRecord[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
+  const [departmentsError, setDepartmentsError] = useState("");
+  const [patients, setPatients] = useState<HealthcarePatient[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [patientError, setPatientError] = useState("");
+  const initialLoadRef = useRef(false);
+
+  const loadDepartments = useCallback(async (): Promise<void> => {
+    setDepartmentsLoading(true);
+    setDepartmentsError("");
+    try {
+      const result = await browseService("healthcare", undefined, { limit: 100, offset: 0 });
+      setDepartments(result.items);
+    } catch (reason) {
+      setDepartmentsError(errorText(reason));
+    } finally {
+      setDepartmentsLoading(false);
+    }
   }, []);
-  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} /></div>;
+
+  const loadPatients = useCallback(async (): Promise<void> => {
+    setPatientsLoading(true);
+    setPatientError("");
+    try {
+      const result = await listHealthcarePatients();
+      setPatients(result.items);
+    } catch (reason) {
+      setPatientError(errorText(reason));
+    } finally {
+      setPatientsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void loadDepartments();
+    void loadPatients();
+  }, [loadDepartments, loadPatients]);
+
+  const facility = asRecord(asRecord(departments[0])?.facility);
+  const facilityValue = facility?.source_id ?? facility?.id;
+  const facilityId = typeof facilityValue === "string" || typeof facilityValue === "number" ? String(facilityValue) : "";
+  const onPatientCreated = useCallback((patient: HealthcarePatient) => {
+    setPatients((current) => [...current.filter((item) => item.id !== patient.id), patient]);
+  }, []);
+
+  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} departments={departments} departmentsLoading={departmentsLoading} departmentsError={departmentsError} onRefreshDepartments={() => { void loadDepartments(); }} patients={patients} patientsLoading={patientsLoading} patientError={patientError} onRefreshPatients={() => { void loadPatients(); }} onPatientCreated={onPatientCreated} /></div>;
 }
 
-function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
+function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading, departmentsError, onRefreshDepartments, patients, patientsLoading, patientError, onRefreshPatients, onPatientCreated }: HealthcareBrowseProps) {
   const [keyword, setKeyword] = useState("");
-  const [departments, setDepartments] = useState<JsonRecord[]>([]);
   const [doctors, setDoctors] = useState<JsonRecord[]>([]);
-  const [patients, setPatients] = useState<HealthcarePatient[]>([]);
   const [department, setDepartment] = useState("");
   const [slot, setSlot] = useState<JsonRecord>();
   const [patientId, setPatientId] = useState<number>();
@@ -625,7 +674,6 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   const [confirmation, setConfirmation] = useState<JsonRecord>();
   const [paymentDone, setPaymentDone] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [slotPage, setSlotPage] = useState(1);
@@ -636,59 +684,23 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   const [profilePhone, setProfilePhone] = useState("");
   const [profileRelationship, setProfileRelationship] = useState<HealthcarePatient["relationship"]>("self");
   const [profileSaving, setProfileSaving] = useState(false);
-  const [patientsLoading, setPatientsLoading] = useState(true);
-  const [patientError, setPatientError] = useState("");
+  const [profileError, setProfileError] = useState("");
   const slotPageSize = 3;
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await browseService("healthcare", undefined, { limit: 100, offset: 0 });
-      const next = result.items;
-      setDepartments(next);
-      const names = next.map((item) => display(item.name ?? item.label ?? item.id));
-      const selected = names[0] ?? "";
-      setDepartment(selected);
-      setKeyword(selected);
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadPatients = useCallback(async () => {
-    setPatientsLoading(true);
-    setPatientError("");
-    try {
-      const result = await listHealthcarePatients();
-      setPatients(result.items);
-      setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
-      if (!result.items.length) setProfileFormOpen(true);
-    } catch (reason) {
-      setPatientError(errorText(reason));
-    } finally {
-      setPatientsLoading(false);
-    }
-  }, []);
 
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
   useEffect(() => {
-    void load();
-    void loadPatients();
-  }, [load, loadPatients]);
+    if (!departments.length || department) return;
+    const match = initialResourceId ? departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId) : undefined;
+    const selected = match ?? departments[0];
+    const name = display(selected.name ?? selected.label ?? selected.id);
+    setDepartment(name);
+    setKeyword(name);
+  }, [department, departments, initialResourceId]);
   useEffect(() => {
-    if (!initialResourceId || !departments.length) return;
-    const match = departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId);
-    if (match) {
-      const name = display(match.name ?? match.label ?? match.id);
-      setDepartment(name);
-      setKeyword(name);
-    }
-  }, [initialResourceId, departments]);
-
+    if (patientId === undefined && patients.length) setPatientId(patients.find((item) => item.is_default)?.id ?? patients[0]?.id);
+    if (!patientsLoading && !patientError && !patients.length) setProfileFormOpen(true);
+  }, [patientError, patientId, patients, patientsLoading]);
   useEffect(() => {
     if (!resumeAppointmentId) return;
     void getHistoryDetail("healthcare_appointment", resumeAppointmentId).then((value) => {
@@ -743,17 +755,17 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   async function createProfile(): Promise<void> {
     if (!profileName.trim() || !profilePhone.trim() || profileSaving) return;
     setProfileSaving(true);
-    setPatientError("");
+    setProfileError("");
     try {
       const patient = await createHealthcarePatient({ name: profileName.trim(), phone: profilePhone.trim(), relationship: profileRelationship });
-      setPatients((current) => [...current.filter((item) => item.id !== patient.id), patient]);
+      onPatientCreated(patient);
       setPatientId(patient.id);
       setProfileName("");
       setProfilePhone("");
       setProfileRelationship("self");
       setProfileFormOpen(false);
     } catch (reason) {
-      setPatientError(errorText(reason));
+      setProfileError(errorText(reason));
     } finally {
       setProfileSaving(false);
     }
@@ -839,10 +851,10 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
 
   return (
     <>
-      {loading ? (
+      {departmentsLoading ? (
         <LoadingNote text="Đang tải chuyên khoa…" />
-      ) : error && !departments.length ? (
-        <ErrorNote message={error} onRetry={() => void load()} />
+      ) : departmentsError && !departments.length ? (
+        <ErrorNote message={departmentsError} onRetry={onRefreshDepartments} />
       ) : (
         <div className="healthcare-flow" style={{ textAlign: "left" }}>
           <article className="transaction-panel" style={{ textAlign: "left" }}>
@@ -954,7 +966,7 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
             {slot ? <dl className="healthcare-summary-details"><div><dt>Bác sĩ</dt><dd>{display(slot.doctor_name)}</dd></div><div><dt>Thời gian</dt><dd>{formatDateTime(slot.start_time)}</dd></div><div><dt>Chi phí</dt><dd>{formatMoney(slot.price)}</dd></div></dl> : <p style={{ textAlign: "left" }}>Chọn một khung giờ để xem bác sĩ, thời gian và chi phí.</p>}
             {slot && !appointment ? <div className="healthcare-form" style={{ textAlign: "left" }}>
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Hồ sơ bệnh nhân</span><select value={patientId ?? ""} onChange={(event) => setPatientId(event.target.value ? Number(event.target.value) : undefined)} disabled={patientsLoading}><option value="">{patientsLoading ? "Đang tải hồ sơ…" : "Chọn hồ sơ"}</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} · {patient.relationship}</option>)}</select></label>
-              {patientError ? <div className="healthcare-profile-error" role="alert"><span>{patientError}</span><button className="text-button" type="button" onClick={() => void loadPatients()}>Thử lại</button></div> : null}
+              {patientError || profileError ? <div className="healthcare-profile-error" role="alert"><span>{patientError || profileError}</span>{patientError ? <button className="text-button" type="button" onClick={onRefreshPatients}>Thử lại</button> : null}</div> : null}
               <button className="text-button healthcare-profile-toggle" type="button" onClick={() => setProfileFormOpen((current) => !current)}><Plus size={14} aria-hidden="true" />{profileFormOpen ? "Đóng biểu mẫu" : "Thêm hồ sơ mới"}</button>
               {profileFormOpen ? <div className="healthcare-profile-form"><label><span>Họ và tên</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label><label><span>Số điện thoại</span><input value={profilePhone} onChange={(event) => setProfilePhone(event.target.value)} required /></label><label><span>Quan hệ</span><select value={profileRelationship} onChange={(event) => setProfileRelationship(event.target.value as HealthcarePatient["relationship"])}><option value="self">Bản thân</option><option value="child">Con</option><option value="parent">Cha/mẹ</option><option value="dependent">Người phụ thuộc</option></select></label><button className="button button-secondary" type="button" onClick={() => void createProfile()} disabled={profileSaving || !profileName.trim() || !profilePhone.trim()}>{profileSaving ? <Loader2 className="spinner" size={15} /> : null} Lưu hồ sơ</button></div> : null}
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Nhu cầu khám</span><textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} /></label>

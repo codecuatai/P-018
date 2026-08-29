@@ -344,6 +344,38 @@ export class AdminService {
     return result?.ticket as unknown as JsonObject | undefined;
   }
 
+  async addSupportMessage(
+    id: string,
+    message: string,
+    actorId: string,
+    correlationId: string,
+    idempotencyKey: string,
+  ): Promise<JsonObject | undefined> {
+    const ticket = await this.productOps.getSupportTicket(id);
+    if (!ticket) return undefined;
+    if (ticket.status === 'CLOSED') throw new ConflictException({ code: 'SUPPORT_TICKET_CLOSED', detail: 'Không thể gửi phản hồi cho ticket đã đóng.', retryable: false });
+    const createdAt = new Date().toISOString();
+    const requestHash = createHash('sha256').update(JSON.stringify({ message })).digest('hex');
+    const replayed = ticket.events?.some((event) => event.idempotencyKey === idempotencyKey) ?? false;
+    let updated;
+    try {
+      updated = await this.productOps.addSupportEvent({ id: `ticket-event-${randomUUID()}`, ticketId: id, actorId, eventType: 'MESSAGE', message, idempotencyKey, requestHash, createdAt }, createdAt, undefined, requestHash);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different support message.', retryable: false });
+      throw error;
+    }
+    if (updated && !replayed) {
+      await this.core.audit({
+        action: 'ADMIN_SUPPORT_TICKET_MESSAGE_ADDED',
+        actorId,
+        correlationId,
+        resourceId: id,
+        metadata: { message_length: message.length },
+      });
+    }
+    return updated as unknown as JsonObject | undefined;
+  }
+
   async userServiceSummary(userId: string, correlationId: string): Promise<JsonObject> {
     const [feedback, foodTx, rideTx, restTx, healthTx] = await Promise.allSettled([
       this.productOps.listFeedback(userId),
