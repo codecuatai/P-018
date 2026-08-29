@@ -154,7 +154,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    expose: [ "8001" ]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
@@ -239,7 +238,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-    expose: [ "8104" ]
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]

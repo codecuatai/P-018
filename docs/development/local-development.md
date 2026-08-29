@@ -104,6 +104,37 @@ is required. `seed-local.ps1` is additive and preserves imported catalogs,
 bookings and dataset metadata; `demo-reset.ps1` is dry-run by default and
 requires `-ConfirmReset` for an actor-scoped mutable-data reset.
 
+`local-health.ps1` supports runtime auto-detection (`-Runtime Auto|Local|Compose`,
+with `Host`/`Docker` accepted as aliases). Compose mode checks the published
+Gateway/Web endpoints using dynamic ports from the selected env file, verifies
+internal domain services through container health, and finishes with Gateway
+`/health/ready`. Local mode probes all seven service health endpoints and
+validates PID metadata in `.local-runtime/processes.json`. Auto-detection only
+credits a direct-process runtime when a recorded PID is alive and its recorded
+port is listening, so stale metadata cannot mask a Compose stack. Shared
+port/value lookup, Compose container discovery and direct-process detection live
+in `scripts/local/_common.ps1`, which both `local-health.ps1` and
+`local-acceptance.ps1` dot-source.
+
+## Cross-service Compose acceptance
+
+`local-acceptance.ps1` runs `tests/e2e` as a mandatory cross-service step. The
+suite drives the real Gateway plus Agent, Ride, Restaurant, Healthcare and Food
+over HTTP and uses `docker compose exec`/`restart` for persistence checks, so it
+requires the Compose runtime rather than direct processes:
+
+```powershell
+./scripts/local/start-all.ps1
+./scripts/local/local-acceptance.ps1 -EnvFile .env.example
+```
+
+The step throws when fewer than the seven application containers are running,
+instead of skipping. It can be run directly with
+`corepack pnpm test:e2e:crossservice` or `python -m pytest tests/e2e -q`.
+`E2E_REQUIRE_GATEWAY=1` makes a missing Gateway URL a usage error, and
+`-SkipCrossServiceE2E` is available for a deliberate partial run but prints an
+explicit `UNVERIFIED` line naming the uncovered layer.
+
 For local browser acceptance, `.env.example` enables the labeled deterministic
 geocode fallback and keeps `RIDE_TRACKING_TIME_SCALE=1`. A disposable
 test/demo run may explicitly override the Ride scale (for example, `60`). Both are rejected or constrained in production;

@@ -56,6 +56,10 @@ after Compose health checks and can run the same additive migrations repeatedly.
 It stops on the first owner/path failure and never deletes a volume. Seeds are
 not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
 
+Ride also contains a guarded compatibility path for databases that recorded
+the earlier short-lived `0007` revision; it verifies the quote snapshot schema
+before reconciling the Alembic version marker.
+
 Core application tests use in-memory repositories for deterministic unit speed.
 Explicit Core and Auth PostgreSQL persistence tests use
 `CORE_TEST_DATABASE_URL`; Auth additionally requires the explicit test-only

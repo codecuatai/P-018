@@ -14,3 +14,7 @@ Revision `20260827_0007` is preserved as the immutable booking quote-snapshot
 history. Revision `20260828_0008` additively adds at most two resolved
 intermediate stopovers to a quote. Old quotes have no stopovers and old
 bookings retain their existing public shape.
+An earlier deployment briefly recorded the quote snapshot migration as the
+short revision `0007`; `env.py` reconciles that legacy marker only after
+checking the `ride_bookings.quote_snapshot` column, without changing any
+applied migration file or deleting data.

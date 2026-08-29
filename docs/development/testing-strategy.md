@@ -151,8 +151,30 @@ responsive interaction, or browser-console result is counted.
   p95 and max for Gateway health, Food/Restaurant/Healthcare search, history,
   Admin dashboard and Ride tracking; auth login used 3 samples because the
   local login limiter is intentionally bounded.
-- Gemini remains intentionally unverified because no key is configured. The
-  full legacy `tests/e2e` batch is not reported as a pass: it hit the expected
-  process-local login limiter when every test logged in from one IP and also
-  contains slower Assistant scenarios. The targeted live browser and HTTP
-  acceptance above are the current evidence.
+- Gemini remains intentionally unverified because no key is configured. Token
+  reuse caching is provided in `tests/e2e` to prevent login rate limiting.
+
+## Cross-service Compose layer - `tests/e2e`
+
+`tests/e2e` exercises the real Gateway together with Agent, Ride, Restaurant,
+Healthcare and Food over HTTP, and reaches into the stack with `docker compose
+exec`/`restart` to assert persistence, hold expiry reconciliation and
+idempotent replay across a Gateway restart. It requires Docker Compose and
+cannot run against the direct-process runtime.
+
+Invoke it with `python -m pytest tests/e2e -q` or
+`corepack pnpm test:e2e:crossservice` from the root workspace. The root
+`test:e2e` alias is retained for compatibility; the Playwright browser suite
+remains `pnpm --dir apps/web test:e2e`.
+
+`scripts/local/local-acceptance.ps1` runs this suite as a mandatory step. It
+derives the Gateway URL, Compose project/env file and demo credentials from
+the acceptance env file and sets `E2E_REQUIRE_GATEWAY=1`. The suite-level pytest
+hook rejects a missing Gateway URL, and the acceptance script throws when the
+Compose stack is incomplete. `-SkipCrossServiceE2E` remains available for a
+deliberate partial run and prints an explicit `UNVERIFIED` line.
+
+Shared fixtures live in `tests/e2e/_helpers.py` and are imported absolutely
+(`from _helpers import ...`) because `tests/e2e` has no `__init__.py`. The
+helper owns the access-token cache that keeps a full-suite run inside the
+Gateway's per-IP login limiter.

@@ -26,7 +26,7 @@ docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/001_agent_workflow_states.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/002_agent_run_metadata.sql
 echo 'Core, Agent and Food migrations applied.'
-docker compose --env-file "$env_file" exec -T restaurant-service alembic upgrade head
+docker compose --env-file "$env_file" run --rm --no-deps -T restaurant-service alembic upgrade head
 echo 'Restaurant Service migrations applied.'
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/001_healthcare_booking.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/002_healthcare_slot_reuse.sql
@@ -35,5 +35,5 @@ docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql
 echo 'Healthcare Service migrations applied.'
-docker compose --env-file "$env_file" exec -T ride-service alembic upgrade head
+docker compose --env-file "$env_file" run --rm --no-deps -T ride-service alembic upgrade head
 echo 'Ride Service migrations applied.'
