@@ -56,6 +56,7 @@ def test_contract_carries_semantic_parameters_and_write_safety_constraints() -> 
 
     side_effects = (
         ("/v1/reservation-holds", "post"),
+        ("/v1/reservation-holds/{hold_id}/cancel", "post"),
         ("/v1/reservations", "post"),
         ("/v1/reservations/{reservation_id}", "patch"),
         ("/v1/reservations/{reservation_id}/cancel", "post"),

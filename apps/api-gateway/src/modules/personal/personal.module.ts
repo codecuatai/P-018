@@ -254,6 +254,24 @@ type RouteResult = {
   retryable?: boolean;
 };
 
+function routeGeometryFromGeoJson(value: unknown): LocationCoordinate[] {
+  if (!isRecord(value) || !Array.isArray(value.coordinates)) return [];
+  const points: LocationCoordinate[] = [];
+  const append = (candidate: unknown): void => {
+    if (Array.isArray(candidate) && typeof candidate[0] === 'number' && typeof candidate[1] === 'number') {
+      const longitude = candidate[0];
+      const latitude = candidate[1];
+      if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+        points.push({ latitude, longitude });
+      }
+      return;
+    }
+    if (Array.isArray(candidate)) candidate.forEach(append);
+  };
+  append(value.coordinates);
+  return points;
+}
+
 type AutocompleteResult = {
   provider: string;
   query: string;
@@ -344,13 +362,16 @@ export class LocationService {
       try {
         const url = new URL(`/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`, providerUrl);
         url.searchParams.set('overview', 'full');
-        url.searchParams.set('geometries', 'polyline');
-        const payload = await this.fetchJson(url, 'ROUTING_PROVIDER_TOKEN');
+        // The Ride domain requires auditable geometry, not only a distance or
+        // an opaque encoded line. OSRM-compatible providers can return the
+        // route as GeoJSON, which is normalized below into our typed points.
+        url.searchParams.set('geometries', 'geojson');
+        const payload = await this.fetchRoutingJson(url);
         const route = isRecord(payload) && Array.isArray(payload.routes) && isRecord(payload.routes[0]) ? payload.routes[0] : undefined;
         const distanceMeters = numberValue(route?.distance);
         const durationSeconds = numberValue(route?.duration);
-        if (distanceMeters !== undefined && durationSeconds !== undefined) {
-          const polyline = typeof route?.geometry === 'string' ? route.geometry : null;
+        const routeGeometry = routeGeometryFromGeoJson(route?.geometry);
+        if (distanceMeters !== undefined && durationSeconds !== undefined && routeGeometry.length >= 2) {
           return {
             provider: 'configured-routing-provider',
             status: 'RESOLVED',
@@ -360,8 +381,8 @@ export class LocationService {
             destination,
             route_distance_meters: Math.round(distanceMeters),
             route_duration_seconds: Math.round(durationSeconds),
-            route_polyline: polyline,
-            route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, polyline }),
+            route_geometry: routeGeometry,
+            route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, routeGeometry }),
           };
         }
       } catch {
@@ -401,6 +422,7 @@ export class LocationService {
     const normalized = foldLocalAddress(query);
     const fixtures: Array<{ matches: string[]; latitude: number; longitude: number }> = [
       { matches: ['ho hoan kiem', 'ho guom'], latitude: 21.0285, longitude: 105.8048 },
+      { matches: ['cong vien nghia do', 'nghia do'], latitude: 21.0456, longitude: 105.7939 },
       { matches: ['vinuni'], latitude: 20.9914, longitude: 105.945975 },
       { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], latitude: 10.7758, longitude: 106.7004 },
     ];
@@ -435,6 +457,18 @@ export class LocationService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async fetchRoutingJson(url: URL): Promise<unknown> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.fetchJson(url, 'ROUTING_PROVIDER_TOKEN');
+      } catch (error) {
+        if (attempt === 1) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      }
+    }
+    throw new Error('Routing provider request did not produce a result.');
   }
 
   private parseGeocodeCandidate(value: unknown): GeocodeCandidate | undefined {

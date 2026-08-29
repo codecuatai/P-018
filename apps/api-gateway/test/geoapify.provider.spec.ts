@@ -84,6 +84,56 @@ describe('Geoapify provider boundary', () => {
     expect(result.candidates[0]).toMatchObject({ latitude: 20.9914, longitude: 105.945975 });
   });
 
+  it('resolves the local Nghia Do park fixture for a Ride stopover', async () => {
+    const geoapify = { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() };
+    const locations = new LocationService(
+      config({ APP_ENV: 'development', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: true }),
+      geoapify as never,
+    );
+
+    const result = await locations.geocode('Công viên Nghĩa Đô');
+
+    expect(result).toMatchObject({ provider: 'deterministic-local-demo', status: 'RESOLVED' });
+    expect(result.candidates[0]).toMatchObject({ latitude: 21.0456, longitude: 105.7939 });
+  });
+
+  it('normalizes an OSRM-compatible GeoJSON route into auditable geometry', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      code: 'Ok',
+      routes: [{
+        distance: 2834.4,
+        duration: 241.2,
+        geometry: {
+          type: 'LineString',
+          coordinates: [[105.8048, 21.0285], [105.7991, 21.0362], [105.7939, 21.0456]],
+        },
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const locations = new LocationService(
+      config({ ROUTING_PROVIDER_URL: 'https://router.example.test', UPSTREAM_TIMEOUT_MS: 1000 }),
+      { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() } as never,
+    );
+
+    const result = await locations.route(
+      { latitude: 21.0285, longitude: 105.8048 },
+      { latitude: 21.0456, longitude: 105.7939 },
+    );
+
+    expect(result).toMatchObject({
+      provider: 'configured-routing-provider',
+      status: 'RESOLVED',
+      route_distance_meters: 2834,
+      route_duration_seconds: 241,
+      route_geometry: [
+        { latitude: 21.0285, longitude: 105.8048 },
+        { latitude: 21.0362, longitude: 105.7991 },
+        { latitude: 21.0456, longitude: 105.7939 },
+      ],
+    });
+    const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(requestUrl.searchParams.get('geometries')).toBe('geojson');
+  });
+
   it('reverse geocodes a coordinate through Geoapify', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       results: [{ lat: 21.0285, lon: 105.8048, formatted: 'Hồ Hoàn Kiếm, Hà Nội', rank: 1 }],

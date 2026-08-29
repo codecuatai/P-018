@@ -141,6 +141,7 @@ These routes are not browser-facing. The Gateway is the runtime caller and each 
 | GET | `/v1/restaurants/{restaurant_id}` | Internal token plus actor assertion | `INTERNAL` |
 | POST | `/v1/restaurants/{restaurant_id}/availability` | Internal token plus actor assertion; 30-second snapshot identity/version/expiry | `INTERNAL` |
 | POST | `/v1/reservation-holds` | Internal token, actor assertion, idempotency | `INTERNAL` |
+| POST | `/v1/reservation-holds/{hold_id}/cancel` | Internal token, actor assertion, idempotency; Gateway compensation before a revised hold | `INTERNAL` |
 | POST | `/v1/reservations` | Internal token, actor assertion, idempotency, Gateway confirmation | `INTERNAL` |
 | GET | `/v1/reservations/{reservation_id}` | Internal token plus actor assertion | `INTERNAL` |
 | PATCH | `/v1/reservations/{reservation_id}` | Internal token, actor assertion, idempotency | `INTERNAL` |

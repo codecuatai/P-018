@@ -39,6 +39,9 @@ Healthcare-dependent departure is impossible. Healthcare appointment cards may
 carry the domain-owned facility name/address; the Gateway does not invent or
 persist that authority. Restaurant hold and completed-reservation cards have
 separate schemas so a hold never pretends to have a final reservation code.
+When a still-active hold is invalidated by a material party/time/restaurant
+revision, the Gateway asks Restaurant to release that hold with a separate
+idempotent lifecycle operation before it checks or creates a replacement hold.
 The Gateway validates required reservation confirmation fields and normalizes
 legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
 domain timezone before exposing an ISO 8601 value.

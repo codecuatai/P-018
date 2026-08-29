@@ -217,17 +217,23 @@ function numberValue(value: unknown): number | undefined {
 }
 
 function formatCatalogAddress(...parts: unknown[]): string | undefined {
-  const seen = new Set<string>();
   const segments: string[] = [];
+  const normalizedSegments: string[] = [];
   for (const part of parts) {
     if (typeof part !== 'string' && typeof part !== 'number') continue;
     for (const segment of String(part).split(',')) {
       const value = segment.trim();
       if (!value) continue;
       const key = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('vi-VN');
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (normalizedSegments.some((existing) => existing === key || existing.includes(key))) continue;
+      const containedIndex = normalizedSegments.findIndex((existing) => key.includes(existing));
+      if (containedIndex >= 0) {
+        segments[containedIndex] = value;
+        normalizedSegments[containedIndex] = key;
+        continue;
+      }
       segments.push(value);
+      normalizedSegments.push(key);
     }
   }
   return segments.length ? segments.join(', ') : undefined;
@@ -297,6 +303,152 @@ const HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES = 20;
 
 function plainText(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').replaceAll('Đ', 'D').toLowerCase();
+}
+
+function freshDeviceLocation(value: unknown, now = Date.now()): DeviceCurrentLocation | undefined {
+  if (!isRecord(value) || value.source !== 'device') return undefined;
+  const latitude = numberValue(value.latitude);
+  const longitude = numberValue(value.longitude);
+  const capturedAt = stringValue(value.captured_at);
+  if (
+    latitude === undefined
+    || longitude === undefined
+    || latitude < -90
+    || latitude > 90
+    || longitude < -180
+    || longitude > 180
+    || !capturedAt
+  ) return undefined;
+  const capturedMilliseconds = Date.parse(capturedAt);
+  if (!Number.isFinite(capturedMilliseconds)) return undefined;
+  const ageMilliseconds = now - capturedMilliseconds;
+  if (ageMilliseconds < -300_000 || ageMilliseconds > 900_000) return undefined;
+  const addressText = stringValue(value.address_text);
+  const accuracy = numberValue(value.accuracy_meters);
+  return {
+    latitude,
+    longitude,
+    ...(addressText ? { address_text: addressText.slice(0, 500) } : {}),
+    ...(accuracy !== undefined && accuracy >= 0 && accuracy <= 100_000 ? { accuracy_meters: accuracy } : {}),
+    captured_at: capturedAt,
+    source: 'device',
+  };
+}
+
+function isCurrentLocationQuestion(message: string): boolean {
+  const folded = plainText(message).trim();
+  if (!/(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|current location)/.test(folded)) return false;
+  if (!/(?:o dau|dang o dau|biet|cho biet|xem)/.test(folded)) return false;
+  return !/(?:dat xe|goi xe|muon xe|can xe|chuyen xe|cuoc xe)/.test(folded);
+}
+
+function locationTokens(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return plainText(value)
+    .replace(/[.,;:/()()[\]{}]/g, ' ')
+    .replace(/\b(?:khu\s+vuc|vung|quanh|gan|o|tai|thanh\s+pho|tp|tinh|quan|huyen|phuong|xa|thi\s+tran|thi\s+xa)\b/g, ' ')
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function restaurantMatchesRequestedLocation(candidate: JsonObject, requestedLocation?: string): boolean {
+  const requested = locationTokens(requestedLocation);
+  if (!requested.length) return true;
+  const fields = [candidate.address, candidate.location, candidate.district, candidate.ward, candidate.city]
+    .flatMap((value) => locationTokens(value));
+  if (!fields.length) return false;
+  const requestedPhrase = requested.join(' ');
+  const fieldPhrase = fields.join(' ');
+  return fields.some((field) => field === requestedPhrase || field.includes(requestedPhrase))
+    || fieldPhrase.includes(requestedPhrase)
+    || requested.every((token) => fields.includes(token));
+}
+
+function usesCurrentLocationReference(message: string, slots: Record<string, unknown>, currentLocation?: DeviceCurrentLocation): boolean {
+  const folded = plainText(message);
+  if (/(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|current location)/.test(folded)) return true;
+  if (!currentLocation) return false;
+  const pickupLatitude = numberValue(slots.pickup_latitude);
+  const pickupLongitude = numberValue(slots.pickup_longitude);
+  if (
+    pickupLatitude !== undefined
+    && pickupLongitude !== undefined
+    && Math.abs(pickupLatitude - currentLocation.latitude) < 0.000001
+    && Math.abs(pickupLongitude - currentLocation.longitude) < 0.000001
+  ) return true;
+  const pickup = stringValue(slots.pickup_address);
+  const currentAddress = stringValue(currentLocation.address_text);
+  if (!pickup && !hasExplicitRidePickup(message)) return true;
+  return Boolean(pickup && currentAddress && plainText(pickup) === plainText(currentAddress)
+    && !/(?:tu|from|diem don|pickup)\s+[^,.!?]+/.test(folded));
+}
+
+function hasExplicitRidePickup(message: string): boolean {
+  const folded = plainText(message);
+  return /\b(?:tu|from|diem don|don|pickup|diem xuat phat)\b/.test(folded);
+}
+
+function explicitRidePassengerCount(message: string): number | undefined {
+  const folded = plainText(message);
+  const count = '(?:[1-9][0-9]?|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\\s*(?:nguoi|khach|passengers?)';
+  const ridePassengerRequest = new RegExp(
+    `(?:dat xe|goi xe|di xe|xe may|xe 4 cho|xe 7 cho|chuyen xe|cuoc xe)[^.!?]{0,40}${count}`,
+  );
+  const carryingRequest = new RegExp(`(?:cho|cho toi|cho minh)\\s*${count}[^.!?]{0,24}(?:di|xe)`);
+  if (!ridePassengerRequest.test(folded) && !carryingRequest.test(folded)) return undefined;
+  const match = folded.match(new RegExp(`\\b([1-9][0-9]?)\\s*(?:nguoi|khach|passengers?)\\b`));
+  if (match) return Number(match[1]);
+  const wordCounts: Record<string, number> = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
+  for (const [word, value] of Object.entries(wordCounts)) {
+    if (new RegExp(`\\b${word}\\s*(?:nguoi|khach|passengers?)\\b`).test(folded)) return value;
+  }
+  return undefined;
+}
+
+function isRideResumeRequest(message: string): boolean {
+  const folded = plainText(message);
+  return /\b(?:dat chuyen|xac nhan chuyen|dat xe nay|dat chuyen nay)\b/.test(folded);
+}
+
+function isRestaurantDetailContinuation(message: string): boolean {
+  const folded = plainText(message).trim().replace(/[.!?]+$/, '').trim();
+  if (folded.length > 64) return false;
+  return /^(?:\d{1,2}|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\s+(?:nguoi|khach|ban)\b/.test(folded)
+    || /^(?:so nguoi|luc|vao|toi nay|sang mai|chieu nay|ngay mai|ngay kia)\b/.test(folded);
+}
+
+function isRideStopoverUpdate(message: string): boolean {
+  const folded = plainText(message);
+  return /(?:\bghe(?:\s+qua)?\b|\bdi\s+qua\b|\bdung\s+(?:o|tai)\b|\bdiem\s+dung\b)/.test(folded);
+}
+
+function rideStopoverFromMessage(message: string): string | undefined {
+  const match = message.match(/(?:gh(?:\u00e9|e)(?:\s+qua)?|\u0111i\s+qua|di\s+qua|d\u1eebng\s+(?:\u1edf|t\u1ea1i)|dung\s+(?:o|tai))\s+(.+?)(?=\s+(?:m\u1ed9t\s+ch\u00fat|m\u1ed9t\s+l\u00e1t|r\u1ed3i|sau\s+\u0111\u00f3|tr\u01b0\u1edbc\s+khi|m\u1edbi\s+t\u1edbi)\b|[.!?]|$)/iu);
+  const address = match?.[1]?.trim().replace(/[\s,]+$/, '');
+  return address || undefined;
+}
+
+function restaurantPartySizeFromMessage(message: string): number | undefined {
+  const folded = plainText(message).trim().replace(/[.!?]+$/, '').trim();
+  const numeric = folded.match(/^(?:so nguoi\s*)?([1-9][0-9]?)\s*(?:nguoi|khach|ban)\b/);
+  if (numeric) return Number(numeric[1]);
+  const wordCounts: Record<string, number> = {
+    mot: 1,
+    hai: 2,
+    ba: 3,
+    bon: 4,
+    nam: 5,
+    sau: 6,
+    bay: 7,
+    tam: 8,
+    chin: 9,
+    muoi: 10,
+  };
+  for (const [word, value] of Object.entries(wordCounts)) {
+    if (new RegExp(`^(?:so nguoi\\s*)?${word}\\s+(?:nguoi|khach|ban)\\b`).test(folded)) return value;
+  }
+  return undefined;
 }
 
 function textHasAny(value: string, candidates: string[]): boolean {
@@ -482,7 +634,14 @@ function filterDoctorsByRequestedTime(doctors: JsonObject[], slots: Record<strin
   const preference = stringValue(slots.time_preference)?.toLowerCase();
   const appointmentDate = requestedHealthcareDate(slots);
   const hasDateOrPreference = Boolean(appointmentDate || preference);
-  if (!hasDateOrPreference) return doctors;
+  const futureDoctors = doctors.map((doctor) => ({
+    ...doctor,
+    available_slots: arrayValue(doctor.available_slots).filter((slot) => {
+      const start = parseAuthoritativeDate(isRecord(slot) ? slot.start_time ?? slot.start_at : undefined);
+      return Boolean(start && start.getTime() > Date.now());
+    }),
+  })).filter((doctor) => arrayValue(doctor.available_slots).length > 0);
+  if (!hasDateOrPreference) return futureDoctors;
 
   const targetDate = appointmentDate
     ? appointmentDate
@@ -497,9 +656,9 @@ function filterDoctorsByRequestedTime(doctors: JsonObject[], slots: Record<strin
         ? { start: 18, end: 23 }
         : undefined;
 
-  const filtered = doctors.map((doctor) => {
+  const filtered = futureDoctors.map((doctor) => {
     const availableSlots = arrayValue(doctor.available_slots).filter(isRecord).filter((slot) => {
-      const start = parseAuthoritativeDate(slot.start_time);
+      const start = parseAuthoritativeDate(slot.start_time ?? slot.start_at);
       if (!start) return false;
       if (targetDate && healthcareDateKey(start) !== targetDate) return false;
       if (range && (healthcareHour(start) < range.start || healthcareHour(start) >= range.end)) return false;
@@ -516,7 +675,7 @@ function filterDoctorsByRequestedTime(doctors: JsonObject[], slots: Record<strin
     const exact = filtered.map((doctor) => ({
       ...doctor,
       available_slots: arrayValue(doctor.available_slots).filter((slot) => {
-        const start = parseAuthoritativeDate(isRecord(slot) ? slot.start_time : undefined);
+        const start = parseAuthoritativeDate(isRecord(slot) ? slot.start_time ?? slot.start_at : undefined);
         return Boolean(start && Math.abs(start.getTime() - requested.getTime()) <= 60_000);
       }),
     })).filter((doctor) => arrayValue(doctor.available_slots).length > 0);
@@ -553,6 +712,33 @@ function sanitizedSlots(value: unknown): Record<string, unknown> {
   return result;
 }
 
+function sanitizedTaskSlots(domain: Domain, value: unknown, currentLocationReference = false): Record<string, unknown> {
+  const result = sanitizedSlots(value);
+  if (domain !== 'ride') return result;
+  // Current-device coordinates are request-scoped evidence, not a saved
+  // address or durable task slot. Explicit destination coordinates may still
+  // be retained as non-sensitive route hints, but pickup is always rebuilt
+  // from the fresh request when the semantic source is current location.
+  delete result.pickup_latitude;
+  delete result.pickup_longitude;
+  if (currentLocationReference) delete result.pickup_address;
+  return result;
+}
+
+function taskResultItems(result: TaskProcessResult | { publicItem?: JsonObject; items?: JsonObject[] }): JsonObject[] {
+  const values = [
+    ...(result.publicItem ? [result.publicItem] : []),
+    ...(result.items ?? []),
+  ];
+  const seen = new Set<string>();
+  return values.filter((item) => {
+    const key = JSON.stringify(stableJson(item));
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function taskPhaseFrom(value: unknown): TaskPhase {
   return value === 'NEEDS_INFO' || value === 'IN_PROGRESS' || value === 'AWAITING_CONFIRMATION' || value === 'COMPLETED' || value === 'FAILED' || value === 'BLOCKED' || value === 'DISCARDED' || value === 'PLANNING'
     ? value
@@ -582,7 +768,11 @@ function storedState(value: unknown): AssistantState {
     operation: ['DISCOVER', 'CREATE', 'STATUS', 'UPDATE', 'CANCEL'].includes(String(task.operation)) ? task.operation as Operation : 'DISCOVER',
     goal: stringValue(task.goal) ?? 'Tiếp tục yêu cầu',
     normalized_request: stringValue(task.normalized_request) ?? '',
-    extracted_slots: sanitizedSlots(task.extracted_slots),
+    extracted_slots: sanitizedTaskSlots(
+      ['ride', 'food', 'restaurant', 'healthcare'].includes(String(task.domain)) ? task.domain as Domain : 'food',
+      task.extracted_slots,
+      isRecord(task.authoritative) && task.authoritative.pickup_source === 'CURRENT_DEVICE_LOCATION',
+    ),
     depends_on: arrayValue(task.depends_on).filter((item): item is string => typeof item === 'string'),
     phase: taskPhaseFrom(task.phase),
     revision: integerValue(task.revision),
@@ -1127,7 +1317,7 @@ export class AssistantService {
       const matching = planned.filter((task) => task.domain === target);
       if (matching.length) return { tasks: matching };
       const existing = active.find((task) => task.domain === target);
-      if (existing) return { tasks: [this.planFromTask(existing)] };
+      if (existing) return { tasks: [this.planFromTask(existing, message)] };
     }
 
     if (planned.length > 1 && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
@@ -1136,13 +1326,22 @@ export class AssistantService {
     return { tasks: planned };
   }
 
-  private planFromTask(task: StoredTask): AgentPlanTask {
+  private planFromTask(task: StoredTask, latestMessage?: string): AgentPlanTask {
+    const extractedSlots = sanitizedSlots(task.extracted_slots);
+    const partySize = task.domain === 'restaurant' && latestMessage
+      ? restaurantPartySizeFromMessage(latestMessage)
+      : undefined;
+    if (partySize !== undefined) extractedSlots.party_size = partySize;
+    const stopover = task.domain === 'ride' && latestMessage
+      ? rideStopoverFromMessage(latestMessage)
+      : undefined;
+    if (stopover) extractedSlots.stopover_address = stopover;
     return {
       domain: task.domain,
       operation: task.operation,
       goal: task.goal,
       normalized_request: task.normalized_request || task.goal,
-      extracted_slots: sanitizedSlots(task.extracted_slots),
+      extracted_slots: extractedSlots,
       missing_information: task.missing_information,
     };
   }
@@ -1185,8 +1384,10 @@ export class AssistantService {
     const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day']);
     if (foodSignal && available.has('food')) return ['food'];
     if (textHasAny(folded, ['lich kham', 'bac si', 'kham', 'than kinh']) && available.has('healthcare')) return ['healthcare'];
+    if (available.has('restaurant') && hasCandidate('restaurant') && isRestaurantDetailContinuation(folded)) return ['restaurant'];
     if (textHasAny(folded, ['dat ban', 'nha hang', 'so nguoi']) && available.has('restaurant')) return ['restaurant'];
-    if (textHasAny(folded, ['dat xe', 'goi xe', 'xe may', 'xe 4 cho', 'xe 7 cho']) && available.has('ride')) return ['ride'];
+    if (available.has('ride') && isRideStopoverUpdate(folded)) return ['ride'];
+    if (textHasAny(folded, ['dat xe', 'goi xe', 'dat chuyen', 'xac nhan chuyen', 'dat xe nay', 'dat chuyen nay', 'xe may', 'xe 4 cho', 'xe 7 cho']) && available.has('ride')) return ['ride'];
 
     if (textHasAny(folded, ['chon cai', 'chon thu', 'chon dau'])) {
       if (candidates.length) return candidates;
@@ -1206,6 +1407,24 @@ export class AssistantService {
     const conversationId = requestedConversationId ?? `conv_${randomUUID()}`;
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
+    const effectiveCurrentLocation = freshDeviceLocation(currentLocation);
+    if (isCurrentLocationQuestion(message)) {
+      const locationLabel = effectiveCurrentLocation?.address_text ?? '\u0074\u1ecda \u0111\u1ed9 hi\u1ec7n t\u1ea1i c\u1ee7a thi\u1ebft b\u1ecb';
+      const locationMessage = effectiveCurrentLocation
+        ? `\u0056\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i m\u00ecnh nh\u1eadn \u0111\u01b0\u1ee3c l\u00e0 ${locationLabel}.`
+        : '\u004d\u00ecnh ch\u01b0a c\u00f3 v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i c\u1ee7a b\u1ea1n. B\u1ea1n c\u00f3 th\u1ec3 b\u1eadt chia s\u1ebb v\u1ecb tr\u00ed ho\u1eb7c cho m\u00ecnh bi\u1ebft \u0111\u1ecba \u0111i\u1ec3m c\u1ee5 th\u1ec3 nh\u00e9.';
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        locationMessage,
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+      );
+    }
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 12).map((address) => ({
       id: address.id,
       label: address.label,
@@ -1237,7 +1456,7 @@ export class AssistantService {
           name: user.full_name ?? '',
           saved_addresses: plannerSavedAddresses,
         },
-        ...(currentLocation ? { current_location: currentLocation } : {}),
+        ...(effectiveCurrentLocation ? { current_location: effectiveCurrentLocation } : {}),
         capability_snapshot: CAPABILITY_SNAPSHOT,
         correlation_id: correlationId,
       },
@@ -1252,12 +1471,14 @@ export class AssistantService {
     // path. The Agent still returns `plan` for compatibility with older
     // consumers, but its clarification field can disagree with Core A's
     // validated typed decision and must never block dispatch here.
+    const followUpResolution = this.resolvePlanTasks(state.tasks, resolution.tasks, message, state.actions);
+    const planTasks = followUpResolution.tasks;
+    const clarificationQuestion = resolution.clarificationQuestion ?? followUpResolution.clarificationQuestion;
     const plan: JsonObject = {
       ...(stringValue(planner.assistant_message) ? { assistant_message: stringValue(planner.assistant_message) } : {}),
-      ...(resolution.clarificationQuestion ? { clarification_question: resolution.clarificationQuestion } : {}),
+      ...(clarificationQuestion ? { clarification_question: clarificationQuestion } : {}),
     };
-    const planTasks = resolution.tasks;
-    const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
+    const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective, effectiveCurrentLocation);
     for (const taskId of discardResult.discardedIds) merge.touchedIds.add(taskId);
     const merged = merge.tasks;
     if (resolution.confirmationInvalidated) {
@@ -1268,6 +1489,7 @@ export class AssistantService {
       return Boolean(task && !merge.touchedIds.has(task.id) && action.task_revision === task.revision);
     });
     const items: JsonObject[] = [];
+    const responseActions: StoredAction[] = [];
     const completed: JsonObject[] = [];
     const resultsForComposition: JsonObject[] = [];
 
@@ -1301,11 +1523,21 @@ export class AssistantService {
     if (!planTasks.length && !discardResult.discardedIds.size && stringValue(plan.clarification_question)) {
       // Clarification is informational only: retain every task, revision,
       // authoritative choice, and public action exactly as persisted.
-      return this.persistTurn(conversationId, user, message, safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'), state, [], state.actions);
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+      );
     }
     const hasRunnablePlannedTask = merged.some((task) => (
       merge.touchedIds.has(task.id)
-      && ['PLANNING', 'IN_PROGRESS'].includes(task.phase)
+      && ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS'].includes(task.phase)
       && !hasFailedDependency(task, merged)
       && this.dependenciesReady(task, merged)
     ));
@@ -1324,6 +1556,8 @@ export class AssistantService {
         clarificationState,
         [],
         actions,
+        [],
+        [],
       );
     }
 
@@ -1338,12 +1572,9 @@ export class AssistantService {
         continue;
       }
       if (!merge.touchedIds.has(task.id)) {
-        // Active work may remain visible so a user can continue it. Terminal
-        // history (completed, failed, blocked, or domain-cancelled) stays in
-        // storage but is never replayed into an unrelated turn.
-        if (task.public_item && ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)) {
-          items.push(task.public_item);
-        }
+        // Active work remains durable so a later explicit follow-up can
+        // resume it, but is not replayed into the current response. This
+        // keeps neutral/location turns free of stale cards and actions.
         continue;
       }
       if (hasFailedDependency(task, merged)) {
@@ -1357,13 +1588,16 @@ export class AssistantService {
       }
       if (!this.dependenciesReady(task, merged)) continue;
       try {
-        const result = await this.processTask(task, merged, user, conversationId, correlationId, currentLocation);
+        const result = await this.processTask(task, merged, user, conversationId, correlationId, effectiveCurrentLocation);
         task.phase = result.phase;
         if (result.authoritative) task.authoritative = result.authoritative;
         if (result.publicItem) task.public_item = result.publicItem;
         if (result.workflowId) task.workflow_id = result.workflowId;
-        if (result.actions) actions.push(...result.actions);
-        if (result.items) items.push(...result.items);
+        if (result.actions) {
+          actions.push(...result.actions);
+          responseActions.push(...result.actions);
+        }
+        items.push(...taskResultItems(result));
         if (result.publicItem) resultsForComposition.push(result.publicItem);
       } catch (error: unknown) {
         const code = publicFailureCode(error);
@@ -1378,6 +1612,11 @@ export class AssistantService {
     this.propagateDependencyFailures(merged);
 
     actions.sort((left, right) => {
+      const leftIndex = merged.findIndex((task) => task.id === left.task_id);
+      const rightIndex = merged.findIndex((task) => task.id === right.task_id);
+      return leftIndex - rightIndex;
+    });
+    responseActions.sort((left, right) => {
       const leftIndex = merged.findIndex((task) => task.id === left.task_id);
       const rightIndex = merged.findIndex((task) => task.id === right.task_id);
       return leftIndex - rightIndex;
@@ -1404,13 +1643,21 @@ export class AssistantService {
       merge.touchedIds.has(task.id)
       || ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)
     ));
-    const baseMessage = this.messageFor(message, plan, presentationTasks, items, actions);
+    const baseMessage = this.messageFor(message, plan, presentationTasks, items, responseActions);
     const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
     const composed = planner.decision_source === 'deterministic'
       ? baseMessage
       : await this.compose(message, conversationId, user.sub, activeTasks, resultsForComposition, correlationId, baseMessage);
-    const finalMessage = this.withDiscardAcknowledgement(composed, discardResult.domains, planTasks.length > 0);
-    const response = await this.persistTurn(conversationId, user, message, finalMessage, nextState, items, actions, completed);
+    const finalMessage = this.withDiscardAcknowledgement(
+      !responseActions.length && items.some((item) => (
+        item.kind === 'restaurant_options' && stringValue(item.note)?.includes('số người')
+      ))
+        ? 'Mình đã tìm thấy các quán phù hợp trong khu vực bạn yêu cầu. Bạn cho mình biết số người để mình kiểm tra bàn nhé.'
+        : composed,
+      discardResult.domains,
+      planTasks.length > 0,
+    );
+    const response = await this.persistTurn(conversationId, user, message, finalMessage, nextState, items, actions, completed, responseActions);
     return response;
   }
 
@@ -1420,11 +1667,12 @@ export class AssistantService {
     correlationId: string,
     idempotencyKey: string,
   ): Promise<AssistantResponse> {
+    const effectiveCurrentLocation = freshDeviceLocation(request.current_location);
     const requestHash = stableHash({
       conversation_id: request.conversation_id,
       action_id: request.action_id,
       ...(request.quantity !== undefined ? { quantity: request.quantity } : {}),
-      ...(request.current_location ? { current_location: request.current_location } : {}),
+      ...(effectiveCurrentLocation ? { current_location: effectiveCurrentLocation } : {}),
     });
     const conversation = await this.store.getConversation(request.conversation_id, user.sub);
     if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.' });
@@ -1488,7 +1736,7 @@ export class AssistantService {
         : state.actions.filter((candidate) => candidate.task_id !== task.id);
       if (result.nextActions) state.actions.push(...result.nextActions);
       if (result.nextAction) state.actions.push(result.nextAction);
-      const remainingItems = result.publicItem ? [result.publicItem] : (result.items ?? []);
+      const remainingItems = taskResultItems(result);
       const dependentActions: StoredAction[] = [];
       for (const dependent of state.tasks) {
         if (
@@ -1507,13 +1755,11 @@ export class AssistantService {
           continue;
         }
         try {
-          const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId, request.current_location);
-          dependent.phase = dependentResult.phase;
-          if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
-          if (dependentResult.publicItem) {
-            dependent.public_item = dependentResult.publicItem;
-            remainingItems.push(dependentResult.publicItem);
-          }
+        const dependentResult = await this.processTask(dependent, state.tasks, user, request.conversation_id, correlationId, effectiveCurrentLocation);
+        dependent.phase = dependentResult.phase;
+        if (dependentResult.authoritative) dependent.authoritative = dependentResult.authoritative;
+        if (dependentResult.publicItem) dependent.public_item = dependentResult.publicItem;
+        remainingItems.push(...taskResultItems(dependentResult));
           if (dependentResult.workflowId) dependent.workflow_id = dependentResult.workflowId;
           if (dependentResult.actions) {
             dependentActions.push(...dependentResult.actions);
@@ -1535,6 +1781,12 @@ export class AssistantService {
       const message = dependentActions.length
         ? `${result.message} Mình cũng đã chuẩn bị bước tiếp theo cho chuyến xe của bạn.`
         : result.message;
+      const responseActions = [
+        ...(result.nextActions ?? []),
+        ...(result.nextAction ? [result.nextAction] : []),
+        ...state.actions.filter((candidate) => candidate.task_id === task.id),
+        ...dependentActions,
+      ].filter((candidate, index, values) => values.findIndex((item) => item.id === candidate.id) === index);
       const turn = this.buildTurn(
         request.conversation_id,
         user,
@@ -1545,6 +1797,7 @@ export class AssistantService {
         state.actions,
         result.publicItem && (result.phase === 'COMPLETED' || action.kind === 'ride_payment') ? [result.publicItem] : [],
         'INTERNAL_ACTION',
+        responseActions,
       );
       try {
         await this.commitAssistantActionSuccess({
@@ -1593,6 +1846,7 @@ export class AssistantService {
           state.actions,
           [],
           'INTERNAL_ACTION',
+          [],
         );
         try {
           await this.commitAssistantActionSuccess({
@@ -1697,6 +1951,7 @@ export class AssistantService {
       state.actions,
       [],
       'INTERNAL_ACTION',
+      nextActions.filter((candidate) => candidate.task_id === task.id),
     );
     await this.store.appendConversationTurn({
       conversationId,
@@ -1923,7 +2178,13 @@ export class AssistantService {
     }
   }
 
-  private mergeTasks(current: StoredTask[], planned: AgentPlanTask[], latestMessage: string, replanDirective?: ReplanDirective): MergeResult {
+  private mergeTasks(
+    current: StoredTask[],
+    planned: AgentPlanTask[],
+    latestMessage: string,
+    replanDirective?: ReplanDirective,
+    currentLocation?: DeviceCurrentLocation,
+  ): MergeResult {
     const next = current.map((task) => ({ ...task, extracted_slots: { ...task.extracted_slots } }));
     const touchedIds = new Set<string>();
     const plannedIds: string[] = [];
@@ -1941,10 +2202,37 @@ export class AssistantService {
       const activeRide = domain === 'ride'
         ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined;
+      const activeSameDomain = next.filter((task) => task.domain === domain
+        && task.phase !== 'COMPLETED'
+        && (retrySameKey || task.phase !== 'FAILED')
+        && task.phase !== 'BLOCKED'
+        && task.phase !== 'DISCARDED');
+      const detailContinuation = domain === 'restaurant'
+        && activeSameDomain.length === 1
+        && isRestaurantDetailContinuation(latestMessage)
+        ? activeSameDomain[0]
+        : undefined;
       const match = sameRequest ?? activeRide ?? (planned.length === 1
         ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
-        : undefined);
-      const slots = sanitizedSlots(candidate.extracted_slots);
+        : undefined) ?? detailContinuation;
+      const candidateSlots = isRecord(candidate.extracted_slots) ? candidate.extracted_slots : {};
+      const currentLocationReference = domain === 'ride'
+        && usesCurrentLocationReference(latestMessage, candidateSlots, currentLocation);
+      const slots = sanitizedTaskSlots(domain, candidateSlots, currentLocationReference);
+      const parsedStopover = domain === 'ride' ? rideStopoverFromMessage(latestMessage) : undefined;
+      if (parsedStopover) slots.stopover_address = parsedStopover;
+      if (domain === 'ride' && Object.prototype.hasOwnProperty.call(slots, 'passenger_count')) {
+        const requestedPassengerCount = explicitRidePassengerCount(latestMessage);
+        if (requestedPassengerCount === undefined) {
+          // Restaurant party size and Ride passenger count are separate
+          // domains. A planner may echo the former into a dependent Ride
+          // proposal; accept a Ride count only when this turn explicitly
+          // scopes the count to the vehicle journey.
+          delete slots.passenger_count;
+        } else {
+          slots.passenger_count = requestedPassengerCount;
+        }
+      }
       const requestedPhase: TaskPhase | undefined = candidate.disposition === 'BLOCKED'
         ? 'BLOCKED'
         : candidate.disposition === 'FAILED'
@@ -1956,11 +2244,17 @@ export class AssistantService {
               : undefined;
       if (match) {
         const nextSlots = { ...match.extracted_slots, ...slots };
+        if (currentLocationReference) {
+          delete nextSlots.pickup_address;
+          delete nextSlots.pickup_latitude;
+          delete nextSlots.pickup_longitude;
+        }
         const changed = !sameJson(match.extracted_slots, nextSlots);
         const stepChanged = !sameJson(match.planned_step, candidate.planned_step);
         const foodContinuation = domain === 'food' && match.phase !== 'COMPLETED';
         const phaseChanged = requestedPhase !== undefined && requestedPhase !== match.phase;
-        if (changed || stepChanged || foodContinuation || phaseChanged) {
+        const rideResume = domain === 'ride' && isRideResumeRequest(latestMessage) && isRecord(match.authoritative?.quote);
+        if (changed || stepChanged || foodContinuation || phaseChanged || rideResume) {
           const exactSameKeyRetry = retrySameKey && !changed && !stepChanged;
           if (!exactSameKeyRetry) match.revision += 1;
           if (changed) this.resetTaskForRevision(match, nextSlots);
@@ -1968,6 +2262,14 @@ export class AssistantService {
           touchedIds.add(match.id);
           match.extracted_slots = nextSlots;
           match.latest_message = latestMessage;
+        }
+        if (domain === 'ride') {
+          if (currentLocationReference) {
+            match.authoritative = { ...(match.authoritative ?? {}), pickup_source: 'CURRENT_DEVICE_LOCATION' };
+          } else if (hasExplicitRidePickup(latestMessage) && match.authoritative) {
+            const { pickup_source: _pickupSource, ...authority } = match.authoritative;
+            match.authoritative = authority;
+          }
         }
         if (requestedPhase !== undefined) match.phase = requestedPhase;
         match.goal = stringValue(candidate.goal) ?? match.goal;
@@ -1990,6 +2292,7 @@ export class AssistantService {
         revision: 0,
         latest_message: latestMessage,
         missing_information: arrayValue(candidate.missing_information).filter((value): value is string => typeof value === 'string'),
+        ...(currentLocationReference ? { authoritative: { pickup_source: 'CURRENT_DEVICE_LOCATION' } } : {}),
         ...(candidate.planned_step ? { planned_step: candidate.planned_step } : {}),
       };
       next.push(created);
@@ -2006,16 +2309,20 @@ export class AssistantService {
       // Keep that durable dependency when the new typed plan has no separate
       // anchor task to map; otherwise the destination would be lost before
       // the fresh quote is prepared.
+      const plannedSlotsRaw = planned[index].extracted_slots;
+      const plannedSlots: JsonObject = isRecord(plannedSlotsRaw) ? plannedSlotsRaw : {};
       const preserveExistingRideDependencies = target.domain === 'ride'
-        && target.operation === 'UPDATE'
         && target.depends_on.length > 0
-        && mappedDependencies.length === 0;
+        && mappedDependencies.length === 0
+        && !stringValue(plannedSlots.dropoff_address);
       target.depends_on = preserveExistingRideDependencies ? target.depends_on : mappedDependencies;
     }
     return { tasks: next, touchedIds };
   }
 
   private resetTaskForRevision(task: StoredTask, nextSlots: Record<string, unknown>): void {
+    const previousSlots = { ...task.extracted_slots };
+    const previousAuthority = task.authoritative ?? {};
     task.phase = 'PLANNING';
     task.blocking_task_id = undefined;
     task.block_reason = undefined;
@@ -2031,14 +2338,60 @@ export class AssistantService {
       return;
     }
     if (task.domain === 'restaurant') {
-      const previousLocation = stringValue(task.extracted_slots.location);
-      const nextLocation = stringValue(nextSlots.location);
-      const previousCuisine = stringValue(task.extracted_slots.cuisine_query) ?? stringValue(task.extracted_slots.cuisine);
-      const nextCuisine = stringValue(nextSlots.cuisine_query) ?? stringValue(nextSlots.cuisine);
-      const candidates = previousLocation && nextLocation && previousLocation === nextLocation && previousCuisine === nextCuisine
-        ? arrayValue(task.authoritative?.candidates).filter(isRecord)
-        : [];
-      task.authoritative = candidates.length ? { candidates } : undefined;
+      const previousLocation = locationTokens(stringValue(previousSlots.location)).join(' ');
+      const nextLocation = locationTokens(stringValue(nextSlots.location)).join(' ');
+      const previousCuisine = plainText(stringValue(previousSlots.cuisine_query) ?? stringValue(previousSlots.cuisine) ?? '');
+      const nextCuisine = plainText(stringValue(nextSlots.cuisine_query) ?? stringValue(nextSlots.cuisine) ?? '');
+      const locationChanged = previousLocation !== nextLocation;
+      const cuisineChanged = previousCuisine !== nextCuisine;
+      const selected = isRecord(previousAuthority.selected) ? previousAuthority.selected : undefined;
+      const selectedCuisine = plainText(stringValue(selected?.cuisine_type) ?? stringValue(selected?.cuisine) ?? '');
+      const selectedNoLongerFits = Boolean(selected && nextCuisine && selectedCuisine && !selectedCuisine.includes(nextCuisine) && !nextCuisine.includes(selectedCuisine));
+      const identityChanged = locationChanged || cuisineChanged || selectedNoLongerFits;
+      const candidateList = identityChanged ? [] : arrayValue(previousAuthority.candidates).filter(isRecord);
+      if (identityChanged) {
+        delete nextSlots.selection;
+        delete nextSlots.selection_index;
+      }
+      const availabilityFields = ['party_size', 'start_at', 'duration_minutes', 'seating_type'];
+      const availabilityChanged = availabilityFields.some((field) => !sameJson(previousSlots[field], nextSlots[field]));
+      const {
+        candidates: _candidates,
+        selected: _selected,
+        availability: _availability,
+        availability_by_restaurant: _availabilityByRestaurant,
+        available_candidates: _availableCandidates,
+        hold: _hold,
+        pending: _pending,
+        ...stableAuthority
+      } = previousAuthority;
+      const invalidatedHold = isRecord(previousAuthority.hold)
+        ? previousAuthority.hold
+        : isRecord(previousAuthority.invalidated_hold)
+          ? previousAuthority.invalidated_hold
+          : undefined;
+      const retainedAuthority: JsonObject = {
+        ...stableAuthority,
+        ...(candidateList.length ? { candidates: candidateList } : {}),
+        ...(!identityChanged && selected ? { selected } : {}),
+        ...(invalidatedHold && stringValue(invalidatedHold.id) ? { invalidated_hold: invalidatedHold } : {}),
+      };
+      // Identity changes invalidate the selected restaurant and all derived
+      // availability/hold data. Party/time revisions keep the authoritative
+      // restaurant choice and candidate list, but force a fresh availability
+      // check and a new hold/confirmation.
+      task.authoritative = Object.keys(retainedAuthority).length ? retainedAuthority : undefined;
+      if (identityChanged || availabilityChanged) {
+        delete task.authoritative?.core_a_dispatch;
+      }
+      return;
+    }
+    if (task.domain === 'ride') {
+      const pickupWasExplicit = hasExplicitRidePickup(String(task.latest_message ?? ''));
+      const pickupSource = previousAuthority.pickup_source;
+      task.authoritative = pickupSource === 'CURRENT_DEVICE_LOCATION' && !pickupWasExplicit
+        ? { pickup_source: pickupSource }
+        : undefined;
       return;
     }
     task.authoritative = undefined;
@@ -2147,7 +2500,38 @@ export class AssistantService {
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
     const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
-    const existing = task.authoritative;
+    let existing = task.authoritative;
+    const invalidatedHold = isRecord(existing?.invalidated_hold) ? existing.invalidated_hold : undefined;
+    const invalidatedHoldId = stringValue(invalidatedHold?.id);
+    if (invalidatedHoldId) {
+      try {
+        await this.restaurant.executeTool({
+          tool_name: 'restaurant.cancel_hold',
+          risk_level: 'REVERSIBLE_WRITE',
+          arguments: { hold_id: invalidatedHoldId },
+          workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
+          tool_call_id: `call_${randomUUID()}`,
+          schema_version: '1',
+          idempotency_key: `assistant:restaurant:hold-cancel:${conversationId}:${task.id}:${task.revision}:${invalidatedHoldId}`,
+        }, user.sub, correlationId);
+      } catch (error) {
+        const errorCode = error instanceof ServiceCallError
+          ? error.code
+          : isRecord(error) && typeof error.code === 'string'
+            ? error.code
+            : undefined;
+        if (errorCode !== 'HOLD_NOT_ACTIVE' && errorCode !== 'HOLD_NOT_FOUND') {
+          const publicItem = {
+            kind: 'restaurant_hold_release_pending',
+            note: 'Mình chưa thể giải phóng lượt giữ bàn cũ để kiểm tra yêu cầu mới. Bạn thử lại sau ít giây nhé.',
+          };
+          return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: existing, publicItem, items: [publicItem] };
+        }
+      }
+      const { invalidated_hold: _invalidatedHold, ...remainingAuthority } = existing ?? {};
+      task.authoritative = remainingAuthority;
+      existing = task.authoritative;
+    }
     const selection = stringValue(slots.selection);
     const existingSelected = isRecord(existing?.selected);
     const discoveryMissing = !location && !cuisineQuery;
@@ -2163,94 +2547,142 @@ export class AssistantService {
     if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
-        items: [{ kind: 'clarification'}],
+        items: [{ kind: 'clarification', question: 'Thời điểm này đã qua. Bạn cho mình một thời gian trong tương lai nhé.' }],
       };
     }
     const candidates = arrayValue(existing?.candidates).filter(isRecord);
+    const selectableCandidates = arrayValue(existing?.available_candidates).filter(isRecord);
+    const visibleCandidates = selectableCandidates.length ? selectableCandidates : candidates;
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
-    const requestedIndex = selectionIndexFromText(task.latest_message, candidates);
-    if (!selected && selection) selected = candidates[selectionIndex(selection) ?? 0];
-    if (!selected && requestedIndex !== undefined) selected = candidates[requestedIndex];
+    const requestedIndex = selectionIndexFromText(task.latest_message, visibleCandidates);
+    if (!selected && selection) selected = visibleCandidates[selectionIndex(selection) ?? 0];
+    if (!selected && requestedIndex !== undefined) selected = visibleCandidates[requestedIndex];
     if (!candidates.length) {
-      const result = await this.restaurant.executeTool({
+      const workflowId = task.workflow_id ?? `wf_${conversationId}_${task.id}`;
+      const search = (arguments_: Record<string, unknown>): Promise<unknown> => this.restaurant.executeTool({
         tool_name: 'restaurant.search',
         risk_level: 'READ',
-        arguments: {
-          location,
-          limit: 20,
-          ...(cuisineQuery ? { cuisine_type: cuisineQuery } : {}),
-          ...(budgetRange ? { budget_range: budgetRange } : {}),
-        },
-        workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
+        arguments: { ...arguments_, limit: 20 },
+        workflow_id: workflowId,
         tool_call_id: `call_${randomUUID()}`,
         schema_version: '1',
       }, user.sub, correlationId);
-      let list = this.resultItems(result);
+      const result = await search({
+        ...(location ? { location } : {}),
+        ...(cuisineQuery ? { cuisine_type: cuisineQuery } : {}),
+        ...(budgetRange ? { budget_range: budgetRange } : {}),
+      });
+      let list = this.resultItems(result).filter((candidate) => restaurantMatchesRequestedLocation(candidate, location));
       let fallbackReason: 'location' | 'cuisine' | 'broad' | undefined;
-      if (!list.length && cuisineQuery) {
-        const locationFallback = await this.restaurant.executeTool({
-          tool_name: 'restaurant.search',
-          risk_level: 'READ',
-          arguments: { location, limit: 20 },
-          workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
-          tool_call_id: `call_${randomUUID()}`,
-          schema_version: '1',
-        }, user.sub, correlationId);
-        list = this.resultItems(locationFallback);
+      // With a hard area, a cuisine relaxation is allowed only inside that
+      // same area. Never fall back to a cuisine-only or broad catalog that can
+      // leak restaurants from another district.
+      if (!list.length && cuisineQuery && location) {
+        const locationFallback = await search({ location });
+        list = this.resultItems(locationFallback).filter((candidate) => restaurantMatchesRequestedLocation(candidate, location));
         if (list.length) fallbackReason = 'location';
       }
-      if (!list.length && cuisineQuery) {
-        const cuisineFallback = await this.restaurant.executeTool({
-          tool_name: 'restaurant.search',
-          risk_level: 'READ',
-          arguments: { cuisine_type: cuisineQuery, limit: 20 },
-          workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
-          tool_call_id: `call_${randomUUID()}`,
-          schema_version: '1',
-        }, user.sub, correlationId);
-        list = this.resultItems(cuisineFallback);
-        if (list.length) fallbackReason = 'cuisine';
-      }
-      if (!list.length) {
-        const broadFallback = await this.restaurant.executeTool({
-          tool_name: 'restaurant.search',
-          risk_level: 'READ',
-          arguments: { limit: 20 },
-          workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
-          tool_call_id: `call_${randomUUID()}`,
-          schema_version: '1',
-        }, user.sub, correlationId);
-        list = this.resultItems(broadFallback);
-        if (list.length) fallbackReason = 'broad';
-      }
       list = prioritizeRestaurantCandidates(list);
-      const publicItem = this.restaurantOptions(list);
-      if (fallbackReason) {
-        publicItem.note = fallbackReason === 'location'
-          ? 'Mình chưa tìm thấy kết quả khớp hoàn toàn với ưu tiên món ăn này; dưới đây là các nhà hàng phù hợp trong khu vực để bạn chọn.'
-          : fallbackReason === 'cuisine'
-            ? 'Mình chưa lọc được đúng khu vực bạn yêu cầu; dưới đây là các nhà hàng có cùng ưu tiên món ăn từ dữ liệu hiện có.'
-            : 'Mình chưa lọc được đúng khu vực và ưu tiên món ăn; dưới đây là các nhà hàng hiện có để bạn chọn.';
-      }
+      const noResultNote = location && cuisineQuery
+        ? `Mình chưa tìm thấy quán ${cuisineQuery} còn trong dữ liệu tại ${location}. Mình không mở rộng sang khu vực khác.`
+        : location
+          ? `Mình chưa tìm thấy nhà hàng trong khu vực ${location} từ dữ liệu hiện có.`
+          : cuisineQuery
+            ? `Mình chưa tìm thấy nhà hàng phù hợp với ${cuisineQuery} từ dữ liệu hiện có.`
+            : 'Mình chưa tìm thấy nhà hàng phù hợp từ dữ liệu hiện có.';
+      const missingBookingDetail = !partySize
+        ? 'Để kiểm tra bàn chính xác, bạn cho mình biết số người nhé.'
+        : !startAt
+          ? 'Bạn cho mình biết thời gian muốn đặt bàn nhé.'
+          : undefined;
+      const resultNote = fallbackReason === 'location'
+        ? `Mình chưa tìm thấy đúng loại món này; dưới đây là các nhà hàng vẫn thuộc ${location} để bạn chọn.`
+        : noResultNote;
+      const publicItem = this.restaurantOptions(list, [resultNote, missingBookingDetail].filter(Boolean).join(' '));
       const cohortId = this.newCohort(task);
-      const selectionActions = list.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId));
+      const selectionActions = partySize && startAt
+        ? list.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId))
+        : [];
       return {
         phase: list.length ? 'NEEDS_INFO' : 'FAILED',
-        authoritative: { candidates: list },
+        authoritative: {
+          candidates: list,
+          ...(location ? { search_location: location } : {}),
+          ...(cuisineQuery ? { search_cuisine: cuisineQuery } : {}),
+        },
         publicItem,
         items: [publicItem],
         actions: selectionActions,
       };
     }
     if (!selected) {
-      const publicItem = this.restaurantOptions(candidates);
+      if (partySize && startAt) {
+        const availabilityEntries = await Promise.all(candidates.map(async (candidate) => {
+          const restaurantId = stringValue(candidate.id);
+          if (!restaurantId) return { candidate, availability: undefined };
+          const availability = await this.restaurant.executeTool({
+            tool_name: 'restaurant.check_availability',
+            risk_level: 'READ',
+            arguments: {
+              restaurant_id: restaurantId,
+              party_size: partySize,
+              start_at: startAt,
+              duration_minutes: numberValue(slots.duration_minutes) ?? 120,
+            },
+            workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
+            tool_call_id: `call_${randomUUID()}`,
+            schema_version: '1',
+          }, user.sub, correlationId);
+          return { candidate, availability: isRecord(availability) ? availability : undefined };
+        }));
+        const availabilityByRestaurant: JsonObject = {};
+        for (const entry of availabilityEntries) {
+          const restaurantId = stringValue(entry.candidate.id);
+          if (restaurantId && entry.availability) availabilityByRestaurant[restaurantId] = entry.availability;
+        }
+        const availableCandidates = availabilityEntries
+          .filter((entry) => entry.availability?.available === true)
+          .map((entry) => entry.candidate);
+        const hasAvailable = availabilityEntries.some((entry) => entry.availability?.available === true);
+        const authority = {
+          ...(existing ?? {}),
+          candidates,
+          available_candidates: availableCandidates,
+          availability_by_restaurant: availabilityByRestaurant,
+          availability_party_size: partySize,
+          availability_start_at: startAt,
+        };
+        if (!hasAvailable) {
+          const publicItem = this.restaurantOptions(
+            [],
+            `Mình đã kiểm tra ${candidates.length} nhà hàng trong ${location ?? 'danh sách vừa tìm'} nhưng chưa có bàn cho ${partySize} người lúc ${publicDateTime(startAt) ?? startAt}. Bạn thử đổi thời gian hoặc số người nhé.`,
+          );
+          return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: authority, publicItem, items: [publicItem] };
+        }
+        const publicItem = this.restaurantOptions(
+          availableCandidates,
+          `Mình đã kiểm tra bàn cho ${partySize} người lúc ${publicDateTime(startAt) ?? startAt}. Bạn chọn một quán trong danh sách để mình giữ bàn nhé.`,
+        );
+        const cohortId = this.newCohort(task);
+        return {
+          phase: 'NEEDS_INFO' as TaskPhase,
+          authoritative: authority,
+          publicItem,
+          items: [publicItem],
+          actions: availableCandidates.map((candidate) => this.actionFor(task, 'select_restaurant', { selection_index: candidates.indexOf(candidate) }, cohortId)),
+        };
+      }
+      const note = !partySize
+        ? 'Để kiểm tra bàn chính xác, bạn cho mình biết số người nhé.'
+        : 'Bạn cho mình biết thời gian muốn đặt bàn nhé.';
+      const publicItem = this.restaurantOptions(candidates, note);
       const cohortId = this.newCohort(task);
       return {
         phase: 'NEEDS_INFO' as TaskPhase,
         authoritative: existing,
         publicItem,
         items: [publicItem],
-        actions: candidates.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId)),
+        actions: [],
       };
     }
     const restaurantId = stringValue(selected.id);
@@ -2258,7 +2690,7 @@ export class AssistantService {
     const availability = await this.restaurant.executeTool({
       tool_name: 'restaurant.check_availability',
       risk_level: 'READ',
-      arguments: { restaurant_id: restaurantId, party_size: partySize, start_at: startAt, duration_minutes: 120 },
+      arguments: { restaurant_id: restaurantId, party_size: partySize, start_at: startAt, duration_minutes: numberValue(slots.duration_minutes) ?? 120 },
       workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
       tool_call_id: `call_${randomUUID()}`,
       schema_version: '1',
@@ -2301,7 +2733,7 @@ export class AssistantService {
     const tool: RestaurantTool = {
       tool_name: 'restaurant.create_reservation',
       risk_level: 'FINANCIAL_OR_FINAL',
-      arguments: { restaurant_id: restaurantId, party_size: partySize, start_at: startAt, duration_minutes: 120, hold_id: hold.id },
+      arguments: { restaurant_id: restaurantId, party_size: partySize, start_at: startAt, duration_minutes: numberValue(slots.duration_minutes) ?? 120, hold_id: hold.id },
       workflow_id: task.workflow_id ?? `wf_${conversationId}_${task.id}`,
       tool_call_id: `call_${randomUUID()}`,
       schema_version: '1',
@@ -2316,7 +2748,10 @@ export class AssistantService {
   private async addressOptionsItem(userId: string, purpose: "PICKUP" | "DROPOFF" | "DELIVERY"): Promise<JsonObject> {
     const addresses = (await this.store.listSavedAddresses(userId)).slice(0, 5).map((address) => ({ label: address.label, address_text: address.addressText, is_default: address.isDefault }));
     const label = purpose === "PICKUP" ? "điểm đón" : purpose === "DROPOFF" ? "điểm đến" : "địa chỉ giao hàng";
-    return { kind: "address_options", title: `Chọn ${label}`, purpose, addresses, allow_new: true, note: `Bạn có thể chọn ${label} đã lưu hoặc nhập một địa chỉ mới cụ thể.` };
+    const note = purpose === 'PICKUP'
+      ? 'Mình chưa có vị trí đón của bạn. Bạn có thể nhập điểm đón hoặc bật chia sẻ vị trí để mình dùng vị trí hiện tại làm điểm đón.'
+      : `Bạn có thể chọn ${label} đã lưu hoặc nhập một địa chỉ mới cụ thể.`;
+    return { kind: "address_options", title: `Chọn ${label}`, purpose, addresses, allow_new: true, note };
   }
 
   private async processRide(
@@ -2327,6 +2762,15 @@ export class AssistantService {
     correlationId: string,
     currentLocation?: DeviceCurrentLocation,
   ): Promise<TaskProcessResult> {
+    const freshLocation = freshDeviceLocation(currentLocation);
+    const pickupSource = stringValue(task.authoritative?.pickup_source);
+    const rideAuthorityForTask = (result: JsonObject, extra: JsonObject = {}): JsonObject => rideAuthority(
+      result,
+      {
+        ...(pickupSource === 'CURRENT_DEVICE_LOCATION' ? { pickup_source: pickupSource } : {}),
+        ...extra,
+      },
+    );
     const authoritativeResult = isRecord(task.authoritative?.result) ? task.authoritative.result : undefined;
     const existingBooking = [task.authoritative?.booking, authoritativeResult?.booking].find(isRecord);
     const existingBookingId = stringValue(existingBooking?.id);
@@ -2337,7 +2781,7 @@ export class AssistantService {
       try {
         const liveBooking = await this.rideClient.getBooking(user.sub, { correlationId }, existingBookingId);
         if (isTerminalRideBookingStatus(liveBooking.status)) {
-          return { phase: 'COMPLETED' as TaskPhase, publicItem: this.rideItem({ booking: liveBooking }, task), authoritative: rideAuthority({ booking: liveBooking }) };
+          return { phase: 'COMPLETED' as TaskPhase, publicItem: this.rideItem({ booking: liveBooking }, task), authoritative: rideAuthorityForTask({ booking: liveBooking }) };
         }
       } catch (error) {
         // Ignore errors and proceed
@@ -2377,7 +2821,9 @@ export class AssistantService {
     }
     if (dependency) {
       const selected = dependency.authoritative?.selected;
-      const destination = stringValue(selected && isRecord(selected) ? selected.location : undefined);
+      const destination = isRecord(selected)
+        ? formatCatalogAddress(selected.address, selected.location, selected.district, selected.city)
+        : undefined;
       if (destination) slots.dropoff_address = destination;
     }
     if (healthcareDependency) {
@@ -2398,14 +2844,14 @@ export class AssistantService {
     // A browser location is request-scoped.  It is used only to form the
     // current Ride quote, not copied into saved addresses or the durable task
     // slots. The Web client resends it for explicit actions while sharing is on.
-    if (!pickup && currentLocation) {
-      pickup = currentLocation.address_text?.trim() || 'Vị trí thiết bị hiện tại';
-      slots.pickup_latitude = currentLocation.latitude;
-      slots.pickup_longitude = currentLocation.longitude;
+    if (!pickup && freshLocation) {
+      pickup = freshLocation.address_text?.trim() || 'Vị trí thiết bị hiện tại';
+      slots.pickup_latitude = freshLocation.latitude;
+      slots.pickup_longitude = freshLocation.longitude;
     }
     const savedAddresses = await this.store.listSavedAddresses(user.sub);
     const sortedAddresses = [...savedAddresses].sort((a, b) => (b.label?.length ?? 0) - (a.label?.length ?? 0));
-    if (pickup) {
+    if (pickup && pickupSource !== 'CURRENT_DEVICE_LOCATION') {
       const match = sortedAddresses.find((a) => plainText(pickup!).includes(plainText(a.label)));
       if (match) pickup = match.addressText;
     }
@@ -2417,8 +2863,8 @@ export class AssistantService {
       const match = sortedAddresses.find((a) => plainText(stopover!).includes(plainText(a.label)));
       if (match) stopover = match.addressText;
     }
-    // Update slots so the resolved address persists
-    if (pickup) slots.pickup_address = pickup;
+    // `slots` is a request-local route projection. Current-device pickup is
+    // deliberately never written back to task.extracted_slots/profile.
     if (dropoff) slots.dropoff_address = dropoff;
     if (stopover) slots.stopover_address = stopover;
     const passengerCount = numberValue(slots.passenger_count) ?? 1;
@@ -2494,7 +2940,7 @@ export class AssistantService {
       const heldAppointment = dependentHealthcareAppointment;
       if (!heldAppointment) {
         const publicItem = { kind: 'ride_timing_conflict'};
-        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const appointmentStart = parseAuthoritativeDate(heldAppointment.start_time ?? (isRecord(heldAppointment.slot) ? heldAppointment.slot.start_time : undefined));
       const durationMinutes = numberValue(quote.duration_minutes);
@@ -2502,7 +2948,7 @@ export class AssistantService {
         const publicItem = {
           kind: 'ride_timing_conflict',
           };
-        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote, appointment: heldAppointment }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const recommendedDeparture = new Date(appointmentStart.getTime() - (durationMinutes + HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES) * 60_000);
       if (appointmentStart.getTime() <= Date.now() || recommendedDeparture.getTime() <= Date.now()) {
@@ -2512,7 +2958,7 @@ export class AssistantService {
           recommended_departure: recommendedDeparture.toISOString(),
           note: `Giờ nên rời đi đã qua hoặc không đủ thời gian đến lịch khám. Mình chưa đặt hoặc hủy chuyến xe; bạn hãy chọn lại lịch khám hoặc điểm đón.`,
         };
-        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, recommended_departure: recommendedDeparture.toISOString() }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+        return { phase: 'FAILED' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote, appointment: heldAppointment, recommended_departure: recommendedDeparture.toISOString() }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const timing = {
         appointment_start_time: appointmentStart.toISOString(),
@@ -2523,22 +2969,22 @@ export class AssistantService {
       const publicItem = { ...this.rideItem({ quote }, task), duration_minutes: durationMinutes, ...timing };
       if (result.stage === 'SERVICE_CONFIRMATION') {
         if (!this.dependenciesCompleted(task, allTasks)) {
-          return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+          return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
         }
         const action = this.actionFor(task, 'ride_service', { workflow_id: result.workflow_id });
-        return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], actions: [action], workflowId: result.workflow_id };
+        return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], actions: [action], workflowId: result.workflow_id };
       }
-      return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+      return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote, appointment: heldAppointment, ...timing }), publicItem, items: [publicItem], workflowId: result.workflow_id };
     }
     const publicItem = quote ? this.rideItem({ quote }, task) : { kind: 'progress'};
     if (result.stage === 'SERVICE_CONFIRMATION' && quote) {
       if (task.depends_on.length > 0 && !this.dependenciesCompleted(task, allTasks)) {
-        return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+        return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
       }
       const action = this.actionFor(task, 'ride_service', { workflow_id: result.workflow_id });
-        return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], actions: [action], workflowId: result.workflow_id };
+        return { phase: 'AWAITING_CONFIRMATION' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote }), publicItem, items: [publicItem], actions: [action], workflowId: result.workflow_id };
     }
-    return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthority(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
+    return { phase: 'IN_PROGRESS' as TaskPhase, authoritative: rideAuthorityForTask(result, { quote }), publicItem, items: [publicItem], workflowId: result.workflow_id };
   }
 
   private async processHealthcare(task: StoredTask, user: AuthUser, conversationId: string, correlationId: string): Promise<TaskProcessResult> {
@@ -2553,23 +2999,40 @@ export class AssistantService {
     }
     const existing = task.authoritative;
     const doctors = arrayValue(existing?.doctors).filter(isRecord);
-    if (!doctors.length || existing?.department !== department) {
+    const requestedStart = requestedHealthcareStart(slots);
+    const requestedDate = requestedHealthcareDate(slots);
+    const requestedPreference = stringValue(slots.time_preference);
+    const authorityContextChanged = existing && (
+      existing.requested_start_at !== slots.start_at
+      || existing.requested_date !== requestedDate
+      || existing.time_preference !== requestedPreference
+    );
+    if (!doctors.length || existing?.department !== department || authorityContextChanged) {
       const result = await this.healthcare.executeTool({ tool_name: 'healthcare.list_slots', risk_level: 'READ', arguments: { department }, workflow_id: workflowId, tool_call_id: `call_${randomUUID()}`, schema_version: '1' }, user.sub, correlationId);
       const availableDoctors = this.resultItems(result).filter((doctor) => arrayValue(doctor.available_slots).some(isRecord));
       const requestedDoctors = filterDoctorsByRequestedTime(availableDoctors, slots);
-      const requestedStart = requestedHealthcareStart(slots);
-      const requestedDate = requestedHealthcareDate(slots);
-      const exactRequested = hasExactHealthcareSlot(requestedDoctors, requestedStart);
-      const doctorsForSelection = requestedDoctors.length ? requestedDoctors : availableDoctors;
+      const exactRequested = requestedStart ? hasExactHealthcareSlot(requestedDoctors, requestedStart) : requestedDoctors.length > 0;
+      const futureDoctors = filterDoctorsByRequestedTime(availableDoctors, {});
+      const hasRequestedConstraint = Boolean(requestedStart || requestedDate || requestedPreference);
+      // A constrained request may only show slots that actually satisfy its
+      // date/daypart/nearby-clock boundary. Falling back to every future slot
+      // would present an arbitrary distant appointment as a "nearest"
+      // alternative and could lead the user to confirm the wrong day.
+      const doctorsForSelection = hasRequestedConstraint ? requestedDoctors : futureDoctors;
       const publicItem = doctorsForSelection.length > 0
         ? this.healthcareOptions(doctorsForSelection, task.id)
         : {
           kind: 'healthcare_no_availability',
-          note: requestedStart
-            ? 'Mình không tự đổi giờ bạn yêu cầu. Dưới đây là các khung giờ khác từ dữ liệu lịch hiện có để bạn chọn nếu phù hợp.'
-            : 'Mình chưa thấy lịch phù hợp với buổi bạn muốn. Dưới đây là các khung giờ từ dữ liệu lịch hiện có để bạn chọn.',
+          note: hasRequestedConstraint
+            ? `Mình không tìm thấy khung giờ còn trống phù hợp với ${requestedStart ? publicDateTime(slots.start_at) ?? slots.start_at : requestedDate ?? requestedPreference ?? 'thời gian bạn chọn'}. Hiện chưa có lựa chọn thay thế trong dữ liệu.`
+            : 'Mình chưa thấy khung giờ khám còn trống từ dữ liệu hiện có.',
           options: this.healthcareOptionRows(doctorsForSelection),
         };
+      if (isRecord(publicItem) && doctorsForSelection.length > 0 && hasRequestedConstraint && !exactRequested) {
+        publicItem.note = requestedStart
+          ? `Không có đúng khung ${publicDateTime(slots.start_at) ?? slots.start_at}; dưới đây là các khung giờ gần nhất còn trống để bạn cân nhắc.`
+          : 'Không có đúng ngày hoặc buổi bạn yêu cầu; dưới đây là các khung giờ còn trống gần nhất để bạn cân nhắc.';
+      }
       const selectionActions = this.healthcareSelectionActions(doctorsForSelection, task);
       return {
         phase: doctorsForSelection.length ? 'NEEDS_INFO' as TaskPhase : 'FAILED' as TaskPhase,
@@ -3287,6 +3750,7 @@ export class AssistantService {
     actions: StoredAction[] = [],
     completed: JsonObject[] = [],
     messageKind: ConversationMessageKind = 'USER',
+    responseActions: StoredAction[] = actions,
   ): {
     response: AssistantResponse;
     userMessage: AssistantActionSuccessCommit['userMessage'];
@@ -3300,7 +3764,7 @@ export class AssistantService {
         conversation_id: conversationId,
         message: safeMessage,
         items: items.map((item) => this.sanitizeConsumerItem(item)),
-        actions: actions.map((action) => this.publicAction(action)),
+        actions: responseActions.map((action) => this.publicAction(action)),
         completed: completed.map((item) => this.sanitizeConsumerItem(item)),
         workflow_status: orchestration.status,
     };
@@ -3377,7 +3841,13 @@ export class AssistantService {
     if (kinds.has('clarification')) return 'Mình cần thêm một vài thông tin để tiếp tục xử lý yêu cầu của bạn.';
     if (kinds.has('task_error') || kinds.has('ride_timing_conflict')) return 'Một bước trong yêu cầu chưa thể hoàn tất an toàn. Bạn kiểm tra thông tin và thử lại nhé.';
     if (kinds.has('restaurant_confirmation') || kinds.has('healthcare_confirmation') || kinds.has('food_confirmation')) return 'Thông tin đã sẵn sàng. Bạn kiểm tra lại các chi tiết rồi xác nhận bước tiếp theo nhé.';
-    if (kinds.has('restaurant_options') || kinds.has('healthcare_options') || kinds.has('food_options') || kinds.has('ride_quote')) return 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
+    if (kinds.has('restaurant_options')) {
+      const needsPartySize = items.some((item) => stringValue(item.note)?.includes('số người'));
+      return needsPartySize
+        ? 'Mình đã tìm thấy các quán phù hợp trong khu vực bạn yêu cầu. Bạn cho mình biết số người để mình kiểm tra bàn nhé.'
+        : 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
+    }
+    if (kinds.has('healthcare_options') || kinds.has('food_options') || kinds.has('ride_quote')) return 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
     if (kinds.has('reservation') || kinds.has('appointment_confirmed') || kinds.has('food_order')) return 'Yêu cầu của bạn đã được cập nhật theo kết quả xác thực từ dịch vụ.';
     return message.trim() ? 'Mình đã tìm được thông tin phù hợp cho bạn.' : 'Mình đã cập nhật thông tin cho bạn.';
   }
@@ -3424,14 +3894,15 @@ export class AssistantService {
     return { id: action.id, kind: action.kind, label: labels[action.kind], ...(action.selection_index !== undefined ? { target_index: action.selection_index } : {}) };
   }
 
-  private restaurantOptions(candidates: JsonObject[]): JsonObject {
+  private restaurantOptions(candidates: JsonObject[], note?: string): JsonObject {
     if (!candidates.length) {
       return {
         kind: 'restaurant_unavailable',
         options: [],
-        };
+        ...(note ? { note } : {}),
+      };
     }
-    return { kind: 'restaurant_options', options: candidates.map((candidate) => this.publicRestaurant(candidate)) };
+    return { kind: 'restaurant_options', options: candidates.map((candidate) => this.publicRestaurant(candidate)), ...(note ? { note } : {}) };
   }
 
   private resultItems(value: unknown): JsonObject[] {
@@ -3689,7 +4160,7 @@ export class AssistantService {
     const allowed = new Set([
       'kind', 'title', 'note', 'question', 'options', 'departments', 'restaurant',
       'reservation_code', 'party_size', 'start_at', 'status', 'expires_at',
-      'pickup', 'dropoff', 'stopovers', 'vehicle', 'amount', 'currency', 'duration_minutes',
+      'pickup', 'dropoff', 'stopovers', 'vehicle', 'passenger_count', 'amount', 'currency', 'duration_minutes',
       'route_distance_meters', 'route_duration_seconds', 'route_geometry',
       'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude',
       'appointment_start_time', 'recommended_departure', 'departure_buffer_minutes', 'scheduled_pickup', 'schedule_note',

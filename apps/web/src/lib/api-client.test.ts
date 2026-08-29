@@ -141,6 +141,23 @@ describe("browser API client", () => {
     });
   });
 
+  it("omits location when a later message or action has no fresh device context", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return jsonResponse(200, { data: { conversation_id: "conv-1", message: "ok", items: [], actions: [], completed: [], workflow_status: "RUNNING" } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await sendAssistantMessage("Tôi muốn đặt xe đến Cầu Giấy", "conv-1");
+    await runAssistantAction("conv-1", "action-ride-1", "action-key");
+
+    expect(bodies).toEqual([
+      { message: "Tôi muốn đặt xe đến Cầu Giấy", conversation_id: "conv-1" },
+      { conversation_id: "conv-1", action_id: "action-ride-1" },
+    ]);
+  });
+
   it("translates stale, unavailable, location, and driver errors for consumers", () => {
     const makeError = (code: string): ApiError => new ApiError({ code, detail: code, status: 409, retryable: false });
     expect(errorText(makeError("STALE_ACTION"))).toBe("Lựa chọn này vừa được cập nhật. Hãy chọn lại từ danh sách mới.");

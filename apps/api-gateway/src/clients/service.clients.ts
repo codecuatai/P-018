@@ -300,7 +300,7 @@ function mapFoodErrorStatus(code: string, upstreamStatus: number): number {
 }
 
 export interface RestaurantTool {
-  tool_name: 'restaurant.search' | 'restaurant.get' | 'restaurant.check_availability' | 'restaurant.create_hold' | 'restaurant.create_reservation';
+  tool_name: 'restaurant.search' | 'restaurant.get' | 'restaurant.check_availability' | 'restaurant.create_hold' | 'restaurant.cancel_hold' | 'restaurant.create_reservation';
   risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
   arguments: Record<string, unknown>;
   workflow_id: string;
@@ -364,12 +364,17 @@ export class AgentClient extends InternalServiceClient {
 
   assistantChat(payload: JsonObject, correlationId: string): Promise<JsonObject> {
     const actorId = typeof payload.user_id === 'string' ? payload.user_id : undefined;
-    return this.legacyRequest<JsonObject>(
+    return this.request(
       '/api/v1/assistant-chat',
-      { method: 'POST', body: JSON.stringify(payload), headers: actorId ? { 'x-actor-id': actorId } : {} },
-      correlationId,
-      actorId,
-      30000,
+      {
+        correlationId,
+        workflowId: typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined,
+        toolCallId: 'assistant-chat',
+      },
+      { method: 'POST', body: JSON.stringify(payload) },
+      actorId ? actorHeaders(actorId) : {},
+      operationProfile('agent.assistant_chat'),
+      (value) => asJsonObject(envelopeValue(value), 'Agent assistant chat'),
     );
   }
 
@@ -627,6 +632,11 @@ export class RestaurantClient extends InternalServiceClient {
       profile = operationProfile('restaurant.hold.create');
       headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
       body = JSON.stringify(tool.arguments);
+    } else if (tool.tool_name === 'restaurant.cancel_hold') {
+      path = `/v1/reservation-holds/${encodeURIComponent(String(tool.arguments.hold_id))}/cancel`;
+      method = 'POST';
+      profile = operationProfile('restaurant.hold.cancel');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
     } else if (tool.tool_name === 'restaurant.create_reservation') {
       path = '/v1/reservations';
       method = 'POST';

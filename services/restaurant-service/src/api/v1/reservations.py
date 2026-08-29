@@ -20,6 +20,17 @@ def create_hold(body: HoldCreateRequest, request: Request, idempotency_key: str 
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 
+@router.post("/reservation-holds/{hold_id}/cancel")
+def cancel_hold(hold_id: str, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), actor_id=Depends(require_internal_auth)):
+    key = require_idempotency_key(idempotency_key)
+    try:
+        return envelope(request.app.state.restaurant_service.cancel_hold(actor_id, hold_id, key), request)
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if code == "HOLD_NOT_FOUND" else 409
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
 @router.post("/reservations", status_code=status.HTTP_201_CREATED)
 def create_reservation(body: ReservationCreateRequest, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), actor_id=Depends(require_internal_auth)):
     key = require_idempotency_key(idempotency_key)

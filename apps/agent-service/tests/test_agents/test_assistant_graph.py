@@ -510,6 +510,153 @@ def test_restaurant_request_keeps_location_separate_from_time_clause() -> None:
     assert "T21:00:00" in slots["start_at"]
 
 
+@pytest.mark.parametrize(
+    "location_phrase",
+    [
+        "ở Cầu Giấy",
+        "tại Cầu Giấy",
+        "ở khu vực Cầu Giấy",
+        "ở chỗ khu vực Cầu Giấy",
+        "quanh Cầu Giấy",
+        "gần Cầu Giấy",
+    ],
+)
+def test_restaurant_location_paraphrases_do_not_leak_into_cuisine(location_phrase: str) -> None:
+    plan = deterministic_plan(f"Tìm quán lẩu {location_phrase} lúc 17 giờ, có còn bàn không?")
+
+    assert domains(plan) == ["restaurant"]
+    slots = plan.tasks[0].extracted_slots
+    assert slots["location"] == "Cầu Giấy"
+    assert slots["cuisine_query"] == "lau"
+
+
+def test_neutral_food_to_ride_follow_up_keeps_food_without_discarding_it() -> None:
+    first = deterministic_plan("Tìm phở bò giao về nhà")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan("Tôi muốn đặt xe đến Cầu Giấy", state)
+
+    assert domains(follow_up) == ["ride"]
+    assert follow_up.discarded_task_refs == []
+    assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "Cầu Giấy"
+
+
+@pytest.mark.parametrize("current_location", [None, {
+    "latitude": 21.0285,
+    "longitude": 105.8048,
+    "captured_at": "2020-01-01T00:00:00+00:00",
+    "source": "device",
+}])
+def test_stale_or_missing_later_location_does_not_become_a_ride_pickup(current_location: dict[str, Any] | None) -> None:
+    state = {"tasks": [{
+        "domain": "food",
+        "phase": "IN_PROGRESS",
+        "goal": "Tìm phở bò",
+        "normalized_request": "Tìm phở bò giao về nhà",
+        "extracted_slots": {"dish_query": "phở bò"},
+    }]}
+
+    plan = _apply_plan_guards(
+        deterministic_plan("Tôi muốn đặt xe đến Cầu Giấy", state, current_location),
+        "Tôi muốn đặt xe đến Cầu Giấy",
+        state,
+        current_location,
+    )
+
+    slots = plan.tasks[0].extracted_slots
+    assert slots["dropoff_address"] == "Cầu Giấy"
+    assert "pickup_address" not in slots
+    assert "pickup_latitude" not in slots
+    assert "pickup_longitude" not in slots
+
+
+def test_demo_restaurant_then_ride_request_keeps_area_and_dependency() -> None:
+    plan = deterministic_plan(
+        "Check giúp tôi xem tầm 5h chiều nay có quán lẩu nào còn bàn ở khu vực Cầu Giấy không, "
+        "xong rồi đặt xe giúp tôi ra đó luôn."
+    )
+
+    assert domains(plan) == ["restaurant", "ride"]
+    restaurant_slots = plan.tasks[0].extracted_slots
+    assert restaurant_slots["location"] == "Cầu Giấy"
+    assert restaurant_slots["cuisine_query"] == "lau"
+    assert datetime.fromisoformat(restaurant_slots["start_at"]).hour == 17
+    assert "party_size" in plan.tasks[0].missing_information
+    assert plan.tasks[1].depends_on == [0]
+    assert "dropoff_address" not in plan.tasks[1].extracted_slots
+
+
+def test_demo_party_follow_up_targets_restaurant_without_replaying_ride() -> None:
+    first = deterministic_plan(
+        "Check giúp tôi xem tầm 5h chiều nay có quán lẩu nào còn bàn ở khu vực Cầu Giấy không, "
+        "xong rồi đặt xe giúp tôi ra đó luôn."
+    )
+    follow_up = deterministic_plan("5 người", {"tasks": [task.model_dump() for task in first.tasks]})
+
+    assert domains(follow_up) == ["restaurant"]
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["location"] == "Cầu Giấy"
+    assert slots["cuisine_query"] == "lau"
+    assert slots["party_size"] == 5
+
+
+def test_demo_stopover_follow_up_preserves_authoritative_ride_route() -> None:
+    state = {
+        "tasks": [{
+            "domain": "ride",
+            "phase": "AWAITING_CONFIRMATION",
+            "goal": "Đi tới nhà hàng vừa đặt",
+            "normalized_request": "Đi tới nhà hàng vừa đặt",
+            "extracted_slots": {
+                "dropoff_address": "Nhà hàng vừa đặt",
+                "vehicle_type": "BIKE",
+            },
+        }],
+    }
+
+    follow_up = deterministic_plan(
+        "Trước khi tới quán, cho tôi ghé Công viên Nghĩa Đô một chút rồi mới tới nhà hàng vừa đặt.",
+        state,
+    )
+
+    assert domains(follow_up) == ["ride"]
+    slots = follow_up.tasks[0].extracted_slots
+    assert slots["stopover_address"] == "Công viên Nghĩa Đô"
+    assert slots["dropoff_address"] == "Nhà hàng vừa đặt"
+    assert slots["vehicle_type"] == "BIKE"
+
+
+@pytest.mark.asyncio
+async def test_current_location_question_has_truthful_fresh_and_missing_branches() -> None:
+    graph = build_assistant_graph(llm=FailingPlanner())
+    fresh = await graph.ainvoke({
+        "query": "Bạn biết vị trí hiện tại của tôi ở đâu không?",
+        "conversation_state": {},
+        "current_location": {
+            "latitude": 21.0285,
+            "longitude": 105.8048,
+            "address_text": "Cầu Giấy, Hà Nội",
+            "captured_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+            "source": "device",
+        },
+    })
+    assert fresh["plan"]["tasks"] == []
+    assert "Cầu Giấy, Hà Nội" in fresh["assistant_message"]
+
+    stale = await graph.ainvoke({
+        "query": "Bạn biết vị trí hiện tại của tôi ở đâu không?",
+        "conversation_state": {},
+        "current_location": {
+            "latitude": 21.0285,
+            "longitude": 105.8048,
+            "captured_at": "2020-01-01T00:00:00+00:00",
+            "source": "device",
+        },
+    })
+    assert stale["plan"]["tasks"] == []
+    assert "chưa có vị trí hiện tại" in stale["assistant_message"]
+
+
 def test_unsupported_request_is_safe() -> None:
     plan = deterministic_plan("Đặt vé máy bay đi Đà Nẵng")
     assert plan.tasks == []
@@ -676,6 +823,25 @@ class ConflictingExplicitSlotPlanner:
         )
 
 
+class ConflictingRestaurantLocationPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình sẽ tìm nhà hàng.",
+            tasks=[
+                PlannedTask(
+                    domain="restaurant",
+                    goal="Tìm quán lẩu",
+                    normalized_request="Tìm quán lẩu ở Ba Đình",
+                    extracted_slots={
+                        "location": "Ba Đình",
+                        "cuisine_query": "lau ba dinh",
+                    },
+                ),
+            ],
+        )
+
+
 @pytest.mark.asyncio
 async def test_model_cannot_override_explicit_vehicle_or_drop_tomorrow_preference() -> None:
     graph = build_assistant_graph(llm=ConflictingExplicitSlotPlanner())
@@ -688,6 +854,20 @@ async def test_model_cannot_override_explicit_vehicle_or_drop_tomorrow_preferenc
 
     assert result["plan"]["tasks"][0]["extracted_slots"]["vehicle_type"] == "BIKE"
     assert result["plan"]["tasks"][1]["extracted_slots"]["time_preference"] == "tomorrow_morning"
+
+
+@pytest.mark.asyncio
+async def test_configured_model_guard_preserves_explicit_restaurant_location_and_cuisine() -> None:
+    graph = build_assistant_graph(llm=ConflictingRestaurantLocationPlanner())
+    result = await graph.ainvoke({
+        "query": "Tìm quán lẩu ở chỗ khu vực Cầu Giấy có còn bàn không?",
+        "conversation_state": {},
+    })
+
+    assert result["decision_source"] == "model"
+    slots = result["plan"]["tasks"][0]["extracted_slots"]
+    assert slots["location"] == "Cầu Giấy"
+    assert slots["cuisine_query"] == "lau"
 
 
 class CapturingComposer:

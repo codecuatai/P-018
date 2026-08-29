@@ -43,8 +43,8 @@ describe("FoodCartDock", () => {
 });
 
 describe("Ride cancellation card", () => {
-  it("shows an intermediate stop in the public Ride confirmation card", () => {
-    render(<AssistantCards response={{
+  it("shows ordered intermediate stops in the public Ride confirmation card", () => {
+    const { container } = render(<AssistantCards response={{
       conversation_id: "conversation-stopover",
       message: "",
       actions: [],
@@ -53,7 +53,7 @@ describe("Ride cancellation card", () => {
         kind: "ride_booking",
         title: "Kiểm tra chuyến xe",
         pickup: "Vị trí hiện tại",
-        stopovers: [{ address: "Công viên Nghĩa Đô" }],
+        stopovers: [{ address: "Công viên Nghĩa Đô" }, { address: "Hồ Tây" }],
         dropoff: "Nhà hàng đã chọn",
         vehicle: "Xe 4 chỗ",
         amount: 139000,
@@ -63,6 +63,48 @@ describe("Ride cancellation card", () => {
 
     expect(screen.getByText("ĐIỂM DỪNG 1")).toBeInTheDocument();
     expect(screen.getByText("Công viên Nghĩa Đô")).toBeInTheDocument();
+    expect(screen.getByText("ĐIỂM DỪNG 2")).toBeInTheDocument();
+    expect(screen.getByText("Hồ Tây")).toBeInTheDocument();
+    const card = container.querySelector("article.card-ride");
+    const cardText = card?.textContent ?? "";
+    expect(cardText.indexOf("Vị trí hiện tại")).toBeLessThan(cardText.indexOf("Công viên Nghĩa Đô"));
+    expect(cardText.indexOf("Công viên Nghĩa Đô")).toBeLessThan(cardText.indexOf("Hồ Tây"));
+    expect(cardText.indexOf("Hồ Tây")).toBeLessThan(cardText.indexOf("Nhà hàng đã chọn"));
+  });
+
+  it("renders the final Ride confirmation fields and dispatches one service action", () => {
+    const onAction = jest.fn();
+    const response = {
+      conversation_id: "conversation-ride-final",
+      message: "",
+      actions: [{ id: "ride-service", kind: "ride_service", label: "Xác nhận chuyến xe" }],
+      completed: [],
+      items: [{
+        kind: "ride_quote",
+        title: "Báo giá chuyến xe",
+        pickup: "Vị trí hiện tại, Cầu Giấy",
+        stopovers: [{ address: "Công viên Nghĩa Đô" }],
+        dropoff: "Số 1 Cầu Giấy, Hà Nội",
+        vehicle: "Xe máy",
+        amount: 67000,
+        currency: "VND",
+        duration_minutes: 32,
+      }],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={onAction} />);
+
+    const card = screen.getByText("Báo giá chuyến xe").closest("article");
+    expect(card).toHaveTextContent("Vị trí hiện tại, Cầu Giấy");
+    expect(card).toHaveTextContent("Công viên Nghĩa Đô");
+    expect(card).toHaveTextContent("Số 1 Cầu Giấy, Hà Nội");
+    expect(card).toHaveTextContent("Xe máy");
+    expect(card).toHaveTextContent("67.000 đ");
+    expect(card).toHaveTextContent("32 phút");
+    fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Xác nhận chuyến xe" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith(response.actions[0]);
   });
 
   it("keeps the cancellation control inside the Ride card", () => {
@@ -186,6 +228,45 @@ describe("Healthcare slot card", () => {
     fireEvent.click(within(doctorGroup as HTMLElement).getByRole("button", { name: "Chọn lịch" }));
 
     expect(onAction).toHaveBeenCalledWith(response.actions[1]);
+  });
+
+  it("renders a truthful nearby Healthcare alternative without inventing a requested time", () => {
+    const response = {
+      conversation_id: "conversation-healthcare-alternative",
+      message: "",
+      items: [{
+        kind: "healthcare_options",
+        title: "Lịch khám gần nhất",
+        note: "Không có đúng khung 10:00; dưới đây là các khung giờ gần nhất còn trống để bạn cân nhắc.",
+        options: [{ doctor: "Bác sĩ A", facility: { name: "Bệnh viện A" }, department: "Thần kinh", start_time: "2099-01-01T11:30:00Z", target_index: 0 }],
+      }],
+      actions: [{ id: "health-alternative", kind: "select_healthcare_slot", label: "Chọn lịch này", target_index: 0 }],
+      completed: [],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={jest.fn()} />);
+
+    expect(screen.getByText(/Không có đúng khung 10:00/)).toBeInTheDocument();
+    expect(screen.getAllByText(/18:30 01\/01\/2099/)).toHaveLength(2);
+  });
+
+  it("renders an empty Healthcare result without a selection control", () => {
+    render(<AssistantCards response={{
+      conversation_id: "conversation-healthcare-empty",
+      message: "",
+      items: [{
+        kind: "healthcare_no_availability",
+        title: "Chưa có lịch phù hợp",
+        note: "Mình không tìm thấy khung giờ còn trống phù hợp. Hiện chưa có lựa chọn thay thế trong dữ liệu.",
+        options: [],
+      }],
+      actions: [],
+      completed: [],
+    } as AssistantResponse} onAction={jest.fn()} />);
+
+    expect(screen.getByText(/Hiện chưa có lựa chọn thay thế/)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Chọn lịch" })).not.toBeInTheDocument();
   });
 
   it("links a missing patient profile error to the Healthcare profile screen", () => {

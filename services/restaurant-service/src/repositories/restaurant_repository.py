@@ -486,6 +486,40 @@ class RestaurantRepository:
             db.commit()
             return result
 
+    def cancel_hold(self, actor_id, hold_id, key, request_hash):
+        with self.factory() as db:
+            replay, record = self._claim_idempotency(db, actor_id, "cancel_hold", key, request_hash)
+            if replay is not None:
+                return replay
+
+            hold = db.scalar(
+                select(HoldRow)
+                .where(HoldRow.id == hold_id, HoldRow.actor_id == actor_id)
+                .with_for_update()
+            )
+            if not hold:
+                raise ValueError("HOLD_NOT_FOUND")
+            if hold.status != "ACTIVE":
+                raise ValueError("HOLD_NOT_ACTIVE")
+
+            hold.status = "CANCELLED"
+            hold.resource_version += 1
+            hold.idempotency_key = self._legacy_key("cancel_hold", key)
+            hold.request_hash = request_hash
+            result = self.hold_dict(hold, db.get(TableRow, hold.table_id).table_code)
+            db.add(
+                EventRow(
+                    aggregate_type="hold",
+                    aggregate_id=hold.id,
+                    event_type="CANCELLED",
+                    actor_id=actor_id,
+                    occurred_at=utc_now(),
+                )
+            )
+            self._complete_idempotency(record, result)
+            db.commit()
+            return result
+
     @staticmethod
     def hold_dict(row, table_code=None):
         return {
@@ -500,6 +534,7 @@ class RestaurantRepository:
             "end_at": RestaurantRepository._as_utc(row.end_at),
             "expires_at": RestaurantRepository._as_utc(row.expires_at),
             "status": row.status,
+            "resource_version": row.resource_version,
         }
 
     def create_reservation(

@@ -54,6 +54,10 @@ class RestaurantApplicationService:
         return self.repo.create_hold(actor_id, restaurant_id, party_size, start, end, key, request_hash,
             datetime.now(UTC) + timedelta(minutes=10))
 
+    def cancel_hold(self, actor_id, hold_id, key):
+        payload = {"hold_id": hold_id, "action": "cancel"}
+        return self.repo.cancel_hold(actor_id, hold_id, key, self.repo.request_hash(payload))
+
     def create_reservation(self, actor_id, restaurant_id, party_size, start_at, duration_minutes, special_requests, key, hold_id=None):
         start, end = normalized_interval(start_at, duration_minutes)
         payload = {"restaurant_id": restaurant_id, "party_size": party_size, "start_at": start.isoformat(), "end_at": end.isoformat(), "special_requests": special_requests, "hold_id": hold_id}

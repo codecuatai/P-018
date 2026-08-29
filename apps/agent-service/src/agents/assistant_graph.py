@@ -224,13 +224,14 @@ def plan_core_a(input_: CoreAInput) -> PlanningDecision:
 
 
 def _core_a_input(plan: AssistantPlan, state: AssistantState) -> CoreAInput:
+    fresh_current_location = _fresh_current_location(state.get("current_location")) or {}
     semantic_turn = semantic_turn_from_plan(
         plan.tasks,
         interaction_mode=plan.interaction_mode,
         discarded_task_refs=plan.discarded_task_refs,
         user_message=str(state.get("query", "")),
         conversation_state=(state.get("conversation_state", {}) if isinstance(state.get("conversation_state"), dict) else {}),
-        current_location=(state.get("current_location", {}) if isinstance(state.get("current_location"), dict) else {}),
+        current_location=fresh_current_location,
     )
     raw_context = state.get("conversation_state", {})
     context_tasks: list[PlannerTaskContext] = []
@@ -450,8 +451,14 @@ def _party_size(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | Non
     return None
 
 
-_LOCATION_PATTERN = re.compile(r"\b(?:ở|tại|tai|o|khu vuc|đến|den)\b\s+([^,.!?;]+)", re.IGNORECASE)
-_LOCATION_SUFFIX_PATTERN = re.compile(r"\b(?:roi|sau do|va|rồi|sau đó|và)\b", re.IGNORECASE)
+_LOCATION_PATTERN = re.compile(
+    r"\b(?:ở|tại|tai|o|khu\s+(?:vực|vuc)|quanh|gần|gan|đến|den)\b\s+([^,.!?;]+)",
+    re.IGNORECASE,
+)
+_LOCATION_SUFFIX_PATTERN = re.compile(
+    r"\b(?:roi|sau do|va|rồi|sau đó|và|không|khong|nhỉ|nhi|nhé|nhe)\b",
+    re.IGNORECASE,
+)
 _SHORT_LOCATION_PATTERN = re.compile(r"[\wÀ-ỹĐđ .,'-]+", re.UNICODE)
 _MAX_HEURISTIC_INPUT_LENGTH = 512
 _MAX_LOCATION_LENGTH = 160
@@ -468,12 +475,20 @@ def _location(text: str) -> str | None:
             for match in pattern.finditer(bounded):
                 result = match.group(1).strip()
                 result = re.split(
-                    r"\b(?:roi|sau do|va|rồi|sau đó|và|lúc|luc|vào|vao|ngày|ngay|tối|toi|sáng|sang|trưa|trua|có|co|quán|quan|cho|xong|đồng\s+thời|dong\s+thoi|nhà\s*hàng|nha\s*hang)\b",
+                    r"\b(?:roi|sau do|va|rồi|sau đó|và|lúc|luc|vào|vao|ngày|ngay|tối|toi|sáng|sang|trưa|trua|có|co|quán|quan|xong|đồng\s+thời|dong\s+thoi|nhà\s*hàng|nha\s*hang|không|khong|nhỉ|nhi|nhé|nhe)\b",
                     result,
                     maxsplit=1,
                     flags=re.IGNORECASE,
                 )[0]
-                result = re.sub(r"^(?:gần|gan)\s+", "", result, flags=re.IGNORECASE).strip()
+                result = re.sub(
+                    r"^(?:(?:gần|gan|quanh|khu\s+(?:vực|vuc)|vùng|vung|chỗ|cho)\s+)+",
+                    "",
+                    result,
+                    flags=re.IGNORECASE,
+                ).strip(" ,")
+                result = re.sub(r"\s+(?:không|khong|nhỉ|nhi|nhé|nhe)\s*$", "", result, flags=re.IGNORECASE).strip(" ,")
+                if len(result) > _MAX_LOCATION_LENGTH:
+                    result = result[:_MAX_LOCATION_LENGTH].rsplit(" ", 1)[0].strip()
                 if _plain(result).strip() in {"do", "day", "nha hang do", "quan do"}:
                     continue
                 if result:
@@ -512,6 +527,17 @@ def _route(text: str) -> tuple[str | None, str | None]:
         dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", dropoff, maxsplit=1, flags=re.IGNORECASE)[0].strip()
         dropoff = _strip_vehicle_suffix(dropoff)
         return pickup or None, dropoff or None
+
+    direct_destination = re.search(
+        r"\b(?:đặt|dat|gọi|goi|muốn|muon|cần|can)\s+xe\s+(?:giúp\s+(?:tôi|mình)\s+)?"
+        r"(?:đến|den|tới|toi|to)\s+(.+?)(?:[,.!?]|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if direct_destination:
+        dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", direct_destination.group(1), maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        dropoff = _strip_vehicle_suffix(dropoff)
+        return None, dropoff or None
 
     # A route that names a pickup but refers only to "there" intentionally
     # carries no destination. The
@@ -625,13 +651,14 @@ def _changed_route_slot(text: str, slot: str) -> str | None:
 def _stopover_address(text: str) -> str | None:
     """Extract one explicit intermediate stop for the offline fallback only."""
 
-    marker = r"(?:tạt\s+qua|tat\s+qua|ghé\s+qua|ghe\s+qua|dừng\s+(?:ở|o|tại|tai)|dung\s+(?:o|tai))"
+    marker = r"(?:tạt\s+qua|tat\s+qua|ghé(?:\s+qua)?|ghe(?:\s+qua)?|đi\s+qua|di\s+qua|dừng\s+(?:ở|o|tại|tai)|dung\s+(?:o|tai))"
     suffix = r"(?=\s+(?:rồi|roi|trước\s+khi|truoc\s+khi|mới|moi|đến|den)\b|[,.!?]|$)"
     for candidate in (text, _plain(text)):
         match = re.search(rf"\b{marker}\s+(?:chỗ\s+|cho\s+|địa\s+điểm\s+|dia\s+diem\s+)?(?P<value>.+?){suffix}", candidate, re.IGNORECASE)
         if not match:
             continue
-        value = re.sub(r"\s+(?:giúp\s+(?:tôi|mình)|giup\s+(?:toi|minh)|để|de)\b.*$", "", match.group("value"), flags=re.IGNORECASE)
+        value = re.sub(r"\s+(?:một\s+chút|mot\s+chut|một\s+lát|mot\s+lat)\s*$", "", match.group("value"), flags=re.IGNORECASE)
+        value = re.sub(r"\s+(?:giúp\s+(?:tôi|mình)|giup\s+(?:toi|minh)|để|de)\b.*$", "", value, flags=re.IGNORECASE)
         value = _clean_changed_route_value(value)
         if value:
             return value
@@ -715,7 +742,12 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         if domain == "restaurant":
             cuisine_match = re.search(r"\b(?:muon an|thich an|an|quan|nha hang)\b\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
             if cuisine_match:
-                cuisine = re.split(r"\b(?:luc|vao|toi|sang|trua|nao|co|con|ban)\b", cuisine_match.group(1), maxsplit=1)[0].strip()
+                cuisine = re.split(
+                    r"\b(?:luc|vao|toi|sang|trua|nao|co|con|ban|o|tai|khu\s+vuc|quanh|gan|vung|cho|den)\b",
+                    cuisine_match.group(1),
+                    maxsplit=1,
+                    flags=re.IGNORECASE,
+                )[0].strip()
                 cuisine = re.sub(r"^an\s+", "", cuisine).strip()
                 if cuisine and cuisine not in {"tai nha hang", "nha hang"}:
                     slots["cuisine_query"] = cuisine
@@ -804,7 +836,7 @@ def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: 
     if domain == "restaurant":
         # Discovery can begin with a location or cuisine alone. Booking details
         # become mandatory only after the user asks to reserve/hold a table.
-        booking_intent = _has_any(_plain(text), ("dat ban", "giu ban", "dat cho", "an toi", "an trua"))
+        booking_intent = _has_any(_plain(text), ("dat ban", "giu ban", "dat cho", "con ban", "ban trong", "an toi", "an trua"))
         if not slots.get("location") and not slots.get("cuisine_query") and not slots.get("cuisine_type") and not slots.get("cuisine"):
             missing.append("location|cuisine_query")
         if booking_intent:
@@ -890,6 +922,8 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     restaurant_words = ("dat ban", "nha hang", "chon nha hang", "so nguoi", "nguoi", "khach")
     ride_words = (
         "dat xe",
+        "dat chuyen",
+        "xac nhan chuyen",
         "goi xe",
         "di tu",
         "xe may",
@@ -901,6 +935,7 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "tat qua",
         "ghe qua",
         "diem dung",
+        "vi tri hien tai",
     )
 
     matches: list[int] = []
@@ -1004,6 +1039,40 @@ def _discard_targets(message: str, previous_tasks: list[Any]) -> list[int]:
     if len(active) == 1:
         return [active[0][0]]
     return []
+
+
+def _current_location_plan(text: str, current_location: dict[str, Any] | None = None) -> AssistantPlan | None:
+    """Answer a location-context question without routing it to a service.
+
+    The location is request-scoped and may be absent or stale.  Returning a
+    truthful branch here keeps a location question from falling through to the
+    generic service greeting, while leaving pickup resolution to Gateway for
+    actual Ride requests.
+    """
+    lowered = _plain(text)
+    mentions_current_location = _has_any(
+        lowered,
+        ("vi tri hien tai", "vi tri cua toi", "current location", "vi tri thiet bi"),
+    )
+    asks_where = _has_any(lowered, ("o dau", "dang o dau", "biet", "cho biet", "xem"))
+    service_request = _has_any(lowered, ("dat xe", "goi xe", "muon xe", "can xe", "tu ", "den "))
+    if not mentions_current_location or not asks_where or service_request:
+        return None
+    fresh_location = _fresh_current_location(current_location)
+    if fresh_location:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message=f"Vị trí hiện tại mình nhận được là {fresh_location['address_text']}.",
+        )
+    return AssistantPlan(
+        interaction_mode="advisory",
+        assistant_message=(
+            "Mình chưa có vị trí hiện tại của bạn. Bạn có thể bật chia sẻ vị trí "
+            "để mình biết vị trí hiện tại và dùng làm điểm đón."
+        ),
+        needs_clarification=True,
+        clarification_question="Bạn có thể bật chia sẻ vị trí để mình biết vị trí hiện tại không?",
+    )
 
 
 def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
@@ -1148,7 +1217,11 @@ def _ride_cancellation_plan(text: str, conversation_state: dict[str, Any] | None
     )
 
 
-def deterministic_plan(message: str, conversation_state: dict[str, Any] | None = None) -> AssistantPlan:
+def deterministic_plan(
+    message: str,
+    conversation_state: dict[str, Any] | None = None,
+    current_location: dict[str, Any] | None = None,
+) -> AssistantPlan:
     """Conservative offline fallback used only when the provider is unavailable."""
     text = message.strip()
     lowered = _plain(text)
@@ -1164,6 +1237,10 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             tasks=[],
             interaction_mode="unsupported",
         )
+
+    location_plan = _current_location_plan(text, current_location)
+    if location_plan is not None:
+        return location_plan
 
     conversation_plan = _conversation_only_plan(text, lowered)
     if conversation_plan is not None:
@@ -1199,6 +1276,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "tat qua",
             "ghe qua",
             "diem dung",
+            "vi tri hien tai",
             "xe may",
             "xac nhan",
             "xe 4 cho",
@@ -1224,10 +1302,14 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
             "gan day",
         ),
     )
+    restaurant_reference_only = _has_any(
+        lowered,
+        ("nha hang vua dat", "nha hang do", "quan vua dat", "quan do"),
+    ) and not _has_any(lowered, ("dat ban", "giu ban", "dat cho", "con ban", "ban trong"))
     explicit_restaurant = _has_any(
         lowered,
         ("dat ban", "nha hang", "an tai nha hang", "an toi tai", "con ban", "ban trong", "dat cho"),
-    )
+    ) and not restaurant_reference_only
     explicit_food = _has_any(
         lowered,
         (
@@ -1260,7 +1342,7 @@ def deterministic_plan(message: str, conversation_state: dict[str, Any] | None =
         lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung")
     )
     explicit_ride = (
-        _has_any(lowered, ("dat xe", "goi xe", "muon xe", "can xe", "di tu", "tu ")) and (
+        _has_any(lowered, ("dat xe", "dat chuyen", "goi xe", "muon xe", "can xe", "di tu", "tu ")) and (
             _route(text)[0] is not None or "xe" in lowered
         )
     ) or _stopover_address(text) is not None
@@ -2359,7 +2441,11 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
         if temporal_boundary is not None:
             return _typed_pipeline_result(temporal_boundary, state, "deterministic")
         if not use_model:
-            plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = deterministic_plan(
+                str(state.get("query", "")),
+                state.get("conversation_state", {}),
+                state.get("current_location"),
+            )
             plan = _apply_plan_guards(
                 plan,
                 str(state.get("query", "")),
@@ -2384,6 +2470,9 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
             cancellation_boundary = _ride_cancellation_plan(message, state.get("conversation_state"))
             if cancellation_boundary is not None:
                 return _typed_pipeline_result(cancellation_boundary, state, "deterministic")
+            location_boundary = _current_location_plan(message, state.get("current_location"))
+            if location_boundary is not None:
+                return _typed_pipeline_result(location_boundary, state, "deterministic")
             # Apply the same explicit out-of-scope boundary before invoking a
             # generative model; prompt-only enforcement is not sufficient.
             explicit_boundary = _conversation_only_plan(message, _plain(message))
@@ -2440,7 +2529,11 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                 ),
             ):
                 pass
-            plan = deterministic_plan(str(state.get("query", "")), state.get("conversation_state", {}))
+            plan = deterministic_plan(
+                str(state.get("query", "")),
+                state.get("conversation_state", {}),
+                state.get("current_location"),
+            )
             plan = _apply_plan_guards(
                 plan,
                 str(state.get("query", "")),

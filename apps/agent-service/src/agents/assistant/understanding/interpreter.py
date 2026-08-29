@@ -41,6 +41,14 @@ def _operation(text: str) -> Operation:
 
 def _operation_for_task(domain: Domain, normalized_request: str, slots: Mapping[str, Any]) -> Operation:
     operation = _operation(normalized_request)
+    # A combined request such as "tìm quán ... rồi đặt xe" is still in the
+    # Restaurant discovery phase until the user selects a concrete restaurant.
+    # Treating the anchor as CREATE makes the requirement checker ask for
+    # party/time before it can even return the authoritative candidate list.
+    # A later selection (or an explicit reservation update/cancel/status)
+    # keeps its own operation semantics.
+    if domain == Domain.RESTAURANT and operation == Operation.CREATE and slots.get("selection") is None:
+        return Operation.DISCOVER
     # A material stopover changes an unconfirmed route, so it must re-quote
     # rather than use the unavailable booking-update capability.
     if domain == Domain.RIDE and slots.get("stopover_address") is not None:
