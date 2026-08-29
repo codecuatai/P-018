@@ -10,6 +10,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock3,
   CreditCard,
   Database,
@@ -20,6 +22,7 @@ import {
   Key,
   LayoutDashboard,
   LifeBuoy,
+  LoaderCircle,
   LogOut,
   Menu,
   MessageSquare,
@@ -41,6 +44,7 @@ import {
   UserCheck,
   UserRound,
   Users,
+  UserX,
   Utensils,
   UtensilsCrossed,
   Workflow,
@@ -101,6 +105,8 @@ export function AdminDashboard() {
     refreshing,
     lastCheckedAt,
     load,
+    fetchUsers,
+    updateUserStatus,
     addTicketMessage,
     refreshHealth,
     refreshTransactions,
@@ -415,6 +421,9 @@ export function AdminDashboard() {
                       users={users}
                       onRetry={() => void load()}
                       onManageServices={() => switchSubTab("user-services")}
+                      onFetchPage={fetchUsers}
+                      onUpdateStatus={updateUserStatus}
+                      currentUserId={user?.sub || user?.id}
                     />
                   )}
                   {currentSubTabId === "user-services" && (
@@ -934,14 +943,28 @@ function UsersSubtab({
   users,
   onRetry,
   onManageServices,
+  onFetchPage,
+  onUpdateStatus,
+  currentUserId,
 }: {
   users: Loadable<{ items: AdminUserRecord[]; total: number; page: number; page_size: number }>;
   onRetry: () => void;
   onManageServices: () => void;
+  onFetchPage?: (page: number, pageSize: number) => Promise<void>;
+  onUpdateStatus?: (id: string, status: "active" | "suspended") => Promise<AdminUserRecord>;
+  currentUserId?: string;
 }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roleFilter, statusFilter, pageSize]);
 
   const filteredItems = useMemo(() => {
     const items = users.data?.items ?? [];
@@ -958,6 +981,56 @@ function UsersSubtab({
     });
   }, [users.data?.items, search, roleFilter, statusFilter]);
 
+  const totalFiltered = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, safePage, pageSize]);
+
+  const startRecord = totalFiltered === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endRecord = Math.min(safePage * pageSize, totalFiltered);
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, safePage - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }, [safePage, totalPages]);
+
+  const handleToggleStatus = async (userId: string, nextStatus: "active" | "suspended", userName: string) => {
+    if (!onUpdateStatus) return;
+    const actionLabel = nextStatus === "suspended" ? "khóa (disband)" : "mở khóa (kích hoạt lại)";
+    const confirmed = window.confirm(`Bạn có chắc chắn muốn ${actionLabel} tài khoản "${userName}"?`);
+    if (!confirmed) return;
+
+    setActionLoadingId(userId);
+    setActionMessage(null);
+    try {
+      await onUpdateStatus(userId, nextStatus);
+      setActionMessage({
+        text: `Đã ${nextStatus === "suspended" ? "khóa tài khoản" : "mở khóa và kích hoạt lại"} "${userName}" thành công.`,
+        type: "success",
+      });
+      setTimeout(() => setActionMessage(null), 4000);
+    } catch (error) {
+      setActionMessage({
+        text: `Không thể cập nhật trạng thái: ${error instanceof Error ? error.message : "Đã có lỗi xảy ra"}`,
+        type: "error",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   return (
     <section className="admin-section" id="users" aria-labelledby="users-title">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
@@ -972,6 +1045,28 @@ function UsersSubtab({
           <span>Quản lý phân quyền dịch vụ →</span>
         </button>
       </div>
+
+      {/* Action Banner Toast */}
+      {actionMessage && (
+        <div
+          className="admin-toast-banner"
+          style={{
+            marginBottom: "12px",
+            padding: "8px 14px",
+            fontSize: "12px",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: actionMessage.type === "success" ? "#F0FDF4" : "#FEF2F2",
+            color: actionMessage.type === "success" ? "#166534" : "#991B1B",
+            border: `1px solid ${actionMessage.type === "success" ? "#BBF7D0" : "#FECACA"}`,
+          }}
+        >
+          {actionMessage.type === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+          <strong>{actionMessage.text}</strong>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="admin-filter-bar">
@@ -1018,7 +1113,10 @@ function UsersSubtab({
           </select>
         </div>
         <div className="admin-filter-right">
-          <span>Hiển thị {filteredItems.length} / {users.data?.total ?? 0} tài khoản</span>
+          <span>
+            Hiển thị {startRecord} - {endRecord} / {totalFiltered} tài khoản
+            {users.data?.total !== undefined && users.data.total > totalFiltered ? ` (Tổng cộng ${users.data.total})` : ""}
+          </span>
         </div>
       </div>
 
@@ -1033,7 +1131,7 @@ function UsersSubtab({
           ) : (
             <div className="admin-table-card">
               <div className="admin-table-caption-bar">
-                <strong>Danh sách tài khoản ({filteredItems.length})</strong>
+                <strong>Danh sách tài khoản ({totalFiltered}) · Trang {safePage}/{totalPages}</strong>
                 <span>Dữ liệu xác thực từ Gateway Core</span>
               </div>
               <div className="admin-table-wrap" style={{ border: "none", borderRadius: 0 }}>
@@ -1044,10 +1142,11 @@ function UsersSubtab({
                       <th scope="col">Vai trò</th>
                       <th scope="col">Trạng thái</th>
                       <th scope="col">Ngày tạo</th>
+                      <th scope="col" style={{ textAlign: "right", paddingRight: "16px" }}>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((u) => (
+                    {paginatedItems.map((u) => (
                       <tr key={u.id}>
                         <td>
                           <div className="admin-user-cell">
@@ -1064,15 +1163,127 @@ function UsersSubtab({
                           <span className={`admin-role-badge role-${u.role}`}>{u.role}</span>
                         </td>
                         <td>
-                          <span className={`admin-badge status-${u.status === "active" ? "healthy" : "unavailable"}`}>
-                            {u.status === "active" ? "Hoạt động" : u.status}
+                          <span className={`admin-badge status-${u.status === "active" ? "healthy" : "suspended"}`}>
+                            {u.status === "active" ? "Hoạt động" : "Đã khóa"}
                           </span>
                         </td>
                         <td style={{ color: "#64748B" }}>{formatDate(u.created_at)}</td>
+                        <td style={{ textAlign: "right", paddingRight: "16px" }}>
+                          {currentUserId === u.id ? (
+                            <span style={{ fontSize: "11px", color: "#94A3B8", fontStyle: "italic" }}>Tài khoản của bạn</span>
+                          ) : u.status === "active" ? (
+                            <button
+                              className="admin-action-btn-suspend"
+                              type="button"
+                              disabled={actionLoadingId === u.id}
+                              onClick={() => void handleToggleStatus(u.id, "suspended", u.full_name || u.email)}
+                              aria-label={`Khóa tài khoản ${u.full_name || u.email}`}
+                              title="Khóa / Vô hiệu hóa tài khoản (Disband)"
+                            >
+                              {actionLoadingId === u.id ? <LoaderCircle className="spinner" size={12} /> : <UserX size={12} />}
+                              <span>Khóa tài khoản</span>
+                            </button>
+                          ) : (
+                            <button
+                              className="admin-action-btn-activate"
+                              type="button"
+                              disabled={actionLoadingId === u.id}
+                              onClick={() => void handleToggleStatus(u.id, "active", u.full_name || u.email)}
+                              aria-label={`Mở khóa tài khoản ${u.full_name || u.email}`}
+                              title="Mở khóa / Kích hoạt lại tài khoản"
+                            >
+                              {actionLoadingId === u.id ? <LoaderCircle className="spinner" size={12} /> : <UserCheck size={12} />}
+                              <span>Kích hoạt lại</span>
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Phân trang (Pagination) */}
+              <div className="admin-pagination">
+                <div className="admin-page-size-selector">
+                  <span>Hiển thị:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="admin-select-filter"
+                    style={{ height: "28px", padding: "0 6px", fontSize: "11px" }}
+                    aria-label="Số hàng mỗi trang"
+                  >
+                    <option value={5}>5 / trang</option>
+                    <option value={10}>10 / trang</option>
+                    <option value={20}>20 / trang</option>
+                    <option value={50}>50 / trang</option>
+                  </select>
+                </div>
+
+                <div className="admin-pagination-info">
+                  Trang <strong>{safePage}</strong> / <strong>{totalPages}</strong> ({startRecord} - {endRecord} trên {totalFiltered})
+                </div>
+
+                <div className="admin-pagination-controls">
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safePage <= 1}
+                    aria-label="Trang đầu"
+                    title="Trang đầu"
+                  >
+                    <ChevronsLeft size={14} />
+                  </button>
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Trang trước"
+                  >
+                    <ChevronLeft size={14} /> Trước
+                  </button>
+
+                  <div className="admin-pagination-pages">
+                    {pageNumbers.map((p) => (
+                      <button
+                        key={p}
+                        className={`admin-pagination-btn ${p === safePage ? "is-active" : ""}`}
+                        type="button"
+                        onClick={() => setCurrentPage(p)}
+                        aria-label={`Trang ${p}`}
+                        aria-current={p === safePage ? "page" : undefined}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Trang sau"
+                  >
+                    Sau <ChevronRight size={14} />
+                  </button>
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safePage >= totalPages}
+                    aria-label="Trang cuối"
+                    title="Trang cuối"
+                  >
+                    <ChevronsRight size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           )

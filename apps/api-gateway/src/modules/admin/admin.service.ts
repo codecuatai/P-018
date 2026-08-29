@@ -1,10 +1,11 @@
-import { ConflictException, Injectable, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
 
 import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { AuthService } from '../auth/auth.service';
+import { AuthUserStatus } from '../auth/auth.types';
 import { CoreStore } from '../core/core.module';
 import { CoreProductOpsStore, SupportTicketStatus } from '../core/product-ops.store';
 import { decryptSecret, encryptSecret } from '../core/crypto.util';
@@ -172,6 +173,27 @@ export class AdminService {
 
   async users(page: number, pageSize: number): Promise<JsonObject> {
     return this.auth.listUsers(page, pageSize) as unknown as JsonObject;
+  }
+
+  async updateUserStatus(id: string, status: 'active' | 'disabled' | 'suspended', actorId: string, correlationId: string): Promise<JsonObject> {
+    if (id === actorId && (status === 'suspended' || status === 'disabled')) {
+      throw new ConflictException({ code: 'CANNOT_SUSPEND_SELF', detail: 'Bạn không thể tự khóa tài khoản quản trị của chính mình.', retryable: false });
+    }
+    const targetStatus: AuthUserStatus = (status === 'suspended' || status === 'disabled') ? 'disabled' : 'active';
+    const updated = await this.auth.updateUserStatus(id, targetStatus);
+    if (!updated) {
+      throw new NotFoundException({ code: 'USER_NOT_FOUND', detail: 'Không tìm thấy tài khoản người dùng.', retryable: false });
+    }
+    return {
+      id: updated.id,
+      email: updated.email,
+      full_name: updated.fullName,
+      phone: updated.phone,
+      role: updated.role,
+      status: updated.status === 'disabled' ? 'suspended' : 'active',
+      updated_at: updated.updatedAt,
+      created_at: updated.createdAt,
+    } as unknown as JsonObject;
   }
 
   async domainTransactions(domain: string, page: number, pageSize: number, correlationId: string): Promise<JsonObject> {

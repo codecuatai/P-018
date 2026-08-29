@@ -116,4 +116,77 @@ describe("AdminDashboard", () => {
     await waitFor(() => expect(apiClient.addAdminSupportMessage).toHaveBeenCalledWith("ticket-admin-reply-1", "Cảm ơn bạn đã liên hệ với X-One."));
     window.history.replaceState(null, "", "");
   });
+
+  it("renders user list with pagination and supports page switching and page size change", async () => {
+    const mockUsers = Array.from({ length: 25 }, (_, i) => ({
+      id: `user-${i + 1}`,
+      email: `user${i + 1}@example.com`,
+      full_name: `User ${i + 1}`,
+      role: "customer" as const,
+      status: "active" as const,
+      created_at: new Date().toISOString(),
+    }));
+    (apiClient.getAdminUsers as jest.Mock).mockResolvedValue({ items: mockUsers, total: 25, page: 1, page_size: 100 });
+
+    render(<AdminDashboard />);
+
+    // Switch to Users tab
+    const usersTabBtn = await screen.findByRole("button", { name: /Người dùng & Phân quyền/i });
+    fireEvent.click(usersTabBtn);
+
+    // Default page size is 10, so it shows Page 1 with 10 users (User 1 to User 10)
+    await waitFor(() => {
+      expect(screen.getByText("User 1")).toBeInTheDocument();
+      expect(screen.getByText("User 10")).toBeInTheDocument();
+      expect(screen.queryByText("User 11")).not.toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Trang 1\/3/i)).toBeInTheDocument();
+
+    // Click Next button
+    const nextBtn = screen.getByRole("button", { name: "Trang sau" });
+    fireEvent.click(nextBtn);
+
+    // Should now show User 11 to User 20
+    expect(screen.queryByText("User 1")).not.toBeInTheDocument();
+    expect(screen.getByText("User 11")).toBeInTheDocument();
+    expect(screen.getByText("User 20")).toBeInTheDocument();
+    expect(screen.getByText(/Trang 2\/3/i)).toBeInTheDocument();
+
+    // Change page size to 50
+    const pageSizeSelect = screen.getByLabelText("Số hàng mỗi trang");
+    fireEvent.change(pageSizeSelect, { target: { value: "50" } });
+
+    // Now all 25 users fit on 1 page
+    expect(screen.getByText("User 1")).toBeInTheDocument();
+    expect(screen.getByText("User 25")).toBeInTheDocument();
+    expect(screen.getByText(/Trang 1\/1/i)).toBeInTheDocument();
+  });
+
+  it("allows an admin to disband (suspend) and reactivate a user account", async () => {
+    const userToSuspend = {
+      id: "user-target-1",
+      email: "victim@example.com",
+      full_name: "Target User",
+      role: "customer" as const,
+      status: "active" as const,
+      created_at: new Date().toISOString(),
+    };
+    (apiClient.getAdminUsers as jest.Mock).mockResolvedValue({ items: [userToSuspend], total: 1, page: 1, page_size: 20 });
+    (apiClient.updateAdminUserStatus as jest.Mock).mockResolvedValue({ ...userToSuspend, status: "suspended" });
+
+    jest.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<AdminDashboard />);
+
+    const usersTabBtn = await screen.findByRole("button", { name: /Người dùng & Phân quyền/i });
+    fireEvent.click(usersTabBtn);
+
+    const suspendBtn = await screen.findByRole("button", { name: /Khóa tài khoản Target User/i });
+    fireEvent.click(suspendBtn);
+
+    await waitFor(() => {
+      expect(apiClient.updateAdminUserStatus).toHaveBeenCalledWith("user-target-1", "suspended");
+    });
+  });
 });

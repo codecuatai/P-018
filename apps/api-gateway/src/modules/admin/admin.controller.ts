@@ -18,6 +18,10 @@ class SupportQuery extends PageQuery {
   @IsOptional() @IsIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']) status?: SupportTicketStatus;
 }
 
+class UserStatusUpdateDto {
+  @IsNotEmpty() @IsIn(['active', 'suspended', 'disabled']) status!: 'active' | 'suspended' | 'disabled';
+}
+
 class SupportUpdateDto {
   @IsOptional() @IsIn(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']) status?: SupportTicketStatus;
   @IsOptional() @IsIn(['LOW', 'NORMAL', 'HIGH', 'URGENT']) priority?: SupportPriority;
@@ -72,6 +76,15 @@ export class AdminController {
 
   @Get('users')
   async users(@Query() query: PageQuery, @Req() request: AdminRequest): Promise<object> { return this.reply(await this.admin.users(query.page, query.page_size), request); }
+
+  @Patch('users/:id/status')
+  async updateUserStatus(
+    @Param('id') id: string,
+    @Body() body: UserStatusUpdateDto,
+    @Req() request: AdminRequest,
+  ): Promise<object> {
+    return this.reply(await this.admin.updateUserStatus(id, body.status, request.user.sub, correlation(request)), request);
+  }
 
   @Get('users/:id/services')
   async userServices(@Param('id') id: string, @Req() request: AdminRequest): Promise<object> {

@@ -491,6 +491,13 @@ export function getAdminUsers(page = 1, pageSize = 20): Promise<{ items: AdminUs
   return request(`/api/v1/admin/users?page=${page}&page_size=${pageSize}`, { method: "GET" });
 }
 
+export function updateAdminUserStatus(userId: string, status: "active" | "suspended"): Promise<AdminUserRecord> {
+  return request(`/api/v1/admin/users/${userId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function getAdminTransactions(page = 1, pageSize = 20): Promise<{ items: AdminTransactionRecord[]; total?: number; page: number; page_size: number; partial: boolean; unavailable: string[] }> {
   return request(`/api/v1/admin/transactions?page=${page}&page_size=${pageSize}`, { method: "GET" });
 }
