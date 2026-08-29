@@ -526,6 +526,9 @@
 .candidate-option { display: flex; align-items: flex-start; gap: 8px; padding: 10px 11px; color: var(--color-ink); background: #FBFCFD; border: 1px solid var(--color-border); border-radius: 8px; font-size: 0.73rem; line-height: 1.45; text-align: left; }
 .candidate-option:hover { border-color: var(--color-primary); background: var(--surface-ice); }
 .candidate-option svg { flex: 0 0 auto; margin-top: 2px; color: var(--color-primary); }
+.candidate-option > div { display: grid; gap: 2px; }
+.candidate-option strong { color: var(--color-navy); font-size: 0.76rem; font-weight: 700; }
+.candidate-option small { color: var(--color-muted); font-size: 0.68rem; }
 .onboarding-page .form-error { margin: 18px 0 0; color: #9F382F; background: var(--color-danger-surface); border: 1px solid #EFC7C2; }
 .history-header-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .history-header-actions .button { margin-top: 0; white-space: nowrap; }
