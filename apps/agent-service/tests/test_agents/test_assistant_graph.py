@@ -570,7 +570,9 @@ def test_stale_or_missing_later_location_does_not_become_a_ride_pickup(current_l
     assert "pickup_longitude" not in slots
 
 
-def test_demo_restaurant_then_ride_request_keeps_area_and_dependency() -> None:
+def test_demo_restaurant_then_ride_request_keeps_area_and_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
+    fixed_now = datetime(2026, 8, 29, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))
+    monkeypatch.setattr(TemporalContext, "now", classmethod(lambda cls: fixed_now))
     plan = deterministic_plan(
         "Check giúp tôi xem tầm 5h chiều nay có quán lẩu nào còn bàn ở khu vực Cầu Giấy không, "
         "xong rồi đặt xe giúp tôi ra đó luôn."

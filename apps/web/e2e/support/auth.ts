@@ -23,7 +23,7 @@ export async function login(page: Page, email: string, password = "e2e-password-
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Email").fill(email);
   await dialog.locator("#login-password").fill(password);
-  await dialog.getByRole("button", { name: "Đăng nhập" }).click();
+  await dialog.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await page.waitForURL(/\/app(?:\/onboarding)?(?:\?.*)?$/, { timeout: 30_000 });
   if (page.url().includes("/app/onboarding")) await completeOnboarding(page);
 }

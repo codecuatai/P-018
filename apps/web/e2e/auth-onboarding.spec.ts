@@ -13,6 +13,7 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await dialog.getByLabel("Họ và tên").fill("Người dùng Auth E2E");
   await dialog.getByLabel("Email").fill("auth-flow@example.test");
   await dialog.locator("#register-password").fill("e2e-password-123456");
+  await dialog.locator("#register-confirm-password").fill("e2e-password-123456");
   await dialog.getByRole("button", { name: "Tạo tài khoản" }).click();
   await page.waitForURL("**/app/onboarding");
 
@@ -31,13 +32,18 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await page.goto("/app/profile");
   await expect(page.getByRole("heading", { name: "Thông tin tài khoản" })).toBeVisible();
   const mobileMenu = page.getByRole("button", { name: "Mở điều hướng" });
-  if (await mobileMenu.isVisible().catch(() => false)) await mobileMenu.click();
-  await page.getByRole("button", { name: "Đăng xuất" }).click();
+  if (await mobileMenu.isVisible().catch(() => false)) {
+    await mobileMenu.click();
+    await page.getByRole("button", { name: "Cài đặt và tài khoản" }).click();
+  } else {
+    await page.getByRole("button", { name: "Tài khoản", exact: true }).click();
+  }
+  await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
   await page.waitForURL(/\/$/);
   await login(page, "auth-flow@example.test");
   await expect(page.locator(".app-shell")).toBeVisible({ timeout: 15_000 });
   await page.goto("/app/addresses");
-  await expect(page.getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
+  await expect(page.getByLabel("Địa chỉ đã lưu").getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
   expect(gateway.calls.filter((call) => call.path === "/api/v1/addresses" && call.method === "POST")).toHaveLength(1);
 });
 
@@ -50,6 +56,7 @@ test("location denial remains explicit and does not create a guessed marker", as
   await dialog.getByLabel("Họ và tên").fill("Người dùng Deny E2E");
   await dialog.getByLabel("Email").fill("deny-flow@example.test");
   await dialog.locator("#register-password").fill("e2e-password-123456");
+  await dialog.locator("#register-confirm-password").fill("e2e-password-123456");
   await dialog.getByRole("button", { name: "Tạo tài khoản" }).click();
   await page.waitForURL("**/app/onboarding");
   await completeOnboarding(page, "Người dùng Deny E2E");
