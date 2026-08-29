@@ -344,6 +344,7 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
 
 function RestaurantBrowse() {
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
   const [selected, setSelected] = useState<JsonRecord>();
   const [loading, setLoading] = useState(false);
@@ -358,23 +359,32 @@ function RestaurantBrowse() {
   const [checked, setChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const searchRequestRef = useRef(0);
   const pageSize = 4;
 
   const load = useCallback(async (query = "") => {
+    const requestId = ++searchRequestRef.current;
     setLoading(true);
     setError("");
     setPage(1);
     try {
-      setItems((await browseService("restaurant", query)).items);
+      const result = await browseService("restaurant", query);
+      if (requestId !== searchRequestRef.current) return;
+      setItems(result.items);
     } catch (reason) {
+      if (requestId !== searchRequestRef.current) return;
       setError(errorText(reason));
     } finally {
-      setLoading(false);
+      if (requestId === searchRequestRef.current) setLoading(false);
     }
   }, []);
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [keyword]);
+  useEffect(() => { void load(debouncedKeyword); }, [debouncedKeyword, load]);
   useEffect(() => {
     if (!initialResourceId || selected || detailLoading) return;
     const match = items.find((item) => idOf(item) === initialResourceId);
@@ -456,7 +466,7 @@ function RestaurantBrowse() {
     }
   }
   async function cancel(): Promise<void> {
-    if (!reservation?.id) return;
+    if (!reservation?.id || reservation.status === "CANCELLED" || actionLoading) return;
     setActionLoading(true);
     setError("");
     try {
@@ -522,7 +532,7 @@ function RestaurantBrowse() {
                 <Check size={18} />
                 <strong style={{ textAlign: "left" }}>Đặt bàn đã hoàn tất</strong>
                 <span>{statusLabel(reservation.status ?? "CONFIRMED")}</span>
-                <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button>
+                {reservation.status !== "CANCELLED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button> : null}
               </div>
             ) : null}
             {error ? <ErrorNote message={error} onRetry={() => void check()} /> : null}
@@ -539,7 +549,7 @@ function RestaurantBrowse() {
 
   return (
     <>
-      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
+      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" showSubmit={false} />
       {loading ? (
         <LoadingNote text="Đang tải nhà hàng…" />
       ) : error ? (
@@ -592,7 +602,7 @@ function RestaurantBrowse() {
           ) : null}
         </>
       ) : (
-        <EmptyNote title="Bạn muốn đặt bàn như thế nào?" body="Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp." />
+        <EmptyNote title={debouncedKeyword ? "Không tìm thấy kết quả phù hợp" : "Bạn muốn đặt bàn như thế nào?"} body={debouncedKeyword ? "Thử một tên nhà hàng, khu vực hoặc loại ẩm thực khác." : "Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp."} />
       )}
     </>
   );
@@ -1095,7 +1105,7 @@ function AddressAutocompleteField({ id, label, value, placeholder, onChange, onS
   </div>;
 }
 
-function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit: () => void; placeholder: string }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} /><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button></div></form>; }
+function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder, showSubmit = true }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit?: () => void; placeholder: string; showSubmit?: boolean }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} />{showSubmit ? <button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button> : null}</div></form>; }
 function AuthoritativeImage({ source, alt, compact = false }: { source: unknown; alt: string; compact?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (typeof source !== "string" || !source.trim()) return null;
@@ -1120,7 +1130,23 @@ function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKe
   </div>;
 }
 function ConfirmationBox({ confirmation, checked, setChecked, onConfirm, loading, label }: { confirmation: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onConfirm: () => void; loading: boolean; label: string }) { return <div className="confirmation-box"><div><span className="eyebrow">XÁC NHẬN RÕ RÀNG</span><h3>{display(confirmation.title ?? "Kiểm tra lần cuối")}</h3><p>{display(confirmation.detail ?? "Các điều khoản hiện tại đã được kiểm tra từ nguồn đáng tin cậy.")}</p>{confirmation.preview ? <PreviewSummary preview={asRecord(confirmation.preview)} /> : null}</div><label className="confirmation-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /> <span>{label}</span></label><button className="button button-primary" type="button" onClick={onConfirm} disabled={loading || !checked}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận</button></div>; }
-function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND"); const address = asRecord(preview.address ?? preview.delivery_address); const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text; return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>; }
+function PreviewSummary({ preview }: { preview?: JsonRecord }) {
+  if (!preview) return null;
+  if (preview.restaurant_name) {
+    return <dl className="preview-summary">
+      <div><dt>Nhà hàng</dt><dd>{display(preview.restaurant_name)}</dd></div>
+      <div><dt>Thời lượng</dt><dd>{numberOf(preview.duration_minutes) || 120} phút</dd></div>
+      <div><dt>Yêu cầu đặc biệt</dt><dd>{display(preview.special_requests, "Không có")}</dd></div>
+      <div><dt>Hết hạn xác nhận</dt><dd>{formatDateTime(preview.confirmation_expires_at)}</dd></div>
+      {preview.hold_expires_at ? <div><dt>Hết hạn giữ bàn</dt><dd>{formatDateTime(preview.hold_expires_at)}</dd></div> : null}
+      <div><dt>Phiên bản</dt><dd>{display(preview.resource_version)}</dd></div>
+    </dl>;
+  }
+  const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND");
+  const address = asRecord(preview.address ?? preview.delivery_address);
+  const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text;
+  return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>;
+}
 function LoadingNote({ text }: { text: string }) { return <p className="inline-note service-loading-note" aria-live="polite"><Loader2 className="spinner" size={17} /> {text}</p>; }
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="error-panel" role="alert"><p>{message}</p><button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button></div>; }
 function EmptyNote({ title, body }: { title: string; body: string }) { return <div className="empty-state"><Search size={24} /><h2>{title}</h2><p>{body}</p></div>; }

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ServiceBrowse } from "@/features/product/service-browse";
 import * as apiClient from "@/lib/api-client";
@@ -10,8 +10,12 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("@/lib/api-client");
+jest.mock("./xone-map", () => ({
+  XOneMap: ({ label }: { label?: string }) => <div data-testid="xone-map">{label ?? "Bản đồ"}</div>,
+}));
 
 const browseServiceMock = apiClient.browseService as jest.MockedFunction<typeof apiClient.browseService>;
+const getRestaurantDetailMock = apiClient.getRestaurantDetail as jest.MockedFunction<typeof apiClient.getRestaurantDetail>;
 const getFoodRestaurantMock = apiClient.getFoodRestaurant as jest.MockedFunction<typeof apiClient.getFoodRestaurant>;
 const getFoodMenuMock = apiClient.getFoodMenu as jest.MockedFunction<typeof apiClient.getFoodMenu>;
 const listSavedAddressesMock = apiClient.listSavedAddresses as jest.MockedFunction<typeof apiClient.listSavedAddresses>;
@@ -97,5 +101,84 @@ describe("ServiceBrowse pagination and healthcare loading", () => {
     render(<ServiceBrowse service="healthcare" />);
 
     expect(await screen.findByRole("heading", { name: "Chưa có khung giờ" })).toBeInTheDocument();
+  });
+
+  describe("Restaurant search and catalog-backed details", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      browseServiceMock.mockResolvedValue({
+        items: [{ id: "restaurant-1", name: "Nhà hàng mẫu" }],
+        source: "restaurant-service",
+        partial: false,
+      });
+    });
+
+    afterEach(() => {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    });
+
+    it("removes the submit button and fetches only the latest query after 300 ms", async () => {
+      render(<ServiceBrowse service="restaurant" />);
+      await act(async () => { await Promise.resolve(); });
+
+      expect(screen.queryByRole("button", { name: /^Tìm$/ })).not.toBeInTheDocument();
+      expect(browseServiceMock).toHaveBeenCalledTimes(1);
+
+      const input = screen.getByLabelText("Tìm theo tên, khu vực hoặc ẩm thực");
+      fireEvent.change(input, { target: { value: "Toka" } });
+      act(() => jest.advanceTimersByTime(200));
+      fireEvent.change(input, { target: { value: "Tokachiya Ramen" } });
+      act(() => jest.advanceTimersByTime(299));
+
+      expect(browseServiceMock).toHaveBeenCalledTimes(1);
+
+      act(() => jest.advanceTimersByTime(1));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(browseServiceMock).toHaveBeenCalledTimes(2);
+      expect(browseServiceMock).toHaveBeenLastCalledWith("restaurant", "Tokachiya Ramen");
+    });
+
+    it("shows the requested empty state after a completed search has no matches", async () => {
+      browseServiceMock
+        .mockResolvedValueOnce({ items: [{ id: "restaurant-1", name: "Nhà hàng mẫu" }], source: "restaurant-service", partial: false })
+        .mockResolvedValueOnce({ items: [], source: "restaurant-service", partial: false });
+
+      render(<ServiceBrowse service="restaurant" />);
+      await act(async () => { await Promise.resolve(); });
+
+      fireEvent.change(screen.getByLabelText("Tìm theo tên, khu vực hoặc ẩm thực"), { target: { value: "Không tồn tại" } });
+      act(() => jest.advanceTimersByTime(300));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(screen.getByRole("heading", { name: "Không tìm thấy kết quả phù hợp" })).toBeInTheDocument();
+    });
+  });
+
+  it("renders a catalog-backed restaurant address with its verified map point", async () => {
+    browseServiceMock.mockResolvedValue({
+      items: [{ id: "rest-cg-1", name: "Lẩu Cầu Giấy" }],
+      source: "restaurant-service",
+      partial: false,
+    });
+    getRestaurantDetailMock.mockResolvedValue({
+      id: "rest-cg-1",
+      name: "Lẩu Cầu Giấy",
+      address: "Số 1 Cầu Giấy, Hà Nội",
+      location: "Cầu Giấy",
+      district: "Cầu Giấy",
+      city: "Hà Nội",
+      latitude: 21.035,
+      longitude: 105.795,
+    });
+
+    render(<ServiceBrowse service="restaurant" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Xem và giữ bàn" }));
+
+    await waitFor(() => expect(getRestaurantDetailMock).toHaveBeenCalledWith("rest-cg-1"));
+    expect(await screen.findByRole("heading", { name: "Lẩu Cầu Giấy" })).toBeInTheDocument();
+    expect(screen.getByText(/Số 1 Cầu Giấy, Hà Nội/)).toBeInTheDocument();
+    expect(screen.getByTestId("xone-map")).toHaveTextContent("Vị trí địa điểm");
   });
 });

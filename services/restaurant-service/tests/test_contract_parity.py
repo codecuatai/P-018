@@ -74,3 +74,14 @@ def test_contract_carries_semantic_parameters_and_write_safety_constraints() -> 
         "maxLength": 255,
     }
     assert "parameters" in runtime["/v1/restaurants/{restaurant_id}/availability"]["post"]
+
+    runtime_search_parameters = {
+        item["name"] for item in runtime["/v1/restaurants"]["get"]["parameters"]
+    }
+    contract_search_parameters = {
+        item.get("name")
+        for item in contract["/v1/restaurants"]["get"]["parameters"]
+        if "name" in item
+    }
+    assert "q" in runtime_search_parameters
+    assert "q" in contract_search_parameters

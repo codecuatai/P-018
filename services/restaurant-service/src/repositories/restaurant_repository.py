@@ -214,6 +214,20 @@ class RestaurantRepository:
         normalized = unicodedata.normalize("NFD", value.casefold())
         return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
 
+    @staticmethod
+    def _query_has_diacritics(value: str) -> bool:
+        """Return whether a query explicitly contains Vietnamese accents."""
+        decomposed = unicodedata.normalize("NFD", value)
+        return any(unicodedata.category(char) == "Mn" for char in decomposed) or any(
+            char in "đĐ" for char in value
+        )
+
+    @classmethod
+    def _normalize_query_text(cls, value: str, accent_sensitive: bool) -> str:
+        if accent_sensitive:
+            return unicodedata.normalize("NFC", value.casefold())
+        return cls._fold_search_text(value)
+
     @classmethod
     def _is_generated_discovery_placeholder(cls, row: RestaurantRow) -> bool:
         """Keep OSM placeholders for provenance/ops, but hide them from discovery."""
@@ -240,7 +254,37 @@ class RestaurantRepository:
         )
         return all(token in searchable for token in tokens)
 
-    def list_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
+    @classmethod
+    def _matches_generic_query(cls, row: RestaurantRow, query: str) -> bool:
+        """Match a consumer keyword against name, location, or cuisine.
+
+        An explicitly accented query is kept accent-sensitive so ``chả`` does
+        not match ``chay``. Plain queries remain accent-insensitive substrings,
+        so ``cha`` matches ``chả``, ``chảy`` and ``chay``.
+        """
+        accent_sensitive = cls._query_has_diacritics(query)
+        tokens = [
+            token
+            for token in cls._normalize_query_text(query, accent_sensitive).split()
+            if token
+        ]
+        if not tokens:
+            return True
+        return any(
+            all(token in cls._normalize_query_text(value, accent_sensitive) for token in tokens)
+            for value in (row.name, row.location, row.cuisine_type)
+            if value
+        )
+
+    def list_restaurants(
+        self,
+        location: str | None = None,
+        cuisine_type: str | None = None,
+        budget_range: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        q: str | None = None,
+    ):
         with self.factory() as db:
             stmt = self._active_restaurant_statement(db).order_by(RestaurantRow.id)
             if location:
@@ -260,6 +304,7 @@ class RestaurantRepository:
                 for row in db.scalars(stmt).all()
                 if not self._is_generated_discovery_placeholder(row)
                 and (not cuisine_type or self._matches_cuisine_query(row, cuisine_type))
+                and (not q or self._matches_generic_query(row, q))
             ]
             # Prefer restaurants with an actual image without changing the
             # relative order of records in either group.
