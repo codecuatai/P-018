@@ -22,7 +22,7 @@ for _module_name in tuple(sys.modules):
 
 os.environ.setdefault("SERVICE_PORT", "8101")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite://")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
 from src.config import get_settings  # noqa: E402
 from src.infrastructure.database import get_session  # noqa: E402

@@ -3,7 +3,14 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from catalog_import import EXPECTED, build_plan, database_timestamp, database_timestamp_without_timezone, fallback_restaurant_coordinate, resolve_source_root
+from catalog_import import (
+    EXPECTED,
+    build_plan,
+    database_timestamp,
+    database_timestamp_without_timezone,
+    fallback_restaurant_coordinate,
+    resolve_source_root,
+)
 
 
 def test_database_timestamp_converts_iso_offset_to_aware_datetime() -> None:

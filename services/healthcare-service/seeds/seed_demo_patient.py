@@ -6,7 +6,6 @@ import os
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 from src.database import SessionLocal
 from src.models.medical import Patient, PatientUserLink
 

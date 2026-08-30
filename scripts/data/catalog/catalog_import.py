@@ -20,10 +20,11 @@ import re
 import sys
 import unicodedata
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -373,7 +374,7 @@ def build_healthcare(version: str, source_root: Path | None = None) -> tuple[lis
         if department_key in department_by_key:
             department_source_id, catalog_name = department_by_key[department_key]
         else:
-            department_source_id = f"derived_department_{hashlib.sha256(f'{facility_source_id}:{department_key[1]}'.encode('utf-8')).hexdigest()[:32]}"
+            department_source_id = f"derived_department_{hashlib.sha256(f'{facility_source_id}:{department_key[1]}'.encode()).hexdigest()[:32]}"
             catalog_name = department_display_name(department_key)
             doctor_report.repaired_rows += 1
         payload = {"record_type": "doctor", "source_id": str(source_id), "facility_source_id": str(facility_source_id), "department": row["department"].strip(), "department_source_id": department_source_id, "department_name": catalog_name, "name": row["name"].strip(), "title": clean(row.get("title")), "specialty": clean(row.get("specialty")), "description": clean(row.get("description")), "consultation_price": parse_price(row.get("consultation_price")), "image_url": clean(row.get("image_url")), "source_metadata": source_metadata(row, version, str(source_id))}
@@ -760,7 +761,7 @@ async def apply_healthcare(connection: Any, records: list[NormalizedRecord]) -> 
         elif payload.get("record_type") == "department":
             await connection.execute("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,source_url,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,source_id=EXCLUDED.source_id,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", payload.get("catalog_name") or payload.get("name"), payload.get("description") or payload.get("specialty"), payload.get("source_id"), payload.get("facility_source_id"), record.source_name, record.source_url, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
         elif payload.get("record_type") == "doctor":
-            department_source_id = str(payload.get("department_source_id") or hashlib.sha256(f"{payload.get('facility_source_id')}:{payload.get('department')}".encode("utf-8")).hexdigest()[:32])
+            department_source_id = str(payload.get("department_source_id") or hashlib.sha256(f"{payload.get('facility_source_id')}:{payload.get('department')}".encode()).hexdigest()[:32])
             department_id = await connection.fetchval("INSERT INTO departments (name,description,source_id,facility_source_id,source_name,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET name=EXCLUDED.name,description=EXCLUDED.description,source_id=EXCLUDED.source_id,facility_source_id=EXCLUDED.facility_source_id,source_name=EXCLUDED.source_name,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json RETURNING id", payload.get("department_name") or payload.get("department"), payload.get("specialty"), department_source_id, payload.get("facility_source_id"), record.source_name, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
             await connection.execute("INSERT INTO doctors (department_id,name,price,description,source_id,facility_source_id,title,specialty,source_name,source_url,dataset_version,content_hash,is_active,provenance_json) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,TRUE,$13::jsonb) ON CONFLICT (source_id) WHERE source_id IS NOT NULL DO UPDATE SET department_id=EXCLUDED.department_id,name=EXCLUDED.name,price=EXCLUDED.price,description=EXCLUDED.description,facility_source_id=EXCLUDED.facility_source_id,title=EXCLUDED.title,specialty=EXCLUDED.specialty,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,dataset_version=EXCLUDED.dataset_version,content_hash=EXCLUDED.content_hash,is_active=TRUE,provenance_json=EXCLUDED.provenance_json", department_id, payload.get("name"), payload.get("consultation_price"), payload.get("description"), payload.get("source_id"), payload.get("facility_source_id"), payload.get("title"), payload.get("specialty"), record.source_name, record.source_url, record.dataset_version, record.content_hash, json.dumps(payload.get("source_metadata", {}), ensure_ascii=False))
 

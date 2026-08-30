@@ -44,7 +44,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # Fix Windows console encoding so VN diacritics in prompts print cleanly.
@@ -225,7 +225,7 @@ def _iter_inputs_from_db(conv_id: str, conv_dir: Path, cutoff: datetime | None, 
     try:
         conn = sqlite3.connect(str(db_file))
         rows = conn.execute("SELECT idx, step_payload FROM steps").fetchall()
-        
+
         # Extract CWDs from payload if present
         for _, payload in rows:
             if not payload:

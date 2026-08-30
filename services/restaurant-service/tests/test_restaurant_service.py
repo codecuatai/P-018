@@ -3,7 +3,7 @@ from datetime import datetime
 
 os.environ.setdefault("SERVICE_PORT", "8102")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./.test-restaurant.db")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
 from fastapi.testclient import TestClient
 from src.application.restaurant_service import RestaurantApplicationService

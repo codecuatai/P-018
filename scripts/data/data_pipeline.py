@@ -12,14 +12,13 @@ import csv
 import hashlib
 import io
 import json
-import re
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 from urllib.parse import urlparse
-
 
 MOJIBAKE_MARKERS = ("Ã", "Â", "Ä", "áº", "ï¿½")
 URL_FIELDS = ("source_url", "sourceUrl", "website", "image_url", "imageUrl")

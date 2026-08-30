@@ -1,7 +1,6 @@
+from seeds.seed_demo_patient import DEMO_PATIENT_NAME, DEMO_PATIENT_PHONE, ensure_demo_patient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-
-from seeds.seed_demo_patient import DEMO_PATIENT_NAME, DEMO_PATIENT_PHONE, ensure_demo_patient
 from src.models.medical import Base, Patient, PatientUserLink
 
 

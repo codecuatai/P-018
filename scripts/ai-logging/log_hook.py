@@ -5,9 +5,9 @@ Reads JSON from stdin, normalizes to common format, appends to .ai-log/session.j
 """
 import json
 import os
-import sys
 import subprocess
-from datetime import datetime, timezone, timedelta
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 VN_TZ = timezone(timedelta(hours=7))
