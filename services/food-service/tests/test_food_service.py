@@ -19,6 +19,52 @@ def make_service(repository: InMemoryFoodRepository | None = None) -> FoodApplic
 
 
 @pytest.mark.asyncio
+async def test_menu_server_pagination_returns_items_after_first_hundred_and_orders_them() -> None:
+    repository = InMemoryFoodRepository()
+    repository.items = {
+        item_id: item for item_id, item in repository.items.items()
+        if item.get("restaurant_id") != "res_pho_hanoi"
+    }
+    for index in range(1, 137):
+        item_id = f"item_page_{index:03d}"
+        repository.items[item_id] = {
+            "id": item_id,
+            "restaurant_id": "res_pho_hanoi",
+            "name": f"Món thử {index}",
+            "description": "Món trong thực đơn phân trang.",
+            "category": "Món thử",
+            "price": 50000 + index,
+            "currency": "VND",
+            "available": True,
+            "option_groups": [],
+        }
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
+
+    page = await food.menu("res_pho_hanoi", limit=20, offset=100)
+
+    assert page["total"] == 136
+    assert len(page["items"]) == 20
+    assert page["items"][0]["id"] == "item_page_101"
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-page-101")
+    cart = await food.add_item(
+        cart["id"],
+        {"menu_item_id": page["items"][0]["id"], "quantity": 1, "selected_options": []},
+        "usr_demo_001",
+        "add-page-101",
+    )
+    assert cart["items"][0]["menu_item_id"] == "item_page_101"
+
+
+@pytest.mark.asyncio
 async def test_cart_total_and_multi_restaurant_pickup_route() -> None:
     food = make_service()
     cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-total-key")

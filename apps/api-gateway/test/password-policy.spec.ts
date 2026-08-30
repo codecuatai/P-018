@@ -132,6 +132,7 @@ describe('password policy HTTP contract', () => {
         detail: 'Mật khẩu hiện tại không đúng.',
       });
 
+      // The session remains fully valid and active for subsequent operations
       const meRes = await request(app.getHttpServer())
         .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${token}`)

@@ -237,7 +237,6 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
       { name: 'assistant.chat', method: 'POST', path: '/api/v1/assistant/chat', maxRequests: Number(validated.GATEWAY_ASSISTANT_CHAT_RATE_LIMIT), windowMs },
       { name: 'assistant.actions', method: 'POST', path: '/api/v1/assistant/actions', maxRequests: Number(validated.GATEWAY_ASSISTANT_ACTION_RATE_LIMIT), windowMs },
       { name: 'voice.transcribe', method: 'POST', path: '/api/v1/voice/transcribe', maxRequests: Number(validated.GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT), windowMs },
-      { name: 'voice.text_to_speech', method: 'POST', path: '/api/v1/voice/text-to-speech', maxRequests: Number(validated.GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT), windowMs },
       { name: 'auth.register', method: 'POST', path: '/api/v1/auth/register', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.forgot-password', method: 'POST', path: '/api/v1/auth/forgot-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
       { name: 'auth.reset-password', method: 'POST', path: '/api/v1/auth/reset-password', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },

@@ -49,12 +49,14 @@ describe('AuthStore refresh reuse grace window', () => {
     await store.createUser(account());
     await store.createSession(session({ id: 'sess-a', refreshTokenHash: 'hash-a', familyId: 'fam-1' }));
 
-    const first = await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-1' }), iso(0));
+    const first = await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-1', createdAt: iso(0), lastUsedAt: iso(0) }), iso(0));
     expect(first.state).toBe('ROTATED');
 
+    // Replay hash-a 5s later — still inside the 10s window, replacement fresh.
     const replay = await store.rotateRefreshToken('hash-a', session({ id: 'sess-c', refreshTokenHash: 'hash-c', familyId: 'fam-1', createdAt: iso(5_000), lastUsedAt: iso(5_000) }), iso(5_000));
     expect(replay.state).toBe('ROTATED');
 
+    // Family is intact: the access-token check still resolves the account.
     const issuedAtSeconds = Math.floor(T0 / 1_000);
     expect(await store.getActiveUserForSession('usr-grace', 'fam-1', issuedAtSeconds)).toMatchObject({ id: 'usr-grace' });
   });
@@ -64,8 +66,9 @@ describe('AuthStore refresh reuse grace window', () => {
     await store.createUser(account());
     await store.createSession(session({ id: 'sess-a', refreshTokenHash: 'hash-a', familyId: 'fam-2' }));
 
-    await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-2' }), iso(0));
+    await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-2', createdAt: iso(0), lastUsedAt: iso(0) }), iso(0));
 
+    // Replay 20s later — outside the 10s window: full-family reuse detection.
     const replay = await store.rotateRefreshToken('hash-a', session({ id: 'sess-d', refreshTokenHash: 'hash-d', familyId: 'fam-2', createdAt: iso(20_000), lastUsedAt: iso(20_000) }), iso(20_000));
     expect(replay.state).toBe('REUSE_DETECTED');
 
@@ -78,13 +81,26 @@ describe('AuthStore refresh reuse grace window', () => {
     await store.createUser(account());
     await store.createSession(session({ id: 'sess-a', refreshTokenHash: 'hash-a', familyId: 'fam-3' }));
 
-    await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-3' }), iso(0));
+    await store.rotateRefreshToken('hash-a', session({ id: 'sess-b', refreshTokenHash: 'hash-b', familyId: 'fam-3', createdAt: iso(0), lastUsedAt: iso(0) }), iso(0));
     await store.rotateRefreshToken('hash-b', session({ id: 'sess-c', refreshTokenHash: 'hash-c', familyId: 'fam-3', createdAt: iso(1_000), lastUsedAt: iso(1_000) }), iso(1_000));
 
+    // Replay hash-a inside the window. Both direct descendants are consumed,
+    // but sess-c is still a usable leaf and must be used for recovery.
     const replay = await store.rotateRefreshToken('hash-a', session({ id: 'sess-e', refreshTokenHash: 'hash-e', familyId: 'fam-3', createdAt: iso(2_000), lastUsedAt: iso(2_000) }), iso(2_000));
     expect(replay.state).toBe('ROTATED');
 
     const issuedAtSeconds = Math.floor(T0 / 1_000);
     expect(await store.getActiveUserForSession('usr-grace', 'fam-3', issuedAtSeconds)).toMatchObject({ id: 'usr-grace' });
+  });
+
+  it('treats a circular replacement chain as reuse instead of traversing forever', async () => {
+    const store = makeStore();
+    await store.createUser(account());
+    await store.createSession(session({ id: 'sess-cycle-a', refreshTokenHash: 'hash-cycle-a', familyId: 'fam-cycle', consumedAt: iso(0), replacedBySessionId: 'sess-cycle-b' }));
+    await store.createSession(session({ id: 'sess-cycle-b', refreshTokenHash: 'hash-cycle-b', familyId: 'fam-cycle', consumedAt: iso(0), replacedBySessionId: 'sess-cycle-a' }));
+
+    const replay = await store.rotateRefreshToken('hash-cycle-a', session({ id: 'sess-cycle-c', refreshTokenHash: 'hash-cycle-c', familyId: 'fam-cycle' }), iso(1_000));
+
+    expect(replay.state).toBe('REUSE_DETECTED');
   });
 });

@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Logger, OnModuleDestroy, OnModuleInit, Optional, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Logger, OnModuleDestroy, OnModuleInit, Optional, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Injectable, Module } from '@nestjs/common';
 
@@ -129,26 +129,32 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
 
   private async withDeliveryRoute(orderId: string, data: JsonObject): Promise<JsonObject> {
     if (!this.locations) return data;
-    const restaurant = coordinateValue(data.restaurant);
-    const address = coordinateValue(data.address);
-    const restaurantPoint = restaurant ?? await this.resolveCoordinate(data.restaurant, 'restaurant');
-    const addressPoint = address ?? await this.resolveCoordinate(data.address, 'address');
-    if (!restaurantPoint || !addressPoint) return data;
+    const restaurant = isObject(data.restaurant) ? data.restaurant : undefined;
+    const pickupStops = Array.isArray(data.pickup_stops) ? data.pickup_stops.filter(isObject) : [];
+    const pickupSources = pickupStops.length ? pickupStops : restaurant ? [restaurant] : [];
+    const enrichedPickups = await Promise.all(pickupSources.map(async (pickup) => {
+      const coordinate = coordinateValue(pickup) ?? await this.resolveCoordinate(pickup, 'restaurant');
+      return coordinate ? { ...pickup, ...coordinate } : pickup;
+    }));
+    const deliveryAddress = isObject(data.address) ? data.address : undefined;
+    const addressPoint = coordinateValue(deliveryAddress) ?? await this.resolveCoordinate(deliveryAddress, 'address');
+    const pickupPoints = enrichedPickups.map(coordinateValue).filter((point): point is FoodRoutePoint => point !== undefined);
+    const enrichedData: JsonObject = {
+      ...data,
+      ...(pickupStops.length ? { pickup_stops: enrichedPickups } : {}),
+      ...(restaurant && pickupPoints[0] ? { restaurant: { ...restaurant, ...pickupPoints[0] } } : {}),
+      ...(deliveryAddress && addressPoint ? { address: { ...deliveryAddress, ...addressPoint } } : {}),
+    };
+    // Coordinates are useful on their own: the browser can render verified
+    // restaurant/delivery pins even while a routing provider is degraded.
+    if (!pickupPoints.length || !addressPoint) return enrichedData;
+
     let route = this.deliveryRoutes.get(orderId);
     if (!route) {
-      const resolved = await this.locations.route(restaurantPoint, addressPoint);
-      const geometry = resolved.route_geometry;
-      if (resolved.provider !== 'geoapify' || resolved.status !== 'RESOLVED' || !geometry || geometry.length < 2 || resolved.route_distance_meters === undefined || resolved.route_duration_seconds === undefined || !resolved.route_snapshot_hash) {
-        throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
-      }
-      route = {
-        provider: resolved.provider,
-        origin: resolved.origin,
-        destination: resolved.destination,
-        distance_meters: resolved.route_distance_meters,
-        duration_seconds: resolved.route_duration_seconds,
-        geometry,
-        snapshot_hash: resolved.route_snapshot_hash,
+      route = await this.resolveDeliveryRoute([...pickupPoints, addressPoint]) ?? {
+        origin: pickupPoints[0],
+        destination: addressPoint,
+        geometry: [...pickupPoints, addressPoint],
       };
       this.deliveryRoutes.set(orderId, route);
     }
@@ -161,10 +167,32 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
     const courierLocation = ['DRIVER_ASSIGNED', 'PICKED_UP', 'DELIVERING', 'DELIVERED'].includes(status) ? pointAlongRoute(route.geometry, progress) : undefined;
     if (['CANCELLED', 'REFUNDED'].includes(status)) this.deliveryRoutes.delete(orderId);
     return {
-      ...data,
+      ...enrichedData,
       delivery_route: route,
       ...(courierLocation ? { courier_location: courierLocation } : {}),
     };
+  }
+
+  private async resolveDeliveryRoute(points: FoodRoutePoint[]): Promise<FoodDeliveryRouteSnapshot | undefined> {
+    if (!this.locations || points.length < 2) return undefined;
+    try {
+      const legs = await Promise.all(points.slice(1).map((destination, index) => this.locations!.route(points[index], destination)));
+      if (!legs.every((leg) => leg.status === 'RESOLVED' && leg.route_geometry && leg.route_geometry.length >= 2 && leg.route_distance_meters !== undefined && leg.route_duration_seconds !== undefined && leg.route_snapshot_hash)) return undefined;
+      const geometry = legs.flatMap((leg, index) => index === 0 ? leg.route_geometry! : leg.route_geometry!.slice(1));
+      return {
+        provider: legs[0].provider,
+        origin: points[0],
+        destination: points[points.length - 1],
+        distance_meters: legs.reduce((total, leg) => total + (leg.route_distance_meters ?? 0), 0),
+        duration_seconds: legs.reduce((total, leg) => total + (leg.route_duration_seconds ?? 0), 0),
+        geometry,
+        snapshot_hash: legs.map((leg) => leg.route_snapshot_hash).join('.'),
+      };
+    } catch {
+      // Tracking remains available with verified pins and a straight visual
+      // connector when the optional route provider cannot answer in time.
+      return undefined;
+    }
   }
 
   private async resolveCoordinate(value: unknown, kind: 'restaurant' | 'address'): Promise<{ latitude: number; longitude: number } | undefined> {
@@ -172,9 +200,13 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
     if (!isObject(value)) return undefined;
     const text = kind === 'restaurant' ? value.address : value.address_text ?? value.address;
     if (typeof text !== 'string' || text.trim().length < 3) return undefined;
-    const result = await this.locations.geocode(text);
-    const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
-    return candidate && candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined;
+    try {
+      const result = await this.locations.geocode(text);
+      const candidate = result.candidates.find((item) => item.latitude !== null && item.longitude !== null);
+      return candidate && candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   cancelPreview(orderId: string, actorId: string, correlationId: string): Promise<JsonObject> { return this.food.post(`/api/v1/orders/${orderId}/cancel-preview?user_id=${encodeURIComponent(actorId)}`, {}, correlationId, undefined, actorId); }
@@ -182,16 +214,18 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
 }
 
 type FoodDeliveryRouteSnapshot = {
-  provider: string;
-  origin: { latitude: number; longitude: number };
-  destination: { latitude: number; longitude: number };
-  distance_meters: number;
-  duration_seconds: number;
-  geometry: Array<{ latitude: number; longitude: number }>;
-  snapshot_hash: string;
+  provider?: string;
+  origin: FoodRoutePoint;
+  destination: FoodRoutePoint;
+  distance_meters?: number;
+  duration_seconds?: number;
+  geometry: FoodRoutePoint[];
+  snapshot_hash?: string;
 };
 
-function coordinateValue(value: unknown): { latitude: number; longitude: number } | undefined {
+type FoodRoutePoint = { latitude: number; longitude: number };
+
+function coordinateValue(value: unknown): FoodRoutePoint | undefined {
   if (!isObject(value) || typeof value.latitude !== 'number' || typeof value.longitude !== 'number') return undefined;
   return Number.isFinite(value.latitude) && Number.isFinite(value.longitude) ? { latitude: value.latitude, longitude: value.longitude } : undefined;
 }

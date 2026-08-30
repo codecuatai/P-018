@@ -18,11 +18,7 @@ from src.domain.policies import (
 from src.domain.quotes import build_authoritative_quote, price_item
 from src.repositories.food import FoodRepository, ident
 
-# Số món tối đa quét được cho một nhà hàng khi dựng thực đơn. Nhà hàng lớn nhất
-# trong dataset 2026-08-hanoi-v1 có 1.786 món, nên 5.000 là mức dự phòng an toàn:
-# đủ để `total` phản ánh đúng số món thật thay vì bị cắt âm thầm.
-MENU_SCAN_CAP = 5000
-DEFAULT_MENU_PAGE_SIZE = 100
+DEFAULT_MENU_PAGE_SIZE = 20
 
 
 class FoodApplicationService:
@@ -104,11 +100,11 @@ class FoodApplicationService:
 
     async def menu(self, restaurant_id: str, limit: int = DEFAULT_MENU_PAGE_SIZE, offset: int = 0) -> dict:
         restaurant = await self.restaurant(restaurant_id)
-        all_items = [result["item"] for result in await self.repository.search(restaurant_id=restaurant_id, limit=MENU_SCAN_CAP)]
+        items, total = await self.repository.list_menu_items(restaurant_id, limit=limit, offset=offset)
         return {
             "restaurant": restaurant,
-            "items": all_items[offset : offset + limit],
-            "total": len(all_items),
+            "items": items,
+            "total": total,
             "limit": limit,
             "offset": offset,
         }
@@ -682,13 +678,13 @@ class FoodApplicationService:
             raise DomainError("FORBIDDEN", "Đơn hàng không thuộc user hiện tại.")
         return order
 
-    async def list_orders(self, user_id: str) -> list[dict]:
+    async def list_orders(self, user_id: str, limit: int = 50) -> list[dict]:
         orders = await self.repository.list_orders()
         return sorted(
             (order for order in orders if order.get("user_id") == user_id),
             key=lambda order: str(order.get("created_at", "")),
             reverse=True,
-        )
+        )[:limit]
 
     async def ops_summary(self) -> dict:
         orders = await self.repository.list_orders()

@@ -9,7 +9,7 @@ vertical workflow compatibility paths still ask the Gateway to execute a
 whitelisted read/draft/preview request; they do not call a domain directly or
 execute a final action. This is a migration exception, not an authority grant.
 
-The canonical inventory contains 46 entries with the explicit classifications
+The canonical inventory contains 47 entries with the explicit classifications
 `IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
 `IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, and `DEPRECATED`. The Gateway
 parity test and Agent policy parity test verify the checked canonical entries
@@ -45,8 +45,10 @@ tracking events, idempotency, and final status; two explicit confirmations are
 required before final payment/booking execution.
 
 Restaurant Agent tools cover search, detail, availability and holds. Final
-reservation, read/list/cancel operations are represented in the registry, with
-the final write still gated by Gateway confirmation and domain idempotency.
+reservation creation, same-ID reservation updates, read/list/cancel operations
+are represented in the registry. Update is a Gateway-owned final action with a
+fresh availability preview, actor/resource-version binding, explicit user
+confirmation, and domain idempotency.
 
 Healthcare Agent tools cover departments, slots, holds and cancellation.
 Facility/doctor/appointment reads and final confirmation are represented as

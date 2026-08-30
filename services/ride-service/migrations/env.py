@@ -22,6 +22,7 @@ target_metadata = Base.metadata
 _LEGACY_QUOTE_SNAPSHOT_REVISION = "0007"
 _QUOTE_SNAPSHOT_REVISION = "20260827_0007"
 _QUOTE_SNAPSHOT_PREVIOUS_REVISION = "20260816_0006"
+_QUOTE_STOPOVERS_REVISION = "20260828_0008"
 
 
 def _normalize_legacy_quote_snapshot_revision(connection: Connection) -> None:
@@ -77,6 +78,94 @@ def _normalize_legacy_quote_snapshot_revision(connection: Connection) -> None:
     connection.commit()
 
 
+_PHANTOM_0008_REVISION = _QUOTE_STOPOVERS_REVISION
+
+
+def _normalize_phantom_0008_revision(connection: Connection) -> None:
+    """Reconcile an old phantom stamp without replaying the canonical migration."""
+
+    inspector = inspect(connection)
+    if not inspector.has_table("alembic_version"):
+        return
+
+    phantom_exists = connection.execute(
+        text(
+            "SELECT 1 FROM alembic_version "
+            "WHERE version_num = :phantom LIMIT 1"
+        ),
+        {"phantom": _PHANTOM_0008_REVISION},
+    ).scalar_one_or_none()
+    if phantom_exists is None:
+        connection.commit()
+        return
+
+    if not inspector.has_table("ride_quotes"):
+        raise RuntimeError(
+            "Ride revision 20260828_0008 is recorded, but ride_quotes is "
+            "missing; refusing to rewrite migration state."
+        )
+
+    quote_columns = {
+        column["name"] for column in inspector.get_columns("ride_quotes")
+    }
+    if "stopovers" in quote_columns:
+        # The canonical 0008 migration has already applied.  It used to be
+        # treated as a phantom while this migration file was unavailable;
+        # resetting its marker now would replay ADD COLUMN and fail.
+        connection.commit()
+        return
+
+    connection.execute(
+        text(
+            "UPDATE alembic_version SET version_num = :target "
+            "WHERE version_num = :phantom"
+        ),
+        {
+            "phantom": _PHANTOM_0008_REVISION,
+            "target": _QUOTE_SNAPSHOT_REVISION,
+        },
+    )
+    connection.commit()
+
+
+def _normalize_preapplied_stopovers_revision(connection: Connection) -> None:
+    """Advance only an intact schema left at the predecessor revision marker."""
+
+    inspector = inspect(connection)
+    if not inspector.has_table("alembic_version") or not inspector.has_table("ride_quotes"):
+        return
+
+    predecessor_exists = connection.execute(
+        text(
+            "SELECT 1 FROM alembic_version "
+            "WHERE version_num = :predecessor LIMIT 1"
+        ),
+        {"predecessor": _QUOTE_SNAPSHOT_REVISION},
+    ).scalar_one_or_none()
+    if predecessor_exists is None:
+        connection.commit()
+        return
+
+    quote_columns = {
+        column["name"] for column in inspector.get_columns("ride_quotes")
+    }
+    if "stopovers" not in quote_columns:
+        connection.commit()
+        return
+
+    connection.execute(
+        text(
+            "UPDATE alembic_version SET version_num = :target "
+            "WHERE version_num = :predecessor"
+        ),
+        {
+            "predecessor": _QUOTE_SNAPSHOT_REVISION,
+            "target": _QUOTE_STOPOVERS_REVISION,
+        },
+    )
+    connection.commit()
+
+
 def run_migrations_offline() -> None:
     context.configure(
         url=config.get_main_option("sqlalchemy.url"),
@@ -97,6 +186,8 @@ def run_migrations_online() -> None:
     )
     with connectable.connect() as connection:
         _normalize_legacy_quote_snapshot_revision(connection)
+        _normalize_phantom_0008_revision(connection)
+        _normalize_preapplied_stopovers_revision(connection)
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():
             context.run_migrations()

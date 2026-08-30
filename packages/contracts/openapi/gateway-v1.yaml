@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: X-One Gateway API
-  version: 1.6.0
+  version: 1.4.0
 paths:
   /api/v1/assistant/chat:
     post:
@@ -47,59 +47,6 @@ paths:
         '400': {description: Missing or blank Idempotency-Key}
         '422': {description: Invalid Idempotency-Key or request}
         '409': {description: Action is stale or confirmation precondition failed}
-  /api/v1/voice/transcribe:
-    post:
-      summary: Transcribe a bounded audio upload
-      description: >
-        Stateless speech-to-text fallback for clients that cannot use the
-        browser Web Speech API. Audio is forwarded to the Agent service and is
-        not retained by X-One.
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              additionalProperties: false
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: Audio clip, up to 10 MiB.
-      responses:
-        '200':
-          description: Transcribed audio
-          content:
-            application/json: {schema: {$ref: '#/components/schemas/VoiceTranscriptionEnvelope'}}
-        '400': {description: Missing or empty audio file}
-        '401': {description: Missing or invalid user token}
-        '413': {description: Audio file exceeds the 10 MiB limit}
-        '415': {description: Unsupported audio media type}
-        '502': {description: Speech-to-text provider unavailable}
-  /api/v1/voice/text-to-speech:
-    post:
-      summary: Synthesize assistant text as audio
-      description: >
-        Stateless text-to-speech for assistant responses. The Gateway forwards
-        bounded text to the Agent voice provider and does not retain the text
-        or generated audio.
-      security: [{bearerAuth: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/TextToSpeechRequest'}
-      responses:
-        '200':
-          description: Synthesized MPEG audio
-          content:
-            audio/mpeg:
-              schema: {type: string, format: binary}
-        '400': {description: Missing or overlong text}
-        '401': {description: Missing or invalid user token}
-        '502': {description: Text-to-speech provider unavailable}
 
   /api/v1/healthcare-workflows/chat:
     post:
@@ -260,10 +207,27 @@ paths:
       security: [{bearerAuth: []}]
       parameters:
         - {$ref: '#/components/parameters/RestaurantId'}
-        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 20}}
         - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
-        '200': {description: Food menu for the restaurant}
+        '200':
+          description: Paginated Food menu for the restaurant
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [restaurant, items, total, limit, offset]
+                    properties:
+                      restaurant: {type: object, additionalProperties: true}
+                      items: {type: array, items: {type: object, additionalProperties: true}}
+                      total: {type: integer, minimum: 0}
+                      limit: {type: integer, minimum: 1}
+                      offset: {type: integer, minimum: 0}
+                  meta: {type: object, additionalProperties: true}
         '401': {description: Missing or invalid user token}
         '404': {description: Restaurant not found}
   /api/v1/service-actions/food/cart:
@@ -393,6 +357,27 @@ paths:
         '400': {description: Missing idempotency key}
         '401': {description: Missing or invalid user token}
         '409': {description: Idempotency or availability conflict}
+  /api/v1/service-actions/restaurant/reservations/{reservationId}:
+    patch:
+      summary: Update an actor-owned Restaurant reservation after Gateway confirmation
+      description: >
+        Applies a previously previewed Restaurant reservation change through the
+        authoritative Restaurant service. The caller must provide an idempotency
+        key; the Gateway verifies the actor-owned reservation and the domain
+        enforces the same-ID resource transition.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ReservationId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantReservationUpdateRequest'}}}
+      responses:
+        '200': {description: Updated actor-owned reservation}
+        '400': {description: Missing idempotency key or empty update}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Reservation not found}
+        '409': {description: Reservation version or idempotency conflict}
   /api/v1/service-actions/healthcare/doctors:
     get:
       summary: List authoritative Healthcare doctors by department
@@ -468,7 +453,7 @@ paths:
 
   /api/v1/history:
     get:
-      summary: List unified actor-scoped history across domain services and Core conversations
+      summary: List unified actor-scoped service activity across domain services
       security: [{bearerAuth: []}]
       parameters:
         - name: service
@@ -488,7 +473,7 @@ paths:
           schema: {type: integer, minimum: 1, default: 1}
         - name: page_size
           in: query
-          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
       responses:
         '200': {description: Unified history; partial and unavailable fields identify degraded domains}
         '401': {description: Missing or invalid user token}
@@ -517,8 +502,18 @@ paths:
     get:
       summary: List Core-owned conversations for the authenticated actor
       security: [{bearerAuth: []}]
+      parameters:
+        - name: include_archived
+          in: query
+          schema: {type: boolean, default: false}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
       responses:
-        '200': {description: Conversation summaries}
+        '200': {description: Paginated Core conversation summaries}
         '401': {description: Missing or invalid user token}
     post:
       summary: Create a Core-owned conversation
@@ -787,14 +782,20 @@ paths:
 
   /api/v1/notifications:
     get:
-      summary: List durable actor-scoped notifications and synchronize domain events
+      summary: List durable Core-owned actor-scoped notification projections
       security: [{bearerAuth: []}]
       parameters:
         - name: status
           in: query
           schema: {type: string, enum: [UNREAD, READ]}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
-        '200': {description: Notifications with unread count and degraded dependency metadata}
+        '200': {description: Paginated notifications with unread count; no synchronous domain scan}
         '401': {description: Missing or invalid user token}
   /api/v1/notifications/unread-count:
     get:
@@ -1075,6 +1076,11 @@ components:
       name: restaurantId
       required: true
       schema: {type: string, minLength: 1, maxLength: 128}
+    ReservationId:
+      in: path
+      name: reservationId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
     CartId:
       in: path
       name: cartId
@@ -1136,28 +1142,6 @@ components:
       required: false
       schema: {type: integer, minimum: 1, maximum: 100, default: 20}
   schemas:
-    VoiceTranscriptionEnvelope:
-      type: object
-      required: [data, meta]
-      properties:
-        data:
-          $ref: '#/components/schemas/VoiceTranscription'
-        meta:
-          type: object
-          additionalProperties: true
-    VoiceTranscription:
-      type: object
-      required: [text, provider]
-      additionalProperties: false
-      properties:
-        text: {type: string}
-        provider: {type: string}
-    TextToSpeechRequest:
-      type: object
-      required: [text]
-      additionalProperties: false
-      properties:
-        text: {type: string, minLength: 1, maxLength: 5000}
     AssistantChatRequest:
       type: object
       required: [message]
@@ -1232,7 +1216,7 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, ride_cancel, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, restaurant_update, ride_service, ride_payment, ride_cancel, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
               label: {type: string}
               target_index: {type: integer, minimum: 0}
         completed:
@@ -1246,6 +1230,7 @@ components:
       oneOf:
         - {$ref: '#/components/schemas/RestaurantOptionsItem'}
         - {$ref: '#/components/schemas/RestaurantHoldItem'}
+        - {$ref: '#/components/schemas/RestaurantUpdateConfirmationItem'}
         - {$ref: '#/components/schemas/RestaurantReservationItem'}
         - {$ref: '#/components/schemas/RideItem'}
         - {$ref: '#/components/schemas/RideTimingConflictItem'}
@@ -1262,6 +1247,13 @@ components:
         options:
           type: array
           items: {$ref: '#/components/schemas/RestaurantOption'}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string}
+        previous_start_at: {type: string, format: date-time}
+        previous_party_size: {type: integer, minimum: 1}
+        party_size: {type: integer, minimum: 1}
+        start_at: {type: string, format: date-time}
+        status: {type: string}
         note: {type: string}
     RestaurantOption:
       type: object
@@ -1284,6 +1276,23 @@ components:
         start_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
         note: {type: string}
+    RestaurantUpdateConfirmationItem:
+      type: object
+      required: [kind, title, operation, restaurant, resource_id, previous_start_at, start_at, party_size, status]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [restaurant_confirmation]}
+        title: {type: string}
+        operation: {type: string, enum: [UPDATE]}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string, minLength: 1}
+        reservation_code: {type: string}
+        previous_start_at: {type: string, format: date-time}
+        start_at: {type: string, format: date-time}
+        previous_party_size: {type: integer, minimum: 1}
+        party_size: {type: integer, minimum: 1}
+        status: {type: string, enum: [AWAITING_CONFIRMATION]}
+        note: {type: string}
     RestaurantReservationItem:
       type: object
       required: [kind, title, restaurant, reservation_code, party_size, start_at, status]
@@ -1292,10 +1301,13 @@ components:
         kind: {type: string, enum: [reservation]}
         title: {type: string}
         restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string, minLength: 1}
         reservation_code: {type: string}
+        previous_start_at: {type: string, format: date-time}
         party_size: {type: integer}
+        previous_party_size: {type: integer, minimum: 1}
         start_at: {type: string, format: date-time}
-        status: {type: string, enum: [CONFIRMED]}
+        status: {type: string, enum: [CONFIRMED, MODIFIED]}
     RestaurantReference:
       type: object
       required: [name]
@@ -1568,6 +1580,14 @@ components:
         start_at: {type: string, format: date-time}
         duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
         seating_type: {type: string, maxLength: 80}
+    RestaurantReservationUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        party_size: {type: integer, minimum: 1, maximum: 50}
+        start_at: {type: string, format: date-time}
+        special_requests: {type: [string, 'null'], maxLength: 1000}
     RestaurantHoldRequest:
       allOf:
         - {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}

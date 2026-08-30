@@ -11,6 +11,7 @@ import { PaymentModule } from '../payment/payment.module';
 import { PaymentService } from '../payment/payment.service';
 
 export type HistoryType = 'food_order' | 'ride_booking' | 'restaurant_reservation' | 'healthcare_appointment';
+const HISTORY_UPSTREAM_TIMEOUT_MS = 750;
 
 export interface HistoryItem {
   id: string;
@@ -104,7 +105,7 @@ export class HistoryQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  page_size = 20;
+  page_size = 10;
 }
 
 @Injectable()
@@ -115,10 +116,10 @@ export class HistoryService {
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
     const requested = options.service ? [options.service] : names;
     const responses = await Promise.allSettled(requested.map((name) => {
-      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
-      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
-      return this.healthcare.listAppointments(actorId, correlationId);
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }, 50, HISTORY_UPSTREAM_TIMEOUT_MS).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      return this.healthcare.listAppointments(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
     }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
@@ -130,7 +131,7 @@ export class HistoryService {
       }
       for (const value of extractItems(result.value)) items.push(normalizeHistoryItem(name, value));
     });
-    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp) || left.type.localeCompare(right.type) || left.id.localeCompare(right.id));
     if (!items.length && unavailable.length === requested.length) throw new ServiceUnavailableException({ code: 'HISTORY_UNAVAILABLE', detail: 'Lịch sử đang tạm thời chưa sẵn sàng.', retryable: true });
     const filtered = items.filter((item) => matchesHistory(item, options));
     const page = options.page ?? 1;
@@ -143,10 +144,10 @@ export class HistoryService {
   async active(actorId: string, correlationId: string): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
     const responses = await Promise.allSettled(names.map((name) => {
-      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
-      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
-      return this.healthcare.listAppointments(actorId, correlationId);
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }, 50, HISTORY_UPSTREAM_TIMEOUT_MS).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      return this.healthcare.listAppointments(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
     }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
@@ -162,7 +163,7 @@ export class HistoryService {
         if (isHistoryResourceActive(name, value, now)) items.push(normalized);
       }
     });
-    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp) || left.type.localeCompare(right.type) || left.id.localeCompare(right.id));
     return { items, partial: unavailable.length > 0, unavailable };
   }
 

@@ -6,62 +6,73 @@ jest.mock("@/lib/api-client", () => ({
   getActiveHistory: jest.fn(),
 }));
 
-describe("active history shared poller", () => {
+describe("Active History Shared Poller (Multi-tab & Multi-component)", () => {
   const mockItem: HistoryItem = {
-    id: "active-1",
-    type: "ride_booking",
-    title: "Chuyến xe",
-    status: "DRIVER_ASSIGNED",
-    detail: "Đang đón bạn",
-    timestamp: "2026-08-29T10:00:00Z",
-    source: "ride_booking",
-    resource: { id: "active-1", status: "DRIVER_ASSIGNED" },
+    id: "test-item-01",
+    type: "restaurant_reservation",
+    title: "Dịch vụ thử nghiệm",
+    status: "CONFIRMED",
+    detail: "Thông tin mẫu",
+    timestamp: new Date().toISOString(),
+    source: "restaurant_reservation",
+    resource: { id: "test-res-01" },
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     resetActiveHistoryPollerCache();
-    localStorage.clear();
     (apiClient.getActiveHistory as jest.Mock).mockResolvedValue({ items: [mockItem] });
   });
 
-  test("deduplicates same-user requests within the shared fetch gap", async () => {
-    const first = await fetchActiveHistoryShared("user-101");
-    const second = await fetchActiveHistoryShared("user-101");
-
+  test("deduplicates network requests across multiple tabs/components within min fetch gap", async () => {
+    // Tab 1 / Component 1 calls fetchActiveHistoryShared
+    const res1 = await fetchActiveHistoryShared("user-101");
     expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(1);
-    expect(second.items).toEqual(first.items);
+    expect(res1.items).toHaveLength(1);
+
+    // Tab 2 / Component 2 calls fetchActiveHistoryShared 100ms later
+    const res2 = await fetchActiveHistoryShared("user-101");
+
+    // Network request count must STILL be 1 (deduplicated across tabs/components)
+    expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(1);
+    expect(res2.items).toEqual(res1.items);
   });
 
-  test("keeps cache and in-flight requests isolated by user", async () => {
-    const [first, second] = await Promise.all([
-      fetchActiveHistoryShared("user-a"),
-      fetchActiveHistoryShared("user-b"),
-    ]);
+  test("notifies all subscribers across tabs/components when fresh active history is fetched", async () => {
+    const callbackTabA = jest.fn();
+    const callbackTabB = jest.fn();
 
-    expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(2);
-    expect(first.items).toEqual([mockItem]);
-    expect(second.items).toEqual([mockItem]);
-  });
-
-  test("notifies subscribers when a fresh payload is written", async () => {
-    const subscriberA = jest.fn();
-    const subscriberB = jest.fn();
-    const unsubscribeA = subscribeActiveHistoryShared("user-101", subscriberA);
-    const unsubscribeB = subscribeActiveHistoryShared("user-101", subscriberB);
+    const unsubscribeA = subscribeActiveHistoryShared("user-101", callbackTabA);
+    const unsubscribeB = subscribeActiveHistoryShared("user-101", callbackTabB);
 
     await fetchActiveHistoryShared("user-101", { force: true });
 
-    expect(subscriberA).toHaveBeenCalledWith([mockItem]);
-    expect(subscriberB).toHaveBeenCalledWith([mockItem]);
+    expect(callbackTabA).toHaveBeenCalledWith([mockItem]);
+    expect(callbackTabB).toHaveBeenCalledWith([mockItem]);
+
     unsubscribeA();
     unsubscribeB();
   });
 
-  test("bypasses a recent cache when force is true", async () => {
+  test("bypasses cache and makes network request when force is true", async () => {
     await fetchActiveHistoryShared("user-101");
-    await fetchActiveHistoryShared("user-101", { force: true });
+    expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(1);
 
+    await fetchActiveHistoryShared("user-101", { force: true });
     expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(2);
+  });
+
+  test("coalesces overlapping forced refreshes for one user", async () => {
+    let resolveRequest: ((value: { items: HistoryItem[] }) => void) | undefined;
+    (apiClient.getActiveHistory as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+
+    const first = fetchActiveHistoryShared("user-101", { force: true });
+    const second = fetchActiveHistoryShared("user-101", { force: true });
+
+    expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(1);
+    resolveRequest?.({ items: [mockItem] });
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
   });
 });

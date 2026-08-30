@@ -49,10 +49,10 @@ describe('VoiceInput', () => {
     });
 
     render(<VoiceInput onTranscript={mockOnTranscript} onError={mockOnError} />);
-
+    
     const btn = screen.getByRole('button', { name: 'Nhập bằng giọng nói' });
     fireEvent.click(btn);
-
+    
     expect(mockStartListening).toHaveBeenCalled();
   });
 
@@ -78,10 +78,10 @@ describe('VoiceInput', () => {
     });
 
     render(<VoiceInput onTranscript={mockOnTranscript} onError={mockOnError} />);
-
+    
     const btn = screen.getByRole('button', { name: 'Nhập bằng giọng nói' });
     fireEvent.click(btn);
-
+    
     expect(mockStartRecording).toHaveBeenCalled();
   });
 
@@ -107,10 +107,10 @@ describe('VoiceInput', () => {
     });
 
     render(<VoiceInput onTranscript={mockOnTranscript} onError={mockOnError} />);
-
+    
     const btn = screen.getByRole('button', { name: 'Nhập bằng giọng nói' });
     fireEvent.click(btn);
-
+    
     // Wait for promise rejection to propagate
     await Promise.resolve();
     expect(mockOnError).toHaveBeenCalledWith('Không thể truy cập microphone. Vui lòng kiểm tra quyền.');
@@ -138,16 +138,16 @@ describe('VoiceInput', () => {
     });
 
     render(<VoiceInput onTranscript={mockOnTranscript} onError={mockOnError} />);
-
+    
     fireEvent.keyDown(window, { key: 'Escape' });
-
+    
     expect(mockCancelRecording).toHaveBeenCalled();
   });
 
   it('cancels Tier 1 recording on Escape key', () => {
     const mockStopListening = jest.fn();
     const mockResetTranscript = jest.fn();
-
+    
     (useSpeechRecognition as jest.Mock).mockReturnValue({
       isSupported: true,
       isListening: true,
@@ -170,9 +170,9 @@ describe('VoiceInput', () => {
     });
 
     render(<VoiceInput onTranscript={mockOnTranscript} onError={mockOnError} />);
-
+    
     fireEvent.keyDown(window, { key: 'Escape' });
-
+    
     expect(mockStopListening).toHaveBeenCalled();
     expect(mockResetTranscript).toHaveBeenCalled();
   });

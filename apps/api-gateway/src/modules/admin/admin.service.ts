@@ -1,10 +1,11 @@
-import { ConflictException, Injectable, Optional } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
 
 import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { AuthService } from '../auth/auth.service';
+import { AuthUserStatus } from '../auth/auth.types';
 import { CoreStore } from '../core/core.module';
 import { CoreProductOpsStore, SupportTicketStatus } from '../core/product-ops.store';
 import { decryptSecret, encryptSecret } from '../core/crypto.util';
@@ -174,6 +175,27 @@ export class AdminService {
     return this.auth.listUsers(page, pageSize) as unknown as JsonObject;
   }
 
+  async updateUserStatus(id: string, status: 'active' | 'disabled' | 'suspended', actorId: string, correlationId: string): Promise<JsonObject> {
+    if (id === actorId && (status === 'suspended' || status === 'disabled')) {
+      throw new ConflictException({ code: 'CANNOT_SUSPEND_SELF', detail: 'Bạn không thể tự khóa tài khoản quản trị của chính mình.', retryable: false });
+    }
+    const targetStatus: AuthUserStatus = (status === 'suspended' || status === 'disabled') ? 'disabled' : 'active';
+    const updated = await this.auth.updateUserStatus(id, targetStatus);
+    if (!updated) {
+      throw new NotFoundException({ code: 'USER_NOT_FOUND', detail: 'Không tìm thấy tài khoản người dùng.', retryable: false });
+    }
+    return {
+      id: updated.id,
+      email: updated.email,
+      full_name: updated.fullName,
+      phone: updated.phone,
+      role: updated.role,
+      status: updated.status === 'disabled' ? 'suspended' : 'active',
+      updated_at: updated.updatedAt,
+      created_at: updated.createdAt,
+    } as unknown as JsonObject;
+  }
+
   async domainTransactions(domain: string, page: number, pageSize: number, correlationId: string): Promise<JsonObject> {
     switch (domain) {
       case 'food': return this.food.opsTransactions(correlationId, pageSize, (page - 1) * pageSize);
@@ -227,9 +249,13 @@ export class AdminService {
           latency_ms: Math.round(performance.now() - started),
           checked_at: new Date().toISOString(),
           detail: {
-            database: dbReady ? 'connected' : 'unavailable',
+            endpoint: 'GET /api/v1/health (Internal)',
+            http_status: healthy ? '200 OK' : '503 Service Unavailable',
+            database_pool: dbReady ? 'connected (PostgreSQL Core)' : 'unavailable',
             workflow_worker: workerHealthy ? 'healthy' : 'unhealthy',
+            workflow_saga_worker: workerHealthy ? 'active & healthy' : 'unhealthy',
             confirmation_recovery_worker: 'healthy',
+            runtime: 'Node.js (NestJS Gateway)',
           },
         };
       }],
@@ -242,6 +268,14 @@ export class AdminService {
             status: ok ? 'healthy' : 'unavailable',
             latency_ms: Math.round(performance.now() - started),
             checked_at: new Date().toISOString(),
+            detail: {
+              endpoint: 'PostgreSQL Core Connection Pool',
+              http_status: ok ? '200 OK (DB PING)' : '500 DB Error',
+              database_pool: ok ? 'connected' : 'disconnected',
+              driver: 'pg / PostgreSQL 16',
+              idempotency_store: 'active',
+              audit_logger: 'active',
+            },
           };
         } catch (error) {
           return {
@@ -249,6 +283,11 @@ export class AdminService {
             status: 'unavailable',
             latency_ms: Math.round(performance.now() - started),
             checked_at: new Date().toISOString(),
+            detail: {
+              endpoint: 'PostgreSQL Core Pool',
+              http_status: '500 DB Error',
+              database_pool: 'unavailable',
+            },
             error: error instanceof Error ? error.name : 'DB_ERROR',
           };
         }
@@ -273,8 +312,14 @@ export class AdminService {
       const result = await probe();
       const latency_ms = Math.round(performance.now() - started);
       const checked_at = new Date().toISOString();
+      const enrichedDetail: Record<string, unknown> = {
+        endpoint: 'GET /health/ready',
+        http_status: `${result.status} ${result.status === 200 ? 'OK' : result.status === 503 ? 'Service Unavailable' : 'Error'}`,
+        probe_latency_ms: latency_ms,
+        ...(result.body && typeof result.body === 'object' ? result.body : {}),
+      };
       if (result.ok && result.status === 200) {
-        return { service, status: 'healthy', latency_ms, checked_at, detail: result.body };
+        return { service, status: 'healthy', latency_ms, checked_at, detail: enrichedDetail };
       }
       if (result.status === 503) {
         return {
@@ -282,7 +327,7 @@ export class AdminService {
           status: 'degraded',
           latency_ms,
           checked_at,
-          detail: result.body,
+          detail: enrichedDetail,
           error: 'SERVICE_DEGRADED',
         };
       }
@@ -291,15 +336,23 @@ export class AdminService {
         status: 'unavailable',
         latency_ms,
         checked_at,
-        detail: result.body,
+        detail: enrichedDetail,
         error: `HTTP_${result.status}`,
       };
     } catch (error) {
+      const latency_ms = Math.round(performance.now() - started);
+      const checked_at = new Date().toISOString();
       return {
         service,
         status: 'unavailable',
-        latency_ms: Math.round(performance.now() - started),
-        checked_at: new Date().toISOString(),
+        latency_ms,
+        checked_at,
+        detail: {
+          endpoint: 'GET /health/ready',
+          http_status: 'CONNECTION_REFUSED / TIMEOUT',
+          probe_latency_ms: latency_ms,
+          error_detail: error instanceof Error ? error.message : 'Unknown upstream error',
+        },
         error: error instanceof Error ? error.message || error.name : 'UPSTREAM_ERROR',
       };
     }

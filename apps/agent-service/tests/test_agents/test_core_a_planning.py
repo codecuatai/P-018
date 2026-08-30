@@ -412,7 +412,7 @@ def test_healthcare_to_ride_uses_dependency_not_model_destination() -> None:
     assert "dropoff_address" not in planned_ride.missing_information
 
 
-def test_capability_present_only_as_skeleton_is_not_selected() -> None:
+def test_restaurant_update_requires_authority_and_emits_final_commit_step() -> None:
     intent = SemanticIntent(
         intent_ref=0,
         domain=Domain.RESTAURANT,
@@ -432,9 +432,10 @@ def test_capability_present_only_as_skeleton_is_not_selected() -> None:
         ]
     )
     task = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0]
-    assert task.steps == []
-    assert task.disposition == TaskDisposition.WAITING
-    assert task.missing_information == ["capability:restaurant.update_reservation"]
+    assert task.steps[0].capability == "restaurant.update_reservation"
+    assert task.steps[0].phase.value == "FINAL_COMMIT"
+    assert task.steps[0].confirmation_gate == ConfirmationGate.FINAL_COMMIT
+    assert task.steps[0].requires_authority[0].fact == "reservation_id"
 
 
 def test_stale_quote_invalidates_confirmation_and_requotes() -> None:

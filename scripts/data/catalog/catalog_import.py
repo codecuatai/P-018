@@ -622,6 +622,13 @@ def fold_catalog_text(value: Any) -> str:
     return "".join(char for char in normalized_text if unicodedata.category(char) != "Mn").replace("đ", "d")
 
 
+def catalog_search_text(payload: dict[str, Any]) -> str:
+    return fold_catalog_text(" ".join(
+        str(payload.get(field) or "")
+        for field in ("name", "category", "description")
+    ))
+
+
 def meaningful_rating(value: Any, review_count: int | None) -> float | None:
     rating = numeric(value)
     if rating is None or review_count is None or review_count <= 0 or not 0 <= rating <= 5:
@@ -707,9 +714,33 @@ async def register_dataset(connection: Any, plan: ImportPlan, allow_rejected: bo
 
 
 async def apply_food(connection: Any, records: list[NormalizedRecord]) -> None:
-    for record in records:
-        payload = json.dumps(record.payload, ensure_ascii=False)
-        await connection.execute("INSERT INTO food_catalog (id,record_type,data,dataset_version,source_record_id,source_name,source_url,fetched_at,last_verified_at,content_hash,is_active,updated_at) VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,TRUE,now()) ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data,dataset_version=EXCLUDED.dataset_version,source_record_id=EXCLUDED.source_record_id,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,fetched_at=EXCLUDED.fetched_at,last_verified_at=EXCLUDED.last_verified_at,content_hash=EXCLUDED.content_hash,is_active=TRUE,updated_at=now()", str(record.payload["id"]), "restaurant" if record.payload.get("id", "").startswith("food_restaurant_") else "menu_item", payload, record.dataset_version, record.source_record_id, record.source_name, record.source_url, database_timestamp(record.fetched_at), database_timestamp(record.last_verified_at), record.content_hash)
+    statement = (
+        "INSERT INTO food_catalog (id,record_type,data,dataset_version,source_record_id,source_name,source_url,"
+        "fetched_at,last_verified_at,content_hash,search_text,is_active,updated_at) "
+        "VALUES ($1,$2,$3::jsonb,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,now()) "
+        "ON CONFLICT (id) DO UPDATE SET data=EXCLUDED.data,dataset_version=EXCLUDED.dataset_version,"
+        "source_record_id=EXCLUDED.source_record_id,source_name=EXCLUDED.source_name,source_url=EXCLUDED.source_url,"
+        "fetched_at=EXCLUDED.fetched_at,last_verified_at=EXCLUDED.last_verified_at,content_hash=EXCLUDED.content_hash,"
+        "search_text=EXCLUDED.search_text,is_active=TRUE,updated_at=now()"
+    )
+    values = [
+        (
+            str(record.payload["id"]),
+            "restaurant" if record.payload.get("id", "").startswith("food_restaurant_") else "menu_item",
+            json.dumps(record.payload, ensure_ascii=False),
+            record.dataset_version,
+            record.source_record_id,
+            record.source_name,
+            record.source_url,
+            database_timestamp(record.fetched_at),
+            database_timestamp(record.last_verified_at),
+            record.content_hash,
+            catalog_search_text(record.payload),
+        )
+        for record in records
+    ]
+    if values:
+        await connection.executemany(statement, values)
 
 
 async def apply_restaurant(connection: Any, records: list[NormalizedRecord]) -> None:

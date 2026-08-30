@@ -133,3 +133,35 @@ async def test_add_item_creates_cart_and_adds_item_in_same_turn() -> None:
         "create_cart",
         "add_to_cart",
     ]
+
+
+@pytest.mark.asyncio
+async def test_typed_selected_food_action_cannot_fall_back_to_food_discovery() -> None:
+    result = await build_graph().ainvoke(
+        {
+            "query": "internal selection status",
+            "user_id": "actor-selected-item",
+            "conversation_id": "conv-selected-item",
+            "correlation_id": "cor-selected-item",
+            "workflow_context": {
+                "assistant_action": "ADD_SELECTED_FOOD_ITEM",
+                "assistant_action_quantity": 3,
+                "restaurant_id": "restaurant_A_93f",
+                "menu_item_id": "item_Z_71b",
+                "menu_item_candidates": [
+                    {"id": "item_Z_71b", "name": "burger bò", "restaurant_id": "restaurant_A_93f"}
+                ],
+            },
+        }
+    )
+
+    assert result["intent"] == "add_to_cart"
+    assert [call["capability_name"] for call in result["tool_calls"]] == [
+        "view_menu_item",
+        "create_cart",
+        "add_to_cart",
+    ]
+    assert result["tool_calls"][-1]["semantic_arguments"] == {
+        "quantity": 3,
+        "option_preferences": [],
+    }

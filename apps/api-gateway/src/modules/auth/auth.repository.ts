@@ -25,7 +25,6 @@ function resolveReuseGraceMs(raw: unknown): number {
   if (!Number.isFinite(parsed)) return REFRESH_REUSE_GRACE_MS;
   return Math.min(Math.max(parsed, 0), 300) * 1_000;
 }
-
 export type RefreshRotation =
   | { state: 'ROTATED'; account: AuthAccount; session: AuthSession }
   | { state: 'REUSE_DETECTED'; account: AuthAccount; familyId: string }
@@ -43,6 +42,7 @@ export interface AuthRepository {
   getUserById(id: string): Promise<AuthAccount | undefined>;
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }>;
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined>;
+  updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined>;
   createSession(session: AuthSession): Promise<AuthSession>;
   getSessionByRefreshHash(refreshTokenHash: string): Promise<AuthSession | undefined>;
   rotateRefreshToken(currentHash: string, nextSession: AuthSession, now: string): Promise<RefreshRotation>;
@@ -114,6 +114,14 @@ export class InMemoryAuthRepository implements AuthRepository {
     if (patch.language !== undefined) account.language = patch.language || undefined;
     if (patch.timezone !== undefined) account.timezone = patch.timezone || undefined;
     if (patch.onboardingCompletedAt !== undefined) account.onboardingCompletedAt = patch.onboardingCompletedAt || undefined;
+    account.updatedAt = new Date().toISOString();
+    return clone(account);
+  }
+
+  async updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> {
+    const account = this.usersById.get(id);
+    if (!account) return undefined;
+    account.status = status;
     account.updatedAt = new Date().toISOString();
     return clone(account);
   }
@@ -345,6 +353,11 @@ export class PostgresAuthRepository implements AuthRepository {
     if (!fields.length) return this.getUserById(id);
     values.push(id);
     const result = await this.pool.query(`UPDATE users SET ${fields.join(',')},updated_at=now() WHERE id=$${values.length} RETURNING id`, values);
+    return result.rows[0] ? this.getUserById(id) : undefined;
+  }
+
+  async updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> {
+    const result = await this.pool.query('UPDATE users SET status=$1, updated_at=now() WHERE id=$2 RETURNING id', [status, id]);
     return result.rows[0] ? this.getUserById(id) : undefined;
   }
 
@@ -604,6 +617,7 @@ export class AuthStore implements OnModuleDestroy {
   getUserById(id: string): Promise<AuthAccount | undefined> { return this.repository.getUserById(id); }
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> { return this.repository.listUsers(page, pageSize); }
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> { return this.repository.updateProfile(id, patch); }
+  updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> { return this.repository.updateUserStatus(id, status); }
   createSession(session: AuthSession): Promise<AuthSession> { return this.repository.createSession(session); }
   getSessionByRefreshHash(hash: string): Promise<AuthSession | undefined> { return this.repository.getSessionByRefreshHash(hash); }
   rotateRefreshToken(hash: string, session: AuthSession, now: string): Promise<RefreshRotation> { return this.repository.rotateRefreshToken(hash, session, now); }

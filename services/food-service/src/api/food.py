@@ -99,7 +99,7 @@ async def restaurant(restaurant_id: str, food: FoodApplicationService = Depends(
 @router.get("/restaurants/{restaurant_id}/menu", dependencies=[Depends(require_internal)])
 async def menu(
     restaurant_id: str,
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(20, ge=1, le=500),
     offset: int = Query(0, ge=0),
     food: FoodApplicationService = Depends(service),
 ):
@@ -235,8 +235,8 @@ async def preview(
 
 
 @router.get("/orders")
-async def list_orders(actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
-    return {"data": {"items": await food.list_orders(actor_id)}}
+async def list_orders(limit: int = Query(default=50, ge=1, le=100), actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+    return {"data": {"items": await food.list_orders(actor_id, limit=limit)}}
 
 
 @router.post("/orders", dependencies=[Depends(require_internal)])

@@ -482,6 +482,7 @@ export interface AuthSessionSummary {
 export type AssistantActionKind =
   | "select_restaurant"
   | "restaurant_confirm"
+  | "restaurant_update"
   | "ride_service"
   | "ride_payment"
   | "ride_cancel"
@@ -507,6 +508,7 @@ type AssistantActionOf<K extends AssistantActionKind> = {
 export type AssistantAction =
   | AssistantActionOf<"select_restaurant">
   | AssistantActionOf<"restaurant_confirm">
+  | AssistantActionOf<"restaurant_update">
   | AssistantActionOf<"ride_service">
   | AssistantActionOf<"ride_payment">
   | AssistantActionOf<"ride_cancel">
@@ -608,6 +610,11 @@ export interface AssistantRestaurantOptionsItem extends AssistantItemBase<"resta
 export interface AssistantRestaurantConfirmationItem extends AssistantItemBase<"restaurant_confirmation" | "reservation"> {
   restaurant?: AssistantRestaurant;
   reservation_code?: string;
+  operation?: "UPDATE";
+  resource_id?: string;
+  previous_start_at?: string;
+  previous_party_size?: number;
+  next_party_size?: number;
   party_size?: number;
   start_at?: string;
   status?: string;
@@ -620,7 +627,7 @@ export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "rid
   resource_id?: string;
   pickup?: string;
   dropoff?: string;
-  stopovers?: Array<{ address: string }>;
+  stopovers?: Array<{ address: string; latitude?: number; longitude?: number }>;
   vehicle?: string;
   distance_km?: number;
   amount?: number;
@@ -735,6 +742,7 @@ export interface AssistantAddressOptionsItem extends AssistantItemBase<"address_
 export interface AssistantTaskErrorItem extends AssistantItemBase<"task_error"> {
   error_code?: string;
   retryable?: boolean;
+  action_id?: string;
 }
 
 export type KnownAssistantItem =
@@ -778,15 +786,30 @@ export interface AssistantResponse {
   workflow_status?: "PENDING" | "RUNNING" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED";
 }
 
+export type ActivityService = "ride" | "food" | "restaurant" | "healthcare" | "general";
+
+export type ActivityStatus = "pending" | "running" | "completed" | "retrying" | "error";
+
+export interface ActivityEntry {
+  id: string;
+  service: ActivityService;
+  label: string;
+  step: string;
+  status: ActivityStatus;
+  detail?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   timestamp: string;
   response?: AssistantResponse;
-  requestStatus?: "sending" | "sent" | "error";
+  requestStatus?: "sending" | "sent" | "error" | "stopped";
   retryText?: string;
   retryAction?: AssistantAction;
+  pendingStartedAt?: number;
+  activity?: ActivityEntry[];
 }
 
 export interface SessionActivity {

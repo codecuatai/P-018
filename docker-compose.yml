@@ -34,6 +34,20 @@ services:
     ports: [ "${POSTGRES_PORT}:5432" ]
     networks: [ xone_internal ]
 
+  catalog-importer:
+    profiles: [ dataops ]
+    build:
+      context: .
+      dockerfile: scripts/data/catalog/Dockerfile
+    environment:
+      FOOD_DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
+      RESTAURANT_DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
+      HEALTHCARE_DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
+    volumes:
+      - ./data:/workspace/data:ro
+      - ./artifacts/dataops:/workspace/artifacts/dataops
+    networks: [ xone_internal ]
+
   api-gateway:
     build:
       context: .
@@ -62,9 +76,9 @@ services:
       GATEWAY_AUTH_LOGIN_RATE_LIMIT: ${GATEWAY_AUTH_LOGIN_RATE_LIMIT:?GATEWAY_AUTH_LOGIN_RATE_LIMIT is required}
       GATEWAY_ASSISTANT_CHAT_RATE_LIMIT: ${GATEWAY_ASSISTANT_CHAT_RATE_LIMIT:?GATEWAY_ASSISTANT_CHAT_RATE_LIMIT is required}
       GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: ${GATEWAY_ASSISTANT_ACTION_RATE_LIMIT:?GATEWAY_ASSISTANT_ACTION_RATE_LIMIT is required}
-      GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT: ${GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT:?GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT is required}
       GATEWAY_FUTURE_AUTH_RATE_LIMIT: ${GATEWAY_FUTURE_AUTH_RATE_LIMIT:?GATEWAY_FUTURE_AUTH_RATE_LIMIT is required}
       GATEWAY_AUTH_REFRESH_RATE_LIMIT: ${GATEWAY_AUTH_REFRESH_RATE_LIMIT:?GATEWAY_AUTH_REFRESH_RATE_LIMIT is required}
+      GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT: ${GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT:?GATEWAY_VOICE_TRANSCRIBE_RATE_LIMIT is required}
       DATABASE_URL: ${CORE_DATABASE_URL:?CORE_DATABASE_URL is required}
       AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:?AGENT_SERVICE_URL is required}
       RIDE_SERVICE_URL: ${RIDE_SERVICE_URL:?RIDE_SERVICE_URL is required}
@@ -203,6 +217,11 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
       HEALTHCARE_FACILITY_NAME: ${HEALTHCARE_FACILITY_NAME:?HEALTHCARE_FACILITY_NAME is required}
       HEALTHCARE_FACILITY_ADDRESS: ${HEALTHCARE_FACILITY_ADDRESS:?HEALTHCARE_FACILITY_ADDRESS is required}
+      # Used only by the explicit development seed command; the running
+      # service never creates a patient or link at startup.
+      DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:?DEMO_AUTH_ENABLED is required}
+      DEMO_AUTH_USER_ID: ${DEMO_AUTH_USER_ID:-}
+      HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
       interval: 10s

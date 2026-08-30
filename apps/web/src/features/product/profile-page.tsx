@@ -19,6 +19,8 @@ export function ProfilePage() {
   const section = searchParams?.get("section");
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
+  const [language, setLanguage] = useState("vi");
+  const [timezone, setTimezone] = useState("Asia/Ho_Chi_Minh");
   const [saving, setSaving] = useState(false);
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -61,6 +63,8 @@ export function ProfilePage() {
   useEffect(() => {
     setFullName(user?.full_name ?? "");
     setPhone(user?.phone ?? "");
+    setLanguage(user?.language ?? "vi");
+    setTimezone(user?.timezone ?? "Asia/Ho_Chi_Minh");
   }, [user]);
 
   useEffect(() => {
@@ -104,7 +108,7 @@ export function ProfilePage() {
     }
     setSaving(true); setFeedback(""); setError("");
     try {
-      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone });
+      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone, language: language.trim(), timezone: timezone.trim() });
       if (newAddressText.trim() && (selectedSavedAddressId || selectedAddress) && !(await handleSetDefaultAddress())) return;
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
@@ -264,6 +268,10 @@ export function ProfilePage() {
           })()}
 
           <label className="form-field"><span>Email</span><input value={user?.email ?? ""} disabled aria-describedby="email-note" /><small id="email-note" className="field-hint">Email chưa được thay đổi trong luồng này.</small></label>
+          <div className="profile-form-row">
+            <label className="form-field"><span>Ngôn ngữ</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="vi">Tiếng Việt</option><option value="en">English</option></select></label>
+            <label className="form-field"><span>Múi giờ</span><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option value="Asia/Ho_Chi_Minh">Hà Nội</option><option value="UTC">UTC</option></select></label>
+          </div>
           {error ? <p className="form-error" role="alert">{error}</p> : null}
           {feedback ? <p className="form-success" role="status">{feedback}</p> : null}
           <button className="button button-primary" type="button" onClick={() => void save()} disabled={saving || !fullName.trim()}>{saving ? <Loader2 className="spinner" size={16} /> : <Save size={16} />}{saving ? "Đang lưu…" : "Lưu thay đổi"}</button>

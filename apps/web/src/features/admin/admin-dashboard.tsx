@@ -10,6 +10,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   Clock3,
   CreditCard,
   Database,
@@ -20,6 +22,7 @@ import {
   Key,
   LayoutDashboard,
   LifeBuoy,
+  LoaderCircle,
   LogOut,
   Menu,
   MessageSquare,
@@ -41,6 +44,7 @@ import {
   UserCheck,
   UserRound,
   Users,
+  UserX,
   Utensils,
   UtensilsCrossed,
   Workflow,
@@ -101,6 +105,8 @@ export function AdminDashboard() {
     refreshing,
     lastCheckedAt,
     load,
+    fetchUsers,
+    updateUserStatus,
     addTicketMessage,
     refreshHealth,
     refreshTransactions,
@@ -415,6 +421,9 @@ export function AdminDashboard() {
                       users={users}
                       onRetry={() => void load()}
                       onManageServices={() => switchSubTab("user-services")}
+                      onFetchPage={fetchUsers}
+                      onUpdateStatus={updateUserStatus}
+                      currentUserId={user?.sub || user?.id}
                     />
                   )}
                   {currentSubTabId === "user-services" && (
@@ -664,38 +673,44 @@ function OverviewSummarySubtab({
               label="Tài khoản"
               value={summary.data.counts.total_users}
               icon={<Users size={16} />}
+              subtext="Đã đăng ký trong Core"
               onClick={() => onNavigateTab("users", "user-list")}
             />
             <MetricCard
               label="Thanh toán"
               value={summary.data.counts.payments}
               icon={<CreditCard size={16} />}
+              subtext="Giao dịch qua Saga"
               onClick={() => onNavigateTab("transactions", "payments-list")}
             />
             <MetricCard
               label="Hoàn tiền"
               value={summary.data.counts.refunds}
               icon={<RefreshCw size={16} />}
+              subtext="Yêu cầu hoàn trả"
               onClick={() => onNavigateTab("transactions", "payments-list")}
             />
             <MetricCard
               label="Support đang mở"
               value={summary.data.counts.open_support_tickets}
               icon={<LifeBuoy size={16} />}
+              subtext="Ticket chờ hỗ trợ"
               onClick={() => onNavigateTab("support", "support-queue")}
             />
             <MetricCard
               label="Workflow lỗi"
               value={summary.data.counts.failed_workflows}
               icon={<AlertTriangle size={16} />}
-              tone="warning"
+              tone={Number(summary.data.counts.failed_workflows) > 0 ? "warning" : "default"}
+              subtext={Number(summary.data.counts.failed_workflows) === 0 ? "100% khớp lệnh" : "Cần đối soát"}
               onClick={() => onNavigateTab("transactions", "workflow-reconciliation")}
             />
             <MetricCard
               label="Workflow partial"
               value={summary.data.counts.partial_success_workflows}
               icon={<Workflow size={16} />}
-              tone="warning"
+              tone={Number(summary.data.counts.partial_success_workflows) > 0 ? "warning" : "default"}
+              subtext={Number(summary.data.counts.partial_success_workflows) === 0 ? "Không có phân mảnh" : "Cần xử lý"}
               onClick={() => onNavigateTab("transactions", "workflow-reconciliation")}
             />
           </div>
@@ -710,7 +725,7 @@ function OverviewSummarySubtab({
                     key={domain.domain}
                     label={domain.domain}
                     status={domain.status}
-                    detail={domain.data ? compactCounts(domain.data.counts) : domain.error}
+                    detail={domain.data ? formatDomainCounts(domain.domain, domain.data.counts ?? domain.data) : domain.error}
                   />
                 ))}
               </div>
@@ -871,7 +886,7 @@ function DatasetsSubtab({ datasets, onRetry }: { datasets: Loadable<{ items: Adm
     return items.filter(
       (item) =>
         item.domain.toLowerCase().includes(q) ||
-        (item.data && datasetDetail(item.data).toLowerCase().includes(q)),
+        (item.data && datasetDetail(item.domain, item.data).toLowerCase().includes(q)),
     );
   }, [datasets.data?.items, search]);
 
@@ -910,7 +925,7 @@ function DatasetsSubtab({ datasets, onRetry }: { datasets: Loadable<{ items: Adm
                 key={item.domain}
                 label={item.domain}
                 status={item.status}
-                detail={item.data ? datasetDetail(item.data) : item.error}
+                detail={item.data ? datasetDetail(item.domain, item.data) : item.error}
               />
             ))}
           </div>
@@ -928,14 +943,28 @@ function UsersSubtab({
   users,
   onRetry,
   onManageServices,
+  onFetchPage,
+  onUpdateStatus,
+  currentUserId,
 }: {
   users: Loadable<{ items: AdminUserRecord[]; total: number; page: number; page_size: number }>;
   onRetry: () => void;
   onManageServices: () => void;
+  onFetchPage?: (page: number, pageSize: number) => Promise<void>;
+  onUpdateStatus?: (id: string, status: "active" | "suspended") => Promise<AdminUserRecord>;
+  currentUserId?: string;
 }) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roleFilter, statusFilter, pageSize]);
 
   const filteredItems = useMemo(() => {
     const items = users.data?.items ?? [];
@@ -952,6 +981,56 @@ function UsersSubtab({
     });
   }, [users.data?.items, search, roleFilter, statusFilter]);
 
+  const totalFiltered = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return filteredItems.slice(start, start + pageSize);
+  }, [filteredItems, safePage, pageSize]);
+
+  const startRecord = totalFiltered === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endRecord = Math.min(safePage * pageSize, totalFiltered);
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxVisible = 5;
+    let start = Math.max(1, safePage - Math.floor(maxVisible / 2));
+    let end = Math.min(totalPages, start + maxVisible - 1);
+    if (end - start + 1 < maxVisible) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+    for (let i = start; i <= end; i++) {
+      pages.push(i);
+    }
+    return pages;
+  }, [safePage, totalPages]);
+
+  const handleToggleStatus = async (userId: string, nextStatus: "active" | "suspended", userName: string) => {
+    if (!onUpdateStatus) return;
+    const actionLabel = nextStatus === "suspended" ? "khóa (disband)" : "mở khóa (kích hoạt lại)";
+    const confirmed = window.confirm(`Bạn có chắc chắn muốn ${actionLabel} tài khoản "${userName}"?`);
+    if (!confirmed) return;
+
+    setActionLoadingId(userId);
+    setActionMessage(null);
+    try {
+      await onUpdateStatus(userId, nextStatus);
+      setActionMessage({
+        text: `Đã ${nextStatus === "suspended" ? "khóa tài khoản" : "mở khóa và kích hoạt lại"} "${userName}" thành công.`,
+        type: "success",
+      });
+      setTimeout(() => setActionMessage(null), 4000);
+    } catch (error) {
+      setActionMessage({
+        text: `Không thể cập nhật trạng thái: ${error instanceof Error ? error.message : "Đã có lỗi xảy ra"}`,
+        type: "error",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   return (
     <section className="admin-section" id="users" aria-labelledby="users-title">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
@@ -966,6 +1045,28 @@ function UsersSubtab({
           <span>Quản lý phân quyền dịch vụ →</span>
         </button>
       </div>
+
+      {/* Action Banner Toast */}
+      {actionMessage && (
+        <div
+          className="admin-toast-banner"
+          style={{
+            marginBottom: "12px",
+            padding: "8px 14px",
+            fontSize: "12px",
+            borderRadius: "8px",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: actionMessage.type === "success" ? "#F0FDF4" : "#FEF2F2",
+            color: actionMessage.type === "success" ? "#166534" : "#991B1B",
+            border: `1px solid ${actionMessage.type === "success" ? "#BBF7D0" : "#FECACA"}`,
+          }}
+        >
+          {actionMessage.type === "success" ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
+          <strong>{actionMessage.text}</strong>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="admin-filter-bar">
@@ -1012,7 +1113,10 @@ function UsersSubtab({
           </select>
         </div>
         <div className="admin-filter-right">
-          <span>Hiển thị {filteredItems.length} / {users.data?.total ?? 0} tài khoản</span>
+          <span>
+            Hiển thị {startRecord} - {endRecord} / {totalFiltered} tài khoản
+            {users.data?.total !== undefined && users.data.total > totalFiltered ? ` (Tổng cộng ${users.data.total})` : ""}
+          </span>
         </div>
       </div>
 
@@ -1027,7 +1131,7 @@ function UsersSubtab({
           ) : (
             <div className="admin-table-card">
               <div className="admin-table-caption-bar">
-                <strong>Danh sách tài khoản ({filteredItems.length})</strong>
+                <strong>Danh sách tài khoản ({totalFiltered}) · Trang {safePage}/{totalPages}</strong>
                 <span>Dữ liệu xác thực từ Gateway Core</span>
               </div>
               <div className="admin-table-wrap" style={{ border: "none", borderRadius: 0 }}>
@@ -1038,10 +1142,11 @@ function UsersSubtab({
                       <th scope="col">Vai trò</th>
                       <th scope="col">Trạng thái</th>
                       <th scope="col">Ngày tạo</th>
+                      <th scope="col" style={{ textAlign: "right", paddingRight: "16px" }}>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredItems.map((u) => (
+                    {paginatedItems.map((u) => (
                       <tr key={u.id}>
                         <td>
                           <div className="admin-user-cell">
@@ -1058,15 +1163,127 @@ function UsersSubtab({
                           <span className={`admin-role-badge role-${u.role}`}>{u.role}</span>
                         </td>
                         <td>
-                          <span className={`admin-badge status-${u.status === "active" ? "healthy" : "unavailable"}`}>
-                            {u.status === "active" ? "Hoạt động" : u.status}
+                          <span className={`admin-badge status-${u.status === "active" ? "healthy" : "suspended"}`}>
+                            {u.status === "active" ? "Hoạt động" : "Đã khóa"}
                           </span>
                         </td>
                         <td style={{ color: "#64748B" }}>{formatDate(u.created_at)}</td>
+                        <td style={{ textAlign: "right", paddingRight: "16px" }}>
+                          {currentUserId === u.id ? (
+                            <span style={{ fontSize: "11px", color: "#94A3B8", fontStyle: "italic" }}>Tài khoản của bạn</span>
+                          ) : u.status === "active" ? (
+                            <button
+                              className="admin-action-btn-suspend"
+                              type="button"
+                              disabled={actionLoadingId === u.id}
+                              onClick={() => void handleToggleStatus(u.id, "suspended", u.full_name || u.email)}
+                              aria-label={`Khóa tài khoản ${u.full_name || u.email}`}
+                              title="Khóa / Vô hiệu hóa tài khoản (Disband)"
+                            >
+                              {actionLoadingId === u.id ? <LoaderCircle className="spinner" size={12} /> : <UserX size={12} />}
+                              <span>Khóa tài khoản</span>
+                            </button>
+                          ) : (
+                            <button
+                              className="admin-action-btn-activate"
+                              type="button"
+                              disabled={actionLoadingId === u.id}
+                              onClick={() => void handleToggleStatus(u.id, "active", u.full_name || u.email)}
+                              aria-label={`Mở khóa tài khoản ${u.full_name || u.email}`}
+                              title="Mở khóa / Kích hoạt lại tài khoản"
+                            >
+                              {actionLoadingId === u.id ? <LoaderCircle className="spinner" size={12} /> : <UserCheck size={12} />}
+                              <span>Kích hoạt lại</span>
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+
+              {/* Phân trang (Pagination) */}
+              <div className="admin-pagination">
+                <div className="admin-page-size-selector">
+                  <span>Hiển thị:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    className="admin-select-filter"
+                    style={{ height: "28px", padding: "0 6px", fontSize: "11px" }}
+                    aria-label="Số hàng mỗi trang"
+                  >
+                    <option value={5}>5 / trang</option>
+                    <option value={10}>10 / trang</option>
+                    <option value={20}>20 / trang</option>
+                    <option value={50}>50 / trang</option>
+                  </select>
+                </div>
+
+                <div className="admin-pagination-info">
+                  Trang <strong>{safePage}</strong> / <strong>{totalPages}</strong> ({startRecord} - {endRecord} trên {totalFiltered})
+                </div>
+
+                <div className="admin-pagination-controls">
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={safePage <= 1}
+                    aria-label="Trang đầu"
+                    title="Trang đầu"
+                  >
+                    <ChevronsLeft size={14} />
+                  </button>
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safePage <= 1}
+                    aria-label="Trang trước"
+                  >
+                    <ChevronLeft size={14} /> Trước
+                  </button>
+
+                  <div className="admin-pagination-pages">
+                    {pageNumbers.map((p) => (
+                      <button
+                        key={p}
+                        className={`admin-pagination-btn ${p === safePage ? "is-active" : ""}`}
+                        type="button"
+                        onClick={() => setCurrentPage(p)}
+                        aria-label={`Trang ${p}`}
+                        aria-current={p === safePage ? "page" : undefined}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={safePage >= totalPages}
+                    aria-label="Trang sau"
+                  >
+                    Sau <ChevronRight size={14} />
+                  </button>
+                  <button
+                    className="admin-pagination-btn"
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={safePage >= totalPages}
+                    aria-label="Trang cuối"
+                    title="Trang cuối"
+                  >
+                    <ChevronsRight size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           )
@@ -1559,12 +1776,14 @@ function MetricCard({
   value,
   icon,
   tone = "default",
+  subtext,
   onClick,
 }: {
   label: string;
   value: unknown;
   icon: React.ReactNode;
   tone?: "default" | "warning";
+  subtext?: string;
   onClick?: () => void;
 }) {
   return (
@@ -1580,16 +1799,19 @@ function MetricCard({
         <span className="admin-metric-icon-box">{icon}</span>
       </div>
       <strong>{valueNumber(value)}</strong>
+      {subtext && <span className="admin-metric-subtext">{subtext}</span>}
       {onClick && <span className="admin-metric-hint">Xem chi tiết →</span>}
     </article>
   );
 }
 
 function DomainRow({ label, status, detail }: { label: string; status: string; detail?: string }) {
+  const domainMeta = DOMAIN_DATASET_DEFAULTS[label.toLowerCase()];
+  const displayLabel = domainMeta?.title ? `${domainMeta.title} (${label})` : label;
   return (
     <div className="admin-domain-row">
       <span className={`admin-status-dot status-${status}`} aria-hidden="true" />
-      <strong>{label}</strong>
+      <strong>{displayLabel}</strong>
       <span className="admin-domain-detail">{detail ?? "Chưa có dữ liệu"}</span>
       <span className={`admin-badge status-${status}`}>
         {status === "healthy" ? "Sẵn sàng" : status === "degraded" ? "Suy giảm" : "Mất kết nối"}
@@ -1597,6 +1819,16 @@ function DomainRow({ label, status, detail }: { label: string; status: string; d
     </div>
   );
 }
+
+const SERVICE_FRIENDLY_NAMES: Record<string, { name: string; tag: string }> = {
+  "api-gateway": { name: "api-gateway", tag: "Cổng Edge & Router" },
+  "gateway-core": { name: "gateway-core", tag: "Database Core & Saga" },
+  "agent-service": { name: "agent-service", tag: "AI Orchestrator" },
+  "food-service": { name: "food-service", tag: "Ẩm thực & Thực đơn" },
+  "ride-service": { name: "ride-service", tag: "Gọi xe & Tài xế" },
+  "restaurant-service": { name: "restaurant-service", tag: "Nhà hàng & Đặt bàn" },
+  "healthcare-service": { name: "healthcare-service", tag: "Y tế & Đặt khám" },
+};
 
 function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; compact?: boolean }) {
   const [expandedService, setExpandedService] = useState<string | null>(null);
@@ -1627,58 +1859,86 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
           <span style={{ textAlign: "right", minWidth: "60px" }}>Chi tiết</span>
         </div>
       )}
-      {items.map((item) => (
-        <div key={item.service} className="admin-health-card-item">
-          <div className="admin-health-row">
-            <span className={`admin-status-dot status-${item.status}`} aria-hidden="true" />
-            <strong>{item.service}</strong>
-            <span
-              className={`admin-latency-badge ${
-                item.latency_ms < 20
-                  ? "admin-latency-fast"
-                  : item.latency_ms < 80
-                  ? "admin-latency-medium"
-                  : "admin-latency-slow"
-              }`}
+      {items.map((item) => {
+        const info = SERVICE_FRIENDLY_NAMES[item.service.toLowerCase()];
+        const isExpanded = expandedService === item.service;
+        return (
+          <div key={item.service} className="admin-health-card-item">
+            <div
+              className={`admin-health-row ${compact ? "is-compact-row" : ""}`}
+              onClick={compact && item.detail ? () => setExpandedService(isExpanded ? null : item.service) : undefined}
+              style={compact && item.detail ? { cursor: "pointer" } : undefined}
+              title={compact && item.detail ? "Bấm để xem kết quả live probe" : undefined}
             >
-              {item.status === "healthy" ? `${item.latency_ms} ms` : item.error ?? "Lỗi"}
-            </span>
-            <span className={`admin-badge status-${item.status}`}>
-              {item.status === "healthy" ? "Tốt" : item.status === "degraded" ? "Suy giảm" : "Lỗi"}
-            </span>
-            <time dateTime={item.checked_at}>{formatDate(item.checked_at)}</time>
-            {!compact ? (
+              <span className={`admin-status-dot status-${item.status}`} aria-hidden="true" />
+              <div>
+                <strong>{item.service}</strong>
+                {info && <span style={{ fontSize: "0.62rem", color: "var(--color-muted)", display: "block" }}>{info.tag}</span>}
+              </div>
+              <span
+                className={`admin-latency-badge ${
+                  item.latency_ms < 30
+                    ? "admin-latency-fast"
+                    : item.latency_ms < 90
+                    ? "admin-latency-medium"
+                    : "admin-latency-slow"
+                }`}
+              >
+                {item.status === "healthy" ? `${item.latency_ms} ms` : item.error ?? "Lỗi"}
+              </span>
+              <span className={`admin-badge status-${item.status}`}>
+                {item.status === "healthy" ? "Tốt" : item.status === "degraded" ? "Suy giảm" : "Lỗi"}
+              </span>
+              <time dateTime={item.checked_at}>{formatDate(item.checked_at)}</time>
               <div style={{ textAlign: "right", minWidth: "60px" }}>
                 {item.detail && Object.keys(item.detail).length > 0 ? (
                   <button
                     className="button button-secondary"
                     style={{ padding: "0.15rem 0.5rem", fontSize: "0.7rem", height: "26px" }}
                     type="button"
-                    onClick={() => setExpandedService(expandedService === item.service ? null : item.service)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpandedService(isExpanded ? null : item.service);
+                    }}
                   >
-                    {expandedService === item.service ? "Ẩn" : "Chi tiết"}
+                    {isExpanded ? "Ẩn" : "Chi tiết"}
                   </button>
                 ) : (
                   <span style={{ fontSize: "0.68rem", color: "var(--color-muted-soft)" }}>—</span>
                 )}
               </div>
-            ) : null}
+            </div>
+            {isExpanded && item.detail && (
+              <HealthDetailViewer detail={item.detail} />
+            )}
           </div>
-          {!compact && expandedService === item.service && item.detail && (
-            <HealthDetailViewer detail={item.detail} />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function HealthDetailViewer({ detail }: { detail: Record<string, unknown> }) {
+  const [showJson, setShowJson] = useState(false);
+
   return (
     <div className="admin-health-detail-card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", borderBottom: "1px dashed #E2E8F0", paddingBottom: "6px" }}>
+        <span style={{ fontSize: "0.66rem", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+          Kết quả kiểm tra chẩn đoán (Live Probe Response)
+        </span>
+        <button
+          type="button"
+          className="button button-secondary"
+          style={{ padding: "0.1rem 0.4rem", fontSize: "0.62rem", height: "22px" }}
+          onClick={() => setShowJson(!showJson)}
+        >
+          {showJson ? "Ẩn JSON" : "Xem Raw JSON"}
+        </button>
+      </div>
       <div className="admin-health-detail-grid">
         {Object.entries(detail).map(([key, val]) => {
-          const isHealthy = val === "healthy" || val === "connected" || val === true;
+          const isHealthy = val === "healthy" || val === "connected" || val === true || (typeof val === "string" && val.includes("200 OK"));
           const isDegraded = val === "degraded" || val === "unhealthy";
           const statusClass = isHealthy ? "status-healthy" : isDegraded ? "status-degraded" : "status-unavailable";
           const displayVal = typeof val === "object" ? JSON.stringify(val) : String(val);
@@ -1690,6 +1950,11 @@ function HealthDetailViewer({ detail }: { detail: Record<string, unknown> }) {
           );
         })}
       </div>
+      {showJson && (
+        <pre style={{ margin: "8px 0 0", padding: "8px 12px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "0.68rem", fontFamily: "monospace", overflowX: "auto" }}>
+          {JSON.stringify(detail, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -1954,24 +2219,74 @@ function formatDate(value: unknown): string {
   return Number.isNaN(parsed.valueOf()) ? "—" : parsed.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
 }
 
-function compactCounts(value: unknown): string {
-  if (!value || typeof value !== "object") return "Đã kết nối";
-  return Object.entries(value as Record<string, unknown>)
-    .map(([key, entry]) => `${key}: ${valueNumber(entry)}`)
-    .join(" · ");
+const DOMAIN_DATASET_DEFAULTS: Record<string, { title: string; datasetName: string; source: string }> = {
+  food: { title: "Ẩm thực", datasetName: "Thực đơn món ăn & Quán ăn", source: "PostgreSQL" },
+  ride: { title: "Di chuyển", datasetName: "Đội ngũ Tài xế & Phương tiện", source: "PostgreSQL / Geo" },
+  restaurant: { title: "Nhà hàng", datasetName: "Danh mục Nhà hàng & Bàn", source: "PostgreSQL" },
+  healthcare: { title: "Y tế", datasetName: "Cơ sở Y tế & Bác sĩ", source: "PostgreSQL" },
+};
+
+function formatDomainCounts(domain: string, value: unknown): string {
+  if (!value || typeof value !== "object") return "Đã kết nối trực tiếp";
+  const counts = value as Record<string, unknown>;
+  const parts: string[] = [];
+
+  const keyLabels: Record<string, string> = {
+    orders: "đơn hàng",
+    bookings: "chuyến xe",
+    restaurants: "nhà hàng",
+    reservations: "lượt đặt bàn",
+    appointments: "lịch khám",
+    drivers: "tài xế",
+    available_drivers: "sẵn sàng",
+    facilities: "cơ sở y tế",
+    doctors: "bác sĩ",
+    active_rides: "chuyến đang chạy",
+    menu_items: "món ăn",
+  };
+
+  // Primary count keys
+  for (const [k, label] of Object.entries(keyLabels)) {
+    if (typeof counts[k] === "number") {
+      parts.push(`${valueNumber(counts[k])} ${label}`);
+    }
+  }
+
+  // Handle nested status breakdown if present (e.g. orders_by_status, bookings_by_status)
+  for (const [k, val] of Object.entries(counts)) {
+    if (k.endsWith("_by_status") && val && typeof val === "object") {
+      const subEntries = Object.entries(val as Record<string, unknown>)
+        .filter(([, v]) => typeof v === "number" && (v as number) > 0)
+        .map(([st, cnt]) => `${st.toLowerCase()}: ${valueNumber(cnt)}`);
+      if (subEntries.length > 0) {
+        parts.push(`(${subEntries.join(", ")})`);
+      }
+    }
+  }
+
+  if (parts.length > 0) return parts.join(" · ");
+
+  return Object.entries(counts)
+    .filter(([, v]) => typeof v === "number" || typeof v === "string")
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${valueNumber(v)}`)
+    .join(" · ") || "Đã kết nối";
 }
 
-function datasetDetail(value: Record<string, unknown>): string {
-  return (
-    [
-      valueText(value.dataset_name ?? value.dataset),
-      valueText(value.version),
-      value.row_count !== undefined ? `${valueNumber(value.row_count)} dòng` : undefined,
-      valueText(value.freshness_status, ""),
-    ]
-      .filter(Boolean)
-      .join(" · ") || "Đã kết nối"
-  );
+function datasetDetail(domain: string, value: Record<string, unknown>): string {
+  const meta = DOMAIN_DATASET_DEFAULTS[domain.toLowerCase()];
+  const name = typeof value.dataset_name === "string" && value.dataset_name.trim()
+    ? value.dataset_name
+    : typeof value.dataset === "string" && value.dataset.trim()
+    ? value.dataset
+    : meta?.datasetName ?? "Dữ liệu nghiệp vụ";
+
+  const rowCount = typeof value.row_count === "number" ? `${valueNumber(value.row_count)} bản ghi` : undefined;
+  const version = typeof value.version === "string" && value.version.trim() ? `Phiên bản: ${value.version}` : `Nguồn: ${meta?.source ?? "PostgreSQL"}`;
+  const freshness = typeof value.freshness_status === "string" && value.freshness_status.trim()
+    ? value.freshness_status
+    : "Sẵn sàng thời gian thực";
+
+  return [name, rowCount, version, freshness].filter(Boolean).join(" · ");
 }
 
 function initials(email: string): string {

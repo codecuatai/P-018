@@ -26,7 +26,7 @@ export function useSpeechRecognition() {
       setIsSupported(false);
       return;
     }
-
+    
     const recognition = new SpeechRecognition();
     recognition.lang = 'vi-VN';
     recognition.continuous = true;
@@ -131,7 +131,8 @@ export function useSpeechRecognition() {
       recognitionRef.current.start();
       setIsListening(true);
       startDurationTimer();
-    } catch {
+    } catch (e) {
+      console.error('Error starting recognition:', e);
       setError('Không thể bắt đầu nhận dạng giọng nói.');
     }
   }, [startDurationTimer]);

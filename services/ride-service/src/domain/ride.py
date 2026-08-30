@@ -618,7 +618,7 @@ def _haversine_km(latitude_a: float, longitude_a: float, latitude_b: float, long
 SIMULATED_DRIVER_SPAWN_MIN_METERS = 2_000.0
 SIMULATED_DRIVER_SPAWN_MAX_METERS = 3_000.0
 SIMULATED_DRIVER_FALLBACK_SPEED_KM_PER_MINUTE = 0.35
-SIMULATED_DRIVER_TRACKING_SPEED_FACTOR = 0.2
+SIMULATED_DRIVER_TRACKING_SPEED_FACTOR = 0.4
 
 
 def spawn_simulated_driver_near_pickup(

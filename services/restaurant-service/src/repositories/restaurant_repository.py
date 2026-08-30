@@ -24,6 +24,9 @@ from src.infrastructure.database import (
 
 class RestaurantRepository:
     _IDEMPOTENCY_PENDING = '{"status":"PENDING"}'
+    _DEMO_TABLE_PREFIX = "DEMO-XONE-"
+    _DEMO_TABLE_COUNT = 32
+    _DEMO_TABLE_CAPACITY = 12
 
     def __init__(self, database_url: str):
         self.factory = make_session_factory(database_url)
@@ -50,13 +53,39 @@ class RestaurantRepository:
     def seed(self) -> None:
         with self.factory() as db:
             restaurants = list(db.scalars(self._active_restaurant_statement(db).order_by(RestaurantRow.id)))
+            restaurant_ids = [restaurant.id for restaurant in restaurants]
+            table_counts_by_restaurant: dict[str, int] = {}
+            opening_hour_counts_by_restaurant: dict[str, int] = {}
+            demo_table_codes_by_restaurant: dict[str, set[str]] = {}
+            if restaurant_ids:
+                table_counts_by_restaurant = dict(
+                    db.execute(
+                        select(TableRow.restaurant_id, func.count(TableRow.id))
+                        .where(TableRow.restaurant_id.in_(restaurant_ids))
+                        .group_by(TableRow.restaurant_id)
+                    ).all()
+                )
+                opening_hour_counts_by_restaurant = dict(
+                    db.execute(
+                        select(OpeningHourRow.restaurant_id, func.count(OpeningHourRow.id))
+                        .where(OpeningHourRow.restaurant_id.in_(restaurant_ids))
+                        .group_by(OpeningHourRow.restaurant_id)
+                    ).all()
+                )
+                for restaurant_id, table_code in db.execute(
+                    select(TableRow.restaurant_id, TableRow.table_code).where(
+                        TableRow.restaurant_id.in_(restaurant_ids),
+                        TableRow.table_code.like(f"{self._DEMO_TABLE_PREFIX}%"),
+                    )
+                ):
+                    demo_table_codes_by_restaurant.setdefault(restaurant_id, set()).add(table_code)
+
             # Imported catalog rows are authoritative.  Add only the minimal
             # deterministic booking resources that an imported row may lack.
             # This keeps seed idempotent and makes real catalog records bookable
             # without replacing or mutating their imported identity.
             for index, restaurant in enumerate(restaurants):
-                table_count = db.scalar(select(func.count(TableRow.id)).where(TableRow.restaurant_id == restaurant.id))
-                if not table_count:
+                if not table_counts_by_restaurant.get(restaurant.id):
                     capacities = (2, 4, 6, 8, 4) if index % 2 == 0 else (2, 4, 4, 6, 8)
                     for table_index, capacity in enumerate(capacities, 1):
                         db.add(
@@ -69,10 +98,28 @@ class RestaurantRepository:
                             )
                         )
 
-                hour_count = db.scalar(
-                    select(func.count(OpeningHourRow.id)).where(OpeningHourRow.restaurant_id == restaurant.id)
-                )
-                if not hour_count:
+                # A development catalog can be exercised repeatedly by several
+                # demo accounts.  Keep a dedicated additive capacity buffer so
+                # reservations and active holds on pre-existing tables never
+                # make a freshly seeded catalog look unavailable.  These are
+                # static Restaurant-owned resources: no reservation, hold, or
+                # imported restaurant identity is changed by this seed.
+                existing_table_codes = demo_table_codes_by_restaurant.get(restaurant.id, set())
+                for table_index in range(1, self._DEMO_TABLE_COUNT + 1):
+                    table_code = f"{self._DEMO_TABLE_PREFIX}{table_index:02d}"
+                    if table_code in existing_table_codes:
+                        continue
+                    db.add(
+                        TableRow(
+                            restaurant_id=restaurant.id,
+                            table_code=table_code,
+                            capacity=self._DEMO_TABLE_CAPACITY,
+                            seating_type="standard",
+                            active=True,
+                        )
+                    )
+
+                if not opening_hour_counts_by_restaurant.get(restaurant.id):
                     for weekday in range(7):
                         db.add(
                             OpeningHourRow(

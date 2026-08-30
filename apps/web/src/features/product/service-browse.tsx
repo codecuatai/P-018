@@ -343,6 +343,7 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
 }
 
 function RestaurantBrowse() {
+  const itemsPerPage = 10;
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
@@ -359,23 +360,30 @@ function RestaurantBrowse() {
   const [checked, setChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [paging, setPaging] = useState(false);
   const searchRequestRef = useRef(0);
-  const pageSize = 4;
 
-  const load = useCallback(async (query = "") => {
+  const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
     const requestId = ++searchRequestRef.current;
-    setLoading(true);
+    if (keepList) setPaging(true); else setLoading(true);
     setError("");
-    setPage(1);
     try {
-      const result = await browseService("restaurant", query);
+      const result = await browseService("restaurant", query, { page: targetPage, limit: itemsPerPage });
       if (requestId !== searchRequestRef.current) return;
+      const total = typeof result.total === "number" ? result.total : result.items.length;
       setItems(result.items);
+      setPage(typeof result.page === "number" && result.page > 0 ? result.page : targetPage);
+      setTotalItems(total);
+      setPageCount(typeof result.total_pages === "number" && result.total_pages > 0 ? result.total_pages : Math.max(1, Math.ceil(total / itemsPerPage)));
     } catch (reason) {
       if (requestId !== searchRequestRef.current) return;
       setError(errorText(reason));
     } finally {
-      if (requestId === searchRequestRef.current) setLoading(false);
+      if (requestId === searchRequestRef.current) {
+        if (keepList) setPaging(false); else setLoading(false);
+      }
     }
   }, []);
   const searchParams = useSearchParams();
@@ -479,9 +487,6 @@ function RestaurantBrowse() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
-
   if (selected) {
     return (
       <div className="service-detail-flow" style={{ textAlign: "left" }}>
@@ -557,7 +562,7 @@ function RestaurantBrowse() {
       ) : items.length ? (
         <>
           <div className="browse-results" style={{ textAlign: "left" }}>
-            {paginatedItems.map((item) => (
+            {items.map((item) => (
               <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}>
                 <AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} />
                 <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
@@ -571,17 +576,17 @@ function RestaurantBrowse() {
               </article>
             ))}
           </div>
-          {totalPages > 1 ? (
+          {pageCount > 1 ? (
             <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
               <span style={{ fontSize: "0.75rem", color: "var(--color-muted)", textAlign: "left" }}>
-                Trang <strong>{page}</strong> / {totalPages} · ({items.length} nhà hàng)
+                Trang <strong>{page}</strong> / {pageCount} · ({totalItems} nhà hàng)
               </span>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={page <= 1}
+                  onClick={() => void load(debouncedKeyword, Math.max(1, page - 1), true)}
+                  disabled={page <= 1 || paging}
                   aria-label="Trang trước"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >
@@ -590,8 +595,8 @@ function RestaurantBrowse() {
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  disabled={page >= totalPages}
+                  onClick={() => void load(debouncedKeyword, Math.min(pageCount, page + 1), true)}
+                  disabled={page >= pageCount || paging}
                   aria-label="Trang sau"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >
@@ -1022,7 +1027,7 @@ function RideBrowse() {
   async function confirm(): Promise<void> { if (!booking?.id || !paymentChecked) return; setLoading(true); setError(""); try { setBooking(await confirmRideBooking(String(booking.id))); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
   const status = statusLabel(booking?.status);
   const quoteDetail = quote ? { ...quoteToAssistantItem(quote), kind: booking?.id ? "ride_booking" as const : "ride_quote" as const, ...(booking?.id ? { booking_id: String(booking.id), status: typeof booking.status === "string" ? booking.status : quote.status } : {}) } : undefined;
-  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select value={pickupAddressId} onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select value={dropoffAddressId} onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickupAddressId(""); setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickupAddressId(""); setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoffAddressId(""); setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoffAddressId(""); setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><label htmlFor="ride-vehicle">Loại xe</label><select id="ride-vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value as typeof vehicle)}><option value="BIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option></select>{stopovers.length ? <p className="field-hint">Điểm ghé: {stopovers.map((stopover) => stopover.address).join(" → ")}</p> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide ride-quote-submit" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Điểm ghé</dt><dd>{(quote.stopovers ?? stopovers).length ? (quote.stopovers ?? stopovers).map((stopover) => stopover.address).join(" → ") : "Không có"}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
+  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select value={pickupAddressId} onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select value={dropoffAddressId} onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickupAddressId(""); setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickupAddressId(""); setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoffAddressId(""); setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoffAddressId(""); setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><label htmlFor="ride-vehicle">Loại xe</label><select id="ride-vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value as typeof vehicle)}><option value="BIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option></select>{stopovers.length ? <p className="field-hint">Điểm ghé: {stopovers.map((stopover) => stopover.address).join(" → ")}</p> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide ride-quote-submit" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Điểm ghé</dt><dd>{(quote.stopovers ?? stopovers).length ? (quote.stopovers ?? stopovers).map((stopover) => stopover.address).join(" → ") : "Không có"}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} stopovers={(quote.stopovers ?? stopovers).map((stopover) => ({ latitude: stopover.latitude, longitude: stopover.longitude, label: stopover.address }))} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
 }
 
 function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
@@ -1046,7 +1051,7 @@ function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
     pickup_longitude: quote.pickup_longitude ?? undefined,
     dropoff_latitude: quote.dropoff_latitude ?? undefined,
     dropoff_longitude: quote.dropoff_longitude ?? undefined,
-    ...(quote.stopovers?.length ? { stopovers: quote.stopovers.map((stopover) => ({ address: stopover.address })) } : {}),
+    ...(quote.stopovers?.length ? { stopovers: quote.stopovers.map((stopover) => ({ address: stopover.address, latitude: stopover.latitude, longitude: stopover.longitude })) } : {}),
   };
 }
 

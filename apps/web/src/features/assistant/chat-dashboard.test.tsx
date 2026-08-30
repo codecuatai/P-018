@@ -1,12 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 
+import * as apiClient from "@/lib/api-client";
 import { ChatDashboard } from "./chat-dashboard";
 
 jest.mock("@/lib/api-client", () => ({
   createConversation: jest.fn(),
   createIdempotencyKey: jest.fn(() => "test-idempotency-key"),
-  errorText: jest.fn(() => "test error"),
+  errorText: jest.fn(() => "Lỗi thử nghiệm"),
   getConversation: jest.fn(),
   isRetryableError: jest.fn(() => false),
   reverseGeocodeAddress: jest.fn(),
@@ -24,12 +25,6 @@ jest.mock("@/components/WorkflowCards", () => ({
   FoodCartDock: () => null,
 }));
 
-jest.mock("@/components/voice-input", () => ({
-  VoiceInput: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" aria-label="voice-input" disabled={disabled}>Voice</button>
-  ),
-}));
-
 jest.mock("@/features/product/context-rail", () => ({
   ActiveWorkDetailDialog: () => null,
   ActiveWorkRailCardWithCancel: () => null,
@@ -38,9 +33,11 @@ jest.mock("@/features/product/context-rail", () => ({
 }));
 
 describe("ChatDashboard voice controls", () => {
-  it("renders an enabled voice input control", () => {
+  it("exposes the develop voice input while keeping unfinished add-ons disabled", () => {
     render(<ChatDashboard user={{ sub: "user-m6", email: "m6@example.test", role: "USER" }} />);
 
-    expect(screen.getByRole("button", { name: "voice-input" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Thêm tùy chọn" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Nhập bằng giọng nói" })).toBeEnabled();
+    expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
   });
 });

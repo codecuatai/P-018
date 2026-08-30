@@ -5,7 +5,7 @@ import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { TextToSpeechRequestDto, UploadedAudioFile } from './voice.dto';
-import { MAX_AUDIO_BYTES, VoiceService } from './voice.service';
+import { VoiceService } from './voice.service';
 
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };
 
@@ -16,7 +16,7 @@ export class VoiceController {
 
   @Post('transcribe')
   @HttpCode(200)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_AUDIO_BYTES } }))
+  @UseInterceptors(FileInterceptor('file'))
   async transcribe(
     @UploadedFile() file: UploadedAudioFile,
     @Req() request: AuthenticatedRequest,
@@ -36,16 +36,16 @@ export class VoiceController {
     @Req() request: AuthenticatedRequest,
     @Res() response: Response,
   ) {
-    const audioBuffer = await this.voiceService.textToSpeech(
+    const audioStream = await this.voiceService.textToSpeech(
       body.text,
       request.correlationId ?? 'cor_unknown',
       request.user.sub,
     );
     response.set({
       'Content-Type': 'audio/mpeg',
-      'Content-Length': String(audioBuffer.length),
       'Content-Disposition': 'inline; filename=tts.mp3',
     });
-    response.send(audioBuffer);
+    audioStream.pipe(response);
   }
 }
+

@@ -170,6 +170,18 @@ const profiles: Record<string, OperationProfile> = {
     retryableDomainCodes: [],
     retryAfterCapMs: 2_000,
   },
+  'restaurant.reservation.update': {
+    serviceId: 'restaurant-service',
+    operationId: 'restaurant.reservation.update',
+    contractVersion: 'v1',
+    risk: 'FINANCIAL_OR_FINAL',
+    maxAttempts: 2,
+    perAttemptTimeoutMs: 5_000,
+    totalTimeoutMs: 11_000,
+    retryableStatuses: [408, 429, 502, 503, 504],
+    retryableDomainCodes: [],
+    retryAfterCapMs: 2_000,
+  },
   'healthcare.departments.list': {
     serviceId: 'healthcare-service',
     operationId: 'healthcare.departments.list',

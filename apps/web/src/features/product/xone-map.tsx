@@ -25,6 +25,7 @@ type XOneMapProps = {
   driver?: XOnePoint | null;
   restaurant?: XOnePoint | null;
   healthcare?: XOnePoint | null;
+  stopovers?: XOnePoint[] | null;
   routePolyline?: string | null;
   routeGeometry?: XOnePoint[] | null;
   routeProvider?: string;
@@ -63,6 +64,7 @@ export function XOneMap({
   driver,
   restaurant,
   healthcare,
+  stopovers,
   routePolyline,
   routeGeometry,
   routeProvider,
@@ -80,6 +82,7 @@ export function XOneMap({
   const leafletRef = useRef<LeafletApi | undefined>(undefined);
   const tileLayerRef = useRef<import("leaflet").TileLayer | undefined>(undefined);
   const markerRefs = useRef<Partial<Record<MarkerKey, LeafletMarker>>>({});
+  const stopoverMarkerRefs = useRef<LeafletMarker[]>([]);
   const markerAnimationRefs = useRef<Partial<Record<MarkerKey, number>>>({});
   const polylineRef = useRef<import("leaflet").Polyline | undefined>(undefined);
   const fitKeyRef = useRef("");
@@ -96,9 +99,10 @@ export function XOneMap({
       restaurant: sanitizePoint(restaurant),
       healthcare: sanitizePoint(healthcare),
     };
-    const points = [...parsedRoute, ...Object.values(markers)].filter(isPoint);
-    return { route: parsedRoute, markers, points };
-  }, [current, destination, driver, healthcare, origin, restaurant, routeGeometry, routePolyline, user]);
+    const resolvedStopovers = (stopovers ?? []).map(sanitizePoint).filter(isPoint);
+    const points = [...parsedRoute, ...Object.values(markers), ...resolvedStopovers].filter(isPoint);
+    return { route: parsedRoute, markers, stopovers: resolvedStopovers, points };
+  }, [current, destination, driver, healthcare, origin, restaurant, routeGeometry, routePolyline, stopovers, user]);
 
   const hasTargetPoints = !providerUnavailable && mapData.points.length > 0;
   const canRenderMap = hasTargetPoints && mapState !== "error";
@@ -177,12 +181,14 @@ export function XOneMap({
       Object.values(markerAnimationRefs.current).forEach((frame) => { if (frame !== undefined) window.cancelAnimationFrame(frame); });
       markerAnimationRefs.current = {};
       Object.values(markerRefs.current).forEach((marker) => marker?.remove());
+      stopoverMarkerRefs.current.forEach((marker) => marker.remove());
       polylineRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
       leafletRef.current = undefined;
       tileLayerRef.current = undefined;
       markerRefs.current = {};
+      stopoverMarkerRefs.current = [];
       polylineRef.current = undefined;
       fitKeyRef.current = "";
     };
@@ -255,7 +261,12 @@ export function XOneMap({
       markerRefs.current[key] = marker;
     }
 
-    const fitPoints = [...route, ...["origin", "destination", "user", "restaurant", "healthcare"].map((key) => mapData.markers[key as MarkerKey]).filter(isPoint)];
+    stopoverMarkerRefs.current.forEach((marker) => marker.remove());
+    stopoverMarkerRefs.current = mapData.stopovers.map((point, index) => L.circleMarker(toLatLng(point), { radius: 8, color: "#FFFFFF", weight: 2, fillColor: "#315EF5", fillOpacity: 0.95 })
+      .addTo(map)
+      .bindTooltip(point.label ?? `Điểm dừng ${index + 1}`, { direction: "top", offset: [0, -6] }));
+
+    const fitPoints = [...route, ...mapData.stopovers, ...["origin", "destination", "user", "restaurant", "healthcare"].map((key) => mapData.markers[key as MarkerKey]).filter(isPoint)];
     const fitKey = fitPoints.map((point) => `${point.latitude.toFixed(6)},${point.longitude.toFixed(6)}`).join("|");
     if (fitKey && fitKey !== fitKeyRef.current) {
       fitKeyRef.current = fitKey;
@@ -282,7 +293,7 @@ export function XOneMap({
         )}
       </>
     ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
-    {variant === "default" && mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
+    {variant === "default" && mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><span hidden={!mapData.stopovers.length}><i className="legend-dot" style={{ backgroundColor: "#315EF5" }} />Điểm dừng</span><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
 }
 

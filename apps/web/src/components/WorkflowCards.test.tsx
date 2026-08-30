@@ -61,12 +61,32 @@ describe("Result disclosure", () => {
 
     fireEvent.click(disclosure);
     expect(screen.getByText("Nhà hàng 5")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Thu gọn" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /^Thu gọn danh sách$/ })).toHaveAttribute("aria-expanded", "true");
     fireEvent.click(within(screen.getByText("Nhà hàng 5").closest(".option-row") as HTMLElement).getByRole("button", { name: "Chọn quán" }));
     expect(onAction).toHaveBeenCalledWith(actions[4]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Thu gọn" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Thu gọn danh sách$/ }));
     expect(screen.queryByText("Nhà hàng 5")).not.toBeInTheDocument();
+  });
+
+  it("keeps the checked restaurant visible when its requested slot is unavailable", () => {
+    render(<AssistantCards response={{
+      conversation_id: "restaurant-unavailable",
+      message: "",
+      completed: [],
+      items: [{
+        kind: "restaurant_unavailable",
+        title: "Quán đã chọn chưa còn bàn",
+        restaurant: { name: "Samcheop Topokki", address: "Trần Quốc Hoàn, Cầu Giấy" },
+        options: [{ name: "Quán thay thế", address: "Cầu Giấy" }],
+        note: "Bạn có thể đổi giờ hoặc chọn quán khác.",
+      }],
+      actions: [],
+    } as AssistantResponse} onAction={jest.fn()} />);
+
+    expect(screen.getAllByText("Quán đã chọn chưa còn bàn")).toHaveLength(2);
+    expect(screen.getByRole("region", { name: "Nhà hàng đã kiểm tra" })).toHaveTextContent("Samcheop Topokki");
+    expect(screen.getByText("Quán thay thế")).toBeInTheDocument();
   });
 
   it("shows four Food rows by default and binds selection to the original option", () => {
@@ -267,6 +287,44 @@ describe("Restaurant selection and confirmation", () => {
 
     expect(onAction).toHaveBeenCalledWith(response.actions[0]);
   });
+
+  it("shows the old and new reservation terms and dispatches the update action", () => {
+    const onAction = jest.fn();
+    const response = {
+      conversation_id: "conversation-restaurant-update",
+      message: "",
+      completed: [],
+      items: [{
+        kind: "restaurant_confirmation",
+        title: "Xác nhận đổi giờ đặt bàn",
+        operation: "UPDATE",
+        resource_id: "reservation-1",
+        restaurant: { name: "Nhà hàng Hồ Gươm", location: "Hà Nội" },
+        previous_start_at: "2099-01-02T12:00:00+07:00",
+        start_at: "2099-01-02T13:00:00+07:00",
+        previous_party_size: 2,
+        party_size: 3,
+        status: "AWAITING_CONFIRMATION",
+      }],
+      actions: [{ id: "restaurant-update", kind: "restaurant_update", label: "Xác nhận đổi giờ" }],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={onAction} />);
+
+    const confirmation = screen
+      .getAllByText("Xác nhận đổi giờ đặt bàn")
+      .find((element) => element.closest("article") !== null)
+      ?.closest("article") as HTMLElement;
+    expect(confirmation).toHaveTextContent("Giờ hiện tại");
+    expect(confirmation).toHaveTextContent("Giờ mới");
+    expect(confirmation).toHaveTextContent("Số khách hiện tại");
+    const button = within(confirmation).getByRole("button", { name: "Xác nhận đổi giờ" });
+    expect(button).toBeDisabled();
+    fireEvent.click(within(confirmation).getByRole("checkbox", { name: "Tôi xác nhận thay đổi đặt bàn ở trên." }));
+    fireEvent.click(button);
+
+    expect(onAction).toHaveBeenCalledWith(response.actions[0]);
+  });
 });
 
 describe("Healthcare slot card", () => {
@@ -364,5 +422,109 @@ describe("Healthcare slot card", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hủy giữ chỗ" }));
 
     expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: "health-cancel", kind: "healthcare_cancel" }));
+  });
+});
+
+describe("Partial multi-service results and task error details", () => {
+  it("renders the completed Restaurant success card before the failed Ride error card", () => {
+    const response = {
+      conversation_id: "conversation-partial",
+      message: "",
+      completed: [{
+        kind: "reservation",
+        title: "Đã đặt bàn thành công",
+        restaurant: { name: "Maison Hanoi", location: "12 Hoan Kiem, Ha Noi" },
+        reservation_code: "res-1",
+        start_at: "2099-01-01T19:00:00+07:00",
+        party_size: 2,
+        status: "CONFIRMED",
+      }],
+      items: [{
+        kind: "task_error",
+        title: "Dịch vụ gặp sự cố",
+        note: "Mình chưa thể đặt chuyến xe cho bạn.",
+        error_code: "NO_DRIVER",
+        retryable: false,
+      }],
+      actions: [],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={jest.fn()} />);
+
+    expect(screen.getByText("Maison Hanoi")).toBeInTheDocument();
+    expect(screen.getByText("Đã xác nhận")).toBeInTheDocument();
+    expect(screen.getByText(/NO_DRIVER/)).toBeInTheDocument();
+    expect(screen.getByText(/Mình chưa thể đặt chuyến xe cho bạn/)).toBeInTheDocument();
+
+    const blocks = Array.from(document.querySelectorAll(".assistant-card, .task-error-notice"));
+    expect(blocks.length).toBe(2);
+    expect(blocks[0]).toHaveClass("assistant-card", "card-restaurant");
+    expect(blocks[1]).toHaveClass("task-error-notice");
+  });
+
+  it("shows the failed task's real error note instead of a generic fallback", () => {
+    render(<AssistantCards response={{ conversation_id: "conversation", message: "", completed: [], items: [{ kind: "task_error", title: "Không thể đặt chuyến xe", note: "Hiện chưa tìm được tài xế phù hợp.", error_code: "NO_DRIVER", retryable: false }], actions: [] }} onAction={jest.fn()} />);
+
+    expect(screen.getByText(/Không thể đặt chuyến xe/)).toBeInTheDocument();
+    expect(screen.getByText(/Hiện chưa tìm được tài xế phù hợp/)).toBeInTheDocument();
+    expect(screen.queryByText("Bạn hãy thử lại nhé.")).not.toBeInTheDocument();
+  });
+
+  it("retries only the failed task's action from a retryable error card", () => {
+    const onAction = jest.fn();
+    const response = {
+      conversation_id: "conversation-retry",
+      message: "",
+      completed: [],
+      items: [{
+        kind: "task_error",
+        title: "Dịch vụ gặp sự cố",
+        note: "Tạm thời chưa kết nối được dịch vụ xe.",
+        error_code: "UPSTREAM_UNAVAILABLE",
+        retryable: true,
+        action_id: "ride-service-action",
+      }],
+      actions: [{ id: "ride-service-action", kind: "ride_service", label: "Xác nhận chuyến xe" }],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={onAction} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Thử lại bước này" }));
+
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ id: "ride-service-action", kind: "ride_service" }));
+  });
+});
+
+
+describe("Collapsible agent cards in the workflow", () => {
+  it("wraps service cards with the reusable toggle and a collapsed summary", () => {
+    const onAction = jest.fn();
+    const response = {
+      conversation_id: "conversation-collapsible",
+      message: "",
+      completed: [],
+      items: [{
+        kind: "restaurant_options",
+        title: "Nhà hàng phù hợp",
+        options: [
+          { name: "Quán A", address: "Hà Nội", cuisine: "Việt Nam" },
+          { name: "Quán B", address: "Hà Nội", cuisine: "Việt Nam" },
+        ],
+      }],
+      actions: [{ id: "restaurant-0", kind: "select_restaurant", label: "Chọn nhà hàng này", target_index: 0 }],
+    } as AssistantResponse;
+
+    render(<AssistantCards response={response} onAction={onAction} />);
+
+    const toggle = screen.getByRole("button", { name: "Thu gọn" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Chọn quán" })).toBeInTheDocument();
+    expect(screen.queryByText("2 quán phù hợp")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("button", { name: "Hiện tất cả" })).toBeInTheDocument();
+    expect(screen.getByText("2 quán phù hợp")).toBeInTheDocument();
+    expect(screen.getByText("Quán A")).toBeInTheDocument();
   });
 });

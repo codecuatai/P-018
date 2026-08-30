@@ -13,17 +13,22 @@ export async function completeOnboarding(page: Page, name = "Vũ Văn Phong", ph
 
 export async function login(page: Page, email: string, password = "e2e-password-123456"): Promise<void> {
   await page.goto("/");
-  const desktopLogin = page.getByRole("button", { name: "Đăng nhập" }).first();
-  if (await desktopLogin.isVisible().catch(() => false)) {
-    await desktopLogin.click();
+  const directAppBtn = page.getByRole("link", { name: "Vào ứng dụng Chat" }).first();
+  if (await directAppBtn.isVisible().catch(() => false)) {
+    await directAppBtn.click();
   } else {
-    await page.getByRole("button", { name: "Mở menu" }).click();
-    await page.getByRole("button", { name: "Đăng nhập" }).click();
+    const desktopLogin = page.getByRole("button", { name: "Đăng nhập", exact: true }).first();
+    if (await desktopLogin.isVisible().catch(() => false)) {
+      await desktopLogin.click();
+    } else {
+      await page.getByRole("button", { name: "Mở menu" }).first().click();
+      await page.getByRole("button", { name: "Đăng nhập", exact: true }).first().click();
+    }
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Email").fill(email);
+    await dialog.locator("#login-password").fill(password);
+    await dialog.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   }
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Email").fill(email);
-  await dialog.locator("#login-password").fill(password);
-  await dialog.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await page.waitForURL(/\/app(?:\/onboarding)?(?:\?.*)?$/, { timeout: 30_000 });
   if (page.url().includes("/app/onboarding")) await completeOnboarding(page);
 }

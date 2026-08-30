@@ -83,4 +83,13 @@ describe('AdminController', () => {
       expect((response as any).data).toEqual({ id: 'ticket_1', status: 'RESOLVED' });
     });
   });
+
+  describe('User Status Update', () => {
+    it('updates user status to suspended and back to active', async () => {
+      mockAdminService.updateUserStatus = jest.fn().mockResolvedValue({ id: 'u_1', status: 'suspended' });
+      const res = await controller.updateUserStatus('u_1', { status: 'suspended' }, mockRequest);
+      expect(mockAdminService.updateUserStatus).toHaveBeenCalledWith('u_1', 'suspended', 'admin_1', 'corr_test_1');
+      expect((res as any).data.status).toBe('suspended');
+    });
+  });
 });

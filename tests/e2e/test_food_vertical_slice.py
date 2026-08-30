@@ -12,6 +12,8 @@ import httpx
 import pytest
 from _helpers import REPO_ROOT, compose_args, get_cached_token
 
+from _helpers import REPO_ROOT, compose_args, get_cached_token
+
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")

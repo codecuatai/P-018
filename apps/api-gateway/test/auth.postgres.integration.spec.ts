@@ -21,7 +21,6 @@ function configForIntegration(): ConfigService {
     JWT_SECRET: 'test-jwt-secret-12345',
     AUTH_ACCESS_TOKEN_TTL_SECONDS: 900,
     AUTH_REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
-    AUTH_REFRESH_REUSE_GRACE_SECONDS: 10,
     AUTH_RESET_TOKEN_TTL_SECONDS: 1_800,
     AUTH_ISSUER: 'x-one',
     AUTH_AUDIENCE: 'x-one-web',
@@ -95,6 +94,9 @@ describe('Auth PostgreSQL persistence', () => {
     expect(persisted.rows[0].refresh_token_hash).toMatch(/^[a-f0-9]{64}$/);
 
     const rotated = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-refresh-${suffix}`);
+    // Explicitly revoke the family before replaying the original cookie. This
+    // keeps the persistence test deterministic while the repository's normal
+    // grace window remains enabled for the benign concurrent-request case.
     const rotatedAgain = await service.refresh(rotated.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-refresh2-${suffix}`);
     await service.logout(rotatedAgain.refreshToken, `cor-auth-pg-logout-${suffix}`);
     await expect(service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-replay-${suffix}`))
@@ -115,12 +117,36 @@ describe('Auth PostgreSQL persistence', () => {
     );
 
     const rotated = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-grace-refresh-${suffix}`);
+    // Immediate replay of the initial token: replacement is still fresh and we
+    // are inside the grace window, so the family rolls forward instead of dying.
     const rolled = await service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-grace-replay-${suffix}`);
     expect(rolled.refreshToken).not.toBe(rotated.refreshToken);
     expect(await service.authenticateAccessToken(rotated.accessToken)).toMatchObject({ sub: issued.user.sub });
 
     const live = await pool.query('SELECT id FROM user_sessions WHERE user_id = $1 AND revoked_at IS NULL', [issued.user.sub]);
     expect(live.rows.length).toBeGreaterThanOrEqual(1);
+  });
+
+  integration('serializes simultaneous refreshes of the same cookie without duplicate sessions or family revocation', async () => {
+    const suffix = Date.now();
+    const issued = await service.register(
+      { fullName: 'Concurrent User', email: `concurrent-${suffix}@example.test`, password },
+      { userAgent: 'postgres-integration', ip: '127.0.0.1' },
+      `cor-auth-pg-concurrent-${suffix}`,
+    );
+
+    const [first, second] = await Promise.all([
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-a-${suffix}`),
+      service.refresh(issued.refreshToken, { userAgent: 'postgres-integration', ip: '127.0.0.1' }, `cor-auth-pg-concurrent-b-${suffix}`),
+    ]);
+
+    expect(first.refreshToken).not.toBe(second.refreshToken);
+    expect(await service.authenticateAccessToken(first.accessToken)).toMatchObject({ sub: issued.user.sub });
+    expect(await service.authenticateAccessToken(second.accessToken)).toMatchObject({ sub: issued.user.sub });
+
+    const sessions = await pool.query('SELECT id, revoked_at FROM user_sessions WHERE user_id = $1 ORDER BY created_at ASC', [issued.user.sub]);
+    expect(sessions.rows).toHaveLength(3);
+    expect(sessions.rows.every((row) => row.revoked_at === null)).toBe(true);
   });
 
   integration('stores a one-time reset hash and invalidates its existing sessions in PostgreSQL', async () => {

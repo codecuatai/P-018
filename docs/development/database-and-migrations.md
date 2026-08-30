@@ -22,12 +22,11 @@ metadata, and migration 016 adds Core-owned token-usage aggregates.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
 `0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
 `003a`, `004`, and `005`; and
-Ride owns its Alembic revisions through `20260828_0008_quote_stopovers`. The
+Ride owns its Alembic revisions through `20260827_0007_quote_snapshot`. The
 `20260827_0007_quote_snapshot` revision adds an immutable JSON quote snapshot to
-`ride_bookings`, while `20260828_0008_quote_stopovers` additively stores at most
-two resolved intermediate stops on a quote. Together they let history,
-cancellation and rebook responses retain the authoritative route, tariff,
-amount, currency and stopovers after the live quote changes. Each owner
+`ride_bookings`, allowing history and cancellation responses to retain the
+authoritative route, tariff, amount and currency after the live quote changes.
+Each owner
 controls its own data boundary.
 
 ## Migration policy
@@ -46,7 +45,7 @@ repair state.
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
 | Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
 | Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
-| Ride | Alembic through `20260828_0008_quote_stopovers` | a new Alembic revision from `head` |
+| Ride | Alembic through `20260827_0007_quote_snapshot` | a new Alembic revision from `head` |
 
 In development, Gateway runs the owned Core SQL migrations during bootstrap when
 `APP_ENV=development` and `CORE_AUTO_MIGRATE=true`; Compose defaults this flag to
@@ -55,20 +54,17 @@ filenames in `core_migrations_log`, and fails startup when the packaged migratio
 directory is missing or empty. Production must explicitly keep this flag false
 and use its deployment migration step instead.
 
-Run `python scripts/database/check-migration-parity.py` after changing migration helpers.
-The full launcher runs `scripts/database/migrate.ps1 .env` or `scripts/database/migrate.sh .env`
+Run `python scripts/check-migration-parity.py` after changing migration helpers.
+The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
 after Compose health checks and can run the same additive migrations repeatedly.
-It stops on the first owner/path failure and never deletes a volume. Seeds are
-not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
-
+Alembic migrations run in one-shot containers created from the current service
+images, so a deployment never executes a newly checked-in migration inside an
+older long-lived service container.
 Ride also contains a guarded compatibility path for databases that recorded
 the earlier short-lived `0007` revision; it verifies the quote snapshot schema
 before reconciling the Alembic version marker.
-
-The canonical Ride chain is immutable and ordered as
-`20260816_0006_passenger_capacity` → `20260827_0007_quote_snapshot` →
-`20260828_0008_quote_stopovers`. A rebook must create a fresh quote with the
-historical route context; it must never reuse a consumed quote or confirmation.
+It stops on the first owner/path failure and never deletes a volume. Seeds are
+not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
 
 Core application tests use in-memory repositories for deterministic unit speed.
 Explicit Core and Auth PostgreSQL persistence tests use

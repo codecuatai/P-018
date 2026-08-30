@@ -30,7 +30,10 @@ def _operation(text: str) -> Operation:
     padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
     if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
         return Operation.CANCEL
-    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")):
+    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")) or any(
+        f" {value} " in (" " + _ascii_fold(text) + " ")
+        for value in ("doi", "cap nhat")
+    ):
         return Operation.UPDATE
     if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
         return Operation.STATUS

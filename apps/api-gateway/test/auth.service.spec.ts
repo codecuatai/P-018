@@ -8,7 +8,6 @@ import { PasswordResetDelivery } from '../src/modules/auth/password-reset.delive
 const values: Record<string, unknown> = {
   AUTH_ACCESS_TOKEN_TTL_SECONDS: 900,
   AUTH_REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
-  AUTH_REFRESH_REUSE_GRACE_SECONDS: 10,
   AUTH_RESET_TOKEN_TTL_SECONDS: 1_800,
   AUTH_ISSUER: 'x-one',
   AUTH_AUDIENCE: 'x-one-web',
@@ -29,7 +28,6 @@ function makeService(): { service: AuthService; store: AuthStore; core: CoreStor
   const core = new CoreStore(config);
   return { service: new AuthService(config, store, core, new PasswordResetDelivery()), store, core };
 }
-
 const metadata = { userAgent: 'jest-browser', ip: '127.0.0.1' };
 const password = 'a reliable local passphrase 123!@#';
 
@@ -60,10 +58,17 @@ describe('real local authentication', () => {
     const { service } = makeService();
     const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
 
+    // First rotation consumes the initial token and mints its replacement.
     const rotated = await service.refresh(initial.refreshToken, metadata, 'cor-refresh');
+    // A lost-response retry (or an aborted navigation) replays the initial
+    // token immediately. Because its replacement is still fresh and we are
+    // inside the grace window, the family rolls forward instead of tripping
+    // reuse detection and logging the whole app out.
     const rolled = await service.refresh(initial.refreshToken, metadata, 'cor-benign-replay');
     expect(rolled.refreshToken).not.toBe(initial.refreshToken);
     expect(rolled.refreshToken).not.toBe(rotated.refreshToken);
+
+    // The session family survives, so previously issued access tokens keep working.
     expect(await service.authenticateAccessToken(rotated.accessToken)).toMatchObject({ sub: initial.user.sub });
     expect(await service.authenticateAccessToken(rolled.accessToken)).toMatchObject({ sub: initial.user.sub });
   });
@@ -74,8 +79,10 @@ describe('real local authentication', () => {
 
     const rotated = await service.refresh(initial.refreshToken, metadata, 'cor-refresh');
     const rotatedAgain = await service.refresh(rotated.refreshToken, metadata, 'cor-refresh-again');
-    const replayed = await service.refresh(initial.refreshToken, metadata, 'cor-replay');
 
+    // The initial token's direct replacement was consumed, but the chain still
+    // has a fresh descendant, so a concurrent lost-response retry is benign.
+    const replayed = await service.refresh(initial.refreshToken, metadata, 'cor-replay');
     expect(replayed.refreshToken).not.toBe(rotatedAgain.refreshToken);
     expect(await service.authenticateAccessToken(rotatedAgain.accessToken)).toMatchObject({ sub: initial.user.sub });
   });
@@ -108,8 +115,9 @@ describe('real local authentication', () => {
     const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
     const nextPassword = 'another reliable passphrase 456$%^';
     await expect(
-      service.changePassword(initial.user, { currentPassword: 'wrong-current-password 123!@#', newPassword: nextPassword }, 'cor-wrong'),
+      service.changePassword(initial.user, { currentPassword: 'wrong-current-password 123!@#', newPassword: nextPassword }, 'cor-wrong')
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'CURRENT_PASSWORD_INVALID', detail: 'Mật khẩu hiện tại không đúng.' }) });
+
     await service.changePassword(initial.user, { currentPassword: password, newPassword: nextPassword }, 'cor-change');
 
     expect(await service.authenticateAccessToken(initial.accessToken)).toBeUndefined();

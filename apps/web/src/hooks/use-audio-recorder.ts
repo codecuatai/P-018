@@ -33,8 +33,9 @@ export function useAudioRecorder() {
       mediaRecorder.start();
       setIsRecording(true);
       setAudioBlob(null);
-    } catch (error) {
-      throw error;
+    } catch (err) {
+      console.error('Error starting audio recording:', err);
+      throw err; // Re-throw to allow caller to handle permission errors
     }
   }, []);
 

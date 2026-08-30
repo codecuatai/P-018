@@ -8,47 +8,44 @@ The complete local stack uses one Compose interpolation file only: root
 Windows PowerShell:
 
 ```powershell
-./scripts/local/start-all.ps1
+./scripts/start-all.ps1
 # Optional: deterministic local demo data
-./scripts/local/start-all.ps1 -SeedDemo
+./scripts/start-all.ps1 -SeedDemo
 ```
 
 Linux/macOS:
 
 ```bash
-./scripts/local/start-all.sh
+./scripts/start-all.sh
 # Optional: deterministic local demo data
-./scripts/local/start-all.sh --seed-demo
+./scripts/start-all.sh --seed-demo
 ```
 
 The launcher copies root `.env.example` only when root `.env` does not exist;
 it never overwrites it or touches service-level files. It validates the
 environment, starts Compose, waits for health checks, runs owned migrations,
 then verifies Gateway readiness and the Next.js Web health endpoint. Normal
-runs do not seed or reset data. Review and replace local placeholders before
-startup. Existing `.env` files from older layouts must be reconciled manually
-because setup deliberately preserves them.
+runs do not seed or reset data. `-SeedDemo` / `--seed-demo` uses the Compose
+catalog-importer job (so the deployment host does not need a Python runtime)
+to import the versioned static Food, Restaurant and Healthcare catalogs,
+creates Healthcare future slots and demo patient link when demo authentication
+is enabled, and additively maintains the Ride driver pool. The development
+deployment workflow invokes the same additive seed and verifier automatically;
+operators do not run a manual seed command after a deploy. The tracked `data/`
+catalog source never includes mutable accounts, conversations, bookings,
+appointments, or payment data. Review and replace local placeholders before
+startup.
+Existing `.env` files from older layouts must be reconciled manually because
+setup deliberately preserves them.
 
 For an explicit disposable/template verification, PowerShell supports
-`./scripts/local/start-all.ps1 -EnvFile .env.example`; normal local use remains root
+`./scripts/start-all.ps1 -EnvFile .env.example`; normal local use remains root
 `.env`. Validate without revealing values with:
 
 ```powershell
-python scripts/quality/validate-env-config.py
+python scripts/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 ```
-
-## Uploading QA evidence to Trello
-
-When a QA card needs an evidence attachment, use the host-only helper with
-non-sensitive arguments only:
-
-```powershell
-./scripts/integrations/trello-upload.ps1 -CardId e3nGtVrF -FilePath artifacts/qa-audit/BUG-LANDING-001-HORIZONTAL-OVERFLOW-320.png
-```
-
-The helper reads only its two private Trello credentials internally from root
-`.env`; it never prints them and is not a Compose service configuration.
 
 ## Standalone service and Web development
 
@@ -75,8 +72,8 @@ When running services manually, apply owned migrations and deterministic seeds
 explicitly:
 
 ```powershell
-./scripts/database/migrate.ps1 .env.example
-./scripts/database/seed.ps1 .env.example
+./scripts/migrate.ps1 .env.example
+./scripts/seed.ps1 .env.example
 ```
 
 The helpers preserve PostgreSQL volumes and do not perform destructive resets.
@@ -87,14 +84,14 @@ The release-candidate workflow runs the seven application processes directly
 and uses the existing PostgreSQL container only as database infrastructure:
 
 ```powershell
-./scripts/local/local-dev.ps1 -EnvFile .env.example -WaitSeconds 90
-./scripts/local/local-health.ps1
-./scripts/database/seed-local.ps1 -EnvFile .env.example
-./scripts/local/local-acceptance.ps1 -EnvFile .env.example
-./scripts/local/local-stop.ps1
+./scripts/local-dev.ps1 -EnvFile .env.example -WaitSeconds 90
+./scripts/local-health.ps1
+./scripts/seed-local.ps1 -EnvFile .env.example
+./scripts/local-acceptance.ps1 -EnvFile .env.example
+./scripts/local-stop.ps1
 ```
 
-`local/local-dev.ps1` validates the environment, checks the PostgreSQL port, starts
+`local-dev.ps1` validates the environment, checks the PostgreSQL port, starts
 Gateway, Agent, Food, Ride, Restaurant, Healthcare and Web in separate
 PowerShell processes, records only those process IDs in ignored
 `.local-runtime/processes.json`, and waits for `localhost:3000` and
@@ -105,35 +102,48 @@ bookings and dataset metadata; `demo-reset.ps1` is dry-run by default and
 requires `-ConfirmReset` for an actor-scoped mutable-data reset.
 
 `local-health.ps1` supports runtime auto-detection (`-Runtime Auto|Local|Compose`,
-with `Host`/`Docker` accepted as aliases). Compose mode checks the published
-Gateway/Web endpoints using dynamic ports from the selected env file, verifies
-internal domain services through container health, and finishes with Gateway
-`/health/ready`. Local mode probes all seven service health endpoints and
+with `Host`/`Docker` accepted as aliases). In Compose mode, it checks published
+Gateway/Web endpoints using dynamic port values from `.env`, verifies internal
+domain services via container health status, and finishes with Gateway
+`/health/ready` so a stack whose Gateway cannot reach its domain services still
+fails. In Local mode, it probes all seven service HTTP health endpoints and
 validates PID metadata in `.local-runtime/processes.json`. Auto-detection only
-credits a direct-process runtime when a recorded PID is alive and its recorded
-port is listening, so stale metadata cannot mask a Compose stack. Shared
-port/value lookup, Compose container discovery and direct-process detection live
-in `scripts/local/_common.ps1`, which both `local-health.ps1` and
-`local-acceptance.ps1` dot-source.
+credits the direct-process runtime when a recorded PID is alive **and** its
+recorded port is listening, so a stale `processes.json` cannot mask a running
+Compose stack. When neither runtime is active, it outputs an explicit guidance
+message instead of false failures. Pass `-EnvFile` to use a non-default
+environment configuration. Shared port/value lookup, Compose container discovery
+and live-process detection live in `scripts/_common.ps1`, which both
+`local-health.ps1` and `local-acceptance.ps1` dot-source.
 
 ## Cross-service Compose acceptance
 
-`local-acceptance.ps1` runs `tests/e2e` as a mandatory cross-service step. The
-suite drives the real Gateway plus Agent, Ride, Restaurant, Healthcare and Food
-over HTTP and uses `docker compose exec`/`restart` for persistence checks, so it
-requires the Compose runtime rather than direct processes:
+`local-acceptance.ps1` runs the cross-service suite in `tests/e2e` as a
+mandatory step. That suite drives the real Gateway plus all domain services and
+shells out to `docker compose exec`/`restart`, so it requires the Compose
+runtime rather than the direct-process runtime:
 
 ```powershell
-./scripts/local/start-all.ps1
-./scripts/local/local-acceptance.ps1 -EnvFile .env.example
+./scripts/start-all.ps1
+./scripts/local-acceptance.ps1 -EnvFile .env.example
 ```
 
 The step throws when fewer than the seven application containers are running,
-instead of skipping. It can be run directly with
-`corepack pnpm test:e2e:crossservice` or `python -m pytest tests/e2e -q`.
-`E2E_REQUIRE_GATEWAY=1` makes a missing Gateway URL a usage error, and
-`-SkipCrossServiceE2E` is available for a deliberate partial run but prints an
-explicit `UNVERIFIED` line naming the uncovered layer.
+instead of skipping. The suite is also runnable on its own:
+
+```powershell
+$env:E2E_GATEWAY_URL = "http://localhost:3000"
+corepack pnpm test:e2e:crossservice   # or: python -m pytest tests/e2e -q
+```
+
+`E2E_GATEWAY_URL`, `E2E_COMPOSE_PROJECT_NAME`, `E2E_COMPOSE_ENV_FILE`,
+`E2E_DEMO_EMAIL` and `E2E_DEMO_PASSWORD` are derived from the acceptance
+`-EnvFile`, and `E2E_REQUIRE_GATEWAY=1` makes a missing Gateway URL a usage
+error rather than a silent all-skip pass. `-SkipCrossServiceE2E` is available
+but prints an explicit `UNVERIFIED` line so an incomplete run is never reported
+as full acceptance. Note that the root `test:e2e:crossservice` script is the
+Python Compose suite; the Playwright browser suite remains `pnpm --dir apps/web
+test:e2e`.
 
 For local browser acceptance, `.env.example` enables the labeled deterministic
 geocode fallback and keeps `RIDE_TRACKING_TIME_SCALE=1`. A disposable

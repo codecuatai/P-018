@@ -88,8 +88,11 @@ function Invoke-AlembicMigration {
         $serviceRoot = Join-Path $repoRoot $serviceRelativeRoot
         $argumentsJson = ConvertTo-Json -InputObject @('-m', 'alembic', 'upgrade', 'head') -Compress
         $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argumentsJson))
-        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\local\local-process.ps1') -EnvFile $EnvFile -WorkingDirectory $serviceRoot -FilePath 'python' -ServiceKind $serviceKind -LocalHostMode -DatabaseKey $DatabaseKey -CommandArgumentsBase64 $argumentsBase64
+        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\local-process.ps1') -EnvFile $EnvFile -WorkingDirectory $serviceRoot -FilePath 'python' -ServiceKind $serviceKind -LocalHostMode -DatabaseKey $DatabaseKey -CommandArgumentsBase64 $argumentsBase64
     } else {
+        # Use a one-shot container from the freshly built image. `exec` could
+        # run the migration inside an older long-lived service container during
+        # deployment.
         & docker compose --env-file $EnvFile run --rm --no-deps -T $Service alembic upgrade head
     }
     $exitCode = $LASTEXITCODE
@@ -126,6 +129,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/007_food_cart_write_idempotency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/008_food_catalog_search.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/002_agent_run_metadata.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
@@ -142,7 +146,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
     Write-Host 'Healthcare Service migrations applied.'
 
-    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260828_0008_quote_stopovers.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
+    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260814_0005_route_geometry.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
     Write-Host 'Ride Service migrations applied.'
 } finally {
     Pop-Location

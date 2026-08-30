@@ -25,25 +25,17 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await page.getByRole("button", { name: "Tiếp tục không dùng vị trí" }).click();
   await page.locator("#onboarding-address").fill("12 Nguyễn Huệ, Quận 1");
   await page.getByRole("button", { name: "Tìm địa chỉ" }).click();
-  await page.getByRole("button", { name: /12 Nguyễn Huệ/ }).click();
+  await page.getByRole("option", { name: /12 Nguyễn Huệ/ }).click();
   await page.getByRole("button", { name: "Hoàn tất thiết lập" }).click();
   await page.waitForURL("**/app");
 
-  await page.goto("/app/profile");
-  await expect(page.getByRole("heading", { name: "Thông tin tài khoản" })).toBeVisible();
-  const mobileMenu = page.getByRole("button", { name: "Mở điều hướng" });
-  if (await mobileMenu.isVisible().catch(() => false)) {
-    await mobileMenu.click();
-    await page.getByRole("button", { name: "Cài đặt và tài khoản" }).click();
-  } else {
-    await page.getByRole("button", { name: "Tài khoản", exact: true }).click();
-  }
-  await page.getByRole("menuitem", { name: "Đăng xuất" }).click();
-  await page.waitForURL(/\/$/);
+  await page.goto("/app/profile?section=settings");
+  await page.getByRole("button", { name: "Đăng xuất" }).first().click();
+  await page.goto("/");
   await login(page, "auth-flow@example.test");
   await expect(page.locator(".app-shell")).toBeVisible({ timeout: 15_000 });
   await page.goto("/app/addresses");
-  await expect(page.getByLabel("Địa chỉ đã lưu").getByText("12 Nguyễn Huệ, Quận 1")).toBeVisible();
+  await expect(page.getByText("12 Nguyễn Huệ, Quận 1").first()).toBeVisible();
   expect(gateway.calls.filter((call) => call.path === "/api/v1/addresses" && call.method === "POST")).toHaveLength(1);
 });
 

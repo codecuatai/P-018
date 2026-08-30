@@ -319,7 +319,7 @@ function mapFoodErrorStatus(code: string, upstreamStatus: number): number {
 }
 
 export interface RestaurantTool {
-  tool_name: 'restaurant.search' | 'restaurant.get' | 'restaurant.check_availability' | 'restaurant.create_hold' | 'restaurant.cancel_hold' | 'restaurant.create_reservation';
+  tool_name: 'restaurant.search' | 'restaurant.get' | 'restaurant.check_availability' | 'restaurant.create_hold' | 'restaurant.cancel_hold' | 'restaurant.create_reservation' | 'restaurant.update_reservation';
   risk_level: 'READ' | 'REVERSIBLE_WRITE' | 'FINANCIAL_OR_FINAL';
   arguments: Record<string, unknown>;
   workflow_id: string;
@@ -539,8 +539,8 @@ export class RideClient extends InternalServiceClient {
     );
   }
 
-  async listBookings(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/v1/bookings', { method: 'GET' }, callContext.correlationId, actorId);
+  async listBookings(actorId: string, callContext: ServiceCallContext, limit = 50, timeoutMs?: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/bookings?limit=${limit}`, { method: 'GET' }, callContext.correlationId, actorId, timeoutMs);
   }
 
   async listQuotes(actorId: string, callContext: ServiceCallContext): Promise<JsonObject> {
@@ -577,8 +577,8 @@ export class RestaurantClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>(`/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
   }
 
-  async listReservations(actorId: string, correlationId: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'GET' }, correlationId, actorId);
+  async listReservations(actorId: string, correlationId: string, limit = 50, timeoutMs?: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/v1/reservations?limit=${limit}`, { method: 'GET' }, correlationId, actorId, timeoutMs);
   }
 
   async checkAvailability(actorId: string, correlationId: string, restaurantId: string, payload: JsonObject): Promise<JsonObject> {
@@ -591,6 +591,17 @@ export class RestaurantClient extends InternalServiceClient {
 
   async createReservation(actorId: string, correlationId: string, idempotencyKey: string, payload: JsonObject): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/v1/reservations', { method: 'POST', body: JSON.stringify(payload), headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
+  }
+
+  async updateReservation(actorId: string, correlationId: string, idempotencyKey: string, reservationId: string, payload: JsonObject): Promise<JsonObject> {
+    return this.request(
+      `/v1/reservations/${encodeURIComponent(reservationId)}`,
+      { correlationId, workflowId: `assistant:restaurant:update:${reservationId}`, toolCallId: `restaurant-update:${reservationId}` },
+      { method: 'PATCH', body: JSON.stringify(payload) },
+      writeHeaders(actorId, idempotencyKey),
+      operationProfile('restaurant.reservation.update'),
+      (value) => asJsonObject(envelopeValue(value), 'Restaurant reservation update'),
+    );
   }
 
   async cancelReservation(actorId: string, correlationId: string, idempotencyKey: string, reservationId: string): Promise<JsonObject> {
@@ -662,6 +673,16 @@ export class RestaurantClient extends InternalServiceClient {
       profile = operationProfile('restaurant.reservation.create');
       headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
       body = JSON.stringify(tool.arguments);
+    } else if (tool.tool_name === 'restaurant.update_reservation') {
+      path = `/v1/reservations/${encodeURIComponent(String(tool.arguments.reservation_id))}`;
+      method = 'PATCH';
+      profile = operationProfile('restaurant.reservation.update');
+      headers = writeHeaders(actorId, tool.idempotency_key ?? `${tool.workflow_id}-${tool.tool_call_id}`);
+      body = JSON.stringify(Object.fromEntries(
+        ['party_size', 'start_at', 'special_requests']
+          .filter((key) => tool.arguments[key] !== undefined)
+          .map((key) => [key, tool.arguments[key]]),
+      ));
     } else {
       throw new Error(`Unsupported restaurant tool: ${tool.tool_name}`);
     }
@@ -690,8 +711,8 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject[]>('/api/v1/departments', { method: 'GET' }, correlationId);
   }
 
-  async listAppointments(actorId: string, correlationId: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/api/v1/appointments', { method: 'GET' }, correlationId, actorId);
+  async listAppointments(actorId: string, correlationId: string, limit = 50, timeoutMs?: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/appointments?limit=${limit}`, { method: 'GET' }, correlationId, actorId, timeoutMs);
   }
 
   async listDepartments(actorId: string, correlationId: string, keyword?: string, limit?: number, offset?: number): Promise<JsonObject> {
@@ -873,8 +894,8 @@ export class FoodClient extends InternalServiceClient {
     return this.legacyRequest<FoodCatalogResponse>(`/api/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
   }
 
-  listOrders(correlationId: string, actorId: string): Promise<JsonObject> {
-    return this.legacyRequest<JsonObject>('/api/v1/orders', { method: 'GET' }, correlationId, actorId);
+  listOrders(correlationId: string, actorId: string, limit = 50, timeoutMs?: number): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(`/api/v1/orders?limit=${limit}`, { method: 'GET' }, correlationId, actorId, timeoutMs);
   }
 
   async createCart(actorId: string, correlationId: string, idempotencyKey: string, restaurantId: string): Promise<JsonObject> {

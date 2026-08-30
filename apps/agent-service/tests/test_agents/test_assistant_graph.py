@@ -9,6 +9,7 @@ from src.agents.assistant_graph import (
     AssistantComposition,
     AssistantPlan,
     PlannedTask,
+    _apply_context_precedence,
     _apply_plan_guards,
     _bounded_authoritative_results,
     _healthcare_requested_date,
@@ -82,6 +83,47 @@ def test_followup_ride_retains_unfinished_healthcare_anchor() -> None:
     )
     assert [task.domain for task in plan.tasks] == ["healthcare", "ride"]
     assert plan.tasks[1].depends_on == [0]
+
+
+def test_ride_only_turn_does_not_replay_an_unfinished_food_task() -> None:
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[
+            PlannedTask(
+                domain="food",
+                goal="TÃ¬m phá»Ÿ",
+                normalized_request="TÃ¬m phá»Ÿ",
+                extracted_slots={"dish_query": "phá»Ÿ"},
+            ),
+            PlannedTask(
+                domain="ride",
+                goal="Dat xe",
+                normalized_request="Dat xe tu vi tri hien tai den Cau Giay",
+                extracted_slots={"pickup_address": "Vi tri hien tai", "dropoff_address": "Cau Giay"},
+            ),
+        ]),
+        "\u0110\u1eb7t xe t\u1eeb v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i \u0111\u1ebfn C\u1ea7u Gi\u1ea5y",
+        {"tasks": [{"domain": "food", "phase": "IN_PROGRESS", "extracted_slots": {"dish_query": "pho"}}]},
+    )
+
+    assert [task.domain for task in plan.tasks] == ["ride"]
+
+
+def test_explicit_ride_turn_synthesizes_ride_when_model_replays_food_only() -> None:
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[
+            PlannedTask(
+                domain="food",
+                goal="TÃƒÂ¬m phÃ¡Â»Å¸",
+                normalized_request="TÃƒÂ¬m phÃ¡Â»Å¸",
+                extracted_slots={"dish_query": "phÃ¡Â»Å¸"},
+            ),
+        ]),
+        "\u0110\u1eb7t xe t\u1eeb v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i \u0111\u1ebfn C\u1ea7u Gi\u1ea5y",
+        {"tasks": [{"domain": "food", "phase": "IN_PROGRESS", "extracted_slots": {"dish_query": "pho"}}]},
+    )
+
+    assert [task.domain for task in plan.tasks] == ["ride"]
+    assert plan.tasks[0].extracted_slots["dropoff_address"] == "\u0043\u1ea7u Gi\u1ea5y"
 
 
 def test_deterministic_guard_path_retains_healthcare_anchor() -> None:
@@ -409,6 +451,32 @@ def test_ride_stopover_follow_up_preserves_the_existing_route() -> None:
     assert slots["vehicle_type"] == "CAR_4"
 
 
+def test_ride_stopover_stops_before_a_following_pickup_instruction() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan(
+        "Đón tôi xong thì tạt qua chỗ công viên Nghĩa Đô đón bạn tôi rồi mới đến quán.",
+        state,
+    )
+
+    ride_task = next(task for task in follow_up.tasks if task.domain == "ride")
+    assert ride_task.extracted_slots["stopover_address"].casefold() == "công viên nghĩa đô"
+
+
+def test_ride_stopover_excludes_the_passengers_following_activity() -> None:
+    first = deterministic_plan("Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ")
+    state = {"tasks": [task.model_dump() for task in first.tasks]}
+
+    follow_up = deterministic_plan(
+        "Trước khi đến Hồ Gươm thì tạt qua công viên Nghĩa Đô tôi lấy ít đồ rồi mới đi tiếp.",
+        state,
+    )
+
+    ride_task = next(task for task in follow_up.tasks if task.domain == "ride")
+    assert ride_task.extracted_slots["stopover_address"].casefold() == "công viên nghĩa đô"
+
+
 def test_model_guard_turns_anchor_misclassification_into_active_ride_stopover_update() -> None:
     guarded = _apply_plan_guards(
         AssistantPlan(tasks=[PlannedTask(
@@ -510,6 +578,25 @@ def test_restaurant_request_keeps_location_separate_from_time_clause() -> None:
     assert "T21:00:00" in slots["start_at"]
 
 
+def test_restaurant_time_update_reuses_authoritative_party_size() -> None:
+    plan = deterministic_plan(
+        "Đổi sang 8 giờ tối giúp tôi.",
+        {
+            "completed_tasks": [
+                {
+                    "domain": "restaurant",
+                    "phase": "COMPLETED",
+                    "facts": [{"field": "reservation_id", "value": "reservation-1", "resource_version": 1}],
+                }
+            ]
+        },
+    )
+
+    assert domains(plan) == ["restaurant"]
+    assert plan.tasks[0].needs_clarification is False
+    assert "party_size" not in plan.tasks[0].missing_information
+
+
 @pytest.mark.parametrize(
     "location_phrase",
     [
@@ -530,6 +617,42 @@ def test_restaurant_location_paraphrases_do_not_leak_into_cuisine(location_phras
     assert slots["cuisine_query"] == "lau"
 
 
+@pytest.mark.parametrize(
+    "user_text",
+    [
+        "Tìm quán lẩu ở Cầu Giấy cho 5 người, có còn bàn không?",
+        "Tìm nhà hàng ăn lẩu tại Cầu Giấy cho 5 người lúc 19 giờ, có còn bàn không?",
+        "Tìm quán lẩu ở một quán lẩu tại Cầu Giấy cho 5 người, có còn bàn không?",
+        "Tìm nhà hàng Samcheop Topokki ở Cầu Giấy cho 5 người, có còn bàn không?",
+    ],
+)
+def test_restaurant_location_stops_before_party_suffix_and_skips_generic_match(user_text: str) -> None:
+    plan = deterministic_plan(user_text)
+
+    assert domains(plan) == ["restaurant"]
+    slots = plan.tasks[0].extracted_slots
+    assert slots["location"] == "Cầu Giấy"
+    assert slots["party_size"] == 5
+
+
+def test_food_does_not_inherit_request_scoped_ride_location() -> None:
+    current_location = {
+        "latitude": 21.0285,
+        "longitude": 105.8048,
+        "address_text": "Cầu Giấy, Hà Nội",
+        "captured_at": datetime.now(ZoneInfo("UTC")).isoformat(),
+        "source": "device",
+    }
+    plan = _apply_context_precedence(
+        deterministic_plan("Tìm phở bò giao về nhà"),
+        "Tìm phở bò giao về nhà",
+        {},
+        current_location,
+    )
+
+    assert "location" not in plan.tasks[0].extracted_slots
+
+
 def test_neutral_food_to_ride_follow_up_keeps_food_without_discarding_it() -> None:
     first = deterministic_plan("Tìm phở bò giao về nhà")
     state = {"tasks": [task.model_dump() for task in first.tasks]}
@@ -539,6 +662,62 @@ def test_neutral_food_to_ride_follow_up_keeps_food_without_discarding_it() -> No
     assert domains(follow_up) == ["ride"]
     assert follow_up.discarded_task_refs == []
     assert follow_up.tasks[0].extracted_slots["dropoff_address"] == "Cầu Giấy"
+
+
+def test_current_location_reply_focuses_an_active_ride_over_food() -> None:
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[
+            PlannedTask(
+                domain="food",
+                goal="Tìm phở bò",
+                normalized_request="Tìm phở bò giao về nhà",
+                extracted_slots={"dish_query": "phở bò"},
+            ),
+            PlannedTask(
+                domain="ride",
+                goal="Tìm chuyến xe",
+                normalized_request="Đặt xe đến Cầu Giấy",
+                extracted_slots={"dropoff_address": "Cầu Giấy"},
+            ),
+        ]),
+        "vị trí hiện tại của tôi",
+        {
+            "tasks": [
+                {"domain": "food", "phase": "NEEDS_INFO", "extracted_slots": {"dish_query": "phở bò"}},
+                {"domain": "ride", "phase": "NEEDS_INFO", "extracted_slots": {"dropoff_address": "Cầu Giấy"}},
+            ]
+        },
+    )
+
+    assert domains(plan) == ["ride"]
+
+
+def test_food_resume_focuses_food_over_an_active_ride() -> None:
+    plan = _merge_explicit_context_actions(
+        AssistantPlan(tasks=[
+            PlannedTask(
+                domain="food",
+                goal="Tìm phở bò",
+                normalized_request="Tìm phở bò giao về nhà",
+                extracted_slots={"dish_query": "phở bò"},
+            ),
+            PlannedTask(
+                domain="ride",
+                goal="Tìm chuyến xe",
+                normalized_request="Đặt xe đến Cầu Giấy",
+                extracted_slots={"dropoff_address": "Cầu Giấy", "vehicle_type": "BIKE"},
+            ),
+        ]),
+        "tiếp tục đặt phở",
+        {
+            "tasks": [
+                {"domain": "food", "phase": "NEEDS_INFO", "extracted_slots": {"dish_query": "phở bò"}},
+                {"domain": "ride", "phase": "AWAITING_CONFIRMATION", "extracted_slots": {"dropoff_address": "Cầu Giấy", "vehicle_type": "BIKE"}},
+            ]
+        },
+    )
+
+    assert domains(plan) == ["food"]
 
 
 @pytest.mark.parametrize("current_location", [None, {
@@ -586,6 +765,24 @@ def test_demo_restaurant_then_ride_request_keeps_area_and_dependency(monkeypatch
     assert "party_size" in plan.tasks[0].missing_information
     assert plan.tasks[1].depends_on == [0]
     assert "dropoff_address" not in plan.tasks[1].extracted_slots
+
+
+def test_restaurant_reference_ride_does_not_turn_reference_into_address() -> None:
+    plan = deterministic_plan(
+        "Đặt xe tới nhà hàng này",
+        {
+            "tasks": [{
+                "domain": "restaurant",
+                "phase": "COMPLETED",
+                "goal": "Nhà hàng đã xác nhận",
+                "extracted_slots": {},
+                "authoritative": {"reservation": {"id": "reservation-1"}},
+            }],
+        },
+    )
+
+    assert domains(plan) == ["ride"]
+    assert "dropoff_address" not in plan.tasks[0].extracted_slots
 
 
 def test_demo_party_follow_up_targets_restaurant_without_replaying_ride() -> None:
@@ -844,6 +1041,22 @@ class ConflictingRestaurantLocationPlanner:
         )
 
 
+class RideOnlyCompoundPlanner:
+    async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
+        assert schema is AssistantPlan
+        return AssistantPlan(
+            assistant_message="Mình sẽ chuẩn bị chuyến xe.",
+            tasks=[
+                PlannedTask(
+                    domain="ride",
+                    goal="Tìm chuyến xe",
+                    normalized_request="Đặt xe ra đó",
+                    extracted_slots={"dropoff_address": "nhà hàng đó"},
+                ),
+            ],
+        )
+
+
 @pytest.mark.asyncio
 async def test_model_cannot_override_explicit_vehicle_or_drop_tomorrow_preference() -> None:
     graph = build_assistant_graph(llm=ConflictingExplicitSlotPlanner())
@@ -870,6 +1083,22 @@ async def test_configured_model_guard_preserves_explicit_restaurant_location_and
     slots = result["plan"]["tasks"][0]["extracted_slots"]
     assert slots["location"] == "Cầu Giấy"
     assert slots["cuisine_query"] == "lau"
+
+
+@pytest.mark.asyncio
+async def test_model_compound_ride_omission_restores_restaurant_anchor_and_dependency() -> None:
+    graph = build_assistant_graph(llm=RideOnlyCompoundPlanner())
+    result = await graph.ainvoke({
+        "query": "check giúp tôi xem tầm 17h ngày 20/09/2099 có quán lẩu nào còn bàn ở khu vực Cầu Giấy không, xong rồi đặt xe giúp tôi ra đó luôn",
+        "conversation_state": {},
+    })
+
+    assert result["decision_source"] == "model"
+    assert [task["domain"] for task in result["plan"]["tasks"]] == ["restaurant", "ride"]
+    assert result["plan"]["tasks"][0]["extracted_slots"]["location"] == "Cầu Giấy"
+    assert result["plan"]["tasks"][0]["extracted_slots"]["cuisine_query"] == "lau"
+    assert result["plan"]["tasks"][1]["depends_on"] == [0]
+    assert "dropoff_address" not in result["plan"]["tasks"][1]["extracted_slots"]
 
 
 class CapturingComposer:

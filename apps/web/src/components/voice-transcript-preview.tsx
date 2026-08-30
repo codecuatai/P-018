@@ -28,10 +28,10 @@ export function VoiceTranscriptPreview({
       <span className="voice-duration" aria-label={`Thời gian ghi âm: ${formatDuration(duration)}`}>
         {formatDuration(duration)}
       </span>
-      <button
+      <button 
         type="button"
-        className="voice-cancel-btn"
-        onClick={onCancel}
+        className="voice-cancel-btn" 
+        onClick={onCancel} 
         aria-label="Hủy ghi âm"
         title="Hủy ghi âm"
       >

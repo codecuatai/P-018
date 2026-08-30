@@ -39,8 +39,60 @@ def test_seed_adds_booking_resources_to_existing_imported_catalog() -> None:
         )
 
     assert restaurant_count == 1
-    assert table_count == 5
+    assert table_count == 37
     assert hour_count == 7
+
+
+def test_seed_adds_demo_capacity_when_a_catalog_row_already_has_tables() -> None:
+    repository = RestaurantRepository("sqlite:///:memory:")
+    engine = repository.factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with repository.factory() as db:
+        db.add(
+            RestaurantRow(
+                id="imported-restaurant-with-tables",
+                name="Imported Restaurant With Tables",
+                location="District 1",
+                cuisine_type="Vietnamese",
+                budget_range="$$",
+                rating=4.5,
+                timezone="Asia/Ho_Chi_Minh",
+                active=True,
+                source_name="local-import",
+            )
+        )
+        db.add(
+            TableRow(
+                restaurant_id="imported-restaurant-with-tables",
+                table_code="T01",
+                capacity=2,
+                seating_type="standard",
+                active=True,
+            )
+        )
+        db.commit()
+
+    repository.seed()
+    repository.seed()
+
+    with repository.factory() as db:
+        demo_table_count = db.scalar(
+            select(func.count(TableRow.id)).where(
+                TableRow.restaurant_id == "imported-restaurant-with-tables",
+                TableRow.table_code.like("DEMO-XONE-%"),
+                TableRow.active.is_(True),
+                TableRow.capacity >= 12,
+            )
+        )
+        table_count = db.scalar(
+            select(func.count(TableRow.id)).where(
+                TableRow.restaurant_id == "imported-restaurant-with-tables"
+            )
+        )
+
+    assert demo_table_count == 32
+    assert table_count == 33
 
 
 def test_seed_does_not_create_catalog_rows_when_import_is_empty() -> None:

@@ -1,5 +1,5 @@
-import { Loader2, Mic, Square } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Mic, Square, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { useSpeechRecognition } from '../hooks/use-speech-recognition';
 import { useAudioRecorder } from '../hooks/use-audio-recorder';
 import { transcribeVoice } from '../lib/api-client';
@@ -17,6 +17,7 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
   const [isProcessing, setIsProcessing] = useState(false);
   const submittedRef = useRef(false);
 
+  // Tier 2 Duration tracking
   const [tier2Duration, setTier2Duration] = useState(0);
   const tier2TimerRef = useRef<number | null>(null);
 
@@ -36,39 +37,49 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
     };
   }, [recorder.isRecording]);
 
+  // Handle Tier 1 (Web Speech API) final transcript
   useEffect(() => {
-    if (speech.transcript && !speech.isListening && !submittedRef.current) {
-      onTranscript(speech.transcript);
-      speech.resetTranscript();
-    } else if (!speech.isListening && speech.transcript) {
+    if (speech.transcript && !speech.isListening) {
+      if (!submittedRef.current) {
+        onTranscript(speech.transcript);
+      }
       speech.resetTranscript();
     }
-  }, [speech.isListening, speech.transcript, speech.resetTranscript, onTranscript]);
+  }, [speech.isListening, speech.transcript, onTranscript, speech]);
 
+  // Handle Tier 1 Error
   useEffect(() => {
     if (speech.error) {
       onError(speech.error);
     }
   }, [speech.error, onError]);
 
+  // Handle Tier 2 (MediaRecorder -> API) transcript
   useEffect(() => {
-    async function processAudio(): Promise<void> {
+    async function processAudio() {
       if (!recorder.audioBlob) return;
-
+      
       setIsProcessing(true);
       try {
         const result = await transcribeVoice(recorder.audioBlob);
-        if (!submittedRef.current) onTranscript(result.text);
-      } catch {
-        if (!submittedRef.current) onError('Không thể nhận dạng giọng nói. Vui lòng gõ tin nhắn.');
+        if (!submittedRef.current) {
+          onTranscript(result.text);
+        }
+      } catch (err: any) {
+        console.error('Tier 2 STT error:', err);
+        if (!submittedRef.current) {
+          onError('Không thể nhận dạng giọng nói. Vui lòng gõ tin nhắn.');
+        }
       } finally {
         setIsProcessing(false);
         recorder.clearAudio();
       }
     }
-
-    if (recorder.audioBlob && !isProcessing) void processAudio();
-  }, [recorder.audioBlob, recorder.clearAudio, onTranscript, onError, isProcessing]);
+    
+    if (recorder.audioBlob && !isProcessing) {
+      processAudio();
+    }
+  }, [recorder.audioBlob, recorder, onTranscript, onError, isProcessing]);
 
   const toggleRecording = useCallback(() => {
     if (disabled || isProcessing) return;
@@ -81,17 +92,17 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
       } else {
         speech.startListening();
       }
-      return;
-    }
-
-    if (recorder.isRecording) {
-      recorder.stopRecording();
     } else {
-      void recorder.startRecording().catch(() => {
-        onError('Không thể truy cập microphone. Vui lòng kiểm tra quyền.');
-      });
+      // Tier 2 Fallback
+      if (recorder.isRecording) {
+        recorder.stopRecording();
+      } else {
+        recorder.startRecording().catch(() => {
+          onError('Không thể truy cập microphone. Vui lòng kiểm tra quyền.');
+        });
+      }
     }
-  }, [disabled, isProcessing, speech.isSupported, speech.isListening, speech.stopListening, speech.startListening, recorder.isRecording, recorder.stopRecording, recorder.startRecording, onError]);
+  }, [disabled, isProcessing, speech, recorder, onError]);
 
   const cancelRecording = useCallback(() => {
     submittedRef.current = true;
@@ -102,8 +113,9 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
     if (recorder.isRecording) {
       recorder.cancelRecording();
     }
-  }, [speech.isListening, speech.stopListening, speech.resetTranscript, recorder.isRecording, recorder.cancelRecording]);
+  }, [speech, recorder]);
 
+  // Keyboard accessibility
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && (speech.isListening || recorder.isRecording)) {
@@ -115,19 +127,19 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
   }, [speech.isListening, recorder.isRecording, cancelRecording]);
 
   const isRecording = speech.isListening || recorder.isRecording;
-
-  let icon = <Mic size={18} aria-hidden="true" />;
-  let btnClass = "composer-mic-btn";
-  let ariaLabel = "Nhập bằng giọng nói";
+  
+  let icon = <Mic size={18} />;
+  let btnClass = 'composer-mic-btn';
+  let ariaLabel = 'Nhập bằng giọng nói';
 
   if (isProcessing) {
-    icon = <Loader2 size={18} className="spinner" aria-hidden="true" />;
-    btnClass += " voice-processing";
-    ariaLabel = "Đang xử lý giọng nói";
+    icon = <Loader2 size={18} className="animate-spin" />;
+    btnClass += ' voice-processing';
+    ariaLabel = 'Đang xử lý giọng nói';
   } else if (isRecording) {
-    icon = <Square size={18} fill="currentColor" aria-hidden="true" />;
-    btnClass += " voice-listening";
-    ariaLabel = "Dừng ghi âm";
+    icon = <Square size={18} fill="currentColor" />;
+    btnClass += ' voice-listening';
+    ariaLabel = 'Dừng ghi âm';
   }
 
   return (
@@ -139,7 +151,6 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
         disabled={disabled || isProcessing}
         aria-label={ariaLabel}
         title={ariaLabel}
-        aria-pressed={isRecording}
       >
         {icon}
       </button>
@@ -155,3 +166,4 @@ export function VoiceInput({ onTranscript, onError, disabled }: VoiceInputProps)
     </>
   );
 }
+

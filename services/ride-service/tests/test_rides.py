@@ -602,7 +602,7 @@ def test_tracking_spawns_driver_near_pickup_then_follows_two_legs(client: TestCl
     pickup = quote["route_geometry"][0]
     assert first_data["status"] == "DRIVER_ASSIGNED"
     assert first_data["driver_location"] == first_data["driver"]["location"]
-    assert first_data["driver"]["tracking_speed_factor"] == 0.2
+    assert first_data["driver"]["tracking_speed_factor"] == 0.4
     spawn_distance_km = _haversine_km(
         first_data["driver_location"]["latitude"],
         first_data["driver_location"]["longitude"],

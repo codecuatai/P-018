@@ -83,9 +83,17 @@ test commands. A Gemini key is needed only for the real-LLM evaluation.
    `http://localhost:3000`. Use the development demo credentials configured in
    your private `.env` when demo authentication is enabled.
 
-For deterministic demo data, explicitly add `-SeedDemo` (PowerShell) or
-`--seed-demo` (Bash). For a disposable template-only verification that never
-reads a private `.env`, use:
+For deterministic local demo data, explicitly add `-SeedDemo` (PowerShell) or
+`--seed-demo` (Bash). The Compose catalog-importer job imports the versioned
+static catalog snapshots in `data/` without requiring Python on the deployment
+host; it then creates future Healthcare slots and the demo patient link, and
+maintains the Ride driver pool without resetting existing records. The
+`deploy-develop` workflow performs this same additive import and verification
+automatically after every code deployment, so it requires no manual seed
+command. `data/` is a catalog source only; it never contains or restores
+conversations, accounts, bookings, appointments, payments, or other mutable
+domain data. For a disposable template-only verification that never reads a
+private `.env`, use:
 
 ```powershell
 ./scripts/local/start-all.ps1 -EnvFile .env.example

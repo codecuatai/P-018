@@ -6,6 +6,7 @@ const mockReplace = jest.fn();
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: mockReplace }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 jest.mock("@/providers/auth-provider", () => ({

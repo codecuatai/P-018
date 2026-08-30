@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Info, LoaderCircle } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { FoodTrackingPanel } from "@/features/product/food-tracking";
 import { RideMapDetail } from "@/features/product/ride-map-detail";
 import { XOneMap, type XOnePoint } from "@/features/product/xone-map";
 import { resolveAddress } from "@/lib/api-client";
@@ -14,7 +15,7 @@ import type { AssistantOption, AssistantRideItem } from "@/types";
 type DetailKind = "food" | "restaurant" | "healthcare" | "ride";
 type DetailPrimaryAction = { label: string; onClick: () => void; disabled?: boolean };
 
-export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, primaryAction }: { open: boolean; onOpenChange: (open: boolean) => void; kind: DetailKind; option: AssistantOption | null; ride?: AssistantRideItem; primaryAction?: DetailPrimaryAction }) {
+export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, foodOrderId, primaryAction }: { open: boolean; onOpenChange: (open: boolean) => void; kind: DetailKind; option: AssistantOption | null; ride?: AssistantRideItem; foodOrderId?: string; primaryAction?: DetailPrimaryAction }) {
   const [resolvedPoint, setResolvedPoint] = useState<XOnePoint>();
   const [resolving, setResolving] = useState(false);
   const nestedRestaurant = isRecord(option?.restaurant) ? option.restaurant : undefined;
@@ -29,7 +30,7 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, pr
     // the result is never persisted or used as booking truth. Healthcare
     // facilities remain authoritative-only, and generic city addresses are
     // intentionally not guessed.
-    if (!open || directPoint || !address || kind === "ride" || kind === "healthcare" || isGenericAddress(address)) return;
+    if (!open || directPoint || !address || foodOrderId || kind === "ride" || kind === "healthcare" || isGenericAddress(address)) return;
     let active = true;
     setResolving(true);
     void resolveAddress(address).then((result) => {
@@ -38,19 +39,19 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, pr
       if (candidate && typeof candidate.latitude === "number" && typeof candidate.longitude === "number") setResolvedPoint({ latitude: candidate.latitude, longitude: candidate.longitude });
     }).catch(() => undefined).finally(() => { if (active) setResolving(false); });
     return () => { active = false; };
-  }, [address, directPoint?.latitude, directPoint?.longitude, kind, open]);
+  }, [address, directPoint?.latitude, directPoint?.longitude, foodOrderId, kind, open]);
 
-  if (!option && !ride) return null;
-  const title = kind === "ride" ? optionalText(ride?.title, "Chuyến xe") : optionalText(option?.name ?? option?.doctor ?? option?.title, "Chi tiết lựa chọn");
+  if (!option && !ride && !foodOrderId) return null;
+  const title = kind === "ride" ? optionalText(ride?.title, "Chuyến xe") : foodOrderId ? "Theo dõi đơn giao hàng" : optionalText(option?.name ?? option?.doctor ?? option?.title, "Chi tiết lựa chọn");
   const restaurantName = optionalText(nestedRestaurant?.name ?? (typeof option?.restaurant === "string" ? option.restaurant : undefined));
   const facilityName = optionalText(nestedFacility?.name);
   const route = ride?.route_geometry && ride.route_geometry.length > 1 ? ride.route_geometry : undefined;
 
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className={`service-detail-dialog service-detail-dialog-${kind}`}>
-      <DialogTitle className={kind === "ride" || kind === "healthcare" || kind === "restaurant" ? "visually-hidden" : undefined}>{title}</DialogTitle>
-      <DialogDescription className={kind === "ride" || kind === "healthcare" || kind === "restaurant" ? "visually-hidden" : undefined}>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
-      {kind === "ride" ? <RideDetail ride={ride} bookingId={bookingId} route={route} /> : kind === "restaurant" ? <RestaurantDetail option={option} title={title} address={address} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : kind === "healthcare" ? <HealthcareDetail option={option} title={title} address={address} facilityName={facilityName} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : <div className="service-detail-dialog-body">
+    <DialogContent className={`service-detail-dialog service-detail-dialog-${kind}${foodOrderId ? " service-detail-dialog-food-tracking" : ""}`}>
+      <DialogTitle className={kind === "ride" || kind === "healthcare" || kind === "restaurant" || foodOrderId ? "visually-hidden" : undefined}>{title}</DialogTitle>
+      <DialogDescription className={kind === "ride" || kind === "healthcare" || kind === "restaurant" || foodOrderId ? "visually-hidden" : undefined}>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
+      {kind === "ride" ? <RideDetail ride={ride} bookingId={bookingId} route={route} /> : kind === "food" && foodOrderId ? <FoodTrackingPanel orderId={foodOrderId} hideMap polling variant="detail" /> : kind === "restaurant" ? <RestaurantDetail option={option} title={title} address={address} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : kind === "healthcare" ? <HealthcareDetail option={option} title={title} address={address} facilityName={facilityName} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : <div className="service-detail-dialog-body">
         {kind === "food" ? <FoodDetail option={option} title={title} restaurantName={restaurantName} address={address} resolvedPoint={resolvedPoint} resolving={resolving} /> : null}
       </div>}
     </DialogContent>
@@ -58,7 +59,8 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, pr
 }
 
 function RideDetail({ ride, bookingId, route }: { ride?: AssistantRideItem; bookingId?: string; route?: Array<{ latitude: number; longitude: number }> }) {
-  return <RideMapDetail bookingId={bookingId} initialOrigin={pointFromRide(ride, "pickup")} initialDestination={pointFromRide(ride, "dropoff")} initialRoute={route} initialRoutePolyline={ride?.route_polyline} initialRouteProvider={ride?.route_provider} initialRouteDistanceMeters={ride?.route_distance_meters} initialRouteDurationSeconds={ride?.route_duration_seconds} status={ride?.status} facts={[{ label: "Điểm đón", value: optionalText(ride?.pickup) }, { label: "Điểm đến", value: optionalText(ride?.dropoff) }, { label: "Loại xe", value: optionalText(ride?.vehicle) }, { label: "Khoảng cách", value: ride?.distance_km !== undefined ? `${ride.distance_km} km` : ride?.route_distance_meters ? `${(ride.route_distance_meters / 1000).toFixed(1)} km` : "Đang cập nhật" }, { label: "Thời gian dự kiến", value: ride?.duration_minutes ? `${ride.duration_minutes} phút` : ride?.route_duration_seconds ? `${Math.ceil(ride.route_duration_seconds / 60)} phút` : "Đang cập nhật" }, { label: "Giá dự kiến", value: formatMoney(ride?.amount, optionalText(ride?.currency, "VND")) }]} />;
+  const stopovers = ride?.stopovers?.flatMap((stopover) => typeof stopover.latitude === "number" && typeof stopover.longitude === "number" ? [{ latitude: stopover.latitude, longitude: stopover.longitude, label: stopover.address }] : []) ?? [];
+  return <RideMapDetail bookingId={bookingId} initialOrigin={pointFromRide(ride, "pickup")} initialDestination={pointFromRide(ride, "dropoff")} initialStopovers={stopovers} initialRoute={route} initialRoutePolyline={ride?.route_polyline} initialRouteProvider={ride?.route_provider} initialRouteDistanceMeters={ride?.route_distance_meters} initialRouteDurationSeconds={ride?.route_duration_seconds} status={ride?.status} facts={[{ label: "Điểm đón", value: optionalText(ride?.pickup) }, { label: "Điểm đến", value: optionalText(ride?.dropoff) }, { label: "Loại xe", value: optionalText(ride?.vehicle) }, { label: "Khoảng cách", value: ride?.distance_km !== undefined ? `${ride.distance_km} km` : ride?.route_distance_meters ? `${(ride.route_distance_meters / 1000).toFixed(1)} km` : "Đang cập nhật" }, { label: "Thời gian dự kiến", value: ride?.duration_minutes ? `${ride.duration_minutes} phút` : ride?.route_duration_seconds ? `${Math.ceil(ride.route_duration_seconds / 60)} phút` : "Đang cập nhật" }, { label: "Giá dự kiến", value: formatMoney(ride?.amount, optionalText(ride?.currency, "VND")) }]} />;
 }
 
 function RestaurantDetail({ option, title, address, resolvedPoint, resolving, primaryAction }: { option: AssistantOption | null; title: string; address: string; resolvedPoint?: XOnePoint; resolving: boolean; primaryAction?: DetailPrimaryAction }) {

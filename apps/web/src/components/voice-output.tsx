@@ -1,6 +1,6 @@
 import { Play, Square, Pause, Settings2 } from 'lucide-react';
 import { useState } from 'react';
-import type { TtsControl } from '../hooks/use-speech-synthesis';
+import { TtsControl } from '../hooks/use-speech-synthesis';
 
 export interface VoiceOutputProps {
   text: string;
@@ -40,8 +40,8 @@ export function VoiceOutput({ text, tts, messageId, activeMessageId, onPlay }: V
 
   return (
     <div className="voice-output">
-      <button
-        type="button"
+      <button 
+        type="button" 
         className={`voice-output-btn ${isPlaying || isPaused ? 'active' : ''}`}
         onClick={handlePlayPause}
         aria-label={isPlaying ? 'Tạm dừng đọc' : isPaused ? 'Tiếp tục đọc' : 'Đọc văn bản'}
@@ -52,8 +52,8 @@ export function VoiceOutput({ text, tts, messageId, activeMessageId, onPlay }: V
 
       {(isPlaying || isPaused) && (
         <>
-          <button
-            type="button"
+          <button 
+            type="button" 
             className="voice-output-btn"
             onClick={handleStop}
             aria-label="Dừng đọc"
@@ -61,9 +61,9 @@ export function VoiceOutput({ text, tts, messageId, activeMessageId, onPlay }: V
           >
             <Square size={12} fill="currentColor" />
           </button>
-
-          <button
-            type="button"
+          
+          <button 
+            type="button" 
             className={`voice-output-btn ${showSettings ? 'active' : ''}`}
             onClick={() => setShowSettings(!showSettings)}
             aria-label="Cài đặt tốc độ đọc"
@@ -71,13 +71,13 @@ export function VoiceOutput({ text, tts, messageId, activeMessageId, onPlay }: V
           >
             <Settings2 size={14} />
           </button>
-
+          
           {showSettings && (
-            <input
-              type="range"
-              min="0.5"
-              max="2"
-              step="0.1"
+            <input 
+              type="range" 
+              min="0.5" 
+              max="2" 
+              step="0.1" 
               value={tts.rate}
               onChange={(e) => tts.setRate(parseFloat(e.target.value))}
               className="voice-speed-slider"

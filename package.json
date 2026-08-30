@@ -8,7 +8,6 @@
     "test:gateway": "corepack pnpm --dir apps/api-gateway test",
     "check:agent": "python -m ruff check apps/agent-service/src apps/agent-service/tests && python -m pytest apps/agent-service/tests -q",
     "compose:config": "docker compose --env-file .env.example config --quiet",
-    "test:e2e": "python -m pytest tests/e2e -q",
     "test:e2e:crossservice": "python -m pytest tests/e2e -q"
   }
 }

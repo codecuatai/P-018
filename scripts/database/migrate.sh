@@ -2,6 +2,23 @@
 set -eu
 env_file="${1:-.env}"
 [ -f "$env_file" ] || env_file='.env.example'
+
+echo "Checking PostgreSQL readiness..."
+until docker compose --env-file "$env_file" exec -T postgres pg_isready -U postgres > /dev/null 2>&1; do
+  sleep 1
+done
+
+export PGOPTIONS="-c lock_timeout=10000 -c statement_timeout=120000"
+
+echo "Terminating lingering client connections before DDL migrations..."
+docker compose --env-file "$env_file" exec -T postgres psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
+SELECT pg_terminate_backend(pid) 
+FROM pg_stat_activity 
+WHERE datname IN ('xone_core', 'xone_food', 'xone_agent', 'xone_healthcare') 
+  AND pid <> pg_backend_pid();
+" > /dev/null 2>&1 || true
+
+echo "Applying Core, Agent and Food migrations..."
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/001_core_vertical_slice.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/002_core_persistence_slice.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/003_core_atomicity.sql
@@ -23,9 +40,12 @@ docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/005_food_idempotency_eligibility.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/006_food_catalog_provenance.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/007_food_cart_write_idempotency.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U food_user -d xone_food -v ON_ERROR_STOP=1 < services/food-service/migrations/008_food_catalog_search.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/001_agent_workflow_states.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/002_agent_run_metadata.sql
 echo 'Core, Agent and Food migrations applied.'
+# Use a one-shot container from the freshly built image. `exec` could run the
+# migration inside an older long-lived service container during deployment.
 docker compose --env-file "$env_file" run --rm --no-deps -T restaurant-service alembic upgrade head
 echo 'Restaurant Service migrations applied.'
 docker compose --env-file "$env_file" exec -T postgres psql -U healthcare_user -d xone_healthcare -v ON_ERROR_STOP=1 < services/healthcare-service/migrations/001_healthcare_booking.sql

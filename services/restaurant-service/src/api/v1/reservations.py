@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from src.api.auth import require_internal_auth
 from src.api.idempotency import require_idempotency_key
@@ -52,8 +52,8 @@ def get_reservation(reservation_id: str, request: Request, actor_id=Depends(requ
 
 
 @router.get("/reservations")
-def list_reservations(request: Request, actor_id=Depends(require_internal_auth)):
-    return envelope({"items": request.app.state.restaurant_service.list_reservations(actor_id)}, request)
+def list_reservations(request: Request, limit: int = Query(default=50, ge=1, le=100), actor_id=Depends(require_internal_auth)):
+    return envelope({"items": request.app.state.restaurant_service.list_reservations(actor_id)[:limit]}, request)
 
 
 @router.patch("/reservations/{reservation_id}")

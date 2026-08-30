@@ -1,4 +1,4 @@
-"""pytest fixtures and strictness hooks for Compose cross-service E2E."""
+"""pytest fixtures and strictness hooks for the cross-service Compose E2E suites."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
+
 from _helpers import (
     DEMO_EMAIL,
     DEMO_PASSWORD,
@@ -23,8 +24,11 @@ def _is_truthy(value: str | None) -> bool:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Refuse to turn a missing Gateway URL into a silent acceptance pass."""
-    del config
+    """Refuse to turn a missing Gateway URL into a silent skip.
+
+    `local-acceptance.ps1` sets `E2E_REQUIRE_GATEWAY=1`, so an acceptance run can
+    never report success for a suite that skipped every test.
+    """
     if _is_truthy(os.getenv("E2E_REQUIRE_GATEWAY")) and not GATEWAY_URL:
         raise pytest.UsageError(
             "E2E_REQUIRE_GATEWAY is set but E2E_GATEWAY_URL is empty. "

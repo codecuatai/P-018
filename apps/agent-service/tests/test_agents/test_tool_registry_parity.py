@@ -51,6 +51,7 @@ def test_canonical_inventory_covers_all_four_domains_and_expected_surface() -> N
         "restaurant.check_availability",
         "restaurant.create_hold",
         "restaurant.create_reservation",
+        "restaurant.update_reservation",
         "restaurant.get_reservation",
         "restaurant.list_reservations",
         "restaurant.cancel_reservation",

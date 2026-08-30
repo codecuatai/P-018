@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, configureApiClient, errorText, getAccessToken, getActiveHistory, login, request, refreshAccessToken, runAssistantAction, sendAssistantMessage, setAccessToken, synthesizeVoice, transcribeVoice, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, getFoodMenu, isAbortError, login, request, refreshAccessToken, setAccessToken, streamVoice, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -78,6 +78,58 @@ describe("browser API client", () => {
     expect(getAccessToken()).toBe("login-access-token");
   });
 
+  it("attaches safe trigger correlation id to refresh request without credentials in url/body", async () => {
+    setAccessToken("stale-token");
+    let refreshTriggerId: string | null = null;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        refreshTriggerId = headers.get("X-Trigger-Correlation-Id");
+        expect(headers.get("X-Correlation-Id")).toMatch(/^cor-refresh/);
+        return jsonResponse(200, { data: { access_token: "fresh-token" } });
+      }
+      if (headers.get("Authorization") === "Bearer stale-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired" });
+      }
+      return jsonResponse(200, { data: { success: true } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await request<{ success: boolean }>("/api/v1/services/healthcare");
+    expect(refreshTriggerId).toMatch(/^cor-/);
+    expect(getAccessToken()).toBe("fresh-token");
+  });
+
+  it("does not call unauthorizedHandler when multiple concurrent requests resolve via in-flight refresh", async () => {
+    setAccessToken("expired-token");
+    const onUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse(200, { data: { access_token: "renewed-token" } });
+      }
+      if (headers.get("Authorization") === "Bearer expired-token") {
+        return jsonResponse(401, { code: "AUTHENTICATION_REQUIRED", detail: "expired" });
+      }
+      return jsonResponse(200, { data: { route: url } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const results = await Promise.all([
+      request<{ route: string }>("/api/v1/services/healthcare"),
+      request<{ route: string }>("/api/v1/healthcare/patients"),
+      request<{ route: string }>("/api/v1/notifications/unread-count"),
+    ]);
+
+    expect(results).toHaveLength(3);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("renewed-token");
+  });
+
   it("lets a retried request join a refresh that starts while its retry is in flight", async () => {
     setAccessToken("expired-token");
     const onUnauthorized = jest.fn();
@@ -129,16 +181,34 @@ describe("browser API client", () => {
     expect(getAccessToken()).toBe("second-renewed-token");
   });
 
-  it("does not log out for a non-session 401 such as a wrong current password", async () => {
+  it("does not wipe in-memory session on transient network error during refresh", async () => {
     setAccessToken("active-token");
-    const onUnauthorized = jest.fn();
-    configureApiClient({ onUnauthorized });
-    const fetchMock = jest.fn(async () => jsonResponse(401, { code: "CURRENT_PASSWORD_INVALID", detail: "Mật khẩu hiện tại không đúng." }));
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) {
+        throw new TypeError("Failed to fetch");
+      }
+      return jsonResponse(200, { data: { ok: true } });
+    });
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
-    await expect(request("/api/v1/auth/change-password", { method: "POST" })).rejects.toMatchObject({ code: "CURRENT_PASSWORD_INVALID" });
-    expect(onUnauthorized).not.toHaveBeenCalled();
+    const refreshed = await refreshAccessToken();
+    expect(refreshed).toMatchObject({ outcome: "transient", token: "active-token" });
     expect(getAccessToken()).toBe("active-token");
+  });
+
+  it("preserves the session and returns a transient outcome when a protected request cannot refresh temporarily", async () => {
+    setAccessToken("expired-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/v1/auth/refresh")) return jsonResponse(503, { code: "UPSTREAM_UNAVAILABLE", detail: "temporarily unavailable" });
+      return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired token" });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/services/healthcare")).rejects.toMatchObject({ code: "AUTH_REFRESH_TEMPORARY", retryable: true });
+    expect(mockUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("expired-session-token");
   });
 
   it("reads active work from the dedicated active-history endpoint", async () => {
@@ -150,75 +220,6 @@ describe("browser API client", () => {
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
     await expect(getActiveHistory()).resolves.toEqual({ items: [] });
-  });
-
-  it("sends current device location as structured assistant context", async () => {
-    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toEqual({
-        message: "Gọi xe tới Hồ Gươm bằng xe máy",
-        conversation_id: "conv-1",
-        current_location: {
-          latitude: 21.0285,
-          longitude: 105.8542,
-          accuracy_meters: 10,
-          captured_at: "2026-08-27T03:00:00.000Z",
-          source: "device",
-        },
-      });
-      return jsonResponse(200, { data: { conversation_id: "conv-1", message: "ok", items: [], actions: [], completed: [], workflow_status: "RUNNING" } });
-    });
-    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
-
-    await sendAssistantMessage("Gọi xe tới Hồ Gươm bằng xe máy", "conv-1", {
-      latitude: 21.0285,
-      longitude: 105.8542,
-      accuracy_meters: 10,
-      captured_at: "2026-08-27T03:00:00.000Z",
-      source: "device",
-    });
-  });
-
-  it("resends shared device location with a selected assistant action", async () => {
-    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      expect(JSON.parse(String(init?.body))).toEqual({
-        conversation_id: "conv-1",
-        action_id: "action-restaurant-1",
-        current_location: {
-          latitude: 21.0285,
-          longitude: 105.8042,
-          captured_at: "2026-08-27T03:00:00.000Z",
-          source: "device",
-        },
-      });
-      return jsonResponse(200, { data: { conversation_id: "conv-1", message: "ok", items: [], actions: [], completed: [], workflow_status: "RUNNING" } });
-    });
-    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
-
-    await runAssistantAction("conv-1", "action-restaurant-1", "action-key", {
-      currentLocation: {
-        latitude: 21.0285,
-        longitude: 105.8042,
-        captured_at: "2026-08-27T03:00:00.000Z",
-        source: "device",
-      },
-    });
-  });
-
-  it("omits location when a later message or action has no fresh device context", async () => {
-    const bodies: Array<Record<string, unknown>> = [];
-    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return jsonResponse(200, { data: { conversation_id: "conv-1", message: "ok", items: [], actions: [], completed: [], workflow_status: "RUNNING" } });
-    });
-    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
-
-    await sendAssistantMessage("Tôi muốn đặt xe đến Cầu Giấy", "conv-1");
-    await runAssistantAction("conv-1", "action-ride-1", "action-key");
-
-    expect(bodies).toEqual([
-      { message: "Tôi muốn đặt xe đến Cầu Giấy", conversation_id: "conv-1" },
-      { conversation_id: "conv-1", action_id: "action-ride-1" },
-    ]);
   });
 
   it("translates stale, unavailable, location, and driver errors for consumers", () => {
@@ -257,37 +258,146 @@ describe("browser API client", () => {
     await expect(browseService("healthcare", "neurology", { limit: 100, offset: 0 })).resolves.toEqual({ items: [], source: "healthcare-service", partial: false });
   });
 
-  it("uploads voice as multipart data without forcing a JSON content type", async () => {
-    setAccessToken("access-token");
-    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(String(input)).toContain("/api/v1/voice/transcribe");
-      expect(init?.method).toBe("POST");
-      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-token");
-      expect(new Headers(init?.headers).get("Content-Type")).toBeNull();
-      expect(init?.body).toBeInstanceOf(FormData);
-      return jsonResponse(200, { data: { text: "hello", provider: "gemini-flash" } });
+  it("preserves active session and does not invoke unauthorizedHandler when changePassword receives CURRENT_PASSWORD_INVALID", async () => {
+    setAccessToken("valid-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/change-password")) {
+        return jsonResponse(401, {
+          code: "CURRENT_PASSWORD_INVALID",
+          detail: "Mật khẩu hiện tại không đúng.",
+        });
+      }
+      return jsonResponse(200, { data: {} });
     });
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
-    await expect(transcribeVoice(new Blob(["audio"], { type: "audio/webm" }))).resolves.toEqual({ text: "hello", provider: "gemini-flash" });
+    let capturedError: unknown;
+    try {
+      await changePassword("wrong-current-password", "NewValidPass123!@#");
+    } catch (err) {
+      capturedError = err;
+    }
+
+    expect(capturedError).toBeInstanceOf(ApiError);
+    expect((capturedError as ApiError).code).toBe("CURRENT_PASSWORD_INVALID");
+    expect(errorText(capturedError)).toBe("Mật khẩu hiện tại không đúng.");
+    expect(mockUnauthorized).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("valid-session-token");
   });
 
-  it("requests assistant speech as audio without exposing the text in the URL", async () => {
+  it("clears session and invokes unauthorizedHandler when token authentication fails and refresh is rejected", async () => {
+    setAccessToken("stale-session-token");
+    const mockUnauthorized = jest.fn();
+    configureApiClient({ onUnauthorized: mockUnauthorized });
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/auth/refresh")) {
+        return jsonResponse(401, { code: "REFRESH_TOKEN_INVALID", detail: "refresh expired" });
+      }
+      return jsonResponse(401, { code: "AUTHENTICATION_FAILED", detail: "expired token" });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/services/food")).rejects.toBeInstanceOf(ApiError);
+    expect(mockUnauthorized).toHaveBeenCalledTimes(1);
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it("paginates the restaurant menu through the Gateway service-actions route", async () => {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      expect(String(input)).toContain("/api/v1/service-actions/food/restaurants/res_pho_hanoi/menu?limit=6&offset=30");
+      return jsonResponse(200, { data: { restaurant: { id: "res_pho_hanoi" }, items: [], total: 136, limit: 6, offset: 30 } });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(getFoodMenu("res_pho_hanoi", { limit: 6, offset: 30 })).resolves.toEqual({
+      restaurant: { id: "res_pho_hanoi" },
+      items: [],
+      total: 136,
+      limit: 6,
+      offset: 30,
+    });
+  });
+
+  it("delivers TTS bytes incrementally without calling arrayBuffer", async () => {
     setAccessToken("access-token");
+    const sourceChunks = [new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5])];
     const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(String(input)).toContain("/api/v1/voice/text-to-speech");
-      expect(String(input)).not.toContain("Xin");
-      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Accept")).toBe("audio/mpeg");
       expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-token");
       expect(JSON.parse(String(init?.body))).toEqual({ text: "Xin chào" });
+      let index = 0;
       return {
         ok: true,
         status: 200,
-        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-      } as Response;
+        body: {
+          getReader: () => ({
+            read: async () => index < sourceChunks.length
+              ? { done: false, value: sourceChunks[index++] }
+              : { done: true, value: undefined },
+            cancel: async () => undefined,
+            releaseLock: () => undefined,
+          }),
+        },
+        arrayBuffer: jest.fn(() => {
+          throw new Error("buffering is not allowed");
+        }),
+      } as unknown as Response;
     });
     Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
 
-    await expect(synthesizeVoice("  Xin chào  ")).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
+    const received: number[][] = [];
+    const firstChunkFlags: boolean[] = [];
+    await streamVoice("  Xin chào  ", (chunk, isFirstChunk) => {
+      received.push(Array.from(chunk));
+      firstChunkFlags.push(isFirstChunk);
+    });
+
+    expect(received).toEqual([[1, 2], [3], [4, 5]]);
+    expect(firstChunkFlags).toEqual([true, false, false]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not buffer an empty or whitespace-only TTS request", async () => {
+    const fetchMock = jest.fn();
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(streamVoice("   ", jest.fn())).rejects.toMatchObject({ code: "TEXT_REQUIRED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("rethrows a raw AbortError when the caller aborts, unlike the internal timeout", async () => {
+    const controller = new AbortController();
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal;
+      await new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const pending = request("/api/v1/assistant/chat", { method: "POST" }, { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(isAbortError(new DOMException("Aborted", "AbortError"))).toBe(true);
+    expect(isAbortError(new Error("plain failure"))).toBe(false);
+  });
+
+  it("maps the internal timeout to a retryable REQUEST_TIMEOUT ApiError", async () => {
+    const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal as AbortSignal;
+      await new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(request("/api/v1/assistant/chat", { method: "POST" }, { timeoutMs: 5 })).rejects.toMatchObject({ code: "REQUEST_TIMEOUT", retryable: true });
   });
 });

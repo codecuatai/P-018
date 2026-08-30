@@ -452,6 +452,10 @@ jobs:
               sh scripts/database/migrate.sh .env
               docker compose --env-file .env up -d --remove-orphans
 
+              echo "Applying idempotent development seed data..."
+              sh scripts/database/seed.sh .env
+              sh scripts/database/verify-seed-data.sh .env
+
               echo "Verifying container status..."
               sleep 5
               docker compose --env-file .env ps

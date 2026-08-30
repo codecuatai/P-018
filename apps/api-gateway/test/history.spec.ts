@@ -25,6 +25,26 @@ describe('history active semantics', () => {
 });
 
 describe('active history', () => {
+  it('uses bounded domain reads and pages a stable >40-record aggregate without duplicate or skip', async () => {
+    const orders = Array.from({ length: 45 }, (_, index) => ({ id: `food-${index}`, status: 'DELIVERED', updated_at: `2099-01-${String(1 + Math.floor(index / 3)).padStart(2, '0')}T10:${String(index % 3).padStart(2, '0')}:00Z` }));
+    const food = { listOrders: jest.fn().mockResolvedValue({ items: orders }) };
+    const ride = { listBookings: jest.fn().mockResolvedValue({ items: [] }) };
+    const restaurant = { listReservations: jest.fn().mockResolvedValue({ items: [] }) };
+    const healthcare = { listAppointments: jest.fn().mockResolvedValue({ items: [] }) };
+    const service = new HistoryService(food as never, ride as never, restaurant as never, healthcare as never, {} as never);
+    const pages = await Promise.all([1, 2, 3].map(async (page) => { const query = new HistoryQueryDto(); query.page = page; query.page_size = 20; return service.list('actor-1', 'cor-history', query); }));
+    const ids = pages.flatMap((page) => page.items.map((item) => item.id));
+
+    expect(ids).toHaveLength(45);
+    expect(new Set(ids).size).toBe(45);
+    expect(pages[0].total).toBe(45);
+    expect(pages[2].has_more).toBe(false);
+    expect(food.listOrders).toHaveBeenCalledWith('cor-history', 'actor-1', 50, 750);
+    expect(ride.listBookings).toHaveBeenCalledWith('actor-1', { correlationId: 'cor-history' }, 50, 750);
+    expect(restaurant.listReservations).toHaveBeenCalledWith('actor-1', 'cor-history', 50, 750);
+    expect(healthcare.listAppointments).toHaveBeenCalledWith('actor-1', 'cor-history', 50, 750);
+  });
+
   it('returns only non-terminal resources with renderable summaries', async () => {
     const food = { listOrders: jest.fn().mockResolvedValue({ items: [
       { id: 'food-active', status: 'DELIVERING', restaurant_name: 'Quán Phở', items: [{ name: 'Phở bò' }], total: { amount: 65000, currency: 'VND' }, updated_at: '2099-01-02T10:00:00Z' },

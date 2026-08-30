@@ -23,10 +23,10 @@
   },
   "devDependencies": {
     "@nestjs/testing": "^11.0.1",
-    "@types/multer": "^2.2.0",
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.14",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.10.2",
     "@types/pg": "8.10.9",
     "@types/supertest": "^6.0.2",

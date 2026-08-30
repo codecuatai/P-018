@@ -7,7 +7,7 @@ import { isEmail } from 'class-validator';
 import { CoreStore } from '../core/core.module';
 import { issueAccessToken, verifyAccessToken } from './auth.token';
 import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
-import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
+import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, AuthUserStatus, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -335,6 +335,14 @@ export class AuthService {
 
   async listUsers(page = 1, pageSize = 50): Promise<{ items: AdminUserSummary[]; total: number }> {
     return this.store.listUsers(page, pageSize);
+  }
+
+  async updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> {
+    const updated = await this.store.updateUserStatus(id, status);
+    if (status === 'disabled') {
+      await this.store.revokeAllUserSessions(id, 'ADMIN_DISBANDED', new Date().toISOString());
+    }
+    return updated;
   }
 
   async updateProfile(user: AuthUser, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthUser> {

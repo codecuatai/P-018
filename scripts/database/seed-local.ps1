@@ -27,8 +27,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Restaurant catalog import failed." }
     & python (Join-Path $repoRoot "scripts\data\catalog\catalog_import.py") healthcare --apply
     if ($LASTEXITCODE -ne 0) { throw "Healthcare catalog import failed." }
+    Invoke-LocalPython -Kind "healthcare" -DatabaseKey "HEALTHCARE_DATABASE_URL" -WorkingDirectory "services\healthcare-service" -Arguments @("-m", "seeds.seed_demo_patient")
     Invoke-LocalPython -Kind "restaurant" -DatabaseKey "RESTAURANT_DATABASE_URL" -WorkingDirectory "services\restaurant-service" -Arguments @("-m", "seeds.seed")
-    Write-Host "Local discovery catalogs imported into PostgreSQL without fixed Food, Restaurant, Healthcare, or Ride demo records."
+    Invoke-LocalPython -Kind "ride" -DatabaseKey "RIDE_DATABASE_URL" -WorkingDirectory "services\ride-service" -Arguments @("-m", "seeds.seed_demo_drivers")
+    Write-Host "Local Food, Restaurant, Healthcare, and Ride development data applied to PostgreSQL."
 } finally {
     Pop-Location
 }
