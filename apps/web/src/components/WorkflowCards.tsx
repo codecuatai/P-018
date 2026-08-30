@@ -24,7 +24,7 @@ export type FoodSelection = {
 type FoodSelectionChangeHandler = (selection: FoodSelection) => void;
 
 export function AssistantCards({ response, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { response: AssistantResponse; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
-  const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
+  const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "restaurant_update", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
     {(response.completed ?? []).map((item, index) => <AssistantCard key={`completed-${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
@@ -37,7 +37,9 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
     case "restaurant_options":
     case "restaurant_unavailable": {
       const restaurantOptions = item.options ?? [];
-      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, "Chọn nhà hàng")} summary={restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."}>
+      const isUnavailable = item.kind === "restaurant_unavailable";
+      const selectedName = text(item.restaurant?.name, "Quán đã chọn");
+      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, isUnavailable ? "Quán đã chọn chưa còn bàn" : "Chọn nhà hàng")} summary={isUnavailable ? selectedName : restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."}>
         <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
@@ -51,7 +53,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
     case "ride_quote":
     case "ride_booking": {
       const rideSummary = [text(item.pickup), text(item.dropoff)].filter(Boolean).join(" → ");
-      return <CollapsibleAgentCard label="Chuyến xe" title={text(item.title, "Chuyến xe")} status={item.status ? statusLabel(item.status) : undefined} summary={rideSummary || "Đang cập nhật hành trình"}>
+      return <CollapsibleAgentCard label="Chuyến xe" title="Chuyến xe" status={item.status ? statusLabel(item.status) : undefined} summary={rideSummary || "Đang cập nhật hành trình"}>
         <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
@@ -106,17 +108,20 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
   });
   const [detail, setDetail] = useState<AssistantOption | null>(null);
   const [page, setPage] = useState(1);
+  const [showAll, setShowAll] = useState(false);
   const pageSize = 4;
   const allOptions = item.options ?? [];
   const totalPages = Math.max(1, Math.ceil(allOptions.length / pageSize));
   const paginatedOptions = allOptions
     .map((option, originalIndex) => ({ option, originalIndex }))
     .slice((page - 1) * pageSize, page * pageSize);
+  const visibleOptions = showAll ? allOptions.map((option, originalIndex) => ({ option, originalIndex })) : paginatedOptions;
 
   return <><article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Nhà hàng" title={item.title} />
+    {item.kind === "restaurant_unavailable" && item.restaurant ? <section className="restaurant-unavailable-context" aria-label="Nhà hàng đã kiểm tra"><span>Đã kiểm tra</span><strong>{text(item.restaurant.name, "Nhà hàng đã chọn")}</strong><small>{text(item.restaurant.address ?? item.restaurant.location, "Địa điểm đang được cập nhật")}</small></section> : null}
     {allOptions.length ? <>
       <div className="option-list">
-        {paginatedOptions.map(({ option, originalIndex }) => <div className="option-row" key={`${String(option.name)}-${originalIndex}`}>
+        {visibleOptions.map(({ option, originalIndex }) => <div className="option-row" key={`${String(option.name)}-${originalIndex}`}>
           <OptionImage source={option.image_url} alt={optionalText(option.name, "Nhà hàng")} compact />
           <div>
             <strong>{text(option.name, "Nhà hàng")}</strong>
@@ -158,6 +163,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
           </div>
         </div>
       ) : null}
+      <DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={allOptions.length} />
     </> : <p className="card-note">Mình đang cập nhật thêm lựa chọn cho bạn.</p>}
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
   </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="restaurant" option={detail} primaryAction={actionForRestaurantOption(detail, allOptions, rawSelectionActions, disabledActionId, onAction, setDetail)} /></>;
@@ -165,9 +171,10 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
 
 function RestaurantConfirmation({ item, actions, onAction, disabledActionId }: { item: AssistantRestaurantConfirmationItem; actions: AssistantAction[]; onAction: (action: AssistantAction) => void; disabledActionId?: string }) {
   const [confirmed, setConfirmed] = useState(false);
-  const action = actions.find((candidate) => candidate.kind === "restaurant_confirm");
+  const isUpdate = item.operation === "UPDATE";
+  const action = actions.find((candidate) => candidate.kind === (isUpdate ? "restaurant_update" : "restaurant_confirm"));
   const isCanceled = item.status === "FAILED" || item.status === "DISCARDED" || item.status === "CANCELLED";
-  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} /><Detail label="Thời gian" value={formatDateTime(item.start_at)} /><Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action && !isCanceled ? <section className="restaurant-confirmation-form" aria-label="Xác nhận đặt bàn"><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>Tôi xác nhận thông tin đặt bàn ở trên.</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> Xác nhận đặt bàn</button></section> : null}</article>;
+  return <article className="assistant-card card-restaurant"><CardHeading icon={<CalendarDays size={17} />} label="Đặt bàn" title={item.title} /><div className="detail-list"><Detail label="Nhà hàng" value={text(item.restaurant?.name, "Nhà hàng đã chọn")} /><Detail label="Địa điểm" value={text(item.restaurant?.location, "Đang cập nhật")} />{isUpdate ? <Detail label="Giờ hiện tại" value={formatDateTime(item.previous_start_at)} /> : null}<Detail label={isUpdate ? "Giờ mới" : "Thời gian"} value={formatDateTime(item.start_at)} />{isUpdate && item.previous_party_size ? <Detail label="Số khách hiện tại" value={`${String(item.previous_party_size)} người`} /> : null}<Detail label="Số khách" value={item.party_size ? `${String(item.party_size)} người` : "Theo yêu cầu"} /><Detail label="Trạng thái" value={statusLabel(item.status)} /></div>{item.note ? <p className="card-note">{text(item.note)}</p> : null}{action && !isCanceled ? <section className="restaurant-confirmation-form" aria-label={isUpdate ? "Xác nhận đổi giờ đặt bàn" : "Xác nhận đặt bàn"}><label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> <span>{isUpdate ? "Tôi xác nhận thay đổi đặt bàn ở trên." : "Tôi xác nhận thông tin đặt bàn ở trên."}</span></label><button className="card-action" type="button" onClick={() => onAction(action)} disabled={!confirmed || Boolean(disabledActionId)}><ShieldCheck size={15} /> {isUpdate ? "Xác nhận đổi giờ" : "Xác nhận đặt bàn"}</button></section> : null}</article>;
 }
 
 function RideCard({ item, children, actions, onAction, disabledActionId }: { item: AssistantRideItem; children?: ReactNode; actions?: AssistantAction[]; onAction?: ActionHandler; disabledActionId?: string }) {
@@ -208,6 +215,16 @@ function RideCard({ item, children, actions, onAction, disabledActionId }: { ite
             </div>
           </div>
           <div className="route-connector" />
+          {item.stopovers?.map((stop, index) => <div key={`${stop.address}-${index}`} className="route-stopover-group">
+            <div className="route-stop stopover-stop">
+              <span className="route-dot stopover-dot" />
+              <div className="route-stop-copy">
+                <span className="route-stop-label">ĐIỂM DỪNG {index + 1}</span>
+                <strong className="route-stop-address">{text(stop.address, "Điểm dừng chưa rõ")}</strong>
+              </div>
+            </div>
+            <div className="route-connector" />
+          </div>)}
           <div className="route-stop dropoff-stop">
             <span className="route-dot dropoff-dot" />
             <div className="route-stop-copy">
@@ -280,14 +297,17 @@ function HealthcareCard({ item, actions, onAction, disabledActionId }: { item: A
   const selectionActions = actions.filter((action) => action.kind === "select_healthcare_slot");
   const [detail, setDetail] = useState<AssistantOption | null>(null);
   const [selectedSlots, setSelectedSlots] = useState<Record<string, number>>({});
+  const [showAll, setShowAll] = useState(false);
   const groups = groupHealthcareOptions(item.options ?? []);
+  const visibleGroups = showAll ? groups : groups.slice(0, 4);
   return <><article className="assistant-card card-healthcare"><CardHeading icon={<Stethoscope size={17} />} label="Lịch khám" title={item.title} />
-    {groups.length ? <div className="healthcare-doctor-groups">{groups.map((group) => {
+    {groups.length ? <div className="healthcare-doctor-groups">{visibleGroups.map((group) => {
       const selectedIndex = selectedSlots[group.key] ?? group.options[0]?.index;
       const selected = group.options.find((candidate) => candidate.index === selectedIndex);
       const action = selectedIndex === undefined ? undefined : healthcareSelectionAction(selectionActions, selectedIndex);
       return <section className="healthcare-doctor-group" key={group.key}><div className="healthcare-doctor-heading"><div><strong>{group.doctor}</strong><span>{text(group.facility, "Cơ sở đang cập nhật")} · {text(group.department, "Khoa khám")}</span></div><small>{group.options.length} khung giờ</small></div><label className="healthcare-slot-select">Khung giờ<select aria-label={"Khung giờ của " + group.doctor} value={selectedIndex ?? ""} onChange={(event) => setSelectedSlots((current) => ({ ...current, [group.key]: Number(event.target.value) }))}>{group.options.map((candidate) => <option value={candidate.index} key={candidate.index}>{formatDateTime(candidate.option.start_time)}{candidate.option.price !== undefined ? " · " + formatMoney(candidate.option.price, "VND") : ""}</option>)}</select></label>{selected ? <div className="healthcare-slot-detail"><span>{formatDateTime(selected.option.start_time)}{selected.option.price !== undefined ? " · " + formatMoney(selected.option.price, "VND") : ""}</span><div className="option-actions">{action ? <button className="small-action" type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}>Chọn lịch</button> : null}<button className="small-action" type="button" onClick={() => setDetail(selected.option)}>Xem chi tiết</button></div></div> : null}</section>;
-    })}</div> : item.departments?.length ? <div className="option-list">{item.departments.map((department, index) => <div className="option-row" key={String(department.name) + "-" + index}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhấn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
+    })}</div> : item.departments?.length ? <div className="option-list">{(showAll ? item.departments : item.departments.slice(0, 4)).map((department, index) => <div className="option-row" key={String(department.name) + "-" + index}><div><strong>{text(department.name, "Khoa khám")}</strong><span>{text(department.description, "Hãy nhấn tên khoa để xem lịch trống.")}</span></div></div>)}</div> : <p className="card-note">Mình đang cập nhật lịch khám phù hợp.</p>}
+    <DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={Math.max(groups.length, item.departments?.length ?? 0)} />
     {item.note ? <p className="card-note">{text(item.note)}</p> : null}
   </article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="healthcare" option={detail} primaryAction={actionForHealthcareOption(detail, groups, selectionActions, disabledActionId, onAction, setDetail)} /></>;
 }
@@ -315,15 +335,19 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
     : rawSelectionActions;
   const confirmationAction = actions.find((action) => action.kind === "food_confirm");
   const paymentAction = actions.find((action) => action.kind === "food_payment");
+  const checkoutAction = actions.find((action) => action.kind === "food_checkout");
   const [detail, setDetail] = useState<AssistantOption | null>(null);
+  const [trackingOpen, setTrackingOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
+  const [showAll, setShowAll] = useState(false);
   const pageSize = 4;
   const allOptions = item.options ?? [];
   const totalPages = Math.max(1, Math.ceil(allOptions.length / pageSize));
   const paginatedOptions = allOptions
     .map((option, originalIndex) => ({ option, originalIndex }))
     .slice((page - 1) * pageSize, page * pageSize);
+  const visibleOptions = showAll ? allOptions.map((option, originalIndex) => ({ option, originalIndex })) : paginatedOptions;
 
   const updateQuantity = (key: string, action: AssistantAction | undefined, quantity: number, commit: boolean): void => {
     const next = Math.max(0, Math.min(50, Number.isFinite(quantity) ? Math.trunc(quantity) : 0));
@@ -333,7 +357,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
     void commit;
   };
   const orderId = item.order?.id;
-  return <><article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{allOptions.length ? <><div className="food-option-list">{paginatedOptions.map(({ option, originalIndex }) => {
+  return <><article className="assistant-card card-food"><CardHeading icon={<Utensils size={17} />} label="Đồ ăn" title={item.title} />{allOptions.length ? <><div className="food-option-list">{visibleOptions.map(({ option, originalIndex }) => {
     const key = `${String(option.name ?? option.title ?? originalIndex)}-${originalIndex}`;
     const action = selectionActions[originalIndex];
     const quantity = foodSelections?.[action?.id ?? ""]?.quantity ?? quantities[key] ?? 0;
@@ -379,7 +403,12 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
         </button>
       </div>
     </div>
-  ) : null}</> : item.kind === "food_cart" ? <p className="card-note" role="status">Giỏ hàng đã được cập nhật ở khu vực bên trên ô chat.</p> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{item.kind === "food_confirmation" ? <FoodConfirmation item={item} confirmationAction={confirmationAction} paymentAction={paymentAction} onAction={onAction} disabledActionId={disabledActionId} /> : null}{item.order ? <><div className="metric-row"><Metric label="Đơn hàng" value="Đã tiếp nhận" /><Metric label="Trạng thái" value={statusLabel(item.order.status)} /></div>{orderId ? <FoodTrackingPanel orderId={orderId} /> : null}</> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận." : "")}</p> : null}</article><ServiceDetailDialog open={Boolean(detail)} onOpenChange={(open) => { if (!open) setDetail(null); }} kind="food" option={detail} /></>;
+  ) : null}<DisclosureToggle expanded={showAll} onToggle={() => setShowAll((value) => !value)} count={allOptions.length} /></> : item.kind === "food_cart" ? <FoodCartSummary cart={item.cart} checkoutAction={checkoutAction} onAction={onAction} disabledActionId={disabledActionId} /> : <p className="card-note">Mình đang lấy danh sách món ăn phù hợp.</p>}{item.kind === "food_confirmation" ? <FoodConfirmation item={item} confirmationAction={confirmationAction} paymentAction={paymentAction} onAction={onAction} disabledActionId={disabledActionId} /> : null}{item.order ? <><div className="metric-row"><Metric label="Đơn hàng" value="Đã tiếp nhận" /><Metric label="Trạng thái" value={statusLabel(item.order.status)} /></div>{orderId ? <><button className="ride-action-map" type="button" onClick={() => setTrackingOpen(true)}>Xem bản đồ và hành trình</button><FoodTrackingPanel orderId={orderId} hideMap /></> : null}</> : null}{item.note || item.payment ? <p className="card-note"><CircleDollarSign size={14} /> {text(item.note, item.payment ? "Thanh toán đã được ghi nhận." : "")}</p> : null}</article><ServiceDetailDialog open={Boolean(detail) || trackingOpen} onOpenChange={(open) => { if (!open) { setDetail(null); setTrackingOpen(false); } }} kind="food" option={detail} foodOrderId={trackingOpen ? orderId : undefined} /></>;
+}
+
+function FoodCartSummary({ cart, checkoutAction, onAction, disabledActionId }: { cart?: AssistantFoodItem["cart"]; checkoutAction?: AssistantAction; onAction: ActionHandler; disabledActionId?: string }) {
+  const items = cart?.items ?? [];
+  return <section className="food-cart-summary" aria-label="Xem lại giỏ hàng"><strong>Giỏ hàng</strong>{items.length ? <ul>{items.map((entry, index) => <li key={`${text(entry.name, "món")}-${index}`}><span>{text(entry.name, "Món ăn")} × {entry.quantity ?? 1}</span><b>{formatMoney((entry.unit_price ?? entry.price ?? 0) * (entry.quantity ?? 1), entry.currency ?? "VND")}</b></li>)}</ul> : <p className="card-note">Chưa có món trong giỏ.</p>}{checkoutAction ? <button className="card-action food-checkout-action" type="button" onClick={() => onAction(checkoutAction)} disabled={Boolean(disabledActionId) || !items.length}><CircleDollarSign size={15} /> Tiếp tục đặt món</button> : null}</section>;
 }
 
 function FoodConfirmation({ item, confirmationAction, paymentAction, onAction, disabledActionId }: { item: AssistantFoodItem; confirmationAction?: AssistantAction; paymentAction?: AssistantAction; onAction: ActionHandler; disabledActionId?: string }) {
@@ -413,6 +442,11 @@ export function FoodCartDock({ total, onConfirm, disabled }: { total: number; on
       <button className="card-action" type="button" onClick={onConfirm} disabled={Boolean(disabled) || total <= 0}><CircleDollarSign size={15} /> Xác nhận</button>
     </div>
   </section>;
+}
+
+function DisclosureToggle({ expanded, onToggle, count }: { expanded: boolean; onToggle: () => void; count: number }) {
+  if (count <= 4) return null;
+  return <button className="small-action card-disclosure" type="button" aria-expanded={expanded} aria-label={expanded ? "Thu gọn danh sách" : undefined} onClick={onToggle}>{expanded ? "Thu gọn" : "Hiện tất cả"}</button>;
 }
 
 function RideLiveStatus({ tracking }: { tracking: import("../types").RideTracking }): ReactNode {

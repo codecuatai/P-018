@@ -20,6 +20,7 @@ async function flushPromises(): Promise<void> {
 describe("RestaurantBrowse real-time search", () => {
   beforeEach(() => {
     jest.useFakeTimers();
+    browseServiceMock.mockReset();
     browseServiceMock.mockResolvedValue({
       items: [{ id: "restaurant-1", name: "Nhà hàng mẫu" }],
       source: "restaurant-service",
@@ -51,7 +52,23 @@ describe("RestaurantBrowse real-time search", () => {
     await flushPromises();
 
     expect(browseServiceMock).toHaveBeenCalledTimes(2);
-    expect(browseServiceMock).toHaveBeenLastCalledWith("restaurant", "Tokachiya Ramen");
+    expect(browseServiceMock).toHaveBeenLastCalledWith("restaurant", "Tokachiya Ramen", { page: 1, limit: 10 });
+  });
+
+  it("loads the next restaurant page from the server instead of slicing the first response", async () => {
+    browseServiceMock
+      .mockResolvedValueOnce({ items: [{ id: "restaurant-1", name: "Nhà hàng 1" }], total: 11, page: 1, total_pages: 2, source: "restaurant-service", partial: false })
+      .mockResolvedValueOnce({ items: [{ id: "restaurant-11", name: "Nhà hàng 11" }], total: 11, page: 2, total_pages: 2, source: "restaurant-service", partial: false });
+
+    render(<ServiceBrowse service="restaurant" />);
+    await flushPromises();
+
+    expect(screen.getByText((_, element) => element?.textContent === "Trang 1 / 2 · (11 nhà hàng)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Trang sau" }));
+    await flushPromises();
+
+    expect(browseServiceMock).toHaveBeenLastCalledWith("restaurant", "", { page: 2, limit: 10 });
+    expect(screen.getByText("Nhà hàng 11")).toBeInTheDocument();
   });
 
   it("shows the requested empty state after a completed search has no matches", async () => {

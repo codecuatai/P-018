@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
+import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, DeviceCurrentLocation, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideStopover, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -386,7 +386,7 @@ export function cancelHealthcareAppointment(appointmentId: number): Promise<Reco
   return request(`/api/v1/service-actions/healthcare/${encodeURIComponent(String(appointmentId))}/cancel`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("healthcare-cancel") });
 }
 
-export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number }): Promise<RideQuote> {
+export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number; stopovers?: RideStopover[] }): Promise<RideQuote> {
   return request("/api/v1/services/ride/quote", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("ride-quote") });
 }
 
@@ -422,8 +422,10 @@ export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<
   return request(`/api/v1/history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function listNotifications(status?: "UNREAD" | "READ"): Promise<{ items: NotificationItem[]; unread_count: number; partial: boolean; unavailable: string[] }> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+export function listNotifications(status?: "UNREAD" | "READ", page = 1, pageSize = 20): Promise<{ items: NotificationItem[]; unread_count: number; total: number; page: number; page_size: number; has_more: boolean; partial: boolean; unavailable: string[] }> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (status) params.set("status", status);
+  const query = `?${params.toString()}`;
   return request(`/api/v1/notifications${query}`, { method: "GET" });
 }
 
@@ -609,8 +611,10 @@ export function getAdminTokenUsage(filters: { from_time?: string; to_time?: stri
   return request(`/api/v1/admin/token-usage${qs ? `?${qs}` : ""}`, { method: "GET" });
 }
 
-export function listConversations(includeArchived = false, signal?: AbortSignal): Promise<{ items: ConversationRecord[] }> {
-  return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" }, { signal });
+export function listConversations(includeArchived = false, signal?: AbortSignal, page = 1, pageSize = 10): Promise<{ items: ConversationRecord[]; total: number; page: number; page_size: number; has_more: boolean }> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (includeArchived) params.set("include_archived", "true");
+  return request(`/api/v1/conversations?${params.toString()}`, { method: "GET" }, { signal });
 }
 
 export function getConversation(id: string): Promise<ConversationRecord> {
@@ -665,17 +669,21 @@ export function resetPassword(token: string, newPassword: string): Promise<{ pas
   return request("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }, { includeAuth: false, retryAuth: false });
 }
 
-export function sendAssistantMessage(message: string, conversationId?: string, signal?: AbortSignal): Promise<AssistantResponse> {
+export function sendAssistantMessage(message: string, conversationId?: string, currentLocation?: DeviceCurrentLocation, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/chat", {
     method: "POST",
-    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}) }),
-  }, { signal });
+    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}), ...(currentLocation ? { current_location: currentLocation } : {}) }),
+  // Assistant planning can include a model planner, domain reads, and a
+  // second composition call. Keep the client deadline above the Gateway's
+  // 62-second upstream budget so a valid multi-service turn is not reported
+  // as a false timeout at 30 seconds.
+  }, { signal, timeoutMs: 90_000 });
 }
 
-export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }, signal?: AbortSignal): Promise<AssistantResponse> {
+export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number; currentLocation?: DeviceCurrentLocation }, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/actions", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}) }),
+    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}), ...(input?.currentLocation ? { current_location: input.currentLocation } : {}) }),
   }, { idempotencyKey, signal });
 }
 
@@ -747,35 +755,61 @@ export async function transcribeVoice(
   }
 }
 
-export async function synthesizeVoice(
+export type VoiceChunkHandler = (chunk: Uint8Array, isFirstChunk: boolean) => void | Promise<void>;
+
+/**
+ * Stream TTS bytes to the browser as they arrive.
+ *
+ * Keeping the reader here (rather than behind `response.arrayBuffer()`) lets
+ * the UI feed a MediaSource incrementally while retaining the same auth,
+ * timeout, cancellation, and retry behavior as the buffered helper below.
+ */
+export async function streamVoice(
   text: string,
+  onChunk: VoiceChunkHandler,
   signal?: AbortSignal,
-  retried = false
-): Promise<ArrayBuffer> {
+  retried = false,
+): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new ApiError({
+      code: 'TEXT_REQUIRED',
+      detail: 'Nội dung đọc không được để trống.',
+      status: 400,
+      retryable: false,
+    });
+  }
+
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
   const abortListener = () => controller.abort();
+  if (signal?.aborted) controller.abort();
   signal?.addEventListener('abort', abortListener, { once: true });
 
+  const correlationId = createRequestId('cor');
   const headers = new Headers();
+  headers.set('Accept', 'audio/mpeg');
   headers.set('Content-Type', 'application/json');
-  headers.set('X-Correlation-Id', createRequestId('cor'));
+  headers.set('X-Correlation-Id', correlationId);
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/voice/text-to-speech`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text: trimmed }),
       signal: controller.signal,
       credentials: 'include',
     });
 
     if (!response.ok) {
       if (response.status === 401 && !retried) {
-        const refreshed = await refreshAccessToken();
-        if (refreshed) {
-          return synthesizeVoice(text, signal, true);
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === 'authenticated' && refreshed.token) {
+          return streamVoice(trimmed, onChunk, signal, true);
+        }
+        if (refreshed.outcome === 'transient') {
+          throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
         }
       }
       if (response.status === 401) {
@@ -787,25 +821,89 @@ export async function synthesizeVoice(
       throw new ApiError(problem);
     }
 
-    return await response.arrayBuffer();
+    if (!response.body) {
+      throw new ApiError({
+        code: 'TTS_EMPTY_BODY',
+        detail: 'Dịch vụ đọc văn bản không trả về dữ liệu âm thanh.',
+        status: 502,
+        retryable: true,
+      });
+    }
+
+    const reader = response.body.getReader();
+    let isFirstChunk = true;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.byteLength === 0) continue;
+        await onChunk(value, isFirstChunk);
+        isFirstChunk = false;
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (isFirstChunk) {
+      throw new ApiError({
+        code: 'TTS_EMPTY_BODY',
+        detail: 'Dịch vụ đọc văn bản không trả về dữ liệu âm thanh.',
+        status: 502,
+        retryable: true,
+      });
+    }
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (isAbortError(error)) {
+      // A caller-supplied abort is an intentional stop. Only the internal
+      // deadline is surfaced as a retryable timeout for the UI.
+      if (signal?.aborted) throw error;
       throw new ApiError({
         code: 'REQUEST_TIMEOUT',
         detail: 'Đọc văn bản hơi chậm. Bạn thử lại nhé.',
-        status: 408, retryable: true,
+        status: 408,
+        retryable: true,
       });
     }
     throw new ApiError({
       code: 'SERVICE_UNAVAILABLE',
       detail: 'Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau.',
-      status: 0, retryable: true,
+      status: 0,
+      retryable: true,
     });
   } finally {
     globalThis.clearTimeout(timeout);
     signal?.removeEventListener('abort', abortListener);
   }
+}
+
+/**
+ * Compatibility helper for callers that still need one complete MP3 buffer.
+ * The interactive player uses `streamVoice` directly so normal playback does
+ * not wait for the complete response before creating audio.
+ */
+export async function synthesizeVoice(
+  text: string,
+  signal?: AbortSignal,
+  retried = false,
+): Promise<ArrayBuffer> {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  await streamVoice(text, (chunk) => {
+    chunks.push(chunk);
+    totalBytes += chunk.byteLength;
+  }, signal, retried);
+
+  const audio = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return audio.buffer;
 }
 
 export function errorText(error: unknown): string {

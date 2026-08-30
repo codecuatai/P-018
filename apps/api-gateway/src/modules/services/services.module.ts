@@ -1,5 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Headers, Injectable, Module, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested, ArrayMaxSize } from 'class-validator';
+import { createHash } from 'crypto';
+import { Type } from 'class-transformer';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
@@ -13,6 +15,23 @@ import { RideActionsController } from './ride-actions.controller';
 import { LocationService } from '../personal/personal.module';
 
 export type ServiceKey = 'food' | 'ride' | 'restaurant' | 'healthcare';
+
+class RideStopoverDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(300)
+  address!: string;
+
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
+}
 
 class RideQuoteDto {
   @IsString()
@@ -56,6 +75,12 @@ class RideQuoteDto {
   @Min(-180)
   @Max(180)
   dropoff_longitude?: number;
+
+  @IsOptional()
+  @ArrayMaxSize(2)
+  @ValidateNested({ each: true })
+  @Type(() => RideStopoverDto)
+  stopovers?: RideStopoverDto[];
 }
 
 const catalog = [
@@ -186,8 +211,28 @@ export class ServiceHubService {
   async quoteRide(actorId: string, idempotencyKey: string, correlationId: string, body: RideQuoteDto): Promise<unknown> {
     const pickup = await this.resolveAddress(body.pickup_address, body.pickup_latitude, body.pickup_longitude);
     const dropoff = await this.resolveAddress(body.dropoff_address, body.dropoff_latitude, body.dropoff_longitude);
-    const route = await this.locations.route(pickup.coordinate, dropoff.coordinate);
-    if (route.status !== 'RESOLVED' || route.provider !== 'geoapify' || !route.route_geometry?.length) throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+    const stopovers = (body.stopovers ?? []).map((stopover) => ({ address: stopover.address.trim(), coordinate: { latitude: stopover.latitude, longitude: stopover.longitude } }));
+    const points = [pickup, ...stopovers, dropoff];
+    const segments = await Promise.all(points.slice(0, -1).map((origin, index) => this.locations.route(origin.coordinate, points[index + 1].coordinate)));
+    if (segments.some((route) => (
+      route.status !== 'RESOLVED'
+      || route.provider !== 'geoapify'
+      || !route.route_distance_meters
+      || route.route_distance_meters <= 0
+      || !route.route_duration_seconds
+      || route.route_duration_seconds <= 0
+      || !route.route_geometry
+      || route.route_geometry.length < 2
+    ))) throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
+    const primaryRoute = segments[0];
+    if (!primaryRoute) throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hành trình chưa có đủ chặng đường để báo giá.', retryable: true });
+    const routeGeometry = segments.flatMap((route, index) => index ? route.route_geometry!.slice(1) : route.route_geometry!);
+    const routeDistanceMeters = segments.reduce((total, route) => total + (route.route_distance_meters ?? 0), 0);
+    const routeDurationSeconds = segments.reduce((total, route) => total + (route.route_duration_seconds ?? 0), 0);
+    const routeProvider = segments.every((route) => route.provider === primaryRoute.provider) ? primaryRoute.provider : 'composed-route';
+    const routeSnapshotHash = stopovers.length
+      ? createHash('sha256').update(JSON.stringify({ pickup: pickup.coordinate, stopovers: stopovers.map((stopover) => stopover.coordinate), dropoff: dropoff.coordinate, routeDistanceMeters, routeDurationSeconds, routeProvider })).digest('hex')
+      : primaryRoute.route_snapshot_hash;
     return this.ride.createQuote(actorId, idempotencyKey, { correlationId, workflowId: `web-ride-${idempotencyKey}` }, {
       pickup_address: pickup.address,
       dropoff_address: dropoff.address,
@@ -197,11 +242,12 @@ export class ServiceHubService {
       pickup_longitude: pickup.coordinate.longitude,
       dropoff_latitude: dropoff.coordinate.latitude,
       dropoff_longitude: dropoff.coordinate.longitude,
-      route_provider: route.provider,
-      route_distance_meters: route.route_distance_meters,
-      route_duration_seconds: route.route_duration_seconds,
-      route_geometry: route.route_geometry,
-      route_snapshot_hash: route.route_snapshot_hash,
+      route_provider: routeProvider,
+      route_distance_meters: routeDistanceMeters,
+      route_duration_seconds: routeDurationSeconds,
+      route_geometry: routeGeometry,
+      ...(routeSnapshotHash ? { route_snapshot_hash: routeSnapshotHash } : {}),
+      ...(stopovers.length ? { stopovers: stopovers.map((stopover) => ({ address: stopover.address, ...stopover.coordinate })) } : {}),
     });
   }
 

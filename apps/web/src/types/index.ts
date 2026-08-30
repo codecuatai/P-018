@@ -30,6 +30,15 @@ export interface SavedAddress {
   updated_at: string;
 }
 
+export interface DeviceCurrentLocation {
+  latitude: number;
+  longitude: number;
+  address_text?: string;
+  accuracy_meters?: number;
+  captured_at: string;
+  source: "device";
+}
+
 export interface HealthcarePatient {
   id: number;
   name: string;
@@ -108,6 +117,12 @@ export interface RideTracking {
   updated_at?: string;
 }
 
+export interface RideStopover {
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface RideQuote {
   id: string;
   status: "QUOTE_CREATED" | "AWAITING_CONFIRMATION" | "CONSUMED" | "EXPIRED" | string;
@@ -130,6 +145,8 @@ export interface RideQuote {
   route_duration_seconds?: number | null;
   route_polyline?: string | null;
   route_geometry?: Array<{ latitude: number; longitude: number }> | null;
+  route_snapshot_hash?: string | null;
+  stopovers?: RideStopover[];
 }
 
 export interface FoodTracking {
@@ -465,8 +482,10 @@ export interface AuthSessionSummary {
 export type AssistantActionKind =
   | "select_restaurant"
   | "restaurant_confirm"
+  | "restaurant_update"
   | "ride_service"
   | "ride_payment"
+  | "ride_cancel"
   | "select_healthcare_slot"
   | "healthcare_payment"
   | "healthcare_confirm"
@@ -489,8 +508,10 @@ type AssistantActionOf<K extends AssistantActionKind> = {
 export type AssistantAction =
   | AssistantActionOf<"select_restaurant">
   | AssistantActionOf<"restaurant_confirm">
+  | AssistantActionOf<"restaurant_update">
   | AssistantActionOf<"ride_service">
   | AssistantActionOf<"ride_payment">
+  | AssistantActionOf<"ride_cancel">
   | AssistantActionOf<"select_healthcare_slot">
   | AssistantActionOf<"healthcare_payment">
   | AssistantActionOf<"healthcare_confirm">
@@ -589,6 +610,11 @@ export interface AssistantRestaurantOptionsItem extends AssistantItemBase<"resta
 export interface AssistantRestaurantConfirmationItem extends AssistantItemBase<"restaurant_confirmation" | "reservation"> {
   restaurant?: AssistantRestaurant;
   reservation_code?: string;
+  operation?: "UPDATE";
+  resource_id?: string;
+  previous_start_at?: string;
+  previous_party_size?: number;
+  next_party_size?: number;
   party_size?: number;
   start_at?: string;
   status?: string;
@@ -601,6 +627,7 @@ export interface AssistantRideItem extends AssistantItemBase<"ride_quote" | "rid
   resource_id?: string;
   pickup?: string;
   dropoff?: string;
+  stopovers?: Array<{ address: string; latitude?: number; longitude?: number }>;
   vehicle?: string;
   distance_km?: number;
   amount?: number;

@@ -6,7 +6,7 @@
           {
             "name": "log-prompt",
             "type": "command",
-            "command": "python scripts/log_codex_hook.py",
+            "command": "python scripts/ai-logging/log_codex_hook.py",
             "timeout": 10
           }
         ]
@@ -18,7 +18,7 @@
           {
             "name": "log-stop",
             "type": "command",
-            "command": "python scripts/log_codex_hook.py",
+            "command": "python scripts/ai-logging/log_codex_hook.py",
             "timeout": 10
           }
         ]

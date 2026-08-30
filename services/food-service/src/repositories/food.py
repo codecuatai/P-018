@@ -30,6 +30,10 @@ def _matches_keyword(text: str, keyword: str) -> bool:
     return all(re.search(rf"\b{re.escape(token)}\b", text) for token in keyword.split())
 
 
+def _like_pattern(token: str) -> str:
+    return f"%{token}%"
+
+
 def _search_district(value: object, location_aliases: list[dict]) -> str:
     """Resolve a catalog-managed landmark alias to an administrative area.
 
@@ -869,7 +873,29 @@ class PostgresFoodRepository:
         active_version = await pool.fetchval(
             "SELECT dataset_version FROM catalog_dataset_versions WHERE domain='food' AND is_active=TRUE ORDER BY imported_at DESC, dataset_version DESC LIMIT 1"
         )
-        restaurants = {value["id"]: value for value in await self._records("restaurant")}
+        restaurant_query = (
+            "SELECT id, data->>'name' AS name, data->>'district' AS district, "
+            "data->>'address' AS address, data->>'is_open' AS is_open, "
+            "data->>'rating' AS rating, data->>'review_count' AS review_count "
+            "FROM food_catalog WHERE record_type='restaurant' AND is_active=TRUE"
+        )
+        restaurant_args: list[object] = []
+        if active_version:
+            restaurant_query += " AND dataset_version=$1"
+            restaurant_args.append(active_version)
+        restaurant_rows = await pool.fetch(restaurant_query, *restaurant_args)
+        restaurants = {
+            str(row["id"]): {
+                "id": str(row["id"]),
+                "name": str(row["name"] or ""),
+                "district": str(row["district"] or ""),
+                "address": str(row["address"] or ""),
+                "is_open": str(row["is_open"] or "true").strip().casefold() not in {"false", "0", "no"},
+                "rating": float(row["rating"] or 0),
+                "review_count": int(row["review_count"] or 0),
+            }
+            for row in restaurant_rows
+        }
         result = []
         raw_keyword = str(filters.get("keyword", "")).strip().casefold()
         keyword = _fold_text(raw_keyword)
@@ -877,6 +903,12 @@ class PostgresFoodRepository:
         district = _fold_text(filters.get("district", ""))
         category = _fold_text(filters.get("category", ""))
         restaurant_id = str(filters.get("restaurant_id", ""))
+        start = int(filters.get("offset", 0) or 0)
+        limit = int(filters.get("limit", 12) or 12)
+        # Keep chat search bounded before Python-level relevance checks. The
+        # request still hydrates only the final response window, rather than
+        # decoding an entire active catalog for a 12-item page.
+        candidate_limit = min(1000, max(100, start + (limit * 10)))
         item_keyword_match = False
         primary_item_keyword_match = False
         item_query = (
@@ -889,7 +921,63 @@ class PostgresFoodRepository:
         if active_version:
             item_query += " AND dataset_version=$1"
             item_args.append(active_version)
-        item_query += " ORDER BY id"
+
+        eligible_restaurant_ids = set(restaurants)
+        if restaurant_id:
+            eligible_restaurant_ids.intersection_update({restaurant_id})
+        if district:
+            eligible_restaurant_ids.intersection_update({
+                restaurant_key
+                for restaurant_key, restaurant in restaurants.items()
+                if district in _fold_text(f"{restaurant.get('district', '')} {restaurant.get('address', '')}")
+            })
+        if filters.get("open_only", True):
+            eligible_restaurant_ids.intersection_update({
+                restaurant_key
+                for restaurant_key, restaurant in restaurants.items()
+                if restaurant.get("is_open", True)
+            })
+        if not eligible_restaurant_ids:
+            return []
+        if eligible_restaurant_ids != set(restaurants):
+            item_args.append(sorted(eligible_restaurant_ids))
+            item_query += f" AND data->>'restaurant_id'=ANY(${len(item_args)}::text[])"
+
+        keyword_restaurant_ids: list[str] = []
+        if keyword:
+            for restaurant_key, restaurant in restaurants.items():
+                restaurant_haystack = str(restaurant.get("name", "")).casefold()
+                if preserve_diacritics:
+                    matches = _matches_keyword(restaurant_haystack, raw_keyword)
+                else:
+                    matches = _matches_keyword(_fold_text(restaurant_haystack), keyword)
+                if matches:
+                    keyword_restaurant_ids.append(restaurant_key)
+
+            # This is an intentionally broad, database-side prefilter. It
+            # avoids transferring every menu row over the network while the
+            # Python loop below remains authoritative for word-boundary and
+            # primary-field precedence.
+            tokens = raw_keyword.split() if preserve_diacritics else keyword.split()
+            if tokens and all(re.fullmatch(r"\w+", token, flags=re.UNICODE) for token in tokens):
+                if preserve_diacritics:
+                    item_text_expression = (
+                        "lower(coalesce(data->>'name','') || ' ' || "
+                        "coalesce(data->>'category','') || ' ' || coalesce(data->>'description',''))"
+                    )
+                else:
+                    item_text_expression = "coalesce(search_text, '')"
+                token_conditions: list[str] = []
+                for token in tokens:
+                    item_args.append(_like_pattern(token))
+                    token_conditions.append(f"{item_text_expression} LIKE ${len(item_args)}")
+                keyword_filter = f"({' AND '.join(token_conditions)})"
+                if keyword_restaurant_ids:
+                    item_args.append(keyword_restaurant_ids)
+                    keyword_filter = f"({keyword_filter} OR data->>'restaurant_id'=ANY(${len(item_args)}::text[]))"
+                item_query += f" AND {keyword_filter}"
+        item_args.append(candidate_limit)
+        item_query += f" ORDER BY id LIMIT ${len(item_args)}"
         # Search only the scalar fields needed for matching. Full JSON payloads
         # (images, option groups, descriptions, etc.) are hydrated after the
         # result window is selected, avoiding a 17k-record JSON decode on every
@@ -959,8 +1047,6 @@ class PostgresFoodRepository:
             result = [entry for entry in result if entry["_primary_item_keyword_match"]]
         elif keyword and item_keyword_match:
             result = [entry for entry in result if entry["_item_keyword_match"]]
-        start = int(filters.get("offset", 0) or 0)
-        limit = int(filters.get("limit", 12) or 12)
         result.sort(
             key=lambda value: (
                 -(value["restaurant"].get("rating") or 0),
@@ -982,8 +1068,24 @@ class PostgresFoodRepository:
             full_args.append(active_version)
         rows = await pool.fetch(full_query, *full_args)
         full_items = {str(row["id"]): _safe_catalog_record("menu_item", _json_object(row["data"])) for row in rows}
+        restaurant_ids = [str(entry["restaurant"]["id"]) for entry in window]
+        restaurant_query = (
+            "SELECT id, data FROM food_catalog WHERE record_type='restaurant' AND is_active=TRUE AND id=ANY($1::text[])"
+        )
+        restaurant_args = [restaurant_ids]
+        if active_version:
+            restaurant_query += " AND dataset_version=$2"
+            restaurant_args.append(active_version)
+        restaurant_rows = await pool.fetch(restaurant_query, *restaurant_args)
+        full_restaurants = {
+            str(row["id"]): _safe_catalog_record("restaurant", _json_object(row["data"]))
+            for row in restaurant_rows
+        }
         return [
-            {"item": full_items.get(str(entry["item"]["id"]), entry["item"]), "restaurant": entry["restaurant"]}
+            {
+                "item": full_items.get(str(entry["item"]["id"]), entry["item"]),
+                "restaurant": full_restaurants.get(str(entry["restaurant"]["id"]), entry["restaurant"]),
+            }
             for entry in window
         ]
 

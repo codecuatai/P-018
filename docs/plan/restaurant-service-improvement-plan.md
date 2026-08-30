@@ -326,7 +326,7 @@ alembic downgrade -1
 Run downgrade only for migrations whose rollback is explicitly supported; otherwise run the documented compatibility/rollback check without destructive data loss. At repository level, run:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 git diff --check
 ```

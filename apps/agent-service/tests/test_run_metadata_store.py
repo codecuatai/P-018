@@ -1,7 +1,9 @@
 import asyncio
 from pathlib import Path
 
+import psycopg
 import pytest
+import src.application.run_metadata_store as metadata_module
 from pydantic import ValidationError
 from src.application.run_metadata_store import (
     InMemoryAgentRunMetadataStore,
@@ -90,3 +92,75 @@ def test_agent_source_contains_no_runtime_ddl() -> None:
 @pytest.mark.asyncio
 async def test_memory_persistence_mode_is_ready() -> None:
     assert await persistence_ready() is True
+
+
+class _FakeTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        return False
+
+
+class _FakeCursor:
+    async def fetchone(self):
+        return (1, RunMetadata.model_construct().created_at)
+
+
+class _FakeConnection:
+    def __init__(self, *, fail: bool) -> None:
+        self.fail = fail
+
+    def transaction(self):
+        return _FakeTransaction()
+
+    async def execute(self, _query, _params):
+        if self.fail:
+            raise psycopg.errors.AdminShutdown("connection closed by test")
+        return _FakeCursor()
+
+
+class _FakeConnectionContext:
+    def __init__(self, connection: _FakeConnection) -> None:
+        self.connection = connection
+
+    async def __aenter__(self):
+        return self.connection
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        return False
+
+
+class _FakePool:
+    def __init__(self, *, fail: bool) -> None:
+        self.connection_value = _FakeConnection(fail=fail)
+
+    def connection(self, **_kwargs):
+        return _FakeConnectionContext(self.connection_value)
+
+
+@pytest.mark.asyncio
+async def test_postgres_metadata_reconnects_after_connection_shutdown(monkeypatch) -> None:
+    pools = [_FakePool(fail=True), _FakePool(fail=False)]
+    resets = 0
+
+    async def fake_get_pool():
+        return pools.pop(0)
+
+    async def fake_reset_pool():
+        nonlocal resets
+        resets += 1
+
+    monkeypatch.setattr(metadata_module, "get_async_pool", fake_get_pool)
+    monkeypatch.setattr(metadata_module, "reset_pool", fake_reset_pool)
+
+    metadata = RunMetadata(
+        actor_id="actor-reconnect",
+        workflow_id="workflow-reconnect",
+        run_id="run-reconnect",
+        phase="PLANNED",
+    )
+    result = await metadata_module.PostgresAgentRunMetadataStore().record(metadata)
+
+    assert result.version == 1
+    assert resets == 1

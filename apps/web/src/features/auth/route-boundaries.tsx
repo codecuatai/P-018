@@ -14,10 +14,6 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   useEffect(() => {
-    if (status === "signed-out") {
-      router.replace("/");
-      return;
-    }
     if (status === "unauthenticated") {
       const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}&reason=session_expired` : "/?auth=login&reason=session_expired";
       router.replace(next);
@@ -25,7 +21,6 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   }, [pathname, router, status]);
   if (status === "loading") return <LoadingState>Đang khôi phục phiên…</LoadingState>;
   if (status === "recoverable") return <LoadingState><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></LoadingState>;
-  if (status === "signed-out") return <LoadingState>Đang mở trang chính…</LoadingState>;
   if (status !== "authenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   return <>{children}</>;
 }

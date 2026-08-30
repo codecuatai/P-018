@@ -67,6 +67,23 @@ paths:
       responses:
         '201': {description: Hold created or replayed}
         '409': {description: Conflict}
+  /v1/reservation-holds/{hold_id}/cancel:
+    post:
+      summary: Release an actor-owned active reservation hold
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - name: hold_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Cancelled hold envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '404': {description: Hold not found}
+        '409': {description: Hold is no longer active or idempotency conflict}
   /v1/reservations:
     get:
       summary: List reservations owned by the asserted actor

@@ -10,7 +10,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-
 from _helpers import REPO_ROOT, compose_args, get_cached_token
 
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")

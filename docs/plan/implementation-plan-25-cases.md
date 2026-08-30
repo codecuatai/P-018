@@ -75,7 +75,7 @@ Kết quả test trong lần đánh giá này:
 - Agent `/ride-chat` targeted API tests: `2 passed`.
 - Gateway targeted Ride/tool tests: `12 passed` trong 4 suites.
 - Gateway TypeScript: `tsc --noEmit` pass.
-- Environment mapping: `python scripts/validate-env-config.py` pass (`114` root variables,
+- Environment mapping: `python scripts/quality/validate-env-config.py` pass (`114` root variables,
   `104` Compose variables).
 - Compose rendering: `docker compose --env-file .env.example config --quiet` exit code `0`;
   Docker CLI chỉ cảnh báo không đọc được user-level `config.json` trong sandbox.
@@ -1631,7 +1631,7 @@ Mỗi case khi hoàn thành phải có:
 - [ ] OpenAPI contract updated, backward compatible
 - [ ] Gateway typed client updated
 - [ ] E2E test qua Gateway
-- [ ] `python scripts/validate-env-config.py` pass
+- [ ] `python scripts/quality/validate-env-config.py` pass
 - [ ] `docker compose --env-file .env.example config --quiet` pass
 - [ ] Documentation updated (api-inventory, service-boundaries, data-architecture, workflows)
 - [ ] `git diff --check` clean

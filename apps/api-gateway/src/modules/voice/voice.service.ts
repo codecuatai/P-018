@@ -1,5 +1,7 @@
 import { BadGatewayException, Injectable, PayloadTooLargeException, UnsupportedMediaTypeException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { TranscribeResponseDto, UploadedAudioFile } from './voice.dto';
 
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024; // 10 MiB
@@ -75,7 +77,7 @@ export class VoiceService {
     }
   }
 
-  async textToSpeech(text: string, correlationId: string, actorId: string): Promise<Buffer> {
+  async textToSpeech(text: string, correlationId: string, actorId: string): Promise<Readable> {
     const trimmed = (text || '').trim();
     if (!trimmed) {
       throw new BadRequestException({ code: 'TEXT_REQUIRED', detail: 'Text is required.' });
@@ -87,6 +89,7 @@ export class VoiceService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
 
+    let audioStream: Readable | undefined;
     try {
       const response = await fetch(`${this.agentUrl}/api/v1/voice/text-to-speech`, {
         method: 'POST',
@@ -108,8 +111,16 @@ export class VoiceService {
         });
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      return Buffer.from(arrayBuffer);
+      if (!response.body) {
+        throw new BadGatewayException({ code: 'TTS_EMPTY_BODY', detail: 'Agent service returned an empty audio stream.' });
+      }
+
+      audioStream = Readable.fromWeb(response.body as unknown as NodeReadableStream);
+      const clearStreamTimeout = () => clearTimeout(timeout);
+      audioStream.once('end', clearStreamTimeout);
+      audioStream.once('error', clearStreamTimeout);
+      audioStream.once('close', clearStreamTimeout);
+      return audioStream;
     } catch (error) {
       this.logger.error(`TTS request failed: ${error}`);
       if (error instanceof BadGatewayException || error instanceof BadRequestException) {
@@ -120,7 +131,7 @@ export class VoiceService {
         detail: 'Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau nhé.',
       });
     } finally {
-      clearTimeout(timeout);
+      if (!audioStream) clearTimeout(timeout);
     }
   }
 }

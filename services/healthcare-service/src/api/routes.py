@@ -6,7 +6,7 @@ import unicodedata
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.orm import Session
@@ -615,22 +615,57 @@ def get_doctors_by_department(
         _commit_reconciliation(db, expired_appointment_ids)
         raise HTTPException(status_code=404, detail={"code": "DEPARTMENT_NOT_FOUND", "detail": "Department was not found."})
 
+    department_by_id = {department.id: department for department in department_records}
+    doctor_query = db.query(Doctor).filter(
+        Doctor.department_id.in_(department_by_id),
+        Doctor.is_active.is_(True),
+    )
+    if active_version:
+        doctor_query = doctor_query.filter(Doctor.dataset_version == active_version)
+    # Fetch the selected departments' doctors once. The facility equality is
+    # retained as a Python guard because it is a per-department pair, while
+    # the old implementation issued a separate query for every department.
+    doctors_by_department: dict[int, list[Doctor]] = {department_id: [] for department_id in department_by_id}
+    for doctor in doctor_query.order_by(Doctor.name).all():
+        department_record = department_by_id.get(doctor.department_id)
+        if department_record is not None and doctor.facility_source_id == department_record.facility_source_id:
+            doctors_by_department[doctor.department_id].append(doctor)
+
+    selected_doctors = [
+        doctor
+        for department_record in department_records
+        for doctor in doctors_by_department[department_record.id]
+    ]
+    slots_by_doctor: dict[int, list[TimeSlot]] = {doctor.id: [] for doctor in selected_doctors}
+    if slots_by_doctor:
+        available_slots = (
+            db.query(TimeSlot)
+            .filter(
+                TimeSlot.doctor_id.in_(slots_by_doctor),
+                TimeSlot.status == SlotStatus.AVAILABLE.value,
+                TimeSlot.start_time > func.now(),
+            )
+            .order_by(TimeSlot.doctor_id, TimeSlot.start_time)
+            .all()
+        )
+        for slot in available_slots:
+            slots_by_doctor[slot.doctor_id].append(slot)
+
+    facility_ids = {doctor.facility_source_id for doctor in selected_doctors if doctor.facility_source_id}
+    facilities: dict[str, dict[str, Any]] = {}
+    if facility_ids:
+        facility_query = db.query(HealthcareFacility).filter(
+            HealthcareFacility.is_active.is_(True),
+            HealthcareFacility.source_id.in_(facility_ids),
+        )
+        if active_version:
+            facility_query = facility_query.filter(HealthcareFacility.dataset_version == active_version)
+        facilities = {facility.source_id: _facility_record_data(facility) for facility in facility_query.all()}
+    default_facility = _facility_data(db)
+
     doctors: list[dict[str, Any]] = []
     for department_record in department_records:
-        doctor_query = db.query(Doctor).filter(Doctor.department_id == department_record.id, Doctor.is_active.is_(True), Doctor.facility_source_id == department_record.facility_source_id)
-        if active_version:
-            doctor_query = doctor_query.filter(Doctor.dataset_version == active_version)
-        for doctor in doctor_query.order_by(Doctor.name).all():
-            slots = (
-                db.query(TimeSlot)
-                .filter(
-                    TimeSlot.doctor_id == doctor.id,
-                    TimeSlot.status == SlotStatus.AVAILABLE.value,
-                    TimeSlot.start_time > func.now(),
-                )
-                .order_by(TimeSlot.start_time)
-                .all()
-            )
+        for doctor in doctors_by_department[department_record.id]:
             doctors.append(
                 {
                     "id": doctor.id,
@@ -639,7 +674,7 @@ def get_doctors_by_department(
                     "description": doctor.description,
                     "title": doctor.title,
                     "specialty": doctor.specialty,
-                    "facility": _facility_data(db, doctor.facility_source_id),
+                    "facility": facilities.get(doctor.facility_source_id, default_facility),
                     "department": {
                         "id": department_record.id,
                         "name": department_record.name,
@@ -651,7 +686,7 @@ def get_doctors_by_department(
                             "start_time": _iso_utc(slot.start_time),
                             "end_time": _iso_utc(slot.end_time),
                         }
-                        for slot in slots
+                        for slot in slots_by_doctor[doctor.id]
                     ],
                 }
             )
@@ -752,10 +787,11 @@ def list_appointments(
     db: Session = Depends(get_db),
     _internal_token: str = Depends(verify_internal_service_token),
     x_actor_id: str | None = Header(default=None, alias="X-Actor-Id"),
+    limit: int = Query(default=50, ge=1, le=100),
 ) -> dict[str, Any]:
     actor_id = _require_actor(x_actor_id)
     expired_appointment_ids = _reconcile_expired_holds(db)
-    appointments = db.query(Appointment).filter(Appointment.actor_id == actor_id).order_by(Appointment.id.desc()).all()
+    appointments = db.query(Appointment).filter(Appointment.actor_id == actor_id).order_by(Appointment.id.desc()).limit(limit).all()
     _commit_reconciliation(db, expired_appointment_ids)
     return {"data": {"items": [_appointment_data(appointment, db) for appointment in appointments]}}
 

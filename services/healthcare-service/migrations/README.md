@@ -14,6 +14,6 @@ preserves missing source consultation prices as NULL; the booking route refuses 
 without an authoritative price instead of manufacturing a zero price. The canonical
 lineage is therefore `001 -> 002 -> 003 -> 003a -> 004 -> 005`, while an old-develop
 database enters at the bridge after its legacy `003_healthcare_provider_catalog.sql`.
-Apply the migrations explicitly with `scripts/migrate.ps1` or `scripts/migrate.sh` before
+Apply the migrations explicitly with `scripts/database/migrate.ps1` or `scripts/database/migrate.sh` before
 running the deterministic seed.
-Application startup never creates or alters the schema. Use `scripts/import_healthcare_dataset.py --dataset-version <version> --apply` explicitly. The specialty CSV is parsed into a controlled staging projection because its tags/description fields contain unquoted commas; the raw source remains unchanged and rows without a source URL are retained with a quality flag.
+Application startup never creates or alters the schema. Use `scripts/data/import_healthcare_dataset.py --dataset-version <version> --apply` explicitly. The specialty CSV is parsed into a controlled staging projection because its tags/description fields contain unquoted commas; the raw source remains unchanged and rows without a source URL are retained with a quality flag.

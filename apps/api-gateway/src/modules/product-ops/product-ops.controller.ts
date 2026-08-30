@@ -14,6 +14,19 @@ class NotificationQueryDto {
   @IsOptional()
   @IsIn(['UNREAD', 'READ'])
   status?: 'UNREAD' | 'READ';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  page_size = 20;
 }
 
 class FavoriteDto {
@@ -123,10 +136,10 @@ export class NotificationsController {
   constructor(private readonly productOps: ProductOpsService) {}
 
   @Get()
-  async list(@Query() query: NotificationQueryDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { const result = await this.productOps.listNotifications(request.user.sub, correlation(request), query.status); return { data: { ...result, items: result.items.map(presentNotification) }, meta: { request_id: request.correlationId } }; }
+  async list(@Query() query: NotificationQueryDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { const result = await this.productOps.listNotifications(request.user.sub, { status: query.status, page: query.page, pageSize: query.page_size }); return { data: { ...result, items: result.items.map(presentNotification) }, meta: { request_id: request.correlationId } }; }
 
   @Get('unread-count')
-  async unreadCount(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: await this.productOps.unreadCount(request.user.sub, correlation(request)), meta: { request_id: request.correlationId } }; }
+  async unreadCount(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: await this.productOps.unreadCount(request.user.sub), meta: { request_id: request.correlationId } }; }
 
   @Post(':id/read')
   async read(@Param('id') id: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: presentNotification(await this.productOps.markNotificationRead(id, request.user.sub)), meta: { request_id: request.correlationId } }; }

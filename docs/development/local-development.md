@@ -25,9 +25,18 @@ The launcher copies root `.env.example` only when root `.env` does not exist;
 it never overwrites it or touches service-level files. It validates the
 environment, starts Compose, waits for health checks, runs owned migrations,
 then verifies Gateway readiness and the Next.js Web health endpoint. Normal
-runs do not seed or reset data. Review and replace local placeholders before
-startup. Existing `.env` files from older layouts must be reconciled manually
-because setup deliberately preserves them.
+runs do not seed or reset data. `-SeedDemo` / `--seed-demo` uses the Compose
+catalog-importer job (so the deployment host does not need a Python runtime)
+to import the versioned static Food, Restaurant and Healthcare catalogs,
+creates Healthcare future slots and demo patient link when demo authentication
+is enabled, and additively maintains the Ride driver pool. The development
+deployment workflow invokes the same additive seed and verifier automatically;
+operators do not run a manual seed command after a deploy. The tracked `data/`
+catalog source never includes mutable accounts, conversations, bookings,
+appointments, or payment data. Review and replace local placeholders before
+startup.
+Existing `.env` files from older layouts must be reconciled manually because
+setup deliberately preserves them.
 
 For an explicit disposable/template verification, PowerShell supports
 `./scripts/start-all.ps1 -EnvFile .env.example`; normal local use remains root

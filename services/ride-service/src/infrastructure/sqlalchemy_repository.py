@@ -261,6 +261,7 @@ def _quote_from_row(row: QuoteRow) -> Quote:
         tariff_snapshot=row.tariff_snapshot,
         passenger_count=row.passenger_count,
         capacity_policy_version=row.capacity_policy_version,
+        stopovers=row.stopovers or [],
     )
 
 

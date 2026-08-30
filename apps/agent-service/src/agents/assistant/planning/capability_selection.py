@@ -77,7 +77,8 @@ def default_capability_snapshot() -> CapabilitySnapshot:
             _cap(
                 "restaurant.update_reservation",
                 Domain.RESTAURANT,
-                status=CapabilityStatus.SKELETON,
+                RiskLevel.FINANCIAL_OR_FINAL,
+                ConfirmationGate.FINAL_COMMIT,
             ),
             _cap(
                 "restaurant.reservation.get",
@@ -189,6 +190,12 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
             ),
         }[task.domain]
     if task.operation == Operation.UPDATE:
+        if task.domain == Domain.RIDE and getattr(task.semantic_slots, "stopover_address", None) is not None:
+            return StepChoice(
+                "ride.quote.create",
+                PlanningPhase.QUOTE_OR_PREVIEW,
+                "Tạo lại quote Ride với điểm dừng trung gian",
+            )
         return {
             Domain.FOOD: StepChoice(
                 "get_food_cart",
@@ -199,6 +206,7 @@ def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
                 "restaurant.update_reservation",
                 PlanningPhase.FINAL_COMMIT,
                 "Cập nhật reservation",
+                (AuthorityRequirement(fact="reservation_id", required_version=True),),
             ),
             Domain.HEALTHCARE: StepChoice(
                 "healthcare.update_appointment",

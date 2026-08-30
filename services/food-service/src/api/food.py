@@ -235,8 +235,8 @@ async def preview(
 
 
 @router.get("/orders")
-async def list_orders(actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
-    return {"data": {"items": await food.list_orders(actor_id)}}
+async def list_orders(limit: int = Query(default=50, ge=1, le=100), actor_id: str = Depends(require_actor), food: FoodApplicationService = Depends(service)):
+    return {"data": {"items": await food.list_orders(actor_id, limit=limit)}}
 
 
 @router.post("/orders", dependencies=[Depends(require_internal)])

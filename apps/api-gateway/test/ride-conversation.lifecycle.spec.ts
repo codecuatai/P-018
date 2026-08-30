@@ -112,6 +112,64 @@ describe('Ride conversation lifecycle and revisions', () => {
     expect(agent.interpret.mock.calls[0][4]).toBe('actor-1');
   });
 
+  it('creates a fresh semantic quote with a resolved intermediate stop without invoking the Ride interpreter', async () => {
+    const stop = { address: 'Công viên Nghĩa Đô, Cầu Giấy, Hà Nội', latitude: 21.042, longitude: 105.799 };
+    const stoppedQuote = { ...quote('quote_stop', 'Nhà hàng đã chọn, Cầu Giấy, Hà Nội'), stopovers: [stop] };
+    const agent = { interpret: jest.fn() };
+    const ride = { createQuote: jest.fn().mockResolvedValue(stoppedQuote) };
+    const locations = {
+      realMode: true,
+      geocode: jest.fn(async (address: string) => ({
+        provider: 'geoapify' as const,
+        status: 'RESOLVED' as const,
+        query: address,
+        candidates: [{
+          address_text: address,
+          latitude: address.includes('Nghĩa Đô') ? stop.latitude : address.includes('Nhà hàng') ? 21.036 : 20.9914,
+          longitude: address.includes('Nghĩa Đô') ? stop.longitude : address.includes('Nhà hàng') ? 105.79 : 105.945975,
+          confidence: 1,
+        }],
+      })),
+      route: jest.fn(async (origin: { latitude: number; longitude: number }, destination: { latitude: number; longitude: number }) => ({
+        provider: 'geoapify' as const,
+        status: 'RESOLVED' as const,
+        distance_km: 4,
+        duration_minutes: 10,
+        origin,
+        destination,
+        route_distance_meters: 4_000,
+        route_duration_seconds: 600,
+        route_geometry: [origin, destination],
+        route_polyline: null,
+        route_snapshot_hash: 'route-stop',
+      })),
+    };
+    const service = new RideConversationService(
+      agent as never,
+      ride as never,
+      { require: jest.fn().mockReturnValue({ toolName: 'ride.quote.create' }) } as never,
+      locations as never,
+    );
+
+    const result = await service.quoteFromSemantic('actor-stop', 'gw_stop', 'cor-stop', {
+      pickupAddress: 'VinUniversity, Hà Nội',
+      dropoffAddress: 'Nhà hàng đã chọn, Cầu Giấy, Hà Nội',
+      vehicleType: 'CAR_4',
+      passengerCount: 2,
+      stopoverAddress: stop.address,
+    });
+
+    expect(agent.interpret).not.toHaveBeenCalled();
+    expect(locations.route).toHaveBeenCalledTimes(2);
+    expect(ride.createQuote.mock.calls[0][3]).toMatchObject({
+      stopovers: [stop],
+      route_distance_meters: 8_000,
+      route_duration_seconds: 1_200,
+    });
+    expect(result.quote?.stopovers).toEqual([stop]);
+    expect(result.stage).toBe('SERVICE_CONFIRMATION');
+  });
+
   it('keeps the Gateway workflow in tracking after payment while Ride searches', async () => {
     const currentQuote = quote('quote_tracking', 'Hồ Hoàn Kiếm / Hồ Gươm, Hà Nội');
     const prepared = {

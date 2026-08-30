@@ -17,6 +17,17 @@ class ChatRequest(BaseModel):
     workflow_context: dict[str, Any] = Field(default_factory=dict)
 
 
+class DeviceCurrentLocation(BaseModel):
+    """Ephemeral browser/device location supplied for the current turn."""
+
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    address_text: str | None = Field(default=None, max_length=500)
+    accuracy_meters: float | None = Field(default=None, ge=0, le=100_000)
+    captured_at: datetime
+    source: Literal["device"] = "device"
+
+
 class AssistantChatRequest(BaseModel):
     """Top-level X-One planning/composition contract used by the Gateway."""
 
@@ -29,6 +40,7 @@ class AssistantChatRequest(BaseModel):
     authoritative_results: list[dict[str, Any]] = Field(default_factory=list, max_length=8)
     capability_snapshot: dict[str, Any] | None = None
     user_profile: dict[str, Any] | None = None
+    current_location: DeviceCurrentLocation | None = None
     mode: Literal["plan", "compose"] = "plan"
 
 

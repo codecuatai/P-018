@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,6 +40,11 @@ class FoodWorkflowContext(BaseModel):
     last_order_id: str | None = None
     last_payment_id: str | None = None
     pending_confirmation_id: str | None = None
+    # A UI selection is a typed workflow event, not a natural-language
+    # instruction. It is intentionally ephemeral: the Gateway supplies it
+    # only for the turn that adds the selected menu item to the cart.
+    assistant_action: Literal["ADD_SELECTED_FOOD_ITEM"] | None = None
+    assistant_action_quantity: int | None = Field(default=None, ge=1, le=50)
 
 
 class AgentState(TypedDict, total=False):

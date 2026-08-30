@@ -58,6 +58,7 @@ def _create_quote(
     with_coordinates: bool = True,
     vehicle_type: str = "CAR_4",
     passenger_count: int = 1,
+    stopovers: list[dict[str, object]] | None = None,
 ) -> dict:
     payload = {
         "pickup_address": "VinUni, Gia Lam",
@@ -65,6 +66,7 @@ def _create_quote(
         "vehicle_type": vehicle_type,
         "passenger_count": passenger_count,
         "promo_code": "SAVE5000",
+        "stopovers": stopovers or [],
     }
     if with_coordinates:
         payload.update({
@@ -600,7 +602,7 @@ def test_tracking_spawns_driver_near_pickup_then_follows_two_legs(client: TestCl
     pickup = quote["route_geometry"][0]
     assert first_data["status"] == "DRIVER_ASSIGNED"
     assert first_data["driver_location"] == first_data["driver"]["location"]
-    assert first_data["driver"]["tracking_speed_factor"] == 0.2
+    assert first_data["driver"]["tracking_speed_factor"] == 0.4
     spawn_distance_km = _haversine_km(
         first_data["driver_location"]["latitude"],
         first_data["driver_location"]["longitude"],
@@ -742,6 +744,52 @@ def test_ride_lifecycle_persists_every_authoritative_transition(client: TestClie
         driver = session.get(RideDriverRow, assigned_driver_id)
         assert driver is not None
         assert driver.availability_status == "AVAILABLE"
+
+
+def test_stopover_quote_is_bound_to_confirmation_and_booking_snapshot(client: TestClient) -> None:
+    stops = [{"address": "Intermediate stop", "latitude": 21.031, "longitude": 105.806}]
+    quote = _create_quote(client, key="stopover-quote", stopovers=stops)
+    assert quote["stopovers"] == stops
+
+    prepare_payload = {
+        "action": "ride.booking.prepare",
+        "actor_id": ACTOR,
+        "quote_id": quote["id"],
+        "quote_version": quote["quote_version"],
+        "amount": quote["amount"],
+        "currency": quote["currency"],
+        "passenger_count": quote["passenger_count"],
+        "capacity_policy_version": quote["capacity_policy_version"],
+        "stopovers": stops,
+    }
+    invalid_payload = {**prepare_payload, "stopovers": []}
+    rejected = client.post(
+        "/v1/bookings:prepare",
+        headers=_headers(key="stopover-invalid"),
+        json={
+            "quote_id": quote["id"],
+            "confirmation": _confirmation("ride.booking.prepare", invalid_payload, quote),
+        },
+    )
+    assert rejected.status_code == 409
+
+    response = client.post(
+        "/v1/bookings:prepare",
+        headers=_headers(key="stopover-prepare"),
+        json={
+            "quote_id": quote["id"],
+            "confirmation": _confirmation("ride.booking.prepare", prepare_payload, quote),
+        },
+    )
+    assert response.status_code == 201
+    booking = response.json()["data"]
+    assert booking["stopovers"] == stops
+    engine = getattr(client, "ride_engine")
+    with Session(engine) as session:
+        row = session.get(BookingRow, booking["id"])
+        assert row is not None
+        assert row.quote_snapshot is not None
+        assert row.quote_snapshot["stopovers"] == stops
 
 
 def test_expired_quote_is_persisted_and_cannot_be_prepared(client: TestClient) -> None:

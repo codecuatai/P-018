@@ -357,6 +357,27 @@ paths:
         '400': {description: Missing idempotency key}
         '401': {description: Missing or invalid user token}
         '409': {description: Idempotency or availability conflict}
+  /api/v1/service-actions/restaurant/reservations/{reservationId}:
+    patch:
+      summary: Update an actor-owned Restaurant reservation after Gateway confirmation
+      description: >
+        Applies a previously previewed Restaurant reservation change through the
+        authoritative Restaurant service. The caller must provide an idempotency
+        key; the Gateway verifies the actor-owned reservation and the domain
+        enforces the same-ID resource transition.
+      security: [{bearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ReservationId'}
+        - {$ref: '#/components/parameters/RequiredIdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RestaurantReservationUpdateRequest'}}}
+      responses:
+        '200': {description: Updated actor-owned reservation}
+        '400': {description: Missing idempotency key or empty update}
+        '401': {description: Missing or invalid user token}
+        '404': {description: Reservation not found}
+        '409': {description: Reservation version or idempotency conflict}
   /api/v1/service-actions/healthcare/doctors:
     get:
       summary: List authoritative Healthcare doctors by department
@@ -432,7 +453,7 @@ paths:
 
   /api/v1/history:
     get:
-      summary: List unified actor-scoped history across domain services and Core conversations
+      summary: List unified actor-scoped service activity across domain services
       security: [{bearerAuth: []}]
       parameters:
         - name: service
@@ -452,7 +473,7 @@ paths:
           schema: {type: integer, minimum: 1, default: 1}
         - name: page_size
           in: query
-          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
       responses:
         '200': {description: Unified history; partial and unavailable fields identify degraded domains}
         '401': {description: Missing or invalid user token}
@@ -481,8 +502,18 @@ paths:
     get:
       summary: List Core-owned conversations for the authenticated actor
       security: [{bearerAuth: []}]
+      parameters:
+        - name: include_archived
+          in: query
+          schema: {type: boolean, default: false}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
       responses:
-        '200': {description: Conversation summaries}
+        '200': {description: Paginated Core conversation summaries}
         '401': {description: Missing or invalid user token}
     post:
       summary: Create a Core-owned conversation
@@ -751,14 +782,20 @@ paths:
 
   /api/v1/notifications:
     get:
-      summary: List durable actor-scoped notifications and synchronize domain events
+      summary: List durable Core-owned actor-scoped notification projections
       security: [{bearerAuth: []}]
       parameters:
         - name: status
           in: query
           schema: {type: string, enum: [UNREAD, READ]}
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, default: 1}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 20}
       responses:
-        '200': {description: Notifications with unread count and degraded dependency metadata}
+        '200': {description: Paginated notifications with unread count; no synchronous domain scan}
         '401': {description: Missing or invalid user token}
   /api/v1/notifications/unread-count:
     get:
@@ -962,6 +999,15 @@ paths:
         required: true
         content: {application/json: {schema: {type: object, additionalProperties: false, properties: {status: {type: string, enum: [OPEN, IN_PROGRESS, RESOLVED, CLOSED]}, priority: {type: string, enum: [LOW, NORMAL, HIGH, URGENT]}}}}}
       responses: {'200': {description: Updated support ticket}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}}
+  /api/v1/admin/support-tickets/{id}/messages:
+    post:
+      summary: Add an administrator reply to a support ticket
+      security: [{bearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ResourceId'}, {$ref: '#/components/parameters/RequiredIdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [message], properties: {message: {type: string, minLength: 1, maxLength: 5000}}}}}
+      responses: {'200': {description: Updated support ticket and timeline}, '400': {description: Missing idempotency key or invalid message}, '401': {description: Missing token}, '403': {description: Admin role required}, '404': {description: Ticket not found}, '409': {description: Ticket closed or idempotency conflict}}
 components:
   securitySchemes:
     bearerAuth:
@@ -1028,6 +1074,11 @@ components:
     RestaurantId:
       in: path
       name: restaurantId
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 128}
+    ReservationId:
+      in: path
+      name: reservationId
       required: true
       schema: {type: string, minLength: 1, maxLength: 128}
     CartId:
@@ -1104,6 +1155,19 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        current_location:
+          $ref: '#/components/schemas/DeviceCurrentLocation'
+    DeviceCurrentLocation:
+      type: object
+      required: [latitude, longitude, captured_at, source]
+      additionalProperties: false
+      properties:
+        latitude: {type: number, minimum: -90, maximum: 90}
+        longitude: {type: number, minimum: -180, maximum: 180}
+        address_text: {type: string, maxLength: 500}
+        accuracy_meters: {type: number, minimum: 0, maximum: 100000}
+        captured_at: {type: string, format: date-time}
+        source: {type: string, enum: [device]}
     AssistantActionRequest:
       type: object
       required: [conversation_id, action_id]
@@ -1117,6 +1181,12 @@ components:
           type: string
           minLength: 1
           maxLength: 128
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 50
+        current_location:
+          $ref: '#/components/schemas/DeviceCurrentLocation'
     AssistantEnvelope:
       type: object
       required: [data, meta]
@@ -1146,7 +1216,7 @@ components:
             additionalProperties: false
             properties:
               id: {type: string}
-              kind: {type: string, enum: [select_restaurant, restaurant_confirm, ride_service, ride_payment, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
+              kind: {type: string, enum: [select_restaurant, restaurant_confirm, restaurant_update, ride_service, ride_payment, ride_cancel, select_healthcare_slot, healthcare_payment, healthcare_confirm, healthcare_cancel, select_food_item, food_cart_increment, food_cart_decrement, food_cart_remove, food_checkout, food_confirm, food_payment]}
               label: {type: string}
               target_index: {type: integer, minimum: 0}
         completed:
@@ -1160,6 +1230,7 @@ components:
       oneOf:
         - {$ref: '#/components/schemas/RestaurantOptionsItem'}
         - {$ref: '#/components/schemas/RestaurantHoldItem'}
+        - {$ref: '#/components/schemas/RestaurantUpdateConfirmationItem'}
         - {$ref: '#/components/schemas/RestaurantReservationItem'}
         - {$ref: '#/components/schemas/RideItem'}
         - {$ref: '#/components/schemas/RideTimingConflictItem'}
@@ -1176,6 +1247,13 @@ components:
         options:
           type: array
           items: {$ref: '#/components/schemas/RestaurantOption'}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string}
+        previous_start_at: {type: string, format: date-time}
+        previous_party_size: {type: integer, minimum: 1}
+        party_size: {type: integer, minimum: 1}
+        start_at: {type: string, format: date-time}
+        status: {type: string}
         note: {type: string}
     RestaurantOption:
       type: object
@@ -1198,6 +1276,23 @@ components:
         start_at: {type: string, format: date-time}
         expires_at: {type: string, format: date-time}
         note: {type: string}
+    RestaurantUpdateConfirmationItem:
+      type: object
+      required: [kind, title, operation, restaurant, resource_id, previous_start_at, start_at, party_size, status]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [restaurant_confirmation]}
+        title: {type: string}
+        operation: {type: string, enum: [UPDATE]}
+        restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string, minLength: 1}
+        reservation_code: {type: string}
+        previous_start_at: {type: string, format: date-time}
+        start_at: {type: string, format: date-time}
+        previous_party_size: {type: integer, minimum: 1}
+        party_size: {type: integer, minimum: 1}
+        status: {type: string, enum: [AWAITING_CONFIRMATION]}
+        note: {type: string}
     RestaurantReservationItem:
       type: object
       required: [kind, title, restaurant, reservation_code, party_size, start_at, status]
@@ -1206,10 +1301,13 @@ components:
         kind: {type: string, enum: [reservation]}
         title: {type: string}
         restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        resource_id: {type: string, minLength: 1}
         reservation_code: {type: string}
+        previous_start_at: {type: string, format: date-time}
         party_size: {type: integer}
+        previous_party_size: {type: integer, minimum: 1}
         start_at: {type: string, format: date-time}
-        status: {type: string, enum: [CONFIRMED]}
+        status: {type: string, enum: [CONFIRMED, MODIFIED]}
     RestaurantReference:
       type: object
       required: [name]
@@ -1226,6 +1324,14 @@ components:
         title: {type: string}
         pickup: {type: string}
         dropoff: {type: string}
+        stopovers:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [address]
+            properties:
+              address: {type: string}
         vehicle: {type: string}
         amount: {type: integer}
         currency: {type: string}
@@ -1474,6 +1580,14 @@ components:
         start_at: {type: string, format: date-time}
         duration_minutes: {type: integer, minimum: 30, maximum: 360, default: 120}
         seating_type: {type: string, maxLength: 80}
+    RestaurantReservationUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        party_size: {type: integer, minimum: 1, maximum: 50}
+        start_at: {type: string, format: date-time}
+        special_requests: {type: [string, 'null'], maxLength: 1000}
     RestaurantHoldRequest:
       allOf:
         - {$ref: '#/components/schemas/RestaurantAvailabilityRequest'}
@@ -1505,6 +1619,17 @@ components:
         pickup_longitude: {type: number, minimum: -180, maximum: 180}
         dropoff_latitude: {type: number, minimum: -90, maximum: 90}
         dropoff_longitude: {type: number, minimum: -180, maximum: 180}
+        stopovers:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [address, latitude, longitude]
+            properties:
+              address: {type: string, minLength: 3, maxLength: 300}
+              latitude: {type: number, minimum: -90, maximum: 90}
+              longitude: {type: number, minimum: -180, maximum: 180}
     ConversationCreateRequest:
       type: object
       required: [title]

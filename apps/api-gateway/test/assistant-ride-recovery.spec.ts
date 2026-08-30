@@ -83,6 +83,7 @@ describe('Unified Assistant Ride receipt recovery', () => {
               semantic_slots: {
                 pickup_address: { value: 'VinUni', source: 'USER_EXPLICIT' },
                 dropoff_address: { value: 'Ho Guom', source: 'USER_EXPLICIT' },
+                vehicle_type: { value: 'CAR_4', source: 'INFERRED_PREFERENCE' },
               },
               depends_on: [],
               missing_information: [],

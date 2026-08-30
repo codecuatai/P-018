@@ -59,6 +59,14 @@ validation failures use the conservative deterministic planner. The internal
 Agent status endpoint exposes only model mode/name, fallback name, key
 configured boolean, and last-call diagnostics.
 
+The current implementation still constructs the `SemanticTurn` input to Core A
+from the compatibility `AssistantPlan` inside `_core_a_input`. This is a
+bounded transitional bridge, not evidence that the native Core-B replacement
+gate is complete; the full prompt-defined semantic matrices remain a separate
+acceptance requirement. The deterministic fallback is deliberately narrow for
+the live demo: contextual party phrases are separated from calendar digits,
+reference pronouns are not locations, and equivalent Ride wording is accepted.
+
 The planner sanitizes model slots before returning them. IDs, prices,
 availability, status, and other authoritative resource facts are resolved by
 the Gateway from domain results. The Gateway sends the top-level planner only a

@@ -61,4 +61,18 @@ describe("Active History Shared Poller (Multi-tab & Multi-component)", () => {
     await fetchActiveHistoryShared("user-101", { force: true });
     expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(2);
   });
+
+  test("coalesces overlapping forced refreshes for one user", async () => {
+    let resolveRequest: ((value: { items: HistoryItem[] }) => void) | undefined;
+    (apiClient.getActiveHistory as jest.Mock).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+
+    const first = fetchActiveHistoryShared("user-101", { force: true });
+    const second = fetchActiveHistoryShared("user-101", { force: true });
+
+    expect(apiClient.getActiveHistory).toHaveBeenCalledTimes(1);
+    resolveRequest?.({ items: [mockItem] });
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
 });

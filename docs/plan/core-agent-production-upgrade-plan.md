@@ -152,7 +152,7 @@ Hệ thống sẽ chạy kiểm thử liên tục theo chu trình TDD (Red-Green
 | **2. Agent Unit & LangGraph Tests** | `pytest apps/agent-service/tests/test_agents/ -v` | 13/13 test files đạt 100% pass (bao gồm multi-turn context, intent reconciliation, hardening, structured output). |
 | **3. Gate G2 Evaluation Benchmark** | `python eval/gate_g2_mvp.py` | Đạt tối thiểu **40/40 test cases** tiếng Việt đa dạng (10 Food, 10 Ride, 10 Restaurant, 10 Healthcare & Multi-intent). |
 | **4. Gateway Integration & E2E** | `npm --prefix apps/api-gateway test` | Toàn bộ unit/integration test của NestJS Gateway đạt 100% pass. |
-| **5. Environment & Config Validation** | `python scripts/validate-env-config.py`<br>`docker compose --env-file .env.example config --quiet` | Không có lỗi cấu hình môi trường, Compose render hoàn hảo. |
+| **5. Environment & Config Validation** | `python scripts/quality/validate-env-config.py`<br>`docker compose --env-file .env.example config --quiet` | Không có lỗi cấu hình môi trường, Compose render hoàn hảo. |
 | **6. Web E2E Browser Test** | `npx --prefix apps/web playwright test` | 27/27 responsive & live transaction browser tests pass. |
 
 ---

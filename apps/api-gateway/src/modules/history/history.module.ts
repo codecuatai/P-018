@@ -11,6 +11,7 @@ import { PaymentModule } from '../payment/payment.module';
 import { PaymentService } from '../payment/payment.service';
 
 export type HistoryType = 'food_order' | 'ride_booking' | 'restaurant_reservation' | 'healthcare_appointment';
+const HISTORY_UPSTREAM_TIMEOUT_MS = 750;
 
 export interface HistoryItem {
   id: string;
@@ -104,7 +105,7 @@ export class HistoryQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  page_size = 20;
+  page_size = 10;
 }
 
 @Injectable()
@@ -115,20 +116,10 @@ export class HistoryService {
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
     const requested = options.service ? [options.service] : names;
     const responses = await Promise.allSettled(requested.map((name) => {
-      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then(async (res) => {
-        const items = extractItems(res as JsonObject) as Array<JsonObject & { quote_id?: string }>;
-        const enriched = await Promise.all(items.map(async (item) => {
-          if (!item.quote_id) return item;
-          try {
-            const quote = await this.ride.getQuote(actorId, { correlationId }, item.quote_id);
-            return { ...quote, ...item };
-          } catch { return item; }
-        }));
-        return { items: enriched } as unknown as JsonObject;
-      });
-      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
-      return this.healthcare.listAppointments(actorId, correlationId);
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }, 50, HISTORY_UPSTREAM_TIMEOUT_MS).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      return this.healthcare.listAppointments(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
     }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
@@ -140,7 +131,7 @@ export class HistoryService {
       }
       for (const value of extractItems(result.value)) items.push(normalizeHistoryItem(name, value));
     });
-    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp) || left.type.localeCompare(right.type) || left.id.localeCompare(right.id));
     if (!items.length && unavailable.length === requested.length) throw new ServiceUnavailableException({ code: 'HISTORY_UNAVAILABLE', detail: 'Lịch sử đang tạm thời chưa sẵn sàng.', retryable: true });
     const filtered = items.filter((item) => matchesHistory(item, options));
     const page = options.page ?? 1;
@@ -153,20 +144,10 @@ export class HistoryService {
   async active(actorId: string, correlationId: string): Promise<{ items: HistoryItem[]; partial: boolean; unavailable: string[] }> {
     const names = ['food_order', 'ride_booking', 'restaurant_reservation', 'healthcare_appointment'] as const;
     const responses = await Promise.allSettled(names.map((name) => {
-      if (name === 'food_order') return this.food.listOrders(correlationId, actorId);
-      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }).then(async (res) => {
-        const items = extractItems(res as JsonObject) as Array<JsonObject & { quote_id?: string }>;
-        const enriched = await Promise.all(items.map(async (item) => {
-          if (!item.quote_id) return item;
-          try {
-            const quote = await this.ride.getQuote(actorId, { correlationId }, item.quote_id);
-            return { ...quote, ...item };
-          } catch { return item; }
-        }));
-        return { items: enriched } as unknown as JsonObject;
-      });
-      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId);
-      return this.healthcare.listAppointments(actorId, correlationId);
+      if (name === 'food_order') return this.food.listOrders(correlationId, actorId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      if (name === 'ride_booking') return this.ride.listBookings(actorId, { correlationId }, 50, HISTORY_UPSTREAM_TIMEOUT_MS).then((value) => this.enrichRideHistoryResponse(actorId, correlationId, value));
+      if (name === 'restaurant_reservation') return this.restaurant.listReservations(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
+      return this.healthcare.listAppointments(actorId, correlationId, 50, HISTORY_UPSTREAM_TIMEOUT_MS);
     }));
     const unavailable: string[] = [];
     const items: HistoryItem[] = [];
@@ -182,7 +163,7 @@ export class HistoryService {
         if (isHistoryResourceActive(name, value, now)) items.push(normalized);
       }
     });
-    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
+    items.sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp) || left.type.localeCompare(right.type) || left.id.localeCompare(right.id));
     return { items, partial: unavailable.length > 0, unavailable };
   }
 
@@ -201,6 +182,7 @@ export class HistoryService {
         const quote = await this.ride.getQuote(actorId, { correlationId }, booking.quote_id);
         return publicHistoryResource(type, { ...quote, ...booking });
       } catch {
+        // A booking remains readable when the historical quote is unavailable.
         return publicHistoryResource(type, booking);
       }
     });
@@ -208,6 +190,25 @@ export class HistoryService {
     const appointmentId = Number(id);
     if (!Number.isInteger(appointmentId) || appointmentId < 1) throw new BadRequestException({ code: 'HISTORY_ID_INVALID', detail: 'Mã lịch khám không hợp lệ.', retryable: false });
     return this.healthcare.getAppointment(appointmentId, actorId, correlationId).then((value) => publicHistoryResource(type, value));
+  }
+
+  private async enrichRideHistoryResponse(actorId: string, correlationId: string, response: JsonObject): Promise<JsonObject> {
+    const items = extractItems(response) as Array<JsonObject & { quote_id?: string }>;
+    if (!items.length) return response;
+    const enriched = await Promise.all(items.map(async (item) => {
+      if (typeof item.quote_id !== 'string' || !item.quote_id.trim()) return item;
+      try {
+        const quote = await this.ride.getQuote(actorId, { correlationId }, item.quote_id);
+        return { ...quote, ...item };
+      } catch {
+        return item;
+      }
+    }));
+    if (Array.isArray(response.items)) return { ...response, items: enriched };
+    if (isObject(response.items) && Array.isArray(response.items.items)) {
+      return { ...response, items: { ...response.items, items: enriched } };
+    }
+    return response;
   }
 }
 
@@ -294,7 +295,7 @@ function formatAmount(value: number): string {
 
 function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObject {
   const result = pickFields(resource, type === 'ride_booking'
-    ? ['id', 'status', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'passenger_count', 'capacity_policy_version', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_distance_meters', 'route_duration_seconds', 'route_polyline']
+    ? ['id', 'status', 'quote_id', 'quote_version', 'tariff_version', 'pickup_address', 'dropoff_address', 'pickup', 'dropoff', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'vehicle_type', 'passenger_count', 'capacity_policy_version', 'vehicle', 'fare', 'amount', 'currency', 'distance_km', 'duration_minutes', 'route_provider', 'route_distance_meters', 'route_duration_seconds', 'route_polyline', 'route_snapshot_hash']
     : type === 'food_order'
       ? ['id', 'status', 'restaurant_name', 'delivery_address', 'image_url', 'total', 'amount', 'currency']
       : type === 'restaurant_reservation'
@@ -302,6 +303,10 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
         : ['id', 'appointment_id', 'status', 'is_paid', 'patient_id', 'facility_name', 'address', 'department', 'department_name', 'doctor_name', 'doctor_id', 'slot_id', 'start_time', 'appointment_time', 'price', 'amount', 'currency', 'image_url']);
 
   if (type === 'ride_booking') {
+    const geometry = publicGeometry(resource.route_geometry);
+    if (geometry.length > 1) result.route_geometry = geometry;
+    const stopovers = publicStopovers(resource.stopovers);
+    if (stopovers.length) result.stopovers = stopovers;
     const driver = publicDriver(resource.driver);
     if (driver) result.driver = driver;
     const driverLocation = publicPoint(resource.driver_location) ?? publicPointFromFields(resource.driver_latitude, resource.driver_longitude);
@@ -309,7 +314,6 @@ function publicHistoryResource(type: HistoryType, resource: JsonObject): JsonObj
     if (driverLocation) result.driver_location = driverLocation;
     if (currentLocation) result.current_location = currentLocation;
     const route = publicRoute(resource.route);
-    const geometry = publicGeometry(resource.route_geometry);
     if (route) result.route = route;
     else if (geometry.length > 1) {
       const origin = publicPointFromFields(resource.pickup_latitude, resource.pickup_longitude);
@@ -443,6 +447,15 @@ function publicRoute(value: unknown): JsonObject | undefined {
 function publicGeometry(value: unknown): Array<{ latitude: number; longitude: number }> {
   if (!Array.isArray(value)) return [];
   return value.map(publicPoint).filter((point): point is { latitude: number; longitude: number } => Boolean(point));
+}
+
+function publicStopovers(value: unknown): Array<{ address: string; latitude: number; longitude: number }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((stop) => {
+    if (!isObject(stop) || typeof stop.address !== 'string' || !stop.address.trim()) return [];
+    const point = publicPointFromFields(stop.latitude, stop.longitude);
+    return point ? [{ address: stop.address.trim(), ...point }] : [];
+  });
 }
 
 function publicPoint(value: unknown): { latitude: number; longitude: number } | undefined {

@@ -68,7 +68,11 @@ export class FoodConversationController {
   @Get()
   async list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const includeArchived = request.query?.include_archived === 'true';
-    return { data: { items: await this.store.listConversations(request.user.sub, { includeArchived }) }, meta: { request_id: request.correlationId } };
+    const page = parsePaginationValue(request.query?.page, 1);
+    const pageSize = parsePaginationValue(request.query?.page_size, 10);
+    if (page > 100000 || pageSize > 100) throw new NotFoundException({ code: 'INVALID_PAGINATION', detail: 'Phân trang không hợp lệ.', retryable: false });
+    const result = await this.store.listConversations(request.user.sub, { includeArchived, page, pageSize });
+    return { data: { ...result, page, page_size: pageSize, has_more: page * pageSize < result.total }, meta: { request_id: request.correlationId } };
   }
 
   @Post()
@@ -107,6 +111,11 @@ export class FoodConversationController {
     if (!await this.store.deleteConversation(conversationId, request.user.sub)) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
     return { data: { deleted: true }, meta: { request_id: request.correlationId } };
   }
+}
+
+function parsePaginationValue(value: unknown, fallback: number): number {
+  if (typeof value !== 'string' || !/^\d+$/.test(value)) return fallback;
+  return Math.max(Number(value), 1);
 }
 
 @Module({

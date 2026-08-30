@@ -3,11 +3,11 @@ from datetime import datetime
 
 os.environ.setdefault("SERVICE_PORT", "8102")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./.test-restaurant.db")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
 from fastapi.testclient import TestClient
 from src.application.restaurant_service import RestaurantApplicationService
-from src.infrastructure.database import Base, RestaurantRow, build_engine
+from src.infrastructure.database import Base, RestaurantRow, TableRow, build_engine
 from src.main import app
 from src.repositories.restaurant_repository import RestaurantRepository
 
@@ -246,6 +246,78 @@ def test_hold_reservation_and_idempotency():
         "price_level": "$$$",
         "image_url": None,
     }
+
+
+def test_cancel_hold_releases_capacity_and_replays_idempotently():
+    # The development seed intentionally gives catalog restaurants a large
+    # demo capacity buffer.  Use a single-table fixture so this test still
+    # verifies that cancelling a hold makes that exact capacity reusable.
+    with engine.begin() as connection:
+        connection.execute(
+            RestaurantRow.__table__.insert(),
+            [{
+                "id": "rest-single-table",
+                "name": "Single Table Fixture",
+                "location": "District 1, Ho Chi Minh City",
+                "cuisine_type": "French",
+                "budget_range": "$$",
+                "rating": 4.0,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            }],
+        )
+        connection.execute(
+            TableRow.__table__.insert(),
+            [{
+                "restaurant_id": "rest-single-table",
+                "table_code": "ONLY-08",
+                "capacity": 8,
+                "seating_type": "standard",
+                "active": True,
+            }],
+        )
+
+    payload = {"restaurant_id": "rest-single-table", "party_size": 8, "start_at": "2030-08-13T18:30:00+07:00", "duration_minutes": 120}
+    hold = client.post("/v1/reservation-holds", json=payload, headers={**AUTH, "Idempotency-Key": "hold-cancel-001"})
+    assert hold.status_code == 201
+    hold_id = hold.json()["data"]["id"]
+
+    unavailable = client.post(
+        "/v1/restaurants/rest-single-table/availability",
+        json=payload,
+        headers=AUTH,
+    )
+    assert unavailable.status_code == 200
+    assert unavailable.json()["data"]["available"] is False
+
+    forbidden = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-other", "Idempotency-Key": "hold-cancel-other"},
+    )
+    assert forbidden.status_code == 404
+
+    cancelled = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={**AUTH, "Idempotency-Key": "hold-cancel-commit-001"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["data"]["status"] == "CANCELLED"
+    assert cancelled.json()["data"]["resource_version"] == 2
+
+    replay = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={**AUTH, "Idempotency-Key": "hold-cancel-commit-001"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["data"] == cancelled.json()["data"]
+
+    available_again = client.post(
+        "/v1/restaurants/rest-single-table/availability",
+        json=payload,
+        headers=AUTH,
+    )
+    assert available_again.status_code == 200
+    assert available_again.json()["data"]["available"] is True
 
 
 def test_update_and_cancel_reservation_are_actor_scoped_and_idempotent():

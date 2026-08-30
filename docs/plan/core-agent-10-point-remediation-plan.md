@@ -548,8 +548,8 @@ npm --prefix apps/api-gateway run build
 Push-Location services/food-service
 ..\..\.venv\Scripts\python.exe -m pytest tests -q
 Pop-Location
-python scripts/validate-env-config.py
-python scripts/check-migration-parity.py
+python scripts/quality/validate-env-config.py
+python scripts/database/check-migration-parity.py
 docker compose --env-file .env.example config --quiet
 .\.venv\Scripts\python.exe eval/core_agent_deterministic.py
 .\.venv\Scripts\python.exe eval/core_agent_provider_release.py --repetitions 2

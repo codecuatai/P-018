@@ -24,15 +24,15 @@ There is no SQL/database tool and no generic executor entry.
 
 ## Current inventory
 
-The v2 file contains 46 canonical entries across all four domains:
+The v2 file contains 47 canonical entries across all four domains:
 
 | Domain | `IMPLEMENTED_AGENT_TOOL` | `IMPLEMENTED_GATEWAY_ACTION` | `IMPLEMENTED_DOMAIN_API` | Total |
 | --- | ---: | ---: | ---: | ---: |
 | Food | 14 | 1 | 3 | 18 |
 | Ride | 1 | 8 | 1 | 10 |
-| Restaurant | 4 | 2 | 2 | 8 |
+| Restaurant | 4 | 3 | 2 | 9 |
 | Healthcare | 4 | 1 | 5 | 10 |
-| **Total** | **23** | **12** | **11** | **46** |
+| **Total** | **23** | **13** | **11** | **47** |
 
 The classifications are evidence-based:
 
@@ -53,7 +53,7 @@ truth for schemas, risk, owner, idempotency, confirmation, and aliases.
 | --- | --- |
 | Food | `food.search`, `food.get_restaurant`, `food.list_menu`, `food.get_menu_item`, `food.create_cart`, `food.add_cart_item`, `food.update_cart_item`, `food.remove_cart_item`, `food.quote_delivery`, `food.apply_voucher`, `food.remove_voucher`, `food.preview_order`, `food.prepare_order`, `food.get_order`, `food.list_orders`, `food.track_order`, `food.prepare_cancel_order`, `food.cancel_order` |
 | Ride | `ride.quote.create`, `ride.quote.get`, `ride.booking.prepare`, `ride.booking.confirm`, `ride.booking.get`, `ride.booking.list`, `ride.booking.status.get`, `ride.tracking.get`, `ride.booking.cancel.prepare`, `ride.booking.cancel` |
-| Restaurant | `restaurant.search`, `restaurant.get`, `restaurant.check_availability`, `restaurant.create_hold`, `restaurant.create_reservation`, `restaurant.get_reservation`, `restaurant.list_reservations`, `restaurant.cancel_reservation` |
+| Restaurant | `restaurant.search`, `restaurant.get`, `restaurant.check_availability`, `restaurant.create_hold`, `restaurant.create_reservation`, `restaurant.update_reservation`, `restaurant.get_reservation`, `restaurant.list_reservations`, `restaurant.cancel_reservation` |
 | Healthcare | `healthcare.search_facilities`, `healthcare.get_facility`, `healthcare.list_departments`, `healthcare.list_doctors`, `healthcare.list_slots`, `healthcare.hold_slot`, `healthcare.get_appointment`, `healthcare.list_appointments`, `healthcare.confirm_appointment`, `healthcare.cancel_appointment` |
 
 Legacy Food names such as `view_menu`, `view_menu_item`, `create_cart`,
@@ -69,7 +69,8 @@ the release test.
 
 - `ride.quote.create` is Agent-proposable and executes through
   `RideConversationService`/`RideClient`; Ride remains authoritative for the
-  tariff, route snapshot, expiry, and quote version.
+  tariff, route snapshot, bounded stopovers, expiry, and quote version. A
+  stopover change produces a new quote rather than a booking update.
 - `ride.booking.prepare` and `ride.booking.confirm` are Gateway actions with
   two explicit confirmations. The final result exposes the Ride booking
   status, including `NO_DRIVER`, rather than inferring success.

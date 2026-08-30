@@ -15,6 +15,7 @@ def decompose(turn: SemanticTurn) -> list[CoreAPlannedTask]:
                 goal=intent.goal,
                 normalized_request=intent.normalized_request,
                 semantic_slots=intent.slots,
+                constraints=intent.constraints,
                 disposition=TaskDisposition.READY,
             )
         )

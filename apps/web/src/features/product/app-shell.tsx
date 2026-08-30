@@ -9,6 +9,7 @@ import {
   ChevronRight,
   History,
   LifeBuoy,
+  Loader2,
   LogOut,
   Menu,
   MessageSquareText,
@@ -27,7 +28,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { getUnreadNotificationCount, listConversations, listNotifications, markAllNotificationsRead } from "@/lib/api-client";
+import { getUnreadNotificationCount, listConversations, listNotifications } from "@/lib/api-client";
 import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
@@ -35,6 +36,7 @@ import { useAuth } from "@/providers/auth-provider";
 
 const navigation = [
   { href: "/app", label: "Trợ lý AI", icon: Bot },
+  { href: "/app/services", label: "Dịch vụ", icon: Store },
   { href: "/app/history", label: "Lịch sử", icon: History },
   { href: "/app/favorites", label: "Đã lưu", icon: BookmarkCheck },
 ];
@@ -209,6 +211,7 @@ function NotificationBell() {
   const { status } = useAuth();
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean; href?: string }>>([]);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
 
@@ -248,11 +251,12 @@ function NotificationBell() {
   useEffect(() => {
     if (!open || status !== "authenticated") return;
     let active = true;
-    void listNotifications().then(async (result) => {
+    setLoading(true);
+    void listNotifications(undefined, 1, 8).then((result) => {
       if (!active) return;
       const allItems = result.items ?? [];
       const unreadCount = result.unread_count;
-      setItems(allItems.slice(0, 8).map((item) => ({
+      setItems(allItems.map((item) => ({
         id: item.id,
         title: item.title || "Thông báo",
         body: item.body || undefined,
@@ -261,14 +265,10 @@ function NotificationBell() {
           ? `/app/history/${item.resource_type}/${encodeURIComponent(item.resource_id)}`
           : undefined,
       })));
-      if (unreadCount > 0) {
-        setCount(0);
-        try {
-          await markAllNotificationsRead();
-          emitNotificationsChanged();
-        } catch {}
-      }
-    }).catch(() => undefined);
+      setCount(Math.max(0, unreadCount));
+    }).catch(() => undefined).finally(() => {
+      if (active) setLoading(false);
+    });
     return () => { active = false; };
   }, [open, status]);
 
@@ -295,7 +295,9 @@ function NotificationBell() {
             </button>
           </div>
           <div className="notification-popover-body">
-            {items.length === 0 ? (
+            {loading ? (
+              <p className="notif-loading" role="status" aria-live="polite"><Loader2 className="spin" size={16} aria-hidden="true" /> Đang tải thông báo…</p>
+            ) : items.length === 0 ? (
               <p className="notif-empty">Không có thông báo mới.</p>
             ) : (
               items.map((item) => {
@@ -356,7 +358,7 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
     const load = () => {
       controller?.abort();
       controller = new AbortController();
-      void listConversations(false, controller.signal).then((result) => { if (active) setItems(result.items); }).catch(() => undefined);
+      void listConversations(false, controller.signal, 1, 10).then((result) => { if (active) setItems(result.items); }).catch(() => undefined);
     };
     load();
     window.addEventListener(CONVERSATIONS_CHANGED_EVENT, load);
@@ -364,7 +366,7 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
   }, []);
   const groups = groupConversations(items.filter((item) => item.status !== "ARCHIVED")).slice(0, 3);
   if (!groups.length) return null;
-  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
+  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history/conversations">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
 }
 
 function conversationIcon(title: string) { const lower = title.toLowerCase(); if (lower.includes("xe") || lower.includes("chuyến") || lower.includes("đi") || lower.includes("đón")) return CarFront; if (lower.includes("ăn") || lower.includes("phở") || lower.includes("món") || lower.includes("quán") || lower.includes("bàn") || lower.includes("nhà hàng")) return Utensils; if (lower.includes("khám") || lower.includes("bệnh") || lower.includes("bác sĩ") || lower.includes("y tế")) return Stethoscope; return MessageSquareText; }
