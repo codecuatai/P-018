@@ -78,7 +78,8 @@ export interface SupportTicketUpdateResult {
 
 export interface ProductOpsStore {
   upsertNotification(value: NotificationRecord): Promise<NotificationRecord>;
-  listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]>;
+  listNotifications(actorId: string, options?: { status?: NotificationStatus; page?: number; pageSize?: number }): Promise<NotificationRecord[]>;
+  countNotifications(actorId: string, status?: NotificationStatus): Promise<number>;
   countUnreadNotifications(actorId: string): Promise<number>;
   markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined>;
   markAllNotificationsRead(actorId: string): Promise<number>;
@@ -115,11 +116,19 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
     return clone(value);
   }
 
-  async listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> {
+  async listNotifications(actorId: string, options: { status?: NotificationStatus; page?: number; pageSize?: number } = {}): Promise<NotificationRecord[]> {
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 20;
+    const offset = (page - 1) * pageSize;
     return [...this.notifications.values()]
-      .filter((item) => item.actorId === actorId && (!status || item.status === status))
-      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .filter((item) => item.actorId === actorId && (!options.status || item.status === options.status))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id))
+      .slice(offset, offset + pageSize)
       .map(clone);
+  }
+
+  async countNotifications(actorId: string, status?: NotificationStatus): Promise<number> {
+    return [...this.notifications.values()].filter((item) => item.actorId === actorId && (!status || item.status === status)).length;
   }
 
   async countUnreadNotifications(actorId: string): Promise<number> {
@@ -324,7 +333,17 @@ export class PostgresProductOpsStore implements ProductOpsStore {
     return this.notificationFromRow(result.rows[0]);
   }
 
-  async listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> { const result = await this.pool.query(`SELECT * FROM notifications WHERE actor_id=$1 ${status ? 'AND status=$2' : ''} ORDER BY created_at DESC`, status ? [actorId, status] : [actorId]); return result.rows.map((row) => this.notificationFromRow(row)); }
+  async listNotifications(actorId: string, options: { status?: NotificationStatus; page?: number; pageSize?: number } = {}): Promise<NotificationRecord[]> {
+    const values: unknown[] = [actorId];
+    let where = 'actor_id=$1';
+    if (options.status) { values.push(options.status); where += ` AND status=$${values.length}`; }
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 20;
+    values.push(pageSize, (page - 1) * pageSize);
+    const result = await this.pool.query(`SELECT * FROM notifications WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
+    return result.rows.map((row) => this.notificationFromRow(row));
+  }
+  async countNotifications(actorId: string, status?: NotificationStatus): Promise<number> { const result = await this.pool.query(`SELECT count(*)::int AS count FROM notifications WHERE actor_id=$1 ${status ? 'AND status=$2' : ''}`, status ? [actorId, status] : [actorId]); return Number(result.rows[0]?.count ?? 0); }
   async countUnreadNotifications(actorId: string): Promise<number> { const result = await this.pool.query("SELECT count(*)::int AS count FROM notifications WHERE actor_id=$1 AND status='UNREAD'", [actorId]); return Number(result.rows[0]?.count ?? 0); }
   async markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined> { const result = await this.pool.query("UPDATE notifications SET status='READ',read_at=COALESCE(read_at,now()) WHERE id=$1 AND actor_id=$2 RETURNING *", [id, actorId]); return result.rows[0] ? this.notificationFromRow(result.rows[0]) : undefined; }
   async markAllNotificationsRead(actorId: string): Promise<number> { const result = await this.pool.query("UPDATE notifications SET status='READ',read_at=COALESCE(read_at,now()) WHERE actor_id=$1 AND status='UNREAD'", [actorId]); return result.rowCount ?? 0; }
@@ -441,7 +460,8 @@ export class CoreProductOpsStore implements OnModuleDestroy {
 
   constructor(config: ConfigService) { this.repository = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID ? new InMemoryProductOpsStore() : new PostgresProductOpsStore(config.getOrThrow<string>('DATABASE_URL')); }
   upsertNotification(value: NotificationRecord): Promise<NotificationRecord> { return this.repository.upsertNotification(value); }
-  listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> { return this.repository.listNotifications(actorId, status); }
+  listNotifications(actorId: string, options?: { status?: NotificationStatus; page?: number; pageSize?: number }): Promise<NotificationRecord[]> { return this.repository.listNotifications(actorId, options); }
+  countNotifications(actorId: string, status?: NotificationStatus): Promise<number> { return this.repository.countNotifications(actorId, status); }
   countUnreadNotifications(actorId: string): Promise<number> { return this.repository.countUnreadNotifications(actorId); }
   markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined> { return this.repository.markNotificationRead(id, actorId); }
   markAllNotificationsRead(actorId: string): Promise<number> { return this.repository.markAllNotificationsRead(actorId); }

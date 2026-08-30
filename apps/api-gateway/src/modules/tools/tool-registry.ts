@@ -86,6 +86,7 @@ const definitions: readonly ToolDefinition[] = [
   definition({ name: 'restaurant.check_availability', domain: 'restaurant', version: 2, risk: 'READ', argumentSchema: 'RestaurantAvailabilityArguments', resultSchema: 'RestaurantAvailabilityResult', idempotencyRequirement: 'none', confirmationRequirement: 'none', owner: 'restaurant-service', classification: 'IMPLEMENTED_AGENT_TOOL' }),
   definition({ name: 'restaurant.create_hold', domain: 'restaurant', version: 2, risk: 'REVERSIBLE_WRITE', argumentSchema: 'RestaurantHoldArguments', resultSchema: 'RestaurantHoldResult', idempotencyRequirement: 'required', confirmationRequirement: 'policy-dependent', owner: 'restaurant-service', classification: 'IMPLEMENTED_AGENT_TOOL' }),
   definition({ name: 'restaurant.create_reservation', domain: 'restaurant', version: 2, risk: 'FINANCIAL_OR_FINAL', argumentSchema: 'RestaurantReservationArguments', resultSchema: 'RestaurantReservationResult', idempotencyRequirement: 'required', confirmationRequirement: 'explicit_gateway_confirmation', owner: 'restaurant-service + Gateway', classification: 'IMPLEMENTED_GATEWAY_ACTION' }),
+  definition({ name: 'restaurant.update_reservation', domain: 'restaurant', version: 2, risk: 'FINANCIAL_OR_FINAL', argumentSchema: 'RestaurantReservationUpdateArguments', resultSchema: 'RestaurantReservationResult', idempotencyRequirement: 'required', confirmationRequirement: 'explicit_gateway_confirmation', owner: 'restaurant-service + Gateway', classification: 'IMPLEMENTED_GATEWAY_ACTION' }),
   definition({ name: 'healthcare.list_departments', domain: 'healthcare', version: 2, risk: 'READ', argumentSchema: 'HealthcareDepartmentArguments', resultSchema: 'HealthcareDepartmentResult', idempotencyRequirement: 'none', confirmationRequirement: 'none', owner: 'healthcare-service', classification: 'IMPLEMENTED_AGENT_TOOL' }),
   definition({ name: 'healthcare.list_slots', domain: 'healthcare', version: 2, risk: 'READ', argumentSchema: 'HealthcareSlotArguments', resultSchema: 'HealthcareSlotResult', idempotencyRequirement: 'none', confirmationRequirement: 'none', owner: 'healthcare-service', classification: 'IMPLEMENTED_AGENT_TOOL' }),
   definition({ name: 'healthcare.hold_slot', domain: 'healthcare', version: 2, risk: 'REVERSIBLE_WRITE', argumentSchema: 'HealthcareHoldArguments', resultSchema: 'HealthcareAppointmentResult', idempotencyRequirement: 'required', confirmationRequirement: 'policy-dependent', owner: 'healthcare-service', classification: 'IMPLEMENTED_AGENT_TOOL' }),
@@ -142,7 +143,7 @@ const argumentKeys: Record<string, readonly string[]> = {
   'food.order.confirm': ['cart_id', 'address_id', 'confirmation_id'],
   'food.order.cancel': ['order_id', 'confirmation_id'],
   'food.refund.execute': ['payment_id', 'confirmation_id'],
-  'ride.quote.create': ['pickup_address', 'dropoff_address', 'vehicle_type', 'passenger_count', 'promo_code', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude'],
+  'ride.quote.create': ['pickup_address', 'dropoff_address', 'vehicle_type', 'passenger_count', 'promo_code', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'stopovers'],
   'ride.quote.get': ['quote_id'],
   'ride.booking.prepare': ['quote_id'],
   'ride.booking.get': ['booking_id'],
@@ -154,6 +155,7 @@ const argumentKeys: Record<string, readonly string[]> = {
   'restaurant.check_availability': ['restaurant_id', 'start_at', 'party_size', 'duration_minutes', 'seating_type'],
   'restaurant.create_hold': ['restaurant_id', 'start_at', 'party_size', 'duration_minutes', 'seating_type'],
   'restaurant.create_reservation': ['restaurant_id', 'party_size', 'start_at', 'duration_minutes', 'special_requests', 'hold_id'],
+  'restaurant.update_reservation': ['reservation_id', 'party_size', 'start_at', 'special_requests'],
   'healthcare.list_departments': ['facility_id', 'keyword'],
   'healthcare.list_slots': ['department', 'facility_id', 'date', 'start_at'],
   'healthcare.hold_slot': ['slot_id', 'symptoms'],
@@ -204,6 +206,7 @@ const requiredArguments: Record<string, readonly string[]> = {
   'restaurant.check_availability': ['restaurant_id', 'start_at', 'party_size'],
   'restaurant.create_hold': ['restaurant_id', 'start_at', 'party_size'],
   'restaurant.create_reservation': ['hold_id'],
+  'restaurant.update_reservation': ['reservation_id'],
   'healthcare.list_slots': ['department'],
   'healthcare.hold_slot': ['slot_id'],
   'healthcare.confirm_appointment': ['appointment_id'],
@@ -260,8 +263,10 @@ function validateArguments(definition_: ToolDefinition, args: Record<string, unk
   }
   if (definition_.name === 'ride.quote.create' && !['BIKE', 'CAR_4', 'CAR_7'].includes(String(args.vehicle_type))) throw new BadGatewayException({ code: 'TOOL_ARGUMENTS_INVALID', detail: 'Agent tool arguments are invalid.', retryable: false });
   if (definition_.name === 'ride.quote.create' && args.passenger_count !== undefined && (!Number.isInteger(args.passenger_count) || Number(args.passenger_count) < 1 || Number(args.passenger_count) > 20)) throw new BadGatewayException({ code: 'TOOL_ARGUMENTS_INVALID', detail: 'Agent tool arguments are invalid.', retryable: false });
+  if (definition_.name === 'ride.quote.create' && args.stopovers !== undefined && (!Array.isArray(args.stopovers) || args.stopovers.length > 2 || args.stopovers.some((stopover) => !isRecord(stopover) || !isNonEmptyString(stopover.address, 300) || !isCoordinate(stopover.latitude, -90, 90) || !isCoordinate(stopover.longitude, -180, 180)))) throw new BadGatewayException({ code: 'TOOL_ARGUMENTS_INVALID', detail: 'Agent tool arguments are invalid.', retryable: false });
   if (definition_.idempotencyRequirement === 'required' && definition_.risk !== 'READ' && args.idempotency_key !== undefined) throw new BadGatewayException({ code: 'TOOL_ARGUMENTS_INVALID', detail: 'Idempotency is supplied by the request boundary.', retryable: false });
 }
 
 function isNonEmptyString(value: unknown, maximumLength: number): value is string { return typeof value === 'string' && value.trim().length > 0 && value.length <= maximumLength; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
+function isCoordinate(value: unknown, minimum: number, maximum: number): value is number { return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum; }

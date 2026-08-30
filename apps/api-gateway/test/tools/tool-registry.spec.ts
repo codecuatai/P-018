@@ -126,4 +126,20 @@ describe('ToolRegistry', () => {
     expect(() => registry.require({ tool_name: 'restaurant.search', risk_level: 'READ', workflow_id: 'wf_test', arguments: { location: 'Hà Nội', price: 0 } })).toThrow(BadGatewayException);
     expect(() => registry.require({ tool_name: 'healthcare.hold_slot', workflow_id: 'wf_test', arguments: { slot_id: 10, patient_id: 99 } })).toThrow(BadGatewayException);
   });
+
+  it('requires the authoritative reservation id for Restaurant updates', () => {
+    expect(() => registry.require({
+      tool_name: 'restaurant.update_reservation',
+      risk_level: 'FINANCIAL_OR_FINAL',
+      workflow_id: 'wf_restaurant_update',
+      arguments: { start_at: '2099-01-01T12:00:00Z' },
+    })).toThrow(BadGatewayException);
+
+    expect(() => registry.require({
+      tool_name: 'restaurant.update_reservation',
+      risk_level: 'FINANCIAL_OR_FINAL',
+      workflow_id: 'wf_restaurant_update',
+      arguments: { reservation_id: 'reservation-1', start_at: '2099-01-01T12:00:00Z' },
+    })).not.toThrow();
+  });
 });

@@ -5,17 +5,18 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as Rea
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
-import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { actionActivity, buildActivityFromResponse } from "@/lib/progress-filter";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
 import { emitActiveConversationChanged, emitConversationsChanged, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
-import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type HistoryItem } from "@/types";
+import { isUserVisibleConversationMessage, type AssistantAction, type AssistantResponse, type AuthUser, type ChatMessage, type ConversationRecord, type DeviceCurrentLocation, type HistoryItem } from "@/types";
 
 import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailCard, ContextRail, ConversationContextCards } from "@/features/product/context-rail";
 import { VoiceInput } from "@/components/voice-input";
 import { VoiceOutput } from "@/components/voice-output";
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis";
+import { deviceLocationFromPosition } from "./current-location";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
@@ -30,7 +31,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const tts = useSpeechSynthesis();
   const [ttsActiveMessageId, setTtsActiveMessageId] = useState<string | null>(null);
   const [activeItems, setActiveItems] = useState<HistoryItem[]>([]);
-  const [activeRefreshNonce, setActiveRefreshNonce] = useState(0);
   const [activeDetail, setActiveDetail] = useState<HistoryItem | null>(null);
   const [foodSelections, setFoodSelections] = useState<Record<string, FoodSelection>>({});
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
@@ -49,6 +49,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
+  const [currentLocation, setCurrentLocation] = useState<DeviceCurrentLocation>();
 
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
@@ -56,6 +57,13 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const railWidthRef = useRef(railWidth);
   const activeRequestController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 128)}px`;
+  }, [composer]);
 
   // Abort any in-flight assistant request when the chat screen unmounts so a
   // pending fetch can never keep the request (or its timers) alive after navigation.
@@ -177,6 +185,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     let active = true;
     let timer: number | undefined;
     let requestSignalController: AbortController | undefined;
+    let refreshPromise: Promise<void> | undefined;
 
     const unsubscribe = subscribeActiveHistoryShared(user.sub, (items) => {
       if (active) setActiveItems(items);
@@ -189,22 +198,31 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       }
     };
 
-    const refresh = async (force = false): Promise<void> => {
-      if (!active || document.hidden) return;
-      requestSignalController = new AbortController();
-      try {
-        const { items, nextInterval } = await fetchActiveHistoryShared(user.sub, {
-          force,
-          signal: requestSignalController.signal,
-        });
-        if (!active) return;
-        setActiveItems(items);
-        scheduleNext(nextInterval);
-      } catch {
-        scheduleNext(60_000);
-      } finally {
-        requestSignalController = undefined;
-      }
+    const refresh = (force = false): Promise<void> => {
+      if (!active || document.hidden) return Promise.resolve();
+      if (refreshPromise) return refreshPromise;
+      const controller = new AbortController();
+      requestSignalController = controller;
+      const run = (async () => {
+        try {
+          const { items, nextInterval } = await fetchActiveHistoryShared(user.sub, {
+            force,
+            signal: controller.signal,
+          });
+          if (!active) return;
+          setActiveItems(items);
+          scheduleNext(nextInterval);
+        } catch {
+          scheduleNext(60_000);
+        }
+      })();
+      let settled: Promise<void>;
+      settled = run.finally(() => {
+        if (refreshPromise === settled) refreshPromise = undefined;
+        if (requestSignalController === controller) requestSignalController = undefined;
+      });
+      refreshPromise = settled;
+      return settled;
     };
 
     const handleVisibilityChange = () => {
@@ -239,7 +257,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       window.removeEventListener("focus", handleWindowFocus);
       window.removeEventListener("xone-active-work-changed", handleActiveWorkChanged);
     };
-  }, [activeRefreshNonce, user.sub]);
+  }, [user.sub]);
 
   useEffect(() => { feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" }); }, [messages.length, sending]);
 
@@ -275,9 +293,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setComposer("");
     setSending(true);
     try {
-      const requestStartedAt = Date.now();
-      const response = await sendAssistantMessage(text, conversationId, controller.signal);
-      await holdHealthcareDemoResponse(response, requestStartedAt);
+      const response = await sendAssistantMessage(text, conversationId, currentLocation, controller.signal);
       setConversationId(response.conversation_id);
       if (response.items.some((item) => item.kind === "food_options") && response.actions.some((action) => action.kind === "select_food_item")) {
         setFoodSelections({});
@@ -286,7 +302,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: response.message, response, requestStatus: "sent" } : item));
       void syncConversation(response.conversation_id);
       emitConversationsChanged();
-      setActiveRefreshNonce((value) => value + 1);
+      window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
     } catch (error) {
       if (isAbortError(error)) {
         setMessages((current) => current.map((item) => item.id === pendingId ? { ...item, text: "Đã dừng tạo câu trả lời.", requestStatus: "stopped" as const } : item));
@@ -313,7 +329,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setSending(true);
     setMessages((current) => [...current, { id: pendingId, role: "assistant", text: "Mình đang hoàn tất bước này…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt: Date.now(), activity }]);
     try {
-      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, input, controller.signal);
+      const response = await runAssistantAction(conversationId, action.id, idempotencyKey, {
+        ...input,
+        ...(currentLocation ? { currentLocation } : {}),
+      }, controller.signal);
       consumedActionIds.current.add(action.id);
       delete actionKeys.current[action.id];
       const keepMutationInTurn = action.kind === "select_food_item" || action.kind === "food_cart_increment" || action.kind === "food_cart_decrement" || action.kind === "food_cart_remove";
@@ -329,7 +348,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       });
       if (!keepMutationInTurn) void syncConversation(response.conversation_id);
       emitConversationsChanged();
-      setActiveRefreshNonce((value) => value + 1);
+      window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
     } catch (error) {
       if (isAbortError(error)) {
         setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: "Đã dừng thực hiện bước này.", requestStatus: "stopped" as const } : message));
@@ -343,7 +362,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       }));
       if (!retryable) {
         void syncConversation(conversationId);
-        setActiveRefreshNonce((value) => value + 1);
+        window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
       }
     } finally {
       if (activeRequestController.current === controller) activeRequestController.current = null;
@@ -377,7 +396,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         const action = selection.action;
         const idempotencyKey = actionKeys.current[action.id] ?? createIdempotencyKey("assistant-select_food_item");
         actionKeys.current[action.id] = idempotencyKey;
-        response = await runAssistantAction(conversationId, action.id, idempotencyKey, { quantity: selection.quantity }, controller.signal);
+        response = await runAssistantAction(conversationId, action.id, idempotencyKey, {
+          quantity: selection.quantity,
+          ...(currentLocation ? { currentLocation } : {}),
+        }, controller.signal);
         consumedActionIds.current.add(action.id);
       }
       if (controller.signal.aborted) {
@@ -389,7 +411,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       if (checkout) {
         const checkoutKey = actionKeys.current[checkout.id] ?? createIdempotencyKey("assistant-food_checkout");
         actionKeys.current[checkout.id] = checkoutKey;
-        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey, undefined, controller.signal);
+        finalResponse = await runAssistantAction(conversationId, checkout.id, checkoutKey, currentLocation ? { currentLocation } : undefined, controller.signal);
         consumedActionIds.current.add(checkout.id);
       }
       if (!finalResponse) throw new Error("FOOD_RESPONSE_EMPTY");
@@ -402,7 +424,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         : message));
       void syncConversation(finalResponse.conversation_id);
       emitConversationsChanged();
-      setActiveRefreshNonce((value) => value + 1);
+      window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
     } catch (error) {
       if (isAbortError(error)) {
         setMessages((current) => current.map((message) => message.id === pendingId ? { ...message, text: "Đã dừng tạo đơn.", requestStatus: "stopped" as const } : message));
@@ -416,7 +438,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     }
   }
 
-  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
+  function newConversation(): void { actionKeys.current = {}; consumedActionIds.current = new Set(); setConversationId(undefined); setMessages([]); setComposer(""); setConversationLoadError(""); setLocateError(""); setCurrentLocation(undefined); setFoodSelections({}); setFoodSelectionSubmitted(false); inputRef.current?.focus(); }
   
   async function handleLocate(): Promise<void> {
     if (!("geolocation" in navigator)) {
@@ -429,7 +451,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     try {
       const position = await getCurrentPosition();
       const address = await fetchAddress(position);
-      setComposer((previous) => previous + (previous ? " " : "") + address);
+      setCurrentLocation(deviceLocationFromPosition(position, address));
       inputRef.current?.focus();
     } catch {
       setLocateError("Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập và thử lại.");
@@ -524,6 +546,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
               </div>
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
+            {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
             <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
           </div>
         </div>
@@ -722,60 +745,18 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
-const REVERSE_GEOCODE_TIMEOUT_MS = 8_000;
-
-// Reverse geocode through Nominatim (OpenStreetMap) for house-number level detail.
-// The request is aborted after REVERSE_GEOCODE_TIMEOUT_MS so a slow or unreachable
-// provider can never leave the composer's locate button spinning.
 async function fetchAddress(position: GeolocationPosition): Promise<string> {
   const lat = position.coords.latitude;
   const lon = position.coords.longitude;
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), REVERSE_GEOCODE_TIMEOUT_MS);
-
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=vi`,
-      { signal: controller.signal },
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      const addr = data.address;
-      
-      if (addr) {
-        const houseNumber = addr.house_number ? `Số ${addr.house_number}` : "";
-        const road = addr.road || "";
-        const streetInfo = [houseNumber, road].filter(Boolean).join(" ");
-        
-        const district = addr.county || addr.suburb || addr.city_district || "";
-        const city = addr.city || addr.province || addr.state || "";
-        
-        const rawAddress = [streetInfo, district, city].filter(Boolean).join(", ");
-        const uniqueParts = [...new Set(rawAddress.split(", ").map(s => s.trim()))].filter(Boolean);
-        
-        if (uniqueParts.length > 0) {
-          return uniqueParts.join(", ");
-        }
-      }
-    }
-    throw new Error("Không có dữ liệu chi tiết");
-    
-  } catch (error) {
-    console.warn("Lỗi API Nominatim, fallback về tọa độ thô:", error);
-    return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-  } finally {
-    window.clearTimeout(timer);
+    const result = await reverseGeocodeAddress(lat, lon);
+    const candidate = result.candidates.find((item) => item.address_text.trim());
+    if (candidate?.address_text.trim()) return candidate.address_text.trim();
+  } catch {
+    // The Gateway owns provider access. Keep the device location usable if
+    // reverse geocoding is temporarily unavailable.
   }
-}
-
-async function holdHealthcareDemoResponse(response: AssistantResponse, requestStartedAt: number): Promise<void> {
-  const isHealthcareResponse = [...(response.completed ?? []), ...response.items].some((item) => ["healthcare_options", "healthcare_no_availability", "appointment", "healthcare_confirmation", "appointment_confirmed"].includes(item.kind))
-    || response.actions.some((action) => action.kind.startsWith("healthcare_") || action.kind === "select_healthcare_slot");
-  if (!isHealthcareResponse) return;
-
-  const remainingDelay = 6000 - (Date.now() - requestStartedAt);
-  if (remainingDelay > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, remainingDelay));
+  return `Tọa độ: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 }
 
 function toChatMessages(record: ConversationRecord, consumedActionIds: Set<string> = new Set()): ChatMessage[] { return record.messages.filter(isUserVisibleConversationMessage).map((message, index) => ({ id: `${record.conversationId}-${index}`, role: message.role, text: message.content, timestamp: message.createdAt, ...(message.role === "assistant" && message.data ? { response: { ...message.data, actions: message.data.actions.filter((action) => !consumedActionIds.has(action.id)) } } : {}), requestStatus: "sent" })); }

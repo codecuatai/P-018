@@ -73,7 +73,7 @@ vào worklog. Việc vận hành bắt buộc: thu hồi/rotate khóa đã lộ.
 
 ### 3.1. Migration Healthcare catalog
 
-Đã cập nhật scripts/migrate.ps1 và scripts/migrate.sh để chạy migration:
+Đã cập nhật scripts/database/migrate.ps1 và scripts/database/migrate.sh để chạy migration:
 
 ~~~text
 services/healthcare-service/migrations/003_healthcare_provider_catalog.sql
@@ -83,7 +83,7 @@ Chưa chạy live lại sau thay đổi.
 
 ### 3.2. Nối importer vào seed chuẩn
 
-Đã cập nhật scripts/seed.ps1 và scripts/seed.sh theo thứ tự:
+Đã cập nhật scripts/database/seed.ps1 và scripts/database/seed.sh theo thứ tự:
 
 1. Seed Food deterministic.
 2. Chạy seeds.import_food_csv.
@@ -172,8 +172,8 @@ docker compose --env-file .env up -d --no-deps agent-service api-gateway restaur
 4. Chạy migration và importer:
 
 ~~~powershell
-./scripts/migrate.ps1 .env
-./scripts/seed.ps1 .env
+./scripts/database/migrate.ps1 .env
+./scripts/database/seed.ps1 .env
 ~~~
 
 Không dùng docker compose down -v.
@@ -275,7 +275,7 @@ python -m pytest -q
 
 ~~~powershell
 Set-Location "F:\E\VinUni\P-018"
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env config --quiet
 $env:E2E_GATEWAY_URL = "http://localhost:3000"
 python -m pytest tests/e2e -q
@@ -350,7 +350,7 @@ nguyên, chứng minh upsert không tạo bản ghi catalog trùng.
 - Ride: `10 passed`.
 - Gateway: `61 passed, 5 skipped`; `pnpm lint` và `pnpm build` pass.
 - Web: `pnpm build` pass.
-- `python scripts/validate-env-config.py` pass (81 root variables, 77 Compose
+- `python scripts/quality/validate-env-config.py` pass (81 root variables, 77 Compose
   variables); `docker compose --env-file .env config --quiet` và
   `docker compose --env-file .env.example config --quiet` pass.
 - Ruff: **not run** vì Python local không cài module `ruff`; không ghi nhận pass.

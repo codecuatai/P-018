@@ -12,16 +12,18 @@ function makeService() {
 }
 
 describe('ProductOpsService', () => {
-  it('synchronizes deterministic notifications idempotently', async () => {
+  it('reads paginated notification projections without synchronizing domains', async () => {
     const { service, store, ride } = makeService();
-    (ride.listBookings as jest.Mock).mockResolvedValue({ items: [{ id: 'ride-1', status: 'DRIVER_ASSIGNED' }] });
+    await store.upsertNotification({ id: 'notification-1', actorId: 'actor-1', eventKey: 'ride-1', type: 'RIDE_DRIVER_ASSIGNED', title: 'Tài xế đã nhận chuyến', body: 'Đang đến.', status: 'UNREAD', createdAt: '2026-08-30T00:00:00.000Z' });
+    await store.upsertNotification({ id: 'notification-2', actorId: 'actor-1', eventKey: 'ride-2', type: 'RIDE_DRIVER_ASSIGNED', title: 'Tài xế khác', body: 'Đang đến.', status: 'UNREAD', createdAt: '2026-08-30T00:01:00.000Z' });
 
-    const first = await service.listNotifications('actor-1', 'cor-1');
-    const second = await service.listNotifications('actor-1', 'cor-2');
+    const first = await service.listNotifications('actor-1', { page: 1, pageSize: 1 });
+    const second = await service.listNotifications('actor-1', { page: 2, pageSize: 1 });
 
-    expect(first).toMatchObject({ unread_count: 1, partial: false, unavailable: [] });
-    expect(second.unread_count).toBe(1);
-    expect(await store.listNotifications('actor-1')).toHaveLength(1);
+    expect(first).toMatchObject({ unread_count: 2, total: 2, page: 1, page_size: 1, has_more: true, partial: false, unavailable: [] });
+    expect(second).toMatchObject({ unread_count: 2, total: 2, page: 2, page_size: 1, has_more: false });
+    expect(first.items[0]?.id).not.toBe(second.items[0]?.id);
+    expect(ride.listBookings).not.toHaveBeenCalled();
   });
 
   it('validates a favorite against the authoritative healthcare service and deduplicates it', async () => {

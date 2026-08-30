@@ -33,7 +33,7 @@ describe("NotificationBell behavior", () => {
     mockListConversations.mockResolvedValue({ items: [] });
   });
 
-  it("shows red badge with unread count, renders unread items in blue and read items in white, marks all read and keeps history", async () => {
+  it("shows red badge with unread count and keeps it consistent while rendering notification history", async () => {
     mockGetUnreadNotificationCount
       .mockResolvedValueOnce({ unread_count: 2 })
       .mockResolvedValue({ unread_count: 0 });
@@ -68,13 +68,8 @@ describe("NotificationBell behavior", () => {
     expect(unreadItem).toHaveClass("notif-unread"); // Blue background
     expect(readItem).not.toHaveClass("notif-unread"); // White background
 
-    // markAllNotificationsRead was called
-    expect(mockMarkAllNotificationsRead).toHaveBeenCalledTimes(1);
-
-    // Red badge count on bell disappears (count is 0)
-    await waitFor(() => {
-      expect(screen.queryAllByText("2")).toHaveLength(0);
-    });
+    expect(mockMarkAllNotificationsRead).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Thông báo, 1 chưa đọc")).toBeInTheDocument();
 
     // 3. User closes popover
     const closeBtn = screen.getByRole("button", { name: "Đóng" });
@@ -82,7 +77,7 @@ describe("NotificationBell behavior", () => {
       fireEvent.click(closeBtn);
     });
 
-    // 4. When user re-opens, notifications are still present but all are now marked READ (white)
+    // 4. When the source later reports them read, the popup reflects that state.
     mockListNotifications.mockResolvedValueOnce({
       items: [
         { id: "notif-1", title: "Tài xế đã đến điểm đón", body: "Tài xế đang chờ bạn", status: "READ", created_at: new Date().toISOString() },
@@ -102,5 +97,21 @@ describe("NotificationBell behavior", () => {
       expect(item1).not.toHaveClass("notif-unread");
       expect(item2).not.toHaveClass("notif-unread");
     });
+  });
+
+  it("shows a loading state instead of an empty notification message while the list is pending", async () => {
+    mockGetUnreadNotificationCount.mockResolvedValue({ unread_count: 4 });
+    let resolveNotifications: ((value: { items: never[]; unread_count: number }) => void) | undefined;
+    mockListNotifications.mockImplementationOnce(() => new Promise((resolve) => { resolveNotifications = resolve; }));
+
+    render(<AppShell><div>App Content</div></AppShell>);
+    const bellBtn = screen.getAllByRole("button", { name: /Thông báo/i })[0];
+    await act(async () => { fireEvent.click(bellBtn); });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Đang tải thông báo…");
+    expect(screen.queryByText("Không có thông báo mới.")).not.toBeInTheDocument();
+
+    await act(async () => { resolveNotifications?.({ items: [], unread_count: 0 }); });
+    await waitFor(() => expect(screen.getByText("Không có thông báo mới.")).toBeInTheDocument());
   });
 });

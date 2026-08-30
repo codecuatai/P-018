@@ -67,12 +67,12 @@ test commands. A Gemini key is needed only for the real-LLM evaluation.
 
    ```powershell
    Copy-Item .env.example .env
-   ./scripts/start-all.ps1
+   ./scripts/local/start-all.ps1
    ```
 
    ```bash
    cp .env.example .env
-   ./scripts/start-all.sh
+   ./scripts/local/start-all.sh
    ```
 
 2. The launcher validates the template, builds and starts Compose, waits for
@@ -83,12 +83,20 @@ test commands. A Gemini key is needed only for the real-LLM evaluation.
    `http://localhost:3000`. Use the development demo credentials configured in
    your private `.env` when demo authentication is enabled.
 
-For deterministic demo data, explicitly add `-SeedDemo` (PowerShell) or
-`--seed-demo` (Bash). For a disposable template-only verification that never
-reads a private `.env`, use:
+For deterministic local demo data, explicitly add `-SeedDemo` (PowerShell) or
+`--seed-demo` (Bash). The Compose catalog-importer job imports the versioned
+static catalog snapshots in `data/` without requiring Python on the deployment
+host; it then creates future Healthcare slots and the demo patient link, and
+maintains the Ride driver pool without resetting existing records. The
+`deploy-develop` workflow performs this same additive import and verification
+automatically after every code deployment, so it requires no manual seed
+command. `data/` is a catalog source only; it never contains or restores
+conversations, accounts, bookings, appointments, payments, or other mutable
+domain data. For a disposable template-only verification that never reads a
+private `.env`, use:
 
 ```powershell
-./scripts/start-all.ps1 -EnvFile .env.example
+./scripts/local/start-all.ps1 -EnvFile .env.example
 ```
 
 The full onboarding, standalone-development, migration, and troubleshooting
@@ -133,9 +141,9 @@ The launcher reports the Web and Gateway URLs after successful health checks.
 For static configuration checks that do not read your private `.env`:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
-python scripts/check-migration-parity.py
+python scripts/database/check-migration-parity.py
 ```
 
 Run targeted automated checks using the commands in the

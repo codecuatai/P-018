@@ -13,21 +13,18 @@ export class DuplicateAuthEmailError extends Error {
 // A refresh response can be lost in transit when the client aborts the request
 // mid-flight (hard navigation, reload, or tab teardown while the page is still
 // restoring its in-memory session). The server may have already committed the
-// rotation, so the browser keeps the *old* cookie and replays it on the next
+// rotation, so the browser keeps the old cookie and replays it on the next
 // load. Within this short grace window such a replay — of a just-consumed token
-// whose replacement session is still untouched — is treated as that benign race
-// and rolled forward, instead of tripping family-wide reuse detection and
-// logging the user out. Outside the window, or once the replacement has already
-// been used/revoked, genuine reuse detection still applies in full.
-// A bounded, configuration-backed grace window handles a lost refresh response
-// without weakening replay detection after the replacement chain is exhausted.
+// whose replacement session is still untouched — is treated as that benign
+// race and rolled forward. Outside the window, or once the replacement has
+// already been used or revoked, genuine reuse detection still applies.
 export const REFRESH_REUSE_GRACE_MS = 10_000;
 
 function resolveReuseGraceMs(raw: unknown): number {
   const parsed = Number(raw ?? REFRESH_REUSE_GRACE_MS / 1_000);
-  return (Number.isFinite(parsed) ? Math.max(0, parsed) : 10) * 1_000;
+  if (!Number.isFinite(parsed)) return REFRESH_REUSE_GRACE_MS;
+  return Math.min(Math.max(parsed, 0), 300) * 1_000;
 }
-
 export type RefreshRotation =
   | { state: 'ROTATED'; account: AuthAccount; session: AuthSession }
   | { state: 'REUSE_DETECTED'; account: AuthAccount; familyId: string }
@@ -146,8 +143,8 @@ export class InMemoryAuthRepository implements AuthRepository {
     if (!current) return { state: 'INVALID' };
     const account = await this.getUserById(current.userId);
     if (!account) return { state: 'INVALID' };
-    // A revoked member is always a genuine replay: the family was already torn
-    // down (logout, prior reuse, password change, ...).
+    // A revoked member is always a genuine replay: the family was already
+    // torn down by logout, prior reuse, password change, or another revoke.
     if (current.revokedAt) {
       await this.revokeAllInFamily(current.userId, current.familyId, 'refresh_token_reuse', now);
       return { state: 'REUSE_DETECTED', account, familyId: current.familyId };

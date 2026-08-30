@@ -7,7 +7,6 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
-
 from _helpers import (
     DEMO_EMAIL,
     DEMO_PASSWORD,

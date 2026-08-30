@@ -94,6 +94,14 @@ def test_address_discovery_is_a_tool_request() -> None:
     ]
 
 
+def test_generic_home_preference_does_not_select_the_only_saved_address() -> None:
+    slots = resolve_references(
+        {"address_query": "nhà"},
+        {"address_candidates": [{"id": "address_opaque_1", "label": "Nhà riêng"}]},
+    )
+    assert "address_id" not in slots
+
+
 def test_new_dish_query_does_not_reuse_previous_menu_item() -> None:
     slots = resolve_references(
         {"menu_item_id": "item_old", "dish_query": "pho ga"},

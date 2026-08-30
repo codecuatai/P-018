@@ -99,6 +99,11 @@ business logic are prohibited.
   distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
   Core A does not treat freshness-required authority without a future expiry as
   usable.
+- Restaurant reservation updates now use a Gateway-owned preview/action pair:
+  the preview compares the requested time/party size with the persisted
+  reservation and a fresh availability snapshot; the confirmed PATCH is
+  actor-scoped, idempotent, resource-version checked, and must return the same
+  reservation ID with the domain's incremented version.
 - Restaurant model extraction uses an `extra=forbid` semantic schema.
   Vietnamese confirmation parsing rejects negation, questions, correction and
   ambiguous substring matches. Actor-scoped Agent routes require constant-time

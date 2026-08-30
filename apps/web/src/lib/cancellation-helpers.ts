@@ -13,7 +13,7 @@ export function isCancellableStatus(type: HistoryType, status: string): boolean 
     return ["CONFIRMED", "HELD", "SCHEDULED", "BOOKED", "PAYMENT_CONFIRMED", "PENDING"].includes(s);
   }
   if (type === "ride_booking") {
-    return ["SEARCHING", "CONFIRMED", "ACCEPTED", "ARRIVING", "PENDING"].includes(s);
+    return ["AWAITING_CONFIRMATION", "AWAITING_PAYMENT_CONFIRMATION", "SEARCHING_DRIVER", "DRIVER_ASSIGNED", "DRIVER_TO_PICKUP", "DRIVER_ARRIVED", "SEARCHING", "CONFIRMED", "ACCEPTED", "ARRIVING", "PENDING"].includes(s);
   }
   if (type === "food_order") {
     return ["CREATED", "CONFIRMED", "PREPARING", "PENDING"].includes(s);
@@ -53,25 +53,9 @@ export async function executeServiceCancellation(
   fallbackId?: string
 ): Promise<Record<string, unknown>> {
   const resource = typeof resourceOrId === "object" && resourceOrId !== null ? resourceOrId : {};
-  let rawId = typeof resourceOrId === "string"
-    ? resourceOrId
-    : String(
-        resource.id ??
-        resource.reservation_id ??
-        resource.appointment_id ??
-        resource.booking_id ??
-        resource.order_id ??
-        resource.resource_id ??
-        ""
-      );
-
-  if (!rawId || rawId === "undefined" || rawId === "null") {
-    rawId = fallbackId ?? (typeof resourceOrId === "string" ? resourceOrId : "");
-  }
-
-  if (!rawId || rawId === "undefined" || rawId === "null") {
-    throw new Error("Không tìm thấy mã giao dịch để hủy.");
-  }
+  let rawId = typeof resourceOrId === "string" ? resourceOrId : String(resource.id ?? resource.reservation_id ?? resource.appointment_id ?? resource.booking_id ?? resource.order_id ?? resource.resource_id ?? "");
+  if (!rawId || rawId === "undefined" || rawId === "null") rawId = fallbackId ?? "";
+  if (!rawId || rawId === "undefined" || rawId === "null") throw new Error("Không tìm thấy mã giao dịch để hủy.");
 
   if (type === "restaurant_reservation") {
     return await cancelRestaurantReservation(rawId);

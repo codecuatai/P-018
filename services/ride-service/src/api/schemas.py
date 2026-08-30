@@ -10,6 +10,14 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RouteStop(StrictModel):
+    """A resolved intermediate stop in the authoritative Ride route."""
+
+    address: str = Field(min_length=3, max_length=300)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+
+
 class QuoteCreate(StrictModel):
     pickup_address: str = Field(min_length=3, max_length=300)
     dropoff_address: str = Field(min_length=3, max_length=300)
@@ -26,6 +34,7 @@ class QuoteCreate(StrictModel):
     route_duration_seconds: int = Field(gt=0)
     route_geometry: list[dict[str, float]] = Field(min_length=2)
     route_snapshot_hash: str | None = Field(default=None, min_length=1, max_length=64)
+    stopovers: list[RouteStop] = Field(default_factory=list, max_length=2)
 
 
 class ConfirmationRequest(StrictModel):
@@ -91,6 +100,7 @@ class QuoteOut(StrictModel):
     route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
     tariff_snapshot: dict[str, Any] | None = None
+    stopovers: list[RouteStop] = Field(default_factory=list)
 
 
 class BookingOut(StrictModel):
@@ -133,6 +143,7 @@ class BookingOut(StrictModel):
     route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
     tariff_snapshot: dict[str, Any] | None = None
+    stopovers: list[RouteStop] = Field(default_factory=list)
 
 
 class TrackingOut(StrictModel):

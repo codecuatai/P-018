@@ -49,6 +49,7 @@ class QuoteRow(Base):
     route_geometry: Mapped[list[dict[str, float]] | None] = mapped_column(JSON, nullable=True)
     route_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tariff_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    stopovers: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
 class BookingRow(Base):

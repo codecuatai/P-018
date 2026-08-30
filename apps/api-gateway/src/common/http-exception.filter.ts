@@ -28,8 +28,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const raw = httpException?.getResponse();
     const source = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {};
     const code = typeof source.code === 'string' ? source.code : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_ERROR';
-    const messageText = Array.isArray(source.message) ? source.message.filter((item): item is string => typeof item === 'string').join('; ') : typeof source.message === 'string' ? source.message : undefined;
-    const detail = status >= 500 && code === 'INTERNAL_ERROR' ? 'An unexpected error occurred.' : typeof source.detail === 'string' ? source.detail : messageText ?? (typeof raw === 'string' ? raw : 'Request failed.');
+    const messageText = Array.isArray(source.message)
+      ? source.message.filter((item): item is string => typeof item === 'string').join('; ')
+      : typeof source.message === 'string' ? source.message : undefined;
+    const detail = status >= 500 && code === 'INTERNAL_ERROR'
+      ? 'An unexpected error occurred.'
+      : typeof source.detail === 'string' ? source.detail : messageText ?? (typeof raw === 'string' ? raw : 'Request failed.');
     response.status(status).json({
       type: `https://x-one.local/problems/${status}`,
       title: httpException?.name ?? 'Internal Server Error',

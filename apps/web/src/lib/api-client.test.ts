@@ -1,4 +1,4 @@
-import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, getFoodMenu, isAbortError, login, request, refreshAccessToken, setAccessToken, updateProfile } from "@/lib/api-client";
+import { ApiError, addFoodCartItem, browseService, changePassword, configureApiClient, errorText, getAccessToken, getActiveHistory, getFoodMenu, isAbortError, login, request, refreshAccessToken, setAccessToken, streamVoice, updateProfile } from "@/lib/api-client";
 
 let originalFetch: typeof fetch | undefined;
 
@@ -323,6 +323,55 @@ describe("browser API client", () => {
       offset: 30,
     });
   });
+
+  it("delivers TTS bytes incrementally without calling arrayBuffer", async () => {
+    setAccessToken("access-token");
+    const sourceChunks = [new Uint8Array([1, 2]), new Uint8Array([3]), new Uint8Array([4, 5])];
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toContain("/api/v1/voice/text-to-speech");
+      expect(new Headers(init?.headers).get("Accept")).toBe("audio/mpeg");
+      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer access-token");
+      expect(JSON.parse(String(init?.body))).toEqual({ text: "Xin chào" });
+      let index = 0;
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          getReader: () => ({
+            read: async () => index < sourceChunks.length
+              ? { done: false, value: sourceChunks[index++] }
+              : { done: true, value: undefined },
+            cancel: async () => undefined,
+            releaseLock: () => undefined,
+          }),
+        },
+        arrayBuffer: jest.fn(() => {
+          throw new Error("buffering is not allowed");
+        }),
+      } as unknown as Response;
+    });
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    const received: number[][] = [];
+    const firstChunkFlags: boolean[] = [];
+    await streamVoice("  Xin chào  ", (chunk, isFirstChunk) => {
+      received.push(Array.from(chunk));
+      firstChunkFlags.push(isFirstChunk);
+    });
+
+    expect(received).toEqual([[1, 2], [3], [4, 5]]);
+    expect(firstChunkFlags).toEqual([true, false, false]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not buffer an empty or whitespace-only TTS request", async () => {
+    const fetchMock = jest.fn();
+    Object.defineProperty(globalThis, "fetch", { configurable: true, value: fetchMock, writable: true });
+
+    await expect(streamVoice("   ", jest.fn())).rejects.toMatchObject({ code: "TEXT_REQUIRED" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("rethrows a raw AbortError when the caller aborts, unlike the internal timeout", async () => {
     const controller = new AbortController();
     const fetchMock = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

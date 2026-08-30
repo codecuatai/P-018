@@ -53,4 +53,58 @@ describe('Ride passenger capacity Gateway propagation', () => {
       }),
     );
   });
+
+  it('composes authoritative route legs when a rebook includes bounded stopovers', async () => {
+    const ride = { createQuote: jest.fn().mockResolvedValue({ id: 'quote-stopover' }) };
+    const locations = {
+      route: jest.fn()
+        .mockResolvedValueOnce({
+          status: 'RESOLVED',
+          provider: 'geoapify',
+          route_distance_meters: 4_000,
+          route_duration_seconds: 500,
+          route_geometry: [{ latitude: 21, longitude: 105.8 }, { latitude: 21.02, longitude: 105.79 }],
+          route_snapshot_hash: 'leg-one',
+        })
+        .mockResolvedValueOnce({
+          status: 'RESOLVED',
+          provider: 'geoapify',
+          route_distance_meters: 5_000,
+          route_duration_seconds: 600,
+          route_geometry: [{ latitude: 21.02, longitude: 105.79 }, { latitude: 21.1, longitude: 105.9 }],
+          route_snapshot_hash: 'leg-two',
+        }),
+    };
+    const service = new ServiceHubService(
+      {} as never,
+      ride as never,
+      {} as never,
+      {} as never,
+      locations as never,
+    );
+
+    await service.quoteRide('actor-stopover', 'quote-key-stopover', 'cor-stopover', {
+      pickup_address: 'Điểm đón',
+      dropoff_address: 'Điểm đến',
+      pickup_latitude: 21,
+      pickup_longitude: 105.8,
+      dropoff_latitude: 21.1,
+      dropoff_longitude: 105.9,
+      vehicle_type: 'BIKE',
+      stopovers: [{ address: 'Công viên Nghĩa Đô', latitude: 21.02, longitude: 105.79 }],
+    });
+
+    expect(locations.route).toHaveBeenCalledTimes(2);
+    expect(ride.createQuote).toHaveBeenCalledWith(
+      'actor-stopover',
+      'quote-key-stopover',
+      expect.objectContaining({ correlationId: 'cor-stopover' }),
+      expect.objectContaining({
+        route_distance_meters: 9_000,
+        route_duration_seconds: 1_100,
+        route_geometry: [{ latitude: 21, longitude: 105.8 }, { latitude: 21.02, longitude: 105.79 }, { latitude: 21.1, longitude: 105.9 }],
+        stopovers: [{ address: 'Công viên Nghĩa Đô', latitude: 21.02, longitude: 105.79 }],
+      }),
+    );
+  });
 });

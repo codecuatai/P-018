@@ -239,7 +239,7 @@ Mỗi case chỉ được chuyển từ `planned` sang `implemented` khi có đ�
 Các lệnh kiểm tra nền bắt buộc của repository vẫn phải chạy cùng test của service bị thay đổi:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 ```
 

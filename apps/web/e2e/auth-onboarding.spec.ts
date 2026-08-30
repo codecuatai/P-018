@@ -25,7 +25,7 @@ test("landing → register → onboarding denial → saved Nhà address → logo
   await page.getByRole("button", { name: "Tiếp tục không dùng vị trí" }).click();
   await page.locator("#onboarding-address").fill("12 Nguyễn Huệ, Quận 1");
   await page.getByRole("button", { name: "Tìm địa chỉ" }).click();
-  await page.getByRole("button", { name: /12 Nguyễn Huệ/ }).click();
+  await page.getByRole("option", { name: /12 Nguyễn Huệ/ }).click();
   await page.getByRole("button", { name: "Hoàn tất thiết lập" }).click();
   await page.waitForURL("**/app");
 

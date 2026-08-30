@@ -1,0 +1,4 @@
+source_id,name,facility_type,address,ward,district,city,latitude,longitude,phone,website,description,emergency_available,opening_hours,image_url,source_name,source_url,fetched_at
+way/218625367,Bệnh viện Bạch Mai,hospital,78 Đường Giải Phóng,Phương Mai,Đống Đa,Hà Nội,21.0018102,105.8394004,,https://bachmai.gov.vn,,t,,,OpenStreetMap,https://www.openstreetmap.org/way/218625367,2026-08-10 13:16:02
+way/218631146,Bệnh viện Trung ương Quân đội 108,hospital,1 Phố Trần Hưng Đạo,Bạch Đằng,Hai Bà Trưng,Hà Nội,21.0163854,105.8606157,,https://benhvien108.vn/,,t,,,OpenStreetMap,https://www.openstreetmap.org/way/218631146,2026-08-10 13:16:02
+way/438373210,Bệnh viện Đại học Y Hà Nội,hospital,1 Phố Tôn Thất Tùng,Kim Liên,Đống Đa,Hà Nội,21.0021305,105.8303797,,,,t,,,OpenStreetMap,https://www.openstreetmap.org/way/438373210,2026-08-10 13:16:02

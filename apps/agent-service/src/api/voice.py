@@ -7,7 +7,6 @@ Design: stateless, idempotent, no audio retention.
 """
 from __future__ import annotations
 
-import io
 import logging
 import mimetypes
 import re
@@ -22,7 +21,7 @@ from pydantic import BaseModel
 
 from src.api.dependencies import require_actor
 from src.config import get_settings
-from src.services.llm import KEY_POOL, provider_error_category
+from src.services.llm import KEY_POOL, gemini_model_names, provider_error_category
 
 logger = logging.getLogger(__name__)
 stt_tts_router = APIRouter()
@@ -71,35 +70,45 @@ async def speech_to_text(
     text = ""
     last_error: Exception | None = None
 
-    for key in keys:
-        try:
-            client = genai.Client(api_key=key)
-            response = await client.aio.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[genai_types.Content(parts=[
-                    genai_types.Part.from_bytes(data=data, mime_type=mime),
-                    genai_types.Part.from_text(
-                        "Transcribe the audio exactly as spoken. "
-                        "Return ONLY the transcription text, nothing else. "
-                        "If the audio is in Vietnamese, transcribe in Vietnamese."
-                    ),
-                ])],
-            )
-            text = (response.text or "").strip()
-            if text:
-                KEY_POOL.mark_key_success(key)
+    # Keep voice on the same configured model policy as the normal Agent path.
+    # The old hard-coded model can disappear from the provider catalog while the
+    # configured primary/fallback pair remains valid.
+    for model_name in gemini_model_names(settings):
+        try_next_model = True
+        for key in keys:
+            try:
+                client = genai.Client(api_key=key)
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=[genai_types.Content(parts=[
+                        genai_types.Part.from_bytes(data=data, mime_type=mime),
+                        genai_types.Part.from_text(
+                            text="Transcribe the audio exactly as spoken. "
+                            "Return ONLY the transcription text, nothing else. "
+                            "If the audio is in Vietnamese, transcribe in Vietnamese."
+                        ),
+                    ])],
+                )
+                text = (response.text or "").strip()
+                if text:
+                    KEY_POOL.mark_key_success(key)
+                    break
+            except Exception as e:
+                last_error = e
+                category = provider_error_category(e)
+                if category != "model_unavailable":
+                    KEY_POOL.mark_key_failure(key, category)
+                if category in {
+                    "quota_or_rate_limit",
+                    "temporary_provider_failure",
+                    "authentication_or_permission",
+                    "timeout_or_network",
+                    "model_unavailable",
+                }:
+                    continue
+                try_next_model = False
                 break
-        except Exception as e:
-            last_error = e
-            category = provider_error_category(e)
-            KEY_POOL.mark_key_failure(key, category)
-            if category in {
-                "quota_or_rate_limit",
-                "temporary_provider_failure",
-                "authentication_or_permission",
-                "timeout_or_network",
-            }:
-                continue
+        if text or not try_next_model:
             break
 
     if not text:
@@ -157,20 +166,30 @@ async def text_to_speech(
 
     try:
         communicate = edge_tts.Communicate(clean_text, _TTS_VOICE)
-        audio_buffer = io.BytesIO()
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_buffer.write(chunk["data"])
+        stream_iterator = communicate.stream().__aiter__()
+        first_audio: bytes | None = None
+        while first_audio is None:
+            try:
+                chunk = await stream_iterator.__anext__()
+            except StopAsyncIteration:
+                break
+            if chunk["type"] == "audio" and chunk["data"]:
+                first_audio = bytes(chunk["data"])
 
-        if audio_buffer.tell() == 0:
+        if first_audio is None:
             raise HTTPException(
                 status_code=502,
                 detail="TTS service returned empty audio.",
             )
 
-        audio_buffer.seek(0)
+        async def audio_chunks():
+            yield first_audio
+            async for chunk in stream_iterator:
+                if chunk["type"] == "audio" and chunk["data"]:
+                    yield bytes(chunk["data"])
+
         return StreamingResponse(
-            audio_buffer,
+            audio_chunks(),
             media_type="audio/mpeg",
             headers={"Content-Disposition": "inline; filename=tts.mp3"},
         )

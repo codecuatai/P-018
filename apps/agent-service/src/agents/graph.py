@@ -374,8 +374,19 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
 
     async def classify_and_extract(state: AgentState) -> AgentState:
         query = str(state.get("query", ""))
-        deterministic_intent = classify(query)
-        deterministic = extract_slots(query)
+        workflow_slots = dict(state.get("extracted_slots", {}))
+        selection_action = workflow_slots.get("assistant_action")
+        if selection_action == "ADD_SELECTED_FOOD_ITEM":
+            # The Gateway has already resolved the menu item from an explicit
+            # UI action. Keep that typed event authoritative over the wording
+            # of its internal status message, so the model cannot route a
+            # selected item back to food discovery.
+            deterministic_intent = "add_to_cart"
+            quantity = workflow_slots.get("assistant_action_quantity")
+            deterministic = {"quantity": quantity} if isinstance(quantity, int) else {}
+        else:
+            deterministic_intent = classify(query)
+            deterministic = extract_slots(query)
         # A bare location is a valid follow-up only when an existing food
         # search supplies the dish/category.  It must not start an unrelated
         # food flow by itself.
@@ -390,7 +401,7 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
             "intent": deterministic_intent,
             "confidence": None,
             "decision_source": "deterministic",
-            "extracted_slots": {**state.get("extracted_slots", {}), **deterministic},
+            "extracted_slots": {**workflow_slots, **deterministic},
         }
         # The production graph is constructed with the default Gemini adapter
         # even when the runtime is using the deterministic path.  Keep model

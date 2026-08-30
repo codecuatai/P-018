@@ -27,8 +27,8 @@ SEMANTIC_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[str, ...]] = {
     (Domain.HEALTHCARE, Operation.CREATE): ("department",),
     (Domain.HEALTHCARE, Operation.CANCEL): (),
     (Domain.HEALTHCARE, Operation.STATUS): (),
-    (Domain.RIDE, Operation.DISCOVER): ("pickup_address", "dropoff_address"),
-    (Domain.RIDE, Operation.CREATE): ("pickup_address", "dropoff_address"),
+    (Domain.RIDE, Operation.DISCOVER): ("pickup_address", "dropoff_address", "vehicle_type"),
+    (Domain.RIDE, Operation.CREATE): ("pickup_address", "dropoff_address", "vehicle_type"),
     (Domain.RIDE, Operation.CANCEL): (),
     (Domain.RIDE, Operation.STATUS): (),
 }
@@ -96,6 +96,12 @@ def apply_requirements(task: CoreAPlannedTask, context: PlannerContext) -> CoreA
         for requirement in AUTHORITY_REQUIREMENTS.get((task.domain, task.operation), ())
         if usable_fact(facts, requirement) is None
     ]
+    missing_constraints = [
+        f"constraint:{constraint.text}"
+        for constraint in task.constraints
+        if constraint.strength.value == "HARD" and not constraint.actionable
+    ]
+    missing_semantic.extend(missing_constraints)
     disposition = (
         TaskDisposition.NEEDS_INFO
         if missing_semantic

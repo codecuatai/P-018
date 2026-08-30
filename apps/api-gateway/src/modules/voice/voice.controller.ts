@@ -36,17 +36,16 @@ export class VoiceController {
     @Req() request: AuthenticatedRequest,
     @Res() response: Response,
   ) {
-    const audioBuffer = await this.voiceService.textToSpeech(
+    const audioStream = await this.voiceService.textToSpeech(
       body.text,
       request.correlationId ?? 'cor_unknown',
       request.user.sub,
     );
     response.set({
       'Content-Type': 'audio/mpeg',
-      'Content-Length': String(audioBuffer.length),
       'Content-Disposition': 'inline; filename=tts.mp3',
     });
-    response.send(audioBuffer);
+    audioStream.pipe(response);
   }
 }
 

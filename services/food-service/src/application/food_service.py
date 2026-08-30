@@ -678,13 +678,13 @@ class FoodApplicationService:
             raise DomainError("FORBIDDEN", "Đơn hàng không thuộc user hiện tại.")
         return order
 
-    async def list_orders(self, user_id: str) -> list[dict]:
+    async def list_orders(self, user_id: str, limit: int = 50) -> list[dict]:
         orders = await self.repository.list_orders()
         return sorted(
             (order for order in orders if order.get("user_id") == user_id),
             key=lambda order: str(order.get("created_at", "")),
             reverse=True,
-        )
+        )[:limit]
 
     async def ops_summary(self) -> dict:
         orders = await self.repository.list_orders()

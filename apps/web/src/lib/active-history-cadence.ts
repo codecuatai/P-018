@@ -1,15 +1,49 @@
 import type { HistoryItem } from "@/types";
 
+const RIDE_REALTIME_STATUSES = new Set([
+  "AWAITING_CONFIRMATION",
+  "AWAITING_PAYMENT_CONFIRMATION",
+  "SEARCHING_DRIVER",
+  "DRIVER_ASSIGNED",
+  "DRIVER_TO_PICKUP",
+  "DRIVER_ARRIVED",
+  "IN_PROGRESS",
+  "ARRIVED_DESTINATION",
+  // Compatibility statuses from older history rows.
+  "SEARCHING",
+  "CONFIRMED",
+  "ARRIVING",
+  "IN_TRANSIT",
+  "PENDING",
+  "ACCEPTED",
+]);
+
+const FOOD_REALTIME_STATUSES = new Set([
+  "DRAFT",
+  "AWAITING_CONFIRMATION",
+  "PAYMENT_PENDING",
+  "PAID",
+  "RESTAURANT_CONFIRMING",
+  "RESTAURANT_ACCEPTED",
+  "PREPARING",
+  "READY_FOR_PICKUP",
+  "DRIVER_ASSIGNED",
+  "PICKED_UP",
+  "DELIVERING",
+  "REFUND_PENDING",
+  // Compatibility statuses from older history rows.
+  "CREATED",
+  "CONFIRMED",
+  "DISPATCHED",
+  "PENDING",
+]);
+
 export function isRealtimeHistoryItem(item: HistoryItem): boolean {
   const status = String(item.status ?? "").toUpperCase();
   const type = item.type;
-  if (type === "ride_booking") {
-    return ["SEARCHING", "CONFIRMED", "ARRIVING", "IN_TRANSIT", "PENDING", "ACCEPTED"].includes(status);
-  }
-  if (type === "food_order") {
-    return ["CREATED", "CONFIRMED", "PREPARING", "DELIVERING", "DISPATCHED", "PENDING"].includes(status);
-  }
-  return false;
+  return type === "ride_booking"
+    ? RIDE_REALTIME_STATUSES.has(status)
+    : type === "food_order" && FOOD_REALTIME_STATUSES.has(status);
 }
 
 export function calculatePollingInterval(
@@ -37,9 +71,13 @@ export function calculatePollingInterval(
 }
 
 export function sameHistoryItems(left: HistoryItem[], right: HistoryItem[]): boolean {
-  if (!left || !right || left.length !== right.length) return false;
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
   return left.every((item, index) => {
     const next = right[index];
-    return item.id === next?.id && item.type === next?.type && item.status === next?.status && item.timestamp === next?.timestamp && JSON.stringify(item.resource) === JSON.stringify(next.resource);
+    return item.id === next?.id
+      && item.type === next?.type
+      && item.status === next?.status
+      && item.timestamp === next?.timestamp
+      && JSON.stringify(item.resource) === JSON.stringify(next.resource);
   });
 }

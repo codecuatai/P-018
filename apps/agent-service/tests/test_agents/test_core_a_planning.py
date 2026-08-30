@@ -9,6 +9,7 @@ from src.agents.assistant.contracts import (
     AuthorityRequirement,
     CapabilitySnapshot,
     ConfirmationGate,
+    ConstraintStrength,
     CoreAInput,
     Domain,
     FactType,
@@ -22,6 +23,7 @@ from src.agents.assistant.contracts import (
     RestaurantSemanticSlots,
     RideSemanticSlots,
     RiskLevel,
+    SemanticConstraint,
     SemanticIntent,
     SemanticReference,
     SemanticSlot,
@@ -128,6 +130,64 @@ def test_food_discovery_selects_observed_read_capability() -> None:
     assert step.step_kind == StepKind.CAPABILITY
     assert step.risk_ceiling == RiskLevel.READ
     assert step.confirmation_gate == ConfirmationGate.NONE
+
+
+def test_ride_requires_an_explicit_vehicle_type_before_quoting() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RIDE,
+        operation=Operation.CREATE,
+        goal="Đặt xe",
+        normalized_request="Đặt xe từ VinUni đến Hồ Gươm",
+        slots=RideSemanticSlots(
+            pickup_address=slot("VinUni"),
+            dropoff_address=slot("Hồ Gươm"),
+        ),
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.NEEDS_INFO
+    assert task.missing_information == ["vehicle_type"]
+    assert task.steps == []
+
+
+def test_ride_stopover_update_requotes_instead_of_proposing_booking_update() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RIDE,
+        operation=Operation.UPDATE,
+        goal="Them diem dung truoc khi den dich",
+        normalized_request="Ghe qua Cong vien Nghia Do truoc khi den quan",
+        slots=RideSemanticSlots(stopover_address=slot("Cong vien Nghia Do")),
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.READY
+    assert task.steps[0].capability == "ride.quote.create"
+    assert task.steps[0].phase.value == "QUOTE_OR_PREVIEW"
+
+
+def test_unhandled_hard_constraint_cannot_become_ready() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.DISCOVER,
+        goal="Tìm món",
+        normalized_request="Tìm bún nhưng bị dị ứng đậu phộng",
+        slots=FoodSemanticSlots(query=slot("bún")),
+        constraints=[
+            SemanticConstraint(
+                strength=ConstraintStrength.HARD,
+                text="dị ứng đậu phộng",
+                actionable=False,
+            )
+        ],
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+    assert task.disposition == TaskDisposition.NEEDS_INFO
+    assert task.missing_information == ["constraint:dị ứng đậu phộng"]
+    assert task.steps == []
 
 
 def test_food_selection_advances_to_add_to_cart_capability() -> None:
@@ -352,7 +412,7 @@ def test_healthcare_to_ride_uses_dependency_not_model_destination() -> None:
     assert "dropoff_address" not in planned_ride.missing_information
 
 
-def test_capability_present_only_as_skeleton_is_not_selected() -> None:
+def test_restaurant_update_requires_authority_and_emits_final_commit_step() -> None:
     intent = SemanticIntent(
         intent_ref=0,
         domain=Domain.RESTAURANT,
@@ -372,9 +432,10 @@ def test_capability_present_only_as_skeleton_is_not_selected() -> None:
         ]
     )
     task = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0]
-    assert task.steps == []
-    assert task.disposition == TaskDisposition.WAITING
-    assert task.missing_information == ["capability:restaurant.update_reservation"]
+    assert task.steps[0].capability == "restaurant.update_reservation"
+    assert task.steps[0].phase.value == "FINAL_COMMIT"
+    assert task.steps[0].confirmation_gate == ConfirmationGate.FINAL_COMMIT
+    assert task.steps[0].requires_authority[0].fact == "reservation_id"
 
 
 def test_stale_quote_invalidates_confirmation_and_requotes() -> None:

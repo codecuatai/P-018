@@ -87,6 +87,7 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   const { data: tracking } = useRideTracking(bookingId);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const canCancel = isCancellableStatus(item.type, status);
+  const cancellationLabel = item.type === "restaurant_reservation" ? "Hủy đặt bàn" : item.type === "food_order" ? "Hủy đơn" : "Hủy lịch khám";
 
   if (cancelled) return null;
 
@@ -114,12 +115,12 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
     ) : canCancel ? (
       showConfirm ? (
         <div className="active-card-cancel-confirm">
-          <small>Hủy đặt?</small>
-          <button className="button button-danger text-button" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "..." : "Xác nhận"}</button>
-          <button className="button button-secondary text-button" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Đóng</button>
+          <small>{cancellationLabel}?</small>
+          <button className="active-work-cancel-confirm" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "Đang hủy…" : "Xác nhận hủy"}</button>
+          <button className="active-work-cancel-dismiss" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Giữ lại</button>
         </div>
       ) : (
-        <button className="button button-secondary text-button active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>Hủy</button>
+        <button className="active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>{cancellationLabel}</button>
       )
     ) : null}
     {error ? <small className="form-error">{error}</small> : null}
@@ -280,6 +281,12 @@ function ActiveRideDetail({ item }: { item: HistoryItem }) {
   const summary = rideSummary(item);
   const origin = pointFrom(resource.pickup_latitude, resource.pickup_longitude) ?? nestedPoint(resource.route, "origin");
   const destination = pointFrom(resource.dropoff_latitude, resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination");
+  const stopovers = Array.isArray(resource.stopovers)
+    ? resource.stopovers.flatMap((stopover) => {
+      const point = pointFromRecord(stopover);
+      return point ? [{ ...point, label: optionalText(isRecord(stopover) ? stopover.address : undefined) }] : [];
+    })
+    : [];
   const route = routeFrom(resource.route ?? resource);
   const pickup = optionalText(resource.pickup_address ?? resource.pickup, summary.pickup);
   const dropoff = optionalText(resource.dropoff_address ?? resource.dropoff, summary.dropoff);
@@ -288,7 +295,7 @@ function ActiveRideDetail({ item }: { item: HistoryItem }) {
   const duration = durationText(resource.duration_minutes ?? resource.duration, resource.route, summary.duration);
   const fare = rideMoneyText(resource.amount ?? resource.fare, String(resource.currency ?? "VND"), summary.fare);
 
-  return <RideMapDetail bookingId={bookingId} initialOrigin={origin} initialDestination={destination} initialRoute={route} initialRoutePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} initialRouteProvider={typeof resource.route_provider === "string" ? resource.route_provider : undefined} initialRouteDistanceMeters={typeof resource.route_distance_meters === "number" ? resource.route_distance_meters : undefined} initialRouteDurationSeconds={typeof resource.route_duration_seconds === "number" ? resource.route_duration_seconds : undefined} status={item.status} facts={[{ label: "Điểm đón", value: pickup }, { label: "Điểm đến", value: dropoff }, { label: "Loại xe", value: vehicle }, { label: "Khoảng cách", value: distance }, { label: "Thời gian dự kiến", value: duration }, { label: "Giá dự kiến", value: fare }]} />;
+  return <RideMapDetail bookingId={bookingId} initialOrigin={origin} initialDestination={destination} initialStopovers={stopovers} initialRoute={route} initialRoutePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} initialRouteProvider={typeof resource.route_provider === "string" ? resource.route_provider : undefined} initialRouteDistanceMeters={typeof resource.route_distance_meters === "number" ? resource.route_distance_meters : undefined} initialRouteDurationSeconds={typeof resource.route_duration_seconds === "number" ? resource.route_duration_seconds : undefined} status={item.status} facts={[{ label: "Điểm đón", value: pickup }, { label: "Điểm đến", value: dropoff }, { label: "Loại xe", value: vehicle }, { label: "Khoảng cách", value: distance }, { label: "Thời gian dự kiến", value: duration }, { label: "Giá dự kiến", value: fare }]} />;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
