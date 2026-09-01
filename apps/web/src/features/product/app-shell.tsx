@@ -9,6 +9,7 @@ import {
   ChevronRight,
   History,
   LifeBuoy,
+  Loader2,
   LogOut,
   Menu,
   MessageSquareText,
@@ -23,18 +24,19 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { getUnreadNotificationCount, listConversations, listNotifications } from "@/lib/api-client";
-import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, NEW_CONVERSATION_EVENT } from "@/lib/conversation-events";
+import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
 
 const navigation = [
   { href: "/app", label: "Trợ lý AI", icon: Bot },
+  { href: "/app/services", label: "Dịch vụ", icon: Store },
   { href: "/app/history", label: "Lịch sử", icon: History },
   { href: "/app/favorites", label: "Đã lưu", icon: BookmarkCheck },
 ];
@@ -179,7 +181,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function Sidebar({ userEmail, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
   return <div className="sidebar-content">
-    {!compact && <Link className="brand-link sidebar-brand" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={30} /><span>X-One</span></Link>}
     <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới và xóa bớt ngữ cảnh cũ"><Plus size={16} /><span>Đoạn chat mới</span></Link>
     <nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => {
       const isAssistant = href === "/app";
@@ -210,27 +211,126 @@ function NotificationBell() {
   const { status } = useAuth();
   const [count, setCount] = useState(0);
   const [open, setOpen] = useState(false);
-  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean; href?: string }>>([]);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
+
+  const refreshCount = useCallback(async (signal?: AbortSignal) => {
+    if (status !== "authenticated") { setCount(0); return; }
+    try {
+      const result = await getUnreadNotificationCount(signal);
+      setCount(result.unread_count);
+    } catch {}
+  }, [status]);
 
   useEffect(() => {
     if (status !== "authenticated") { setCount(0); return; }
-    let active = true;
     const controller = new AbortController();
-    void getUnreadNotificationCount(controller.signal).then((result) => { if (active) setCount(result.unread_count); }).catch(() => undefined);
-    return () => { active = false; controller.abort(); };
-  }, [status]);
+    void refreshCount(controller.signal);
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void refreshCount();
+      }
+    }, 12_000);
+
+    const handleFocus = () => void refreshCount();
+    const handleNotificationsChanged = () => void refreshCount();
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, handleNotificationsChanged);
+    };
+  }, [status, refreshCount]);
 
   useEffect(() => {
     if (!open || status !== "authenticated") return;
     let active = true;
-    void listNotifications().then((result) => {
-      if (active) setItems((result.items ?? []).slice(0, 6).map((item) => ({ id: item.id, title: item.title || "Thông báo", body: item.body || undefined, read: item.status === "READ" })));
-    }).catch(() => undefined);
+    setLoading(true);
+    void listNotifications(undefined, 1, 8).then((result) => {
+      if (!active) return;
+      const allItems = result.items ?? [];
+      const unreadCount = result.unread_count;
+      setItems(allItems.map((item) => ({
+        id: item.id,
+        title: item.title || "Thông báo",
+        body: item.body || undefined,
+        read: item.status === "READ",
+        href: item.resource_type && item.resource_id && ["food_order", "ride_booking", "restaurant_reservation", "healthcare_appointment"].includes(item.resource_type)
+          ? `/app/history/${item.resource_type}/${encodeURIComponent(item.resource_id)}`
+          : undefined,
+      })));
+      setCount(Math.max(0, unreadCount));
+    }).catch(() => undefined).finally(() => {
+      if (active) setLoading(false);
+    });
     return () => { active = false; };
   }, [open, status]);
 
-  return <div className="notification-bell-wrap" ref={ref}><button className="notification-bell-btn" type="button" aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`} onClick={() => setOpen((value) => !value)}><Bell size={18} />{count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}</button>{open && <div className="notification-popover" role="dialog" aria-label="Thông báo"><div className="notification-popover-header"><span>Thông báo</span>{count > 0 && <span className="notif-unread-count">{count} chưa đọc</span>}<button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}><X size={14} /></button></div><div className="notification-popover-body">{items.length === 0 ? <p className="notif-empty">Không có thông báo mới.</p> : items.map((item) => <div key={item.id} className={`notif-item${item.read ? "" : " notif-unread"}`}>{!item.read && <span className="notif-dot" aria-hidden="true" />}<div className="notif-copy"><strong>{item.title}</strong>{item.body && <span>{item.body}</span>}</div></div>)}</div><div className="notification-popover-footer"><Link href="/app/notifications" onClick={() => setOpen(false)}>Xem tất cả thông báo →</Link></div></div>}</div>;
+  return (
+    <div className="notification-bell-wrap" ref={ref}>
+      <button
+        className="notification-bell-btn"
+        type="button"
+        aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Bell size={18} />
+        {count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+      </button>
+      {open && (
+        <div className="notification-popover" role="dialog" aria-label="Thông báo">
+          <div className="notification-popover-header">
+            <span>Thông báo</span>
+            {items.some((i) => !i.read) && (
+              <span className="notif-unread-count">{items.filter((i) => !i.read).length} chưa đọc</span>
+            )}
+            <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}>
+              <X size={14} />
+            </button>
+          </div>
+          <div className="notification-popover-body">
+            {loading ? (
+              <p className="notif-loading" role="status" aria-live="polite"><Loader2 className="spin" size={16} aria-hidden="true" /> Đang tải thông báo…</p>
+            ) : items.length === 0 ? (
+              <p className="notif-empty">Không có thông báo mới.</p>
+            ) : (
+              items.map((item) => {
+                const inner = (
+                  <>
+                    <span className={`notif-dot ${item.read ? "notif-dot-read" : ""}`} aria-hidden="true" />
+                    <div className="notif-copy">
+                      <strong>{item.title}</strong>
+                      {item.body && <span>{item.body}</span>}
+                    </div>
+                  </>
+                );
+                return item.href ? (
+                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`} onClick={() => setOpen(false)}>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div key={item.id} className={`notif-item ${item.read ? "" : "notif-unread"}`}>
+                    {inner}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="notification-popover-footer">
+            <Link href="/app/notifications" onClick={() => setOpen(false)}>
+              Xem tất cả thông báo →
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => Promise<void> }) {
@@ -258,7 +358,7 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
     const load = () => {
       controller?.abort();
       controller = new AbortController();
-      void listConversations(false, controller.signal).then((result) => { if (active) setItems(result.items); }).catch(() => undefined);
+      void listConversations(false, controller.signal, 1, 10).then((result) => { if (active) setItems(result.items); }).catch(() => undefined);
     };
     load();
     window.addEventListener(CONVERSATIONS_CHANGED_EVENT, load);
@@ -266,7 +366,7 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
   }, []);
   const groups = groupConversations(items.filter((item) => item.status !== "ARCHIVED")).slice(0, 3);
   if (!groups.length) return null;
-  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
+  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history/conversations">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
 }
 
 function conversationIcon(title: string) { const lower = title.toLowerCase(); if (lower.includes("xe") || lower.includes("chuyến") || lower.includes("đi") || lower.includes("đón")) return CarFront; if (lower.includes("ăn") || lower.includes("phở") || lower.includes("món") || lower.includes("quán") || lower.includes("bàn") || lower.includes("nhà hàng")) return Utensils; if (lower.includes("khám") || lower.includes("bệnh") || lower.includes("bác sĩ") || lower.includes("y tế")) return Stethoscope; return MessageSquareText; }

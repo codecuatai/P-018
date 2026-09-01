@@ -10,16 +10,17 @@ function LoadingState({ children }: { children: ReactNode }) {
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+  const { status, retrySession } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   useEffect(() => {
     if (status === "unauthenticated") {
-      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}` : "/?auth=login";
+      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}&reason=session_expired` : "/?auth=login&reason=session_expired";
       router.replace(next);
     }
   }, [pathname, router, status]);
   if (status === "loading") return <LoadingState>Đang khôi phục phiên…</LoadingState>;
+  if (status === "recoverable") return <LoadingState><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></LoadingState>;
   if (status !== "authenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   return <>{children}</>;
 }
@@ -54,16 +55,16 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 }
 
 export function RequireAdmin({ children }: { children: ReactNode }) {
-  const { status, user } = useAuth();
+  const { status, user, retrySession } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   useEffect(() => {
     if (status === "unauthenticated") {
-      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}` : "/?auth=login&next=%2Fadmin";
+      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}&reason=session_expired` : "/?auth=login&next=%2Fadmin&reason=session_expired";
       router.replace(next);
     }
   }, [pathname, router, status]);
-  if (status === "loading" || status === "unauthenticated") return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : "Đang chuyển tới đăng nhập…"}</LoadingState>;
+  if (status === "loading" || status === "recoverable" || status === "unauthenticated") return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
   if (user?.role === "admin" && user.status !== "disabled") return <>{children}</>;
   return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực này dành cho quản trị viên.</h1><p>Tài khoản hiện tại không có quyền mở trang quản trị.</p></main>;
 }

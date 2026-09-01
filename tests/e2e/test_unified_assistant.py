@@ -4,27 +4,21 @@ import os
 import subprocess
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
+from _helpers import REPO_ROOT, compose_args, get_cached_token
 
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
-E2E_COMPOSE_PROJECT_NAME = os.getenv("E2E_COMPOSE_PROJECT_NAME", "p-018")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
-REPO_ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
 
 
 def unique_id(prefix: str) -> str:
     return f"{prefix}-{uuid4().hex[:12]}"
-
-
-def compose_args(*args: str) -> list[str]:
-    return ["docker", "compose", "-p", E2E_COMPOSE_PROJECT_NAME, "--env-file", ".env.example", *args]
 
 
 def restart_gateway() -> None:
@@ -55,10 +49,8 @@ def unique_restaurant_date() -> str:
     return booking_at.strftime("%d/%m/%Y")
 
 
-def login(client: httpx.Client) -> str:
-    response = client.post("/api/v1/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
-    response.raise_for_status()
-    return str(response.json()["data"]["access_token"])
+def login(client: httpx.Client, email: str = DEMO_EMAIL, password: str = DEMO_PASSWORD) -> str:
+    return get_cached_token(client, email, password)
 
 
 def assistant_chat(client: httpx.Client, token: str, message: str, conversation_id: str | None = None) -> dict:
@@ -101,7 +93,7 @@ def test_unified_assistant_routes_ride_food_healthcare_and_unsupported_requests(
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
 
-        ride = assistant_chat(client, token, "Dat xe tu Noi Bai den Hoan Kiem")
+        ride = assistant_chat(client, token, "Dat xe tu Noi Bai den Hoan Kiem bang xe 4 cho")
         assert ride["items"]
         assert any(item.get("kind") == "ride_quote" for item in ride["items"])
         assert any(action["kind"] == "ride_service" for action in ride["actions"])
@@ -129,7 +121,7 @@ def test_unified_assistant_keeps_restaurant_and_ride_in_one_conversation() -> No
         first = assistant_chat(
             client,
             token,
-            f"Dat ban cho 2 nguoi ngay {booking_date} luc 19h o Ha Noi roi goi xe tu VinUni toi nha hang do",
+                f"Dat ban cho 2 nguoi ngay {booking_date} luc 19h o Ha Noi roi goi xe may tu VinUni toi nha hang do",
             conversation_id,
         )
         assert any(item.get("kind") == "restaurant_options" for item in first["items"])
@@ -144,9 +136,12 @@ def test_unified_assistant_keeps_restaurant_and_ride_in_one_conversation() -> No
         selected.raise_for_status()
         data = selected.json()["data"]
         assert any(item.get("kind") == "restaurant_confirmation" for item in data["items"])
-        assert any(item.get("kind") == "ride_quote" for item in data["items"])
         assert any(action["kind"] == "restaurant_confirm" for action in data["actions"])
         assert not any(action["kind"] == "ride_service" for action in data["actions"])
+        confirmed = assistant_action(client, token, conversation_id, find_action(data, "restaurant_confirm"), unique_id("assistant-restaurant-confirm"))
+        assert any(item.get("kind") == "reservation" for item in confirmed["completed"])
+        assert any(item.get("kind") == "ride_quote" for item in confirmed["items"])
+        assert any(action["kind"] == "ride_service" for action in confirmed["actions"])
 
 
 def test_unified_assistant_preserves_restaurant_confirmation_when_food_is_added() -> None:
@@ -208,7 +203,7 @@ def test_unified_a_action_replay_is_exact_and_a_new_key_cannot_resurrect() -> No
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-replay")
-        first = assistant_chat(client, token, "Dat xe tu VinUni den Hoan Kiem", conversation_id)
+        first = assistant_chat(client, token, "Dat xe tu VinUni den Hoan Kiem bang xe 4 cho", conversation_id)
         action = find_action(first, "ride_service")
         key = unique_id("assistant-replay-key")
         executed = assistant_action(client, token, conversation_id, action, key)
@@ -236,11 +231,12 @@ def test_unified_b_food_completion_exposes_only_authoritative_payment() -> None:
             food_chat("Tìm phở bò dưới 100 nghìn ở Hà Nội."),
             food_chat("Chọn quán đầu tiên."),
             food_chat("Cho tôi hai bát phở bò cỡ lớn, không cay."),
-            food_chat("Giao về nhà riêng."),
+            food_chat("Giao về 181 Nguyễn Trãi, Thanh Xuân, Hà Nội."),
             food_chat("Xem tổng tiền."),
         ]
         assert all(turn["conversation_id"] == conversation_id for turn in turns)
-        assert all(any(item.get("kind", "").startswith("food_") for item in turn["items"]) for turn in turns)
+        errors = [item.get("error_code") for turn in turns for item in turn["items"] if item.get("kind") == "task_error"]
+        assert not errors, errors
         assert any(item.get("kind") == "food_options" for item in turns[0]["items"])
         assert any(item.get("preview") for item in turns[-1]["items"])
 
@@ -263,11 +259,11 @@ def test_unified_c_healthcare_full_confirmation_flow() -> None:
         conversation_id = unique_id("assistant-healthcare-full")
         first = assistant_chat(client, token, "Dat lich kham than kinh sang mai", conversation_id)
         selected = assistant_action(client, token, conversation_id, find_action(first, "select_healthcare_slot"), unique_id("assistant-health-select"))
-        paid = assistant_action(client, token, conversation_id, find_action(selected, "healthcare_payment"), unique_id("assistant-health-payment"))
-        confirmed = assistant_action(client, token, conversation_id, find_action(paid, "healthcare_confirm"), unique_id("assistant-health-confirm"))
+        details_confirmed = assistant_action(client, token, conversation_id, find_action(selected, "healthcare_confirm"), unique_id("assistant-health-details"))
+        confirmed = assistant_action(client, token, conversation_id, find_action(details_confirmed, "healthcare_payment"), unique_id("assistant-health-payment"))
         appointment = next(item for item in confirmed["completed"] if item.get("kind") == "appointment_confirmed")
         assert appointment.get("status") == "CONFIRMED"
-        assert appointment.get("appointment", {}).get("facility", {}).get("address")
+        assert appointment.get("facility", {}).get("address")
 
 
 def test_unified_d_healthcare_then_ride_uses_authoritative_facility_and_timing() -> None:
@@ -275,18 +271,19 @@ def test_unified_d_healthcare_then_ride_uses_authoritative_facility_and_timing()
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-healthcare-ride")
-        first = assistant_chat(client, token, "Dat lich kham than kinh sang mai roi dat xe tu VinUni dua toi toi do", conversation_id)
+        first = assistant_chat(client, token, "Dat lich kham than kinh sang mai roi dat xe 4 cho tu VinUni dua toi toi do", conversation_id)
         selected = assistant_action(client, token, conversation_id, find_action(first, "select_healthcare_slot"), unique_id("assistant-healthcare-ride-select"))
         ride = next(item for item in selected["items"] if item.get("kind") == "ride_quote")
         assert ride["dropoff"]
         assert ride["recommended_departure"]
         assert ride["scheduled_pickup"] is False
-        assert any(action["kind"] == "healthcare_payment" for action in selected["actions"])
+        assert any(action["kind"] == "healthcare_confirm" for action in selected["actions"])
         assert not any(action["kind"] == "ride_service" for action in selected["actions"])
-        paid = assistant_action(client, token, conversation_id, find_action(selected, "healthcare_payment"), unique_id("assistant-healthcare-ride-payment"))
-        assert not any(action["kind"] == "ride_service" for action in paid["actions"])
-        confirmed = assistant_action(client, token, conversation_id, find_action(paid, "healthcare_confirm"), unique_id("assistant-healthcare-ride-confirm"))
-        assert any(action["kind"] == "ride_service" for action in confirmed["actions"])
+        details_confirmed = assistant_action(client, token, conversation_id, find_action(selected, "healthcare_confirm"), unique_id("assistant-healthcare-ride-details"))
+        assert any(action["kind"] == "healthcare_payment" for action in details_confirmed["actions"])
+        assert not any(action["kind"] == "ride_service" for action in details_confirmed["actions"])
+        paid = assistant_action(client, token, conversation_id, find_action(details_confirmed, "healthcare_payment"), unique_id("assistant-healthcare-ride-payment"))
+        assert any(action["kind"] == "ride_service" for action in paid["actions"])
 
 
 def test_unified_e_food_and_healthcare_stay_in_one_conversation() -> None:
@@ -330,7 +327,7 @@ def test_unified_f_restaurant_to_ride_completes_both_confirmed_actions() -> None
         token = login(client)
         conversation_id = unique_id("assistant-restaurant-ride-complete")
         booking_date = unique_restaurant_date()
-        first = assistant_chat(client, token, f"Dat ban cho 2 nguoi ngay {booking_date} luc 19h o Ha Noi roi goi xe tu VinUni toi nha hang do", conversation_id)
+        first = assistant_chat(client, token, f"Dat ban cho 2 nguoi ngay {booking_date} luc 19h o Ha Noi roi goi xe 4 cho tu VinUni toi nha hang do", conversation_id)
         selected = assistant_action(client, token, conversation_id, find_action(first, "select_restaurant"), unique_id("assistant-restaurant-select"))
         restaurant_confirmed = assistant_action(client, token, conversation_id, find_action(selected, "restaurant_confirm"), unique_id("assistant-restaurant-confirm"))
         ride_prepared = assistant_action(client, token, conversation_id, find_action(restaurant_confirmed, "ride_service"), unique_id("assistant-ride-service"))
@@ -344,7 +341,7 @@ def test_unified_ride_actions_survive_gateway_restart_and_replay_once() -> None:
     conversation_id = unique_id("assistant-ride-restart")
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
-        first = assistant_chat(client, token, "Dat xe tu VinUni den Hoan Kiem", conversation_id)
+        first = assistant_chat(client, token, "Dat xe 4 cho tu VinUni den Hoan Kiem", conversation_id)
         ride_service = find_action(first, "ride_service")
 
     restart_gateway()

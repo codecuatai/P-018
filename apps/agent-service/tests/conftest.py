@@ -6,14 +6,19 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-os.environ.setdefault("APP_ENV", "test")
-os.environ.setdefault("SERVICE_PORT", "8001")
-os.environ.setdefault("DATABASE_URL", "postgresql://agent_user:test-password@postgres:5432/xone_agent")
-os.environ.setdefault("AGENT_PERSISTENCE_MODE", "memory")
-os.environ.setdefault("GEMINI_API_KEY", "test-key")
-os.environ.setdefault("GEMINI_MODEL", "test-model")
-os.environ.setdefault("AGENT_MODEL_MODE", "deterministic")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["APP_ENV"] = "test"
+os.environ["SERVICE_PORT"] = "8001"
+os.environ["DATABASE_URL"] = "postgresql://agent_user:test-password@postgres:5432/xone_agent"
+
+# Force isolated test behavior instead of inheriting local/prod config.
+os.environ["AGENT_PERSISTENCE_MODE"] = "memory"
+os.environ["AGENT_MODEL_MODE"] = "deterministic"
+
+# Test-only model configuration.
+os.environ["GEMINI_API_KEY"] = "test-key"
+os.environ["GEMINI_MODEL"] = "test-model"
+
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
 if not hasattr(langchain, "debug"):
     langchain.debug = False

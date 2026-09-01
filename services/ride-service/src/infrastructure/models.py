@@ -49,6 +49,7 @@ class QuoteRow(Base):
     route_geometry: Mapped[list[dict[str, float]] | None] = mapped_column(JSON, nullable=True)
     route_snapshot_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     tariff_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    stopovers: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
 
 
 class BookingRow(Base):
@@ -70,6 +71,7 @@ class BookingRow(Base):
     payment_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
     driver: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     driver_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    quote_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     driver_id: Mapped[str | None] = mapped_column(String(128), nullable=True)

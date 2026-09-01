@@ -13,8 +13,8 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 
@@ -27,7 +27,7 @@ import { CoreModule, CoreStore, SavedAddressPatch, SavedAddressRecord } from '..
 import { AuthModule } from '../auth/auth.module';
 import { GeoapifyProvider } from './geoapify.provider';
 
-class ProfilePatchDto {
+export class ProfilePatchDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
@@ -37,6 +37,8 @@ class ProfilePatchDto {
   @IsOptional()
   @IsString()
   @MaxLength(40)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:(?:0|\+84)(?:3|5|7|8|9)\d{8})?$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
   phone?: string;
 
   @IsOptional()
@@ -178,6 +180,8 @@ class PatientCreateDto {
   @IsString()
   @MinLength(6)
   @MaxLength(64)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
   phone!: string;
 
   @IsOptional()
@@ -193,6 +197,26 @@ class PatientCreateDto {
   @IsString()
   @MaxLength(4000)
   medical_history?: string;
+}
+
+class PatientPatchDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(255)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(64)
+  @Transform(({ value }) => typeof value === 'string' ? normalizePhone(value) : value)
+  @Matches(/^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/, { message: 'Số điện thoại Việt Nam không hợp lệ.' })
+  phone?: string;
+
+  @IsOptional()
+  @IsIn(['self', 'child', 'parent', 'dependent'])
+  relationship?: 'self' | 'child' | 'parent' | 'dependent';
 }
 
 export interface LocationCoordinate {
@@ -229,6 +253,24 @@ type RouteResult = {
   route_snapshot_hash?: string;
   retryable?: boolean;
 };
+
+function routeGeometryFromGeoJson(value: unknown): LocationCoordinate[] {
+  if (!isRecord(value) || !Array.isArray(value.coordinates)) return [];
+  const points: LocationCoordinate[] = [];
+  const append = (candidate: unknown): void => {
+    if (Array.isArray(candidate) && typeof candidate[0] === 'number' && typeof candidate[1] === 'number') {
+      const longitude = candidate[0];
+      const latitude = candidate[1];
+      if (Number.isFinite(latitude) && Number.isFinite(longitude) && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180) {
+        points.push({ latitude, longitude });
+      }
+      return;
+    }
+    if (Array.isArray(candidate)) candidate.forEach(append);
+  };
+  append(value.coordinates);
+  return points;
+}
 
 type AutocompleteResult = {
   provider: string;
@@ -320,13 +362,16 @@ export class LocationService {
       try {
         const url = new URL(`/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}`, providerUrl);
         url.searchParams.set('overview', 'full');
-        url.searchParams.set('geometries', 'polyline');
-        const payload = await this.fetchJson(url, 'ROUTING_PROVIDER_TOKEN');
+        // The Ride domain requires auditable geometry, not only a distance or
+        // an opaque encoded line. OSRM-compatible providers can return the
+        // route as GeoJSON, which is normalized below into our typed points.
+        url.searchParams.set('geometries', 'geojson');
+        const payload = await this.fetchRoutingJson(url);
         const route = isRecord(payload) && Array.isArray(payload.routes) && isRecord(payload.routes[0]) ? payload.routes[0] : undefined;
         const distanceMeters = numberValue(route?.distance);
         const durationSeconds = numberValue(route?.duration);
-        if (distanceMeters !== undefined && durationSeconds !== undefined) {
-          const polyline = typeof route?.geometry === 'string' ? route.geometry : null;
+        const routeGeometry = routeGeometryFromGeoJson(route?.geometry);
+        if (distanceMeters !== undefined && durationSeconds !== undefined && routeGeometry.length >= 2) {
           return {
             provider: 'configured-routing-provider',
             status: 'RESOLVED',
@@ -336,8 +381,8 @@ export class LocationService {
             destination,
             route_distance_meters: Math.round(distanceMeters),
             route_duration_seconds: Math.round(durationSeconds),
-            route_polyline: polyline,
-            route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, polyline }),
+            route_geometry: routeGeometry,
+            route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, routeGeometry }),
           };
         }
       } catch {
@@ -363,7 +408,11 @@ export class LocationService {
     if (query.length < 3) throw new BadRequestException({ code: 'ADDRESS_TOO_SHORT', detail: 'Address query is too short.', retryable: false });
     if (this.geoapify.enabled) {
       const suggestions = await this.geoapify.autocomplete(query);
-      return { provider: 'geoapify', query, suggestions };
+      if (suggestions.length) return { provider: 'geoapify', query, suggestions };
+    }
+    const local = this.localDeterministicSuggestions(query);
+    if (local.length) {
+      return { provider: 'deterministic-local-demo', query, suggestions: local };
     }
     const result = await this.geocode(query);
     return { provider: result.provider, query, suggestions: result.candidates };
@@ -375,13 +424,53 @@ export class LocationService {
   private localDeterministicCandidate(query: string): GeocodeCandidate | undefined {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
     const normalized = foldLocalAddress(query);
-    const fixtures: Array<{ matches: string[]; latitude: number; longitude: number }> = [
-      { matches: ['ho hoan kiem', 'ho guom'], latitude: 21.0285, longitude: 105.8048 },
-      { matches: ['vinuni'], latitude: 20.9914, longitude: 105.945975 },
-      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], latitude: 10.7758, longitude: 106.7004 },
+    const fixtures: Array<{ matches: string[]; formatted?: string; latitude: number; longitude: number }> = [
+      { matches: ['ho hoan kiem', 'ho guom'], formatted: 'Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8048 },
+      { matches: ['cong vien nghia do', 'nghia do'], formatted: 'Công viên Nghĩa Đô, Cầu Giấy, Hà Nội', latitude: 21.0456, longitude: 105.7939 },
+      { matches: ['vinuni', 'vinhomes ocean park'], formatted: 'VinUniversity, Vinhomes Ocean Park, Gia Lâm, Hà Nội', latitude: 20.9914, longitude: 105.945975 },
+      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1'], formatted: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh', latitude: 10.7758, longitude: 106.7004 },
+      { matches: ['51 tam khuong', 'tam khuong', '51 5am', 'khuong thuong', 'dong da'], formatted: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội', latitude: 21.0062, longitude: 105.8286 },
+      { matches: ['chua boc', 'quang trung'], formatted: 'Chùa Bộc, Phường Quang Trung, Quận Đống Đa, Hà Nội', latitude: 21.0078, longitude: 105.8282 },
+      { matches: ['tay son', 'nga tu so'], formatted: 'Tây Sơn, Phường Ngã Tư Sở, Quận Đống Đa, Hà Nội', latitude: 21.0112, longitude: 105.8235 },
+      { matches: ['thai ha', 'trung liet'], formatted: 'Thái Hà, Phường Trung Liệt, Quận Đống Đa, Hà Nội', latitude: 21.0135, longitude: 105.8198 },
+      { matches: ['nguyen trai', 'thanh xuan'], formatted: 'Nguyễn Trãi, Quận Thanh Xuân, Hà Nội', latitude: 20.9984, longitude: 105.8123 },
+      { matches: ['cau giay', 'xuan thuy', 'duy tan'], formatted: 'Cầu Giấy, Quận Cầu Giấy, Hà Nội', latitude: 21.0333, longitude: 105.7939 },
+      { matches: ['ba dinh', 'ngoc ha', '34 ngoc ha', 'doi can'], formatted: '34 Ngọc Hà, Phường Ngọc Hà, Quận Ba Đình, Hà Nội', latitude: 21.0378, longitude: 105.8315 },
     ];
-    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`)));
-    return fixture ? { address_text: query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
+    const fixture = fixtures.find((item) => item.matches.some((value) => normalized === value || normalized.includes(` ${value} `) || normalized.startsWith(`${value} `) || normalized.endsWith(` ${value}`) || normalized.includes(value) || value.includes(normalized)));
+    return fixture ? { address_text: fixture.formatted ?? query, latitude: fixture.latitude, longitude: fixture.longitude, confidence: 0.5 } : undefined;
+  }
+
+  private localDeterministicSuggestions(query: string): GeocodeCandidate[] {
+    if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return [];
+    const normalized = foldLocalAddress(query);
+    const fixtures: Array<{ matches: string[]; formatted: string; latitude: number; longitude: number }> = [
+      { matches: ['51 tam khuong', 'tam khuong', '51 5am', 'khuong thuong', 'dong da'], formatted: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội', latitude: 21.0062, longitude: 105.8286 },
+      { matches: ['chua boc', 'quang trung'], formatted: 'Chùa Bộc, Phường Quang Trung, Quận Đống Đa, Hà Nội', latitude: 21.0078, longitude: 105.8282 },
+      { matches: ['tay son', 'nga tu so'], formatted: 'Tây Sơn, Phường Ngã Tư Sở, Quận Đống Đa, Hà Nội', latitude: 21.0112, longitude: 105.8235 },
+      { matches: ['thai ha', 'trung liet'], formatted: 'Thái Hà, Phường Trung Liệt, Quận Đống Đa, Hà Nội', latitude: 21.0135, longitude: 105.8198 },
+      { matches: ['ho hoan kiem', 'ho guom', 'hoan kiem'], formatted: 'Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8542 },
+      { matches: ['12 nguyen hue', 'nguyen hue quan 1', 'quan 1', 'nguyen hue'], formatted: '12 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh', latitude: 10.7758, longitude: 106.7004 },
+      { matches: ['nguyen trai', 'thanh xuan'], formatted: 'Nguyễn Trãi, Quận Thanh Xuân, Hà Nội', latitude: 20.9984, longitude: 105.8123 },
+      { matches: ['cau giay', 'xuan thuy', 'duy tan'], formatted: 'Cầu Giấy, Quận Cầu Giấy, Hà Nội', latitude: 21.0333, longitude: 105.7939 },
+      { matches: ['ba dinh', 'ngoc ha', '34 ngoc ha', 'doi can'], formatted: '34 Ngọc Hà, Phường Ngọc Hà, Quận Ba Đình, Hà Nội', latitude: 21.0378, longitude: 105.8315 },
+      { matches: ['vinuni', 'vinhomes ocean park', 'gia lam'], formatted: 'VinUniversity, Vinhomes Ocean Park, Gia Lâm, Hà Nội', latitude: 20.9914, longitude: 105.945975 },
+    ];
+    const matches = fixtures.filter((item) => item.matches.some((value) => normalized === value || normalized.includes(value) || value.includes(normalized)) || foldLocalAddress(item.formatted).includes(normalized));
+    if (matches.length > 0) {
+      return matches.map((item) => ({ address_text: item.formatted, latitude: item.latitude, longitude: item.longitude, confidence: 0.9 }));
+    }
+    const single = this.localDeterministicCandidate(query);
+    if (single) return [single];
+    const hash = Math.abs(normalized.split('').reduce((acc, c) => ((acc << 5) - acc) + c.charCodeAt(0), 0));
+    const deltaLat = ((hash % 1000) / 1000 - 0.5) * 0.04;
+    const deltaLng = (((hash >> 3) % 1000) / 1000 - 0.5) * 0.04;
+    return [{
+      address_text: `${query.trim()}, Hà Nội`,
+      latitude: Number((21.0285 + deltaLat).toFixed(6)),
+      longitude: Number((105.8542 + deltaLng).toFixed(6)),
+      confidence: 0.6,
+    }];
   }
 
   private configuredProviderUrl(name: 'GEOCODING_PROVIDER_URL' | 'ROUTING_PROVIDER_URL'): URL | undefined {
@@ -413,6 +502,18 @@ export class LocationService {
     }
   }
 
+  private async fetchRoutingJson(url: URL): Promise<unknown> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.fetchJson(url, 'ROUTING_PROVIDER_TOKEN');
+      } catch (error) {
+        if (attempt === 1) throw error;
+        await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      }
+    }
+    throw new Error('Routing provider request did not produce a result.');
+  }
+
   private parseGeocodeCandidate(value: unknown): GeocodeCandidate | undefined {
     if (!isRecord(value)) return undefined;
     const latitude = numberValue(value.lat);
@@ -437,7 +538,7 @@ export class PersonalProfileController {
   async patch(@Body() body: ProfilePatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const updated = await this.auth.updateProfile(request.user, {
       ...(body.full_name !== undefined ? { fullName: body.full_name.trim() } : {}),
-      ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      ...(body.phone !== undefined ? { phone: normalizePhone(body.phone) } : {}),
       ...(body.avatar_url !== undefined ? { avatarUrl: body.avatar_url.trim() } : {}),
       ...(body.language !== undefined ? { language: body.language.trim() } : {}),
       ...(body.timezone !== undefined ? { timezone: body.timezone.trim() } : {}),
@@ -576,6 +677,30 @@ export class HealthcarePatientController {
     const data = await this.healthcare.setDefaultPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId);
     return { data, meta: { request_id: request.correlationId } };
   }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() body: PatientPatchDto, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const patientId = Number(id);
+    const key = idempotencyKey?.trim();
+    if (!Number.isInteger(patientId) || patientId < 1) throw new BadRequestException({ code: 'PATIENT_ID_INVALID', detail: 'Patient id is invalid.', retryable: false });
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for this write.', retryable: false });
+    const data = await this.healthcare.updatePatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId, {
+      ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+      ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+      ...(body.relationship !== undefined ? { relationship: body.relationship } : {}),
+    });
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Delete(':id')
+  async unlink(@Param('id') id: string, @Headers('idempotency-key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const patientId = Number(id);
+    const key = idempotencyKey?.trim();
+    if (!Number.isInteger(patientId) || patientId < 1) throw new BadRequestException({ code: 'PATIENT_ID_INVALID', detail: 'Patient id is invalid.', retryable: false });
+    if (!key) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key is required for this write.', retryable: false });
+    const data = await this.healthcare.unlinkPatient(request.user.sub, request.correlationId ?? 'cor_unknown', key, patientId);
+    return { data, meta: { request_id: request.correlationId } };
+  }
 }
 
 function assertCoordinatePair(latitude: number | undefined, longitude: number | undefined): void {
@@ -593,6 +718,10 @@ function roundCoordinate(value: number | undefined): number | undefined {
 function clean(value: string | undefined): string | undefined {
   const cleaned = value?.trim();
   return cleaned || undefined;
+}
+
+function normalizePhone(value: string): string {
+  return value.trim().replace(/[\s().-]/g, '');
 }
 
 function assertCoordinate(value: LocationCoordinate, name: string): void {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
+import type { ActiveHistoryResult, AdminApiKeyRecord, AdminFeedbackSummary, AdminHealthCheck, AdminLogEntry, AdminPayments, AdminSummary, AdminTokenUsageReport, AdminTransactionRecord, AdminUserRecord, AdminUserServiceSummary, AdminWorkflowRecord, AssistantResponse, AuthSessionSummary, AuthUser, ConversationRecord, DeviceCurrentLocation, FavoriteDomain, FavoriteItem, FeedbackItem, FeedbackResourceType, GeocodeResult, HealthcarePatient, HistoryFilters, HistoryResult, HistoryType, NotificationItem, RideQuote, RideStopover, RideTracking, RouteResult, SavedAddress, ServiceCatalog, SupportPriority, SupportTicket, SupportTicketStatus } from "@/types";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
 
@@ -52,9 +52,17 @@ export interface ForgotPasswordResult {
   delivery_configured: boolean;
 }
 
+export type RefreshOutcome = "authenticated" | "invalid" | "transient";
+
+export interface RefreshResult {
+  outcome: RefreshOutcome;
+  token: string | null;
+  problem?: ApiProblem;
+}
+
 let accessToken: string | null = null;
 let unauthorizedHandler: (() => void) | undefined;
-let refreshInFlight: Promise<string | null> | undefined;
+let refreshInFlight: Promise<RefreshResult> | undefined;
 
 export function configureApiClient(options: { onUnauthorized?: () => void }): void {
   unauthorizedHandler = options.onUnauthorized;
@@ -86,10 +94,12 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   const timeout = globalThis.setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   const abortListener = () => controller.abort();
   options.signal?.addEventListener("abort", abortListener, { once: true });
+  if (options.signal?.aborted) controller.abort();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (init.body !== undefined && init.body !== null) headers.set("Content-Type", "application/json");
-  headers.set("X-Correlation-Id", createRequestId("cor"));
+  const correlationId = createRequestId("cor");
+  headers.set("X-Correlation-Id", correlationId);
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);
   if (options.includeAuth !== false && accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
 
@@ -99,10 +109,18 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
     if (!response.ok) {
       const problem = problemFromResponse(body, response.status);
       if (response.status === 401 && shouldRefresh(path, problem, options)) {
-        const refreshed = await refreshAccessToken();
-        if (refreshed) return request<T>(path, init, { ...options, retried: true });
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === "authenticated" && refreshed.token) return request<T>(path, init, { ...options, retried: true });
+        if (refreshed.outcome === "transient") throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
       }
-      if (response.status === 401 && !options.suppressUnauthorized) {
+      if (response.status === 401 && !options.suppressUnauthorized && isSessionAuthError(problem)) {
+        // If a refresh is currently in flight (triggered by another concurrent request),
+        // wait for it before giving up and clearing the session.
+        if (refreshInFlight) {
+          const refreshed = await refreshInFlight;
+          if (refreshed.outcome === "authenticated" && refreshed.token) return request<T>(path, init, { ...options, retried: true });
+          if (refreshed.outcome === "transient") throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
+        }
         clearAuthSession();
         unauthorizedHandler?.();
       }
@@ -116,6 +134,10 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof DOMException && error.name === "AbortError") {
+      // A caller-supplied signal means the user cancelled on purpose: rethrow the
+      // raw AbortError so the UI can mark the turn as stopped. The internal
+      // timeout keeps mapping to a retryable REQUEST_TIMEOUT.
+      if (options.signal?.aborted) throw error;
       throw new ApiError({ code: "REQUEST_TIMEOUT", detail: "X-One phản hồi hơi chậm. Bạn thử lại nhé.", status: 408, retryable: true });
     }
     throw new ApiError({ code: "SERVICE_UNAVAILABLE", detail: "X-One đang gặp sự cố kết nối. Bạn thử lại sau một chút nhé.", status: 0, retryable: true });
@@ -125,8 +147,12 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   }
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
-  if (!refreshInFlight) refreshInFlight = rawRefresh().finally(() => { refreshInFlight = undefined; });
+export async function refreshAccessToken(triggerCorrelationId?: string): Promise<RefreshResult> {
+  if (!refreshInFlight) {
+    refreshInFlight = rawRefresh(triggerCorrelationId).finally(() => {
+      refreshInFlight = undefined;
+    });
+  }
   return refreshInFlight;
 }
 
@@ -161,8 +187,17 @@ export function getProfile(): Promise<AuthUser> {
   return request<AuthUser>("/api/v1/users/me", { method: "GET" });
 }
 
-export function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
-  return request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+export async function updateProfile(patch: Partial<Pick<AuthUser, "full_name" | "phone" | "avatar_url" | "language" | "timezone">> & { onboarding_completed?: boolean }): Promise<AuthUser> {
+  const updated = await request<AuthUser>("/api/v1/users/me", { method: "PATCH", body: JSON.stringify(patch) });
+  if (patch.phone && updated.phone !== patch.phone) {
+    throw new ApiError({
+      code: "PROFILE_PHONE_NOT_PERSISTED",
+      detail: "Hồ sơ không trả về số điện thoại vừa lưu.",
+      status: 502,
+      retryable: true,
+    });
+  }
+  return updated;
 }
 
 export function listSavedAddresses(): Promise<{ items: SavedAddress[] }> {
@@ -195,6 +230,14 @@ export function createHealthcarePatient(value: { name: string; phone: string; re
 
 export function setDefaultHealthcarePatient(id: number): Promise<HealthcarePatient> {
   return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}/default`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("patient-default") });
+}
+
+export function updateHealthcarePatient(id: number, value: Partial<Pick<HealthcarePatient, "name" | "phone" | "relationship">>): Promise<HealthcarePatient> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "PATCH", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("patient-update") });
+}
+
+export function unlinkHealthcarePatient(id: number): Promise<{ deleted: boolean; id: number; replacement_default_id: number | null }> {
+  return request(`/api/v1/healthcare/patients/${encodeURIComponent(String(id))}`, { method: "DELETE" }, { idempotencyKey: createIdempotencyKey("patient-unlink") });
 }
 
 export function resolveAddress(addressText: string): Promise<GeocodeResult> {
@@ -243,7 +286,15 @@ export function getFoodRestaurant(id: string): Promise<Record<string, unknown>> 
   return request(`/api/v1/service-actions/food/restaurants/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<Record<string, unknown>> {
+export interface FoodMenuPage {
+  restaurant: Record<string, unknown>;
+  items: Record<string, unknown>[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function getFoodMenu(id: string, pagination?: { limit?: number; offset?: number }): Promise<FoodMenuPage> {
   const params = new URLSearchParams();
   if (pagination?.limit !== undefined) params.set("limit", String(pagination.limit));
   if (pagination?.offset !== undefined) params.set("offset", String(pagination.offset));
@@ -335,7 +386,7 @@ export function cancelHealthcareAppointment(appointmentId: number): Promise<Reco
   return request(`/api/v1/service-actions/healthcare/${encodeURIComponent(String(appointmentId))}/cancel`, { method: "POST" }, { idempotencyKey: createIdempotencyKey("healthcare-cancel") });
 }
 
-export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number }): Promise<RideQuote> {
+export function createRideQuote(value: { pickup_address: string; dropoff_address: string; vehicle_type: "BIKE" | "CAR_4" | "CAR_7"; pickup_latitude?: number; pickup_longitude?: number; dropoff_latitude?: number; dropoff_longitude?: number; stopovers?: RideStopover[] }): Promise<RideQuote> {
   return request("/api/v1/services/ride/quote", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("ride-quote") });
 }
 
@@ -371,8 +422,10 @@ export function getHistoryDetail(type: HistoryType, id: string): Promise<Record<
   return request(`/api/v1/history/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { method: "GET" });
 }
 
-export function listNotifications(status?: "UNREAD" | "READ"): Promise<{ items: NotificationItem[]; unread_count: number; partial: boolean; unavailable: string[] }> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+export function listNotifications(status?: "UNREAD" | "READ", page = 1, pageSize = 20): Promise<{ items: NotificationItem[]; unread_count: number; total: number; page: number; page_size: number; has_more: boolean; partial: boolean; unavailable: string[] }> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (status) params.set("status", status);
+  const query = `?${params.toString()}`;
   return request(`/api/v1/notifications${query}`, { method: "GET" });
 }
 
@@ -453,6 +506,13 @@ export function getAdminUsers(page = 1, pageSize = 20): Promise<{ items: AdminUs
   return request(`/api/v1/admin/users?page=${page}&page_size=${pageSize}`, { method: "GET" });
 }
 
+export function updateAdminUserStatus(userId: string, status: "active" | "suspended"): Promise<AdminUserRecord> {
+  return request(`/api/v1/admin/users/${userId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
 export function getAdminTransactions(page = 1, pageSize = 20): Promise<{ items: AdminTransactionRecord[]; total?: number; page: number; page_size: number; partial: boolean; unavailable: string[] }> {
   return request(`/api/v1/admin/transactions?page=${page}&page_size=${pageSize}`, { method: "GET" });
 }
@@ -483,6 +543,10 @@ export function getAdminSupportTickets(options: { status?: SupportTicketStatus; 
 
 export function updateAdminSupportTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }): Promise<SupportTicket> {
   return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("admin-support-update") });
+}
+
+export function addAdminSupportMessage(id: string, message: string): Promise<SupportTicket> {
+  return request(`/api/v1/admin/support-tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify({ message }) }, { idempotencyKey: createIdempotencyKey("admin-support-message") });
 }
 
 export function getAdminUserServices(userId: string): Promise<AdminUserServiceSummary> {
@@ -547,8 +611,10 @@ export function getAdminTokenUsage(filters: { from_time?: string; to_time?: stri
   return request(`/api/v1/admin/token-usage${qs ? `?${qs}` : ""}`, { method: "GET" });
 }
 
-export function listConversations(includeArchived = false, signal?: AbortSignal): Promise<{ items: ConversationRecord[] }> {
-  return request(`/api/v1/conversations${includeArchived ? "?include_archived=true" : ""}`, { method: "GET" }, { signal });
+export function listConversations(includeArchived = false, signal?: AbortSignal, page = 1, pageSize = 10): Promise<{ items: ConversationRecord[]; total: number; page: number; page_size: number; has_more: boolean }> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (includeArchived) params.set("include_archived", "true");
+  return request(`/api/v1/conversations?${params.toString()}`, { method: "GET" }, { signal });
 }
 
 export function getConversation(id: string): Promise<ConversationRecord> {
@@ -584,7 +650,7 @@ export async function logoutAll(): Promise<void> {
 }
 
 export function changePassword(currentPassword: string, newPassword: string): Promise<{ password_changed: boolean; reauthentication_required: boolean }> {
-  return request("/api/v1/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }, { retryAuth: false });
+  return request("/api/v1/auth/change-password", { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }, { retryAuth: true });
 }
 
 export function getSessions(): Promise<{ items: AuthSessionSummary[] }> {
@@ -603,18 +669,241 @@ export function resetPassword(token: string, newPassword: string): Promise<{ pas
   return request("/api/v1/auth/reset-password", { method: "POST", body: JSON.stringify({ token, new_password: newPassword }) }, { includeAuth: false, retryAuth: false });
 }
 
-export function sendAssistantMessage(message: string, conversationId?: string): Promise<AssistantResponse> {
+export function sendAssistantMessage(message: string, conversationId?: string, currentLocation?: DeviceCurrentLocation, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/chat", {
     method: "POST",
-    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}) }),
-  });
+    body: JSON.stringify({ message, ...(conversationId ? { conversation_id: conversationId } : {}), ...(currentLocation ? { current_location: currentLocation } : {}) }),
+  // Assistant planning can include a model planner, domain reads, and a
+  // second composition call. Keep the client deadline above the Gateway's
+  // 62-second upstream budget so a valid multi-service turn is not reported
+  // as a false timeout at 30 seconds.
+  }, { signal, timeoutMs: 90_000 });
 }
 
-export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number }): Promise<AssistantResponse> {
+export function runAssistantAction(conversationId: string, actionId: string, idempotencyKey: string, input?: { quantity?: number; currentLocation?: DeviceCurrentLocation }, signal?: AbortSignal): Promise<AssistantResponse> {
   return request<AssistantResponse>("/api/v1/assistant/actions", {
     method: "POST",
-    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}) }),
-  }, { idempotencyKey });
+    body: JSON.stringify({ conversation_id: conversationId, action_id: actionId, ...(input?.quantity ? { quantity: input.quantity } : {}), ...(input?.currentLocation ? { current_location: input.currentLocation } : {}) }),
+  }, { idempotencyKey, signal });
+}
+
+export async function transcribeVoice(
+  audioBlob: Blob,
+  signal?: AbortSignal,
+  retried = false
+): Promise<{ text: string; provider: string }> {
+  const form = new FormData();
+  form.append('file', audioBlob, 'recording.webm');
+  
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  signal?.addEventListener('abort', abortListener, { once: true });
+  
+  const headers = new Headers();
+  headers.set('X-Correlation-Id', createRequestId('cor'));
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/transcribe`, {
+      method: 'POST',
+      headers,
+      body: form,
+      signal: controller.signal,
+      credentials: 'include',
+    });
+    
+    const body = await parseJson(response);
+    
+    if (!response.ok) {
+      const problem = problemFromResponse(body, response.status);
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return transcribeVoice(audioBlob, signal, true);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      throw new ApiError(problem);
+    }
+    
+    if (!isRecord(body) || !('data' in body)) {
+      throw new ApiError({ code: "INVALID_RESPONSE", detail: "X-One nhận được dữ liệu không hợp lệ.", status: response.status, retryable: false });
+    }
+    
+    return body.data as { text: string; provider: string };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError({
+        code: 'REQUEST_TIMEOUT',
+        detail: 'Nhận dạng giọng nói hơi chậm. Bạn thử lại nhé.',
+        status: 408, retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: 'SERVICE_UNAVAILABLE',
+      detail: 'Dịch vụ giọng nói đang gặp sự cố. Bạn thử lại sau.',
+      status: 0, retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortListener);
+  }
+}
+
+export type VoiceChunkHandler = (chunk: Uint8Array, isFirstChunk: boolean) => void | Promise<void>;
+
+/**
+ * Stream TTS bytes to the browser as they arrive.
+ *
+ * Keeping the reader here (rather than behind `response.arrayBuffer()`) lets
+ * the UI feed a MediaSource incrementally while retaining the same auth,
+ * timeout, cancellation, and retry behavior as the buffered helper below.
+ */
+export async function streamVoice(
+  text: string,
+  onChunk: VoiceChunkHandler,
+  signal?: AbortSignal,
+  retried = false,
+): Promise<void> {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new ApiError({
+      code: 'TEXT_REQUIRED',
+      detail: 'Nội dung đọc không được để trống.',
+      status: 400,
+      retryable: false,
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener('abort', abortListener, { once: true });
+
+  const correlationId = createRequestId('cor');
+  const headers = new Headers();
+  headers.set('Accept', 'audio/mpeg');
+  headers.set('Content-Type', 'application/json');
+  headers.set('X-Correlation-Id', correlationId);
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/text-to-speech`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text: trimmed }),
+      signal: controller.signal,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken(correlationId);
+        if (refreshed.outcome === 'authenticated' && refreshed.token) {
+          return streamVoice(trimmed, onChunk, signal, true);
+        }
+        if (refreshed.outcome === 'transient') {
+          throw temporaryRefreshError(refreshed.problem?.requestId ?? correlationId);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      const body = await parseJson(response);
+      const problem = problemFromResponse(body, response.status);
+      throw new ApiError(problem);
+    }
+
+    if (!response.body) {
+      throw new ApiError({
+        code: 'TTS_EMPTY_BODY',
+        detail: 'Dịch vụ đọc văn bản không trả về dữ liệu âm thanh.',
+        status: 502,
+        retryable: true,
+      });
+    }
+
+    const reader = response.body.getReader();
+    let isFirstChunk = true;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.byteLength === 0) continue;
+        await onChunk(value, isFirstChunk);
+        isFirstChunk = false;
+      }
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
+
+    if (isFirstChunk) {
+      throw new ApiError({
+        code: 'TTS_EMPTY_BODY',
+        detail: 'Dịch vụ đọc văn bản không trả về dữ liệu âm thanh.',
+        status: 502,
+        retryable: true,
+      });
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (isAbortError(error)) {
+      // A caller-supplied abort is an intentional stop. Only the internal
+      // deadline is surfaced as a retryable timeout for the UI.
+      if (signal?.aborted) throw error;
+      throw new ApiError({
+        code: 'REQUEST_TIMEOUT',
+        detail: 'Đọc văn bản hơi chậm. Bạn thử lại nhé.',
+        status: 408,
+        retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: 'SERVICE_UNAVAILABLE',
+      detail: 'Dịch vụ đọc văn bản đang gặp sự cố. Bạn thử lại sau.',
+      status: 0,
+      retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortListener);
+  }
+}
+
+/**
+ * Compatibility helper for callers that still need one complete MP3 buffer.
+ * The interactive player uses `streamVoice` directly so normal playback does
+ * not wait for the complete response before creating audio.
+ */
+export async function synthesizeVoice(
+  text: string,
+  signal?: AbortSignal,
+  retried = false,
+): Promise<ArrayBuffer> {
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  await streamVoice(text, (chunk) => {
+    chunks.push(chunk);
+    totalBytes += chunk.byteLength;
+  }, signal, retried);
+
+  const audio = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return audio.buffer;
 }
 
 export function errorText(error: unknown): string {
@@ -626,46 +915,107 @@ export function isRetryableError(error: unknown): boolean {
   return error instanceof ApiError && error.retryable;
 }
 
-function shouldRefresh(path: string, problem: ApiProblem, options: RequestOptions): boolean {
-  if (options.retried || options.retryAuth === false || path.startsWith("/api/v1/auth/")) return false;
-  return problem.code === "AUTHENTICATION_FAILED" || problem.code === "AUTHENTICATION_REQUIRED";
+const PUBLIC_AUTH_PATHS = new Set([
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/refresh",
+  "/api/v1/auth/forgot-password",
+  "/api/v1/auth/reset-password",
+  "/api/v1/auth/google",
+]);
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) return error.name === "AbortError";
+  return (error as { name?: unknown })?.name === "AbortError";
 }
 
-async function rawRefresh(): Promise<string | null> {
+function shouldRefresh(path: string, problem: ApiProblem, options: RequestOptions): boolean {
+  if (options.retried || options.retryAuth === false || PUBLIC_AUTH_PATHS.has(path)) return false;
+  return problem.code === "AUTHENTICATION_FAILED" || problem.code === "AUTHENTICATION_REQUIRED" || problem.code === "UNAUTHORIZED";
+}
+
+function isSessionAuthError(problem: ApiProblem): boolean {
+  if (problem.code === "CURRENT_PASSWORD_INVALID" || problem.code === "INVALID_CREDENTIALS") {
+    return false;
+  }
+  return (
+    problem.code === "AUTHENTICATION_FAILED" ||
+    problem.code === "AUTHENTICATION_REQUIRED" ||
+    problem.code === "UNAUTHORIZED" ||
+    problem.code === "SESSION_EXPIRED" ||
+    problem.code === "TOKEN_EXPIRED"
+  );
+}
+
+async function rawRefresh(triggerCorrelationId?: string): Promise<RefreshResult> {
   const tokenAtStart = accessToken;
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-Correlation-Id": createRequestId("cor-refresh"),
+    };
+    if (triggerCorrelationId) {
+      headers["X-Trigger-Correlation-Id"] = triggerCorrelationId;
+    }
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
       method: "POST",
-      headers: { Accept: "application/json", "X-Correlation-Id": createRequestId("cor") },
+      headers,
       credentials: "include",
     });
     const body = await parseJson(response);
+    const problem = problemFromResponse(body, response.status);
     if (!response.ok || !isRecord(body) || !isRecord(body.data) || typeof body.data.access_token !== "string") {
       // A login/register may have completed while this refresh was in flight.
       // Never clear the newer in-memory session because an older refresh failed.
       if (accessToken === tokenAtStart) {
-        clearAuthSession();
-        return null;
+        // Only clear the session if the server explicitly rejected the refresh token (401 or 403)
+        // rather than a temporary network or server issue (5xx or 429).
+        if (response.status === 401 || response.status === 403) {
+          clearAuthSession();
+          return { outcome: "invalid", token: null, problem };
+        }
+        return { outcome: "transient", token: accessToken, problem };
       }
-      return accessToken;
+      return accessToken
+        ? { outcome: "authenticated", token: accessToken, problem }
+        : { outcome: "transient", token: null, problem };
     }
-    if (accessToken !== tokenAtStart) return accessToken;
+    if (accessToken !== tokenAtStart) return accessToken
+      ? { outcome: "authenticated", token: accessToken }
+      : { outcome: "transient", token: null };
     setAccessToken(body.data.access_token);
-    return body.data.access_token;
+    return { outcome: "authenticated", token: body.data.access_token };
   } catch {
-    if (accessToken === tokenAtStart) {
-      clearAuthSession();
-      return null;
-    }
-    return accessToken;
+    // If the request was aborted (e.g. page navigation or teardown) or network dropped,
+    // do NOT wipe the in-memory session if it's still what we started with.
+    return {
+      outcome: "transient",
+      token: accessToken,
+      problem: { code: "AUTH_REFRESH_TEMPORARY", detail: "Session refresh temporarily unavailable.", status: 503, retryable: true },
+    };
   }
+}
+
+function temporaryRefreshError(requestId?: string): ApiError {
+  return new ApiError({
+    code: "AUTH_REFRESH_TEMPORARY",
+    detail: "Phiên đăng nhập đang được khôi phục. Bạn thử lại sau một chút nhé.",
+    status: 503,
+    retryable: true,
+    ...(requestId ? { requestId } : {}),
+  });
 }
 
 function friendlyErrorMessage(code: string, detail: string): string {
   const source = `${code} ${detail}`.toUpperCase();
+  if (source.includes("CURRENT_PASSWORD_INVALID") || (source.includes("INVALID_CREDENTIALS") && detail.includes("hiện tại"))) {
+    return "Mật khẩu hiện tại không đúng.";
+  }
   if (source.includes("INVALID_CREDENTIALS")) return "Email hoặc mật khẩu không đúng.";
   if (source.includes("ACCOUNT_ALREADY_EXISTS")) return "Email này đã được dùng để tạo tài khoản.";
-  if (source.includes("PASSWORD_POLICY")) return "Dùng mật khẩu hoặc cụm mật khẩu từ 8 ký tự trở lên.";
+  if (source.includes("PASSWORD_POLICY")) {
+    if (detail && detail.startsWith("Mật khẩu")) return detail;
+    return "Mật khẩu dài từ 8 đến 128 ký tự, bao gồm chữ, số và ký tự đặc biệt.";
+  }
   if (source.includes("RESET_TOKEN")) return "Liên kết đặt lại mật khẩu không còn hợp lệ. Bạn hãy yêu cầu liên kết mới.";
   if (source.includes("PAST_START")) return "Khung giờ này đã qua. Bạn hãy chọn một thời gian muộn hơn nhé.";
   if (source.includes("HOLD HAS EXPIRED") || source.includes("HOLD_EXPIRED")) return "Khung giờ tạm giữ đã hết hạn. Mình có thể tìm một lịch khác cho bạn.";
@@ -679,6 +1029,8 @@ function friendlyErrorMessage(code: string, detail: string): string {
   if (source.includes("IDEMPOTENCY_KEY_REUSED")) {
     return "Yêu cầu giỏ hàng đã được dùng cho dữ liệu khác. Bạn hãy thử lại.";
   }
+  if (source.includes("PROFILE_PHONE_NOT_PERSISTED")) return "Chưa xác nhận được số điện thoại đã được lưu. Dữ liệu của bạn vẫn được giữ lại, hãy thử lại.";
+  if (source.includes("PHONE_INVALID")) return "Số điện thoại không hợp lệ. Hãy kiểm tra lại số Việt Nam của bạn.";
   if (source.includes("SLOT_UNAVAILABLE") || source.includes("CAPACITY_UNAVAILABLE")) return "Khung giờ này vừa hết chỗ. Mình đã cập nhật các giờ còn trống.";
   if (source.includes("NO_DRIVER") || source.includes("NO DRIVER")) return "Hiện chưa tìm được tài xế phù hợp. Bạn có thể thử lại.";
   if (source.includes("UNAUTHORIZED") || source.includes("FORBIDDEN") || source.includes("AUTHENTICATION")) {

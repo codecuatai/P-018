@@ -7,11 +7,12 @@ import { isEmail } from 'class-validator';
 import { CoreStore } from '../core/core.module';
 import { issueAccessToken, verifyAccessToken } from './auth.token';
 import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
-import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, IssuedAuthSession } from './auth.types';
+import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, AuthUserStatus, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 128;
+const PASSWORD_COMPLEXITY_REGEX = /(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/;
 const ARGON2_OPTIONS = {
   type: argon2.argon2id,
   memoryCost: 19 * 1024,
@@ -221,17 +222,18 @@ export class AuthService {
     return issued;
   }
 
-  async refresh(refreshToken: string, metadata: AuthRequestMetadata, correlationId: string): Promise<IssuedAuthSession> {
+  async refresh(refreshToken: string, metadata: AuthRequestMetadata, correlationId: string, triggerCorrelationId?: string): Promise<IssuedAuthSession> {
     const currentHash = tokenHash(refreshToken);
     const current = await this.store.getSessionByRefreshHash(currentHash);
     if (!current) throw invalidRefreshToken();
     const next = this.newSession(current.userId, current.familyId, metadata);
     const rotation = await this.store.rotateRefreshToken(currentHash, next.session, new Date().toISOString());
     if (rotation.state === 'REUSE_DETECTED') {
-      await this.audit('REFRESH_TOKEN_REUSE_DETECTED', rotation.account.id, correlationId, rotation.familyId);
+      await this.audit('REFRESH_TOKEN_REUSE_DETECTED', rotation.account.id, correlationId, rotation.familyId, triggerCorrelationId ? { trigger_correlation_id: triggerCorrelationId } : undefined);
       throw new UnauthorizedException({ code: 'REFRESH_TOKEN_REUSED', detail: 'Phiên đăng nhập không còn hợp lệ.', retryable: false });
     }
     if (rotation.state !== 'ROTATED') throw invalidRefreshToken();
+    await this.audit('REFRESH_TOKEN_ROTATED', rotation.account.id, correlationId, rotation.session.familyId, triggerCorrelationId ? { trigger_correlation_id: triggerCorrelationId } : undefined);
     return this.issueFor(rotation.account, rotation.session, next.refreshToken);
   }
 
@@ -281,10 +283,22 @@ export class AuthService {
   async changePassword(user: AuthUser, input: { currentPassword: string; newPassword: string }, correlationId: string): Promise<void> {
     assertPasswordPolicy(input.newPassword);
     const account = await this.store.getUserById(user.sub);
-    if (!account || !await safelyVerifyPassword(account.passwordHash, input.currentPassword)) throw invalidCredentials();
+    if (!account || !await safelyVerifyPassword(account.passwordHash, input.currentPassword)) {
+      throw new UnauthorizedException({
+        code: 'CURRENT_PASSWORD_INVALID',
+        detail: 'Mật khẩu hiện tại không đúng.',
+        retryable: false,
+      });
+    }
     const nextHash = await argon2.hash(input.newPassword, ARGON2_OPTIONS);
     const updated = await this.store.updatePasswordAndRevokeSessions(user.sub, nextHash, new Date().toISOString(), 'password_changed');
-    if (!updated) throw invalidCredentials();
+    if (!updated) {
+      throw new UnauthorizedException({
+        code: 'CURRENT_PASSWORD_INVALID',
+        detail: 'Mật khẩu hiện tại không đúng.',
+        retryable: false,
+      });
+    }
     await this.audit('PASSWORD_CHANGED', user.sub, correlationId);
   }
 
@@ -321,6 +335,14 @@ export class AuthService {
 
   async listUsers(page = 1, pageSize = 50): Promise<{ items: AdminUserSummary[]; total: number }> {
     return this.store.listUsers(page, pageSize);
+  }
+
+  async updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> {
+    const updated = await this.store.updateUserStatus(id, status);
+    if (status === 'disabled') {
+      await this.store.revokeAllUserSessions(id, 'ADMIN_DISBANDED', new Date().toISOString());
+    }
+    return updated;
   }
 
   async updateProfile(user: AuthUser, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthUser> {
@@ -396,10 +418,12 @@ export function normalizeEmail(value: string): string {
 }
 
 export function assertPasswordPolicy(password: string): void {
-  if (typeof password !== 'string') throw new UnprocessableEntityException({ code: 'PASSWORD_POLICY', detail: `Mật khẩu cần có từ ${MIN_PASSWORD_LENGTH} đến ${MAX_PASSWORD_LENGTH} ký tự.`, retryable: false });
+  if (typeof password !== 'string') {
+    throw new UnprocessableEntityException({ code: 'PASSWORD_POLICY', detail: 'Mật khẩu dài từ 8 đến 128 ký tự, bao gồm chữ, số và ký tự đặc biệt.', retryable: false });
+  }
   const length = Array.from(password).length;
-  if (length < MIN_PASSWORD_LENGTH || length > MAX_PASSWORD_LENGTH) {
-    throw new UnprocessableEntityException({ code: 'PASSWORD_POLICY', detail: `Mật khẩu cần có từ ${MIN_PASSWORD_LENGTH} đến ${MAX_PASSWORD_LENGTH} ký tự.`, retryable: false });
+  if (length < MIN_PASSWORD_LENGTH || length > MAX_PASSWORD_LENGTH || !PASSWORD_COMPLEXITY_REGEX.test(password)) {
+    throw new UnprocessableEntityException({ code: 'PASSWORD_POLICY', detail: 'Mật khẩu dài từ 8 đến 128 ký tự, bao gồm chữ, số và ký tự đặc biệt.', retryable: false });
   }
 }
 

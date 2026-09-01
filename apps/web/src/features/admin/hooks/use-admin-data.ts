@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  addAdminSupportMessage,
   errorText,
   getAdminDatasets,
   getAdminPayments,
@@ -11,6 +12,7 @@ import {
   getAdminUsers,
   getAdminWorkflows,
   updateAdminSupportTicket,
+  updateAdminUserStatus,
 } from "@/lib/api-client";
 import type {
   AdminHealthCheck,
@@ -62,7 +64,7 @@ export function useAdminData() {
     setRefreshing(true);
     const requests = await Promise.allSettled([
       getAdminSummary(),
-      getAdminUsers(),
+      getAdminUsers(1, 100),
       getAdminTransactions(),
       getAdminPayments(),
       getAdminWorkflows(),
@@ -83,6 +85,16 @@ export function useAdminData() {
     });
     setLastCheckedAt(Date.now());
     setRefreshing(false);
+  }, []);
+
+  const fetchUsers = useCallback(async (page = 1, pageSize = 20) => {
+    setData((current) => ({ ...current, users: { ...current.users, loading: true, error: undefined } }));
+    try {
+      const result = await getAdminUsers(page, pageSize);
+      setData((current) => ({ ...current, users: { loading: false, data: result } }));
+    } catch (error) {
+      setData((current) => ({ ...current, users: { loading: false, error: errorText(error) } }));
+    }
   }, []);
 
   const refreshHealth = useCallback(async () => {
@@ -132,11 +144,52 @@ export function useAdminData() {
     }
   }, []);
 
+  const addTicketMessage = useCallback(async (id: string, message: string) => {
+    try {
+      const updated = await addAdminSupportMessage(id, message);
+      setData((current) => ({
+        ...current,
+        support: {
+          ...current.support,
+          data: current.support.data
+            ? { ...current.support.data, items: current.support.data.items.map((ticket) => ticket.id === id ? updated : ticket) }
+            : current.support.data,
+        },
+      }));
+      return updated;
+    } catch (error) {
+      setData((current) => ({ ...current, support: { ...current.support, error: errorText(error) } }));
+      throw error;
+    }
+  }, []);
+
+  const updateUserStatus = useCallback(async (id: string, status: "active" | "suspended") => {
+    try {
+      const updated = await updateAdminUserStatus(id, status);
+      setData((current) => ({
+        ...current,
+        users: {
+          ...current.users,
+          data: current.users.data
+            ? {
+                ...current.users.data,
+                items: current.users.data.items.map((u) => (u.id === id ? { ...u, status: updated.status } : u)),
+              }
+            : current.users.data,
+        },
+      }));
+      return updated;
+    } catch (error) {
+      setData((current) => ({ ...current, users: { ...current.users, error: errorText(error) } }));
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  return { ...data, refreshing, lastCheckedAt, load, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket };
+  return { ...data, refreshing, lastCheckedAt, load, fetchUsers, updateUserStatus, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket, addTicketMessage };
 }
 
 function loadable<T>(result: PromiseSettledResult<T>): Loadable<T> {

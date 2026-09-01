@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: X-One Restaurant Service
-  version: 1.2.0
+  version: 1.3.0
 paths:
   /v1/restaurants:
     get:
@@ -9,6 +9,7 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/InternalToken'}
         - {$ref: '#/components/parameters/ActorId'}
+        - {name: q, in: query, required: false, description: Case-insensitive substring match across restaurant name, location, or cuisine type. Queries with Vietnamese diacritics are accent-sensitive; queries without diacritics are accent-insensitive., schema: {type: string}}
         - {name: location, in: query, required: false, schema: {type: string}}
         - {name: cuisine_type, in: query, required: false, schema: {type: string}}
         - {name: budget_range, in: query, required: false, schema: {type: string}}
@@ -66,6 +67,23 @@ paths:
       responses:
         '201': {description: Hold created or replayed}
         '409': {description: Conflict}
+  /v1/reservation-holds/{hold_id}/cancel:
+    post:
+      summary: Release an actor-owned active reservation hold
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {$ref: '#/components/parameters/ActorId'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+        - name: hold_id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Cancelled hold envelope
+          content: {application/json: {schema: {$ref: '#/components/schemas/Envelope'}}}
+        '404': {description: Hold not found}
+        '409': {description: Hold is no longer active or idempotency conflict}
   /v1/reservations:
     get:
       summary: List reservations owned by the asserted actor

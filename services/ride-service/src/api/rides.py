@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from secrets import compare_digest
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 from sqlalchemy.orm import Session
 
 from src.api.schemas import (
@@ -96,6 +96,7 @@ def create_quote(
             route_duration_seconds=payload.route_duration_seconds,
             route_geometry=payload.route_geometry,
             route_snapshot_hash=payload.route_snapshot_hash,
+            stopovers=[item.model_dump() for item in payload.stopovers],
         ),
         idempotency_key,
     )
@@ -262,8 +263,9 @@ def list_bookings(
     request: Request,
     actor_id: Annotated[str, Depends(require_actor)],
     session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> dict[str, object]:
-    return {"data": {"items": [BookingOut.model_validate(value) for value in application(session).list_bookings(actor_id)]}, "meta": _meta(request).model_dump(mode="json")}
+    return {"data": {"items": [BookingOut.model_validate(value) for value in application(session).list_bookings(actor_id)[:limit]]}, "meta": _meta(request).model_dump(mode="json")}
 
 
 @router.get("/internal/ops/summary", dependencies=[Depends(require_internal_service)])

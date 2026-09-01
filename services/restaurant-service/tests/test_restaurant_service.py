@@ -3,11 +3,11 @@ from datetime import datetime
 
 os.environ.setdefault("SERVICE_PORT", "8102")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./.test-restaurant.db")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
 from fastapi.testclient import TestClient
 from src.application.restaurant_service import RestaurantApplicationService
-from src.infrastructure.database import Base, RestaurantRow, build_engine
+from src.infrastructure.database import Base, RestaurantRow, TableRow, build_engine
 from src.main import app
 from src.repositories.restaurant_repository import RestaurantRepository
 
@@ -30,7 +30,7 @@ with engine.begin() as connection:
             },
             {
                 "id": "rest-002",
-                "name": "Sakura Sushi House",
+                "name": "Tokachiya Ramen",
                 "location": "District 3, Ho Chi Minh City",
                 "cuisine_type": "Japanese",
                 "budget_range": "$$",
@@ -58,6 +58,46 @@ with engine.begin() as connection:
                 "timezone": "Asia/Ho_Chi_Minh",
                 "active": True,
             },
+            {
+                "id": "rest-cha-ca",
+                "name": "Chả Cá Văn Miếu",
+                "location": "Dong Da, Hanoi",
+                "cuisine_type": "Vietnamese",
+                "budget_range": "$$",
+                "rating": 4.7,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chay",
+                "name": "Nhà hàng Chay An Nhiên",
+                "location": "District 1, Ho Chi Minh City",
+                "cuisine_type": "Vegetarian",
+                "budget_range": "$$",
+                "rating": 4.5,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chay-accented",
+                "name": "Chảy Bistro",
+                "location": "District 2, Ho Chi Minh City",
+                "cuisine_type": "Fusion",
+                "budget_range": "$$",
+                "rating": 4.4,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
+            {
+                "id": "rest-chao",
+                "name": "Chảo Đỏ",
+                "location": "District 3, Ho Chi Minh City",
+                "cuisine_type": "Vietnamese",
+                "budget_range": "$$",
+                "rating": 4.3,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            },
         ],
     )
 RestaurantRepository(os.environ["DATABASE_URL"]).seed()
@@ -77,6 +117,34 @@ def test_search_restaurants():
     hanoi_res = client.get("/v1/restaurants?location=Hà Nội", headers=AUTH)
     assert hanoi_res.status_code == 200
     assert len(hanoi_res.json()["data"]["items"]) >= 2
+
+
+def test_generic_search_matches_name_location_and_cuisine_without_accents():
+    name_res = client.get("/v1/restaurants?q=Tokachiya%20Ramen", headers=AUTH)
+    location_res = client.get("/v1/restaurants?q=ha%20noi", headers=AUTH)
+    cuisine_res = client.get("/v1/restaurants?q=japanese", headers=AUTH)
+
+    assert name_res.status_code == 200
+    assert [item["id"] for item in name_res.json()["data"]["items"]] == ["rest-002"]
+    assert location_res.status_code == 200
+    assert {"rest-003", "rest-004"} <= {item["id"] for item in location_res.json()["data"]["items"]}
+    assert cuisine_res.status_code == 200
+    assert [item["id"] for item in cuisine_res.json()["data"]["items"]] == ["rest-002"]
+
+
+def test_generic_search_uses_smart_diacritic_substring_matching():
+    accented_res = client.get("/v1/restaurants", params={"q": "chả"}, headers=AUTH)
+    unaccented_res = client.get("/v1/restaurants", params={"q": "cha"}, headers=AUTH)
+
+    assert accented_res.status_code == 200
+    accented_ids = {item["id"] for item in accented_res.json()["data"]["items"]}
+    assert "rest-cha-ca" in accented_ids
+    assert "rest-chay" not in accented_ids
+    assert {"rest-chay-accented", "rest-chao"} <= accented_ids
+
+    assert unaccented_res.status_code == 200
+    unaccented_ids = {item["id"] for item in unaccented_res.json()["data"]["items"]}
+    assert {"rest-cha-ca", "rest-chay", "rest-chay-accented", "rest-chao"} <= unaccented_ids
 
 
 def test_consumer_discovery_searches_authoritative_fields_and_hides_only_placeholders():
@@ -178,6 +246,78 @@ def test_hold_reservation_and_idempotency():
         "price_level": "$$$",
         "image_url": None,
     }
+
+
+def test_cancel_hold_releases_capacity_and_replays_idempotently():
+    # The development seed intentionally gives catalog restaurants a large
+    # demo capacity buffer.  Use a single-table fixture so this test still
+    # verifies that cancelling a hold makes that exact capacity reusable.
+    with engine.begin() as connection:
+        connection.execute(
+            RestaurantRow.__table__.insert(),
+            [{
+                "id": "rest-single-table",
+                "name": "Single Table Fixture",
+                "location": "District 1, Ho Chi Minh City",
+                "cuisine_type": "French",
+                "budget_range": "$$",
+                "rating": 4.0,
+                "timezone": "Asia/Ho_Chi_Minh",
+                "active": True,
+            }],
+        )
+        connection.execute(
+            TableRow.__table__.insert(),
+            [{
+                "restaurant_id": "rest-single-table",
+                "table_code": "ONLY-08",
+                "capacity": 8,
+                "seating_type": "standard",
+                "active": True,
+            }],
+        )
+
+    payload = {"restaurant_id": "rest-single-table", "party_size": 8, "start_at": "2030-08-13T18:30:00+07:00", "duration_minutes": 120}
+    hold = client.post("/v1/reservation-holds", json=payload, headers={**AUTH, "Idempotency-Key": "hold-cancel-001"})
+    assert hold.status_code == 201
+    hold_id = hold.json()["data"]["id"]
+
+    unavailable = client.post(
+        "/v1/restaurants/rest-single-table/availability",
+        json=payload,
+        headers=AUTH,
+    )
+    assert unavailable.status_code == 200
+    assert unavailable.json()["data"]["available"] is False
+
+    forbidden = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={"X-Internal-Service-Token": "test-token", "X-Actor-Id": "usr-other", "Idempotency-Key": "hold-cancel-other"},
+    )
+    assert forbidden.status_code == 404
+
+    cancelled = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={**AUTH, "Idempotency-Key": "hold-cancel-commit-001"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["data"]["status"] == "CANCELLED"
+    assert cancelled.json()["data"]["resource_version"] == 2
+
+    replay = client.post(
+        f"/v1/reservation-holds/{hold_id}/cancel",
+        headers={**AUTH, "Idempotency-Key": "hold-cancel-commit-001"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["data"] == cancelled.json()["data"]
+
+    available_again = client.post(
+        "/v1/restaurants/rest-single-table/availability",
+        json=payload,
+        headers=AUTH,
+    )
+    assert available_again.status_code == 200
+    assert available_again.json()["data"]["available"] is True
 
 
 def test_update_and_cancel_reservation_are_actor_scoped_and_idempotent():

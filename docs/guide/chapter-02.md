@@ -572,10 +572,10 @@ Template tích hợp sẵn hệ thống auto-logging — ghi lại mọi prompt 
 
 ```bash
 # Linux / macOS / Git Bash
-bash scripts/setup_hooks.sh
+bash scripts/setup/setup_hooks.sh
 
 # Windows PowerShell
-# powershell -ExecutionPolicy Bypass -File scripts\setup_hooks.ps1
+# powershell -ExecutionPolicy Bypass -File scripts\setup\setup_hooks.ps1
 ```
 
 Lệnh này cài git pre-push hook và tạo thư mục `.ai-log/`. Sau khi chạy, mọi AI tool dưới đây sẽ tự động log — không cần thao tác thêm.
@@ -611,11 +611,11 @@ Nếu dùng ChatGPT, Claude.ai, Gemini Web, hoặc tool không có hook:
 
 ```bash
 # Interactive (script sẽ hỏi tool + prompt)
-bash scripts/_pyrun.sh scripts/log_manual.py
+bash scripts/ai-logging/_pyrun.sh scripts/ai-logging/log_manual.py
 
 # One-line
-bash scripts/_pyrun.sh scripts/log_manual.py --tool chatgpt --prompt "Brainstorm UI layout"
-bash scripts/_pyrun.sh scripts/log_manual.py --tool gemini-web --prompt "Research scoring algorithms"
+bash scripts/ai-logging/_pyrun.sh scripts/ai-logging/log_manual.py --tool chatgpt --prompt "Brainstorm UI layout"
+bash scripts/ai-logging/_pyrun.sh scripts/ai-logging/log_manual.py --tool gemini-web --prompt "Research scoring algorithms"
 ```
 
 ### Cấu hình `.env`
@@ -634,7 +634,7 @@ Copy từ `.env.example` sang `.env` và điền `AI_LOG_API_KEY` do instructor 
 
 | Vấn đề | Nguyên nhân | Cách fix |
 |---------|-------------|----------|
-| Hooks không log | Chưa chạy `setup_hooks.sh` | Chạy lại `bash scripts/setup_hooks.sh` |
+| Hooks không log | Chưa chạy `setup_hooks.sh` | Chạy lại `bash scripts/setup/setup_hooks.sh` |
 | `python3: not found` | Thiếu Python trên PATH | `brew install python3` (macOS) hoặc cài từ python.org (Windows) |
 | Submit failed | Sai `AI_LOG_API_KEY` hoặc không có network | Kiểm tra `.env`, logs vẫn giữ locally |
 | Antigravity không log | Chưa có transcript | Chắc chắn dùng Antigravity IDE trong repo folder |

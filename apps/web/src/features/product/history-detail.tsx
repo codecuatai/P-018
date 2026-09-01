@@ -7,12 +7,26 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { errorText, getHistoryDetail, listMyFeedback, prepareFoodReorder, prepareHealthcareRebook, prepareRestaurantRebook, prepareRideRebook, submitFeedback } from "@/lib/api-client";
 import { canRateStatus, executeServiceCancellation, isCancellableStatus } from "@/lib/cancellation-helpers";
 import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
-import type { FeedbackItem, HistoryType } from "@/types";
+import type { FeedbackItem, HistoryType, RideStopover } from "@/types";
 
 import { FoodTrackingPanel } from "./food-tracking";
 import { RideTrackingPanel } from "./ride-tracking";
 import { useRideTracking, markRideTrackingCancelled } from "./ride-tracking-cache";
 import { XOneMap, type XOnePoint } from "./xone-map";
+
+export function buildRideRebookPath(resource: Record<string, unknown>): string {
+  const snap = rideSnapshot(resource);
+  const pickup = String(snap.pickup_address ?? snap.pickup ?? resource.pickup_address ?? resource.pickup ?? "");
+  const dropoff = String(snap.dropoff_address ?? snap.dropoff ?? resource.dropoff_address ?? resource.dropoff ?? "");
+  const vehicle = String(snap.vehicle_type ?? snap.vehicle ?? resource.vehicle_type ?? resource.vehicle ?? "CAR_4");
+  const search = new URLSearchParams();
+  if (pickup && pickup !== "undefined") search.set("pickup", pickup);
+  if (dropoff && dropoff !== "undefined") search.set("dropoff", dropoff);
+  if (vehicle && vehicle !== "undefined") search.set("vehicle", vehicle);
+  const stopovers = rideStopovers(snap.stopovers ?? resource.stopovers);
+  if (stopovers.length) search.set("stopovers", JSON.stringify(stopovers));
+  return `/app/services/ride?${search.toString()}`;
+}
 
 export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
   const [resource, setResource] = useState<Record<string, unknown>>();
@@ -37,17 +51,7 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
 
   async function reorder(): Promise<void> {
     if (type === "ride_booking") {
-      const snap = (typeof resource?.quote === "object" && resource?.quote !== null ? resource.quote : typeof resource?.snapshot === "object" && resource?.snapshot !== null ? resource.snapshot : resource) as Record<string, unknown> | undefined;
-      const pickup = String(snap?.pickup_address ?? snap?.pickup ?? resource?.pickup_address ?? resource?.pickup ?? "");
-      const dropoff = String(snap?.dropoff_address ?? snap?.dropoff ?? resource?.dropoff_address ?? resource?.dropoff ?? "");
-      const vehicle = String(snap?.vehicle_type ?? snap?.vehicle ?? resource?.vehicle_type ?? resource?.vehicle ?? "CAR_4");
-
-      const search = new URLSearchParams();
-      if (pickup && pickup !== "undefined") search.set("pickup", pickup);
-      if (dropoff && dropoff !== "undefined") search.set("dropoff", dropoff);
-      if (vehicle && vehicle !== "undefined") search.set("vehicle", vehicle);
-
-      window.location.href = `/app/services/ride?${search.toString()}`;
+      window.location.href = buildRideRebookPath(resource ?? {});
       return;
     }
 
@@ -78,7 +82,7 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
   async function handleCancel(): Promise<void> {
     setActionPending(true); setActionMessage(""); setError("");
     try {
-      const cancelResult = await executeServiceCancellation(type, resource ?? id);
+      const cancelResult = await executeServiceCancellation(type, resource ?? id, id);
       const newStatus = String(cancelResult.status ?? "CANCELLED");
       setResource((prev) => prev ? { ...prev, status: newStatus } : { status: newStatus });
       if (type === "ride_booking") markRideTrackingCancelled(id);
@@ -97,10 +101,12 @@ export function HistoryDetail({ type, id }: { type: HistoryType; id: string }) {
 
 function PurposeBuiltDetail({ type, resource, id }: { type: HistoryType; resource: Record<string, unknown>; id: string }) {
   if (type === "ride_booking") {
-    const snap = (typeof resource.quote === "object" && resource.quote !== null ? resource.quote : typeof resource.snapshot === "object" && resource.snapshot !== null ? resource.snapshot : resource) as Record<string, unknown>;
+    const snap = rideSnapshot(resource);
+    const stopovers = rideStopovers(snap.stopovers ?? resource.stopovers);
     const origin = pointFrom(snap.pickup_latitude ?? resource.pickup_latitude, snap.pickup_longitude ?? resource.pickup_longitude) ?? nestedPoint(resource.route, "origin");
     const destination = pointFrom(snap.dropoff_latitude ?? resource.dropoff_latitude, snap.dropoff_longitude ?? resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination");
-    return <section className="history-purpose-detail"><DetailSection title="Hành trình"><Fact label="Điểm đón" value={optionalText(snap.pickup_address ?? snap.pickup ?? resource.pickup_address ?? resource.pickup)} /><Fact label="Điểm đến" value={optionalText(snap.dropoff_address ?? snap.dropoff ?? resource.dropoff_address ?? resource.dropoff)} /><Fact label="Khoảng cách" value={distanceText(snap.distance_km ?? resource.distance_km, resource.route)} /><Fact label="Thời gian" value={minutesText(snap.duration_minutes ?? resource.duration_minutes, resource.route)} /><Fact label="Loại xe" value={optionalText(snap.vehicle_type ?? snap.vehicle ?? resource.vehicle_type ?? resource.vehicle)} /><Fact label="Giá chuyến" value={formatMoney(snap.amount ?? snap.fare ?? resource.amount ?? resource.fare, String(snap.currency ?? resource.currency ?? "VND"))} /><Fact label="Tài xế" value={driverText(resource.driver)} /></DetailSection>{origin || destination ? <XOneMap origin={origin} destination={destination} routeGeometry={routeFrom(resource.route)} routePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} label="Bản đồ hành trình" /> : null}<RideTrackingPanel bookingId={id} /></section>;
+    const routeSource = resource.route ?? snap.route ?? resource.route_geometry ?? snap.route_geometry;
+    return <section className="history-purpose-detail"><DetailSection title="Hành trình"><Fact label="Điểm đón" value={optionalText(snap.pickup_address ?? snap.pickup ?? resource.pickup_address ?? resource.pickup)} /><Fact label="Điểm ghé" value={stopovers.length ? stopovers.map((stopover) => stopover.address).join(" → ") : "Không có"} /><Fact label="Điểm đến" value={optionalText(snap.dropoff_address ?? snap.dropoff ?? resource.dropoff_address ?? resource.dropoff)} /><Fact label="Khoảng cách" value={distanceText(snap.distance_km ?? resource.distance_km, resource.route)} /><Fact label="Thời gian" value={minutesText(snap.duration_minutes ?? resource.duration_minutes, resource.route)} /><Fact label="Loại xe" value={optionalText(snap.vehicle_type ?? snap.vehicle ?? resource.vehicle_type ?? resource.vehicle)} /><Fact label="Giá chuyến" value={formatMoney(snap.amount ?? snap.fare ?? resource.amount ?? resource.fare, String(snap.currency ?? resource.currency ?? "VND"))} /><Fact label="Phiên bản snapshot" value={snapshotVersionText(snap, resource)} /><Fact label="Tài xế" value={driverText(resource.driver)} /></DetailSection>{origin || destination ? <XOneMap origin={origin} destination={destination} routeGeometry={routeFrom(routeSource)} routePolyline={typeof (snap.route_polyline ?? resource.route_polyline) === "string" ? String(snap.route_polyline ?? resource.route_polyline) : undefined} label="Bản đồ hành trình" /> : null}<RideTrackingPanel bookingId={id} /></section>;
   }
   if (type === "food_order") return <section className="history-purpose-detail"><Image source={resource.image_url ?? nestedValue(resource.restaurant, "image_url")} alt="Đơn đồ ăn" /><DetailSection title="Đơn đồ ăn"><Fact label="Nhà hàng" value={nestedName(resource.restaurant) || optionalText(resource.restaurant_name)} /><Fact label="Món đã chọn" value={itemsSummary(resource.items)} /><Fact label="Tổng cộng" value={formatMoney(resource.total ?? resource.amount, String(resource.currency ?? "VND"))} /><Fact label="Địa chỉ giao" value={optionalText(resource.delivery_address ?? resource.address)} /></DetailSection><FoodTrackingPanel orderId={id} /></section>;
   if (type === "restaurant_reservation") {
@@ -126,6 +132,9 @@ function isHealthcarePaymentPending(resource: Record<string, unknown>, payment?:
   return ["PENDING", "HOLD", "HELD", "DRAFT", "AWAITING_PAYMENT", "PAYMENT_PENDING"].includes(status) || ["PENDING", "REQUIRES_PAYMENT", "AWAITING_PAYMENT", "UNPAID"].includes(paymentStatus);
 }
 function nestedValue(value: unknown, key: string): unknown { return isRecord(value) ? value[key] : undefined; }
+function rideSnapshot(resource: Record<string, unknown>): Record<string, unknown> { return isRecord(resource.quote) ? resource.quote : isRecord(resource.snapshot) ? resource.snapshot : resource; }
+function rideStopovers(value: unknown): RideStopover[] { return Array.isArray(value) ? value.flatMap((item) => { if (!isRecord(item) || typeof item.address !== "string") return []; const latitude = Number(item.latitude); const longitude = Number(item.longitude); const address = item.address.trim(); return address.length >= 3 && Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180 ? [{ address, latitude, longitude }] : []; }).slice(0, 2) : []; }
+function snapshotVersionText(snap: Record<string, unknown>, resource: Record<string, unknown>): string { const quote = optionalText(snap.quote_version ?? resource.quote_version, ""); const tariff = optionalText(snap.tariff_version ?? resource.tariff_version, ""); const route = optionalText(snap.route_snapshot_hash ?? resource.route_snapshot_hash, ""); return [quote && `quote ${quote}`, tariff && `tariff ${tariff}`, route && `route ${route}`].filter(Boolean).join(" · ") || "Đang cập nhật"; }
 function itemsSummary(value: unknown): string { if (!Array.isArray(value)) return "Món đang cập nhật"; return value.map((item) => isRecord(item) ? `${optionalText(item.name ?? item.title, "Món ăn")} × ${String(item.quantity ?? 1)}` : "Món ăn").join(", "); }
 function pointFrom(latitude: unknown, longitude: unknown): XOnePoint | undefined { const lat = Number(latitude); const lng = Number(longitude); return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { latitude: lat, longitude: lng } : undefined; }
 function nestedPoint(value: unknown, key: string): XOnePoint | undefined { if (!isRecord(value) || !isRecord(value[key]) || value[key].suspicious === true) return undefined; return pointFrom(value[key].latitude, value[key].longitude); }

@@ -69,6 +69,7 @@ class QuoteCommand:
     route_duration_seconds: int | None = None
     route_geometry: list[dict[str, float]] | None = None
     route_snapshot_hash: str | None = None
+    stopovers: list[dict[str, Any]] | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +141,7 @@ class Quote:
     tariff_snapshot: dict[str, Any] | None = None
     passenger_count: int = 1
     capacity_policy_version: str = CAPACITY_POLICY_VERSION
+    stopovers: list[dict[str, Any]] | None = None
 
     def snapshot(self) -> dict[str, Any]:
         return _json_safe(asdict(self))
@@ -163,9 +165,14 @@ class Booking:
     tracking_started_at: datetime | None = None
     passenger_count: int = 1
     capacity_policy_version: str = CAPACITY_POLICY_VERSION
+    quote_snapshot: dict[str, Any] | None = None
 
     def snapshot(self) -> dict[str, Any]:
-        return _json_safe(asdict(self))
+        data = _json_safe(asdict(self))
+        quote_snapshot = data.pop("quote_snapshot", None)
+        if quote_snapshot:
+            data.update({key: value for key, value in quote_snapshot.items() if key not in {"id", "status"}})
+        return data
 
 
 @dataclass(frozen=True)
@@ -321,7 +328,7 @@ def transition_quote(quote: Quote, target: str) -> None:
 
 
 def prepare_confirmation_payload(quote: Quote, actor_id: str) -> dict[str, Any]:
-    return {
+    payload = {
         "action": "ride.booking.prepare",
         "actor_id": actor_id,
         "quote_id": quote.id,
@@ -331,6 +338,9 @@ def prepare_confirmation_payload(quote: Quote, actor_id: str) -> dict[str, Any]:
         "passenger_count": quote.passenger_count,
         "capacity_policy_version": quote.capacity_policy_version,
     }
+    if quote.stopovers:
+        payload["stopovers"] = quote.stopovers
+    return payload
 
 
 def confirm_confirmation_payload(
@@ -390,6 +400,7 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         "duration_seconds": route_duration_seconds,
         "polyline": route_polyline,
         "geometry": route_geometry,
+        "stopovers": command.stopovers or [],
     }
     return Quote(
         id=quote_id,
@@ -424,6 +435,7 @@ def create_quote(command: QuoteCommand, tariff: dict[str, Any], *, now: datetime
         tariff_snapshot={"version": tariff_version, **tariff},
         passenger_count=command.passenger_count,
         capacity_policy_version=CAPACITY_POLICY_VERSION,
+        stopovers=command.stopovers or [],
     )
 
 
@@ -606,7 +618,7 @@ def _haversine_km(latitude_a: float, longitude_a: float, latitude_b: float, long
 SIMULATED_DRIVER_SPAWN_MIN_METERS = 2_000.0
 SIMULATED_DRIVER_SPAWN_MAX_METERS = 3_000.0
 SIMULATED_DRIVER_FALLBACK_SPEED_KM_PER_MINUTE = 0.35
-SIMULATED_DRIVER_TRACKING_SPEED_FACTOR = 0.2
+SIMULATED_DRIVER_TRACKING_SPEED_FACTOR = 0.4
 
 
 def spawn_simulated_driver_near_pickup(

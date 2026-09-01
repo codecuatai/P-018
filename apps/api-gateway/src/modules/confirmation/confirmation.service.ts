@@ -25,6 +25,25 @@ function isRecord(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function nonBlankString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function restaurantConfirmationDetail(startAt: unknown, partySize: unknown): string {
+  const parsed = typeof startAt === 'string' ? Date.parse(startAt) : Number.NaN;
+  const formattedStart = Number.isFinite(parsed)
+    ? new Intl.DateTimeFormat('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }).format(new Date(parsed))
+    : String(startAt ?? 'Thời gian đang cập nhật');
+  return `${formattedStart} · ${String(partySize)} người`;
+}
+
 function healthcareFinalStateError(appointment: JsonObject): { code: string; detail: string } | null {
   if (appointment.status === 'EXPIRED') return { code: 'APPOINTMENT_EXPIRED', detail: 'The appointment hold has expired.' };
   if (appointment.status === 'CANCELLED') return { code: 'APPOINTMENT_NOT_CONFIRMABLE', detail: 'The appointment has been cancelled.' };
@@ -91,13 +110,47 @@ export class ConfirmationService {
   }
 
   private async foodAddressPayload(actorId: string, values: JsonObject): Promise<JsonObject> {
-    if (isRecord(values.address_snapshot)) return values;
+    if (isRecord(values.address_snapshot)) {
+      const snapshot = values.address_snapshot;
+      const latitude = typeof snapshot.latitude === 'number' ? snapshot.latitude : undefined;
+      const longitude = typeof snapshot.longitude === 'number' ? snapshot.longitude : undefined;
+      const addressText = nonBlankString(snapshot.address_text);
+      const isCoordinateFallback = Boolean(addressText && /^tọa\s*độ\s+-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/iu.test(addressText));
+      if (snapshot.source === 'device_current_location' && isCoordinateFallback && latitude !== undefined && longitude !== undefined && this.locations) {
+        try {
+          const resolved = await this.locations.reverseGeocode({ latitude, longitude });
+          const candidate = resolved.candidates.find((item) => typeof item.address_text === 'string' && item.address_text.trim());
+          if (candidate) {
+            return {
+              ...values,
+              address_snapshot: {
+                ...snapshot,
+                address_text: candidate.address_text,
+                ...(candidate.latitude !== null ? { latitude: candidate.latitude } : {}),
+                ...(candidate.longitude !== null ? { longitude: candidate.longitude } : {}),
+                provider: resolved.provider,
+                source: 'device_reverse_geocoded',
+              },
+            };
+          }
+        } catch {
+          // Coordinate fallback remains valid when the optional provider is
+          // unavailable; checkout must not fail solely because naming failed.
+        }
+      }
+      return values;
+    }
     const snapshot = await this.coreAddressSnapshot(actorId, values.address_id);
     return snapshot ? { ...values, address_snapshot: snapshot } : values;
   }
 
   async prepare(user: AuthUser, payload: JsonObject, correlationId: string): Promise<ConfirmationRecord & { preview: JsonObject }> {
-    const previewPayload = await this.foodAddressPayload(user.sub, { cart_id: payload.cart_id, address_id: payload.address_id, user_id: user.sub });
+    const previewPayload = await this.foodAddressPayload(user.sub, {
+      cart_id: payload.cart_id,
+      address_id: payload.address_id,
+      user_id: user.sub,
+      ...(isRecord(payload.address_snapshot) ? { address_snapshot: payload.address_snapshot } : {}),
+    });
     const preview = await this.food.post('/api/v1/orders/preview', previewPayload, correlationId, undefined, user.sub);
     const total = preview.total as JsonObject;
     const amount = Number(total.amount);
@@ -129,11 +182,20 @@ export class ConfirmationService {
     }
 
     let snapshot = resource ?? {};
+    let restaurantRecord: JsonObject | undefined;
+    if (action === 'CREATE_RESTAURANT_RESERVATION') {
+      restaurantRecord = await this.restaurant.getRestaurant(String(args.restaurant_id), user.sub, correlationId);
+      snapshot = { ...snapshot, restaurant: restaurantRecord };
+    }
     if (action === 'CONFIRM_HEALTHCARE_APPOINTMENT') {
       const appointmentId = Number(args.appointment_id);
       const authoritativeAppointment = await this.healthcare.getAppointment(appointmentId, user.sub, correlationId);
       const stateError = healthcareFinalStateError(authoritativeAppointment);
-      if (stateError) throw new ConflictException(stateError);
+      // The financial confirmation is created before the payment acknowledgement
+      // so it binds the authoritative draft's price/version.  Execution still
+      // re-reads this record and requires a paid draft immediately before the
+      // domain final transition.
+      if (stateError && stateError.code !== 'PAYMENT_REQUIRED') throw new ConflictException(stateError);
       snapshot = authoritativeAppointment;
     }
     const amount = Math.max(0, Math.trunc(Number(snapshot.price ?? args.price ?? 0) || 0));
@@ -166,6 +228,23 @@ export class ConfirmationService {
     };
     await this.store.createConfirmation(confirmation);
     await this.store.audit({ action: 'domain_confirmation.created', actorId: user.sub, resourceId: confirmation.id, correlationId, metadata: { action, workflow_id: tool.workflow_id } });
+    const presentation = action === 'CREATE_RESTAURANT_RESERVATION'
+      ? {
+          title: `Xác nhận đặt bàn tại ${nonBlankString(restaurantRecord?.name) ?? 'nhà hàng đã chọn'}`,
+          detail: restaurantConfirmationDetail(args.start_at, args.party_size),
+          preview: {
+            restaurant_name: nonBlankString(restaurantRecord?.name) ?? 'Nhà hàng đã chọn',
+            start_at: args.start_at,
+            party_size: Number(args.party_size),
+            duration_minutes: Number(args.duration_minutes ?? 120),
+            special_requests: nonBlankString(args.special_requests),
+            hold_id: args.hold_id,
+            resource_version: confirmation.quoteVersion,
+            confirmation_expires_at: new Date(confirmation.expiresAt).toISOString(),
+            ...(nonBlankString(snapshot.expires_at) ? { hold_expires_at: nonBlankString(snapshot.expires_at) } : {}),
+          },
+        }
+      : {};
     return {
       id: confirmation.id,
       action: confirmation.action,
@@ -179,6 +258,7 @@ export class ConfirmationService {
       currency: confirmation.currency,
       expires_at: new Date(confirmation.expiresAt).toISOString(),
       ...(Object.keys(snapshot).length ? { resource: snapshot } : {}),
+      ...presentation,
     };
   }
 
@@ -203,6 +283,74 @@ export class ConfirmationService {
     const conversation = await this.store.getConversation(conversationId, actorId);
     if (!conversation) return;
     await this.store.mergeConversationState(conversationId, actorId, { last_order_id: orderId, ...(paymentId ? { last_payment_id: paymentId } : {}), pending_confirmation_id: null });
+  }
+
+  private async transitionFoodOrderIfCurrent(
+    order: JsonObject,
+    actorId: string,
+    expectedStatus: string,
+    targetStatus: string,
+    reason: string,
+    operationKey: string,
+    correlationId: string,
+  ): Promise<JsonObject> {
+    if (String(order.status) !== expectedStatus) return order;
+    const orderId = String(order.id);
+    try {
+      return await this.food.post(
+        `/api/v1/internal/orders/${encodeURIComponent(orderId)}/transition`,
+        { target_status: targetStatus, reason, operation_key: operationKey },
+        correlationId,
+        operationKey,
+      );
+    } catch (error: unknown) {
+      // Payment reconciliation can advance this same order between the read
+      // above and the transition request. The Food service remains the state
+      // authority, so reload its result instead of treating that race as a
+      // failed customer payment.
+      if (errorCode(error) !== 'INVALID_ORDER_TRANSITION') throw error;
+      return this.food.get(`/api/v1/orders/${encodeURIComponent(orderId)}`, correlationId, actorId);
+    }
+  }
+
+  private async settleFoodOrderPayment(
+    orderId: string,
+    actorId: string,
+    payment: PaymentRecord,
+    correlationId: string,
+  ): Promise<JsonObject> {
+    let order = await this.food.get(`/api/v1/orders/${encodeURIComponent(orderId)}`, correlationId, actorId);
+    if (payment.status === 'FAILED') {
+      return this.transitionFoodOrderIfCurrent(
+        order,
+        actorId,
+        'PAYMENT_PENDING',
+        'PAYMENT_FAILED',
+        'Payment provider reported a failure',
+        `payment-failed:${payment.id}`,
+        correlationId,
+      );
+    }
+    if (payment.status !== 'SUCCEEDED') return order;
+
+    order = await this.transitionFoodOrderIfCurrent(
+      order,
+      actorId,
+      'PAYMENT_PENDING',
+      'PAID',
+      'Payment provider reported success',
+      `payment-paid:${payment.id}`,
+      correlationId,
+    );
+    return this.transitionFoodOrderIfCurrent(
+      order,
+      actorId,
+      'PAID',
+      'RESTAURANT_CONFIRMING',
+      'Awaiting restaurant confirmation',
+      `restaurant-confirming:${payment.id}`,
+      correlationId,
+    );
   }
 
   async execute(id: string, user: AuthUser, body: JsonObject, correlationId: string, idempotencyKey: string): Promise<JsonObject> {
@@ -243,12 +391,7 @@ export class ConfirmationService {
         await this.store.completeConfirmation(id, user.sub, executionKey, 'FAILED_RETRYABLE', result, 'PAYMENT_TIMEOUT');
         throw new ConflictException({ code: 'PAYMENT_TIMEOUT', detail: 'Payment status is unknown; query the payment before retrying.', retryable: true });
       }
-      if (payment.status === 'FAILED') {
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment sandbox failed', operation_key: `payment-failed:${id}` }, correlationId, `payment-failed:${id}`);
-      } else {
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAID', reason: 'Payment sandbox succeeded', operation_key: `payment-paid:${id}` }, correlationId, `payment-paid:${id}`);
-        await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Awaiting restaurant confirmation', operation_key: `restaurant-confirming:${id}` }, correlationId, `restaurant-confirming:${id}`);
-      }
+      await this.settleFoodOrderPayment(String(order.id), user.sub, payment, correlationId);
       const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, user.sub);
       const result: JsonObject = { confirmation_id: confirmation.id, order: authoritativeOrder, payment };
       await this.store.completeConfirmation(id, user.sub, executionKey, payment.status === 'FAILED' ? 'FAILED_FINAL' : 'SUCCEEDED', result, payment.status === 'FAILED' ? 'PAYMENT_FAILED' : undefined);
@@ -430,11 +573,7 @@ export class ConfirmationService {
           const orderPayload = await this.foodAddressPayload(actor.sub, { cart_id: confirmation.payload.cart_id, address_id: confirmation.payload.address_id, user_id: actor.sub, payment_method: paymentMethod, idempotency_key: orderKey, expected_snapshot_hash: confirmation.payload.snapshot_hash, expected_cart_version: confirmation.payload.cart_version, expected_amount: confirmation.amount, expected_currency: confirmation.currency, expected_quote_version: confirmation.payload.quote_version, ...(isRecord(confirmation.payload.address_snapshot) ? { address_snapshot: confirmation.payload.address_snapshot } : {}) });
           const order = await this.food.post('/api/v1/orders', orderPayload, correlationId, orderKey, actor.sub);
           const payment = await this.payments.createAndConfirm({ actorId: actor.sub, orderId: String(order.id), amount: Number(order.amount), currency: String(order.currency), method: paymentMethod as 'bank_transfer' | 'card' | 'e_wallet', idempotencyKey: paymentKey, simulateFailure: payload.simulate_failure === true, simulateTimeout: payload.simulate_timeout === true, confirmationId: confirmation.id, confirmationExecutionKey: confirmation.executionKey, conversationId: typeof payload.conversation_id === 'string' ? payload.conversation_id : undefined });
-          if (payment.status === 'FAILED') await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment recovery failed', operation_key: `payment-failed:${confirmation.id}` }, correlationId, `payment-failed:${confirmation.id}`);
-          else if (payment.status === 'SUCCEEDED') {
-            await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'PAID', reason: 'Payment recovery succeeded', operation_key: `payment-paid:${confirmation.id}` }, correlationId, `payment-paid:${confirmation.id}`);
-            await this.food.post(`/api/v1/internal/orders/${order.id}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Restaurant confirmation resumed', operation_key: `restaurant-confirming:${confirmation.id}` }, correlationId, `restaurant-confirming:${confirmation.id}`);
-          }
+          await this.settleFoodOrderPayment(String(order.id), actor.sub, payment, correlationId);
           const authoritativeOrder = await this.food.get(`/api/v1/orders/${encodeURIComponent(String(order.id))}`, correlationId, actor.sub);
           const result = { confirmation_id: confirmation.id, order: authoritativeOrder, payment, ...(payment.status === 'TIMED_OUT' || payment.status === 'UNKNOWN' ? { code: 'PAYMENT_TIMEOUT' } : {}) };
           await this.store.completeConfirmation(confirmation.id, actor.sub, confirmation.executionKey, payment.status === 'FAILED' ? 'FAILED_FINAL' : payment.status === 'SUCCEEDED' ? 'SUCCEEDED' : 'FAILED_RETRYABLE', result, payment.status === 'FAILED' ? 'PAYMENT_FAILED' : payment.status === 'SUCCEEDED' ? undefined : 'PAYMENT_TIMEOUT');
@@ -472,19 +611,13 @@ export class ConfirmationService {
     if (!confirmation || confirmation.actorId !== payment.actorId) return;
     const actor = { sub: payment.actorId, email: 'recovery@xone.local', role: 'customer' as const };
     if (payment.status === 'SUCCEEDED') {
-      let order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
-      if (String(order.status) === 'PAYMENT_PENDING') {
-        order = await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'PAID', reason: 'Payment provider recovery succeeded', operation_key: `payment-paid:${payment.id}` }, correlationId, `payment-paid:${payment.id}`);
-      }
-      if (String(order.status) === 'PAID') {
-        order = await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'RESTAURANT_CONFIRMING', reason: 'Payment provider recovery succeeded', operation_key: `restaurant-confirming:${payment.id}` }, correlationId, `restaurant-confirming:${payment.id}`);
-      }
+      let order = await this.settleFoodOrderPayment(payment.orderId, payment.actorId, payment, correlationId);
       order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
       const result = { confirmation_id: confirmation.id, order, payment };
       await this.store.completeConfirmation(confirmation.id, actor.sub, payment.confirmationExecutionKey, 'SUCCEEDED', result);
       await this.updateConversationAfterExecution(payment.conversationId, actor.sub, payment.orderId, payment.id);
     } else if (payment.status === 'FAILED') {
-      await this.food.post(`/api/v1/internal/orders/${payment.orderId}/transition`, { target_status: 'PAYMENT_FAILED', reason: 'Payment provider recovery failed', operation_key: `payment-failed:${payment.id}` }, correlationId, `payment-failed:${payment.id}`);
+      await this.settleFoodOrderPayment(payment.orderId, payment.actorId, payment, correlationId);
       const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
       await this.store.completeConfirmation(confirmation.id, actor.sub, payment.confirmationExecutionKey, 'FAILED_FINAL', { confirmation_id: confirmation.id, order, payment, code: 'PAYMENT_FAILED' }, 'PAYMENT_FAILED');
     }

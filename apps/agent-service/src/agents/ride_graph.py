@@ -126,10 +126,13 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
     ride = _ride_context(context)
     slots = _extract(query, context)
     patch = _patch(context, slots)
-    missing = [field for field in ("pickup_address", "dropoff_address") if not slots.get(field)]
+    missing = [field for field in ("pickup_address", "dropoff_address", "vehicle_type") if not slots.get(field)]
     if missing:
         return {
-            "response": "Bạn cho mình biết điểm đón và điểm đến còn thiếu để mình tính giá chuyến đi nhé.",
+            "response": (
+                "Bạn cho mình biết điểm đón, điểm đến và loại xe "
+                "(xe máy, ô tô 4 chỗ hoặc ô tô 7 chỗ) còn thiếu nhé."
+            ),
             "intent": "clarify_ride",
             "missing_fields": missing,
             "state_patch": patch,
@@ -152,7 +155,7 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
         arguments: dict[str, Any] = {
             "pickup_address": slots["pickup_address"],
             "dropoff_address": slots["dropoff_address"],
-            "vehicle_type": slots.get("vehicle_type", "CAR_4"),
+            "vehicle_type": slots["vehicle_type"],
         }
         if slots.get("promo_code"):
             arguments["promo_code"] = slots["promo_code"]

@@ -27,6 +27,7 @@ export function ProfilePage() {
   const [error, setError] = useState("");
 
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [addressesLoading, setAddressesLoading] = useState(true);
   const [newAddressText, setNewAddressText] = useState("");
   const [addressCandidates, setAddressCandidates] = useState<GeocodeCandidate[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<GeocodeCandidate>();
@@ -39,6 +40,7 @@ export function ProfilePage() {
 
   const loadAddresses = useCallback(async () => {
     const sequence = ++addressLoadSequence.current;
+    setAddressesLoading(true);
     try {
       const res = await listSavedAddresses();
       if (sequence !== addressLoadSequence.current) return;
@@ -49,6 +51,8 @@ export function ProfilePage() {
       });
     } catch (err) {
       console.error(err);
+    } finally {
+      if (sequence === addressLoadSequence.current) setAddressesLoading(false);
     }
   }, []);
 
@@ -96,9 +100,15 @@ export function ProfilePage() {
 
   async function save(): Promise<void> {
     if (!fullName.trim() || saving) return;
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone && !isValidVietnamesePhone(normalizedPhone)) {
+      setFeedback("");
+      setError("Số điện thoại không hợp lệ. Hãy nhập số di động Việt Nam (10 số, bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84).");
+      return;
+    }
     setSaving(true); setFeedback(""); setError("");
     try {
-      await updateProfile({ full_name: fullName.trim(), phone: phone.trim(), language: language.trim(), timezone: timezone.trim() });
+      await updateProfile({ full_name: fullName.trim(), phone: normalizedPhone, language: language.trim(), timezone: timezone.trim() });
       if (newAddressText.trim() && (selectedSavedAddressId || selectedAddress) && !(await handleSetDefaultAddress())) return;
       setFeedback("Hồ sơ đã được cập nhật.");
     } catch (reason) {
@@ -268,11 +278,19 @@ export function ProfilePage() {
         </div>
       </article>
     </div>
-    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Ngôn ngữ, múi giờ và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
-    {section === "addresses" ? <div className="profile-section-content"><AddressPage /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
+    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Quản lý mật khẩu và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
+    {section === "addresses" ? <div className="profile-section-content"><AddressPage items={addresses} loading={addressesLoading} onReload={loadAddresses} onItemsChange={setAddresses} /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
   </section>;
 }
 
 function normalizeAddressText(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi-VN");
+}
+
+function normalizePhone(value: string): string {
+  return value.trim().replace(/[\s().-]/g, "");
+}
+
+function isValidVietnamesePhone(value: string): boolean {
+  return /^(?:0|\+84)(?:3|5|7|8|9)\d{8}$/.test(value);
 }

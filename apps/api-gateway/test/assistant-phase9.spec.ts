@@ -163,9 +163,247 @@ describe('Phase 9 assistant runtime acceptance', () => {
     expect(ride.confirmPayment).toHaveBeenCalledWith(user.sub, 'ride-workflow-1', 'phase9-ride-fail');
     expect(response.workflow_status).toBe('PARTIAL_SUCCESS');
     expect(response.items[0]).toEqual(expect.objectContaining({ kind: 'task_error', error_code: 'NO_DRIVER' }));
+    expect(response.completed).toEqual([expect.objectContaining({ kind: 'appointment_confirmed', status: 'CONFIRMED' })]);
     const saved = await store.getConversation(conversationId, user.sub);
     const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
     expect(tasks.find((task) => task.domain === 'healthcare')).toEqual(expect.objectContaining({ phase: 'COMPLETED' }));
     expect(tasks.find((task) => task.domain === 'ride')).toEqual(expect.objectContaining({ phase: 'FAILED' }));
+  });
+
+  it('keeps a committed Restaurant reservation separate from a failed dependent Ride', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-phase9-partial-restaurant';
+    await store.saveConversation({
+      conversationId,
+      actorId: user.sub,
+      messages: [],
+      state: {
+        tasks: [
+          {
+            id: 'restaurant-task',
+            domain: 'restaurant',
+            goal: 'Restaurant',
+            normalized_request: 'Restaurant',
+            extracted_slots: { location: 'Hanoi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+            depends_on: [],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'restaurant-workflow-1',
+            authoritative: {
+              selected: { id: 'rest-1', name: 'Maison Hanoi', location: '12 Hoan Kiem, Ha Noi' },
+              pending: { id: 'restaurant-confirm-1' },
+            },
+          },
+          {
+            id: 'ride-task',
+            domain: 'ride',
+            goal: 'Ride',
+            normalized_request: 'Ride to restaurant',
+            extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Restaurant', vehicle_type: 'CAR_4' },
+            depends_on: ['restaurant-task'],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'ride-workflow-1',
+            authoritative: { quote: { id: 'quote-1', pickup_address: 'VinUni', dropoff_address: 'Restaurant' } },
+          },
+        ],
+        actions: [
+          { id: 'restaurant-confirm-action', kind: 'restaurant_confirm', task_id: 'restaurant-task', task_revision: 0, cohort_id: 'restaurant-cohort', confirmation_id: 'restaurant-confirm-1', workflow_id: 'restaurant-workflow-1' },
+          { id: 'ride-service-action', kind: 'ride_service', task_id: 'ride-task', task_revision: 0, cohort_id: 'ride-cohort', workflow_id: 'ride-workflow-1' },
+        ],
+      },
+      status: 'ACTIVE',
+    });
+    const ride = {
+      chat: jest.fn().mockRejectedValue(new ServiceCallError({
+        service: 'ride-service',
+        operation: 'ride.quote.create',
+        contractVersion: 'v1',
+        httpStatus: 409,
+        code: 'NO_DRIVER',
+        detail: 'No driver is available.',
+        category: 'BUSINESS',
+        retryable: false,
+        retryAfterMs: null,
+        outcome: 'RESPONSE_RECEIVED',
+      })),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const confirmations = {
+      executeDomain: jest.fn().mockResolvedValue({ tool_result: { id: 'res-1', reservation_code: 'res-1', restaurant_id: 'rest-1', restaurant_name: 'Maison Hanoi', address: '12 Hoan Kiem, Ha Noi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00', status: 'CONFIRMED' } }),
+      execute: jest.fn(),
+      prepareDomainConfirmation: jest.fn(),
+    };
+    const service = new AssistantService(
+      store as never,
+      { assistantChat: jest.fn() } as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      confirmations as never,
+    );
+
+    const response = await service.act(user, { conversation_id: conversationId, action_id: 'restaurant-confirm-action' }, 'phase9-restaurant-ride', 'phase9-restaurant-ride-key');
+
+    expect(confirmations.executeDomain).toHaveBeenCalledWith('restaurant-confirm-1', user, { workflow_id: 'restaurant-workflow-1' }, 'phase9-restaurant-ride', 'phase9-restaurant-ride-key', 'CREATE_RESTAURANT_RESERVATION', 'restaurant-workflow-1');
+    expect(ride.chat).toHaveBeenCalled();
+    expect(response.workflow_status).toBe('PARTIAL_SUCCESS');
+    expect(response.completed).toEqual([expect.objectContaining({ kind: 'reservation', status: 'CONFIRMED', reservation_code: 'res-1' })]);
+    expect(response.items).toEqual([expect.objectContaining({ kind: 'task_error', error_code: 'NO_DRIVER' })]);
+    const saved = await store.getConversation(conversationId, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.domain === 'restaurant')).toEqual(expect.objectContaining({ phase: 'COMPLETED' }));
+    expect(tasks.find((task) => task.domain === 'ride')).toEqual(expect.objectContaining({ phase: 'FAILED', failure_code: 'NO_DRIVER' }));
+  });
+
+  it('returns the next dependent Ride prompt when the prerequisite commits but pickup is missing', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-phase9-partial-ride-needs-pickup';
+    await store.saveConversation({
+      conversationId,
+      actorId: user.sub,
+      messages: [],
+      state: {
+        tasks: [
+          {
+            id: 'restaurant-task',
+            domain: 'restaurant',
+            goal: 'Restaurant',
+            normalized_request: 'Restaurant',
+            extracted_slots: { location: 'Hanoi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+            depends_on: [],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'restaurant-workflow-1',
+            authoritative: {
+              selected: { id: 'rest-1', name: 'Maison Hanoi', location: '12 Hoan Kiem, Ha Noi' },
+              pending: { id: 'restaurant-confirm-1' },
+            },
+          },
+          {
+            id: 'ride-task',
+            domain: 'ride',
+            goal: 'Ride',
+            normalized_request: 'Ride to restaurant',
+            extracted_slots: { dropoff_address: 'Restaurant' },
+            depends_on: ['restaurant-task'],
+            phase: 'NEEDS_INFO',
+            revision: 0,
+          },
+        ],
+        actions: [
+          { id: 'restaurant-confirm-action', kind: 'restaurant_confirm', task_id: 'restaurant-task', task_revision: 0, cohort_id: 'restaurant-cohort', confirmation_id: 'restaurant-confirm-1', workflow_id: 'restaurant-workflow-1' },
+        ],
+      },
+      status: 'ACTIVE',
+    });
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const confirmations = {
+      executeDomain: jest.fn().mockResolvedValue({ tool_result: { id: 'res-1', reservation_code: 'res-1', restaurant_id: 'rest-1', restaurant_name: 'Maison Hanoi', address: '12 Hoan Kiem, Ha Noi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00', status: 'CONFIRMED' } }),
+      execute: jest.fn(),
+      prepareDomainConfirmation: jest.fn(),
+    };
+    const service = new AssistantService(
+      store as never,
+      { assistantChat: jest.fn() } as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      confirmations as never,
+    );
+
+    const response = await service.act(user, { conversation_id: conversationId, action_id: 'restaurant-confirm-action' }, 'phase9-partial-pickup', 'phase9-partial-pickup-key');
+
+    expect(response.completed).toEqual([expect.objectContaining({ kind: 'reservation', status: 'CONFIRMED', reservation_code: 'res-1' })]);
+    expect(response.items).toEqual([expect.objectContaining({ kind: 'address_options', purpose: 'PICKUP', allow_new: true })]);
+    expect(ride.chat).not.toHaveBeenCalled();
+    const saved = await store.getConversation(conversationId, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+    expect(tasks.find((task) => task.domain === 'restaurant')).toEqual(expect.objectContaining({ phase: 'COMPLETED' }));
+    expect(tasks.find((task) => task.domain === 'ride')).toEqual(expect.objectContaining({ phase: 'NEEDS_INFO' }));
+  });
+
+  it('re-arms only the failed dependent Ride action for a retryable failure', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-phase9-retry-ride';
+    await store.saveConversation({
+      conversationId,
+      actorId: user.sub,
+      messages: [],
+      state: {
+        tasks: [
+          {
+            id: 'restaurant-task',
+            domain: 'restaurant',
+            goal: 'Restaurant',
+            normalized_request: 'Restaurant',
+            extracted_slots: { location: 'Hanoi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' },
+            depends_on: [],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'restaurant-workflow-1',
+            authoritative: {
+              selected: { id: 'rest-1', name: 'Maison Hanoi', location: '12 Hoan Kiem, Ha Noi' },
+              pending: { id: 'restaurant-confirm-1' },
+            },
+          },
+          {
+            id: 'ride-task',
+            domain: 'ride',
+            goal: 'Ride',
+            normalized_request: 'Ride to restaurant',
+            extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Restaurant', vehicle_type: 'CAR_4' },
+            depends_on: ['restaurant-task'],
+            phase: 'AWAITING_CONFIRMATION',
+            revision: 0,
+            workflow_id: 'ride-workflow-1',
+            authoritative: { quote: { id: 'quote-1', pickup_address: 'VinUni', dropoff_address: 'Restaurant' } },
+          },
+        ],
+        actions: [
+          { id: 'restaurant-confirm-action', kind: 'restaurant_confirm', task_id: 'restaurant-task', task_revision: 0, cohort_id: 'restaurant-cohort', confirmation_id: 'restaurant-confirm-1', workflow_id: 'restaurant-workflow-1' },
+          { id: 'ride-service-action', kind: 'ride_service', task_id: 'ride-task', task_revision: 0, cohort_id: 'ride-cohort', workflow_id: 'ride-workflow-1' },
+        ],
+      },
+      status: 'ACTIVE',
+    });
+    const ride = {
+      chat: jest.fn().mockRejectedValue(new ServiceCallError({
+        service: 'ride-service',
+        operation: 'ride.quote.create',
+        contractVersion: 'v1',
+        httpStatus: 503,
+        code: 'UPSTREAM_UNAVAILABLE',
+        detail: 'Temporary outage',
+        category: 'TRANSIENT',
+        retryable: true,
+        retryAfterMs: null,
+        outcome: 'NOT_SENT',
+      })),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const confirmations = {
+      executeDomain: jest.fn().mockResolvedValue({ tool_result: { id: 'res-1', reservation_code: 'res-1', restaurant_id: 'rest-1', restaurant_name: 'Maison Hanoi', address: '12 Hoan Kiem, Ha Noi', party_size: 2, start_at: '2099-01-01T19:00:00+07:00', status: 'CONFIRMED' } }),
+      execute: jest.fn(),
+      prepareDomainConfirmation: jest.fn(),
+    };
+    const service = new AssistantService(
+      store as never,
+      { assistantChat: jest.fn() } as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      confirmations as never,
+    );
+
+    const response = await service.act(user, { conversation_id: conversationId, action_id: 'restaurant-confirm-action' }, 'phase9-retry-ride', 'phase9-retry-ride-key');
+
+    expect(response.workflow_status).toBe('PARTIAL_SUCCESS');
+    expect(response.completed[0]).toEqual(expect.objectContaining({ kind: 'reservation', status: 'CONFIRMED' }));
+    expect(response.items[0]).toEqual(expect.objectContaining({ kind: 'task_error', error_code: 'UPSTREAM_UNAVAILABLE', retryable: true, action_id: 'ride-service-action' }));
+    expect(response.actions.map((action) => action.id)).toContain('ride-service-action');
+    expect(response.actions.map((action) => action.id)).not.toContain('restaurant-confirm-action');
   });
 });

@@ -7,7 +7,7 @@ import { cancelRideBooking, errorText } from "@/lib/api-client";
 
 import { markRideTrackingCancelled } from "./ride-tracking-cache";
 
-const terminalStatuses = new Set(["COMPLETED", "NO_DRIVER", "FAILED", "PAYMENT_FAILED", "CANCELLED"]);
+const terminalStatuses = new Set(["COMPLETED", "NO_DRIVER", "FAILED", "PAYMENT_FAILED", "CANCELLED", "IN_PROGRESS", "ARRIVED_DESTINATION"]);
 
 export function RideCancelButton({ bookingId, status, onCancelled, className = "" }: { bookingId?: string; status?: string; onCancelled?: (result: Record<string, unknown>) => void; className?: string }) {
   const [loading, setLoading] = useState(false);

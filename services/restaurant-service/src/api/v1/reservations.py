@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 from src.api.auth import require_internal_auth
 from src.api.idempotency import require_idempotency_key
@@ -17,6 +17,17 @@ def create_hold(body: HoldCreateRequest, request: Request, idempotency_key: str 
     except ValueError as exc:
         code = str(exc)
         status_code = 409 if code in {"CAPACITY_UNAVAILABLE", "IDEMPOTENCY_PAYLOAD_MISMATCH"} else 422
+        raise HTTPException(status_code=status_code, detail=code) from exc
+
+
+@router.post("/reservation-holds/{hold_id}/cancel")
+def cancel_hold(hold_id: str, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"), actor_id=Depends(require_internal_auth)):
+    key = require_idempotency_key(idempotency_key)
+    try:
+        return envelope(request.app.state.restaurant_service.cancel_hold(actor_id, hold_id, key), request)
+    except ValueError as exc:
+        code = str(exc)
+        status_code = 404 if code == "HOLD_NOT_FOUND" else 409
         raise HTTPException(status_code=status_code, detail=code) from exc
 
 
@@ -41,8 +52,8 @@ def get_reservation(reservation_id: str, request: Request, actor_id=Depends(requ
 
 
 @router.get("/reservations")
-def list_reservations(request: Request, actor_id=Depends(require_internal_auth)):
-    return envelope({"items": request.app.state.restaurant_service.list_reservations(actor_id)}, request)
+def list_reservations(request: Request, limit: int = Query(default=50, ge=1, le=100), actor_id=Depends(require_internal_auth)):
+    return envelope({"items": request.app.state.restaurant_service.list_reservations(actor_id)[:limit]}, request)
 
 
 @router.patch("/reservations/{reservation_id}")

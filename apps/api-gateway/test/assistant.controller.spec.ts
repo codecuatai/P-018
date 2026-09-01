@@ -6,6 +6,22 @@ describe('Assistant action idempotency header', () => {
   const request = { user: { sub: 'actor-1', email: 'actor@example.test', role: 'USER' }, correlationId: 'cor-1' } as unknown as CorrelatedRequest & { user: AuthUser };
   const response = { conversation_id: 'conv-1', message: 'ok', items: [], actions: [], completed: [] };
 
+  it('forwards structured current location to the assistant service', async () => {
+    const service = { chat: jest.fn().mockResolvedValue(response) };
+    const controller = new AssistantController(service as never);
+    const location = {
+      latitude: 21.0285,
+      longitude: 105.8542,
+      accuracy_meters: 10,
+      captured_at: '2026-08-27T03:00:00.000Z',
+      source: 'device' as const,
+    };
+
+    await controller.chat({ message: 'Gọi xe', conversation_id: 'conv-1', current_location: location }, request);
+
+    expect(service.chat).toHaveBeenCalledWith(request.user, 'Gọi xe', 'conv-1', 'cor-1', location);
+  });
+
   it.each([undefined, '', '   '])('rejects a missing or blank key (%p)', async (key) => {
     const service = { act: jest.fn() };
     const controller = new AssistantController(service as never);
@@ -29,5 +45,20 @@ describe('Assistant action idempotency header', () => {
     const controller = new AssistantController(service as never);
     await controller.action({ conversation_id: 'conv-1', action_id: 'act-1' }, '  k  ', request);
     expect(service.act).toHaveBeenCalledWith(request.user, { conversation_id: 'conv-1', action_id: 'act-1' }, 'cor-1', 'k');
+  });
+
+  it('forwards the browser location again with an explicit action', async () => {
+    const service = { act: jest.fn().mockResolvedValue(response) };
+    const controller = new AssistantController(service as never);
+    const location = {
+      latitude: 21.0285,
+      longitude: 105.8542,
+      captured_at: '2026-08-27T03:00:00.000Z',
+      source: 'device' as const,
+    };
+
+    await controller.action({ conversation_id: 'conv-1', action_id: 'act-1', current_location: location }, 'action-key', request);
+
+    expect(service.act).toHaveBeenCalledWith(request.user, { conversation_id: 'conv-1', action_id: 'act-1', current_location: location }, 'cor-1', 'action-key');
   });
 });

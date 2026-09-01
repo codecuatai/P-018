@@ -18,6 +18,17 @@ def _match(candidates: list[dict[str, Any]], query: str) -> list[dict[str, Any]]
     ]
 
 
+def _is_generic_delivery_address(query: str) -> bool:
+    """Keep a generic home preference from becoming an address selection."""
+    return plain(query).strip() in {
+        "home",
+        "nha",
+        "nha toi",
+        "giao ve nha",
+        "giao toi nha",
+    }
+
+
 def resolve_references(slots: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(slots)
     restaurants = list(context.get("restaurant_candidates", []))
@@ -51,7 +62,11 @@ def resolve_references(slots: dict[str, Any], context: dict[str, Any]) -> dict[s
             resolved["restaurant_id"] = resolved.get("restaurant_id") or matches[0].get("restaurant_id")
         elif len(matches) > 1:
             resolved["ambiguous_menu_items"] = matches
-    if resolved.get("address_query") and not resolved.get("address_id"):
+    if (
+        resolved.get("address_query")
+        and not resolved.get("address_id")
+        and not _is_generic_delivery_address(str(resolved["address_query"]))
+    ):
         matches = _match(addresses, str(resolved["address_query"]))
         if len(matches) == 1:
             resolved["address_id"] = matches[0].get("id")
