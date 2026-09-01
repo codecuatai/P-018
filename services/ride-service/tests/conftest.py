@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,14 +12,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+_SERVICE_ROOT = str(Path(__file__).resolve().parents[1])
+if _SERVICE_ROOT in sys.path:
+    sys.path.remove(_SERVICE_ROOT)
+sys.path.insert(0, _SERVICE_ROOT)
+for _module_name in tuple(sys.modules):
+    if _module_name == "src" or _module_name.startswith("src."):
+        del sys.modules[_module_name]
+
 os.environ.setdefault("SERVICE_PORT", "8101")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite://")
-os.environ.setdefault("INTERNAL_SERVICE_TOKEN", "test-token")
+os.environ["INTERNAL_SERVICE_TOKEN"] = "test-token"
 
-from src.config import get_settings
-from src.infrastructure.database import get_session
-from src.infrastructure.models import Base, RideDriverRow, RideTariffRow
-from src.main import app
+from src.config import get_settings  # noqa: E402
+from src.infrastructure.database import get_session  # noqa: E402
+from src.infrastructure.models import Base, RideDriverRow, RideTariffRow  # noqa: E402
+from src.main import app  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

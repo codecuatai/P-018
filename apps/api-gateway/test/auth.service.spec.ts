@@ -28,9 +28,8 @@ function makeService(): { service: AuthService; store: AuthStore; core: CoreStor
   const core = new CoreStore(config);
   return { service: new AuthService(config, store, core, new PasswordResetDelivery()), store, core };
 }
-
 const metadata = { userAgent: 'jest-browser', ip: '127.0.0.1' };
-const password = 'a reliable local passphrase';
+const password = 'a reliable local passphrase 123!@#';
 
 describe('real local authentication', () => {
   it('registers a normalized email with an Argon2id-only password hash', async () => {
@@ -55,15 +54,52 @@ describe('real local authentication', () => {
     expect(unknown).toMatchObject({ response: expect.objectContaining({ code: 'INVALID_CREDENTIALS', detail: 'Email hoặc mật khẩu không đúng.' }) });
   });
 
-  it('rotates refresh tokens and revokes the full family on replay', async () => {
+  it('tolerates a benign replay of a just-consumed refresh token while its replacement is still fresh', async () => {
     const { service } = makeService();
     const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
-    expect(await service.authenticateAccessToken(initial.accessToken)).toMatchObject({ sub: initial.user.sub });
+
+    // First rotation consumes the initial token and mints its replacement.
+    const rotated = await service.refresh(initial.refreshToken, metadata, 'cor-refresh');
+    // A lost-response retry (or an aborted navigation) replays the initial
+    // token immediately. Because its replacement is still fresh and we are
+    // inside the grace window, the family rolls forward instead of tripping
+    // reuse detection and logging the whole app out.
+    const rolled = await service.refresh(initial.refreshToken, metadata, 'cor-benign-replay');
+    expect(rolled.refreshToken).not.toBe(initial.refreshToken);
+    expect(rolled.refreshToken).not.toBe(rotated.refreshToken);
+
+    // The session family survives, so previously issued access tokens keep working.
+    expect(await service.authenticateAccessToken(rotated.accessToken)).toMatchObject({ sub: initial.user.sub });
+    expect(await service.authenticateAccessToken(rolled.accessToken)).toMatchObject({ sub: initial.user.sub });
+  });
+
+  it('keeps a family alive when a consumed token has a fresh descendant in the grace window', async () => {
+    const { service } = makeService();
+    const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
 
     const rotated = await service.refresh(initial.refreshToken, metadata, 'cor-refresh');
-    expect(rotated.refreshToken).not.toBe(initial.refreshToken);
-    await expect(service.refresh(initial.refreshToken, metadata, 'cor-replay')).rejects.toMatchObject({ response: expect.objectContaining({ code: 'REFRESH_TOKEN_REUSED' }) });
-    expect(await service.authenticateAccessToken(rotated.accessToken)).toBeUndefined();
+    const rotatedAgain = await service.refresh(rotated.refreshToken, metadata, 'cor-refresh-again');
+
+    // The initial token's direct replacement was consumed, but the chain still
+    // has a fresh descendant, so a concurrent lost-response retry is benign.
+    const replayed = await service.refresh(initial.refreshToken, metadata, 'cor-replay');
+    expect(replayed.refreshToken).not.toBe(rotatedAgain.refreshToken);
+    expect(await service.authenticateAccessToken(rotatedAgain.accessToken)).toMatchObject({ sub: initial.user.sub });
+  });
+
+  it('audits refresh rotation with bounded trigger correlation metadata only', async () => {
+    const { service, core } = makeService();
+    const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
+
+    await service.refresh(initial.refreshToken, metadata, 'cor-refresh', 'web-restore-Healthcare-01');
+
+    const audits = (core.repository as unknown as { audits: Array<Record<string, unknown>> }).audits;
+    expect(audits.at(-1)).toMatchObject({
+      action: 'REFRESH_TOKEN_ROTATED',
+      correlationId: 'cor-refresh',
+      metadata: { trigger_correlation_id: 'web-restore-Healthcare-01' },
+    });
+    expect(JSON.stringify(audits.at(-1))).not.toContain(initial.refreshToken);
   });
 
   it('scopes session revocation to its authenticated actor', async () => {
@@ -77,7 +113,11 @@ describe('real local authentication', () => {
   it('invalidates old credentials and sessions after a password change', async () => {
     const { service } = makeService();
     const initial = await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
-    const nextPassword = 'another reliable passphrase';
+    const nextPassword = 'another reliable passphrase 456$%^';
+    await expect(
+      service.changePassword(initial.user, { currentPassword: 'wrong-current-password 123!@#', newPassword: nextPassword }, 'cor-wrong')
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'CURRENT_PASSWORD_INVALID', detail: 'Mật khẩu hiện tại không đúng.' }) });
+
     await service.changePassword(initial.user, { currentPassword: password, newPassword: nextPassword }, 'cor-change');
 
     expect(await service.authenticateAccessToken(initial.accessToken)).toBeUndefined();
@@ -89,7 +129,7 @@ describe('real local authentication', () => {
     const { service, core } = makeService();
     await service.register({ fullName: 'Nguyễn An', email: 'an@example.test', password }, metadata, 'cor-register');
     const reset = await service.requestPasswordReset('an@example.test', 'cor-forgot');
-    const nextPassword = 'reset local passphrase';
+    const nextPassword = 'reset local passphrase 789&*(';
     expect(reset.devResetToken).toBeDefined();
     await service.resetPassword(reset.devResetToken!, nextPassword, 'cor-reset');
     await expect(service.resetPassword(reset.devResetToken!, nextPassword, 'cor-replay')).rejects.toMatchObject({ response: expect.objectContaining({ code: 'RESET_TOKEN_INVALID' }) });

@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
+from src.api.voice import stt_tts_router
 from src.config import get_settings
 from src.infrastructure.database import close_pool, persistence_ready
 from src.observability import initialize_telemetry, shutdown_telemetry
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(stt_tts_router, prefix="/api/v1/voice")
 
 
 @app.get("/health/live")

@@ -9,3 +9,7 @@ quote and booking lifecycle. Runtime startup never creates or mutates schema.
 Revision `20260816_0006` additively binds `passenger_count` and the capacity
 policy version to quote and booking snapshots. Existing rows remain compatible
 as one-passenger transactions.
+An earlier deployment briefly recorded the quote snapshot migration as the
+short revision `0007`; `env.py` reconciles that legacy marker only after
+checking the `ride_bookings.quote_snapshot` column, without changing any
+applied migration file or deleting data.

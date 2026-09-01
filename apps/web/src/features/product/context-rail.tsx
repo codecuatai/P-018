@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { errorText, resolveAddress } from "@/lib/api-client";
 import { executeServiceCancellation, isCancellableStatus } from "@/lib/cancellation-helpers";
-import { formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
+import { formatAddress, formatDateTime, formatMoney, isRecord, optionalText, statusLabel } from "@/lib/presentation";
 import type { HistoryItem } from "@/types";
 import { RideMapDetail } from "./ride-map-detail";
 import { FoodTrackingPanel } from "./food-tracking";
@@ -87,13 +87,14 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
   const { data: tracking } = useRideTracking(bookingId);
   const status = tracking?.status ?? item.status ?? String(item.resource.status ?? "");
   const canCancel = isCancellableStatus(item.type, status);
+  const cancellationLabel = item.type === "restaurant_reservation" ? "Hủy đặt bàn" : item.type === "food_order" ? "Hủy đơn" : "Hủy lịch khám";
 
   if (cancelled) return null;
 
   async function handleCancel() {
     setPending(true); setError("");
     try {
-      await executeServiceCancellation(item.type, item.resource.id ? item.resource : item.id);
+      await executeServiceCancellation(item.type, item.resource, item.id);
       setCancelled(true);
       onCancelled?.();
       window.dispatchEvent(new CustomEvent("xone-active-work-changed"));
@@ -114,12 +115,12 @@ export function ActiveWorkRailCardWithCancel({ item, onDetails, onCancelled }: {
     ) : canCancel ? (
       showConfirm ? (
         <div className="active-card-cancel-confirm">
-          <small>Hủy đặt?</small>
-          <button className="button button-danger text-button" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "..." : "Xác nhận"}</button>
-          <button className="button button-secondary text-button" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Đóng</button>
+          <small>{cancellationLabel}?</small>
+          <button className="active-work-cancel-confirm" type="button" onClick={() => void handleCancel()} disabled={pending}>{pending ? "Đang hủy…" : "Xác nhận hủy"}</button>
+          <button className="active-work-cancel-dismiss" type="button" onClick={() => setShowConfirm(false)} disabled={pending}>Giữ lại</button>
         </div>
       ) : (
-        <button className="button button-secondary text-button active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>Hủy</button>
+        <button className="active-work-cancel-btn" type="button" onClick={() => setShowConfirm(true)}>{cancellationLabel}</button>
       )
     ) : null}
     {error ? <small className="form-error">{error}</small> : null}
@@ -229,7 +230,7 @@ function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
   const resource = item.resource;
   const restaurant = isRecord(resource.restaurant) ? resource.restaurant : undefined;
   const name = nestedName(restaurant) || optionalText(resource.restaurant_name ?? resource.name, "Nhà hàng");
-  const address = optionalText(resource.address ?? restaurant?.address ?? restaurant?.location, "Địa chỉ nhà hàng chưa có");
+  const address = formatAddress(resource.address, restaurant?.address, restaurant?.location, resource.district, restaurant?.district, resource.city, restaurant?.city) || "Địa chỉ nhà hàng chưa có";
   const directPoint = pointFromRecord(restaurant) ?? pointFrom(resource.latitude, resource.longitude) ?? pointFromRecord(resource.location);
   const canResolve = Boolean(address) && !/chưa có|đang cập nhật/i.test(address);
 
@@ -247,10 +248,10 @@ function ActiveRestaurantDetail({ item }: { item: HistoryItem }) {
   }, [address, canResolve, directPoint?.latitude, directPoint?.longitude]);
 
   const location = resolvedPoint ? { ...resolvedPoint, label: name } : undefined;
-  return <div className="restaurant-map-detail">
-    <section className="restaurant-map-stage" aria-label="Bản đồ và thông tin đặt bàn">
+  return <div className={`restaurant-map-detail${location ? "" : " restaurant-map-detail-no-map"}`}>
+    <section className={`restaurant-map-stage${location ? "" : " is-unavailable"}`} aria-label="Bản đồ và thông tin đặt bàn">
       <div className="restaurant-map-canvas">
-        {location ? <XOneMap restaurant={location} density="active" label={`Vị trí ${name}`} /> : resolving ? <p className="inline-note restaurant-map-empty">Đang xác định vị trí từ địa chỉ nhà hàng…</p> : <p className="inline-note restaurant-map-empty">{address}</p>}
+        {location ? <XOneMap restaurant={location} variant="location-detail" density="active" label={`Vị trí ${name}`} /> : resolving ? <p className="inline-note restaurant-map-empty">Đang xác định vị trí từ địa chỉ nhà hàng…</p> : <p className="inline-note restaurant-map-empty">{address}</p>}
         <aside className="restaurant-map-info-panel" aria-label="Thông tin đặt bàn"><span className="eyebrow">ĐẶT BÀN ĐÃ XÁC NHẬN</span><h3>{name}</h3><p>{address}</p><div className="consumer-detail-grid"><Fact label="Thời gian" value={formatDateTime(resource.start_at ?? resource.reservation_time)} /><Fact label="Số khách" value={resource.party_size ? `${String(resource.party_size)} người` : "Chưa có"} /><Fact label="Trạng thái" value={statusLabel(resource.status ?? item.status)} /><Fact label="Bàn" value={optionalText(resource.table_code, "Đã sắp xếp")} /><Fact label="Ẩm thực" value={optionalText(restaurant?.cuisine, "Theo thực đơn nhà hàng")} /><Fact label="Đánh giá" value={typeof restaurant?.rating === "number" ? `${String(restaurant.rating)} ★` : "Chưa có"} /><Fact label="Mức giá" value={optionalText(restaurant?.price_level, "Chưa có")} /><Fact label="Giờ mở cửa" value="Hằng ngày: 08:00–22:00" /></div></aside>
       </div>
     </section>
@@ -280,6 +281,12 @@ function ActiveRideDetail({ item }: { item: HistoryItem }) {
   const summary = rideSummary(item);
   const origin = pointFrom(resource.pickup_latitude, resource.pickup_longitude) ?? nestedPoint(resource.route, "origin");
   const destination = pointFrom(resource.dropoff_latitude, resource.dropoff_longitude) ?? nestedPoint(resource.route, "destination");
+  const stopovers = Array.isArray(resource.stopovers)
+    ? resource.stopovers.flatMap((stopover) => {
+      const point = pointFromRecord(stopover);
+      return point ? [{ ...point, label: optionalText(isRecord(stopover) ? stopover.address : undefined) }] : [];
+    })
+    : [];
   const route = routeFrom(resource.route ?? resource);
   const pickup = optionalText(resource.pickup_address ?? resource.pickup, summary.pickup);
   const dropoff = optionalText(resource.dropoff_address ?? resource.dropoff, summary.dropoff);
@@ -288,7 +295,7 @@ function ActiveRideDetail({ item }: { item: HistoryItem }) {
   const duration = durationText(resource.duration_minutes ?? resource.duration, resource.route, summary.duration);
   const fare = rideMoneyText(resource.amount ?? resource.fare, String(resource.currency ?? "VND"), summary.fare);
 
-  return <RideMapDetail bookingId={bookingId} initialOrigin={origin} initialDestination={destination} initialRoute={route} initialRoutePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} initialRouteProvider={typeof resource.route_provider === "string" ? resource.route_provider : undefined} initialRouteDistanceMeters={typeof resource.route_distance_meters === "number" ? resource.route_distance_meters : undefined} initialRouteDurationSeconds={typeof resource.route_duration_seconds === "number" ? resource.route_duration_seconds : undefined} status={item.status} facts={[{ label: "Điểm đón", value: pickup }, { label: "Điểm đến", value: dropoff }, { label: "Loại xe", value: vehicle }, { label: "Khoảng cách", value: distance }, { label: "Thời gian dự kiến", value: duration }, { label: "Giá dự kiến", value: fare }]} />;
+  return <RideMapDetail bookingId={bookingId} initialOrigin={origin} initialDestination={destination} initialStopovers={stopovers} initialRoute={route} initialRoutePolyline={typeof resource.route_polyline === "string" ? resource.route_polyline : undefined} initialRouteProvider={typeof resource.route_provider === "string" ? resource.route_provider : undefined} initialRouteDistanceMeters={typeof resource.route_distance_meters === "number" ? resource.route_distance_meters : undefined} initialRouteDurationSeconds={typeof resource.route_duration_seconds === "number" ? resource.route_duration_seconds : undefined} status={item.status} facts={[{ label: "Điểm đón", value: pickup }, { label: "Điểm đến", value: dropoff }, { label: "Loại xe", value: vehicle }, { label: "Khoảng cách", value: distance }, { label: "Thời gian dự kiến", value: duration }, { label: "Giá dự kiến", value: fare }]} />;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -361,8 +368,11 @@ function pointFrom(latitude: unknown, longitude: unknown): XOnePoint | undefined
 
 function pointFromRecord(value: unknown): XOnePoint | undefined {
   if (!isRecord(value)) return undefined;
-  if (value.suspicious === true) return undefined;
-  return pointFrom(value.latitude, value.longitude) ?? nestedPoint(value, "location");
+  if (value.suspicious === true || value.coordinate_status === "suspicious_default") return undefined;
+  return pointFrom(value.latitude, value.longitude)
+    ?? nestedPoint(value, "location")
+    ?? nestedPoint(value, "coordinates")
+    ?? nestedPoint(value, "coordinate");
 }
 
 function nestedPoint(value: unknown, key: string): XOnePoint | undefined {

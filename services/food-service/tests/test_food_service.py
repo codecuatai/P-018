@@ -7,7 +7,7 @@ from src.domain.policies import DomainError
 from src.repositories.food import InMemoryFoodRepository
 
 
-def make_service() -> FoodApplicationService:
+def make_service(repository: InMemoryFoodRepository | None = None) -> FoodApplicationService:
     settings = Settings(
         app_env="test",
         persistence="memory",
@@ -15,7 +15,53 @@ def make_service() -> FoodApplicationService:
         database_url="postgresql://test",
         internal_service_token="token",
     )
-    return FoodApplicationService(InMemoryFoodRepository(), settings)
+    return FoodApplicationService(repository or InMemoryFoodRepository(), settings)
+
+
+@pytest.mark.asyncio
+async def test_menu_server_pagination_returns_items_after_first_hundred_and_orders_them() -> None:
+    repository = InMemoryFoodRepository()
+    repository.items = {
+        item_id: item for item_id, item in repository.items.items()
+        if item.get("restaurant_id") != "res_pho_hanoi"
+    }
+    for index in range(1, 137):
+        item_id = f"item_page_{index:03d}"
+        repository.items[item_id] = {
+            "id": item_id,
+            "restaurant_id": "res_pho_hanoi",
+            "name": f"Món thử {index}",
+            "description": "Món trong thực đơn phân trang.",
+            "category": "Món thử",
+            "price": 50000 + index,
+            "currency": "VND",
+            "available": True,
+            "option_groups": [],
+        }
+    food = FoodApplicationService(
+        repository,
+        Settings(
+            app_env="test",
+            persistence="memory",
+            service_port=8104,
+            database_url="postgresql://test",
+            internal_service_token="token",
+        ),
+    )
+
+    page = await food.menu("res_pho_hanoi", limit=20, offset=100)
+
+    assert page["total"] == 136
+    assert len(page["items"]) == 20
+    assert page["items"][0]["id"] == "item_page_101"
+    cart = await food.create_cart("usr_demo_001", "res_pho_hanoi", "cart-page-101")
+    cart = await food.add_item(
+        cart["id"],
+        {"menu_item_id": page["items"][0]["id"], "quantity": 1, "selected_options": []},
+        "usr_demo_001",
+        "add-page-101",
+    )
+    assert cart["items"][0]["menu_item_id"] == "item_page_101"
 
 
 @pytest.mark.asyncio
@@ -414,3 +460,43 @@ async def test_search_keeps_accented_dish_terms_distinct() -> None:
     food = make_service()
     results = await food.search(keyword="phở bò")
     assert [result["item"]["name"] for result in results] == ["Phở bò tái"]
+
+
+@pytest.mark.asyncio
+async def test_menu_pagination_keeps_authoritative_total_beyond_default_page() -> None:
+    repository = InMemoryFoodRepository()
+    repository.items = {
+        item_id: item
+        for item_id, item in repository.items.items()
+        if item["restaurant_id"] != "res_pho_hanoi"
+    }
+    for index in range(136):
+        item_id = f"item_pho_regression_{index:03d}"
+        repository.items[item_id] = {
+            "id": item_id,
+            "restaurant_id": "res_pho_hanoi",
+            "name": f"Phở bò món {index + 1}",
+            "description": "Món regression có thể đặt.",
+            "category": "Phở",
+            "price": 65_000,
+            "currency": "VND",
+            "available": True,
+            "option_groups": [],
+        }
+
+    food = make_service(repository)
+    first_page = await food.menu("res_pho_hanoi", limit=100, offset=0)
+    second_page = await food.menu("res_pho_hanoi", limit=100, offset=100)
+
+    assert first_page["total"] == 136
+    assert first_page["limit"] == 100
+    assert first_page["offset"] == 0
+    assert len(first_page["items"]) == 100
+    assert first_page["items"][0]["id"] == "item_pho_regression_000"
+    assert first_page["items"][-1]["id"] == "item_pho_regression_099"
+    assert second_page["total"] == 136
+    assert second_page["limit"] == 100
+    assert second_page["offset"] == 100
+    assert len(second_page["items"]) == 36
+    assert second_page["items"][0]["id"] == "item_pho_regression_100"
+    assert second_page["items"][-1]["id"] == "item_pho_regression_135"

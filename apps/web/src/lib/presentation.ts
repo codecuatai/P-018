@@ -1,7 +1,7 @@
 export type DisplayValue = string | number | null | undefined;
 
 const STATUS_LABELS: Record<string, string> = {
-  QUOTE_CREATED: "Đã tạo chuyến",
+  QUOTE_CREATED: "Đã có báo giá",
   AWAITING_CONFIRMATION: "Chờ bạn xác nhận",
   SEARCHING_DRIVER: "Đang tìm tài xế",
   DRIVER_ASSIGNED: "Đã có tài xế",
@@ -79,6 +79,24 @@ export function formatMoney(value: unknown, currency = "VND"): string {
 
 export function optionalText(value: unknown, fallback = "Đang cập nhật"): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/** Format catalog addresses without repeating comma-separated locality segments. */
+export function formatAddress(...parts: unknown[]): string {
+  const seen = new Set<string>();
+  const segments: string[] = [];
+  for (const part of parts) {
+    if (typeof part !== "string" && typeof part !== "number") continue;
+    for (const segment of String(part).split(",")) {
+      const value = segment.trim();
+      if (!value) continue;
+      const key = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("vi-VN");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      segments.push(value);
+    }
+  }
+  return segments.join(", ");
 }
 
 export function numberValue(value: unknown): number | undefined {

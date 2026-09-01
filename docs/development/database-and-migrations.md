@@ -22,7 +22,11 @@ metadata, and migration 016 adds Core-owned token-usage aggregates.
 Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
 `0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
 `003a`, `004`, and `005`; and
-Ride owns its Alembic revisions through `20260814_0005_route_geometry`. Each owner
+Ride owns its Alembic revisions through `20260827_0007_quote_snapshot`. The
+`20260827_0007_quote_snapshot` revision adds an immutable JSON quote snapshot to
+`ride_bookings`, allowing history and cancellation responses to retain the
+authoritative route, tariff, amount and currency after the live quote changes.
+Each owner
 controls its own data boundary.
 
 ## Migration policy
@@ -41,7 +45,7 @@ repair state.
 | Food | `001` through `006` SQL | `007` or greater, additive SQL |
 | Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
 | Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
-| Ride | Alembic through `20260814_0005_route_geometry` | a new Alembic revision from `head` |
+| Ride | Alembic through `20260827_0007_quote_snapshot` | a new Alembic revision from `head` |
 
 In development, Gateway runs the owned Core SQL migrations during bootstrap when
 `APP_ENV=development` and `CORE_AUTO_MIGRATE=true`; Compose defaults this flag to
@@ -53,6 +57,12 @@ and use its deployment migration step instead.
 Run `python scripts/check-migration-parity.py` after changing migration helpers.
 The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
 after Compose health checks and can run the same additive migrations repeatedly.
+Alembic migrations run in one-shot containers created from the current service
+images, so a deployment never executes a newly checked-in migration inside an
+older long-lived service container.
+Ride also contains a guarded compatibility path for databases that recorded
+the earlier short-lived `0007` revision; it verifies the quote snapshot schema
+before reconciling the Alembic version marker.
 It stops on the first owner/path failure and never deletes a volume. Seeds are
 not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
 

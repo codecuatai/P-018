@@ -4,16 +4,16 @@
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=copilot",
-        "powershell": "scripts\\_pyrun.cmd scripts\\log_hook.py --tool=copilot",
+        "bash": "bash scripts/ai-logging/_pyrun.sh scripts/ai-logging/log_hook.py --tool=copilot",
+        "powershell": "scripts\\ai-logging\\_pyrun.cmd scripts\\ai-logging\\log_hook.py --tool=copilot",
         "timeoutSec": 10
       }
     ],
     "sessionEnd": [
       {
         "type": "command",
-        "bash": "bash scripts/_pyrun.sh scripts/log_hook.py --tool=copilot",
-        "powershell": "scripts\\_pyrun.cmd scripts\\log_hook.py --tool=copilot",
+        "bash": "bash scripts/ai-logging/_pyrun.sh scripts/ai-logging/log_hook.py --tool=copilot",
+        "powershell": "scripts\\ai-logging\\_pyrun.cmd scripts\\ai-logging\\log_hook.py --tool=copilot",
         "timeoutSec": 10
       }
     ]

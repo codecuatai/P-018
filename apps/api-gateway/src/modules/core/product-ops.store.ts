@@ -78,7 +78,8 @@ export interface SupportTicketUpdateResult {
 
 export interface ProductOpsStore {
   upsertNotification(value: NotificationRecord): Promise<NotificationRecord>;
-  listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]>;
+  listNotifications(actorId: string, options?: { status?: NotificationStatus; page?: number; pageSize?: number }): Promise<NotificationRecord[]>;
+  countNotifications(actorId: string, status?: NotificationStatus): Promise<number>;
   countUnreadNotifications(actorId: string): Promise<number>;
   markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined>;
   markAllNotificationsRead(actorId: string): Promise<number>;
@@ -93,7 +94,7 @@ export interface ProductOpsStore {
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }>;
   listAllSupportTickets(options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }>;
   getSupportTicket(id: string, actorId?: string): Promise<SupportTicketRecord | undefined>;
-  addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus): Promise<SupportTicketRecord | undefined>;
+  addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus, requestHash?: string): Promise<SupportTicketRecord | undefined>;
   updateSupportTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }, updatedAt: string, actorId: string, idempotencyKey: string, requestHash: string): Promise<SupportTicketUpdateResult | undefined>;
   checkHealth(): Promise<boolean>;
   close(): Promise<void>;
@@ -115,11 +116,19 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
     return clone(value);
   }
 
-  async listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> {
+  async listNotifications(actorId: string, options: { status?: NotificationStatus; page?: number; pageSize?: number } = {}): Promise<NotificationRecord[]> {
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 20;
+    const offset = (page - 1) * pageSize;
     return [...this.notifications.values()]
-      .filter((item) => item.actorId === actorId && (!status || item.status === status))
-      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))
+      .filter((item) => item.actorId === actorId && (!options.status || item.status === options.status))
+      .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id))
+      .slice(offset, offset + pageSize)
       .map(clone);
+  }
+
+  async countNotifications(actorId: string, status?: NotificationStatus): Promise<number> {
+    return [...this.notifications.values()].filter((item) => item.actorId === actorId && (!status || item.status === status)).length;
   }
 
   async countUnreadNotifications(actorId: string): Promise<number> {
@@ -257,10 +266,14 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
     return clone({ ...value, events });
   }
 
-  async addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus): Promise<SupportTicketRecord | undefined> {
+  async addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus, requestHash?: string): Promise<SupportTicketRecord | undefined> {
     const value = this.tickets.get(event.ticketId);
     if (!value) return undefined;
-    if (event.idempotencyKey && [...this.ticketEvents.values()].some((item) => item.ticketId === event.ticketId && item.idempotencyKey === event.idempotencyKey)) return this.getSupportTicket(event.ticketId);
+    const existingEvent = event.idempotencyKey ? [...this.ticketEvents.values()].find((item) => item.ticketId === event.ticketId && item.idempotencyKey === event.idempotencyKey) : undefined;
+    if (existingEvent) {
+      if (requestHash && existingEvent.requestHash && existingEvent.requestHash !== requestHash) throw new Error('IDEMPOTENCY_KEY_REUSED');
+      return this.getSupportTicket(event.ticketId);
+    }
     this.ticketEvents.set(event.id, clone(event));
     value.updatedAt = updatedAt;
     if (status) {
@@ -320,7 +333,17 @@ export class PostgresProductOpsStore implements ProductOpsStore {
     return this.notificationFromRow(result.rows[0]);
   }
 
-  async listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> { const result = await this.pool.query(`SELECT * FROM notifications WHERE actor_id=$1 ${status ? 'AND status=$2' : ''} ORDER BY created_at DESC`, status ? [actorId, status] : [actorId]); return result.rows.map((row) => this.notificationFromRow(row)); }
+  async listNotifications(actorId: string, options: { status?: NotificationStatus; page?: number; pageSize?: number } = {}): Promise<NotificationRecord[]> {
+    const values: unknown[] = [actorId];
+    let where = 'actor_id=$1';
+    if (options.status) { values.push(options.status); where += ` AND status=$${values.length}`; }
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 20;
+    values.push(pageSize, (page - 1) * pageSize);
+    const result = await this.pool.query(`SELECT * FROM notifications WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values);
+    return result.rows.map((row) => this.notificationFromRow(row));
+  }
+  async countNotifications(actorId: string, status?: NotificationStatus): Promise<number> { const result = await this.pool.query(`SELECT count(*)::int AS count FROM notifications WHERE actor_id=$1 ${status ? 'AND status=$2' : ''}`, status ? [actorId, status] : [actorId]); return Number(result.rows[0]?.count ?? 0); }
   async countUnreadNotifications(actorId: string): Promise<number> { const result = await this.pool.query("SELECT count(*)::int AS count FROM notifications WHERE actor_id=$1 AND status='UNREAD'", [actorId]); return Number(result.rows[0]?.count ?? 0); }
   async markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined> { const result = await this.pool.query("UPDATE notifications SET status='READ',read_at=COALESCE(read_at,now()) WHERE id=$1 AND actor_id=$2 RETURNING *", [id, actorId]); return result.rows[0] ? this.notificationFromRow(result.rows[0]) : undefined; }
   async markAllNotificationsRead(actorId: string): Promise<number> { const result = await this.pool.query("UPDATE notifications SET status='READ',read_at=COALESCE(read_at,now()) WHERE actor_id=$1 AND status='UNREAD'", [actorId]); return result.rowCount ?? 0; }
@@ -399,7 +422,7 @@ export class PostgresProductOpsStore implements ProductOpsStore {
   async listSupportTickets(actorId: string, options: { status?: SupportTicketStatus; page?: number; pageSize?: number } = {}): Promise<{ items: SupportTicketRecord[]; total: number }> { const page = Math.max(options.page ?? 1, 1); const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100); const values: unknown[] = [actorId]; const where = ['actor_id=$1']; if (options.status) { values.push(options.status); where.push(`status=$${values.length}`); } const count = await this.pool.query(`SELECT count(*)::int AS count FROM support_tickets WHERE ${where.join(' AND ')}`, values); values.push(pageSize, (page - 1) * pageSize); const result = await this.pool.query(`SELECT * FROM support_tickets WHERE ${where.join(' AND ')} ORDER BY updated_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values); return { total: Number(count.rows[0]?.count ?? 0), items: result.rows.map((row) => this.ticketFromRow(row)) }; }
   async listAllSupportTickets(options: { status?: SupportTicketStatus; page?: number; pageSize?: number } = {}): Promise<{ items: SupportTicketRecord[]; total: number }> { const page = Math.max(options.page ?? 1, 1); const pageSize = Math.min(Math.max(options.pageSize ?? 20, 1), 100); const values: unknown[] = []; const where: string[] = []; if (options.status) { values.push(options.status); where.push(`status=$${values.length}`); } const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''; const count = await this.pool.query(`SELECT count(*)::int AS count FROM support_tickets ${clause}`, values); values.push(pageSize, (page - 1) * pageSize); const result = await this.pool.query(`SELECT * FROM support_tickets ${clause} ORDER BY updated_at DESC LIMIT $${values.length - 1} OFFSET $${values.length}`, values); return { total: Number(count.rows[0]?.count ?? 0), items: result.rows.map((row) => this.ticketFromRow(row)) }; }
   async getSupportTicket(id: string, actorId?: string): Promise<SupportTicketRecord | undefined> { const result = await this.pool.query(`SELECT * FROM support_tickets WHERE id=$1 ${actorId ? 'AND actor_id=$2' : ''}`, actorId ? [id, actorId] : [id]); if (!result.rows[0]) return undefined; const events = await this.pool.query('SELECT * FROM support_ticket_events WHERE ticket_id=$1 ORDER BY created_at ASC', [id]); return this.ticketFromRow(result.rows[0], events.rows.map((row) => this.eventFromRow(row))); }
-  async addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus): Promise<SupportTicketRecord | undefined> { const client = await this.pool.connect(); try { await client.query('BEGIN'); const update = await client.query(`UPDATE support_tickets SET updated_at=$1,status=COALESCE($2,status),closed_at=CASE WHEN $2='CLOSED' THEN COALESCE(closed_at,$1) WHEN $2 IS NOT NULL THEN NULL ELSE closed_at END WHERE id=$3 RETURNING *`, [updatedAt, status ?? null, event.ticketId]); if (!update.rows[0]) { await client.query('ROLLBACK'); return undefined; } const inserted = await client.query('INSERT INTO support_ticket_events (id,ticket_id,actor_id,event_type,message,idempotency_key,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (ticket_id,idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id', [event.id, event.ticketId, event.actorId ?? null, event.eventType, event.message ?? null, event.idempotencyKey ?? null, event.createdAt]); if (!inserted.rows[0] && event.idempotencyKey) { await client.query('COMMIT'); return this.getSupportTicket(event.ticketId); } await client.query('COMMIT'); return this.getSupportTicket(event.ticketId); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
+  async addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus, requestHash?: string): Promise<SupportTicketRecord | undefined> { const client = await this.pool.connect(); try { await client.query('BEGIN'); const update = await client.query(`UPDATE support_tickets SET updated_at=$1,status=COALESCE($2,status),closed_at=CASE WHEN $2='CLOSED' THEN COALESCE(closed_at,$1) WHEN $2 IS NOT NULL THEN NULL ELSE closed_at END WHERE id=$3 RETURNING *`, [updatedAt, status ?? null, event.ticketId]); if (!update.rows[0]) { await client.query('ROLLBACK'); return undefined; } if (event.idempotencyKey) { const existing = await client.query('SELECT request_hash FROM support_ticket_events WHERE ticket_id=$1 AND idempotency_key=$2 FOR UPDATE', [event.ticketId, event.idempotencyKey]); if (existing.rows[0]) { if (requestHash && existing.rows[0].request_hash && String(existing.rows[0].request_hash) !== requestHash) throw new Error('IDEMPOTENCY_KEY_REUSED'); await client.query('COMMIT'); return this.getSupportTicket(event.ticketId); } } await client.query('INSERT INTO support_ticket_events (id,ticket_id,actor_id,event_type,message,idempotency_key,request_hash,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)', [event.id, event.ticketId, event.actorId ?? null, event.eventType, event.message ?? null, event.idempotencyKey ?? null, requestHash ?? event.requestHash ?? null, event.createdAt]); await client.query('COMMIT'); return this.getSupportTicket(event.ticketId); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
   async updateSupportTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }, updatedAt: string, actorId: string, idempotencyKey: string, requestHash: string): Promise<SupportTicketUpdateResult | undefined> {
     const client = await this.pool.connect();
     try {
@@ -437,7 +460,8 @@ export class CoreProductOpsStore implements OnModuleDestroy {
 
   constructor(config: ConfigService) { this.repository = process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID ? new InMemoryProductOpsStore() : new PostgresProductOpsStore(config.getOrThrow<string>('DATABASE_URL')); }
   upsertNotification(value: NotificationRecord): Promise<NotificationRecord> { return this.repository.upsertNotification(value); }
-  listNotifications(actorId: string, status?: NotificationStatus): Promise<NotificationRecord[]> { return this.repository.listNotifications(actorId, status); }
+  listNotifications(actorId: string, options?: { status?: NotificationStatus; page?: number; pageSize?: number }): Promise<NotificationRecord[]> { return this.repository.listNotifications(actorId, options); }
+  countNotifications(actorId: string, status?: NotificationStatus): Promise<number> { return this.repository.countNotifications(actorId, status); }
   countUnreadNotifications(actorId: string): Promise<number> { return this.repository.countUnreadNotifications(actorId); }
   markNotificationRead(id: string, actorId: string): Promise<NotificationRecord | undefined> { return this.repository.markNotificationRead(id, actorId); }
   markAllNotificationsRead(actorId: string): Promise<number> { return this.repository.markAllNotificationsRead(actorId); }
@@ -452,7 +476,7 @@ export class CoreProductOpsStore implements OnModuleDestroy {
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }> { return this.repository.listSupportTickets(actorId, options); }
   listAllSupportTickets(options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }> { return this.repository.listAllSupportTickets(options); }
   getSupportTicket(id: string, actorId?: string): Promise<SupportTicketRecord | undefined> { return this.repository.getSupportTicket(id, actorId); }
-  addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus): Promise<SupportTicketRecord | undefined> { return this.repository.addSupportEvent(event, updatedAt, status); }
+  addSupportEvent(event: SupportTicketEventRecord, updatedAt: string, status?: SupportTicketStatus, requestHash?: string): Promise<SupportTicketRecord | undefined> { return this.repository.addSupportEvent(event, updatedAt, status, requestHash); }
   updateSupportTicket(id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }, updatedAt: string, actorId: string, idempotencyKey: string, requestHash: string): Promise<SupportTicketUpdateResult | undefined> { return this.repository.updateSupportTicket(id, patch, updatedAt, actorId, idempotencyKey, requestHash); }
   checkHealth(): Promise<boolean> { return this.repository.checkHealth(); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }

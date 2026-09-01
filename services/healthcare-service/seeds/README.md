@@ -1,7 +1,15 @@
 # Seeds
 
-`seed_medical.py` creates deterministic Healthcare-only departments, doctors, patients,
-future time slots, and the development-only `usr_demo_001` self-patient link after the
-owned migration has been applied. It does not call `create_all()` or access another
-service/database. Registered users must create or select their own Healthcare patient
-link through the Gateway boundary.
+The shared development command uses the Compose `catalog-importer` job to
+import the Healthcare catalog, creates future slots only for imported priced
+doctors, and then runs `seed_demo_patient.py`.
+The latter additively creates the configured development demo user's patient
+record and self-link; it never runs when demo authentication is disabled.
+
+```sh
+sh scripts/database/seed.sh .env
+```
+
+`seed_medical.py` is a legacy destructive fixture and is not part of the
+development or deployment workflow. Registered users create and select their
+own Healthcare patient links through the Gateway boundary.

@@ -99,6 +99,11 @@ business logic are prohibited.
   distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
   Core A does not treat freshness-required authority without a future expiry as
   usable.
+- Restaurant reservation updates now use a Gateway-owned preview/action pair:
+  the preview compares the requested time/party size with the persisted
+  reservation and a fresh availability snapshot; the confirmed PATCH is
+  actor-scoped, idempotent, resource-version checked, and must return the same
+  reservation ID with the domain's incremented version.
 - Restaurant model extraction uses an `extra=forbid` semantic schema.
   Vietnamese confirmation parsing rejects negation, questions, correction and
   ambiguous substring matches. Actor-scoped Agent routes require constant-time
@@ -149,7 +154,7 @@ those gates run successfully.
 | Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
 | Agent persistence | implemented | `apps/agent-service/migrations/002_agent_run_metadata.sql`, `src/application/run_metadata_store.py`, `src/infrastructure/database.py` | Production defaults to required PostgreSQL, performs no runtime DDL, and persists only allowlisted actor/workflow/run metadata, phase, capability names, latency and safe error code. The develop-branch `001_agent_workflow_states.sql` migration remains immutable history but has no runtime writer. Memory mode is explicit test/development configuration. Live PostgreSQL restart/reconnect acceptance remains unverified in this worktree. |
 | Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
-| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py` and `20260816_0006_passenger_capacity.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, tracking events, idempotent replay, and actor-scoped history. Passenger-count/capacity policy is implemented and targeted tests pass, but migration apply/rollback and live Compose E2E for revision 0006 remain unverified in this worktree. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
+| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py`, `20260816_0006_passenger_capacity.py`, and `20260827_0007_quote_snapshot.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, immutable quote snapshot, tracking events, idempotent replay, and actor-scoped history. Targeted Ride tests and OpenAPI parity pass; migration apply/rollback and live Compose E2E remain environment-dependent verification items. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
 | Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, Gateway and Agent parity tests | Version-2 inventory has 46 canonical entries. Parity is checked in both directions; runtime-only compatibility names require a named owner and expiry. The Agent emits semantic typed proposals only and has no execution/domain client. |
 | Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
 | Catalog data pipeline | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |
@@ -230,6 +235,12 @@ Chromium run above is the current browser evidence.
   and 1440x1000; live Product `2/2`, Admin `1/1`, and the real transaction
   flow `1/1` passed with browser error listeners.
 - The 2026-08-16 isolated Gate G2 run provides the first private-key Gemini
-  evidence; the legacy `tests/e2e` batch is still not counted as acceptance
-  evidence because it hit the intentionally bounded process-local login
-  limiter and includes slow Assistant scenarios.
+  evidence. The `tests/e2e` batch was historically excluded from acceptance
+  because it hit the intentionally bounded process-local login limiter and
+  includes slow Assistant scenarios. As of 2026-08-28 it is a mandatory
+  `local-acceptance.ps1` step again: `tests/e2e/_helpers.py` reuses one access
+  token per base URL and user, so a full-suite run stays inside the limiter, and
+  `E2E_REQUIRE_GATEWAY=1` turns a missing Gateway URL into a usage error instead
+  of an all-skip pass. The step requires the Compose runtime and throws when the
+  stack is incomplete; `-SkipCrossServiceE2E` prints an explicit `UNVERIFIED`
+  line. It is still not wired into CI.

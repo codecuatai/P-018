@@ -106,7 +106,7 @@ detail invalidates the prior action rather than silently reusing it.
 
 ### Local configuration and health
 
-The recommended local path is `scripts/start-all.ps1` or `scripts/start-all.sh`
+The recommended local path is `scripts/local/start-all.ps1` or `scripts/local/start-all.sh`
 after copying root `.env.example` to private `.env`. Container liveness probes
 verify processes; Gateway `/health/ready` verifies the dependencies it actually
 checks. The launcher additionally applies explicit idempotent migrations and

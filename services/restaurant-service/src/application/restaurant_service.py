@@ -26,8 +26,16 @@ class RestaurantApplicationService:
     def __init__(self, repo: RestaurantRepository):
         self.repo = repo
 
-    def search_restaurants(self, location=None, cuisine_type=None, budget_range=None, limit=50, offset=0):
-        return self.repo.list_restaurants(location, cuisine_type, budget_range, limit, offset)
+    def search_restaurants(
+        self,
+        location: str | None = None,
+        cuisine_type: str | None = None,
+        budget_range: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        q: str | None = None,
+    ):
+        return self.repo.list_restaurants(location, cuisine_type, budget_range, limit, offset, q)
 
     def get_restaurant(self, restaurant_id):
         return self.repo.get_restaurant_by_id(restaurant_id)
@@ -53,6 +61,10 @@ class RestaurantApplicationService:
         request_hash = self.repo.request_hash(payload)
         return self.repo.create_hold(actor_id, restaurant_id, party_size, start, end, key, request_hash,
             datetime.now(UTC) + timedelta(minutes=10))
+
+    def cancel_hold(self, actor_id, hold_id, key):
+        payload = {"hold_id": hold_id, "action": "cancel"}
+        return self.repo.cancel_hold(actor_id, hold_id, key, self.repo.request_hash(payload))
 
     def create_reservation(self, actor_id, restaurant_id, party_size, start_at, duration_minutes, special_requests, key, hold_id=None):
         start, end = normalized_interval(start_at, duration_minutes)

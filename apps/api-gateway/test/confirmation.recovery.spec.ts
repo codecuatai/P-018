@@ -69,4 +69,24 @@ describe('confirmation refund terminal semantics', () => {
     expect(last?.[3]).toBe('FAILED_FINAL');
     expect(last?.[5]).toBe('REFUND_FAILED');
   });
+
+  it('does not repeat Food transitions after payment reconciliation has already advanced the order', async () => {
+    const confirmation = cancellationConfirmation();
+    const { service, store, food } = dependencies(confirmation);
+    store.getConfirmation.mockResolvedValue({ ...confirmation, action: 'PLACE_FOOD_ORDER' });
+    food.get.mockResolvedValue({ id: 'ord_cancel_regression', status: 'RESTAURANT_CONFIRMING' });
+
+    await service.reconcileRecoveredPayment({
+      id: 'pay_reconciled',
+      actorId: confirmation.actorId,
+      orderId: 'ord_cancel_regression',
+      status: 'SUCCEEDED',
+      confirmationId: confirmation.id,
+      confirmationExecutionKey: confirmation.executionKey,
+    } as never, 'correlation');
+
+    expect(food.post).not.toHaveBeenCalled();
+    const last = store.completeConfirmation.mock.calls.at(-1);
+    expect(last?.[3]).toBe('SUCCEEDED');
+  });
 });

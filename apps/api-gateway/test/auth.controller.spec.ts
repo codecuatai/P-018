@@ -51,6 +51,28 @@ describe('real auth HTTP contract', () => {
     const nextCookie = rotated.headers['set-cookie']?.[0];
     expect(nextCookie).toContain('xone_refresh=');
 
+    // Benign replay inside grace window rolls forward safely
+    const benignReplay = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', origin)
+      .set('Cookie', initialCookie!)
+      .expect(201);
+    const rolledCookie = benignReplay.headers['set-cookie']?.[0];
+    expect(rolledCookie).toContain('xone_refresh=');
+
+    // Explicit family revocation makes replaying the initial token genuine reuse.
+    const rotatedAgain = await request(app.getHttpServer())
+      .post('/api/v1/auth/refresh')
+      .set('Origin', origin)
+      .set('Cookie', rolledCookie!)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/logout')
+      .set('Origin', origin)
+      .set('Cookie', rotatedAgain.headers['set-cookie']?.[0]!)
+      .expect(200);
+
     const replay = await request(app.getHttpServer())
       .post('/api/v1/auth/refresh')
       .set('Origin', origin)
@@ -60,7 +82,7 @@ describe('real auth HTTP contract', () => {
 
     await request(app.getHttpServer())
       .get('/api/v1/auth/me')
-      .set('Authorization', `Bearer ${rotated.body.data.access_token}`)
+      .set('Authorization', `Bearer ${rotatedAgain.body.data.access_token}`)
       .expect(401);
   });
 

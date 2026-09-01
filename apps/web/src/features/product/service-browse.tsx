@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Info, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -40,13 +40,13 @@ import {
   removeFoodVoucher,
   updateFoodCartItem,
 } from "@/lib/api-client";
-import type { AssistantRideItem, GeocodeCandidate, HealthcarePatient, RideQuote, SavedAddress, ServiceKey } from "@/types";
+import type { AssistantRideItem, GeocodeCandidate, HealthcarePatient, RideQuote, RideStopover, SavedAddress, ServiceKey } from "@/types";
 
 import { RideTrackingPanel } from "./ride-tracking";
 import { useRideTracking } from "./ride-tracking-cache";
 import { FoodTrackingPanel } from "./food-tracking";
 import { XOneMap } from "./xone-map";
-import { formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
+import { formatAddress, formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
 import { FavoriteToggle } from "./favorite-toggle";
 import { ServiceDetailDialog } from "@/components/ServiceDetailDialog";
 
@@ -343,7 +343,9 @@ function FoodDeliveryAddress({ addresses, addressId, setAddressId, onAddressAdde
 }
 
 function RestaurantBrowse() {
+  const itemsPerPage = 10;
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [items, setItems] = useState<JsonRecord[]>([]);
   const [selected, setSelected] = useState<JsonRecord>();
   const [loading, setLoading] = useState(false);
@@ -358,23 +360,39 @@ function RestaurantBrowse() {
   const [checked, setChecked] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const pageSize = 4;
+  const [pageCount, setPageCount] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [paging, setPaging] = useState(false);
+  const searchRequestRef = useRef(0);
 
-  const load = useCallback(async (query = "") => {
-    setLoading(true);
+  const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
+    const requestId = ++searchRequestRef.current;
+    if (keepList) setPaging(true); else setLoading(true);
     setError("");
-    setPage(1);
     try {
-      setItems((await browseService("restaurant", query)).items);
+      const result = await browseService("restaurant", query, { page: targetPage, limit: itemsPerPage });
+      if (requestId !== searchRequestRef.current) return;
+      const total = typeof result.total === "number" ? result.total : result.items.length;
+      setItems(result.items);
+      setPage(typeof result.page === "number" && result.page > 0 ? result.page : targetPage);
+      setTotalItems(total);
+      setPageCount(typeof result.total_pages === "number" && result.total_pages > 0 ? result.total_pages : Math.max(1, Math.ceil(total / itemsPerPage)));
     } catch (reason) {
+      if (requestId !== searchRequestRef.current) return;
       setError(errorText(reason));
     } finally {
-      setLoading(false);
+      if (requestId === searchRequestRef.current) {
+        if (keepList) setPaging(false); else setLoading(false);
+      }
     }
   }, []);
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [keyword]);
+  useEffect(() => { void load(debouncedKeyword); }, [debouncedKeyword, load]);
   useEffect(() => {
     if (!initialResourceId || selected || detailLoading) return;
     const match = items.find((item) => idOf(item) === initialResourceId);
@@ -456,7 +474,7 @@ function RestaurantBrowse() {
     }
   }
   async function cancel(): Promise<void> {
-    if (!reservation?.id) return;
+    if (!reservation?.id || reservation.status === "CANCELLED" || actionLoading) return;
     setActionLoading(true);
     setError("");
     try {
@@ -468,9 +486,6 @@ function RestaurantBrowse() {
       setActionLoading(false);
     }
   }
-
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const paginatedItems = items.slice((page - 1) * pageSize, page * pageSize);
 
   if (selected) {
     return (
@@ -522,7 +537,7 @@ function RestaurantBrowse() {
                 <Check size={18} />
                 <strong style={{ textAlign: "left" }}>Đặt bàn đã hoàn tất</strong>
                 <span>{statusLabel(reservation.status ?? "CONFIRMED")}</span>
-                <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button>
+                {reservation.status !== "CANCELLED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button> : null}
               </div>
             ) : null}
             {error ? <ErrorNote message={error} onRetry={() => void check()} /> : null}
@@ -539,7 +554,7 @@ function RestaurantBrowse() {
 
   return (
     <>
-      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" />
+      <SearchForm label="Tìm theo tên, khu vực hoặc ẩm thực" keyword={keyword} setKeyword={setKeyword} loading={loading} placeholder="Ví dụ: Hoàn Kiếm, Việt Nam, sushi" showSubmit={false} />
       {loading ? (
         <LoadingNote text="Đang tải nhà hàng…" />
       ) : error ? (
@@ -547,12 +562,12 @@ function RestaurantBrowse() {
       ) : items.length ? (
         <>
           <div className="browse-results" style={{ textAlign: "left" }}>
-            {paginatedItems.map((item) => (
+            {items.map((item) => (
               <article className="browse-result browse-result-action" key={idOf(item)} style={{ textAlign: "left" }}>
                 <AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? "Nhà hàng")} />
                 <div style={{ textAlign: "left", flex: 1, minWidth: 0 }}>
                   <h2 style={{ textAlign: "left" }}>{display(item.name ?? "Nhà hàng")}</h2>
-                  <p style={{ textAlign: "left" }}>{display(item.location ?? item.address ?? "Địa chỉ đang được xác minh")}</p>
+                  <p style={{ textAlign: "left" }}>{formatAddress(item.address, item.location, item.district, item.city) || "Địa chỉ đang được xác minh"}</p>
                   <small style={{ textAlign: "left" }}>{display(item.cuisine_type ?? item.cuisine ?? "Ẩm thực chưa phân loại")} · {display(item.budget_range ?? "Mức giá chưa công bố")}</small>
                 </div>
                 <button className="button button-secondary" type="button" onClick={() => void open(item)}>
@@ -561,17 +576,17 @@ function RestaurantBrowse() {
               </article>
             ))}
           </div>
-          {totalPages > 1 ? (
+          {pageCount > 1 ? (
             <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
               <span style={{ fontSize: "0.75rem", color: "var(--color-muted)", textAlign: "left" }}>
-                Trang <strong>{page}</strong> / {totalPages} · ({items.length} nhà hàng)
+                Trang <strong>{page}</strong> / {pageCount} · ({totalItems} nhà hàng)
               </span>
               <div style={{ display: "flex", gap: "8px" }}>
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={page <= 1}
+                  onClick={() => void load(debouncedKeyword, Math.max(1, page - 1), true)}
+                  disabled={page <= 1 || paging}
                   aria-label="Trang trước"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >
@@ -580,8 +595,8 @@ function RestaurantBrowse() {
                 <button
                   className="button button-secondary"
                   type="button"
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  disabled={page >= totalPages}
+                  onClick={() => void load(debouncedKeyword, Math.min(pageCount, page + 1), true)}
+                  disabled={page >= pageCount || paging}
                   aria-label="Trang sau"
                   style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
                 >
@@ -592,31 +607,80 @@ function RestaurantBrowse() {
           ) : null}
         </>
       ) : (
-        <EmptyNote title="Bạn muốn đặt bàn như thế nào?" body="Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp." />
+        <EmptyNote title={debouncedKeyword ? "Không tìm thấy kết quả phù hợp" : "Bạn muốn đặt bàn như thế nào?"} body={debouncedKeyword ? "Thử một tên nhà hàng, khu vực hoặc loại ẩm thực khác." : "Nhập khu vực, số người, thời gian hoặc loại ẩm thực để mình tìm nhà hàng phù hợp."} />
       )}
     </>
   );
 }
 
+type HealthcareBrowseProps = {
+  resumeAppointmentId?: string;
+  departments: JsonRecord[];
+  departmentsLoading: boolean;
+  departmentsError: string;
+  onRefreshDepartments: () => void;
+  patients: HealthcarePatient[];
+  patientsLoading: boolean;
+  patientError: string;
+  onRefreshPatients: () => void;
+  onPatientCreated: (patient: HealthcarePatient) => void;
+};
+
 function HealthcareBrowseWithFavorite({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
-  const [facilityId, setFacilityId] = useState("");
-  useEffect(() => {
-    let active = true;
-    void browseService("healthcare", undefined, { limit: 100, offset: 0 }).then((result) => {
-      const facility = asRecord(asRecord(result.items[0])?.facility);
-      const id = facility?.source_id ?? facility?.id;
-      if (active && (typeof id === "string" || typeof id === "number")) setFacilityId(String(id));
-    }).catch(() => undefined);
-    return () => { active = false; };
+  const [departments, setDepartments] = useState<JsonRecord[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
+  const [departmentsError, setDepartmentsError] = useState("");
+  const [patients, setPatients] = useState<HealthcarePatient[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [patientError, setPatientError] = useState("");
+  const initialLoadRef = useRef(false);
+
+  const loadDepartments = useCallback(async (): Promise<void> => {
+    setDepartmentsLoading(true);
+    setDepartmentsError("");
+    try {
+      const result = await browseService("healthcare", undefined, { limit: 100, offset: 0 });
+      setDepartments(result.items);
+    } catch (reason) {
+      setDepartmentsError(errorText(reason));
+    } finally {
+      setDepartmentsLoading(false);
+    }
   }, []);
-  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} /></div>;
+
+  const loadPatients = useCallback(async (): Promise<void> => {
+    setPatientsLoading(true);
+    setPatientError("");
+    try {
+      const result = await listHealthcarePatients();
+      setPatients(result.items);
+    } catch (reason) {
+      setPatientError(errorText(reason));
+    } finally {
+      setPatientsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    void loadDepartments();
+    void loadPatients();
+  }, [loadDepartments, loadPatients]);
+
+  const facility = asRecord(asRecord(departments[0])?.facility);
+  const facilityValue = facility?.source_id ?? facility?.id;
+  const facilityId = typeof facilityValue === "string" || typeof facilityValue === "number" ? String(facilityValue) : "";
+  const onPatientCreated = useCallback((patient: HealthcarePatient) => {
+    setPatients((current) => [...current.filter((item) => item.id !== patient.id), patient]);
+  }, []);
+
+  return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} departments={departments} departmentsLoading={departmentsLoading} departmentsError={departmentsError} onRefreshDepartments={() => { void loadDepartments(); }} patients={patients} patientsLoading={patientsLoading} patientError={patientError} onRefreshPatients={() => { void loadPatients(); }} onPatientCreated={onPatientCreated} /></div>;
 }
 
-function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: string }) {
+function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading, departmentsError, onRefreshDepartments, patients, patientsLoading, patientError, onRefreshPatients, onPatientCreated }: HealthcareBrowseProps) {
   const [keyword, setKeyword] = useState("");
-  const [departments, setDepartments] = useState<JsonRecord[]>([]);
   const [doctors, setDoctors] = useState<JsonRecord[]>([]);
-  const [patients, setPatients] = useState<HealthcarePatient[]>([]);
   const [department, setDepartment] = useState("");
   const [slot, setSlot] = useState<JsonRecord>();
   const [patientId, setPatientId] = useState<number>();
@@ -625,7 +689,6 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   const [confirmation, setConfirmation] = useState<JsonRecord>();
   const [paymentDone, setPaymentDone] = useState(false);
   const [checked, setChecked] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [slotPage, setSlotPage] = useState(1);
@@ -636,59 +699,23 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   const [profilePhone, setProfilePhone] = useState("");
   const [profileRelationship, setProfileRelationship] = useState<HealthcarePatient["relationship"]>("self");
   const [profileSaving, setProfileSaving] = useState(false);
-  const [patientsLoading, setPatientsLoading] = useState(true);
-  const [patientError, setPatientError] = useState("");
+  const [profileError, setProfileError] = useState("");
   const slotPageSize = 3;
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await browseService("healthcare", undefined, { limit: 100, offset: 0 });
-      const next = result.items;
-      setDepartments(next);
-      const names = next.map((item) => display(item.name ?? item.label ?? item.id));
-      const selected = names[0] ?? "";
-      setDepartment(selected);
-      setKeyword(selected);
-    } catch (reason) {
-      setError(errorText(reason));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadPatients = useCallback(async () => {
-    setPatientsLoading(true);
-    setPatientError("");
-    try {
-      const result = await listHealthcarePatients();
-      setPatients(result.items);
-      setPatientId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id);
-      if (!result.items.length) setProfileFormOpen(true);
-    } catch (reason) {
-      setPatientError(errorText(reason));
-    } finally {
-      setPatientsLoading(false);
-    }
-  }, []);
 
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
   useEffect(() => {
-    void load();
-    void loadPatients();
-  }, [load, loadPatients]);
+    if (!departments.length || department) return;
+    const match = initialResourceId ? departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId) : undefined;
+    const selected = match ?? departments[0];
+    const name = display(selected.name ?? selected.label ?? selected.id);
+    setDepartment(name);
+    setKeyword(name);
+  }, [department, departments, initialResourceId]);
   useEffect(() => {
-    if (!initialResourceId || !departments.length) return;
-    const match = departments.find((dep) => idOf(dep) === initialResourceId || display(dep.id) === initialResourceId || display(dep.name) === initialResourceId);
-    if (match) {
-      const name = display(match.name ?? match.label ?? match.id);
-      setDepartment(name);
-      setKeyword(name);
-    }
-  }, [initialResourceId, departments]);
-
+    if (patientId === undefined && patients.length) setPatientId(patients.find((item) => item.is_default)?.id ?? patients[0]?.id);
+    if (!patientsLoading && !patientError && !patients.length) setProfileFormOpen(true);
+  }, [patientError, patientId, patients, patientsLoading]);
   useEffect(() => {
     if (!resumeAppointmentId) return;
     void getHistoryDetail("healthcare_appointment", resumeAppointmentId).then((value) => {
@@ -743,17 +770,17 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
   async function createProfile(): Promise<void> {
     if (!profileName.trim() || !profilePhone.trim() || profileSaving) return;
     setProfileSaving(true);
-    setPatientError("");
+    setProfileError("");
     try {
       const patient = await createHealthcarePatient({ name: profileName.trim(), phone: profilePhone.trim(), relationship: profileRelationship });
-      setPatients((current) => [...current.filter((item) => item.id !== patient.id), patient]);
+      onPatientCreated(patient);
       setPatientId(patient.id);
       setProfileName("");
       setProfilePhone("");
       setProfileRelationship("self");
       setProfileFormOpen(false);
     } catch (reason) {
-      setPatientError(errorText(reason));
+      setProfileError(errorText(reason));
     } finally {
       setProfileSaving(false);
     }
@@ -839,10 +866,10 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
 
   return (
     <>
-      {loading ? (
+      {departmentsLoading ? (
         <LoadingNote text="Đang tải chuyên khoa…" />
-      ) : error && !departments.length ? (
-        <ErrorNote message={error} onRetry={() => void load()} />
+      ) : departmentsError && !departments.length ? (
+        <ErrorNote message={departmentsError} onRetry={onRefreshDepartments} />
       ) : (
         <div className="healthcare-flow" style={{ textAlign: "left" }}>
           <article className="transaction-panel" style={{ textAlign: "left" }}>
@@ -954,7 +981,7 @@ function HealthcareBrowse({ resumeAppointmentId }: { resumeAppointmentId?: strin
             {slot ? <dl className="healthcare-summary-details"><div><dt>Bác sĩ</dt><dd>{display(slot.doctor_name)}</dd></div><div><dt>Thời gian</dt><dd>{formatDateTime(slot.start_time)}</dd></div><div><dt>Chi phí</dt><dd>{formatMoney(slot.price)}</dd></div></dl> : <p style={{ textAlign: "left" }}>Chọn một khung giờ để xem bác sĩ, thời gian và chi phí.</p>}
             {slot && !appointment ? <div className="healthcare-form" style={{ textAlign: "left" }}>
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Hồ sơ bệnh nhân</span><select value={patientId ?? ""} onChange={(event) => setPatientId(event.target.value ? Number(event.target.value) : undefined)} disabled={patientsLoading}><option value="">{patientsLoading ? "Đang tải hồ sơ…" : "Chọn hồ sơ"}</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} · {patient.relationship}</option>)}</select></label>
-              {patientError ? <div className="healthcare-profile-error" role="alert"><span>{patientError}</span><button className="text-button" type="button" onClick={() => void loadPatients()}>Thử lại</button></div> : null}
+              {patientError || profileError ? <div className="healthcare-profile-error" role="alert"><span>{patientError || profileError}</span>{patientError ? <button className="text-button" type="button" onClick={onRefreshPatients}>Thử lại</button> : null}</div> : null}
               <button className="text-button healthcare-profile-toggle" type="button" onClick={() => setProfileFormOpen((current) => !current)}><Plus size={14} aria-hidden="true" />{profileFormOpen ? "Đóng biểu mẫu" : "Thêm hồ sơ mới"}</button>
               {profileFormOpen ? <div className="healthcare-profile-form"><label><span>Họ và tên</span><input value={profileName} onChange={(event) => setProfileName(event.target.value)} required /></label><label><span>Số điện thoại</span><input value={profilePhone} onChange={(event) => setProfilePhone(event.target.value)} required /></label><label><span>Quan hệ</span><select value={profileRelationship} onChange={(event) => setProfileRelationship(event.target.value as HealthcarePatient["relationship"])}><option value="self">Bản thân</option><option value="child">Con</option><option value="parent">Cha/mẹ</option><option value="dependent">Người phụ thuộc</option></select></label><button className="button button-secondary" type="button" onClick={() => void createProfile()} disabled={profileSaving || !profileName.trim() || !profilePhone.trim()}>{profileSaving ? <Loader2 className="spinner" size={15} /> : null} Lưu hồ sơ</button></div> : null}
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Nhu cầu khám</span><textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} /></label>
@@ -981,9 +1008,12 @@ function RideBrowse() {
   const [pickupPoint, setPickupPoint] = useState<Point>();
   const [dropoffPoint, setDropoffPoint] = useState<Point>();
   const [vehicle, setVehicle] = useState<"BIKE" | "CAR_4" | "CAR_7">((searchParams.get("vehicle") as any) ?? "CAR_4");
+  const [stopovers] = useState<RideStopover[]>(() => parseRideStopovers(searchParams.get("stopovers")));
   const [quote, setQuote] = useState<RideQuote>();
   const [booking, setBooking] = useState<JsonRecord>();
   const [addresses, setAddresses] = useState<SavedAddress[]>([]);
+  const [pickupAddressId, setPickupAddressId] = useState("");
+  const [dropoffAddressId, setDropoffAddressId] = useState("");
   const [serviceChecked, setServiceChecked] = useState(false);
   const [paymentChecked, setPaymentChecked] = useState(false);
   const [quoteDetailOpen, setQuoteDetailOpen] = useState(false);
@@ -991,13 +1021,13 @@ function RideBrowse() {
   const [error, setError] = useState("");
 
   useEffect(() => { void listSavedAddresses().then((result) => setAddresses(result.items)).catch(() => undefined); }, []);
-  function useAddress(kind: "pickup" | "dropoff", id: string): void { const address = addresses.find((item) => item.id === id); if (!address) return; const point = address.latitude !== undefined && address.longitude !== undefined ? { latitude: address.latitude, longitude: address.longitude } : undefined; if (kind === "pickup") { setPickup(address.address_text); setPickupPoint(point); } else { setDropoff(address.address_text); setDropoffPoint(point); } }
-  async function submitQuote(): Promise<void> { if (!pickup.trim() || !dropoff.trim()) return; setLoading(true); setError(""); setBooking(undefined); try { setQuote(await createRideQuote({ pickup_address: pickup.trim(), dropoff_address: dropoff.trim(), vehicle_type: vehicle, ...(pickupPoint ? { pickup_latitude: pickupPoint.latitude, pickup_longitude: pickupPoint.longitude } : {}), ...(dropoffPoint ? { dropoff_latitude: dropoffPoint.latitude, dropoff_longitude: dropoffPoint.longitude } : {}) })); setServiceChecked(false); setPaymentChecked(false); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
+  function useAddress(kind: "pickup" | "dropoff", id: string): void { if (kind === "pickup") setPickupAddressId(id); else setDropoffAddressId(id); const address = addresses.find((item) => item.id === id); if (!address) return; const point = address.latitude !== undefined && address.longitude !== undefined ? { latitude: address.latitude, longitude: address.longitude } : undefined; if (kind === "pickup") { setPickup(address.address_text); setPickupPoint(point); } else { setDropoff(address.address_text); setDropoffPoint(point); } }
+  async function submitQuote(): Promise<void> { if (!pickup.trim() || !dropoff.trim()) return; setLoading(true); setError(""); setBooking(undefined); try { setQuote(await createRideQuote({ pickup_address: pickup.trim(), dropoff_address: dropoff.trim(), vehicle_type: vehicle, ...(pickupPoint ? { pickup_latitude: pickupPoint.latitude, pickup_longitude: pickupPoint.longitude } : {}), ...(dropoffPoint ? { dropoff_latitude: dropoffPoint.latitude, dropoff_longitude: dropoffPoint.longitude } : {}), ...(stopovers.length ? { stopovers } : {}) })); setServiceChecked(false); setPaymentChecked(false); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
   async function prepare(): Promise<void> { if (!quote || !serviceChecked) return; setLoading(true); setError(""); try { setBooking(await prepareRideBooking(quote.id)); setPaymentChecked(false); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
   async function confirm(): Promise<void> { if (!booking?.id || !paymentChecked) return; setLoading(true); setError(""); try { setBooking(await confirmRideBooking(String(booking.id))); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
   const status = statusLabel(booking?.status);
   const quoteDetail = quote ? { ...quoteToAssistantItem(quote), kind: booking?.id ? "ride_booking" as const : "ride_quote" as const, ...(booking?.id ? { booking_id: String(booking.id), status: typeof booking.status === "string" ? booking.status : quote.status } : {}) } : undefined;
-  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select defaultValue="" onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select defaultValue="" onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><label htmlFor="ride-vehicle">Loại xe</label><select id="ride-vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value as typeof vehicle)}><option value="BIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option></select>{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
+  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select value={pickupAddressId} onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select value={dropoffAddressId} onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickupAddressId(""); setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickupAddressId(""); setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoffAddressId(""); setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoffAddressId(""); setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><label htmlFor="ride-vehicle">Loại xe</label><select id="ride-vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value as typeof vehicle)}><option value="BIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option></select>{stopovers.length ? <p className="field-hint">Điểm ghé: {stopovers.map((stopover) => stopover.address).join(" → ")}</p> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide ride-quote-submit" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Điểm ghé</dt><dd>{(quote.stopovers ?? stopovers).length ? (quote.stopovers ?? stopovers).map((stopover) => stopover.address).join(" → ") : "Không có"}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} stopovers={(quote.stopovers ?? stopovers).map((stopover) => ({ latitude: stopover.latitude, longitude: stopover.longitude, label: stopover.address }))} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
 }
 
 function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
@@ -1021,6 +1051,7 @@ function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
     pickup_longitude: quote.pickup_longitude ?? undefined,
     dropoff_latitude: quote.dropoff_latitude ?? undefined,
     dropoff_longitude: quote.dropoff_longitude ?? undefined,
+    ...(quote.stopovers?.length ? { stopovers: quote.stopovers.map((stopover) => ({ address: stopover.address, latitude: stopover.latitude, longitude: stopover.longitude })) } : {}),
   };
 }
 
@@ -1081,7 +1112,7 @@ function AddressAutocompleteField({ id, label, value, placeholder, onChange, onS
   </div>;
 }
 
-function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit: () => void; placeholder: string }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} /><button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button></div></form>; }
+function SearchForm({ label, keyword, setKeyword, loading, onSubmit, placeholder, showSubmit = true }: { label: string; keyword: string; setKeyword: (value: string) => void; loading: boolean; onSubmit?: () => void; placeholder: string; showSubmit?: boolean }) { return <form className="service-search" onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}><label htmlFor="service-search-input">{label}</label><div><input id="service-search-input" value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder={placeholder} />{showSubmit ? <button className="button button-primary" type="submit" disabled={loading}><Search size={16} /> Tìm</button> : null}</div></form>; }
 function AuthoritativeImage({ source, alt, compact = false }: { source: unknown; alt: string; compact?: boolean }) {
   const [failed, setFailed] = useState(false);
   if (typeof source !== "string" || !source.trim()) return null;
@@ -1089,9 +1120,40 @@ function AuthoritativeImage({ source, alt, compact = false }: { source: unknown;
   if (failed) return <div className={`${className} service-image-fallback`} role="img" aria-label={`${alt}: ảnh không khả dụng`}>Ảnh không khả dụng</div>;
   return <div className={className}><img src={source} alt={alt} loading="lazy" onError={() => setFailed(true)} /></div>;
 }
-function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKey }) { const point = pointFromRecord(item); const resourceId = idOf(item); return <div className="service-detail-heading"><div><AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} /><span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span><h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2><p>{display(item.address ?? item.location ?? item.description ?? "Địa chỉ đang cập nhật")}</p>{service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}</div>{point ? <XOneMap destination={point} label="Vị trí địa điểm" /> : <span className="field-hint">Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span>}</div>; }
+function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKey }) {
+  const point = pointFromRecord(item);
+  const resourceId = idOf(item);
+  const address = formatAddress(item.address, item.location, item.district, item.city) || "Địa chỉ đang cập nhật";
+  return <div className={`service-detail-heading${point ? "" : " no-map"}${service === "restaurant" ? " restaurant-service-detail-heading" : ""}`}>
+    <div className="service-detail-copy">
+      <AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} />
+      <span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span>
+      <h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2>
+      <p>{address}</p>
+      {service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}
+      {!point ? <div className="map-fallback-banner" role="status"><Info aria-hidden="true" size={17} /><span>Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span></div> : null}
+    </div>
+    {point && service === "restaurant" ? <XOneMap restaurant={point} variant="location-detail" label="Vị trí địa điểm" /> : point ? <XOneMap destination={point} label="Vị trí địa điểm" /> : null}
+  </div>;
+}
 function ConfirmationBox({ confirmation, checked, setChecked, onConfirm, loading, label }: { confirmation: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onConfirm: () => void; loading: boolean; label: string }) { return <div className="confirmation-box"><div><span className="eyebrow">XÁC NHẬN RÕ RÀNG</span><h3>{display(confirmation.title ?? "Kiểm tra lần cuối")}</h3><p>{display(confirmation.detail ?? "Các điều khoản hiện tại đã được kiểm tra từ nguồn đáng tin cậy.")}</p>{confirmation.preview ? <PreviewSummary preview={asRecord(confirmation.preview)} /> : null}</div><label className="confirmation-check"><input type="checkbox" checked={checked} onChange={(event) => setChecked(event.target.checked)} /> <span>{label}</span></label><button className="button button-primary" type="button" onClick={onConfirm} disabled={loading || !checked}>{loading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận</button></div>; }
-function PreviewSummary({ preview }: { preview?: JsonRecord }) { if (!preview) return null; const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND"); const address = asRecord(preview.address ?? preview.delivery_address); const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text; return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>; }
+function PreviewSummary({ preview }: { preview?: JsonRecord }) {
+  if (!preview) return null;
+  if (preview.restaurant_name) {
+    return <dl className="preview-summary">
+      <div><dt>Nhà hàng</dt><dd>{display(preview.restaurant_name)}</dd></div>
+      <div><dt>Thời lượng</dt><dd>{numberOf(preview.duration_minutes) || 120} phút</dd></div>
+      <div><dt>Yêu cầu đặc biệt</dt><dd>{display(preview.special_requests, "Không có")}</dd></div>
+      <div><dt>Hết hạn xác nhận</dt><dd>{formatDateTime(preview.confirmation_expires_at)}</dd></div>
+      {preview.hold_expires_at ? <div><dt>Hết hạn giữ bàn</dt><dd>{formatDateTime(preview.hold_expires_at)}</dd></div> : null}
+      <div><dt>Phiên bản</dt><dd>{display(preview.resource_version)}</dd></div>
+    </dl>;
+  }
+  const currency = moneyCurrency(preview.total) ?? moneyCurrency(preview.subtotal) ?? display(preview.currency ?? "VND");
+  const address = asRecord(preview.address ?? preview.delivery_address);
+  const addressText = typeof preview.delivery_address === "string" ? preview.delivery_address : address?.address ?? address?.address_text ?? preview.delivery_address_text;
+  return <dl className="preview-summary"><div><dt>Tạm tính</dt><dd>{formatMoney(moneyAmount(preview.subtotal), currency)}</dd></div><div><dt>Phí giao hàng</dt><dd>{formatMoney(moneyAmount(preview.delivery_fee ?? preview.delivery_amount), currency)}</dd></div><div><dt>Tổng thanh toán</dt><dd>{formatMoney(moneyAmount(preview.total), currency)}</dd></div><div><dt>Địa chỉ giao</dt><dd>{display(addressText ?? "Đã kiểm tra")}</dd></div></dl>;
+}
 function LoadingNote({ text }: { text: string }) { return <p className="inline-note service-loading-note" aria-live="polite"><Loader2 className="spinner" size={17} /> {text}</p>; }
 function ErrorNote({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="error-panel" role="alert"><p>{message}</p><button className="button button-secondary" type="button" onClick={onRetry}>Thử lại</button></div>; }
 function EmptyNote({ title, body }: { title: string; body: string }) { return <div className="empty-state"><Search size={24} /><h2>{title}</h2><p>{body}</p></div>; }
@@ -1123,7 +1185,25 @@ function mentionsHanoi(value: string): boolean { const normalized = normalizeAdd
 function isHanoiInnerCityAddress(value: string): boolean { const normalized = normalizeAddress(value); return mentionsHanoi(value) && HANOI_INNER_DISTRICTS.some((district) => normalized.includes(district.key)); }
 function hanoiDistrict(value: string): string | undefined { const normalized = normalizeAddress(value); return HANOI_INNER_DISTRICTS.find((candidate) => normalized.includes(candidate.key))?.label; }
 function vehicleLabel(value: string): string { return ({ BIKE: "Xe máy", CAR_4: "Ô tô 4 chỗ", CAR_7: "Ô tô 7 chỗ" } as Record<string, string>)[value] ?? value; }
-function pointFromRecord(value: JsonRecord): Point | undefined { if (value.suspicious === true) return undefined; const latitude = Number(value.latitude); const longitude = Number(value.longitude); return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : undefined; }
+function pointFromRecord(value: JsonRecord): Point | undefined { if (value.suspicious === true || value.coordinate_status === "suspicious_default") return undefined; const candidates: unknown[] = [value, value.location, value.coordinates, value.coordinate]; for (const candidate of candidates) { if (!isRecord(candidate)) continue; const latitude = Number(candidate.latitude); const longitude = Number(candidate.longitude); if (Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180) return { latitude, longitude }; } return undefined; }
 function candidatePoint(candidate: GeocodeCandidate): Point | undefined { return candidate.latitude !== null && candidate.longitude !== null ? { latitude: candidate.latitude, longitude: candidate.longitude } : undefined; }
+function parseRideStopovers(value: string | null): RideStopover[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (!isRecord(item) || typeof item.address !== "string") return [];
+      const address = item.address.trim();
+      const latitude = Number(item.latitude);
+      const longitude = Number(item.longitude);
+      return address.length >= 3 && Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
+        ? [{ address, latitude, longitude }]
+        : [];
+    }).slice(0, 2);
+  } catch {
+    return [];
+  }
+}
 function pointFromQuote(quote: RideQuote, kind: "pickup" | "dropoff"): Point | undefined { const latitude = kind === "pickup" ? quote.pickup_latitude : quote.dropoff_latitude; const longitude = kind === "pickup" ? quote.pickup_longitude : quote.dropoff_longitude; return typeof latitude === "number" && typeof longitude === "number" ? { latitude, longitude } : undefined; }
 function defaultDateTimeLocal(): string { const date = new Date(Date.now() + 60 * 60 * 1000); date.setMinutes(0, 0, 0); const pad = (value: number) => String(value).padStart(2, "0"); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`; }

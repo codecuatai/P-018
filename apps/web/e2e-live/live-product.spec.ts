@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const defaultPassword = "XOne-local-E2E-pass";
+const defaultPassword = "XOne-local-E2E-pass-2026";
 let expectedSignedOutAuthCleanup = false;
 
 async function completeOnboarding(page: Page, name: string): Promise<void> {
@@ -32,7 +32,7 @@ async function loginThroughDialog(page: Page, email: string, password: string): 
   await page.goto("/?auth=login");
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill(password);
-  await page.getByRole("button", { name: /Đăng nhập/i }).click();
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await expect(page).toHaveURL(/\/app(?:\/onboarding|\/services)?(?:\?|$)/, { timeout: 30_000 });
   await completeOnboarding(page, "Người dùng E2E");
 }
@@ -84,9 +84,9 @@ test.describe("live local product", () => {
     const restaurant = page.getByRole("button", { name: /Xem và giữ bàn/i }).first();
     await expect(restaurant).toBeVisible({ timeout: 30_000 });
     await restaurant.click();
-    const favorite = page.getByRole("button", { name: /Lưu địa điểm yêu thích/i });
+    const favorite = page.getByRole("button", { name: /(?:Lưu địa điểm yêu thích|Bỏ khỏi địa điểm đã lưu)/i });
     await expect(favorite).toBeVisible({ timeout: 30_000 });
-    await favorite.click();
+    if (await favorite.getAttribute("aria-label") === "Lưu địa điểm yêu thích") await favorite.click();
     await expect(page.getByRole("button", { name: /Bỏ khỏi địa điểm đã lưu/i })).toHaveAttribute("aria-pressed", "true");
 
     await page.goto("/app/favorites");
@@ -101,7 +101,7 @@ test.describe("live local product", () => {
     await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
     await expect(page.getByRole("status")).toContainText("được ghi nhận", { timeout: 30_000 });
     const message = "Bổ sung thông tin cho lần kiểm tra live.";
-    await page.getByPlaceholder("Bổ sung thông tin…").fill(message);
+    await page.getByPlaceholder("Viết phản hồi của bạn…").fill(message);
     await page.getByRole("button", { name: "Gửi thêm" }).click();
     await expect(page.getByText(message, { exact: true })).toBeVisible({ timeout: 30_000 });
   });

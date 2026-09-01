@@ -10,7 +10,7 @@ export function configureGatewayHttpSecurity(app: NestExpressApplication, config
   app.enableCors({
     origin: config.corsOrigins,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Accept', 'Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Actor-Id', 'Idempotency-Key'],
+    allowedHeaders: ['Accept', 'Content-Type', 'Authorization', 'X-Correlation-Id', 'X-Trigger-Correlation-Id', 'X-Actor-Id', 'Idempotency-Key'],
     exposedHeaders: ['X-Correlation-Id', 'Retry-After', 'X-RateLimit-Limit'],
     credentials: true,
     optionsSuccessStatus: 204,

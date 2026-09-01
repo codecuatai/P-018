@@ -47,10 +47,19 @@ paths:
       parameters:
         - {$ref: '#/components/parameters/InternalToken'}
         - {name: restaurant_id, in: path, required: true, schema: {type: string}}
-        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 100}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500, default: 20}}
         - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:
-        '200': {description: Menu result}
+        '200':
+          description: Paginated menu result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/FoodMenu'
         '401': {$ref: '#/components/responses/Error401'}
         '404': {$ref: '#/components/responses/Error404'}
         '422': {$ref: '#/components/responses/Error422'}
@@ -450,6 +459,16 @@ components:
       properties:
         item: {$ref: '#/components/schemas/FoodMenuItem'}
         restaurant: {$ref: '#/components/schemas/FoodRestaurant'}
+    FoodMenu:
+      type: object
+      additionalProperties: false
+      required: [restaurant, items, total, limit, offset]
+      properties:
+        restaurant: {$ref: '#/components/schemas/FoodRestaurant'}
+        items: {type: array, items: {$ref: '#/components/schemas/FoodMenuItem'}}
+        total: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1}
+        offset: {type: integer, minimum: 0}
     FoodLegacyAddress:
       type: object
       additionalProperties: true

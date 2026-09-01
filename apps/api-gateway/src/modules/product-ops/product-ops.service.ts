@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CoreProductOpsStore, FavoriteDomain, FeedbackRecord, NotificationRecord, ProductOpsDomain, SupportPriority, SupportTicketEventRecord, SupportTicketRecord, SupportTicketStatus } from '../core/product-ops.store';
@@ -7,11 +7,6 @@ import { CoreProductOpsStore, FavoriteDomain, FeedbackRecord, NotificationRecord
 export type FeedbackDomain = ProductOpsDomain;
 export type FeedbackResourceType = 'food_order' | 'ride_booking' | 'restaurant_reservation' | 'healthcare_appointment';
 export type LinkedResourceType = FeedbackResourceType;
-
-export interface SyncNotificationsResult {
-  items: NotificationRecord[];
-  unavailable: string[];
-}
 
 @Injectable()
 export class ProductOpsService {
@@ -23,14 +18,19 @@ export class ProductOpsService {
     private readonly healthcare: HealthcareClient,
   ) {}
 
-  async listNotifications(actorId: string, correlationId: string, status?: 'UNREAD' | 'READ'): Promise<{ items: NotificationRecord[]; unread_count: number; partial: boolean; unavailable: string[] }> {
-    const sync = await this.syncNotifications(actorId, correlationId);
-    return { items: await this.store.listNotifications(actorId, status), unread_count: await this.store.countUnreadNotifications(actorId), partial: sync.unavailable.length > 0, unavailable: sync.unavailable };
+  async listNotifications(actorId: string, options: { status?: 'UNREAD' | 'READ'; page?: number; pageSize?: number } = {}): Promise<{ items: NotificationRecord[]; unread_count: number; total: number; page: number; page_size: number; has_more: boolean; partial: boolean; unavailable: string[] }> {
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 20;
+    const [items, total, unreadCount] = await Promise.all([
+      this.store.listNotifications(actorId, { status: options.status, page, pageSize }),
+      this.store.countNotifications(actorId, options.status),
+      this.store.countUnreadNotifications(actorId),
+    ]);
+    return { items, unread_count: unreadCount, total, page, page_size: pageSize, has_more: page * pageSize < total, partial: false, unavailable: [] };
   }
 
-  async unreadCount(actorId: string, correlationId: string): Promise<{ unread_count: number; partial: boolean; unavailable: string[] }> {
-    const sync = await this.syncNotifications(actorId, correlationId);
-    return { unread_count: await this.store.countUnreadNotifications(actorId), partial: sync.unavailable.length > 0, unavailable: sync.unavailable };
+  async unreadCount(actorId: string): Promise<{ unread_count: number; partial: boolean; unavailable: string[] }> {
+    return { unread_count: await this.store.countUnreadNotifications(actorId), partial: false, unavailable: [] };
   }
 
   async markNotificationRead(id: string, actorId: string): Promise<NotificationRecord> {
@@ -89,8 +89,15 @@ export class ProductOpsService {
   async addSupportMessage(id: string, actorId: string, idempotencyKey: string, message: string): Promise<SupportTicketRecord> {
     const ticket = await this.getSupportTicket(id, actorId);
     if (ticket.status === 'CLOSED') throw new ConflictException({ code: 'SUPPORT_TICKET_CLOSED', detail: 'Yêu cầu hỗ trợ đã đóng.', retryable: false });
-    const event: SupportTicketEventRecord = { id: `ticket-event-${randomUUID()}`, ticketId: ticket.id, actorId, eventType: 'MESSAGE', message, idempotencyKey, createdAt: new Date().toISOString() };
-    const updated = await this.store.addSupportEvent(event, event.createdAt);
+    const requestHash = createHash('sha256').update(JSON.stringify({ message })).digest('hex');
+    const event: SupportTicketEventRecord = { id: `ticket-event-${randomUUID()}`, ticketId: ticket.id, actorId, eventType: 'MESSAGE', message, idempotencyKey, requestHash, createdAt: new Date().toISOString() };
+    let updated;
+    try {
+      updated = await this.store.addSupportEvent(event, event.createdAt, undefined, requestHash);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'IDEMPOTENCY_KEY_REUSED') throw new ConflictException({ code: 'IDEMPOTENCY_KEY_REUSED', detail: 'Idempotency key was reused with a different support message.', retryable: false });
+      throw error;
+    }
     if (!updated) throw new NotFoundException({ code: 'SUPPORT_TICKET_NOT_FOUND', detail: 'Không tìm thấy yêu cầu hỗ trợ.', retryable: false });
     return updated;
   }
@@ -137,6 +144,12 @@ export class ProductOpsService {
       ...(quote.pickup_longitude !== undefined ? { pickup_longitude: quote.pickup_longitude } : {}),
       ...(quote.dropoff_latitude !== undefined ? { dropoff_latitude: quote.dropoff_latitude } : {}),
       ...(quote.dropoff_longitude !== undefined ? { dropoff_longitude: quote.dropoff_longitude } : {}),
+      ...(quote.route_provider ? { route_provider: quote.route_provider } : {}),
+      ...(quote.route_distance_meters !== undefined && quote.route_distance_meters !== null ? { route_distance_meters: quote.route_distance_meters } : {}),
+      ...(quote.route_duration_seconds !== undefined && quote.route_duration_seconds !== null ? { route_duration_seconds: quote.route_duration_seconds } : {}),
+      ...(quote.route_geometry?.length ? { route_geometry: quote.route_geometry } : {}),
+      ...(quote.route_snapshot_hash ? { route_snapshot_hash: quote.route_snapshot_hash } : {}),
+      ...(quote.stopovers ? { stopovers: quote.stopovers } : {}),
     });
     return { kind: 'ride_rebook', old_booking_id: bookingId, quote: nextQuote, auto_booked: false };
   }
@@ -177,65 +190,27 @@ export class ProductOpsService {
     return this.healthcare.getAppointment(appointmentId, actorId, correlationId);
   }
 
-  private async syncNotifications(actorId: string, correlationId: string): Promise<SyncNotificationsResult> {
-    const responses = await Promise.allSettled([
-      this.food.listOrders(correlationId, actorId),
-      this.ride.listBookings(actorId, { correlationId }),
-      this.restaurant.listReservations(actorId, correlationId),
-      this.healthcare.listAppointments(actorId, correlationId),
-    ]);
-    const names = ['food', 'ride', 'restaurant', 'healthcare'];
-    const unavailable: string[] = [];
-    const writes: Array<Promise<NotificationRecord>> = [];
-    responses.forEach((result, index) => {
-      if (result.status === 'rejected') { unavailable.push(names[index]); return; }
-      for (const item of extractItems(result.value)) {
-        const resourceId = historyId(item);
-        if (!resourceId) continue;
-        const status = String(item.status ?? '').toUpperCase();
-        const events = notificationEvents(names[index], resourceId, status, item);
-        for (const event of events) writes.push(this.store.upsertNotification({ id: `notification-${event.eventKey}`, actorId, ...event, status: 'UNREAD', createdAt: new Date().toISOString() }));
-      }
-    });
-    await Promise.allSettled(writes);
-    return { items: await this.store.listNotifications(actorId), unavailable };
-  }
-}
-
-function extractItems(value: JsonObject): JsonObject[] {
-  if (Array.isArray(value.items)) return value.items.filter(isObject);
-  if (isObject(value.items) && Array.isArray(value.items.items)) return value.items.items.filter(isObject);
-  return [];
-}
-
-function historyId(value: JsonObject): string | undefined {
-  const id = value.id ?? value.booking_id ?? value.appointment_id ?? value.reservation_id;
-  return id === undefined || id === null ? undefined : String(id);
-}
-
-function notificationEvents(domain: string, resourceId: string, status: string, resource: JsonObject): Array<Pick<NotificationRecord, 'eventKey' | 'type' | 'title' | 'body' | 'resourceType' | 'resourceId'>> {
-  const events: Array<Pick<NotificationRecord, 'eventKey' | 'type' | 'title' | 'body' | 'resourceType' | 'resourceId'>> = [];
-  const add = (suffix: string, type: string, title: string, body: string, resourceType: string) => events.push({ eventKey: `${domain}:${resourceId}:${suffix}`, type, title, body, resourceType, resourceId });
-  if (domain === 'ride' && status === 'DRIVER_ASSIGNED') add('DRIVER_ASSIGNED', 'RIDE_DRIVER_ASSIGNED', 'Tài xế đã nhận chuyến', 'Tài xế đang chuẩn bị đến điểm đón của bạn.', 'ride_booking');
-  if (domain === 'ride' && status === 'DRIVER_ARRIVED') add('DRIVER_ARRIVED', 'RIDE_DRIVER_ARRIVED', 'Tài xế đã đến điểm đón', 'Tài xế đang chờ bạn tại điểm đón.', 'ride_booking');
-  if (domain === 'food' && ['RESTAURANT_ACCEPTED', 'ACCEPTED', 'CONFIRMED'].includes(status)) add('ACCEPTED', 'FOOD_ACCEPTED', 'Nhà hàng đã nhận đơn', 'Đơn ăn của bạn đang được chuẩn bị.', 'food_order');
-  if (domain === 'food' && ['PREPARING', 'READY_FOR_PICKUP'].includes(status)) add('PREPARING', 'FOOD_PREPARING', 'Đơn ăn đang được chuẩn bị', 'Nhà hàng đang hoàn thiện món cho bạn.', 'food_order');
-  if (domain === 'restaurant' && ['CONFIRMED', 'BOOKED', 'RESERVED'].includes(status)) add('CONFIRMED', 'RESTAURANT_CONFIRMED', 'Đặt bàn đã được xác nhận', 'Thông tin đặt bàn của bạn đã được ghi nhận.', 'restaurant_reservation');
-  if (domain === 'healthcare' && ['CONFIRMED', 'BOOKED', 'PAYMENT_CONFIRMED'].includes(status)) add('CONFIRMED', 'HEALTHCARE_CONFIRMED', 'Lịch khám đã được xác nhận', 'Bạn có thể xem lại thời gian và cơ sở trong lịch sử.', 'healthcare_appointment');
-  if (domain === 'healthcare') {
-    const start = stringAt(resource, ['start_at', 'start_time', 'appointment_time']) ?? objectString(resource.slot, 'start_time');
-    const timestamp = start ? Date.parse(start) : Number.NaN;
-    if (Number.isFinite(timestamp) && timestamp > Date.now() && timestamp <= Date.now() + 48 * 60 * 60 * 1000) add('REMINDER', 'HEALTHCARE_REMINDER', 'Sắp đến lịch khám', 'Lịch khám của bạn sẽ diễn ra trong vòng 48 giờ tới.', 'healthcare_appointment');
-  }
-  return events;
 }
 
 function isCompleted(domain: ProductOpsDomain, resource: JsonObject): boolean {
   const status = String(resource.status ?? '').toUpperCase();
   if (domain === 'food') return ['DELIVERED', 'COMPLETED', 'FULFILLED'].includes(status);
-  if (domain === 'ride') return status === 'COMPLETED';
-  if (domain === 'restaurant') return ['CONFIRMED', 'COMPLETED', 'SEATED'].includes(status);
-  return ['CONFIRMED', 'COMPLETED', 'PAYMENT_CONFIRMED'].includes(status);
+  if (domain === 'ride') return ['COMPLETED', 'FULFILLED'].includes(status);
+  if (domain === 'restaurant') {
+    if (['COMPLETED', 'FULFILLED'].includes(status)) return true;
+    if (status === 'SEATED') {
+      const start = stringAt(resource, ['start_at', 'reservation_time', 'start_time']);
+      if (start) {
+        const timestamp = Date.parse(start);
+        return Number.isFinite(timestamp) && Date.now() >= timestamp;
+      }
+    }
+    return false;
+  }
+  if (domain === 'healthcare') {
+    return ['COMPLETED', 'FULFILLED'].includes(status);
+  }
+  return false;
 }
 
 function arrayAt(value: JsonObject, key: string): JsonObject[] {

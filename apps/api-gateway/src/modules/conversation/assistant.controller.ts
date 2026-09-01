@@ -1,10 +1,40 @@
 import { BadRequestException, Body, Controller, Headers, HttpCode, Post, Req, UnprocessableEntityException, UseGuards } from '@nestjs/common';
-import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { AssistantService } from './assistant.service';
+
+class DeviceCurrentLocationBody {
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude!: number;
+
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  address_text?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100000)
+  accuracy_meters?: number;
+
+  @IsDateString()
+  captured_at!: string;
+
+  @IsIn(['device'])
+  source!: 'device';
+}
 
 class AssistantChatBody {
   @IsString()
@@ -17,6 +47,11 @@ class AssistantChatBody {
   @MinLength(1)
   @MaxLength(128)
   conversation_id?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceCurrentLocationBody)
+  current_location?: DeviceCurrentLocationBody;
 }
 
 class AssistantActionBody {
@@ -35,6 +70,14 @@ class AssistantActionBody {
   @Min(1)
   @Max(50)
   quantity?: number;
+
+  // Device location is supplied again with an explicit action so a dependent
+  // Ride quote can use it after the user selects/confirms another service.
+  // It is request-scoped and never written into the saved-address profile.
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DeviceCurrentLocationBody)
+  current_location?: DeviceCurrentLocationBody;
 }
 
 type AuthenticatedRequest = CorrelatedRequest & { user: AuthUser };
@@ -52,6 +95,7 @@ export class AssistantController {
       body.message,
       body.conversation_id,
       request.correlationId ?? 'cor_unknown',
+      body.current_location,
     );
     return { data: result, meta: { request_id: request.correlationId } };
   }

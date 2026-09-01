@@ -19,7 +19,7 @@ REPO_ROOT = SERVICE_ROOT.parents[1]
 sys.path.insert(0, str(SERVICE_ROOT))
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.dataops.catalog_import import apply_plan, build_plan  # noqa: E402
+from scripts.data.catalog.catalog_import import apply_plan, build_plan  # noqa: E402
 from src.api.routes import _facility_data  # noqa: E402
 from src.database import sqlalchemy_database_url  # noqa: E402
 from src.models.medical import HealthcareFacility  # noqa: E402

@@ -36,6 +36,7 @@ def test_core_a_enums_and_slot_scalar_contract_match_pydantic() -> None:
     assert [item["type"] for item in slot_properties["value"]["oneOf"]] == [
         "string",
         "integer",
+        "number",
         "boolean",
     ]
     assert step_properties["phase"]["enum"] == [item.value for item in PlanningPhase]

@@ -12,9 +12,19 @@ Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/inte
 
 This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 
+Food restaurant menus use server-side `limit`/`offset` pagination. The menu response includes `items`, `total`, `limit`, and `offset`; `total` is the full count of active menu items for the restaurant, not the size of the returned page. Consumers request subsequent pages instead of slicing a truncated client-side array.
+
 The canonical route inventory is [api-inventory.md](api-inventory.md). Shared primitives and the minimum response envelopes are versioned in [shared-primitives.v1.yaml](../../packages/contracts/openapi/shared-primitives.v1.yaml). The current Gateway keeps legacy Ride and vertical workflow routes for compatibility; they are not permission to add new browser callers or bypass the unified assistant confirmation boundary.
 
 The shared `Address` contract requires `id`, `label`, `address_text`, `latitude`, `longitude`, and `city`; `ward` and `district` remain optional. The canonical actor-owned saved-address resource is Gateway `/api/v1/addresses`, persisted in Core migration `010_core_personal_context.sql`. Food still accepts an immutable `address_snapshot` on quote/preview/order calls and validates the actor before using it; its legacy `/api/v1/addresses` shape is not Core authority.
+
+Restaurant discovery keeps the explicit `location`, `cuisine_type`, and
+`budget_range` filters for typed workflow callers. Its additive `q` query
+parameter is the generic consumer-search contract and performs a
+case-insensitive substring match across restaurant name, location, or cuisine
+type. A query containing Vietnamese diacritics is accent-sensitive; a query
+without diacritics remains accent-insensitive, so `cha` can match `chả`,
+`chảy`, `chảo`, or `chay` while `chả` does not match `chay`.
 
 A saved or default address is reusable context, not implicit permission to choose
 a Food delivery destination. Checkout asks where the order should be delivered
@@ -39,9 +49,43 @@ Healthcare-dependent departure is impossible. Healthcare appointment cards may
 carry the domain-owned facility name/address; the Gateway does not invent or
 persist that authority. Restaurant hold and completed-reservation cards have
 separate schemas so a hold never pretends to have a final reservation code.
+Changing an existing Restaurant reservation is a separate Gateway update
+workflow: the response previews the old and requested time/party size and
+returns a `restaurant_update` action only after a fresh availability read. The
+action re-reads the actor-owned reservation, checks its current
+`resource_version`, and calls the Restaurant PATCH with a Gateway-owned
+idempotency key. The domain must return the same reservation ID with its
+updated version; no write occurs during preview.
+When a still-active hold is invalidated by a material party/time/restaurant
+revision, the Gateway asks Restaurant to release that hold with a separate
+idempotent lifecycle operation before it checks or creates a replacement hold.
 The Gateway validates required reservation confirmation fields and normalizes
 legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
 domain timezone before exposing an ISO 8601 value.
+
+`AssistantChatRequest.current_location` and
+`AssistantActionRequest.current_location` are optional, ephemeral UI context.
+They contain validated device latitude/longitude, capture time, optional
+accuracy, and optional reverse-geocoded display text. The Web client resends
+the value with a selected/confirmation action when a dependent Ride quote is
+prepared; it is never written to the saved
+address profile. While the device-share context remains active, the Web also
+resends the same request-scoped location on a later stopover chat so Gateway
+can re-quote without turning the device position into a durable address. The
+Agent accepts it only while fresh. Context precedence is
+deterministic: explicit current-turn values, current UI context, authoritative
+conversation facts, saved profile context, then retrieved-memory hints. A
+lower-precedence source never overwrites a higher-precedence value, and every
+semantic slot carries its source. Product-facing date/time interpretation uses
+`Asia/Ho_Chi_Minh`; an already-passed clock time is clarified instead of being
+silently moved to tomorrow. Ride discovery/creation requires an explicit
+vehicle type. A Ride quote may include at most two resolved intermediate stops;
+the stops form part of the authoritative quote/confirmation payload, so a
+material route change requires a fresh quote and service-details confirmation.
+The fresh quote replaces the public Ride service action; replaying the prior
+action returns `409 ACTION_NOT_AVAILABLE` and cannot confirm the old route.
+Cancellation of an existing ride is proposed through Core A and
+executed only by the Gateway action boundary after user confirmation.
 
 Conversation-only chitchat/advisory turns return safe assistant text without
 replaying prior cards or actions, while pending workflow state remains
@@ -62,6 +106,10 @@ Errors use RFC-7807-inspired JSON: `type`, `title`, `status`, `code`, safe `deta
 The minimum public success contract is `{ data, meta: { request_id } }`. A list uses `{ data: { items }, meta: { request_id, pagination: { cursor, has_more } } }`. Extra safe metadata such as `timestamp` or a compatibility `actor_id` may remain on an existing endpoint, but must not contain credentials, raw prompts, internal confirmation IDs, provider payloads, or chain-of-thought.
 
 `X-Correlation-Id` is accepted/generated for every request. `X-Workflow-Id` and `X-Tool-Call-Id` apply to orchestrated workflows. Internal calls require service authentication. Standard status codes apply: 200/201 success, 202 accepted, 400/401/403/404/409/422 client errors, and 429/5xx only where appropriate.
+
+The browser may send the bounded `X-Trigger-Correlation-Id` header on refresh so
+parallel restore requests can be correlated safely; it is trace metadata only
+and must never contain a token or cookie.
 
 ## Authentication contract
 
@@ -109,7 +157,7 @@ Final/financial confirmation is not a boolean. The contract binds it to the acto
 
 ## Phase 2–9 public additions
 
-`GET/POST /api/v1/conversations`, actor-scoped conversation detail/update/archive/delete, `/api/v1/users/me`, `/api/v1/addresses`, `/api/v1/location`, `/api/v1/healthcare/patients`, `/api/v1/history`, `/api/v1/services`, and `/api/v1/rides/{bookingId}/tracking` are Gateway-owned public surfaces. Each calls Core or a typed domain client; the Web never calls a domain service directly. Service browsing reports partial/degraded dependencies rather than manufacturing results. The Web's “Continue with AI” entry creates a Core conversation with the selected service context before the first prompt is sent. Healthcare patient records remain Healthcare-owned; the Gateway only enforces the public actor boundary and forwards the request.
+`GET/POST /api/v1/conversations`, actor-scoped conversation detail/update/archive/delete, `/api/v1/users/me`, `/api/v1/addresses`, `/api/v1/location`, `/api/v1/healthcare/patients`, `/api/v1/history`, `/api/v1/services`, and `/api/v1/rides/{bookingId}/tracking` are Gateway-owned public surfaces. Each calls Core or a typed domain client; the Web never calls a domain service directly. Conversation and service-history lists are independently paginated (default 10 items), so opening one surface never waits for the other. Service browsing reports partial/degraded dependencies rather than manufacturing results. The Web's “Continue with AI” entry creates a Core conversation with the selected service context before the first prompt is sent. Healthcare patient records remain Healthcare-owned; the Gateway only enforces the public actor boundary and forwards the request.
 
 `POST /api/v1/recommendations/rank` is a deterministic V1 ranking adapter. It consumes authoritative candidates and combines relevance, distance, ETA, price, and rating; suspicious default coordinates are excluded from distance scoring. It is deliberately not an ML claim and does not create a booking.
 
@@ -120,7 +168,12 @@ Healthcare doctor/slot actions, and Ride quote-based prepare/final confirmation
 are all typed Gateway routes. Domain services remain authoritative; every
 retryable write carries `Idempotency-Key`, and final Ride/Restaurant/Healthcare
 actions pass through explicit confirmation evidence. `GET /api/v1/history`
-accepts `service`, `status`, `from`, `to`, `page`, and `page_size` filters.
+accepts `service`, `status`, `from`, `to`, `page`, and `page_size` filters;
+its default page size is `10`.
+Notification projections are Core-owned read models: `GET /api/v1/notifications`
+accepts `status`, `page` (default `1`), and `page_size` (default `20`, maximum
+`100`) and returns `items`, `total`, `page`, `page_size`, and `has_more`.
+Notification list/count reads do not synchronously scan domain-service history.
 
 Assistant responses include `workflow_status` (`PENDING`, `RUNNING`,
 `COMPLETED`, `PARTIAL_SUCCESS`, or `FAILED`) and safe task-error cards. A
@@ -128,5 +181,11 @@ failed dependent task is reported as `DEPENDENCY_BLOCKED`; independent tasks
 continue when policy allows. A final Ride failure never auto-cancels a
 completed Healthcare appointment. History detail may include a sanitized
 Core payment/receipt/refund summary and never exposes provider references.
+
+For Healthcare appointments that require payment, the Assistant presents two
+separate public confirmations: service details first, then the amount/currency
+and payment terms. The second confirmation records payment and immediately
+executes the already-bound final domain confirmation on success; it never
+shows a third public appointment-confirmation action.
 
 `POST /api/v1/workflows/multi-service/plan` persists a read/planning state machine for `restaurant_ride`, `healthcare_ride`, and independent `food_healthcare` work. The request carries only an explicitly selected Restaurant/Healthcare resource ID and its authority; the Gateway re-reads the active record through the owning typed client before creating the destination snapshot. Caller/model-supplied address or coordinates are rejected rather than treated as authoritative. Step results and explicit compensation results are actor-scoped, idempotent, durable in Core, and expose `PENDING`, `RUNNING`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `COMPENSATING`, or `RECOVERY_REQUIRED`. Healthcare compensation is `NONE`; a Ride failure never auto-cancels a Healthcare appointment.

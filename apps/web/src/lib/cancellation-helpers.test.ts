@@ -51,6 +51,11 @@ describe("cancellation and rating helpers", () => {
     expect(apiClient.cancelRestaurantReservation).toHaveBeenCalledWith("res_01");
   });
 
+  test("executes restaurant reservation cancellation using fallbackId when resource has no id property", async () => {
+    await executeServiceCancellation("restaurant_reservation", { reservation_code: "RES-99" }, "res-28045295bbfd");
+    expect(apiClient.cancelRestaurantReservation).toHaveBeenCalledWith("res-28045295bbfd");
+  });
+
   test("executes healthcare appointment cancellation", async () => {
     await executeServiceCancellation("healthcare_appointment", { id: "101" });
     expect(apiClient.cancelHealthcareAppointment).toHaveBeenCalledWith(101);

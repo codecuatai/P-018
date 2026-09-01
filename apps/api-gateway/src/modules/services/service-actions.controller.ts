@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsArray, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested, IsEnum } from 'class-validator';
+import { IsArray, IsEnum, IsInt, IsISO8601, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
@@ -109,6 +109,22 @@ class RestaurantAvailabilityDto {
 class RestaurantHoldDto extends RestaurantAvailabilityDto {
 }
 
+class RestaurantReservationUpdateDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  party_size?: number;
+
+  @IsOptional()
+  @IsISO8601()
+  start_at?: string;
+
+  @IsOptional()
+  @IsString()
+  special_requests?: string;
+}
+
 class HealthcareHoldDto {
   @IsInt()
   @Min(1)
@@ -213,6 +229,17 @@ export class ServiceActionsController {
   async hold(@Body() body: RestaurantHoldDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const { restaurant_id, ...payload } = body;
     return { data: await this.restaurant.createHold(request.user.sub, correlation(request), requiredIdempotency(key), { restaurant_id, ...payload, duration_minutes: payload.duration_minutes ?? 120 }), meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('restaurant/reservations/:reservationId')
+  async updateRestaurant(@Param('reservationId') reservationId: string, @Body() body: RestaurantReservationUpdateDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const payload: JsonObject = {
+      ...(body.party_size !== undefined ? { party_size: body.party_size } : {}),
+      ...(body.start_at !== undefined ? { start_at: body.start_at } : {}),
+      ...(body.special_requests !== undefined ? { special_requests: body.special_requests } : {}),
+    };
+    if (!Object.keys(payload).length) throw new BadRequestException({ code: 'RESTAURANT_UPDATE_EMPTY', detail: 'Cần ít nhất một trường để cập nhật đặt bàn.', retryable: false });
+    return { data: await this.restaurant.updateReservation(request.user.sub, correlation(request), requiredIdempotency(key), reservationId, payload), meta: { request_id: request.correlationId } };
   }
 
   @Post('restaurant/:reservationId/cancel')

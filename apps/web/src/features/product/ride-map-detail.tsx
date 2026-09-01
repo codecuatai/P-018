@@ -15,6 +15,7 @@ type RideMapDetailProps = {
   bookingId?: string;
   initialOrigin?: XOnePoint;
   initialDestination?: XOnePoint;
+  initialStopovers?: XOnePoint[];
   initialRoute?: XOnePoint[];
   initialRoutePolyline?: string;
   initialRouteProvider?: string;
@@ -24,7 +25,7 @@ type RideMapDetailProps = {
   facts: RideDetailFact[];
 };
 
-export function RideMapDetail({ bookingId, initialOrigin, initialDestination, initialRoute, initialRoutePolyline, initialRouteProvider, initialRouteDistanceMeters, initialRouteDurationSeconds, status, facts }: RideMapDetailProps) {
+export function RideMapDetail({ bookingId, initialOrigin, initialDestination, initialStopovers, initialRoute, initialRoutePolyline, initialRouteProvider, initialRouteDistanceMeters, initialRouteDurationSeconds, status, facts }: RideMapDetailProps) {
   const [showInfo, setShowInfo] = useState(false);
   const { data: tracking } = useRideTracking(bookingId);
   const driverPhase = tracking?.status === "DRIVER_ASSIGNED" || tracking?.status === "DRIVER_TO_PICKUP";
@@ -41,7 +42,7 @@ export function RideMapDetail({ bookingId, initialOrigin, initialDestination, in
   return <div className={`ride-map-detail${bookingId ? " has-status" : " no-status"}`}>
     <section className="ride-map-stage" aria-label="Bản đồ hành trình chuyến xe">
       <div className="ride-map-canvas">
-        <XOneMap origin={origin} destination={destination} current={driver ? undefined : tracking?.current_location ?? undefined} driver={driver} density="active" routeGeometry={routeGeometry} routePolyline={routePolyline} routeProvider={routeProvider} routeStatus={tracking?.status ?? status} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} label="Bản đồ hành trình chuyến xe" />
+        <XOneMap origin={origin} destination={destination} stopovers={initialStopovers} current={driver ? undefined : tracking?.current_location ?? undefined} driver={driver} density="active" routeGeometry={routeGeometry} routePolyline={routePolyline} routeProvider={routeProvider} routeStatus={tracking?.status ?? status} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} label="Bản đồ hành trình chuyến xe" />
         <button className="detail-info-button ride-map-info-button" type="button" aria-expanded={showInfo} onClick={() => setShowInfo((value) => !value)}>Thông tin chuyến</button>
         {showInfo ? <aside className="ride-map-info-panel" aria-label="Thông tin chuyến"><div className="consumer-detail-grid">{facts.map((fact) => <Fact key={fact.label} label={fact.label} value={fact.value} />)}</div></aside> : null}
       </div>

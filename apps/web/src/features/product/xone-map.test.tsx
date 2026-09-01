@@ -59,6 +59,20 @@ describe("XOneMap", () => {
     expect(screen.getByText("Cơ sở khám")).toBeInTheDocument();
   });
 
+  it("renders restaurant details without tracking chrome", () => {
+    const { container } = render(
+      <XOneMap
+        restaurant={{ latitude: 21.0301, longitude: 105.8122, label: "Nhà hàng A" }}
+        providerUnavailable
+        variant="location-detail"
+      />,
+    );
+
+    expect(container.querySelector(".xone-map-location-detail")).toBeInTheDocument();
+    expect(screen.queryByText("Bản đồ vị trí")).not.toBeInTheDocument();
+    expect(screen.queryByText("Điểm đến")).not.toBeInTheDocument();
+  });
+
   it("explains a denied location permission without inventing a marker", () => {
     render(<XOneMap locationDenied label="Vị trí hiện tại" />);
 
