@@ -1,105 +1,227 @@
-# WORKLOG — Team P-018
+# Weekly Journal — Team P-018
 
-## 2026-08-13
+> Ghi lại mỗi tuần: học được gì, khó khăn gì, quyết định gì, kế hoạch tiếp.
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Bám sát work.md: corrective hardening backend/UI, Product/Ops, Ride/map/tracking, Food/Restaurant/Healthcare, profile/history, data/image flow và browser QA | ✅ Verified local implementation + browser QA | P0 internal assistant action được giữ ở storage nhưng loại khỏi mọi public conversation projection; AppShell/ContextRail/profile hợp nhất, địa chỉ giữ lại geocode/map/edit, logo một dòng, Ride Leaflet/tracking/searching-driver, Food customizer, Restaurant `image_url` authoritative + fallback, history server filter + infinite load. Đã cập nhật product UI architecture và visual QA checklist. Playwright Chromium `27/27` pass ở 375/768/1440; Gateway `25 suites`, `109 passed`, `7 skipped`; Web `13 suites`, `52 passed`, typecheck/build; Food `23 passed/3 skipped`, Healthcare `25/1`, Restaurant `21/1`, Ride `19`; env/Compose/migration parity pass. Không commit/push/deploy, không in secret, không xoá volume/catalog. | - |
+---
 
-## 2026-08-12
+## Week 1: 2026-07-23 - 2026-07-26
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Final corrective pass Phase 1–9: Ride lifecycle, Tool Registry/Agent parity, Playwright harness, Leaflet map, live HTTP acceptance và documentation | ✅ Implementation PASS; browser/Gemini acceptance pending | Ride DB-authoritative tariff/driver, two confirmations, persisted lifecycle/tracking/history/idempotency; Tool Registry v2 JSON 46 entries with Agent/Gateway/domain parity; Leaflet client-only map with explicit fallback; Playwright 27 tests listed but Chromium executable unavailable; disposable Compose 8 healthy containers and authenticated HTTP PASS for auth persistence, Food, Ride, Restaurant, Healthcare and multi-service dependency/partial-success/cross-user cases; imported read-back Food 17,596, Restaurant 1,307, Healthcare facilities 3/departments 72/doctors 208; Gateway 24 suites/103 passed/7 skipped, Web 13 suites/50 tests/build, Agent 106, Food 23/3 skipped, Ride 16, Restaurant 21/1 skipped, Healthcare 25/1 skipped, contract/DataOps/Ruff PASS. No secret, primary volume, commit, push or deploy touched. | - |
+### Mục tiêu tuần này
+- [x] Khởi tạo repository dự án từ template AI20K Agent
+- [x] Thiết lập môi trường phát triển, .env và Git pre-push hook
+- [x] Cài đặt AI usage logging hook và quy trình PR giữa main/develop/test
+- [x] Chuẩn hóa WORKLOG.md và JOURNAL.md
 
-## 2026-08-10
+### Đã hoàn thành
+- Khởi tạo repository từ template, thêm tài liệu nền (README, docs) và JOURNAL.md (e459dab, 0ffcd10)
+- Kiểm thử AI log hook trên Windows PowerShell; sửa output windows-safe và Codex hook logging (ef2b2e2, d805095)
+- Thiết lập môi trường .venv/dependencies, cài pre-push hook; tạo branch test/verify-ai-log (8e649b9, b8f7790, 229bc27)
+- Cập nhật WORKLOG.md chi tiết theo ngày, giải quyết conflict và chuẩn hóa nội dung (e53ca79, b30f0f2, ce2cc5f, b2f5b04)
+- Đồng bộ nhánh và merge các PR #1–#12 giữa test/develop/main
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Team P-018 | Hoàn thiện Phase 1 Next.js App Router, landing, product routing và real authentication | ✅ Done | Hoàn tất Web App Router, landing/product routes, loading/error/not-found states, memory-only access token, Gateway-only requests và Gateway Auth v1 với Argon2id, JWT, refresh rotation, session, password reset, migration, OpenAPI và PostgreSQL coverage; Web 4 suites/6 tests, 15 routes, các service/domain checks và disposable Compose acceptance đều pass | - |
-| Vũ Văn Phong (2A202601647) | Corrective review/fix và fresh acceptance cho Phase 0 foundation | ✅ Done | Hoàn tất demo-auth fail-closed, production-safe Compose/env, patient-link boundary, Address ownership, Food legacy contract và Tool Registry v2; Agent 103 passed, Gateway/domain checks pass, disposable runtime healthy, deterministic public E2E 31/31; không in secret, không xoá volume, không commit/push | - |
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| AI log hook không chạy đúng trên Windows PowerShell | Sửa output windows-safe, fix Codex hook logging (ef2b2e2, d805095) | Hook logging hoạt động và ghi nhận AI usage |
+| Conflict WORKLOG.md khi merge nhiều nhánh song song | Giải quyết merge conflict, chuẩn hóa mỗi dòng theo member/Team (b30f0f2, ce2cc5f) | Worklog ổn định, đồng bộ qua các nhánh |
 
-**Tổng kết ngày:** Phase 0 corrective acceptance và Phase 1 implementation đều đạt các gate non-browser. Browser screenshot, responsive, interactive và console acceptance vẫn được ghi nhận là chưa xác minh.
+### Bài học
+- Hook AI logging phải được kiểm thử trên đúng môi trường chạy thật (Windows PowerShell) trước khi coi là hoạt động
+- Worklog cập nhật theo ngày giúp truy vết công việc và tạo bằng chứng rõ ràng cho mỗi quyết định
 
-## 2026-08-09
+### Kế hoạch tuần sau
+- [ ] Xây dựng demo frontend mock và tài liệu Project Build Phase
+- [ ] Đồng bộ nhánh và cải thiện quy trình PR
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Final evidence-only code-freeze recount cho X-One | ✅ Done | Xác minh lại base suites Food 22 passed/3 skipped, Ride 10 passed, Restaurant 20 passed/1 skipped, Healthcare 21 passed/1 skipped; PostgreSQL Food 3/3, Gateway Core 5/5; deterministic public E2E 31/31; live Gemini demo 4/5 với mismatch Healthcare thuộc category C; xác nhận CI, lockfile, env, migration parity và boundary checks | - |
-| Vũ Văn Phong (2A202601647) | Revoke/rotate Stitch API key đã từng bị lộ | ❌ Blocked | Đây là thao tác cần người dùng thực hiện trực tiếp; agent không đọc, in hoặc tự thay đổi key. Cần revoke/rotate key trước khi dùng lại integration liên quan | - |
+---
 
-**Tổng kết ngày:** Hoàn tất phân loại BASE SUITES, TARGETED POSTGRESQL, DETERMINISTIC PUBLIC E2E và LIVE GEMINI SMOKE. Kết quả runtime không có state/action bug; browser vẫn chưa xác minh và thao tác revoke/rotate key còn phụ thuộc người dùng.
+## Week 2: 2026-07-27 - 2026-08-02
 
-## 2026-08-08
+### Mục tiêu tuần này
+- [x] Xây dựng demo frontend mock NaviGo cho agent đặt dịch vụ đa nền tảng
+- [x] Bổ sung tài liệu Project Build Phase, UI wireframe flow và architecture diagram
+- [x] Refactor codebase ban đầu và tương thích pytest conftest
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Gộp final X-One correctness và Demo Hardening pass | ✅ Done | Unified Assistant cho Ride/Food/Restaurant/Healthcare; bổ sung task revision/action cohort, idempotency retry, Food context, Healthcare requested time, Ride vehicle/location, Restaurant migration/validation/contract, stable consumer DTO và Gemini diagnostics; Agent 78 pass, Gateway 40 pass/3 skip, Web build, migrations/seeds/Compose health pass, live E2E 23/23 | - |
+### Đã hoàn thành
+- Fix Gemini hook logging; log_antigravity.py có SQLite fallback (67a8198, 4a8ede1)
+- Thêm React web frontend và cập nhật modern UI demo NaviGo, cải thiện demo UI flows (a929f30, ff3d2d3, c575735, a5d0c8c)
+- Bổ sung tài liệu Project Build Phase, docs/ui_wireframe_flow.md, architecture diagram và link UIdemo (83df9f7, f75012c, 4a92dad)
+- Refactor codebase và sửa pytest conftest tương thích langchain.debug (887fa1b, bfa2ca0)
+- Đồng bộ feature/demoUI và merge các PR #13–#24 vào develop
 
-**Tổng kết ngày:** Hoàn tất correctness và hardening cho các flow đa dịch vụ, giữ Gateway-only UI và xử lý parser/E2E collision. Gemini live không chạy trong acceptance; browser-control unavailable; không commit, push hoặc cloud action.
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| Conflict khi merge feature/demoUI vào develop | Merge resolve conflict, đồng bộ từ develop (cd787aa) | Tích hợp demoUI sạch, không mất code |
+| Test lỗi tương thích langchain.debug | Cập nhật pytest conftest (bfa2ca0) | Bộ test chạy ổn định sau refactor |
 
-## 2026-08-07
+### Bài học
+- Tài liệu (diagram, wireframe, docs) cần cập nhật cùng lúc với code để tránh lệch pha
+- Refactor codebase phải đi kèm sửa test để giữ pipeline xanh
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Final corrective pass cho migration, payment confirmation, refund, Agent orchestration và E2E | ✅ Done | Hoàn tất migration parity, stale payment-confirmation linkage, terminal refund semantics, bounded Agent address orchestration, voucher mapping, timeout/restart E2E, PostgreSQL cart concurrency, Gemini smoke và setup script; Agent 20 pass, Food 21 pass/3 skip, Gateway 17 pass/3 skip, Food PG 3, Core PG 3, E2E 15 | - |
-| Team P-018 | Final Agent orchestration pass và đồng bộ evidence | ✅ Done | Reconcile deterministic/model intents, giữ Gemini semantic enrichment, chứng minh public confirmation flow 5 turns; Agent 50 passed, Gateway 18 passed/3 skipped, registry HTTP 200, fresh Vietnamese flow kết thúc ở confirmation_form, migration/env/Compose checks pass | - |
+### Kế hoạch tuần sau
+- [ ] Tách kiến trúc backend-first microservices (NestJS gateway + domain services)
+- [ ] Xây dựng các dịch vụ Food/Ride/Restaurant/Healthcare và tích hợp local
 
-**Tổng kết ngày:** Hoàn thành corrective pass cho backend contracts, payment/recovery và Agent orchestration; các test runtime, migration và public flow đều có evidence. Không commit hoặc push.
+---
 
-## 2026-08-06
+## Week 3: 2026-08-03 - 2026-08-09
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Triển khai Food ordering vertical slice backend | ✅ Done | Hoàn tất Food FastAPI domain/API/PostgreSQL migration-seed; Gateway auth, typed Food/Agent clients, Tool Registry/Executor, confirmation, payment sandbox, workflow và Gateway-only structured LangGraph agent; cập nhật contracts, Compose/env, docs, tests và job.txt; không sửa frontend hoặc restaurant-service | - |
+### Mục tiêu tuần này
+- [x] Refactor repository sang kiến trúc backend-first microservices
+- [x] Xây dựng domain services Food/Ride/Restaurant/Healthcare và gateway
+- [x] Tích hợp bốn domain local (four-domain integration)
 
-**Tổng kết ngày:** Nối happy path backend từ intent tiếng Việt qua Gateway tool, Food preview, confirmation, sandbox payment, order tracking và refund path. Gateway Core durable repository và timer reconciliation được ghi nhận là follow-up.
+### Đã hoàn thành
+- Refactor backend-first: chuyển FastAPI agent, thêm NestJS gateway + domain-service skeletons, Docker/Postgres và AGENTS.md (83aa797, a32a7ff)
+- Xây dựng module medical booking agent + websocket, chuyển backend sang sandbox, tăng bảo mật (dcfa4fc, 187f800, b5903e4)
+- Bỏ mock data, nối real backend endpoints, đồng bộ dark theme; implement restaurant booking agent workflow (3f0a7b7, de0d40b, e35843c)
+- Phát triển ride service, gateway services ride và cập nhật food service (1318b65, 78e2101, b2d61ea)
+- Finalize local four-domain integration, cập nhật docs và resolve conflict (f5c85a0, 8bb214f, d4fdb8d)
 
-## 2026-08-05
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| Feature/ride chưa ổn định, bị revert sau merge | Revert PR #26 rồi phát triển lại trong nhánh riêng (9dc5034, 1318b65) | Ride service tích hợp lại sạch |
+| Nhiều nhánh feature song song gây conflict khi tích hợp | Merge từng nhánh vào codex/p018-integration rồi merge develop (7ea1622, 02757ec, 7135d62) | Tích hợp 4 domain local thành công |
+| Antigravity log chạy sai | Fix Antigravity log (c40bbec) | Log đúng và đầy đủ |
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Chuẩn hóa environment, kiến trúc và governance tài liệu X-One theo backend-first | ✅ Done | Thiết lập root .env với Compose inject tối thiểu; bổ sung Agent, API Gateway và Ride/Restaurant/Healthcare/Food skeletons cùng PostgreSQL logical databases; làm rõ ownership, contracts, CI, docs, AGENTS.md, package discovery, error hygiene, idempotency, confirmation, prompt safety và legacy-doc warnings | 5.0h |
-| Team P-018 | Tối ưu monorepo và cập nhật tài liệu từ nhánh develop trước architecture refactor | ✅ Done | Cập nhật DB driver, Ruff formatting, Agent state/nodes, Web build và tài liệu; giữ current-state theo docs/architecture/current-state.md | 1.5h |
+### Bài học
+- Kiến trúc refactor cần tài liệu và AGENTS.md đi kèm ngay từ đầu để giữ boundary
+- Tích hợp theo từng bước qua integration branch giảm conflict so với merge ồ ạt
 
-**Tổng kết ngày:** Hoàn thành foundation, environment và architecture-governance refactor; xác minh gateway lint/test/build, Web build, domain health tests, package discovery, Compose config và Python compile.
+### Kế hoạch tuần sau
+- [ ] Hoàn thiện CI/CD (self-hosted runner, staging deploy) và Phase 1 Web App Router
+- [ ] Sửa lifecycle Ride, map/tracking, agent multiturn và QA toàn diện
 
-## 2026-08-02
+---
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Bổ sung tài liệu Project Build Phase, AI usage log, đồng bộ nhánh và chuẩn hóa UI flow | ✅ Done | Thêm tài liệu Project Build Phase, ghi AI-log, đồng bộ work qua develop, tạo repo demo uiDemo, cập nhật docs/ui_wireframe_flow.md và docs/architecture_diagram.md, chuẩn hóa worklog | 2.4h |
-| Trần Văn Tài | Hoàn thiện và tinh chỉnh demo frontend cho agent đặt dịch vụ đa nền tảng | ✅ Done | Cập nhật mock frontend với hội thoại tiếng Việt, receipt đặt xe/đồ ăn/chuyến bay, combo, đổi vé/hoàn tiền, chọn xe đưa đón, xác nhận thanh toán và modal thành công; xác minh npm run build và dev server Vite | 1.0h |
-| Lê Tiến Minh | Hoàn thiện và tinh chỉnh demo frontend cho agent đặt dịch vụ đa nền tảng | ✅ Done | Hoàn thiện cùng phạm vi demo mock, khóa sidebar/topbar, giới hạn scroll ở vùng chat và xác minh build/dev server | 1.0h |
-| Team P-018 | Cập nhật worklog cho các thay đổi tài liệu và demo frontend | ✅ Done | Cập nhật WORKLOG.md bằng UTF-8, gom tài liệu dự án, diagram và UI flow trong docs/, chuẩn hóa mỗi dòng theo một member hoặc Team P-018 | 0.3h |
+## Week 4: 2026-08-10 - 2026-08-16
 
-**Tổng kết ngày:** Hoàn thiện tài liệu Project Build Phase, demo frontend mock, UI flow, architecture diagram và quy trình worklog; các kiểm tra build/dev server đã pass.
+### Mục tiêu tuần này
+- [x] Hoàn thiện Phase 1 Next.js App Router, landing, product routing và authentication
+- [x] Cải thiện CI/CD: self-hosted runner, staging deploy, caching, matrix test
+- [x] Sửa lifecycle Ride, map/tracking, agent multiturn và MVP demo 4 dịch vụ
 
-## 2026-07-26
+### Đã hoàn thành
+- Baseline + contract; FE v1, hero section, visual/assets và fake chat (f7b31b3, 04c3a72, e60a125)
+- CI/CD: self-hosted runner, job-level path filtering, matrix test, cache dependency, tránh postgres port collision, staging deploy workflow (a7eff83, d8ae480, 599c45a, 36e9593, c2f3e6a)
+- Perf: chuyển gemini query parsing sang application service layer (a232042)
+- Fix agent multiturn actions + active resource state; ride real routing/lifecycle; active Hanoi service catalogs; MVP tích hợp real four-service local demo (3a30434, d4f0127, 5872295, 6af0c39)
+- Gateway validate agent results, harden public API; ride tracking simulation mượt (46fecbf, ab95357)
+- Thêm mobile React Native; AI log, eval + docs + README; bridge healthcare legacy catalog migration; Gate 2 documentation (4a74bab, 573ae3b, 055aa59, 806e13a, 4657910)
+- Deploy web với staging stack, fix ai-log, bổ sung healthcare 003 migration (c157ad6, 6ceca84, 59993bc)
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Lê Tiến Minh | Rà soát AI Antigravity CLI và chi tiết hóa WORKLOG.md | ✅ Done | Xác nhận hook logging hoạt động trên Windows PowerShell; cập nhật worklog với lịch sử commit, PR và bảng theo dõi | 1.3h |
-| Team P-018 | Kiểm tra git history, PR #4, trạng thái repo và workflow AI log | ✅ Done | Đồng bộ main, develop, test; tạo branch test/verify-ai-log để kiểm thử AI usage logging hook và quy trình PR vào develop | 0.9h |
-| Team P-018 | Bổ sung bằng chứng kỹ thuật cho worklog và AI-log | ✅ Done | Ghi nhận Codex CLI hook, commit kiểm tra AI log, cơ chế archive/restore batch của scripts/submit_log.py và phạm vi test đã collect; không thêm kết quả pass ngoài evidence thực tế | - |
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| Python service test chậm, CPU starvation trên runner | Parallelize bằng matrix strategy, khi cần serialize pipeline (599c45a, 90a31e8) | Pipeline ổn định hơn |
+| Postgres port collision khi chạy nhiều job | Random postgres service ports (c2f3e6a) | Hết xung đột port |
+| Thiếu healthcare 003 migration | Bổ sung migration vào scripts (59993bc) | Migration chạy đủ |
+| Agent multiturn mất active resource state | Repair multiturn actions và active-state flows (3a30434, 0611b22) | Hội thoại nhiều lượt ổn định |
 
-**Tổng kết ngày:** Hoàn tất rà soát worklog, AI logging script/hook, branch test và quy trình PR; phạm vi test được ghi nhận trung thực theo kết quả đã collect.
+### Bài học
+- CI/CD cần tinh chỉnh theo runner thực tế (self-hosted vs ubuntu-latest) để tránh treo và tốn thời gian
+- Sửa domain lifecycle phải đi kèm dữ liệu catalog thật (Hanoi) để demo khớp với thực tế
 
-## 2026-07-25
+### Kế hoạch tuần sau
+- [ ] Upgrade agent: postgres persistence, SSE streaming, Langfuse tracing
+- [ ] Triển khai 2-VPS cho develop/main và fix CI failures
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Tạo branch test, cập nhật worklog và kiểm tra AI usage logging hook | ✅ Done | Tạo branch test từ develop, cập nhật WORKLOG.md, xác minh pre-push hook dùng scripts/submit_log.py và hoàn tất PR #2 vào develop | 1.2h |
-| Trần Văn Tài | Đồng bộ nhánh và cập nhật nhật ký dự án ban đầu | ✅ Done | Merge PR #3/#4 để đồng bộ develop vào main; commit 0ffcd10 bổ sung dữ liệu tuần làm việc trong JOURNAL.md | 0.7h |
-| Team P-018 | Khởi tạo môi trường phát triển, cấu hình .env và cài Git pre-push hook | ✅ Done | Cài .venv và dependencies từ requirements.txt, hoàn tất .env, kích hoạt và xác minh AI log hook | 2.0h |
+---
 
-**Tổng kết ngày:** Hoàn tất thiết lập môi trường phát triển, AI logging pre-push hook và quy trình PR ban đầu giữa các nhánh.
+## Week 5: 2026-08-17 - 2026-08-23
 
-## 2026-07-23
+### Mục tiêu tuần này
+- [x] Upgrade agent: postgres persistence, SSE streaming, few-shot reasoning, Langfuse tracing
+- [x] CI/CD: 2-VPS deployment, buildkit caching, smart deploy
+- [x] Mobile thay mock bằng real API; tích hợp eval tool accuracy với Langfuse
 
-| Member | Task | Status | Output | Time |
-|--------|------|--------|--------|------|
-| Vũ Văn Phong (2A202601647) | Khởi tạo repository dự án từ template AI20K Agent | ✅ Done | Tạo mã nguồn nền với khung LangGraph, FastAPI và Docker | 1.5h |
-| Team P-018 | Thiết lập môi trường, AI Logging Hook, CI/CD và bộ khung tài liệu dự án | ✅ Done | Cài .env, scripts/setup_hooks.ps1, scripts/setup_hooks.sh, GitHub Actions, README.md, ARCHITECTURE.md và docs/ | 2.2h |
+### Đã hoàn thành
+- CI/CD: automated 2-VPS deployment cho develop/main; fix CI failures (healthcare, gateway-postgres, web); no-cache build; buildkit layer caching + automatic migrations (502ac8d, 112eec3, 9b449ec, 9f3bddd)
+- Web Dockerfile: copy pnpm virtual store, full node_modules cho swc helpers, thay pnpm symlink bằng file vật lý (c45a861, 4b77cf6, b7522ef)
+- Agent: Langfuse tracing, conversational flexibility, model-first reasoning, chitchat + safe context switching, postgres persistence + SSE streaming + few-shot, circuit-breaker + fast-fail timeout, harden runtime boundaries/planning handoff, safe tracing + service dispatch (37682ce, b21c2be, 889b87b, 31028f5, 0529892, 58447b1, 4eaf90e, 73e0b12)
+- Mobile: thay mock data bằng real API integration (61ba9c4)
+- Food: conversational checkout address clarification; eval test tool accuracy với Langfuse (97cfe1e, 33ae4f4)
+- Merge Feature/agent qua PR #50 và #51 (cadb86c, 41eb42f)
 
-**Tổng kết ngày:** Khởi tạo hoàn chỉnh dự án AI20K Agent Template, thiết lập môi trường phát triển và AI Logging Hook, đồng thời chuẩn bị CI/CD và tài liệu nền.
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| Web runtime thiếu swc helpers sau build | Copy full node_modules + thay pnpm symlink bằng file vật lý (4b77cf6, b7522ef) | Web chạy đúng trên VPS |
+| CI failures ở nhiều job (healthcare, gateway-postgres, web) | Fix từng job, dùng --no-cache build tránh cache corruption (112eec3, 9b449ec) | CI xanh trở lại |
+| Database pool trong test dễ treo | Circuit-breaker + fast-fail timeout cho db pool (0529892) | Test ổn định hơn |
+| Conflict giữa các nhánh agent khi merge | Merge develop vào agent planning, fix lint và TypeScript (a8ac080, 48514ea, 8faac03) | Agent merged qua PR #50/#51 |
+
+### Bài học
+- Agent mạnh hơn khi có persistence + streaming + telemetry đi kèm với boundary hardening
+- Deploy thật (VPS) phơi ra các lỗi chỉ xuất hiện lúc runtime (swc helpers, cache corruption)
+
+### Kế hoạch tuần sau
+- [ ] Redesign UI assistant chat, dual collapsible sidebars và Google OAuth
+- [ ] Admin console, voice STT/TTS, fix address/geocoding và migration resilience
+
+---
+
+## Week 6: 2026-08-24 - 2026-08-30
+
+### Mục tiêu tuần này
+- [x] Redesign web assistant UI (dual collapsible sidebars, typography Be Vietnam Pro, ride ticket card)
+- [x] Google OAuth 2.0, admin console và voice STT/TTS
+- [x] Fix address/geocoding, ride lifecycle/quote, migration resilience và e2e
+- [x] Reconcile và integrate các fix vào develop (feat/AIcore)
+
+### Đã hoàn thành
+- UI: redesign assistant chat, app shell sidebar, service cards + live activity, 100% typography Be Vietnam Pro, dual collapsible sidebars, notification bell, floating pill edge toggles, composer full width (7f66d1d, e68cb31, 30577f8, 48230a6, 285cfe8)
+- Auth: tích hợp Google OAuth 2.0 ở gateway + web, redirect /app hoặc onboarding; harden session restore và password policy (19380a7, 40bff6e, 0665c9b, b6f4d57)
+- Agent-service: multi-key GEMINI_API_KEYS round-robin + failover; enforce scope boundary, ngăn replay cancelled/failed services (28d4344, 32b3f60, a2568af)
+- Admin: api keys rotation + console management, mask secrets, dashboard live diagnostics, user pagination + disband/reactivation (22ae796, 8fd1a0d, 8b328db, 447c069)
+- Voice: voice input/output STT-TTS qua PR #70/#71/#73, fix multer typing conflict trong CI (5a2e113, c49e9ea, b2666ad, c4bc721)
+- Address: fix geocoding + default delivery address, dedup profile address loading, deterministic address fixtures + autocomplete (73bcc2d, 5cdc231, 5d28a4f, 56aadc6)
+- Ride/Restaurant/Healthcare: reconcile quote snapshot + phantom alembic revision, tracking poll chỉ khi mở map, server-side pagination cho food/restaurant/healthcare, patient profile update/unlink (23fe6e5, 494ca2c, 674bdd6, 99a41af, b7a8b33)
+- Migration/deploy: chạy Alembic từ fresh images, fix migration lock hang + e2e reliability; integrate tooling/auth-profile/product/restaurant/ride, test e2e fixtures, ruff resolve (13689b9, 2ee72ed, 153a26e, ce876d9, 8946350)
+
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| Migration lock hang + e2e không ổn định | Chạy Alembic từ fresh images, tăng resilience CI/CD (13689b9, 2ee72ed) | Migration/e2e ổn định |
+| Phantom alembic revision 20260828_0008 và quote snapshot lệch | Reconcile revision và quote snapshot (494ca2c, 23fe6e5) | Ride migration hợp lệ |
+| Báo giá Ride bị gắn nhãn "Đã tạo chuyến" trước khi xác nhận | Fix label theo trạng thái xác nhận (b3dd17b) | Luồng xác nhận đúng |
+| Address/geocode sai, dropdown địa chỉ bị che | Harden address matching, thêm fixtures deterministic + autocomplete (73bcc2d, 56aadc6) | Địa chỉ và map hiển thị đúng |
+| Voice file upload lỗi typing trong CI | Fix multer typing conflict ở gateway (c4bc721) | CI pipeline pass |
+| Test isolation và lint khi integrate nhiều nhánh | Fix test isolation + ruff resolve (d478f22, 8946350) | Suites pass |
+
+### Bài học
+- UI redesign quy mô lớn cần đi cùng sửa regression (scrollbar, contrast, dropdown bị che)
+- Nên reconcile migration revision định kỳ để tránh phantom revision khi nhiều nhánh cùng tạo migration
+- Integrate fix theo từng phần (tooling/auth-profile/product/restaurant/ride) giúp review dễ và ít conflict
+
+### Kế hoạch tuần sau
+- [ ] Chốt main (PR #77) và upload slide tổng kết
+- [ ] Kiểm thử end-to-end toàn bộ luồng trước buổi demo
+
+---
+
+## Week 7: 2026-08-31 - 2026-09-01
+
+### Mục tiêu tuần này
+- [x] Merge develop vào main (PR #77)
+- [x] Upload slide tổng kết dự án
+
+### Đã hoàn thành
+- Merge PR #77 từ develop vào main (86b34c2)
+- Upload slide tổng kết (a674ce2)
+
+### Khó khăn & Giải pháp
+| Khó khăn | Giải pháp | Kết quả |
+|----------|-----------|---------|
+| | | |
+
+### Bài học
+- Giữ develop luôn xanh và merge main sớm trước deadline demo để slide/tài liệu khớp với code đã chốt
+
+### Kế hoạch tuần sau
+- [ ] Trình bày demo và báo cáo tổng kết dự án
+- [ ] Hoàn thiện hồ sơ nghiệm thu và tài liệu cuối kỳ
+
+---
