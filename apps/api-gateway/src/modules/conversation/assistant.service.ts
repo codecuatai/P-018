@@ -442,11 +442,17 @@ function locationTokens(value: unknown): string[] {
 
 function restaurantSearchLocation(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  // The planner can include the Vietnamese connector that introduces the
-  // party-size clause (for example, "Cầu Giấy cho 5 người") in the location
-  // slot. Keep the consumer-facing spelling, but remove that trailing
-  // connector before the authoritative catalog query and its district guard.
-  const normalized = value.trim().replace(/\s+cho\s*$/iu, '').trim();
+  // Planner output is untrusted semantic input and can occasionally retain
+  // natural-language qualifiers around the actual area. Keep the
+  // consumer-facing spelling, but remove only well-known leading proximity
+  // words and trailing booking/availability clauses before the authoritative
+  // catalog query and its district guard.
+  const normalized = value
+    .trim()
+    .replace(/^\s*(?:(?:ở|tại|gần|quanh)\s+|khu\s+vực\s+)/iu, '')
+    .replace(/\s+(?:mà\s+)?(?:vẫn\s+)?(?:còn|có)\s+(?:bàn|chỗ)(?:\s+(?:trống|không))?.*$/iu, '')
+    .replace(/\s+cho\s*$/iu, '')
+    .trim();
   return normalized || undefined;
 }
 
