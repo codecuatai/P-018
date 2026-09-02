@@ -190,6 +190,87 @@ describe('Unified assistant orchestration', () => {
     expect(confirmed.items[0]).toEqual(expect.objectContaining({ kind: 'ride_quote' }));
   });
 
+  it('normalizes an availability clause leaked into the Restaurant location before a dependent Ride', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã tìm thấy các lựa chọn phù hợp.' }
+        : {
+          plan: {
+            tasks: [
+              {
+                domain: 'restaurant',
+                goal: 'Tìm quán lẩu còn bàn',
+                normalized_request: String(payload.message),
+                extracted_slots: {
+                  location: 'Cầu Giấy mà còn bàn',
+                  cuisine_query: 'lẩu',
+                  start_at: '2099-09-03T20:00:00+07:00',
+                },
+              },
+              {
+                domain: 'ride',
+                goal: 'Đặt xe tới nhà hàng',
+                normalized_request: String(payload.message),
+                extracted_slots: {
+                  pickup_address: 'vị trí hiện tại',
+                  dropoff_address: 'nhà hàng đó',
+                  vehicle_type: 'CAR_4',
+                },
+                depends_on: [0],
+              },
+            ],
+          },
+        }),
+    };
+    const restaurant = {
+      executeTool: jest.fn().mockResolvedValueOnce([
+        {
+          id: 'samcheop-topokki',
+          name: 'Samcheop Topokki',
+          location: 'Phố Trần Quốc Hoàn, Cầu Giấy, Hà Nội',
+          cuisine_type: 'korean',
+        },
+      ]),
+    };
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { prepareDomainConfirmation: jest.fn(), executeDomain: jest.fn(), execute: jest.fn() } as never,
+    );
+
+    const response = await service.chat(
+      user,
+      'Bạn kiểm tra giúp tôi xem 8 giờ tối nay có quán lẩu nào ở gần Cầu Giấy mà còn bàn không, nếu còn thì đặt xe giúp tôi đến đấy.',
+      undefined,
+      'cor-restaurant-location-availability-clause',
+    );
+
+    expect(restaurant.executeTool).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool_name: 'restaurant.search',
+        arguments: { location: 'Cầu Giấy', cuisine_type: 'lẩu', limit: 20 },
+      }),
+      user.sub,
+      'cor-restaurant-location-availability-clause',
+    );
+    expect(response.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'restaurant_options',
+        options: [expect.objectContaining({ name: 'Samcheop Topokki' })],
+      }),
+    ]));
+    expect(response.items).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'task_error', error_code: 'DEPENDENCY_BLOCKED' }),
+    ]));
+    expect(response.actions[0]).toEqual(expect.objectContaining({ kind: 'select_restaurant' }));
+    expect(ride.chat).not.toHaveBeenCalled();
+  });
+
   it('processes only the newly touched task and keeps an unrelated action cohort', async () => {
     let conversation: { conversationId: string; actorId: string; messages: unknown[]; state: Record<string, unknown> } | undefined;
     const store = {
