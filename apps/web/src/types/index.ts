@@ -1,8 +1,10 @@
+export type UserRole = "admin" | "manager" | "provider" | "user" | "customer";
+
 export interface AuthUser {
   id?: string;
   sub: string;
   email: string;
-  role: string;
+  role: UserRole | string;
   full_name?: string;
   phone?: string;
   avatar_url?: string;
@@ -12,7 +14,10 @@ export interface AuthUser {
   status?: string;
   session_id?: string;
   authentication_kind?: "real" | "demo";
+  provider_type?: string;
+  tenant_id?: string;
 }
+
 
 export interface SavedAddress {
   id: string;
@@ -269,7 +274,7 @@ export interface AdminUserRecord {
   email: string;
   full_name: string;
   phone?: string;
-  role: string;
+  role: UserRole | string;
   status: string;
   onboarding_completed_at?: string;
   created_at: string;

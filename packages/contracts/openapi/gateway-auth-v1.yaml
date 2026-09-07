@@ -297,7 +297,7 @@ components:
         email: {type: string, format: email}
         full_name: {type: string}
         phone: {type: string}
-        role: {type: string, enum: [customer, admin]}
+        role: {type: string, enum: [user, customer, manager, provider, admin]}
         status: {type: string, enum: [active, disabled]}
         session_id: {type: string, format: uuid}
         authentication_kind: {type: string, enum: [real, demo]}

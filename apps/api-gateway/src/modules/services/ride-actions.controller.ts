@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Headers, Param, Post, Patch, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Headers, Param, Post, Patch, Req, UseGuards } from '@nestjs/common';
 import { IsString, MinLength, IsEnum } from 'class-validator';
 import { createHash } from 'crypto';
 
@@ -82,6 +82,9 @@ export class RideActionsController {
 
   @Patch(':bookingId/status')
   async updateStatus(@Param('bookingId') bookingId: string, @Body() body: UpdateRideStatusDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    if (request.user.role !== 'provider' && request.user.role !== 'admin' && request.user.role !== 'manager') {
+      throw new ForbiddenException({ code: 'PROVIDER_ROLE_REQUIRED', detail: 'Chỉ đối tác tài xế (Provider) hoặc Quản trị viên mới có quyền cập nhật trạng thái cuốc xe.', retryable: false });
+    }
     const key = requiredKey(idempotencyKey);
     const payload = { status: body.status };
     const updated = await this.ride.updateBookingStatus(request.user.sub, key, {

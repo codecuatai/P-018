@@ -12,6 +12,7 @@ import {
   getAdminUsers,
   getAdminWorkflows,
   updateAdminSupportTicket,
+  updateAdminUserRole,
   updateAdminUserStatus,
 } from "@/lib/api-client";
 import type {
@@ -185,11 +186,33 @@ export function useAdminData() {
     }
   }, []);
 
+  const updateUserRole = useCallback(async (id: string, role: AdminUserRecord["role"]) => {
+    try {
+      const updated = await updateAdminUserRole(id, role);
+      setData((current) => ({
+        ...current,
+        users: {
+          ...current.users,
+          data: current.users.data
+            ? {
+                ...current.users.data,
+                items: current.users.data.items.map((u) => (u.id === id ? { ...u, role: updated.role } : u)),
+              }
+            : current.users.data,
+        },
+      }));
+      return updated;
+    } catch (error) {
+      setData((current) => ({ ...current, users: { ...current.users, error: errorText(error) } }));
+      throw error;
+    }
+  }, []);
+
   useEffect(() => {
     void load();
   }, [load]);
 
-  return { ...data, refreshing, lastCheckedAt, load, fetchUsers, updateUserStatus, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket, addTicketMessage };
+  return { ...data, refreshing, lastCheckedAt, load, fetchUsers, updateUserStatus, updateUserRole, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket, addTicketMessage };
 }
 
 function loadable<T>(result: PromiseSettledResult<T>): Loadable<T> {

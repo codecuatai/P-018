@@ -14,3 +14,15 @@ export class AdminGuard implements CanActivate {
     return true;
   }
 }
+
+@Injectable()
+export class ManagerOrAdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<AdminRequest>();
+    const role = request.user?.role;
+    if ((role !== 'admin' && role !== 'manager') || request.user?.status === 'disabled') {
+      throw new ForbiddenException({ code: 'FORBIDDEN', detail: 'Yêu cầu quyền Quản lý (Manager) hoặc Quản trị viên (Admin).', retryable: false });
+    }
+    return true;
+  }
+}

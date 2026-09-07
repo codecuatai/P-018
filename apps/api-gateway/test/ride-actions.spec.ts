@@ -77,4 +77,30 @@ describe('Ride action gateway cancellation', () => {
     });
     expect(ride.getBooking).not.toHaveBeenCalled();
   });
+
+  describe('Ride status updates', () => {
+    it('rejects status updates from standard user role', async () => {
+      const ride = { updateBookingStatus: jest.fn() };
+      const controller = new RideActionsController(ride as never);
+
+      await expect(controller.updateStatus('booking-1', { status: 'COMPLETED' }, 'key-1', {
+        user: { sub: 'user-1', role: 'user' },
+      } as never)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'PROVIDER_ROLE_REQUIRED' }),
+      });
+      expect(ride.updateBookingStatus).not.toHaveBeenCalled();
+    });
+
+    it('allows status updates from provider role', async () => {
+      const ride = { updateBookingStatus: jest.fn().mockResolvedValue({ id: 'booking-1', status: 'COMPLETED' }) };
+      const controller = new RideActionsController(ride as never);
+
+      const res = await controller.updateStatus('booking-1', { status: 'COMPLETED' }, 'key-1', {
+        user: { sub: 'driver-1', role: 'provider' },
+        correlationId: 'cor-1',
+      } as never);
+      expect((res as any).data.status).toBe('COMPLETED');
+    });
+  });
 });
+

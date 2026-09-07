@@ -92,4 +92,14 @@ describe('AdminController', () => {
       expect((res as any).data.status).toBe('suspended');
     });
   });
+
+  describe('User Role Update', () => {
+    it('updates user role to manager or provider', async () => {
+      mockAdminService.updateUserRole = jest.fn().mockResolvedValue({ id: 'u_1', role: 'manager' });
+      const res = await controller.updateUserRole('u_1', { role: 'manager' }, mockRequest);
+      expect(mockAdminService.updateUserRole).toHaveBeenCalledWith('u_1', 'manager', 'admin_1', 'corr_test_1');
+      expect((res as any).data.role).toBe('manager');
+    });
+  });
 });
+

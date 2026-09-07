@@ -18,6 +18,9 @@ async function main(): Promise<void> {
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error('LOCAL_ADMIN_EMAIL must be a valid email.');
   if (password.length < 8 || password.length > 128) throw new Error('LOCAL_ADMIN_PASSWORD must contain 8-128 characters.');
 
+  const rawRole = (process.env.LOCAL_USER_ROLE || process.env.LOCAL_ADMIN_ROLE || 'admin').trim().toLowerCase();
+  const role = ['admin', 'manager', 'provider', 'user', 'customer'].includes(rawRole) ? rawRole : 'admin';
+
   const now = new Date().toISOString();
   const passwordHash = await argon2.hash(password, ARGON2_OPTIONS);
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
@@ -26,11 +29,11 @@ async function main(): Promise<void> {
     await client.query('BEGIN');
     const user = await client.query<{ id: string }>(
       `INSERT INTO users (id,email,email_normalized,full_name,role,status,created_at,updated_at)
-       VALUES ($1,$2,$2,$3,'admin','active',$4,$4)
+       VALUES ($1,$2,$2,$3,$4,'active',$5,$5)
        ON CONFLICT (email_normalized) DO UPDATE
-       SET full_name=EXCLUDED.full_name, role='admin', status='active', updated_at=EXCLUDED.updated_at
+       SET full_name=EXCLUDED.full_name, role=EXCLUDED.role, status='active', updated_at=EXCLUDED.updated_at
        RETURNING id`,
-      [randomUUID(), email, fullName, now],
+      [randomUUID(), email, fullName, role, now],
     );
     const userId = user.rows[0]?.id;
     if (!userId) throw new Error('Could not provision the local admin account.');

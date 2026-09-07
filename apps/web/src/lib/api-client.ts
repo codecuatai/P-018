@@ -513,6 +513,22 @@ export function updateAdminUserStatus(userId: string, status: "active" | "suspen
   });
 }
 
+export function updateAdminUserRole(userId: string, role: string): Promise<AdminUserRecord> {
+  return request(`/api/v1/admin/users/${encodeURIComponent(userId)}/role`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function updateRideStatus(bookingId: string, status: string): Promise<{ data: unknown; meta: { request_id?: string } }> {
+  return request(`/api/v1/service-actions/ride/${encodeURIComponent(bookingId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  }, {
+    idempotencyKey: createIdempotencyKey(`ride-status-${bookingId}`),
+  });
+}
+
 export function getAdminTransactions(page = 1, pageSize = 20): Promise<{ items: AdminTransactionRecord[]; total?: number; page: number; page_size: number; partial: boolean; unavailable: string[] }> {
   return request(`/api/v1/admin/transactions?page=${page}&page_size=${pageSize}`, { method: "GET" });
 }

@@ -65,6 +65,30 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     }
   }, [pathname, router, status]);
   if (status === "loading" || status === "recoverable" || status === "unauthenticated") return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
-  if (user?.role === "admin" && user.status !== "disabled") return <>{children}</>;
-  return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực này dành cho quản trị viên.</h1><p>Tài khoản hiện tại không có quyền mở trang quản trị.</p></main>;
+  if ((user?.role === "admin" || user?.role === "manager") && user.status !== "disabled") return <>{children}</>;
+  return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực này dành cho quản trị viên & quản lý.</h1><p>Tài khoản hiện tại không có quyền mở trang quản trị.</p></main>;
 }
+
+export function RequireRoles({ roles, children }: { roles: Array<"admin" | "manager" | "provider" | "user" | "customer">; children: ReactNode }) {
+  const { status, user, retrySession } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}&reason=session_expired` : "/?auth=login&reason=session_expired";
+      router.replace(next);
+    }
+  }, [pathname, router, status]);
+  if (status === "loading" || status === "recoverable" || status === "unauthenticated") {
+    return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
+  }
+  const currentRole = user?.role === "customer" ? "user" : user?.role;
+  const isAllowed = user && user.status !== "disabled" && (user.role === "admin" || roles.some((r) => (r === "customer" ? "user" : r) === currentRole));
+  if (isAllowed) return <>{children}</>;
+  return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực yêu cầu quyền đặc biệt.</h1><p>Tài khoản hiện tại không có quyền truy cập vào chức năng này.</p></main>;
+}
+
+export function RequireProvider({ children }: { children: ReactNode }) {
+  return <RequireRoles roles={["provider", "admin"]}>{children}</RequireRoles>;
+}
+

@@ -1,4 +1,4 @@
-export type AuthRole = 'customer' | 'admin';
+export type AuthRole = 'user' | 'customer' | 'manager' | 'provider' | 'admin';
 export type AuthUserStatus = 'active' | 'disabled';
 
 /** Safe authenticated identity passed to Gateway controllers and typed clients. */
@@ -16,6 +16,8 @@ export interface AuthUser {
   status?: AuthUserStatus | string;
   session_id?: string;
   authentication_kind?: 'real' | 'demo';
+  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor' | string;
+  tenant_id?: string;
 }
 
 export interface AuthAccount {

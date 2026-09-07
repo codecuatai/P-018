@@ -37,3 +37,11 @@ Tài liệu này xác định bản đồ phân chia trách nhiệm và ranh gi�
 - Agent chỉ phát sinh các đề xuất công cụ có định kiểu (Typed Tool Proposals). 
 - Gateway tiếp nhận kế hoạch từ Agent, kiểm tra chính sách an toàn, thực thi thông qua In-process Typed Dispatcher và định hình phản hồi cho người dùng.
 - Khi người dùng hỏi chuỗi dịch vụ (ví dụ: *"Tìm quán lẩu ở Cầu Giấy rồi đặt xe đến đó"*), Gateway sẽ gọi Restaurant Service trước để lấy địa chỉ chính xác của nhà hàng đã chọn, sau đó mới dùng địa chỉ đó làm điểm đến cho yêu cầu đặt xe tiếp theo.
+
+#### 5. Mô hình Phân quyền RBAC 4 Vai Trò (Admin, Manager, Provider, User)
+Hệ thống X-One áp dụng mô hình phân quyền dựa trên vai trò (**Role-Based Access Control - RBAC**) tại ranh giới API Gateway (Public edge), kiểm soát quyền hạn truy cập của 4 nhóm đối tượng:
+- **`admin` (Quản trị viên hệ thống)**: Toàn quyền cấu hình hạ tầng, quản lý phân quyền và thay đổi Role người dùng (`PATCH /api/v1/admin/users/:id/role`), quản lý khóa bí mật bên thứ ba (`/api-keys`), cấu hình định giá Token AI, và xem toàn bộ nhật ký kiểm toán hệ thống.
+- **`manager` (Quản lý vận hành & CSKH)**: Toàn quyền truy cập bảng điều khiển vận hành (`Operations Console`), xử lý hàng đợi khiếu nại (`support-tickets`), phản hồi hỗ trợ, theo dõi đánh giá (`feedback`), giám sát trạng thái đơn hàng & đối soát workflow (`workflows`), và khóa/mở khóa tài khoản vi phạm. Không có quyền can thiệp API Keys hoặc cấu hình nhạy cảm.
+- **`provider` (Đối tác cung ứng dịch vụ)**: Truy cập Cổng đối tác (`/app/provider`) theo phân vùng dịch vụ (`provider_type`: `ride_driver`, `restaurant_merchant`, `healthcare_doctor`), được phép cập nhật trạng thái thực thi dịch vụ (ví dụ: `PATCH /api/v1/service-actions/ride/:bookingId/status`).
+- **`user` (Khách hàng tiêu dùng - kế thừa alias `customer`)**: Sử dụng các dịch vụ tìm kiếm, đặt món, đặt xe, đặt bàn, đặt lịch khám thông qua Trợ lý AI Concierge và giao diện trực tiếp. Chỉ truy cập và quản lý dữ liệu cá nhân của chính mình.
+

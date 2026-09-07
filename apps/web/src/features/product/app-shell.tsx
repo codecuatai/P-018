@@ -15,6 +15,7 @@ import {
   MessageSquareText,
   Plus,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Stethoscope,
   Store,
@@ -153,7 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         style={isMobile ? undefined : { gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)` }}
       >
         <aside className="app-sidebar" style={isMobile ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth }}>
-          <Sidebar userEmail={user?.email ?? ""} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} />
+          <Sidebar userEmail={user?.email ?? ""} userRole={user?.role} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} />
           {!sidebarCollapsed && <div className="sidebar-resizer" onMouseDown={(event) => { event.preventDefault(); setIsResizingSidebar(true); }} onDoubleClick={toggleSidebar} title="Kéo để chỉnh kích thước sidebar, nhấp đúp để ẩn" />}
         </aside>
         <button
@@ -170,7 +171,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link className="brand-link" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={27} /><span>X-One</span></Link>
           <div className="app-mobile-actions">
             <NotificationBell />
-            <Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} compact /></SheetContent></Sheet>
+            <Sheet><SheetTrigger asChild><button className="icon-button" type="button" aria-label="Mở điều hướng"><Menu size={20} /></button></SheetTrigger><SheetContent title="Không gian X-One"><Sidebar userEmail={user?.email ?? ""} userRole={user?.role} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} compact /></SheetContent></Sheet>
           </div>
         </header>
         <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">{children}</main>
@@ -179,7 +180,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Sidebar({ userEmail, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
+function Sidebar({ userEmail, userRole, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; userRole?: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
   return <div className="sidebar-content">
     <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới và xóa bớt ngữ cảnh cũ"><Plus size={16} /><span>Đoạn chat mới</span></Link>
     <nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => {
@@ -191,7 +192,7 @@ function Sidebar({ userEmail, pathname, assistantHref, assistantWorkspace, onLog
     })}</nav>
     <RecentConversations pathname={pathname} compact={compact} />
     <div className="sidebar-spacer" />
-    <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} /></div>
+    <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} userRole={userRole} /></div>
   </div>;
 }
 
@@ -201,10 +202,23 @@ const accountMenuItems = [
   { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
 ];
 
-function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>; compact: boolean }) {
+function SidebarUserMenu({ onLogout, compact, userRole }: { onLogout: () => Promise<void>; compact: boolean; userRole?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
-  return <div className="sidebar-user-menu" ref={ref}><button className="sidebar-settings-btn" type="button" aria-label="Cài đặt và tài khoản" onClick={() => setOpen((value) => !value)}><Settings size={16} /></button>{open && <div className="sidebar-user-dropdown" role="menu">{accountMenuItems.map(({ href, icon: Icon, label }) => compact ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link></SheetClose> : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
+
+  const items = [...accountMenuItems];
+  if (userRole === "provider" || userRole === "admin") {
+    items.unshift({ href: "/app/provider", icon: Store, label: "Cổng dịch vụ đối tác" });
+  }
+  if (userRole === "admin" || userRole === "manager") {
+    items.unshift({
+      href: "/app/admin",
+      icon: ShieldAlert,
+      label: userRole === "manager" ? "Vận hành & Hỗ trợ" : "Quản trị hệ thống",
+    });
+  }
+
+  return <div className="sidebar-user-menu" ref={ref}><button className="sidebar-settings-btn" type="button" aria-label="Cài đặt và tài khoản" onClick={() => setOpen((value) => !value)}><Settings size={16} /></button>{open && <div className="sidebar-user-dropdown" role="menu">{items.map(({ href, icon: Icon, label }) => compact ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link></SheetClose> : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
 }
 
 function NotificationBell() {

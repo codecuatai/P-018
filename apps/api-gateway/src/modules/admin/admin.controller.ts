@@ -4,9 +4,9 @@ import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } fr
 
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
-import { AuthUser } from '../auth/auth.types';
+import { AuthRole, AuthUser } from '../auth/auth.types';
 import { SupportPriority, SupportTicketStatus } from '../core/product-ops.store';
-import { AdminGuard } from './admin.guard';
+import { AdminGuard, ManagerOrAdminGuard } from './admin.guard';
 import { AdminService } from './admin.service';
 
 class PageQuery {
@@ -20,6 +20,10 @@ class SupportQuery extends PageQuery {
 
 class UserStatusUpdateDto {
   @IsNotEmpty() @IsIn(['active', 'suspended', 'disabled']) status!: 'active' | 'suspended' | 'disabled';
+}
+
+class UserRoleUpdateDto {
+  @IsNotEmpty() @IsIn(['user', 'customer', 'manager', 'provider', 'admin']) role!: AuthRole;
 }
 
 class SupportUpdateDto {
@@ -67,7 +71,7 @@ class TokenUsageQuery {
 }
 
 @Controller('api/v1/admin')
-@UseGuards(AuthGuard, AdminGuard)
+@UseGuards(AuthGuard, ManagerOrAdminGuard)
 export class AdminController {
   constructor(private readonly admin: AdminService) {}
 
@@ -86,6 +90,16 @@ export class AdminController {
     return this.reply(await this.admin.updateUserStatus(id, body.status, request.user.sub, correlation(request)), request);
   }
 
+  @Patch('users/:id/role')
+  @UseGuards(AdminGuard)
+  async updateUserRole(
+    @Param('id') id: string,
+    @Body() body: UserRoleUpdateDto,
+    @Req() request: AdminRequest,
+  ): Promise<object> {
+    return this.reply(await this.admin.updateUserRole(id, body.role, request.user.sub, correlation(request)), request);
+  }
+
   @Get('users/:id/services')
   async userServices(@Param('id') id: string, @Req() request: AdminRequest): Promise<object> {
     return this.reply(await this.admin.userServiceSummary(id, correlation(request)), request);
@@ -102,17 +116,20 @@ export class AdminController {
   }
 
   @Get('api-keys')
+  @UseGuards(AdminGuard)
   async listApiKeys(@Req() request: AdminRequest): Promise<object> {
     return this.reply(await this.admin.listApiKeys(), request);
   }
 
   @Post('api-keys')
+  @UseGuards(AdminGuard)
   async createApiKey(@Body() body: CreateApiKeyDto, @Req() request: AdminRequest): Promise<object> {
     const key = await this.admin.createApiKey(body, request.user.sub, correlation(request));
     return this.reply(key, request);
   }
 
   @Patch('api-keys/:id/rotate')
+  @UseGuards(AdminGuard)
   async rotateApiKey(@Param('id') id: string, @Body() body: RotateApiKeyDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AdminRequest): Promise<object> {
     if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc khi xoay API key.', retryable: false });
     const key = await this.admin.rotateApiKey(id, body, request.user.sub, correlation(request), idempotencyKey.trim());
@@ -121,6 +138,7 @@ export class AdminController {
   }
 
   @Patch('api-keys/:id/revoke')
+  @UseGuards(AdminGuard)
   async revokeApiKey(@Param('id') id: string, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: AdminRequest): Promise<object> {
     if (!idempotencyKey?.trim()) throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc khi thu hồi API key.', retryable: false });
     const key = await this.admin.revokeApiKey(id, request.user.sub, correlation(request), idempotencyKey.trim());
@@ -129,22 +147,26 @@ export class AdminController {
   }
 
   @Post('api-keys/:id/test')
+  @UseGuards(AdminGuard)
   async testApiKey(@Param('id') id: string, @Req() request: AdminRequest): Promise<object> {
     const result = await this.admin.testApiKey(id, correlation(request));
     return this.reply(result, request);
   }
 
   @Get('logs')
+  @UseGuards(AdminGuard)
   async logs(@Query() query: SystemLogsQuery, @Req() request: AdminRequest): Promise<object> {
     return this.reply(await this.admin.systemLogs(query), request);
   }
 
   @Get('system-logs')
+  @UseGuards(AdminGuard)
   async systemLogs(@Query() query: SystemLogsQuery, @Req() request: AdminRequest): Promise<object> {
     return this.reply(await this.admin.systemLogs(query), request);
   }
 
   @Get('token-usage')
+  @UseGuards(AdminGuard)
   async tokenUsage(@Query() query: TokenUsageQuery, @Req() request: AdminRequest): Promise<object> {
     return this.reply(await this.admin.tokenUsageSummary(query), request);
   }

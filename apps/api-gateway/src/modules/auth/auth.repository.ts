@@ -2,7 +2,15 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient } from 'pg';
 
-import { AdminUserSummary, AuthAccount, AuthSession, AuthUserStatus } from './auth.types';
+import { AdminUserSummary, AuthAccount, AuthRole, AuthSession, AuthUserStatus } from './auth.types';
+
+export function parseAuthRole(role: unknown): AuthRole {
+  const str = String(role ?? '');
+  if (str === 'admin' || str === 'manager' || str === 'provider' || str === 'user' || str === 'customer') {
+    return str as AuthRole;
+  }
+  return 'user';
+}
 
 export class DuplicateAuthEmailError extends Error {
   constructor() {
@@ -43,6 +51,7 @@ export interface AuthRepository {
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }>;
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined>;
   updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined>;
+  updateUserRole(id: string, role: AuthRole): Promise<AuthAccount | undefined>;
   createSession(session: AuthSession): Promise<AuthSession>;
   getSessionByRefreshHash(refreshTokenHash: string): Promise<AuthSession | undefined>;
   rotateRefreshToken(currentHash: string, nextSession: AuthSession, now: string): Promise<RefreshRotation>;
@@ -122,6 +131,14 @@ export class InMemoryAuthRepository implements AuthRepository {
     const account = this.usersById.get(id);
     if (!account) return undefined;
     account.status = status;
+    account.updatedAt = new Date().toISOString();
+    return clone(account);
+  }
+
+  async updateUserRole(id: string, role: AuthRole): Promise<AuthAccount | undefined> {
+    const account = this.usersById.get(id);
+    if (!account) return undefined;
+    account.role = role;
     account.updatedAt = new Date().toISOString();
     return clone(account);
   }
@@ -361,6 +378,11 @@ export class PostgresAuthRepository implements AuthRepository {
     return result.rows[0] ? this.getUserById(id) : undefined;
   }
 
+  async updateUserRole(id: string, role: AuthRole): Promise<AuthAccount | undefined> {
+    const result = await this.pool.query('UPDATE users SET role=$1, updated_at=now() WHERE id=$2 RETURNING id', [role, id]);
+    return result.rows[0] ? this.getUserById(id) : undefined;
+  }
+
   async createSession(session: AuthSession): Promise<AuthSession> {
     const result = await this.pool.query(
       `INSERT INTO user_sessions (id,user_id,refresh_token_hash,token_family_id,expires_at,revoked_at,revoked_reason,consumed_at,replaced_by_session_id,created_at,last_used_at,user_agent,ip_hash)
@@ -547,7 +569,7 @@ export class PostgresAuthRepository implements AuthRepository {
       language: row.language ? String(row.language) : undefined,
       timezone: row.timezone ? String(row.timezone) : undefined,
       onboardingCompletedAt: row.onboarding_completed_at ? new Date(String(row.onboarding_completed_at)).toISOString() : undefined,
-      role: String(row.role) === 'admin' ? 'admin' : 'customer',
+      role: parseAuthRole(row.role),
       status: String(row.status) === 'disabled' ? 'disabled' : 'active',
       passwordHash: String(row.password_hash),
       passwordChangedAt: new Date(String(row.password_changed_at)).toISOString(),
@@ -618,6 +640,7 @@ export class AuthStore implements OnModuleDestroy {
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> { return this.repository.listUsers(page, pageSize); }
   updateProfile(id: string, patch: { fullName?: string; phone?: string; avatarUrl?: string; language?: string; timezone?: string; onboardingCompletedAt?: string }): Promise<AuthAccount | undefined> { return this.repository.updateProfile(id, patch); }
   updateUserStatus(id: string, status: AuthUserStatus): Promise<AuthAccount | undefined> { return this.repository.updateUserStatus(id, status); }
+  updateUserRole(id: string, role: AuthRole): Promise<AuthAccount | undefined> { return this.repository.updateUserRole(id, role); }
   createSession(session: AuthSession): Promise<AuthSession> { return this.repository.createSession(session); }
   getSessionByRefreshHash(hash: string): Promise<AuthSession | undefined> { return this.repository.getSessionByRefreshHash(hash); }
   rotateRefreshToken(hash: string, session: AuthSession, now: string): Promise<RefreshRotation> { return this.repository.rotateRefreshToken(hash, session, now); }
@@ -652,7 +675,7 @@ function adminUserFromRow(row: Record<string, unknown>): AdminUserSummary {
     email: String(row.email),
     full_name: String(row.full_name),
     ...(row.phone ? { phone: String(row.phone) } : {}),
-    role: String(row.role) === 'admin' ? 'admin' : 'customer',
+    role: parseAuthRole(row.role),
     status: String(row.status) === 'disabled' ? 'disabled' : 'active',
     ...(row.onboarding_completed_at ? { onboarding_completed_at: new Date(String(row.onboarding_completed_at)).toISOString() } : {}),
     created_at: new Date(String(row.created_at)).toISOString(),

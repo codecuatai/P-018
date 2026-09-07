@@ -74,7 +74,7 @@ import { SystemLogsSection } from "./sections/system-logs-section";
 import { TokenUsageSection } from "./sections/token-usage-section";
 import { UserServicesSection } from "./sections/user-services-section";
 import { CONSOLIDATED_TABS } from "./admin-tabs";
-import type { Loadable, MainTabId, SubTabId } from "./admin.types";
+import type { Loadable, MainTabId, SubTabId, TabDefinition } from "./admin.types";
 import { useAdminData } from "./hooks/use-admin-data";
 import { useAdminNavigation } from "./hooks/use-admin-navigation";
 
@@ -85,7 +85,7 @@ export function AdminDashboard() {
   const user = auth?.user;
   const logout = auth?.logout ?? (async () => {});
 
-  const { activeMainTab, activeSubTab, switchMainTab, switchSubTab } = useAdminNavigation();
+  const { activeMainTab, activeSubTab, switchMainTab, switchSubTab, tabs } = useAdminNavigation(user?.role);
 
   // Sidebar Layout State
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -107,6 +107,7 @@ export function AdminDashboard() {
     load,
     fetchUsers,
     updateUserStatus,
+    updateUserRole,
     addTicketMessage,
     refreshHealth,
     refreshTransactions,
@@ -224,7 +225,7 @@ export function AdminDashboard() {
     };
   }, [autoPollHealth, refreshHealth]);
 
-  const currentTabDef = CONSOLIDATED_TABS.find((t) => t.id === activeMainTab) || CONSOLIDATED_TABS[0];
+  const currentTabDef = tabs.find((t) => t.id === activeMainTab) || tabs[0];
   const CurrentIcon = currentTabDef.icon;
   const currentSubTabId = activeSubTab[activeMainTab] || currentTabDef.subtabs[0].id;
 
@@ -243,7 +244,7 @@ export function AdminDashboard() {
           </Link>
           <span className="admin-badge-header">
             <ShieldAlert size={13} />
-            <span>Admin Console</span>
+            <span>{user?.role === "manager" ? "Operations Console" : "Admin Console"}</span>
           </span>
         </div>
 
@@ -275,6 +276,8 @@ export function AdminDashboard() {
             searchQuery={sidebarSearch}
             onSearchChange={setSidebarSearch}
             userEmail={user?.email ?? ""}
+            userRole={user?.role}
+            tabs={tabs}
             onLogout={handleLogout}
           />
           {!sidebarCollapsed && (
@@ -322,6 +325,8 @@ export function AdminDashboard() {
                   searchQuery={sidebarSearch}
                   onSearchChange={setSidebarSearch}
                   userEmail={user?.email ?? ""}
+                  userRole={user?.role}
+                  tabs={tabs}
                   onLogout={handleLogout}
                 />
               </SheetContent>
@@ -423,6 +428,8 @@ export function AdminDashboard() {
                       onManageServices={() => switchSubTab("user-services")}
                       onFetchPage={fetchUsers}
                       onUpdateStatus={updateUserStatus}
+                      onUpdateRole={updateUserRole}
+                      canManageRole={user?.role === "admin"}
                       currentUserId={user?.sub || user?.id}
                     />
                   )}
@@ -485,6 +492,8 @@ function AdminSidebarContent({
   searchQuery,
   onSearchChange,
   userEmail,
+  userRole,
+  tabs,
   onLogout,
 }: {
   activeMainTab: MainTabId;
@@ -492,18 +501,21 @@ function AdminSidebarContent({
   searchQuery: string;
   onSearchChange: (query: string) => void;
   userEmail: string;
+  userRole?: string;
+  tabs?: TabDefinition[];
   onLogout: () => Promise<void>;
 }) {
+  const availableTabs = tabs || CONSOLIDATED_TABS;
   const filteredTabs = useMemo(() => {
-    if (!searchQuery.trim()) return CONSOLIDATED_TABS;
+    if (!searchQuery.trim()) return availableTabs;
     const q = searchQuery.toLowerCase();
-    return CONSOLIDATED_TABS.filter(
+    return availableTabs.filter(
       (t) =>
         t.label.toLowerCase().includes(q) ||
         t.subtitle.toLowerCase().includes(q) ||
-        t.subtabs.some((s) => s.label.toLowerCase().includes(q)),
+        t.subtabs.some((s: { label: string }) => s.label.toLowerCase().includes(q)),
     );
-  }, [searchQuery]);
+  }, [availableTabs, searchQuery]);
 
   return (
     <div className="sidebar-content admin-sidebar-inner">
@@ -563,9 +575,9 @@ function AdminSidebarContent({
         <div className="sidebar-identity">
           <span className="identity-initials">{initials(userEmail)}</span>
           <div className="sidebar-identity-copy">
-            <strong>{userEmail || "Quản trị viên"}</strong>
+            <strong>{userEmail || (userRole === "manager" ? "Quản lý vận hành" : "Quản trị viên")}</strong>
             <small>
-              <ShieldCheck size={12} /> Quyền Admin
+              <ShieldCheck size={12} /> {userRole === "manager" ? "Quyền Manager" : "Quyền Admin"}
             </small>
           </div>
         </div>
@@ -945,6 +957,8 @@ function UsersSubtab({
   onManageServices,
   onFetchPage,
   onUpdateStatus,
+  onUpdateRole,
+  canManageRole,
   currentUserId,
 }: {
   users: Loadable<{ items: AdminUserRecord[]; total: number; page: number; page_size: number }>;
@@ -952,6 +966,8 @@ function UsersSubtab({
   onManageServices: () => void;
   onFetchPage?: (page: number, pageSize: number) => Promise<void>;
   onUpdateStatus?: (id: string, status: "active" | "suspended") => Promise<AdminUserRecord>;
+  onUpdateRole?: (id: string, role: AdminUserRecord["role"]) => Promise<AdminUserRecord>;
+  canManageRole?: boolean;
   currentUserId?: string;
 }) {
   const [search, setSearch] = useState("");
@@ -961,6 +977,7 @@ function UsersSubtab({
   const [pageSize, setPageSize] = useState(10);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [roleChangeModal, setRoleChangeModal] = useState<{ user: AdminUserRecord; nextRole: AdminUserRecord["role"] } | null>(null);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -975,7 +992,10 @@ function UsersSubtab({
         u.email.toLowerCase().includes(q) ||
         u.full_name.toLowerCase().includes(q) ||
         u.id.toLowerCase().includes(q);
-      const matchRole = roleFilter === "all" || u.role.toLowerCase() === roleFilter.toLowerCase();
+      const matchRole =
+        roleFilter === "all" ||
+        u.role.toLowerCase() === roleFilter.toLowerCase() ||
+        (roleFilter === "user" && (u.role === "user" || u.role === "customer"));
       const matchStatus = statusFilter === "all" || u.status.toLowerCase() === statusFilter.toLowerCase();
       return matchSearch && matchRole && matchStatus;
     });
@@ -1024,6 +1044,29 @@ function UsersSubtab({
     } catch (error) {
       setActionMessage({
         text: `Không thể cập nhật trạng thái: ${error instanceof Error ? error.message : "Đã có lỗi xảy ra"}`,
+        type: "error",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRoleChangeConfirm = async () => {
+    if (!roleChangeModal || !onUpdateRole) return;
+    const { user: targetUser, nextRole } = roleChangeModal;
+    setActionLoadingId(targetUser.id);
+    setActionMessage(null);
+    try {
+      await onUpdateRole(targetUser.id, nextRole);
+      setActionMessage({
+        text: `Đã cập nhật vai trò tài khoản "${targetUser.full_name || targetUser.email}" thành "${nextRole}".`,
+        type: "success",
+      });
+      setTimeout(() => setActionMessage(null), 4000);
+      setRoleChangeModal(null);
+    } catch (error) {
+      setActionMessage({
+        text: `Không thể cập nhật vai trò: ${error instanceof Error ? error.message : "Đã có lỗi xảy ra"}`,
         type: "error",
       });
     } finally {
@@ -1095,10 +1138,9 @@ function UsersSubtab({
           >
             <option value="all">Tất cả vai trò</option>
             <option value="admin">Admin</option>
-            <option value="customer">Customer</option>
-            <option value="driver">Driver</option>
-            <option value="restaurant_staff">Restaurant Staff</option>
-            <option value="healthcare_staff">Healthcare Staff</option>
+            <option value="manager">Manager</option>
+            <option value="provider">Provider</option>
+            <option value="user">User / Customer</option>
           </select>
 
           <select
@@ -1160,7 +1202,37 @@ function UsersSubtab({
                           </div>
                         </td>
                         <td>
-                          <span className={`admin-role-badge role-${u.role}`}>{u.role}</span>
+                          {canManageRole && currentUserId !== u.id ? (
+                            <select
+                              className="admin-select-filter"
+                              value={u.role === "customer" ? "user" : u.role}
+                              disabled={actionLoadingId === u.id}
+                              onChange={(e) => {
+                                const nextRole = e.target.value as AdminUserRecord["role"];
+                                if (nextRole !== u.role) {
+                                  setRoleChangeModal({ user: u, nextRole });
+                                }
+                              }}
+                              aria-label={`Thay đổi vai trò cho ${u.email}`}
+                              style={{
+                                padding: "2px 8px",
+                                fontSize: "11px",
+                                height: "26px",
+                                borderRadius: "6px",
+                                border: "1px solid #CBD5E1",
+                                background: "#F8FAFC",
+                                fontWeight: 600,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <option value="user">user</option>
+                              <option value="manager">manager</option>
+                              <option value="provider">provider</option>
+                              <option value="admin">admin</option>
+                            </select>
+                          ) : (
+                            <span className={`admin-role-badge role-${u.role}`}>{u.role}</span>
+                          )}
                         </td>
                         <td>
                           <span className={`admin-badge status-${u.status === "active" ? "healthy" : "suspended"}`}>
@@ -1289,6 +1361,79 @@ function UsersSubtab({
           )
         )}
       </PanelState>
+      {/* Role Change Modal */}
+      {roleChangeModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(15, 23, 42, 0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "16px",
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderRadius: "12px",
+              padding: "24px",
+              maxWidth: "440px",
+              width: "100%",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+              <ShieldAlert size={22} style={{ color: "#D97706" }} />
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600, color: "#0F172A" }}>
+                Xác nhận thay đổi vai trò người dùng
+              </h3>
+            </div>
+            <p style={{ fontSize: "13px", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+              Bạn đang chuyển vai trò của tài khoản <strong>{roleChangeModal.user.full_name || roleChangeModal.user.email}</strong> từ{" "}
+              <code style={{ background: "#F1F5F9", padding: "2px 6px", borderRadius: "4px" }}>{roleChangeModal.user.role}</code>{" "}
+              sang{" "}
+              <code style={{ background: "#FEF3C7", color: "#92400E", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>
+                {roleChangeModal.nextRole}
+              </code>.
+            </p>
+            <div
+              style={{
+                fontSize: "12px",
+                color: "#64748B",
+                background: "#F8FAFC",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                marginBottom: "20px",
+                border: "1px solid #E2E8F0",
+              }}
+            >
+              ⚠️ Lưu ý: Khi vai trò thay đổi, tất cả các phiên đăng nhập hiện tại của người dùng này sẽ bị thu hồi tự động để đảm bảo an toàn.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={actionLoadingId === roleChangeModal.user.id}
+                onClick={() => setRoleChangeModal(null)}
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={actionLoadingId === roleChangeModal.user.id}
+                onClick={() => void handleRoleChangeConfirm()}
+              >
+                {actionLoadingId === roleChangeModal.user.id ? <LoaderCircle className="spinner" size={14} /> : null}
+                <span>Xác nhận thay đổi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -1,7 +1,13 @@
 import { randomUUID } from 'crypto';
 import { JwtPayload, sign, verify } from 'jsonwebtoken';
 
-import { AccessTokenClaims, AuthUser } from './auth.types';
+import { AccessTokenClaims, AuthRole, AuthUser } from './auth.types';
+
+export function normalizeAuthRole(role: unknown): AuthRole {
+  if (role === 'admin' || role === 'manager' || role === 'provider' || role === 'user') return role;
+  if (role === 'customer') return 'customer';
+  return 'user';
+}
 
 export function issueAccessToken(
   user: AuthUser,
@@ -13,7 +19,7 @@ export function issueAccessToken(
 ): string {
   return sign({
     sid: sessionId,
-    role: user.role === 'admin' ? 'admin' : 'customer',
+    role: normalizeAuthRole(user.role),
     jti: randomUUID(),
     typ: 'access',
   } satisfies Pick<AccessTokenClaims, 'sid' | 'role' | 'jti' | 'typ'>, secret, {
@@ -36,7 +42,7 @@ export function verifyAccessToken(token: string, secret: string, issuer: string,
       value.typ !== 'access'
       || typeof value.sub !== 'string'
       || typeof value.sid !== 'string'
-      || (value.role !== 'customer' && value.role !== 'admin')
+      || (value.role !== 'customer' && value.role !== 'user' && value.role !== 'manager' && value.role !== 'provider' && value.role !== 'admin')
       || typeof value.iat !== 'number'
       || typeof value.exp !== 'number'
       || typeof value.jti !== 'string'

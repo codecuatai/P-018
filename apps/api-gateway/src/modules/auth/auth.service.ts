@@ -7,7 +7,7 @@ import { isEmail } from 'class-validator';
 import { CoreStore } from '../core/core.module';
 import { issueAccessToken, verifyAccessToken } from './auth.token';
 import { AuthStore, DuplicateAuthEmailError } from './auth.repository';
-import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthSession, AuthSessionSummary, AuthUser, AuthUserStatus, IssuedAuthSession } from './auth.types';
+import { AccessTokenClaims, AdminUserSummary, AuthAccount, AuthRole, AuthSession, AuthSessionSummary, AuthUser, AuthUserStatus, IssuedAuthSession } from './auth.types';
 import { PasswordResetDelivery } from './password-reset.delivery';
 
 const MIN_PASSWORD_LENGTH = 8;
@@ -341,6 +341,14 @@ export class AuthService {
     const updated = await this.store.updateUserStatus(id, status);
     if (status === 'disabled') {
       await this.store.revokeAllUserSessions(id, 'ADMIN_DISBANDED', new Date().toISOString());
+    }
+    return updated;
+  }
+
+  async updateUserRole(id: string, role: AuthRole): Promise<AuthAccount | undefined> {
+    const updated = await this.store.updateUserRole(id, role);
+    if (updated) {
+      await this.store.revokeAllUserSessions(id, 'ROLE_CHANGED', new Date().toISOString());
     }
     return updated;
   }

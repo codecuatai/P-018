@@ -5,7 +5,7 @@ import { performance } from 'perf_hooks';
 
 import { AgentClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { AuthService } from '../auth/auth.service';
-import { AuthUserStatus } from '../auth/auth.types';
+import { AuthRole, AuthUserStatus } from '../auth/auth.types';
 import { CoreStore } from '../core/core.module';
 import { CoreProductOpsStore, SupportTicketStatus } from '../core/product-ops.store';
 import { decryptSecret, encryptSecret } from '../core/crypto.util';
@@ -181,6 +181,26 @@ export class AdminService {
     }
     const targetStatus: AuthUserStatus = (status === 'suspended' || status === 'disabled') ? 'disabled' : 'active';
     const updated = await this.auth.updateUserStatus(id, targetStatus);
+    if (!updated) {
+      throw new NotFoundException({ code: 'USER_NOT_FOUND', detail: 'Không tìm thấy tài khoản người dùng.', retryable: false });
+    }
+    return {
+      id: updated.id,
+      email: updated.email,
+      full_name: updated.fullName,
+      phone: updated.phone,
+      role: updated.role,
+      status: updated.status === 'disabled' ? 'suspended' : 'active',
+      updated_at: updated.updatedAt,
+      created_at: updated.createdAt,
+    } as unknown as JsonObject;
+  }
+
+  async updateUserRole(id: string, role: AuthRole, actorId: string, correlationId: string): Promise<JsonObject> {
+    if (id === actorId && role !== 'admin') {
+      throw new ConflictException({ code: 'CANNOT_DEMOTE_SELF', detail: 'Bạn không thể tự giáng quyền của chính mình.', retryable: false });
+    }
+    const updated = await this.auth.updateUserRole(id, role);
     if (!updated) {
       throw new NotFoundException({ code: 'USER_NOT_FOUND', detail: 'Không tìm thấy tài khoản người dùng.', retryable: false });
     }
