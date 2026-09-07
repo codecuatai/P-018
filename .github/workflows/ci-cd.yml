@@ -26,7 +26,7 @@ env:
 
 jobs:
   detect-changes:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       full: ${{ steps.scope.outputs.full }}
@@ -132,7 +132,7 @@ jobs:
   agent-service:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.agent == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     services:
       postgres:
@@ -171,7 +171,7 @@ jobs:
   ride-service:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.ride == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -191,7 +191,7 @@ jobs:
   restaurant-service:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.restaurant == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -211,7 +211,7 @@ jobs:
   healthcare-service:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.healthcare == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -231,7 +231,7 @@ jobs:
   food-service:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.food == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -251,7 +251,7 @@ jobs:
   gateway:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.gateway == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -276,7 +276,7 @@ jobs:
        github.event_name == 'workflow_dispatch') &&
       (needs.detect-changes.outputs.food == 'true' ||
        needs.detect-changes.outputs.full == 'true')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     services:
       postgres:
@@ -314,7 +314,7 @@ jobs:
        github.event_name == 'workflow_dispatch') &&
       (needs.detect-changes.outputs.gateway == 'true' ||
        needs.detect-changes.outputs.full == 'true')
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 12
     services:
       postgres:
@@ -349,7 +349,7 @@ jobs:
   web:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.web == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -370,7 +370,7 @@ jobs:
   compose:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.compose == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -408,7 +408,7 @@ jobs:
         !contains(needs.*.result, 'failure') &&
         !contains(needs.*.result, 'cancelled')
       }}
-    runs-on: [self-hosted, linux, x64, cohort3]
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: development
     steps:
@@ -491,7 +491,7 @@ jobs:
         !contains(needs.*.result, 'failure') &&
         !contains(needs.*.result, 'cancelled')
       }}
-    runs-on: [self-hosted, linux, x64, cohort3]
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     environment: production
     steps:
