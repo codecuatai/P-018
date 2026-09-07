@@ -1,3 +1,10 @@
+x-logging: &default-logging
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "20m"
+      max-file: "3"
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -27,12 +34,21 @@ services:
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
     restart: unless-stopped
     ports: [ "${POSTGRES_PORT}:5432" ]
     networks: [ xone_internal ]
+    <<: *default-logging
 
   catalog-importer:
     profiles: [ dataops ]
@@ -47,6 +63,7 @@ services:
       - ./data:/workspace/data:ro
       - ./artifacts/dataops:/workspace/artifacts/dataops
     networks: [ xone_internal ]
+    <<: *default-logging
 
   api-gateway:
     build:
@@ -115,12 +132,21 @@ services:
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 512M
+        reservations:
+          memory: 256M
     ports: [ "${API_GATEWAY_PORT}:3000" ]
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   web:
     build:
@@ -143,11 +169,20 @@ services:
         condition: service_healthy
     healthcheck:
       test: [ "CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.8'
+          memory: 512M
+        reservations:
+          memory: 256M
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   agent-service:
     build: ./apps/agent-service
@@ -168,12 +203,21 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          memory: 256M
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   ride-service:
     build: ./services/ride-service
@@ -185,12 +229,21 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 256M
+        reservations:
+          memory: 128M
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   restaurant-service:
     build: ./services/restaurant-service
@@ -201,12 +254,21 @@ services:
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 256M
+        reservations:
+          memory: 128M
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   healthcare-service:
     build: ./services/healthcare-service
@@ -224,12 +286,21 @@ services:
       HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.4'
+          memory: 256M
+        reservations:
+          memory: 128M
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
   food-service:
     build: ./services/food-service
@@ -257,12 +328,21 @@ services:
       FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
     healthcheck:
       test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 10
+      start_period: 25s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 300M
+        reservations:
+          memory: 128M
     depends_on: { postgres: { condition: service_healthy } }
     restart: unless-stopped
     networks: [ xone_internal ]
+    <<: *default-logging
 
 volumes:
   postgres_data:
