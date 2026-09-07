@@ -8,4 +8,4 @@ Script này tạo bổ sung hồ sơ bệnh nhân và liên kết bản thân ch
 sh scripts/database/seed.sh .env
 ```
 
-`seed_medical.py` là fixture phá hủy dữ liệu cũ và không nằm trong quy trình phát triển hay triển khai chính thức. Người dùng đã đăng ký tự tạo và chọn liên kết bệnh nhân thông qua ranh giới API Gateway.
+Fixture phá hủy dữ liệu cũ (`seed_medical.py`) đã được loại bỏ khỏi repository để bảo vệ toàn vẹn dữ liệu. Người dùng đã đăng ký tự tạo và chọn liên kết bệnh nhân thông qua ranh giới API Gateway.

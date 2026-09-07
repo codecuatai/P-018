@@ -1,7 +1,7 @@
 """Additive, deterministic local healthcare catalog seed.
 
-The legacy ``seed_medical.py`` script is intentionally not used by the local
-workflow because it deletes the healthcare catalog and appointment history.
+The legacy destructive seed script was removed from the repository to prevent
+accidental deletion of the healthcare catalog and appointment history.
 This seed only adds missing demo rows and leaves imported rows untouched.
 """
 
