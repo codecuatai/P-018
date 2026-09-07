@@ -683,46 +683,46 @@ function OverviewSummarySubtab({
           <div className="admin-metric-grid">
             <MetricCard
               label="Tài khoản"
-              value={summary.data.counts.total_users}
+              value={summary.data.counts?.total_users ?? 0}
               icon={<Users size={16} />}
               subtext="Đã đăng ký trong Core"
               onClick={() => onNavigateTab("users", "user-list")}
             />
             <MetricCard
               label="Thanh toán"
-              value={summary.data.counts.payments}
+              value={summary.data.counts?.payments ?? 0}
               icon={<CreditCard size={16} />}
               subtext="Giao dịch qua Saga"
               onClick={() => onNavigateTab("transactions", "payments-list")}
             />
             <MetricCard
               label="Hoàn tiền"
-              value={summary.data.counts.refunds}
+              value={summary.data.counts?.refunds ?? 0}
               icon={<RefreshCw size={16} />}
               subtext="Yêu cầu hoàn trả"
               onClick={() => onNavigateTab("transactions", "payments-list")}
             />
             <MetricCard
               label="Support đang mở"
-              value={summary.data.counts.open_support_tickets}
+              value={summary.data.counts?.open_support_tickets ?? 0}
               icon={<LifeBuoy size={16} />}
               subtext="Ticket chờ hỗ trợ"
               onClick={() => onNavigateTab("support", "support-queue")}
             />
             <MetricCard
               label="Workflow lỗi"
-              value={summary.data.counts.failed_workflows}
+              value={summary.data.counts?.failed_workflows ?? 0}
               icon={<AlertTriangle size={16} />}
-              tone={Number(summary.data.counts.failed_workflows) > 0 ? "warning" : "default"}
-              subtext={Number(summary.data.counts.failed_workflows) === 0 ? "100% khớp lệnh" : "Cần đối soát"}
+              tone={Number(summary.data.counts?.failed_workflows ?? 0) > 0 ? "warning" : "default"}
+              subtext={Number(summary.data.counts?.failed_workflows ?? 0) === 0 ? "100% khớp lệnh" : "Cần đối soát"}
               onClick={() => onNavigateTab("transactions", "workflow-reconciliation")}
             />
             <MetricCard
               label="Workflow partial"
-              value={summary.data.counts.partial_success_workflows}
+              value={summary.data.counts?.partial_success_workflows ?? 0}
               icon={<Workflow size={16} />}
-              tone={Number(summary.data.counts.partial_success_workflows) > 0 ? "warning" : "default"}
-              subtext={Number(summary.data.counts.partial_success_workflows) === 0 ? "Không có phân mảnh" : "Cần xử lý"}
+              tone={Number(summary.data.counts?.partial_success_workflows ?? 0) > 0 ? "warning" : "default"}
+              subtext={Number(summary.data.counts?.partial_success_workflows ?? 0) === 0 ? "Không có phân mảnh" : "Cần xử lý"}
               onClick={() => onNavigateTab("transactions", "workflow-reconciliation")}
             />
           </div>
@@ -732,7 +732,7 @@ function OverviewSummarySubtab({
             <div className="admin-card">
               <CardTitle title="Domain summary" note="Dữ liệu từ 4 microservices nghiệp vụ" />
               <div className="admin-domain-list">
-                {summary.data.domains.map((domain) => (
+                {(summary.data.domains ?? []).map((domain) => (
                   <DomainRow
                     key={domain.domain}
                     label={domain.domain}
@@ -761,7 +761,7 @@ function OverviewSummarySubtab({
                   </button>
                 </div>
               </div>
-              <HealthList items={summary.data.health.items} compact />
+              <HealthList items={summary.data.health?.items ?? []} compact />
             </div>
           </div>
         </>
@@ -2004,7 +2004,7 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
           <span style={{ textAlign: "right", minWidth: "60px" }}>Chi tiết</span>
         </div>
       )}
-      {items.map((item) => {
+      {(items ?? []).map((item) => {
         const info = SERVICE_FRIENDLY_NAMES[item.service.toLowerCase()];
         const isExpanded = expandedService === item.service;
         return (

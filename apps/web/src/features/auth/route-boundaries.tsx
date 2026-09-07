@@ -29,7 +29,17 @@ export function GuestOnly({ children }: { children: ReactNode }) {
   const { status, user } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (status === "authenticated") router.replace(user?.role === "admin" ? "/admin" : user?.onboarding_completed_at || user?.authentication_kind === "demo" ? "/app" : "/app/onboarding");
+    if (status === "authenticated") {
+      const dest =
+        user?.role === "admin" || user?.role === "manager"
+          ? "/admin"
+          : user?.role === "provider"
+          ? "/app/provider"
+          : user?.onboarding_completed_at || user?.authentication_kind === "demo"
+          ? "/app"
+          : "/app/onboarding";
+      router.replace(dest);
+    }
   }, [router, status, user]);
   if (status === "loading") return <LoadingState>Đang mở X-One…</LoadingState>;
   if (status === "authenticated") return <LoadingState>Đang chuyển tới không gian của bạn…</LoadingState>;
@@ -41,7 +51,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isOnboarding = pathname === "/app/onboarding";
-  const needsOnboarding = Boolean(user && user.role !== "admin" && !user.onboarding_completed_at && user.authentication_kind !== "demo");
+  const isStaffOrProvider = user?.role === "admin" || user?.role === "manager" || user?.role === "provider";
+  const needsOnboarding = Boolean(user && !isStaffOrProvider && !user.onboarding_completed_at && user.authentication_kind !== "demo");
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;

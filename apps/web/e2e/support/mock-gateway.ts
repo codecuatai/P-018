@@ -4,6 +4,7 @@ type JsonRecord = Record<string, unknown>;
 type MockGatewayOptions = {
   autoLogin?: boolean;
   email?: string;
+  role?: "user" | "customer" | "manager" | "provider" | "admin";
   onboardingComplete?: boolean;
   noDriver?: boolean;
   foreignIds?: string[];
@@ -16,7 +17,7 @@ type MockUser = {
   full_name: string;
   phone: string;
   onboarding_completed_at?: string;
-  role: "user";
+  role: "user" | "customer" | "manager" | "provider" | "admin";
   status: "active";
   authentication_kind: "real";
   language: "vi";
@@ -138,6 +139,65 @@ export class MockGateway {
     if (!actor) return this.fail(route, 401, "AUTHENTICATION_REQUIRED", "Authentication required");
 
     if (path === "/api/v1/auth/me" && method === "GET") return this.ok(route, actor);
+    if (path.startsWith("/api/v1/admin")) {
+      if (actor.role !== "admin" && actor.role !== "manager") {
+        return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      }
+      if (path === "/api/v1/admin/summary" || path === "/api/v1/admin/stats") {
+        return this.ok(route, {
+          counts: {
+            total_users: 4,
+            payments: 12,
+            refunds: 1,
+            open_support_tickets: 0,
+            failed_workflows: 0,
+            partial_success_workflows: 0,
+          },
+          active_users: 128,
+          total_revenue: 12500000,
+          pending_support_tickets: 2,
+          critical_alerts: 0,
+          service_health: "HEALTHY",
+          reservations_today: 14,
+          domains: [
+            { domain: "food", status: "healthy", data: { counts: { orders: 5 } } },
+            { domain: "ride", status: "healthy", data: { counts: { trips: 10 } } },
+            { domain: "restaurant", status: "healthy", data: { counts: { reservations: 2 } } },
+            { domain: "healthcare", status: "healthy", data: { counts: { appointments: 1 } } },
+          ],
+          health: {
+            items: [
+              { service: "gateway-core", status: "healthy", latency_ms: 5, checked_at: isoNow() },
+              { service: "food-service", status: "healthy", latency_ms: 12, checked_at: isoNow() },
+              { service: "ride-service", status: "healthy", latency_ms: 15, checked_at: isoNow() },
+              { service: "restaurant-service", status: "healthy", latency_ms: 8, checked_at: isoNow() },
+              { service: "healthcare-service", status: "healthy", latency_ms: 10, checked_at: isoNow() },
+            ],
+          },
+        });
+      }
+      if (path === "/api/v1/admin/users") {
+        return this.ok(route, {
+          total: 4,
+          page: 1,
+          page_size: 20,
+          items: [
+            { id: "u-1", email: "admin@xone.local", full_name: "Admin User", role: "admin", status: "active", created_at: isoNow() },
+            { id: "u-2", email: "manager@xone.local", full_name: "Manager User", role: "manager", status: "active", created_at: isoNow() },
+            { id: "u-3", email: "provider@xone.local", full_name: "Provider User", role: "provider", status: "active", created_at: isoNow() },
+            { id: "u-4", email: "user@xone.local", full_name: "Standard User", role: "user", status: "active", created_at: isoNow() },
+          ],
+        });
+      }
+      if (path.match(/^\/api\/v1\/admin\/users\/[^/]+\/role$/)) {
+        if (actor.role !== "admin") return this.fail(route, 403, "FORBIDDEN", "Only admin can change role");
+        return this.ok(route, { updated: true });
+      }
+      if (path === "/api/v1/admin/system-health") {
+        return this.ok(route, { items: [{ service: "gateway-core", status: "healthy", latency_ms: 5, checked_at: isoNow() }] });
+      }
+      return this.ok(route, { items: [], total: 0 });
+    }
     if (path === "/api/v1/users/me" && method === "GET") return this.ok(route, actor);
     if (path === "/api/v1/users/me" && method === "PATCH") {
       const body = await this.body(request);
@@ -405,8 +465,8 @@ export class MockGateway {
     return { items, total: items.length, page: 1, page_size: 20, has_more: false, partial: false, unavailable: [] };
   }
 
-  private makeUser(email: string, onboarding: boolean, fullName = "Người dùng E2E"): MockUser {
-    return { sub: `user-${email.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, email, full_name: fullName, phone: "0900000000", ...(onboarding ? { onboarding_completed_at: isoNow() } : {}), role: "user", status: "active", authentication_kind: "real", language: "vi", timezone: "Asia/Ho_Chi_Minh" };
+  private makeUser(email: string, onboarding: boolean, fullName = "Người dùng E2E", role?: "user" | "customer" | "manager" | "provider" | "admin"): MockUser {
+    return { sub: `user-${email.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, email, full_name: fullName, phone: "0900000000", ...(onboarding ? { onboarding_completed_at: isoNow() } : {}), role: role ?? this.options.role ?? "user", status: "active", authentication_kind: "real", language: "vi", timezone: "Asia/Ho_Chi_Minh" };
   }
 
   private makeAddress(id: string, label: string, text: string, isDefault: boolean, source: JsonRecord = {}): JsonRecord { return { id, label, address_text: text, city: "Hồ Chí Minh", latitude: Number(source.latitude ?? 10.7769), longitude: Number(source.longitude ?? 106.7009), provider: "deterministic-fixture", source: "geocoded", is_default: isDefault, created_at: isoNow(), updated_at: isoNow() }; }

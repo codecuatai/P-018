@@ -145,7 +145,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         <div className="app-global-header-right">
           <NotificationBell />
-          <UserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+          <UserMenu userEmail={user?.email ?? ""} userRole={user?.role} onLogout={handleLogout} />
         </div>
       </header>
 
@@ -212,7 +212,7 @@ function SidebarUserMenu({ onLogout, compact, userRole }: { onLogout: () => Prom
   }
   if (userRole === "admin" || userRole === "manager") {
     items.unshift({
-      href: "/app/admin",
+      href: "/admin",
       icon: ShieldAlert,
       label: userRole === "manager" ? "Vận hành & Hỗ trợ" : "Quản trị hệ thống",
     });
@@ -347,10 +347,21 @@ function NotificationBell() {
   );
 }
 
-function UserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => Promise<void> }) {
+function UserMenu({ userEmail, userRole, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
-  return <div className="user-menu-wrap" ref={ref}><button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((value) => !value)}><span className="user-avatar-circle">{initials(userEmail)}</span></button>{open && <div className="user-dropdown" role="menu"><div className="user-dropdown-header"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></div><div className="dropdown-divider" />{accountMenuItems.map(({ href, icon: Icon, label }) => <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
+  const items = [...accountMenuItems];
+  if (userRole === "provider" || userRole === "admin") {
+    items.unshift({ href: "/app/provider", icon: Store, label: "Cổng dịch vụ đối tác" });
+  }
+  if (userRole === "admin" || userRole === "manager") {
+    items.unshift({
+      href: "/admin",
+      icon: ShieldAlert,
+      label: userRole === "manager" ? "Vận hành & Hỗ trợ" : "Quản trị hệ thống",
+    });
+  }
+  return <div className="user-menu-wrap" ref={ref}><button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((value) => !value)}><span className="user-avatar-circle">{initials(userEmail)}</span></button>{open && <div className="user-dropdown" role="menu"><div className="user-dropdown-header"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></div><div className="dropdown-divider" />{items.map(({ href, icon: Icon, label }) => <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
 }
 
 function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick: () => void) {

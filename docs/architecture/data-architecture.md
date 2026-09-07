@@ -32,13 +32,15 @@ flowchart TB
 ### 2. Chi Tiết Dữ Liệu Từng Phân Hệ
 
 #### A. CSDL Core (`xone_core`) — Sở hữu bởi Gateway
-- Quản lý qua các bản migration SQL lũy tiến từ `001` đến `016`:
+- Quản lý qua các bản migration SQL lũy tiến từ `001` đến `018`:
   - `001`–`009`: Bảng `users` (mật khẩu băm bằng Argon2id), `user_sessions` (quản lý token family, refresh token hash SHA-256), `audit_logs`, và các bằng chứng giao dịch sandbox.
   - `010_core_personal_context.sql`: Quản lý hồ sơ người dùng, sổ địa chỉ đã lưu (`saved_addresses`) và metadata hội thoại.
   - `011_core_multi_service_workflows.sql`: Lưu trữ kế hoạch workflow đa dịch vụ, trạng thái phụ thuộc, bù trừ lỗi (compensation) và bằng chứng Idempotency.
   - `012_core_product_ops.sql`: Lưu trữ thông báo (`notifications`), yêu thích (`user_favorites`), đánh giá dịch vụ (`service_feedback`), và phiếu hỗ trợ (`support_tickets`).
   - `013_core_admin_support_idempotency.sql`: Khóa chống lặp khi Admin xử lý ticket.
   - `015_core_api_keys.sql` & `016_core_token_usage.sql`: Quản lý API Key nội bộ và thống kê lượng token AI tiêu thụ.
+  - `017_core_four_roles_rbac.sql`: Mở rộng RBAC 4 tầng (`admin`, `manager`, `provider`, `user`) và bảng `provider_profiles`.
+  - `018_core_seed_four_roles.sql`: Hạt giống tất định 4 tài khoản role chuẩn cho toàn bộ môi trường và production.
 
 #### B. CSDL Ride (`xone_ride`) — Sở hữu bởi Ride Service
 - Quản lý bằng Alembic migrations:

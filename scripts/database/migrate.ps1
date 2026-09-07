@@ -124,6 +124,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/015_core_api_keys.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/016_core_token_usage.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/017_core_four_roles_rbac.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/018_core_seed_four_roles.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile

@@ -20,8 +20,15 @@ export function AuthDialog({ open, mode, nextPath, onOpenChange, onModeChange }:
   const router = useRouter();
   const isLogin = mode === "login";
   const destination = (authenticatedUser: AuthUser) => {
-    if (authenticatedUser.role === "admin" && authenticatedUser.status !== "disabled") return nextPath ?? "/admin";
-    if (!authenticatedUser.onboarding_completed_at && authenticatedUser.authentication_kind !== "demo") return "/app/onboarding";
+    if ((authenticatedUser.role === "admin" || authenticatedUser.role === "manager") && authenticatedUser.status !== "disabled") {
+      return nextPath ?? "/admin";
+    }
+    if (authenticatedUser.role === "provider" && authenticatedUser.status !== "disabled") {
+      return nextPath ?? "/app/provider";
+    }
+    if (!authenticatedUser.onboarding_completed_at && authenticatedUser.authentication_kind !== "demo") {
+      return "/app/onboarding";
+    }
     return nextPath ?? "/app";
   };
 
