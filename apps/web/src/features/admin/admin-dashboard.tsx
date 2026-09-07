@@ -254,11 +254,6 @@ export function AdminDashboard() {
             <span className="admin-header-status-text">gateway-core</span>
           </div>
 
-          <Link href="/app" className="admin-switch-btn" title="Chuyển sang Giao diện Trợ lý người dùng">
-            <Bot size={15} />
-            <span>Không gian User</span>
-          </Link>
-
           <AdminUserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
         </div>
       </header>
@@ -622,16 +617,6 @@ function AdminUserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: (
               <ShieldCheck size={12} /> Phiên Admin bảo mật
             </small>
           </div>
-          <div className="dropdown-divider" />
-          <Link
-            className="dropdown-item"
-            href="/app"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            <Bot size={15} className="dropdown-item-icon" />
-            <span>Không gian User</span>
-          </Link>
           <div className="dropdown-divider" />
           <button
             className="dropdown-item dropdown-item-danger"

@@ -51,17 +51,37 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isOnboarding = pathname === "/app/onboarding";
-  const isStaffOrProvider = user?.role === "admin" || user?.role === "manager" || user?.role === "provider";
-  const needsOnboarding = Boolean(user && !isStaffOrProvider && !user.onboarding_completed_at && user.authentication_kind !== "demo");
+  const isProviderRoute = pathname === "/app/provider" || pathname?.startsWith("/app/provider/");
+  const isStaff = user?.role === "admin" || user?.role === "manager";
+  const isProvider = user?.role === "provider";
+  const needsOnboarding = Boolean(user && !isStaff && !isProvider && !user.onboarding_completed_at && user.authentication_kind !== "demo");
 
   useEffect(() => {
     if (status !== "authenticated" || !user) return;
-    if (needsOnboarding && !isOnboarding) router.replace("/app/onboarding");
-    if (!needsOnboarding && isOnboarding) router.replace("/app");
-  }, [isOnboarding, needsOnboarding, router, status, user]);
+    // Strictly isolate roles: Staff to /admin, Provider to /app/provider
+    if (isStaff && !isProviderRoute) {
+      router.replace("/admin");
+      return;
+    }
+    if (isProvider && !isProviderRoute) {
+      router.replace("/app/provider");
+      return;
+    }
+    if (needsOnboarding && !isOnboarding && !isProviderRoute) {
+      router.replace("/app/onboarding");
+      return;
+    }
+    if (!needsOnboarding && isOnboarding) {
+      router.replace("/app");
+    }
+  }, [isOnboarding, isProvider, isProviderRoute, isStaff, needsOnboarding, router, status, user]);
 
-  if (status === "loading") return <LoadingState>Đang chuẩn bị hồ sơ của bạn…</LoadingState>;
-  if (status === "authenticated" && needsOnboarding !== isOnboarding) return <LoadingState>Đang mở bước thiết lập đầu tiên…</LoadingState>;
+  if (status === "loading") return <LoadingState>Đang chuẩn bị không gian làm việc…</LoadingState>;
+  if (status === "authenticated") {
+    if (isStaff && !isProviderRoute) return <LoadingState>Đang chuyển tới Bảng điều khiển Quản trị…</LoadingState>;
+    if (isProvider && !isProviderRoute) return <LoadingState>Đang chuyển tới Cổng Đối Tác…</LoadingState>;
+    if (needsOnboarding !== isOnboarding && !isProviderRoute) return <LoadingState>Đang mở bước thiết lập đầu tiên…</LoadingState>;
+  }
   return <>{children}</>;
 }
 
@@ -94,12 +114,27 @@ export function RequireRoles({ roles, children }: { roles: Array<"admin" | "mana
     return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
   }
   const currentRole = user?.role === "customer" ? "user" : user?.role;
-  const isAllowed = user && user.status !== "disabled" && (user.role === "admin" || roles.some((r) => (r === "customer" ? "user" : r) === currentRole));
+  const isAllowed = user && user.status !== "disabled" && roles.some((r) => (r === "customer" ? "user" : r) === currentRole);
   if (isAllowed) return <>{children}</>;
   return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực yêu cầu quyền đặc biệt.</h1><p>Tài khoản hiện tại không có quyền truy cập vào chức năng này.</p></main>;
 }
 
 export function RequireProvider({ children }: { children: ReactNode }) {
-  return <RequireRoles roles={["provider", "admin"]}>{children}</RequireRoles>;
+  const { status, user, retrySession } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      const next = pathname && pathname.startsWith("/") ? `/?auth=login&next=${encodeURIComponent(pathname)}&reason=session_expired` : "/?auth=login&reason=session_expired";
+      router.replace(next);
+    }
+  }, [pathname, router, status]);
+  if (status === "loading" || status === "recoverable" || status === "unauthenticated") {
+    return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền đối tác…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
+  }
+  if (user?.role === "provider" && user.status !== "disabled") {
+    return <>{children}</>;
+  }
+  return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực dành riêng cho Đối tác dịch vụ.</h1><p>Tài khoản hiện tại không có quyền mở Cổng dịch vụ đối tác.</p></main>;
 }
 

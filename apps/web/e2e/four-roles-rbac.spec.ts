@@ -15,7 +15,7 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     page.on("console", (msg) => console.log("BROWSER_CONSOLE:", msg.text()));
   });
 
-  test("1. Admin: full access to /admin with 6 tabs and role management modal", async ({ context, page }) => {
+  test("1. Admin: full access to /admin with 6 tabs, role management modal, denied /app/provider", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
       email: "admin@xone.local",
       role: "admin",
@@ -47,9 +47,14 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     await expect(page.getByText(/Xác nhận thay đổi vai trò người dùng/i)).toBeVisible();
     await page.getByRole("button", { name: /Hủy/i }).click();
     await expect(page.getByText(/Xác nhận thay đổi vai trò người dùng/i)).not.toBeVisible();
+
+    // Verify admin cannot access partner provider portal (strict role boundary)
+    await page.goto("/app/provider");
+    await expect(page.getByText(/403 · KHÔNG CÓ QUYỀN TRUY CẬP/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Khu vực dành riêng cho Đối tác dịch vụ/i)).toBeVisible();
   });
 
-  test("2. Manager: operational access to /admin with 4 tabs, sensitive tabs hidden", async ({ context, page }) => {
+  test("2. Manager: operational access to /admin with 4 tabs, sensitive tabs hidden, denied /app/provider", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
       email: "manager@xone.local",
       role: "manager",
@@ -70,9 +75,14 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     // Verify 2 sensitive tabs are hidden for manager
     await expect(page.getByRole("button", { name: /AI Engine & API Keys/i })).not.toBeVisible();
     await expect(page.getByRole("button", { name: /System Logs & Audit/i })).not.toBeVisible();
+
+    // Verify manager cannot access partner provider portal (strict role boundary)
+    await page.goto("/app/provider");
+    await expect(page.getByText(/403 · KHÔNG CÓ QUYỀN TRUY CẬP/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Khu vực dành riêng cho Đối tác dịch vụ/i)).toBeVisible();
   });
 
-  test("3. Provider: full access to /app/provider portal, denied /admin", async ({ context, page }) => {
+  test("3. Provider: full access to /app/provider portal, denied /admin, redirected from /app", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
       email: "provider@xone.local",
       role: "provider",
@@ -83,10 +93,10 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Bảng điều khiển tác vụ dịch vụ đối tác/i)).toBeVisible();
 
-    // Verify domain tabs
-    await expect(page.getByRole("button", { name: /Tài xế di chuyển|Ride Partner/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Quán ăn & Nhà hàng|Food Merchant/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Phòng khám & Bác sĩ|Healthcare/i })).toBeVisible();
+    // Verify domain tabs (sidebar and subtabs)
+    await expect(page.getByRole("button", { name: /Tài xế di chuyển|Ride Partner/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Quán ăn & Nhà hàng|Food Merchant/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Khám bệnh|Healthcare/i }).first()).toBeVisible();
 
     // Verify task workflow progression buttons
     const progressBtn = page.getByRole("button", { name: /Bắt đầu chuyến đi|Đã đến điểm đón|Đã tới đích|Hoàn thành chuyến/i });
@@ -97,6 +107,10 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     await page.goto("/admin");
     await expect(page.getByText(/403 · KHÔNG CÓ QUYỀN TRUY CẬP/i)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Tài khoản hiện tại không có quyền mở trang quản trị/i)).toBeVisible();
+
+    // Verify provider accessing consumer chat /app is automatically routed to /app/provider
+    await page.goto("/app");
+    await expect(page).toHaveURL(/\/app\/provider/, { timeout: 15_000 });
   });
 
   test("4. User: access to /app assistant, denied /admin and /app/provider", async ({ context, page }) => {

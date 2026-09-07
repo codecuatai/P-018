@@ -82,8 +82,8 @@ export class RideActionsController {
 
   @Patch(':bookingId/status')
   async updateStatus(@Param('bookingId') bookingId: string, @Body() body: UpdateRideStatusDto, @Headers('Idempotency-Key') idempotencyKey: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    if (request.user.role !== 'provider' && request.user.role !== 'admin' && request.user.role !== 'manager') {
-      throw new ForbiddenException({ code: 'PROVIDER_ROLE_REQUIRED', detail: 'Chỉ đối tác tài xế (Provider) hoặc Quản trị viên mới có quyền cập nhật trạng thái cuốc xe.', retryable: false });
+    if (request.user.role !== 'provider') {
+      throw new ForbiddenException({ code: 'PROVIDER_ROLE_REQUIRED', detail: 'Chỉ đối tác tài xế (Provider) mới có quyền cập nhật trạng thái cuốc xe.', retryable: false });
     }
     const key = requiredKey(idempotencyKey);
     const payload = { status: body.status };

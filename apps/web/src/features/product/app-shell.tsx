@@ -134,6 +134,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     try { await logout(); } finally { router.replace("/"); }
   }
 
+  if (pathname?.startsWith("/app/provider")) {
+    return <>{children}</>;
+  }
+
   return (
     <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
@@ -202,21 +206,10 @@ const accountMenuItems = [
   { href: "/app/support", icon: LifeBuoy, label: "Hỗ trợ" },
 ];
 
-function SidebarUserMenu({ onLogout, compact, userRole }: { onLogout: () => Promise<void>; compact: boolean; userRole?: string }) {
+function SidebarUserMenu({ onLogout, compact }: { onLogout: () => Promise<void>; compact: boolean; userRole?: string }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
-
   const items = [...accountMenuItems];
-  if (userRole === "provider" || userRole === "admin") {
-    items.unshift({ href: "/app/provider", icon: Store, label: "Cổng dịch vụ đối tác" });
-  }
-  if (userRole === "admin" || userRole === "manager") {
-    items.unshift({
-      href: "/admin",
-      icon: ShieldAlert,
-      label: userRole === "manager" ? "Vận hành & Hỗ trợ" : "Quản trị hệ thống",
-    });
-  }
 
   return <div className="sidebar-user-menu" ref={ref}><button className="sidebar-settings-btn" type="button" aria-label="Cài đặt và tài khoản" onClick={() => setOpen((value) => !value)}><Settings size={16} /></button>{open && <div className="sidebar-user-dropdown" role="menu">{items.map(({ href, icon: Icon, label }) => compact ? <SheetClose asChild key={href}><Link className="dropdown-item" href={href} role="menuitem" onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link></SheetClose> : <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
 }
@@ -347,20 +340,10 @@ function NotificationBell() {
   );
 }
 
-function UserMenu({ userEmail, userRole, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
+function UserMenu({ userEmail, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
   const items = [...accountMenuItems];
-  if (userRole === "provider" || userRole === "admin") {
-    items.unshift({ href: "/app/provider", icon: Store, label: "Cổng dịch vụ đối tác" });
-  }
-  if (userRole === "admin" || userRole === "manager") {
-    items.unshift({
-      href: "/admin",
-      icon: ShieldAlert,
-      label: userRole === "manager" ? "Vận hành & Hỗ trợ" : "Quản trị hệ thống",
-    });
-  }
   return <div className="user-menu-wrap" ref={ref}><button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((value) => !value)}><span className="user-avatar-circle">{initials(userEmail)}</span></button>{open && <div className="user-dropdown" role="menu"><div className="user-dropdown-header"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></div><div className="dropdown-divider" />{items.map(({ href, icon: Icon, label }) => <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
 }
 
