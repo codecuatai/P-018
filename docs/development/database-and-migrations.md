@@ -1,73 +1,43 @@
-# Database and Migrations
+# Cơ Sở Dữ Liệu và Quản Lý Migration (Database and Migrations)
 
-The local PostgreSQL initialization script receives database names, owners and
-passwords through explicit Compose mappings. It creates six logical databases
-with distinct owners and never grants cross-service access.
+Script khởi tạo PostgreSQL cục bộ nhận tên cơ sở dữ liệu, tài khoản sở hữu và mật khẩu thông qua ánh xạ rõ ràng trong Compose. Nó tạo 6 cơ sở dữ liệu logic với các chủ sở hữu tách biệt và tuyệt đối không cấp quyền truy cập chéo giữa các service.
 
-Files in `/docker-entrypoint-initdb.d` run only when PostgreSQL initializes a
-new `postgres_data` volume. Changing `.env` later does not update an existing
-volume. Apply deliberate migrations or role changes for an existing database;
-do not delete a user's volume automatically.
+Các file đặt trong thư mục `/docker-entrypoint-initdb.d` chỉ được thực thi một lần duy nhất khi PostgreSQL khởi tạo volume `postgres_data` mới. Việc thay đổi biến môi trường trong `.env` sau đó sẽ không cập nhật volume đã tồn tại. Đối với cơ sở dữ liệu đã tồn tại, phải áp dụng các migration hoặc thay đổi role một cách chủ động; tuyệt đối không tự ý xóa volume dữ liệu của người dùng.
 
-Core owns additive migrations `001_core_vertical_slice.sql` through
-`016_core_token_usage.sql`. Migration 007 stores safe Assistant
-action receipts for durable same-key replay, migration 008 adds retryable
-failures plus a bounded processing lease, migration 009 adds Core-owned users,
-Argon2id credentials, refresh-session generations and one-time reset-token
-hashes, migration 010 adds profile/saved-address/conversation context, and
-migration 011 persists multi-service workflow plans and step idempotency;
-migration 012 adds Product/Ops records, migration 013 adds idempotency
-evidence for Admin support updates, migration 015 adds encrypted Admin API-key
-metadata, and migration 016 adds Core-owned token-usage aggregates.
-Food owns migrations `001` through `006`; Restaurant owns Alembic revisions
-`0001` through `0005`; Healthcare owns SQL migrations `001`, `002`, `003`,
-`003a`, `004`, and `005`; and
-Ride owns its Alembic revisions through `20260827_0007_quote_snapshot`. The
-`20260827_0007_quote_snapshot` revision adds an immutable JSON quote snapshot to
-`ride_bookings`, allowing history and cancellation responses to retain the
-authoritative route, tariff, amount and currency after the live quote changes.
-Each owner
-controls its own data boundary.
+Dịch vụ Core sở hữu các migration SQL có tính bổ sung (additive) từ `001_core_vertical_slice.sql` đến `016_core_token_usage.sql`. Cụ thể:
+- Migration 007 lưu trữ biên lai hành động Assistant an toàn cho việc replay cùng key bền vững.
+- Migration 008 bổ sung các lỗi có thể thử lại và thời hạn xử lý có giới hạn (bounded processing lease).
+- Migration 009 bổ sung bảng người dùng, mã băm mật khẩu Argon2id, thế hệ phiên refresh và mã băm reset-token dùng một lần do Core sở hữu.
+- Migration 010 bổ sung ngữ cảnh hồ sơ, địa chỉ đã lưu và hội thoại.
+- Migration 011 lưu trữ kế hoạch workflow đa dịch vụ và tính idempotent cho từng bước.
+- Migration 012 bổ sung các bản ghi Product/Ops.
+- Migration 013 bổ sung bằng chứng idempotency cho các cập nhật hỗ trợ của Admin.
+- Migration 015 bổ sung metadata mã hóa cho API key của Admin.
+- Migration 016 lưu trữ dữ liệu tổng hợp mức sử dụng token do Core sở hữu.
 
-## Migration policy
+Dịch vụ Food sở hữu các migration từ `001` đến `006`; Restaurant sở hữu các revision Alembic từ `0001` đến `0005`; Healthcare sở hữu các migration SQL `001`, `002`, `003`, `003a`, `004`, và `005`; Ride sở hữu các revision Alembic đến `20260827_0007_quote_snapshot`. Revision `20260827_0007_quote_snapshot` bổ sung một snapshot JSON báo giá bất biến vào `ride_bookings`, cho phép các phản hồi lịch sử và hủy chuyến giữ nguyên tuyến đường, biểu phí, số tiền và loại tiền tệ có thẩm quyền sau khi báo giá trực tiếp thay đổi. Mỗi chủ sở hữu kiểm soát ranh giới dữ liệu của riêng mình.
 
-Applied migrations are immutable. Never edit, reorder, renumber or silently
-replace a migration that may already have run. Every schema change is additive,
-owned by the service that owns the data, and accompanied by compatibility or
-rollback notes, tests, deterministic seed changes when needed and a
-data-architecture update. Do not use runtime `create_all()`, destructive
-startup migration, cross-service SQL, shared ORM models or volume deletion to
-repair state.
+## Chính Sách Quản Lý Migration (Migration Policy)
 
-| Owner | Current baseline | Next migration convention |
+Các migration đã được áp dụng là **bất biến** (immutable). Tuyệt đối không chỉnh sửa, đổi thứ tự, đánh lại số hiệu hay âm thầm thay thế một migration có thể đã được chạy. Mọi thay đổi schema phải có tính bổ sung (additive), do chính service sở hữu dữ liệu chịu trách nhiệm, và đi kèm ghi chú tương thích hoặc kế hoạch rollback, các bài kiểm thử, thay đổi seed tất định khi cần thiết và cập nhật tài liệu kiến trúc dữ liệu. Không dùng `create_all()` lúc runtime, không chạy migration phá hủy khi khởi động, không viết SQL chéo service, không dùng chung mô hình ORM và không xóa volume để sửa lỗi trạng thái.
+
+| Bên sở hữu | Baseline hiện tại | Quy ước migration tiếp theo |
 | --- | --- | --- |
-| Core/Gateway | `001` through `016` SQL | `017` or greater, additive SQL |
-| Food | `001` through `006` SQL | `007` or greater, additive SQL |
-| Healthcare | `001`, `002`, `003`, `003a`, `004`, `005` SQL | `006` or greater, additive SQL |
-| Restaurant | Alembic `0001` through `0005` | a new Alembic revision from `head` |
-| Ride | Alembic through `20260827_0007_quote_snapshot` | a new Alembic revision from `head` |
+| **Core / Gateway** | `001` đến `016` (SQL thuần) | `017` trở lên, SQL bổ sung |
+| **Food** | `001` đến `006` (SQL thuần) | `007` trở lên, SQL bổ sung |
+| **Healthcare** | `001`, `002`, `003`, `003a`, `004`, `005` (SQL thuần) | `006` trở lên, SQL bổ sung |
+| **Restaurant** | Alembic `0001` đến `0005` | Tạo revision Alembic mới từ `head` |
+| **Ride** | Alembic đến `20260827_0007_quote_snapshot` | Tạo revision Alembic mới từ `head` |
 
-In development, Gateway runs the owned Core SQL migrations during bootstrap when
-`APP_ENV=development` and `CORE_AUTO_MIGRATE=true`; Compose defaults this flag to
-true. The migration runner takes a PostgreSQL advisory lock, records applied
-filenames in `core_migrations_log`, and fails startup when the packaged migration
-directory is missing or empty. Production must explicitly keep this flag false
-and use its deployment migration step instead.
+Trong môi trường phát triển, Gateway tự động chạy các migration SQL của Core khi khởi động nếu `APP_ENV=development` và `CORE_AUTO_MIGRATE=true`; Compose mặc định bật cờ này. Trình chạy migration sử dụng PostgreSQL advisory lock, ghi lại tên các tệp đã áp dụng vào bảng `core_migrations_log`, và sẽ báo lỗi dừng khởi động nếu thư mục migration bị thiếu hoặc rỗng. Trên môi trường production, bắt buộc phải tắt cờ này (`CORE_AUTO_MIGRATE=false`) và chạy migration thông qua bước triển khai độc lập.
 
-Run `python scripts/check-migration-parity.py` after changing migration helpers.
-The full launcher runs `scripts/migrate.ps1 .env` or `scripts/migrate.sh .env`
-after Compose health checks and can run the same additive migrations repeatedly.
-Alembic migrations run in one-shot containers created from the current service
-images, so a deployment never executes a newly checked-in migration inside an
-older long-lived service container.
-Ride also contains a guarded compatibility path for databases that recorded
-the earlier short-lived `0007` revision; it verifies the quote snapshot schema
-before reconciling the Alembic version marker.
-It stops on the first owner/path failure and never deletes a volume. Seeds are
-not part of a normal restart: pass `-SeedDemo` / `--seed-demo` explicitly.
+Chạy lệnh kiểm tra tính tương đồng migration:
+```bash
+python scripts/database/check-migration-parity.py
+```
 
-Core application tests use in-memory repositories for deterministic unit speed.
-Explicit Core and Auth PostgreSQL persistence tests use
-`CORE_TEST_DATABASE_URL`; Auth additionally requires the explicit test-only
-`AUTH_TEST_DATABASE_URL` seam. Healthcare slot-reuse checks use
-`HEALTHCARE_TEST_DATABASE_URL` with a disposable target.
+Bộ khởi chạy đầy đủ thực thi `scripts/migrate.ps1 .env` (hoặc `scripts/migrate.sh .env`) sau khi các container Compose đạt trạng thái healthy và có thể chạy lặp lại các migration bổ sung một cách an toàn (idempotent). Các migration Alembic chạy trong container tạm thời (one-shot) được tạo từ chính image mới của service, do đó quá trình triển khai không bao giờ chạy migration mới bên trong container service cũ đang chạy.
+
+Ride cũng chứa đường dẫn tương thích an toàn cho các cơ sở dữ liệu đã từng ghi nhận revision `0007` ngắn hạn trước đây; nó sẽ kiểm tra schema của quote snapshot trước khi điều chỉnh lại đánh dấu phiên bản Alembic. Quy trình sẽ dừng lại ngay khi phát hiện lỗi ở bất kỳ bước nào và không bao giờ xóa volume. Dữ liệu seed không nằm trong quy trình restart thông thường: hãy truyền cờ `-SeedDemo` / `--seed-demo` một cách tường minh khi cần nạp dữ liệu.
+
+Các bài unit test ứng dụng Core sử dụng repository in-memory để đảm bảo tốc độ và tính tất định. Các bài test kiểm tra việc lưu trữ thực tế trên PostgreSQL của Core và Auth sử dụng `CORE_TEST_DATABASE_URL`; Auth yêu cầu thêm `AUTH_TEST_DATABASE_URL` cho kiểm thử cô lập. Kiểm tra tái sử dụng khung giờ (slot) của Healthcare sử dụng `HEALTHCARE_TEST_DATABASE_URL` với mục tiêu dùng một lần.

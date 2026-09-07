@@ -1,15 +1,15 @@
-# Ride migrations
+# Quản Lý Migration Dịch Vụ Ride (Ride Migrations)
 
-Ride owns these revisions and applies them only to `xone_ride`.
+Dịch vụ Ride sở hữu các revision Alembic và chỉ áp dụng chúng lên cơ sở dữ liệu `xone_ride`.
 
-From the Ride service directory, run `alembic upgrade head`. The first
-revision creates quote, booking, one-time confirmation-consumption, and
-idempotency tables. Later revisions add route/driver data and the explicit
-quote and booking lifecycle. Runtime startup never creates or mutates schema.
-Revision `20260816_0006` additively binds `passenger_count` and the capacity
-policy version to quote and booking snapshots. Existing rows remain compatible
-as one-passenger transactions.
-An earlier deployment briefly recorded the quote snapshot migration as the
-short revision `0007`; `env.py` reconciles that legacy marker only after
-checking the `ride_bookings.quote_snapshot` column, without changing any
-applied migration file or deleting data.
+Từ thư mục `services/ride-service/`, chạy lệnh:
+```bash
+alembic upgrade head
+```
+
+- Revision ban đầu: Tạo các bảng báo giá (quote), đặt chuyến (booking), tiêu thụ xác nhận một lần, và bảng kiểm tra tính idempotent.
+- Các revision tiếp theo: Bổ sung dữ liệu lộ trình/tài xế, vòng đời rõ ràng của báo giá và chuyến xe.
+- Revision `20260816_0006`: Ràng buộc bổ sung số lượng hành khách (`passenger_count`) và phiên bản chính sách sức chứa vào snapshot báo giá và chuyến đi.
+- Revision `20260827_0007_quote_snapshot`: Bổ sung snapshot JSON báo giá bất biến vào `ride_bookings`.
+
+Quá trình khởi động ứng dụng tuyệt đối không tự ý tạo hay sửa đổi cấu trúc bảng cơ sở dữ liệu.

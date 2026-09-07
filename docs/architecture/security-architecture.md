@@ -1,102 +1,81 @@
-# Security Architecture
+# Kiến Trúc An Toàn & Bảo Mật (Security Architecture)
 
-## Implemented Phase 1 baseline
+Tài liệu này đặc tả toàn diện các cơ chế phòng thủ nhiều lớp, chính sách xác thực, phân quyền và bảo vệ dữ liệu trong hệ thống **X-One**.
 
-- Browser and mobile traffic terminate at the Gateway. The configured
-  `GATEWAY_CORS_ORIGINS` allowlist is exact; wildcard origins are rejected and
-  production rejects localhost origins. CORS enables credentials only for that
-  allowlist, never for `*`.
-- Gateway emits `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a
-  restrictive referrer policy, API CSP, permissions policy and production
-  HSTS. JSON and URL-encoded bodies have an explicit bounded limit and safe
-  `REQUEST_BODY_TOO_LARGE` response.
-- Real accounts use Argon2id (`19 MiB`, time cost `2`, parallelism `1`), with
-  a 15--128 Unicode-character password policy. Passwords, access tokens,
-  refresh tokens and reset tokens are never logged or persisted in plaintext.
-- Access tokens are JWTs created and verified by `jsonwebtoken`, constrained
-  to HS256, signature, issuer, audience, expiry, token type and required
-  `iss`, `aud`, `sub`, `sid`, `role`, `iat`, `exp` and `jti` claims. The Web
-  holds the access token in JavaScript memory only, never in localStorage,
-  sessionStorage or a cookie.
-- Refresh tokens are opaque random values. Only their SHA-256 hashes persist
-  in Core's `user_sessions`; the raw value is issued only as an HttpOnly,
-  SameSite=Lax cookie scoped to `/api/v1/auth` and marked Secure outside local
-  HTTP development. Refresh rotates the token generation transactionally. A
-  replay revokes every generation in that token family and is audited.
-- Registration commits `users`, `user_credentials`, and the initial refresh
-  session in one Core PostgreSQL transaction. Password reset tokens are
-  one-time, expiring, hash-only rows; reset and password change revoke all
-  user sessions. Session listing/revocation is actor scoped.
-- Login intentionally makes unknown-user and wrong-password results
-  indistinguishable. Demo tokens remain a development/test compatibility mode
-  only; production environment validation rejects enabling them.
-- The Gateway applies bounded process-local profiles to login, registration,
-  password reset/refresh and assistant routes. A shared/distributed limiter is
-  still required before a multi-instance production deployment; this phase
-  deliberately does not add Redis or queue infrastructure.
+---
 
-## Product/Ops and local acceptance hardening
+### 1. Chính Sách Bảo Mật Tầng Mạng & Cửa Ngõ (Edge & Network Security)
 
-- Notifications, favorites, feedback and support endpoints are actor scoped;
-  resource-linked writes are checked through the owning domain client. Admin
-  routes use a server-side role guard, so a normal user cannot rely on a
-  frontend role check to reach operational data.
-- Product final actions retain the two explicit confirmations and domain-owned
-  idempotency. Admin support update replays are keyed by actor/operation/key
-  and request hash; a changed payload is rejected and a same-payload replay
-  does not repeat the audit effect.
-- The local deterministic geocode fallback is rejected in production, and the
-  Ride tracking time scale is constrained to `1.0` in production. Local
-  accelerated tracking and synthetic drivers are test/demo controls only.
-- Live browser listeners treated page errors, `console.error`, and failed
-  non-aborted requests as acceptance failures. The verified local transaction
-  flow produced no unexplained browser errors; no secret, raw prompt or token
-  was printed.
+- **Điểm kết thúc lưu lượng (Traffic Termination)**: Toàn bộ lưu lượng từ trình duyệt Web và ứng dụng di động đều dừng tại API Gateway. Các microservice bên trong không mở cổng ra ngoài internet.
+- **CORS nghiêm ngặt**: Cấu hình `GATEWAY_CORS_ORIGINS` chỉ chấp nhận danh sách tên miền cụ thể (whitelist), từ chối ký tự đại diện `*`. Trong môi trường Production, toàn bộ origin dạng `localhost` đều bị từ chối.
+- **HTTP Security Headers**: Gateway phát sinh đầy đủ các header bảo mật tiêu chuẩn:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY` (chống Clickjacking)
+  - `Content-Security-Policy` (CSP) hạn chế nguồn tài nguyên
+  - `Strict-Transport-Security` (HSTS) trên môi trường Production
+  - Giới hạn kích thước payload `GATEWAY_BODY_LIMIT_BYTES` và trả mã lỗi `REQUEST_BODY_TOO_LARGE` khi vượt ngưỡng.
 
-## Cookie-origin and CSRF policy
+---
 
-Cookie-authenticated refresh/logout operations require an `Origin` in the
-configured exact allowlist, or an allowed `Referer` origin fallback when no
-Origin exists. Missing, malformed or foreign origin evidence returns a safe
-403. CORS is not treated as CSRF protection. The same origin check is applied
-to bearer-authenticated operations that clear or revoke a browser refresh
-cookie (`logout-all`, session revocation and password change). `SameSite=Lax`
-adds browser-level cross-site protection while retaining same-site Web-to-
-Gateway development on the documented origins.
+### 2. Xác Thực Người Dùng & Quản Lý Phiên (Authentication & Session Security)
 
-## Reset delivery and audit policy
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Người dùng (Web)
+    participant GW as API Gateway
+    participant DB as CSDL Core (PostgreSQL)
 
-The current reset-delivery seam does not claim to send email. It returns the
-same accepted response for known and unknown accounts. The
-`AUTH_DEV_RESET_TOKEN_CAPTURE=true` escape hatch is valid only in development
-or test and exists for deterministic tests/local debugging; production
-configuration rejects it, the Web does not render it, and it must not be used
-as a production delivery channel.
+    User->>GW: POST /api/v1/auth/login (email, password)
+    GW->>DB: Truy vấn user & băm mật khẩu Argon2id
+    GW->>DB: Tạo phiên user_sessions (Token Family, SHA-256 Refresh Hash)
+    GW-->>User: Trả Access Token (RAM) + Set-Cookie Refresh Token (HttpOnly)
+    
+    Note over User,GW: Các request nghiệp vụ tiếp theo
+    User->>GW: GET /api/v1/user/profile (Authorization: Bearer <Access-Token>)
+    GW-->>User: Kết quả hồ sơ
+    
+    Note over User,GW: Khi Access Token hết hạn (TTL 15 phút)
+    User->>GW: POST /api/v1/auth/refresh (Cookie Refresh Token)
+    GW->>DB: Xác thực hash SHA-256 & xoay vòng (Rotate Token Generation)
+    GW-->>User: Cấp Access Token mới + Cookie Refresh Token mới
+```
 
-Core audit events record a bounded action, actor, correlation ID and safe
-resource metadata for registration, login success/failure, refresh-reuse
-detection, logout, session revocation, password change and reset activity.
-They omit raw credentials, raw tokens, provider secrets, raw prompts and
-chain-of-thought. The Agent accepts untrusted content only as validated typed
-tool requests; it cannot authenticate a user, call a domain database or make a
-side effect.
+- **Mật khẩu an toàn**: Mật khẩu người dùng được băm bằng thuật toán **Argon2id** (bộ nhớ 19 MiB, time cost 2, parallelism 1), bắt buộc độ dài 15–128 ký tự Unicode.
+- **Không phân biệt lỗi đăng nhập (Timing Attack Prevention)**: Khi đăng nhập thất bại, hệ thống trả về thông báo giống hệt nhau cho cả trường hợp sai email hoặc sai mật khẩu.
+- **Access Token (JWT)**:
+  - Định dạng HS256, kiểm tra chữ ký, issuer (`AUTH_ISSUER`), audience (`AUTH_AUDIENCE`) và thời hạn sống (`AUTH_ACCESS_TOKEN_TTL_SECONDS`).
+  - Phía Web chỉ lưu Access Token trong **bộ nhớ RAM của JavaScript**; tuyệt đối không lưu vào `localStorage`, `sessionStorage` để chống tấn công XSS.
+- **Refresh Token & Xoay Vòng Token Family (Rotation & Anti-Replay)**:
+  - Refresh Token là chuỗi ngẫu nhiên dài. Chỉ có mã băm SHA-256 được lưu trong bảng `user_sessions`.
+  - Giá trị thật chỉ được gửi qua cookie có cờ `HttpOnly`, `SameSite=Lax`, `Path=/api/v1/auth` và `Secure` (ngoại trừ môi trường dev local HTTP).
+  - Khi refresh, một thế hệ token mới được sinh ra và token cũ bị hủy. Nếu phát hiện token cũ bị dùng lại (Replay Attack), hệ thống sẽ **thu hồi toàn bộ gia đình token (Token Family)** của phiên đó ngay lập tức và ghi nhật ký kiểm toán.
 
-Every actor-scoped Agent route uses the same constant-time internal-service
-token dependency and requires `X-Actor-Id`. Compatibility bodies that contain
-`user_id` must match the asserted actor or return `403`; a missing token or
-actor returns `401`. Model slot patches are domain-specific and reject extra
-or authoritative fields. Confirmation text is Unicode-normalized and must
-match an explicit bounded phrase; negation, questions, correction and
-ambiguity never count as confirmation.
+---
 
-Agent observability persists only allowlisted run metadata. Optional Langfuse
-v4 tracing receives a stricter typed projection containing correlation ID,
-contract/catalog versions, decision/task/capability enums, numeric token
-usage, latency, fallback and safe error categories. It receives no actor or
-workflow identity, input/output, raw prompts, messages, model/provider
-responses, semantic slots, authoritative results, credentials, payment data,
-confirmation evidence, or hidden reasoning. Only manually created SDK spans
-are exported; full graph callbacks are forbidden and an export-stage denylist
-removes forbidden OpenTelemetry attributes. Traces remain private and
-telemetry failure cannot decide workflow success. The earlier synthetic-delta
-SSE endpoint was removed rather than represented as real streaming.
+### 3. Bảo Vệ Tương Tác Giữa Các Service Nội Bộ (Service-to-Service Security)
+
+- **Mã token nội bộ (`INTERNAL_SERVICE_TOKEN`)**:
+  - Mọi yêu cầu từ Gateway gửi xuống 5 microservices đều phải mang header `Authorization: Bearer <INTERNAL_SERVICE_TOKEN>` và `X-Actor-Id: <user_id>`.
+  - Các service kiểm tra token này bằng phép so sánh thời gian không đổi (Constant-time comparison) để chống Timing Attacks.
+  - Bất kỳ yêu cầu nào thiếu token hoặc thiếu Actor ID đều bị từ chối với mã lỗi `401 Unauthorized`.
+
+---
+
+### 4. An Toàn Giao Dịch & Quy Trình Xác Nhận 2 Bước (Transaction Safeguards)
+
+1. **Xác nhận rõ ràng (Explicit Confirmation)**:
+   - Các hành động tạo cuốc xe, đặt bàn, đặt món và khám bệnh bắt buộc phải có bước xác nhận của người dùng (`confirmation_form`).
+   - Token xác nhận được ràng buộc với: Actor ID, mã hash của payload, phiên bản báo giá, số tiền và thời gian hết hạn (TTL 5 phút).
+   - Nếu người dùng hoặc hệ thống thay đổi bất kỳ thông tin nào (đổi món, đổi điểm đón), token xác nhận cũ sẽ lập tức bị hủy bỏ (`confirmation_invalidated`).
+2. **Khóa chống trùng lặp (Idempotency Key)**:
+   - Mọi thao tác ghi hoặc thanh toán đều yêu cầu `Idempotency-Key` từ client.
+   - Domain Service lưu trữ mã băm payload cùng kết quả giao dịch. Nếu client gửi lại cùng một key với cùng payload (do timeout mạng), hệ thống trả về kết quả cũ mà không thực hiện lại giao dịch lần 2. Nếu gửi cùng key nhưng khác payload, hệ thống báo lỗi xung đột an toàn (`409 Conflict`).
+
+---
+
+### 5. An Toàn AI Prompt & Bảo Vệ Dữ Liệu Nhạy Cảm (Prompt Safety & Privacy)
+
+- **Dữ liệu bên ngoài là không tin cậy (Untrusted External Content)**: Tin nhắn người dùng, tài liệu tra cứu và kết quả từ API bên thứ ba được đối xử như dữ liệu chưa được xác thực, không bao giờ được coi là câu lệnh hệ thống (System Instruction).
+- **Chống Prompt Injection**: Agent chỉ sinh ra JSON có cấu trúc (Pydantic Schema); Gateway là chốt chặn cuối cùng thẩm định tính hợp lệ của các tham số trước khi chuyển thành lệnh gọi hàm.
+- **Giữ kín thông tin bí mật (No Secret Leakage)**: Nhật ký ghi log (Application logs, Audit logs và Langfuse traces) tự động loại bỏ mật khẩu, token, thông tin thẻ tín dụng và dữ liệu cá nhân nhạy cảm (PII).

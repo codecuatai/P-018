@@ -1,20 +1,15 @@
-# Testing Strategy
+# Chiến Lược Kiểm Thử (Testing Strategy)
 
-Tests prove one behaviour at the boundary that owns it. Unit tests use
-deterministic adapters and fake LLMs; they do not call Gemini, a live payment
-provider or a live domain system. Contract tests protect public envelopes and
-typed service boundaries. PostgreSQL tests run only against an explicitly
-provided disposable target. Browser acceptance is recorded only after an
-actual browser run.
+Các bài kiểm thử chứng minh một hành vi duy nhất tại ranh giới sở hữu nó. Unit test sử dụng các adapter tất định và LLM giả lập; không bao giờ gọi trực tiếp Gemini, nhà cung cấp thanh toán thực tế hay hệ thống domain thực tế. Contract test bảo vệ các envelope công khai và ranh giới service dạng typed. Các bài test PostgreSQL chỉ chạy trên cơ sở dữ liệu dùng một lần (disposable target) được cấp phát riêng. Nghiệm thu trình duyệt chỉ được công nhận sau một lượt chạy trình duyệt thực tế.
 
-## Phase 2–9 required checks
+## Các Kiểm Tra Bắt Buộc Trước Khi Bàn Giao
 
-Run the changed-scope checks before handoff:
+Chạy các bài kiểm tra phạm vi thay đổi trước khi bàn giao:
 
 ```powershell
-python scripts/validate-env-config.py
+python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
-python scripts/check-migration-parity.py
+python scripts/database/check-migration-parity.py
 
 corepack pnpm --dir apps/api-gateway install --frozen-lockfile
 corepack pnpm --dir apps/api-gateway run lint
@@ -28,15 +23,9 @@ corepack pnpm --dir apps/web test
 corepack pnpm --dir apps/web run build
 ```
 
-The Web suite covers memory-only access-token behaviour, one shared refresh
-for concurrent protected requests, auth-provider restoration/failure,
-registration validation and one reduced-motion hero path. Gateway unit/HTTP
-tests cover Argon2id policy, same-safe login failures, maintained-library JWT
-claims/algorithm restriction, cookie attributes, origin validation, rotation,
-family-reuse invalidation, actor-scoped sessions, password change and reset.
+Bộ kiểm thử của Web bao phủ: hành vi lưu access-token chỉ trên RAM, một refresh token dùng chung duy nhất cho các request được bảo vệ đồng thời, khôi phục/thất bại của auth-provider, validate dữ liệu đăng ký và hiển thị giao diện khi người dùng giảm chuyển động (reduced-motion). Các bài unit/HTTP test của Gateway bao phủ: chính sách Argon2id, thất bại đăng nhập an toàn (chống dò tài khoản), giới hạn thuật toán và claim JWT từ thư viện chuẩn, thuộc tính cookie, kiểm tra origin, xoay vòng token, thu hồi toàn bộ nhóm phiên khi phát hiện dùng lại, phiên làm việc phân vùng theo actor, đổi và đặt lại mật khẩu.
 
-For Core/Auth persistence, provide the same disposable PostgreSQL URL to both
-variables:
+Đối với việc kiểm tra lưu trữ thực tế của Core/Auth trên PostgreSQL, hãy cung cấp cùng một URL database dùng một lần cho cả hai biến:
 
 ```powershell
 $env:CORE_TEST_DATABASE_URL = 'postgresql://.../xone_core'
@@ -44,144 +33,54 @@ $env:AUTH_TEST_DATABASE_URL = $env:CORE_TEST_DATABASE_URL
 corepack pnpm --dir apps/api-gateway test -- --runInBand test/core.postgres.integration.spec.ts test/auth.postgres.integration.spec.ts
 ```
 
-The Auth PostgreSQL test applies the Core migrations it needs through `011_core_multi_service_workflows.sql`;
-then proves the atomic registration rows, Argon2id/hash-only storage, rotation
-replay revocation, one-time reset hash and session invalidation. It must never
-target a user-owned volume.
+Bài test Auth PostgreSQL áp dụng các migration Core cần thiết đến `011_core_multi_service_workflows.sql`; sau đó chứng minh việc tạo tài khoản nguyên tử, lưu trữ băm Argon2id, thu hồi phiên khi replay rotation, băm token reset dùng 1 lần và vô hiệu hóa phiên. Bài test này tuyệt đối không được trỏ vào volume dữ liệu của người dùng.
 
-## CI
+## Tích Hợp Liên Tục (CI)
 
-CI installs Gateway and Web dependencies with the root frozen pnpm lockfile.
-The Web job runs lint, typecheck, Jest and `next build`. The PostgreSQL job runs
-both Core and Auth integration suites against GitHub Actions' disposable
-PostgreSQL service. Compose validation builds the Gateway, Web, Agent and Food
-images.
+CI cài đặt các dependency của Gateway và Web thông qua file khóa pnpm đóng băng (`--frozen-lockfile`). Job của Web chạy lint, typecheck, Jest và `next build`. Job PostgreSQL chạy cả hai suite tích hợp Core và Auth trên dịch vụ PostgreSQL tạm thời của GitHub Actions. Quá trình kiểm tra Compose tiến hành build các image của Gateway, Web, Agent và Food.
 
-## Browser and disposable-stack acceptance
+## Nghiệm Thu Trình Duyệt Và Stack Dùng Một Lần
 
-Create a uniquely named disposable Compose project; do not reuse or delete the
-developer's normal project/volume. Run owned migrations, then test the public
-Web/Gateway flow: landing at 320px and desktop widths, register, refresh,
-logout/login, settings/session action, and a reduced-motion rendering path.
-Record a check as **PASS** only with its observed result. If browser automation
-is unavailable, record it as **UNVERIFIED**, not passed.
+Tạo một dự án Compose dùng một lần với tên duy nhất; không tái sử dụng hay xóa volume/dự án thông thường của lập trình viên. Chạy các migration thuộc quyền sở hữu, sau đó kiểm tra luồng công khai Web/Gateway: trang landing ở kích thước 320px và màn hình desktop, đăng ký, làm mới token, đăng xuất/đăng nhập, thao tác cài đặt/phiên và chế độ hiển thị giảm chuyển động. Chỉ ghi nhận một bài kiểm tra là **PASS** khi có kết quả quan sát thực tế. Nếu không có môi trường tự động hóa trình duyệt, hãy ghi nhận là **UNVERIFIED**, không được coi là đã đạt.
 
-## Playwright harness
+## Khung Kiểm Thử Playwright
 
-The Web owns a single Playwright setup in `apps/web/playwright.config.ts`.
-It uses Chromium projects at 375x812, 768x1024 and 1440x1000, starts or reuses
-the Web dev server, and retains trace/screenshot/video only on failure. The
-three spec files cover 9 scenarios:
+Ứng dụng Web sở hữu một cấu hình Playwright duy nhất tại `apps/web/playwright.config.ts`. Cấu hình sử dụng các dự án Chromium ở các kích thước 375x812, 768x1024 và 1440x1000, tự động khởi động hoặc tái sử dụng dev server của Web, và chỉ lưu trace/ảnh chụp màn hình/video khi có lỗi. 3 tệp kịch bản bao phủ 9 kịch bản:
 
-- `e2e/auth-onboarding.spec.ts`: registration, onboarding denial, saved
-  address, logout/login persistence, and explicit location denial.
-- `e2e/conversations.spec.ts`: create/send/rename/archive/unarchive/reload/
-  delete with actor-scoped Gateway routes.
-- `e2e/service-flows.spec.ts`: Food, Ride lifecycle/two confirmations,
-  Restaurant, Healthcare, Healthcare-plus-Ride partial success, and
-  cross-user denial.
+- `e2e/auth-onboarding.spec.ts`: đăng ký, từ chối onboarding, lưu địa chỉ, duy trì đăng xuất/đăng nhập và từ chối cấp quyền vị trí rõ ràng.
+- `e2e/conversations.spec.ts`: tạo/gửi/đổi tên/lưu trữ/bỏ lưu trữ/tải lại/xóa cuộc hội thoại thông qua các tuyến Gateway phân vùng theo actor.
+- `e2e/service-flows.spec.ts`: Food, vòng đời chuyến đi Ride kèm 2 bước xác nhận, Restaurant, Healthcare, thành công từng phần kết hợp Healthcare và Ride, và từ chối truy cập chéo người dùng.
 
-Browser-independent validation:
+Xác minh độc lập không cần mở trình duyệt:
 
 ```powershell
 corepack pnpm --dir apps/web exec playwright test --list
 corepack pnpm --dir apps/web exec tsc --noEmit
 ```
 
-The list command reports `27 tests (9 scenarios x 3 viewports)`. The following
-execution note is historical (2026-08-12); current browser evidence is recorded
-in the 2026-08-13 section below.
+Lệnh list báo cáo `27 tests (9 scenarios x 3 viewports)`.
 
-Historical execution was attempted with:
+## Bằng Chứng Xác Minh Thực Tế - 2026-08-13
 
-```powershell
-$env:PLAYWRIGHT_BASE_URL = 'http://localhost:5173'
-corepack pnpm --dir apps/web exec playwright test --project=chromium-375
+- Runtime tiến trình trực tiếp: `local-dev.ps1`, `local-health.ps1`, `seed-local.ps1` bổ sung và dry-run `demo-reset.ps1` đã được thực thi đối chiếu với container PostgreSQL hiện có. Toàn bộ 7 kiểm tra sức khỏe ứng dụng đều đạt `PASS`.
+- Bộ kiểm thử trình duyệt nhanh Web: Playwright Chromium chạy tuần tự đạt 27/27 test ở các độ phân giải 375x812, 768x1024 và 1440x1000. Bộ test Product thực tế đạt 2/2, Admin đạt 1/1, và luồng giao dịch thực tế đạt 1/1. Các lỗi trang, lỗi console và request thất bại đều bị coi là lỗi bài test.
+- CLI tùy chọn `agent-browser` không được cài đặt; Playwright Chromium được sử dụng làm bằng chứng kiểm thử trình duyệt thực tế. Không suy diễn kết quả đạt chỉ từ danh sách liệt kê test.
+- Độ bao phủ giao dịch thực tế kiểm tra Food, theo dõi Ride, Restaurant, Healthcare, lịch sử/đặt lại/phản hồi và thông báo qua Gateway và các domain service mà không dùng mock.
+- Kiểm tra hiệu năng khói (performance smoke) cục bộ với 10 mẫu trên mỗi endpoint đọc đã ghi nhận p50, p95 và max cho Gateway health, tìm kiếm Food/Restaurant/Healthcare, lịch sử, dashboard Admin và theo dõi Ride; đăng nhập auth sử dụng 3 mẫu để tránh chạm ngưỡng giới hạn đăng nhập cục bộ.
+
+## Tầng Liên Dịch Vụ Compose — `tests/e2e`
+
+`tests/e2e` là tầng kiểm thử liên dịch vụ: nó điều khiển API Gateway thực tế cùng với Agent, Ride, Restaurant, Healthcare và Food thông qua HTTP, đồng thời can thiệp vào stack bằng `docker compose exec`/`restart` để khẳng định tính bền vững của dữ liệu, xử lý hết hạn giữ chỗ và replay idempotent xuyên suốt quá trình restart Gateway. Do đó, nó **bắt buộc yêu cầu runtime Docker Compose** và không thể chạy trên runtime tiến trình trực tiếp.
+
+Lệnh thực thi là:
+```bash
+python -m pytest tests/e2e -q
+# hoặc từ workspace gốc:
+corepack pnpm test:e2e:crossservice
 ```
 
-At that historical run, all 9 selected tests stopped before navigation because
-`C:\Users\ADMIN\AppData\Local\ms-playwright\chromium_headless_shell-1161\chrome-win\headless_shell.exe`
-does not exist. Therefore browser status is
-`BROWSER_ACCEPTANCE_PENDING` / `BLOCKED_BY_ENVIRONMENT`; no screenshot,
-responsive interaction, or browser-console result is counted.
+Script gốc được đặt tên có chủ ý là `test:e2e:crossservice`, không gọi là `test:e2e` vì `test:e2e` của `apps/web` là bộ kiểm thử trình duyệt Playwright và hai tầng này không được nhầm lẫn trong các script hay CI.
 
-## Historical final corrective-pass evidence - 2026-08-12
+Script `scripts/local-acceptance.ps1` chạy bộ kiểm thử này như một bước bắt buộc. Nó trích xuất `E2E_GATEWAY_URL`, `E2E_COMPOSE_PROJECT_NAME`, `E2E_COMPOSE_ENV_FILE` và tài khoản demo từ tệp môi trường acceptance, đồng thời đặt `E2E_REQUIRE_GATEWAY=1`. Hai cơ chế bảo vệ ngăn chặn việc báo cáo đạt khi chưa chạy: hook `pytest_configure` ở cấp độ bộ test sẽ raise một `UsageError` khi `E2E_REQUIRE_GATEWAY` được đặt mà thiếu URL Gateway, và bước acceptance sẽ báo lỗi ngay khi stack Compose chưa hoàn chỉnh. Cờ `-SkipCrossServiceE2E` có sẵn cho việc chạy từng phần có chủ đích và sẽ in ra dòng `UNVERIFIED` nêu rõ những phần chưa được kiểm tra.
 
-- Environment/config: `101` root variables / `97` Compose variables;
-  Compose config and migration parity (`22` paths) passed.
-- Gateway: lint, typecheck, Jest and build passed; `24` suites passed, `2`
-  skipped; `103 passed, 7 skipped, 110 total` tests.
-- Web: typecheck, Jest and `next build` passed; `13` suites / `50` tests and
-  `19` App Router entries. Leaflet map fallback/invalid-coordinate tests pass.
-- Python: Agent `106 passed`; Ride `16 passed`; Restaurant `21 passed, 1
-  skipped`; Healthcare `25 passed, 1 skipped`; Food `23 passed, 3 skipped`.
-  Ruff passed in every relevant service scope.
-- Contracts/DataOps: shared contract `2 passed`, service contract parity `9
-  passed`, and DataOps importer tests `6 passed`.
-- Disposable runtime: Compose project `p018_acceptance_20260812` had all 8
-  containers healthy; Gateway `/health/ready` and Web `/api/health` returned
-  200. The isolated catalog apply/read-back counts were Food `17,596`,
-  Restaurant `1,307`, Healthcare facilities `3` / departments `72` /
-  doctors `208`; no primary volume was touched.
-- Live HTTP acceptance passed authenticated persistence (register/profile/
-  address/conversation/logout/login), Food order/payment/replay/tracking,
-  Ride quote/two-confirmation/tracking/history, Restaurant hold/confirmation,
-  Healthcare hold/payment/confirmation, and multi-service dependency,
-  partial-success, idempotency and cross-user cases.
-- Gemini smoke is `BLOCKED`: no key is configured. No key or secret was read,
-  printed, copied or changed.
-
-## Current local completion evidence - 2026-08-13
-
-- Direct-process runtime: `local-dev.ps1`, `local-health.ps1`, additive
-  `seed-local.ps1` and scoped dry-run `demo-reset.ps1` were exercised against
-  the existing PostgreSQL container. All seven application health checks were
-  `PASS`.
-- Web fast browser suite: Playwright Chromium ran serially with 27/27 passed
-  at 375x812, 768x1024 and 1440x1000. The live Product suite was 2/2, Admin
-  was 1/1, and the real transaction suite was 1/1. Page errors, console
-  errors and non-aborted failed requests were treated as failures.
-- The optional `agent-browser` CLI is not installed; Playwright Chromium was
-  used for the actual browser evidence. No browser pass is claimed from a
-  test listing alone.
-- Real live transaction coverage exercised Food, Ride tracking, Restaurant,
-  Healthcare, history/reorder/feedback and notifications through the Gateway
-  and domain services without mocks.
-- A local performance smoke with 10 samples per read endpoint recorded p50,
-  p95 and max for Gateway health, Food/Restaurant/Healthcare search, history,
-  Admin dashboard and Ride tracking; auth login used 3 samples because the
-  local login limiter is intentionally bounded.
-- Gemini remains intentionally unverified because no key is configured. The
-  legacy `tests/integration/` placeholder directory was removed in favor of
-  service-owned PostgreSQL persistence suites and targeted live Playwright
-  acceptance. Token reuse caching is provided in `tests/e2e` to prevent login rate limiting.
-
-## Cross-service Compose layer - `tests/e2e`
-
-`tests/e2e` is the cross-service layer: it exercises the real Gateway together
-with Agent, Ride, Restaurant, Healthcare and Food over HTTP, and reaches into
-the stack with `docker compose exec`/`restart` to assert persistence, hold
-expiry reconciliation and idempotent replay across a Gateway restart. It
-therefore requires the Docker Compose runtime and cannot run against the
-direct-process runtime.
-
-Invocation is `python -m pytest tests/e2e -q`, or `corepack pnpm
-test:e2e:crossservice` from the root workspace. The root script is deliberately
-not called `test:e2e`, because `apps/web`'s `test:e2e` is the Playwright browser
-suite and the two layers must not be confused in scripts or CI.
-
-`scripts/local-acceptance.ps1` runs this suite as a mandatory step. It derives
-`E2E_GATEWAY_URL`, `E2E_COMPOSE_PROJECT_NAME`, `E2E_COMPOSE_ENV_FILE` and the
-demo credentials from the acceptance env file, and sets `E2E_REQUIRE_GATEWAY=1`.
-Two guards keep a non-run from being reported as a pass: the suite-level
-`pytest_configure` hook raises a `UsageError` when `E2E_REQUIRE_GATEWAY` is set
-without a Gateway URL, and the acceptance step throws when the Compose stack is
-incomplete. `-SkipCrossServiceE2E` remains available for a deliberate partial
-run and prints an explicit `UNVERIFIED` line naming what is not covered.
-
-Shared fixtures live in `tests/e2e/_helpers.py` and are imported absolutely
-(`from _helpers import ...`). `tests/e2e` has no `__init__.py`, so under
-pytest's default `prepend` import mode a relative import such as
-`from .conftest import ...` fails collection with "attempted relative import
-with no known parent package". `_helpers` also owns the access-token cache that
-keeps a full-suite run inside the Gateway's per-IP login limiter.
+Các fixture dùng chung nằm trong `tests/e2e/_helpers.py` và được import tuyệt đối (`from _helpers import ...`). Thư mục `tests/e2e` không có tệp `__init__.py`, do đó theo chế độ import mặc định `prepend` của pytest, việc import tương đối như `from .conftest import ...` sẽ gây lỗi collection. `_helpers` cũng sở hữu bộ nhớ đệm token truy cập giúp toàn bộ lượt chạy kiểm thử không vượt quá giới hạn rate limit đăng nhập theo IP của Gateway.

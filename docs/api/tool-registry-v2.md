@@ -1,96 +1,54 @@
-# Tool Registry v2 Specification
+# Đặc Tả Registry Công Cụ V2 (Tool Registry v2 Specification)
 
-Status: `IMPLEMENTED_RUNTIME`. The Gateway exposes the validated registry at
-`GET /internal/tools/registry-v2`; the machine-readable canonical inventory is
-[`packages/contracts/tools/tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json).
-The Agent emits typed proposals and bounded policies; it never calls a domain,
-database, payment provider, or final side effect.
+Trạng thái: `IMPLEMENTED_RUNTIME`. API Gateway công khai registry đã validate tại endpoint `GET /internal/tools/registry-v2`; tệp danh mục chuẩn tắc dạng JSON là [`packages/contracts/tools/tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json). Agent chỉ phát ra các đề xuất dạng typed và tuân thủ policy có giới hạn; tuyệt đối không gọi trực tiếp domain, database, nhà cung cấp thanh toán hay tạo tác dụng phụ cuối cùng.
 
-## Contract and authority rules
+## Quy Tắc Hợp Đồng & Thẩm Quyền (Contract & Authority Rules)
 
-Each inventory entry contains `name`, `domain`, `version`, `risk`,
-`argument_schema`, `result_schema`, `idempotency_requirement`,
-`confirmation_requirement`, `owner`, and `classification`. A `ToolRequest`
-uses `tool_name`; the JSON inventory uses `name` so it can also describe the
-canonical alias mapping.
+Mỗi mục trong danh mục bao gồm: `name`, `domain`, `version`, `risk`, `argument_schema`, `result_schema`, `idempotency_requirement`, `confirmation_requirement`, `owner`, và `classification`. `ToolRequest` sử dụng `tool_name`; tệp JSON sử dụng `name` để có thể mô tả cả bảng ánh xạ bí danh chuẩn tắc (canonical alias mapping).
 
-Allowed risks are `READ`, `REVERSIBLE_WRITE`, and `FINANCIAL_OR_FINAL`.
-Every write, hold, cancellation, payment acknowledgement, or final action
-requires a domain-enforced idempotency key from the first write request.
-Financial/final operations require `explicit_gateway_confirmation`. The
-registry rejects unknown arguments and model-supplied authoritative IDs,
-prices, availability, coordinates, status, payment state, or success claims.
-There is no SQL/database tool and no generic executor entry.
+Các mức độ rủi ro được phép: `READ`, `REVERSIBLE_WRITE`, và `FINANCIAL_OR_FINAL`. Mọi thao tác ghi, giữ chỗ, hủy bỏ, xác nhận thanh toán hoặc hành động cuối cùng đều bắt buộc phải có khóa idempotency do domain kiểm soát ngay từ request ghi đầu tiên. Các thao tác tài chính/hành động cuối yêu cầu `explicit_gateway_confirmation`. Registry tự động từ chối các đối số không xác định và các dữ liệu do mô hình LLM tự bịa ra như ID thẩm quyền, giá cả, tính sẵn sàng, tọa độ, trạng thái thanh toán hay tuyên bố thành công. Hoàn toàn không có công cụ SQL/database và không có công cụ thực thi lệnh chung chung (generic executor).
 
-## Current inventory
+## Danh Mục Hiện Tại
 
-The v2 file contains 47 canonical entries across all four domains:
+Tệp v2 chứa **47 mục chuẩn tắc** trên cả 4 domain sản phẩm:
 
-| Domain | `IMPLEMENTED_AGENT_TOOL` | `IMPLEMENTED_GATEWAY_ACTION` | `IMPLEMENTED_DOMAIN_API` | Total |
+| Domain | `IMPLEMENTED_AGENT_TOOL` | `IMPLEMENTED_GATEWAY_ACTION` | `IMPLEMENTED_DOMAIN_API` | Tổng số |
 | --- | ---: | ---: | ---: | ---: |
-| Food | 14 | 1 | 3 | 18 |
-| Ride | 1 | 8 | 1 | 10 |
-| Restaurant | 4 | 3 | 2 | 9 |
-| Healthcare | 4 | 1 | 5 | 10 |
-| **Total** | **23** | **13** | **11** | **47** |
+| **Food** | 14 | 1 | 3 | 18 |
+| **Ride** | 1 | 8 | 1 | 10 |
+| **Restaurant** | 4 | 3 | 2 | 9 |
+| **Healthcare** | 4 | 1 | 5 | 10 |
+| **Tổng cộng** | **23** | **13** | **11** | **47** |
 
-The classifications are evidence-based:
+### Giải Thích Phân Loại:
+- `IMPLEMENTED_AGENT_TOOL`: Policy của Agent có thể đề xuất công cụ chuẩn tắc này và Gateway có luồng xử lý/chuyển tiếp domain có giới hạn.
+- `IMPLEMENTED_GATEWAY_ACTION`: Gateway có đường dẫn action hoặc xác nhận dạng typed, nhưng Agent không thực thi thao tác cuối như một công cụ độc lập.
+- `IMPLEMENTED_DOMAIN_API`: Tuyến đường và schema của service sở hữu đã sẵn sàng; hiện chưa phải là bề mặt hành động của Agent.
+- `LEGACY_COMPAT`: Tên bí danh hoặc tuyến cũ được giữ lại trong quá trình các bên gọi chuyển đổi.
+- `DEPRECATED`: Đã lỗi thời, không nằm trong runtime và không phải là bí danh có thể thực thi.
 
-- `IMPLEMENTED_AGENT_TOOL`: the Agent policy can propose the canonical tool
-  and the Gateway has a bounded executor/domain path.
-- `IMPLEMENTED_GATEWAY_ACTION`: the Gateway has the typed action or
-  confirmation path, but the Agent does not execute the final operation as a
-  free-standing tool.
-- `IMPLEMENTED_DOMAIN_API`: the owning service route and schema are present;
-  it is not currently an Agent action surface.
-- `LEGACY_COMPAT`: an old alias or route retained while callers migrate.
-- `DEPRECATED`: not part of the runtime and not an executable alias.
+### Danh Sách Tên Công Cụ Chuẩn Tắc Theo Domain
 
-The canonical names are grouped below; the JSON file remains the source of
-truth for schemas, risk, owner, idempotency, confirmation, and aliases.
-
-| Domain | Canonical names |
+| Domain | Tên công cụ chuẩn tắc (Canonical names) |
 | --- | --- |
-| Food | `food.search`, `food.get_restaurant`, `food.list_menu`, `food.get_menu_item`, `food.create_cart`, `food.add_cart_item`, `food.update_cart_item`, `food.remove_cart_item`, `food.quote_delivery`, `food.apply_voucher`, `food.remove_voucher`, `food.preview_order`, `food.prepare_order`, `food.get_order`, `food.list_orders`, `food.track_order`, `food.prepare_cancel_order`, `food.cancel_order` |
-| Ride | `ride.quote.create`, `ride.quote.get`, `ride.booking.prepare`, `ride.booking.confirm`, `ride.booking.get`, `ride.booking.list`, `ride.booking.status.get`, `ride.tracking.get`, `ride.booking.cancel.prepare`, `ride.booking.cancel` |
-| Restaurant | `restaurant.search`, `restaurant.get`, `restaurant.check_availability`, `restaurant.create_hold`, `restaurant.create_reservation`, `restaurant.update_reservation`, `restaurant.get_reservation`, `restaurant.list_reservations`, `restaurant.cancel_reservation` |
-| Healthcare | `healthcare.search_facilities`, `healthcare.get_facility`, `healthcare.list_departments`, `healthcare.list_doctors`, `healthcare.list_slots`, `healthcare.hold_slot`, `healthcare.get_appointment`, `healthcare.list_appointments`, `healthcare.confirm_appointment`, `healthcare.cancel_appointment` |
+| **Food** | `food.search`, `food.get_restaurant`, `food.list_menu`, `food.get_menu_item`, `food.create_cart`, `food.add_cart_item`, `food.update_cart_item`, `food.remove_cart_item`, `food.quote_delivery`, `food.apply_voucher`, `food.remove_voucher`, `food.preview_order`, `food.prepare_order`, `food.get_order`, `food.list_orders`, `food.track_order`, `food.prepare_cancel_order`, `food.cancel_order` |
+| **Ride** | `ride.quote.create`, `ride.quote.get`, `ride.booking.prepare`, `ride.booking.confirm`, `ride.booking.get`, `ride.booking.list`, `ride.booking.status.get`, `ride.tracking.get`, `ride.booking.cancel.prepare`, `ride.booking.cancel` |
+| **Restaurant** | `restaurant.search`, `restaurant.get`, `restaurant.check_availability`, `restaurant.create_hold`, `restaurant.create_reservation`, `restaurant.update_reservation`, `restaurant.get_reservation`, `restaurant.list_reservations`, `restaurant.cancel_reservation` |
+| **Healthcare** | `healthcare.search_facilities`, `healthcare.get_facility`, `healthcare.list_departments`, `healthcare.list_doctors`, `healthcare.list_slots`, `healthcare.hold_slot`, `healthcare.get_appointment`, `healthcare.list_appointments`, `healthcare.confirm_appointment`, `healthcare.cancel_appointment` |
 
-Legacy Food names such as `view_menu`, `view_menu_item`, `create_cart`,
-`add_to_cart`, `preview_order`, and `track_food_order` are compatibility inputs
-mapped to the canonical definitions. They are not additional authorities and
-must not be added to new model prompts. The parity gate verifies both directions:
-every JSON entry has matching runtime metadata, and every runtime-only entry
-must be in `TOOL_REGISTRY_COMPATIBILITY` with owner `gateway-tools` and
-expiry `2026-12-31`. An unlisted runtime name or an expired allowlist fails
-the release test.
+Các tên cũ của Food như `view_menu`, `view_menu_item`, `create_cart`, `add_to_cart`, `preview_order`, và `track_food_order` là các đầu vào tương thích được ánh xạ sang định nghĩa chuẩn tắc. Chúng không phải là các thẩm quyền bổ sung và tuyệt đối không được đưa vào prompt mô hình mới. Cổng kiểm tra tính tương đồng (parity gate) xác minh cả hai chiều: mọi mục trong JSON đều phải có metadata runtime khớp nhau, và mọi mục chỉ có ở runtime phải nằm trong `TOOL_REGISTRY_COMPATIBILITY` với chủ sở hữu `gateway-tools` cùng thời hạn `2026-12-31`.
 
-## Ride evidence audit
+## Bằng Chứng Đối Với Dịch Vụ Ride
 
-- `ride.quote.create` is Agent-proposable and executes through
-  `RideConversationService`/`RideClient`; Ride remains authoritative for the
-  tariff, route snapshot, bounded stopovers, expiry, and quote version. A
-  stopover change produces a new quote rather than a booking update.
-- `ride.booking.prepare` and `ride.booking.confirm` are Gateway actions with
-  two explicit confirmations. The final result exposes the Ride booking
-  status, including `NO_DRIVER`, rather than inferring success.
-- `ride.tracking.get`, booking status/list, and cancellation are represented
-  as Gateway/domain capabilities with actor scope and idempotency requirements
-  in the canonical inventory.
+- `ride.quote.create` có thể được đề xuất bởi Agent và thực thi qua `RideConversationService`/`RideClient`; domain Ride giữ thẩm quyền đối với biểu phí, snapshot lộ trình, các điểm dừng có giới hạn, thời hạn hết hạn và phiên bản báo giá. Thay đổi điểm dừng sẽ sinh ra báo giá mới chứ không cập nhật chuyến cũ.
+- `ride.booking.prepare` và `ride.booking.confirm` là các action của Gateway với 2 bước xác nhận rõ ràng. Kết quả cuối cùng phản ánh trạng thái đặt xe của Ride (bao gồm cả `NO_DRIVER`), không tự ý suy diễn thành công.
+- `ride.tracking.get`, trạng thái/danh sách booking, và hủy chuyến được biểu diễn như các khả năng của Gateway/domain với yêu cầu phạm vi actor và tính idempotent trong danh mục chuẩn tắc.
 
-## Boundary rules
+## Các Bất Biến Ranh Giới
 
-- The Gateway owns the public action/confirmation boundary; a final proposal
-  cannot call a domain final endpoint directly.
-- Domain services validate again and own IDs, prices, availability, state
-  transitions, idempotency, and result status.
-- Agent content and tool results are untrusted until schema, policy, and
-  domain validation pass. Raw prompts, provider payloads, and chain-of-thought
-  are never public response fields.
-- Phase 9 ranking and multi-service plan APIs remain Gateway orchestration
-  surfaces rather than Agent tools. They accept validated actor-scoped inputs
-  and typed domain results; the Agent cannot choose a destination, confirm a
-  booking, or mark a workflow successful.
+- Gateway sở hữu ranh giới action/xác nhận công khai; một đề xuất cuối cùng không thể gọi trực tiếp endpoint hoàn tất của domain.
+- Các domain service tự validate lại và sở hữu độc quyền ID, giá cả, tính khả dụng, chuyển đổi trạng thái, tính idempotent và trạng thái kết quả.
+- Nội dung từ Agent và kết quả công cụ luôn bị coi là untrusted cho đến khi vượt qua schema validation, kiểm tra chính sách và domain validation. Prompt thô, payload nhà cung cấp và suy nghĩ ẩn (chain-of-thought) không bao giờ được xuất hiện trong phản hồi công khai.
+- API xếp hạng và kế hoạch đa dịch vụ là các bề mặt điều phối của Gateway, không phải là công cụ của Agent. Chúng nhận dữ liệu đầu vào đã validate theo actor và kết quả domain dạng typed; Agent không thể tự chọn điểm đến, tự chốt đơn đặt hay tự đánh dấu workflow thành công.
 
-Parity evidence: `apps/api-gateway/test/tools/tool-registry.spec.ts` and
-`apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.
+Bằng chứng kiểm thử: `apps/api-gateway/test/tools/tool-registry.spec.ts` và `apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.

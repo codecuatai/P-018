@@ -1,23 +1,21 @@
-# ADR-0006: Saved Address and Transaction Snapshot Ownership
+# ADR-0006: Quyền Sở Hữu Địa Chỉ Đã Lưu Và Snapshot Địa Chỉ Giao Dịch (Address Ownership)
 
-- Status: Accepted decision for Phase 1+
-- Date: 2026-08-10
-- Owners: Core/Gateway, Food, Ride
+- Trạng thái: Đã chấp thuận và đã triển khai (Accepted & Implemented)
+- Ngày: 2026-08-10
+- Chủ sở hữu: Core / API Gateway, Food, Ride
 
-## Decision
+## Quyết định (Decision)
 
-Core/Gateway owns the X-One saved address book. Food and Ride own immutable address snapshots captured in their transaction/order/booking records. A later edit to a saved address never mutates an old transaction snapshot.
+Dịch vụ Core / API Gateway sở hữu sổ địa chỉ đã lưu của người dùng X-One (`saved addresses`). Các dịch vụ Food và Ride sở hữu **snapshot địa chỉ bất biến** được chụp tại thời điểm ghi nhận giao dịch/đơn hàng/chuyến đi tương ứng. Bất kỳ chỉnh sửa nào đối với địa chỉ đã lưu sau này cũng **tuyệt đối không làm thay đổi** snapshot địa chỉ của giao dịch cũ trong lịch sử.
 
-The Gateway resolves a saved address through the Core-owned actor-scoped address contract and passes the resulting normalized snapshot to the owning domain service. Food and Ride never query Core's database directly, add cross-database foreign keys, or import Core ORM/business models. Domain services validate and persist their own snapshot fields.
+API Gateway phân giải địa chỉ đã lưu thông qua hợp đồng địa chỉ theo actor do Core sở hữu, sau đó truyền snapshot đã chuẩn hóa sang cho domain service xử lý. Food và Ride không bao giờ truy vấn trực tiếp cơ sở dữ liệu của Core, không tạo khóa ngoại chéo database và không import mô hình ORM của Core. Các domain service tự validate và lưu trữ các trường snapshot của riêng mình.
 
-## Current compatibility
+## Tính Tương Thích & Di Chuyển
 
-The legacy Food demo still owns actor-scoped delivery addresses in Food and exposes them through its internal `/api/v1/addresses` route. This is a compatibility boundary, not a second Core authority. Core's `user_addresses` table is implemented by migration `010_core_personal_context.sql`; public callers use Gateway `/api/v1/addresses` and `/api/v1/location/*`.
+Bảng `user_addresses` của Core được triển khai thông qua migration `010_core_personal_context.sql`; các client công khai gọi qua Gateway `/api/v1/addresses` và `/api/v1/location/*`.
 
-## Migration path
+Khi tạo đơn hàng Food, adapter của Gateway chuyển đổi địa chỉ Core thuộc sở hữu của actor sang hợp đồng `Address` dùng chung, sau đó gửi một snapshot bất biến sang cho Food. Các đơn hàng Food cũ vẫn đọc dữ liệu trực tiếp từ snapshot đã lưu trong bảng của Food mà không cần phải chạy script backfill hay sửa đổi chéo database.
 
-Phase 1/2 implementation defines Core saved-address CRUD and a Gateway resolver. Food's adapter translates the actor-owned Core address to the shared `Address` contract, then passes an immutable snapshot when creating an order. Existing Food orders remain readable from their stored snapshots; no backfill or cross-database mutation is required.
+## Hệ quả (Consequences)
 
-## Consequences
-
-Address IDs are references at the Gateway boundary, not shared database identity. The authoritative owner of a saved address and the owner of a transaction snapshot remain distinct and testable.
+ID địa chỉ chỉ là các tham chiếu tại ranh giới của API Gateway, không phải là định danh khóa ngoại chia sẻ trong cơ sở dữ liệu. Chủ sở hữu có thẩm quyền của địa chỉ đã lưu (Core) và chủ sở hữu của snapshot giao dịch (Food/Ride) luôn tách biệt rõ ràng và có thể kiểm thử độc lập.

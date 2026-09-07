@@ -1,26 +1,38 @@
-# Script layout
+# Bố Cục Thư Mục Script (Script Layout)
 
-Repository scripts are grouped by the responsibility they support:
+Các script trong kho mã nguồn được phân nhóm theo mục đích trách nhiệm:
 
-| Folder | Purpose |
+| Thư mục | Mục đích sử dụng |
 | --- | --- |
-| `local/` | Local Compose and direct-process startup, health checks, acceptance, and shutdown |
-| `database/` | Migrations, seeds, scoped reset, and migration parity checks |
-| `data/` | Dataset pipeline, domain import wrappers, and catalog import implementation |
-| `quality/` | Test runners, environment validation, performance smoke checks, and script tests |
-| `setup/` | Repository bootstrap, environment setup, and AI hook installation |
-| `ai-logging/` | AI usage hooks, log normalization, submission, and Python launchers |
-| `admin/` | Local administrator provisioning helpers |
-| `integrations/` | External QA/integration helpers such as Trello attachment and assignment tools |
+| `local/` | Khởi động Compose cục bộ và tiến trình trực tiếp, kiểm tra sức khỏe (health checks), nghiệm thu và tắt tiến trình |
+| `database/` | Chạy migrations, nạp seeds, reset dữ liệu trong phạm vi an toàn, và kiểm tra tính tương đồng migration |
+| `data/` | Pipeline xử lý dữ liệu, wrapper import domain, và triển khai import danh mục catalog |
+| `quality/` | Bộ chạy kiểm thử, kiểm tra tính hợp lệ của môi trường, kiểm tra hiệu năng khói và test script |
+| `setup/` | Khởi tạo repository ban đầu, thiết lập môi trường và cài đặt hook AI |
+| `ai-logging/` | Hook ghi log sử dụng AI, chuẩn hóa nhật ký, nộp bài và các launcher Python |
+| `admin/` | Helper tạo và cấp quyền tài khoản quản trị viên cục bộ |
+| `integrations/` | Công cụ tích hợp QA bên ngoài (ví dụ: đính kèm thẻ Trello) |
 
-Run commands from the repository root so their documented relative paths and
-environment loading remain consistent. The most common entry points are:
+Luôn thực thi các lệnh từ thư mục gốc của kho lưu trữ để các đường dẫn tương đối và việc nạp biến môi trường luôn nhất quán.
+
+### Các Điểm Vào Phổ Biến Nhất:
 
 ```powershell
+# Khởi động toàn bộ stack với Docker Compose
 ./scripts/local/start-all.ps1
+
+# Khởi động runtime tiến trình trực tiếp (local development)
 ./scripts/local/local-dev.ps1
+
+# Kiểm tra trạng thái sức khỏe của các service
 ./scripts/local/local-health.ps1
+
+# Dừng runtime tiến trình trực tiếp
 ./scripts/local/local-stop.ps1
+
+# Kiểm tra tính hợp lệ của cấu hình biến môi trường
 python scripts/quality/validate-env-config.py
-python scripts/database/check-migration-parity.py
+
+# Kiểm tra tính tương đồng của các tệp migration
+python scripts/quality/check-migration-parity.py
 ```

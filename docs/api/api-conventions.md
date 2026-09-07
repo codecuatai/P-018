@@ -1,191 +1,72 @@
-# API Conventions
+# Quy Ước Thiết Kế API (API Conventions)
 
-Public Gateway routes use `/api/v1`; optional Gateway-internal routes use `/internal/v1`. The checked-in internal domain prefixes are currently split by the incremental slices:
+Các tuyến (route) công khai của API Gateway sử dụng tiền tố `/api/v1`; các tuyến nội bộ tùy chọn sử dụng `/internal/v1`. Các tiền tố nội bộ của từng service domain hiện được phân tách theo các lát cắt phát triển lũy tiến:
 
-| Boundary | Prefix |
+| Ranh giới | Tiền tố |
 | --- | --- |
-| Public Gateway | `/api/v1` |
-| Restaurant Service | `/v1` |
-| Ride Service | `/v1` |
-| Food Service | `/api/v1` |
-| Healthcare Service | `/api/v1` |
+| **API Gateway Công Khai** | `/api/v1` |
+| **Restaurant Service** | `/v1` |
+| **Ride Service** | `/v1` |
+| **Food Service** | `/api/v1` |
+| **Healthcare Service** | `/api/v1` |
 
-This is a legacy/incremental contract split; do not rename working service routes for cosmetic uniformity immediately before a demo. Use JSON `snake_case`, ISO 8601 datetimes with timezone, and integer money amounts plus ISO currency (for example `{ "amount": 128000, "currency": "VND" }`). The public Food Gateway contract is [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); the Food-owned internal contract remains [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
+Đây là sự phân tách hợp đồng lũy tiến trong lịch sử phát triển; không đổi tên các tuyến đang hoạt động ổn định chỉ vì mục đích hình thức. Sử dụng định dạng JSON `snake_case`, thời gian ISO 8601 có múi giờ, và số tiền kiểu số nguyên kèm mã tiền tệ ISO (ví dụ: `{ "amount": 128000, "currency": "VND" }`). Hợp đồng Gateway Food công khai là [gateway-food-vertical-slice.yaml](../../packages/contracts/openapi/gateway-food-vertical-slice.yaml); hợp đồng nội bộ do Food sở hữu là [food-vertical-slice.yaml](../../packages/contracts/openapi/food-vertical-slice.yaml).
 
-Food restaurant menus use server-side `limit`/`offset` pagination. The menu response includes `items`, `total`, `limit`, and `offset`; `total` is the full count of active menu items for the restaurant, not the size of the returned page. Consumers request subsequent pages instead of slicing a truncated client-side array.
+Thực đơn nhà hàng Food sử dụng phân trang phía server dạng `limit`/`offset`. Phản hồi thực đơn bao gồm `items`, `total`, `limit`, và `offset`; trong đó `total` là tổng số món ăn đang hoạt động của nhà hàng, không phải kích thước của trang hiện tại. Client yêu cầu các trang tiếp theo thay vì cắt mảng trên trình duyệt.
 
-The canonical route inventory is [api-inventory.md](api-inventory.md). Shared primitives and the minimum response envelopes are versioned in [shared-primitives.v1.yaml](../../packages/contracts/openapi/shared-primitives.v1.yaml). The current Gateway keeps legacy Ride and vertical workflow routes for compatibility; they are not permission to add new browser callers or bypass the unified assistant confirmation boundary.
+Danh mục API chuẩn tắc là [api-inventory.md](api-inventory.md). Các kiểu dữ liệu cơ sở dùng chung và envelope phản hồi tối thiểu được định nghĩa tại [shared-primitives.v1.yaml](../../packages/contracts/openapi/shared-primitives.v1.yaml).
 
-The shared `Address` contract requires `id`, `label`, `address_text`, `latitude`, `longitude`, and `city`; `ward` and `district` remain optional. The canonical actor-owned saved-address resource is Gateway `/api/v1/addresses`, persisted in Core migration `010_core_personal_context.sql`. Food still accepts an immutable `address_snapshot` on quote/preview/order calls and validates the actor before using it; its legacy `/api/v1/addresses` shape is not Core authority.
+Hợp đồng `Address` dùng chung bắt buộc có `id`, `label`, `address_text`, `latitude`, `longitude`, và `city`; `ward` và `district` là tùy chọn. Tài nguyên địa chỉ đã lưu chuẩn tắc do Gateway sở hữu tại `/api/v1/addresses`, được lưu trữ trong migration Core `010_core_personal_context.sql`. Food vẫn chấp nhận một `address_snapshot` bất biến trong các cuộc gọi quote/preview/order và validate actor trước khi sử dụng.
 
-Restaurant discovery keeps the explicit `location`, `cuisine_type`, and
-`budget_range` filters for typed workflow callers. Its additive `q` query
-parameter is the generic consumer-search contract and performs a
-case-insensitive substring match across restaurant name, location, or cuisine
-type. A query containing Vietnamese diacritics is accent-sensitive; a query
-without diacritics remains accent-insensitive, so `cha` can match `chả`,
-`chảy`, `chảo`, or `chay` while `chả` does not match `chay`.
+Khám phá nhà hàng (Restaurant discovery) duy trì các bộ lọc tường minh `location`, `cuisine_type`, và `budget_range` cho các luồng gọi typed. Tham số truy vấn bổ sung `q` là hợp đồng tìm kiếm tổng quát và thực hiện so khớp chuỗi con không phân biệt hoa thường trên tên quán, địa điểm hoặc loại ẩm thực. Truy vấn có dấu tiếng Việt sẽ phân biệt dấu; truy vấn không dấu sẽ không phân biệt dấu (ví dụ: `cha` có thể khớp với `chả`, `chảy`, `chảo`, hoặc `chay`, trong khi `chả` không khớp với `chay`).
 
-A saved or default address is reusable context, not implicit permission to choose
-a Food delivery destination. Checkout asks where the order should be delivered
-before resolving a saved-address label or accepting a new concrete address. If
-`address_text` is changed without replacement coordinates, Core clears the old
-coordinates and location metadata instead of applying a delivery quote to a
-stale point; the updated manual address remains saved and can be geocoded later.
+Địa chỉ mặc định hoặc đã lưu chỉ là ngữ cảnh tái sử dụng, không phải là sự đồng ý ngầm để chọn điểm giao hàng cho Food. Quá trình thanh toán luôn xác nhận địa điểm giao hàng trước khi giải quyết nhãn địa chỉ đã lưu. Nếu `address_text` thay đổi mà không có tọa độ thay thế, Core sẽ xóa tọa độ cũ và metadata vị trí cũ thay vì áp dụng báo giá giao hàng lên một tọa độ đã lỗi thời.
 
-The unified consumer conversation uses `POST /api/v1/assistant/chat` and
-`POST /api/v1/assistant/actions`, documented in
-[`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Its
-response contains `conversation_id`, safe assistant text, authoritative result
-cards, explicit action descriptors, and completed cards. It does not expose
-Agent plans, raw tool requests, workflow state, state patches, or internal
-confirmation records. The action endpoint requires a trimmed, non-blank
-`Idempotency-Key` of 1–255 characters; clients reuse the same key for a retry
-of the same action. Final and financial actions remain explicit confirmation
-steps. Consumer cards are discriminated by `kind` and omit internal fields
-such as `workflow_id`, `confirmation_id`, `tool_request`, and `resource_version`.
-The `ride_timing_conflict` card is a truthful no-booking result when a
-Healthcare-dependent departure is impossible. Healthcare appointment cards may
-carry the domain-owned facility name/address; the Gateway does not invent or
-persist that authority. Restaurant hold and completed-reservation cards have
-separate schemas so a hold never pretends to have a final reservation code.
-Changing an existing Restaurant reservation is a separate Gateway update
-workflow: the response previews the old and requested time/party size and
-returns a `restaurant_update` action only after a fresh availability read. The
-action re-reads the actor-owned reservation, checks its current
-`resource_version`, and calls the Restaurant PATCH with a Gateway-owned
-idempotency key. The domain must return the same reservation ID with its
-updated version; no write occurs during preview.
-When a still-active hold is invalidated by a material party/time/restaurant
-revision, the Gateway asks Restaurant to release that hold with a separate
-idempotent lifecycle operation before it checks or creates a replacement hold.
-The Gateway validates required reservation confirmation fields and normalizes
-legacy timezone-less Healthcare timestamps to the `Asia/Ho_Chi_Minh`
-domain timezone before exposing an ISO 8601 value.
+Cuộc hội thoại tiêu dùng hợp nhất sử dụng `POST /api/v1/assistant/chat` và `POST /api/v1/assistant/actions`, được tài liệu hóa trong [`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml). Phản hồi chứa `conversation_id`, lời thoại an toàn của trợ lý, các card kết quả có thẩm quyền, mô tả hành động rõ ràng và các card đã hoàn thành. Phản hồi tuyệt đối không để lộ kế hoạch Agent, yêu cầu tool thô, trạng thái workflow nội bộ hay bản ghi xác nhận. Endpoint action yêu cầu header `Idempotency-Key` (1–255 ký tự); client tái sử dụng cùng key khi retry cùng một hành động. Các hành động tài chính/chốt đơn luôn yêu cầu bước xác nhận rõ ràng. Các card giao diện phân biệt theo trường `kind` và loại bỏ các trường nội bộ như `workflow_id`, `confirmation_id`, `tool_request`, và `resource_version`. Card `ride_timing_conflict` phản ánh trung thực kết quả không thể đặt chuyến khi thời gian khởi hành phụ thuộc vào Healthcare không khả thi.
 
-`AssistantChatRequest.current_location` and
-`AssistantActionRequest.current_location` are optional, ephemeral UI context.
-They contain validated device latitude/longitude, capture time, optional
-accuracy, and optional reverse-geocoded display text. The Web client resends
-the value with a selected/confirmation action when a dependent Ride quote is
-prepared; it is never written to the saved
-address profile. While the device-share context remains active, the Web also
-resends the same request-scoped location on a later stopover chat so Gateway
-can re-quote without turning the device position into a durable address. The
-Agent accepts it only while fresh. Context precedence is
-deterministic: explicit current-turn values, current UI context, authoritative
-conversation facts, saved profile context, then retrieved-memory hints. A
-lower-precedence source never overwrites a higher-precedence value, and every
-semantic slot carries its source. Product-facing date/time interpretation uses
-`Asia/Ho_Chi_Minh`; an already-passed clock time is clarified instead of being
-silently moved to tomorrow. Ride discovery/creation requires an explicit
-vehicle type. A Ride quote may include at most two resolved intermediate stops;
-the stops form part of the authoritative quote/confirmation payload, so a
-material route change requires a fresh quote and service-details confirmation.
-The fresh quote replaces the public Ride service action; replaying the prior
-action returns `409 ACTION_NOT_AVAILABLE` and cannot confirm the old route.
-Cancellation of an existing ride is proposed through Core A and
-executed only by the Gateway action boundary after user confirmation.
+Khi cập nhật lịch đặt bàn Restaurant hiện có, Gateway sử dụng luồng update riêng: phản hồi hiển thị trước thời gian/số lượng khách cũ và mới, và chỉ trả về action `restaurant_update` sau khi đọc dữ liệu bàn trống mới nhất. Action đọc lại đơn đặt bàn của actor, kiểm tra `resource_version` hiện tại, và gọi PATCH sang Restaurant kèm idempotency key do Gateway quản lý. Domain phải trả về đúng ID đặt bàn cũ với version tăng dần; không có thao tác ghi nào xảy ra ở bước preview.
 
-Conversation-only chitchat/advisory turns return safe assistant text without
-replaying prior cards or actions, while pending workflow state remains
-available for a later service turn. A context switch may retire eligible
-unfinished orchestration tasks as `DISCARDED`; this is not a public claim
-that any domain resource was cancelled. Active bookings/orders and final or
-financial state still require the domain-owned cancellation workflow and its
-explicit confirmation policy.
+Khi một lượt giữ chỗ (hold) còn hiệu lực bị vô hiệu hóa do thay đổi số lượng khách/thời gian/nhà hàng, Gateway yêu cầu Restaurant giải phóng lượt giữ chỗ đó bằng một thao tác hủy idempotent riêng biệt trước khi tạo lượt giữ chỗ thay thế. Gateway validate các trường bắt buộc và chuẩn hóa thời gian về múi giờ `Asia/Ho_Chi_Minh` trước khi xuất định dạng ISO 8601.
 
-Successful responses use:
+`AssistantChatRequest.current_location` và `AssistantActionRequest.current_location` là ngữ cảnh giao diện tạm thời tùy chọn. Chúng chứa vĩ độ/kinh độ thiết bị đã validate, thời gian thu thập, độ chính xác tùy chọn và văn bản địa chỉ hiển thị. Web gửi lại giá trị này cùng hành động chọn/xác nhận khi báo giá Ride phụ thuộc được chuẩn bị; nó không bao giờ được ghi vào hồ sơ địa chỉ đã lưu. Thứ tự ưu tiên ngữ cảnh là tất định: giá trị rõ ràng của lượt hiện tại > ngữ cảnh giao diện hiện tại > dữ kiện hội thoại có thẩm quyền > ngữ cảnh hồ sơ đã lưu > gợi ý bộ nhớ truy xuất. Nguồn ưu tiên thấp hơn không bao giờ ghi đè nguồn ưu tiên cao hơn, và mỗi slot ngữ nghĩa đều mang thông tin nguồn gốc. Diễn giải ngày giờ sử dụng múi giờ `Asia/Ho_Chi_Minh`; thời gian đã qua trong ngày sẽ được hỏi lại để làm rõ thay vì âm thầm chuyển sang ngày mai. Báo giá Ride có tối đa 2 điểm dừng trung gian; các điểm dừng là một phần của payload báo giá/xác nhận có thẩm quyền, do đó bất kỳ thay đổi lộ trình nào cũng yêu cầu báo giá mới và bước xác nhận lại chi tiết dịch vụ.
 
+Các lượt trò chuyện thông thường chỉ trả về lời thoại an toàn mà không replay lại card hay action cũ, trong khi trạng thái workflow đang chờ vẫn được bảo lưu cho lượt nghiệp vụ sau. Việc chuyển đổi ngữ cảnh có thể đánh dấu các tác vụ điều phối chưa hoàn thành là `DISCARDED`; đây không phải là tuyên bố rằng tài nguyên domain đã bị hủy. Các đơn đặt chỗ/hàng đang hoạt động và trạng thái tài chính vẫn bắt buộc phải đi qua workflow hủy của chính domain đó cùng chính sách xác nhận rõ ràng.
+
+Phản hồi thành công chuẩn:
 ```json
-{ "data": {}, "meta": { "request_id": "cor_...", "timestamp": "2026-08-05T16:00:00+07:00" } }
+{
+  "data": {},
+  "meta": {
+    "request_id": "cor_...",
+    "timestamp": "2026-08-05T16:00:00+07:00"
+  }
+}
 ```
 
-Errors use RFC-7807-inspired JSON: `type`, `title`, `status`, `code`, safe `detail`, `retryable`, and `request_id`; never return a stack trace. Collection responses use cursor or explicit `limit`/`offset` pagination with metadata.
+Phản hồi lỗi theo chuẩn cảm hứng từ RFC-7807: `type`, `title`, `status`, `code`, `detail` an toàn, `retryable`, và `request_id`; tuyệt đối không bao giờ trả về stack trace mã nguồn.
 
-The minimum public success contract is `{ data, meta: { request_id } }`. A list uses `{ data: { items }, meta: { request_id, pagination: { cursor, has_more } } }`. Extra safe metadata such as `timestamp` or a compatibility `actor_id` may remain on an existing endpoint, but must not contain credentials, raw prompts, internal confirmation IDs, provider payloads, or chain-of-thought.
+Header `X-Correlation-Id` được chấp nhận hoặc tự động sinh cho mọi request. `X-Workflow-Id` và `X-Tool-Call-Id` áp dụng cho các workflow điều phối. Lệnh gọi nội bộ bắt buộc có token xác thực service (`X-Internal-Service-Token`).
 
-`X-Correlation-Id` is accepted/generated for every request. `X-Workflow-Id` and `X-Tool-Call-Id` apply to orchestrated workflows. Internal calls require service authentication. Standard status codes apply: 200/201 success, 202 accepted, 400/401/403/404/409/422 client errors, and 429/5xx only where appropriate.
+## Hợp Đồng Xác Thực (Authentication Contract)
 
-The browser may send the bounded `X-Trigger-Correlation-Id` header on refresh so
-parallel restore requests can be correlated safely; it is trace metadata only
-and must never contain a token or cookie.
+Hợp đồng xác thực Giai đoạn 1 được phiên bản hóa tại [`gateway-auth-v1.yaml`](../../packages/contracts/openapi/gateway-auth-v1.yaml). Các endpoint Đăng ký/Đăng nhập/Làm mới token trả về `{ data: { access_token, token_type, expires_in, user }, meta }`; tuyệt đối không trả về refresh token thô trong JSON. Gateway đặt refresh token trong cookie `HttpOnly`, `SameSite=Lax`, phạm vi `/api/v1/auth` (và gắn cờ `Secure` ngoài môi trường HTTP dev cục bộ). Trình duyệt chỉ lưu access token trong RAM và gọi refresh với `credentials: "include"`.
 
-## Authentication contract
+Refresh token tái sử dụng (replay) sẽ trả về lỗi an toàn `REFRESH_TOKEN_REUSED` sau khi toàn bộ nhóm phiên (token family) bị thu hồi ngay lập tức. `GET /auth/sessions` chỉ hiển thị metadata của phiên; không endpoint nào để lộ refresh token thô hoặc hash.
 
-The Phase 1 authentication contract is versioned in
-[`gateway-auth-v1.yaml`](../../packages/contracts/openapi/gateway-auth-v1.yaml).
-Register/login/refresh return `{ data: { access_token, token_type, expires_in,
-user }, meta }`; they never return a raw refresh token in JSON. The Gateway
-sets the refresh token as an opaque `HttpOnly`, `SameSite=Lax` cookie scoped to
-`/api/v1/auth` (and `Secure` outside local HTTP development). The browser
-retains the access token only in memory and calls refresh with
-`credentials: "include"`.
+## An Toàn Thao Tác Ghi (Write Safety & Idempotency)
 
-Refresh, logout, logout-all, session revocation and password change validate a
-trusted Origin or Referer when a browser cookie can be affected. A refresh
-replay returns the safe `REFRESH_TOKEN_REUSED` error after the whole token
-family is revoked. `GET /auth/sessions` exposes logical session-family metadata
-only; no endpoint exposes a raw or hashed refresh token. `POST /auth/forgot-
-password` always returns a generic accepted result. Its optional test-only
-reset capture is forbidden in production and is not a browser feature.
+Mọi thao tác ghi có thể thử lại hoặc gây tác dụng phụ đều phải nhận `Idempotency-Key` ngay từ request đầu tiên, không phải chỉ sau khi thất bại. Domain service giới hạn phạm vi khóa theo actor đã xác thực, thao tác (operation), và khoảng thời gian lưu giữ; cùng một khóa và payload đã chuẩn hóa sẽ trả về cùng một kết quả logic, trong khi thay đổi payload sẽ bị từ chối với lỗi xung đột an toàn (`409 Conflict`). Không ghi log các payload nhạy cảm thô chỉ để phục vụ kiểm tra idempotency.
 
-## Write safety (target contract expectation)
+Đối với các đề xuất của Agent, `tool_call_id` là metadata trace không đáng tin cậy và không bao giờ là nguồn của khóa ghi phía hạ nguồn. Gateway tạo định danh thực thi có giới hạn từ trạng thái tác vụ đã lưu trữ theo actor, task revision, capability, và chỉ số đề xuất; validate cả hai định danh và truyền khóa do Gateway quản lý tới domain.
 
-Every write that may be retried or cause a side effect receives `Idempotency-Key` from its first request, not only after a failure. The domain scopes it to the authenticated actor, operation, and retention window; the same key and normalized payload return the same logical result, while a changed payload is rejected with a safe conflict. Gateway propagation does not replace the domain guarantee. Do not log raw sensitive payloads solely to implement idempotency.
+Kiểm tra bàn trống của Restaurant trả về `snapshot_id` và `resource_version` riêng biệt cùng `observed_at` và `expires_at` có múi giờ. TTL hiện tại là 30 giây. Phía tiêu thụ yêu cầu độ tươi mới bắt buộc phải từ chối nếu thiếu hoặc hết hạn `expires_at`.
 
-For Agent proposals, `tool_call_id` is untrusted trace metadata and never the
-source of a downstream write key. Gateway creates a bounded execution identity
-from actor-scoped persisted task state, task revision, capability, and proposal
-index, validates both identifiers, and passes the Gateway-owned key to the
-domain.
+Xác nhận tài chính không phải là một cờ boolean đơn giản. Hợp đồng ràng buộc nó với actor, hành động, payload hoặc mã băm đã chuẩn hóa, phiên bản báo giá/tài nguyên, giá/loại tiền tệ, thời hạn, thời điểm cấp phát/tiêu thụ, và bằng chứng audit dùng một lần. Khi đặt hàng Food, hệ thống yêu cầu `expected_snapshot_hash`, `expected_cart_version`, `expected_amount`, `expected_currency`, và `expected_quote_version`; Food tính toán lại báo giá dưới khóa hàng (row-lock) trước khi chèn đơn hàng mới.
 
-Food create-cart, add/update/remove cart-item, and apply/remove-voucher routes
-require `Idempotency-Key` (8–128 characters). Food migration
-`007_food_cart_write_idempotency.sql` owns the operation ledger and commits
-the claimed key, normalized payload hash, cart mutation, authoritative version
-and replay result atomically. Exact replay returns the stored logical result;
-changed payload, operation or target under the same actor/key returns `409`.
+## Bổ Sung Công Khai
 
-Restaurant availability responses expose a distinct `snapshot_id` and
-`resource_version` plus timezone-aware `observed_at` and `expires_at`. The
-current TTL is 30 seconds. A consumer that requires fresh authority must reject
-missing, naive, or expired `expires_at` rather than treating the snapshot as
-indefinitely valid.
-
-Final/financial confirmation is not a boolean. The contract binds it to the actor, action, normalized payload or hash, quote/resource version, price/currency, expiry, issuance/consumption time, and one-time audit evidence. The Food slice implements this through Gateway confirmation and Payment Sandbox modules. Core persistence is PostgreSQL at runtime with an in-memory adapter only for deterministic tests; additive claim/idempotency/payment/refund/recovery/provider fields are in `apps/api-gateway/migrations/003_core_atomicity.sql`, `004_core_recovery.sql`, `005_core_payment_provider_saga.sql`, and `006_core_payment_recovery_claims.sql`. Assistant action receipts are additive in `apps/api-gateway/migrations/007_core_assistant_action_executions.sql` and `008_core_assistant_action_recovery.sql`; successful retries return the stored sanitized response, retryable failures and stale processing leases can be reclaimed with the same key, and a different key cannot consume the same action. Multi-service plan state and step idempotency are additive in `apps/api-gateway/migrations/011_core_multi_service_workflows.sql`. Food order creation requires `expected_snapshot_hash`, `expected_cart_version`, `expected_amount`, `expected_currency`, and `expected_quote_version`; Food recomputes the quote under row locks before inserting an order.
-
-## Phase 2–9 public additions
-
-`GET/POST /api/v1/conversations`, actor-scoped conversation detail/update/archive/delete, `/api/v1/users/me`, `/api/v1/addresses`, `/api/v1/location`, `/api/v1/healthcare/patients`, `/api/v1/history`, `/api/v1/services`, and `/api/v1/rides/{bookingId}/tracking` are Gateway-owned public surfaces. Each calls Core or a typed domain client; the Web never calls a domain service directly. Conversation and service-history lists are independently paginated (default 10 items), so opening one surface never waits for the other. Service browsing reports partial/degraded dependencies rather than manufacturing results. The Web's “Continue with AI” entry creates a Core conversation with the selected service context before the first prompt is sent. Healthcare patient records remain Healthcare-owned; the Gateway only enforces the public actor boundary and forwards the request.
-
-`POST /api/v1/recommendations/rank` is a deterministic V1 ranking adapter. It consumes authoritative candidates and combines relevance, distance, ETA, price, and rating; suspicious default coordinates are excluded from distance scoring. It is deliberately not an ML claim and does not create a booking.
-
-The Gateway-only Service Hub action surface is documented in
-[`gateway-v1.yaml`](../../packages/contracts/openapi/gateway-v1.yaml): Food
-restaurant/menu/cart reads and writes, Restaurant detail/availability/hold,
-Healthcare doctor/slot actions, and Ride quote-based prepare/final confirmation
-are all typed Gateway routes. Domain services remain authoritative; every
-retryable write carries `Idempotency-Key`, and final Ride/Restaurant/Healthcare
-actions pass through explicit confirmation evidence. `GET /api/v1/history`
-accepts `service`, `status`, `from`, `to`, `page`, and `page_size` filters;
-its default page size is `10`.
-Notification projections are Core-owned read models: `GET /api/v1/notifications`
-accepts `status`, `page` (default `1`), and `page_size` (default `20`, maximum
-`100`) and returns `items`, `total`, `page`, `page_size`, and `has_more`.
-Notification list/count reads do not synchronously scan domain-service history.
-
-Assistant responses include `workflow_status` (`PENDING`, `RUNNING`,
-`COMPLETED`, `PARTIAL_SUCCESS`, or `FAILED`) and safe task-error cards. A
-failed dependent task is reported as `DEPENDENCY_BLOCKED`; independent tasks
-continue when policy allows. A final Ride failure never auto-cancels a
-completed Healthcare appointment. History detail may include a sanitized
-Core payment/receipt/refund summary and never exposes provider references.
-
-For Healthcare appointments that require payment, the Assistant presents two
-separate public confirmations: service details first, then the amount/currency
-and payment terms. The second confirmation records payment and immediately
-executes the already-bound final domain confirmation on success; it never
-shows a third public appointment-confirmation action.
-
-`POST /api/v1/workflows/multi-service/plan` persists a read/planning state machine for `restaurant_ride`, `healthcare_ride`, and independent `food_healthcare` work. The request carries only an explicitly selected Restaurant/Healthcare resource ID and its authority; the Gateway re-reads the active record through the owning typed client before creating the destination snapshot. Caller/model-supplied address or coordinates are rejected rather than treated as authoritative. Step results and explicit compensation results are actor-scoped, idempotent, durable in Core, and expose `PENDING`, `RUNNING`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `COMPENSATING`, or `RECOVERY_REQUIRED`. Healthcare compensation is `NONE`; a Ride failure never auto-cancels a Healthcare appointment.
+- Quản lý hội thoại: `GET/POST /api/v1/conversations`, xem chi tiết/cập nhật/lưu trữ/xóa theo actor.
+- Thông tin cá nhân: `/api/v1/users/me`, `/api/v1/addresses`, `/api/v1/location`, `/api/v1/healthcare/patients`.
+- Lịch sử & Dịch vụ: `/api/v1/history`, `/api/v1/services`, theo dõi chuyến đi `/api/v1/rides/{bookingId}/tracking`.
+- Xếp hạng gợi ý: `POST /api/v1/recommendations/rank` là adapter xếp hạng tất định V1 kết hợp độ liên quan, khoảng cách, ETA, giá và đánh giá; loại bỏ tọa độ mặc định đáng ngờ khỏi phép tính khoảng cách.
+- Kế hoạch đa dịch vụ: `POST /api/v1/workflows/multi-service/plan` lưu trữ state machine cho các kịch bản `restaurant_ride`, `healthcare_ride`, và `food_healthcare`. Tọa độ hay địa chỉ do model tự sinh đều bị từ chối; Gateway luôn đọc lại dữ liệu có thẩm quyền từ service sở hữu. Thất bại của chuyến đi Ride không bao giờ tự động hủy lịch hẹn Healthcare đã thành công.

@@ -1,31 +1,27 @@
-# ADR-0005: Target Authentication and Session Architecture
+# ADR-0005: Kiến Trúc Xác Thực Và Quản Lý Phiên Mục Tiêu (Auth & Session Architecture)
 
-- Status: Accepted decision for Phase 1; not implemented in Phase 0
-- Date: 2026-08-10
-- Owners: Core/Gateway
+- Trạng thái: Đã chấp thuận và đã triển khai đầy đủ cho Giai đoạn 1 (Accepted & Implemented)
+- Ngày: 2026-08-10
+- Chủ sở hữu: Core / API Gateway
 
-## Context
+## Ngữ cảnh (Context)
 
-The current Gateway has a development-only demo login and a short-lived signed token path. It has no user/session tables, refresh-cookie flow, password reset, or production identity provider. Implementing those features during the foundation phase would mix a target decision with the current demo boundary.
+Ban đầu, Gateway chỉ có cơ chế đăng nhập tài khoản demo và cấp token ngắn hạn dùng cho phát triển. Hệ thống thiếu bảng lưu trữ người dùng/phiên, luồng cookie refresh, tính năng đặt lại mật khẩu và nhà cung cấp danh tính cấp độ sản xuất.
 
-## Decision
+## Quyết định (Decision)
 
-Phase 1 real authentication will use:
+Hệ thống xác thực thực tế sử dụng các tiêu chuẩn sau:
 
-1. Argon2id for password hashing. Plaintext passwords and reversible password encryption are prohibited.
-2. Short-lived Bearer access tokens with a target lifetime of approximately 10–15 minutes. Tokens carry issuer, audience, subject, session identifier, issued-at, expiry, and a unique identifier sufficient for validation and revocation policy.
-3. Long-lived refresh tokens in an HttpOnly cookie. Only a hash of the refresh token is stored. Refresh is one-time and rotates the token within a token family; reuse detection revokes the family and the affected session.
-4. `Secure` on refresh cookies outside local development. `SameSite=Lax` is the default deployment choice; a cross-site deployment must document why `SameSite=None; Secure` is necessary and must use CSRF protection.
-5. Cookie-authenticated state changes validate the configured Origin. A same-origin Referer may be accepted as a documented fallback; absent or foreign Origin/Referer is rejected. A CSRF token is required for state-changing cookie-authenticated requests when the deployment topology can receive cross-site requests.
-6. Session controls include expiry, revoke current session, revoke all sessions, logout current session, password-change invalidation of existing sessions, and one-time password-reset tokens with bounded expiry and hash-only storage.
-7. The demo auth path is available only in `development` and `test`; `APP_ENV=production` with demo auth enabled fails fast.
+1. **Argon2id** cho thuật toán băm mật khẩu. Nghiêm cấm lưu mật khẩu dạng văn bản thô hoặc mã hóa có thể giải ngược.
+2. **Access Token JWT ngắn hạn** với thời gian sống từ 10–15 phút (`AUTH_ACCESS_TOKEN_TTL_SECONDS=900`). Token chứa issuer, audience, subject, mã định danh phiên (session ID), thời gian cấp phát, thời gian hết hạn và claim định danh duy nhất.
+3. **Refresh Token dài hạn trong cookie `HttpOnly`**. Chỉ lưu trữ mã băm SHA-256 của refresh token trong cơ sở dữ liệu. Token chỉ dùng một lần và tự động xoay vòng (rotate) trong một nhóm thế hệ (token family); phát hiện hành vi tái sử dụng (replay attack) sẽ ngay lập tức thu hồi toàn bộ nhóm phiên.
+4. **Cờ `Secure`** trên cookie refresh ở mọi môi trường ngoài HTTP dev cục bộ. Mặc định sử dụng `SameSite=Lax`.
+5. **Xác thực Origin/Referer** cho mọi thao tác thay đổi trạng thái có cookie. Từ chối request nếu thiếu Origin hoặc Origin không nằm trong danh sách tin cậy.
+6. **Kiểm soát phiên làm việc**: Hỗ trợ xem danh sách phiên, hủy phiên hiện tại, hủy toàn bộ phiên, đăng xuất và tự động vô hiệu hóa tất cả phiên khi đổi mật khẩu; token đặt lại mật khẩu dùng một lần, có thời hạn và chỉ lưu dạng băm.
+7. **Bảo vệ môi trường**: Chế độ demo auth chỉ khả dụng khi `APP_ENV` là `development` hoặc `test`; nếu đặt `APP_ENV=production` mà bật demo auth sẽ báo lỗi dừng khởi động ngay lập tức (fail-fast).
 
-The Gateway remains the public auth boundary. Domain services do not implement their own user/session database and do not receive browser credentials. Core owns identity/session/confirmation metadata when those Phase 1 tables are introduced.
+API Gateway là ranh giới xác thực công khai duy nhất. Các domain service không tự quản lý bảng người dùng/phiên riêng và không tiếp nhận thông tin đăng nhập của trình duyệt. Dịch vụ Core sở hữu toàn bộ metadata danh tính, phiên và xác nhận.
 
-## Phase 0 boundary
+## Hệ quả (Consequences)
 
-This ADR creates no users, sessions, refresh tokens, cookies, password tables, register endpoint, refresh endpoint, logout endpoint, or reset endpoint. Phase 0 only validates the current demo configuration and locks the target policy.
-
-## Consequences
-
-Phase 1 must add an owned Core migration, password/session tests, an OpenAPI contract, cookie/CSRF integration tests, revocation and reuse tests, and a compatibility plan for the current demo login. Until then, the current Bearer demo token is not production authentication.
+Đã bổ sung migration `009_core_auth.sql` do Core sở hữu, các bài kiểm thử mật khẩu/phiên, hợp đồng OpenAPI `gateway-auth-v1.yaml`, kiểm tra tích hợp cookie/CSRF, kiểm tra thu hồi phiên và phát hiện replay.

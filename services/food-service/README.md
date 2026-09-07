@@ -1,7 +1,13 @@
-# Food Service
+# Dịch Vụ Đồ Ăn (Food Service)
 
-Food owns Vietnamese food catalog, restaurant-scoped carts, vouchers, delivery quotes, food orders, status events, drivers, and cancellation policy. It does not own dine-in table reservations or Gateway payment state.
+Dịch vụ Food sở hữu danh mục ẩm thực Việt Nam, giỏ hàng theo từng nhà hàng, voucher giảm giá, báo giá phí giao hàng, đơn đặt món ăn, sự kiện trạng thái đơn, tài xế giao hàng và chính sách hủy đơn. Dịch vụ này **tuyệt đối không sở hữu** việc đặt bàn ăn tại chỗ (thuộc về Restaurant) hoặc trạng thái xử lý thanh toán (thuộc về API Gateway).
 
-Run `scripts/database/migrate.ps1` (or `.sh`) and then `scripts/database/seed.ps1` (or `.sh`) with PostgreSQL running. The seed workflow imports the configured Food catalog dataset and does not create fixed demo restaurants or menu items. Compose sets `PERSISTENCE=postgres`; unit tests may use the explicit `InMemoryFoodRepository` adapter, while `tests/test_postgres_integration.py` exercises a real disposable database when `FOOD_TEST_DATABASE_URL` is configured. Every `/api/v1` route is internal-only and requires `X-Internal-Service-Token`; user-scoped calls also require the asserted `X-Actor-Id`.
+## Khởi Chạy & Dữ Liệu
 
-Preview calculates subtotal, voucher discount, Haversine delivery fee, ETA, total, cancellation policy, supported payment methods, cart version, and a snapshot hash. It never creates an order. The Food worker advances due states transactionally without a broker; the Gateway reconciliation worker handles rejection/cancellation refunds independently of user polling.
+Chạy `scripts/database/migrate.ps1` (hoặc `.sh`) và sau đó chạy `scripts/database/seed.ps1` (hoặc `.sh`) khi PostgreSQL đang hoạt động. Quy trình seed nhập tập dữ liệu danh mục Food đã cấu hình và không tạo các nhà hàng hay món ăn demo cố định. Môi trường Compose thiết lập `PERSISTENCE=postgres`; các bài unit test có thể sử dụng adapter `InMemoryFoodRepository`, trong khi `tests/test_postgres_integration.py` kiểm thử trên cơ sở dữ liệu dùng một lần khi `FOOD_TEST_DATABASE_URL` được cấu hình.
+
+Mọi tuyến `/api/v1` đều là API nội bộ và bắt buộc phải có header `X-Internal-Service-Token`; các lệnh gọi gắn với người dùng yêu cầu thêm header khẳng định `X-Actor-Id`.
+
+## Cơ Chế Xem Trước & Worker
+
+Endpoint preview tính toán tạm tính (subtotal), giảm giá từ voucher, phí giao hàng theo công thức Haversine, thời gian giao dự kiến (ETA), tổng tiền, chính sách hủy, phương thức thanh toán hỗ trợ, phiên bản giỏ hàng và mã băm snapshot. Bước này **tuyệt đối không tạo đơn hàng**. Worker của Food tự động thúc đẩy các trạng thái đến hạn theo giao dịch cơ sở dữ liệu mà không cần message broker; worker đối soát của Gateway xử lý việc hoàn tiền khi bị từ chối/hủy đơn một cách độc lập với việc polling của người dùng.

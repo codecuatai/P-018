@@ -1,9 +1,9 @@
-# X-One architecture entry point
+# Điểm Truy Cập Kiến Trúc X-One (Architecture Entry Point)
 
-The submission-facing architecture document is
-[docs/architecture_diagram.md](docs/architecture_diagram.md). It distinguishes
-the implemented local MVP from the target production evolution and links to the
-canonical runtime, boundary, data, workflow, and security documents.
+Tài liệu chính thức dùng cho việc nộp bài và đánh giá kiến trúc là:
+👉 [docs/architecture_diagram.md](docs/architecture_diagram.md).
 
-This compatibility entry point intentionally does not duplicate architecture
-claims. The source-of-truth index is [docs/README.md](docs/README.md).
+Tài liệu này phân định rạch ròi giữa **phiên bản MVP thực tế hiện tại** và **lộ trình tiến hóa lên môi trường Production**, đồng thời liên kết trực tiếp tới các tài liệu chuyên sâu về runtime, ranh giới dịch vụ, cơ sở dữ liệu, workflow nghiệp vụ và an toàn bảo mật.
+
+Để xem danh mục toàn bộ tài liệu kiến trúc của hệ thống, vui lòng truy cập:
+👉 [docs/README.md](docs/README.md).

@@ -1,26 +1,27 @@
 # Gate G2 — X-One MVP
 
-Quick links to the Gate G2 demo, architecture deliverable, and evaluation
-evidence.
-## Root README.md
-- [README](../README.md)
-## Demo
+Tổng hợp các liên kết nhanh phục vụ nghiệm thu Gate G2: video demo, tài liệu kiến trúc bàn giao và bằng chứng đánh giá.
 
-| Resource | Link | Notes |
+## Tài liệu gốc (Root README)
+- [README Gốc](../README.md)
+
+## Video Demo Nghiệm Thu
+
+| Tài nguyên | Liên kết | Ghi chú |
 | --- | --- | --- |
-| MVP video | [Watch the MVP demo](https://drive.google.com/file/d/1UQpCzyh7G09Qk2FcGSJVViNNy_k4_8is/view?usp=drive_link) | Product flow walkthrough |
+| **Video Demo MVP** | [Xem Video Demo MVP](https://drive.google.com/file/d/1UQpCzyh7G09Qk2FcGSJVViNNy_k4_8is/view?usp=drive_link) | Trình diễn luồng trải nghiệm sản phẩm thực tế |
 
-## Gate G2 evidence
+## Bằng Chứng Bàn Giao Gate G2
 
-| Deliverable | Link |
+| Hạng mục bàn giao | Liên kết |
 | --- | --- |
-| Architecture diagram | [Open the architecture deliverable](architecture_diagram.md) |
-| Evaluation overview | [Open the Gate G2 evaluation](../eval/README.md) |
-| Manual test cases | [Review the seven manual cases](../eval/manual-cases.md) |
-| Latest result report | [Read the evaluation result](../eval/results/gate-g2-mvp-eval.md) |
+| **Sơ đồ & Tài liệu Kiến trúc** | [Mở tài liệu kiến trúc bàn giao](architecture_diagram.md) |
+| **Tổng quan Đánh giá Nghiệm thu** | [Mở tài liệu đánh giá Gate G2](../eval/README.md) |
+| **Kịch bản kiểm thử thủ công** | [Xem 7 ca kiểm thử thủ công](../eval/manual-cases.md) |
+| **Báo cáo kết quả mới nhất** | [Đọc báo cáo kết quả đánh giá](../eval/results/gate-g2-mvp-eval.md) |
 
-## Related documentation
+## Tài Liệu Liên Quan
 
-- [Current architecture state](architecture/current-state.md)
-- [Local development guide](development/local-development.md)
-- [Documentation index](README.md)
+- [Trạng thái kiến trúc hiện tại](architecture/current-state.md)
+- [Hướng dẫn phát triển cục bộ](development/local-development.md)
+- [Mục lục tài liệu](README.md)

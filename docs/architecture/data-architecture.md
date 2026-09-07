@@ -1,70 +1,89 @@
-# Data Architecture
+# Kiến Trúc Dữ Liệu & Quản Lý CSDL (Data Architecture)
 
-Local PostgreSQL provisions six logical databases and owners: `xone_core`/`core_user`, `xone_agent`/`agent_user`, `xone_ride`/`ride_user`, `xone_restaurant`/`restaurant_user`, `xone_healthcare`/`healthcare_user`, and `xone_food`/`food_user`. `xone_agent` stores only allowlisted run/checkpoint metadata owned by Agent; conversation state and domain facts remain Core/domain-owned.
+Hệ thống cơ sở dữ liệu của **X-One** sử dụng **PostgreSQL 16**, được cấu hình phân chia thành **6 cơ sở dữ liệu logic (Logical Databases)** với người dùng sở hữu (DB Owners) riêng biệt:
+1. `xone_core` (User: `core_user`): CSDL của API Gateway.
+2. `xone_agent` (User: `agent_user`): CSDL metadata của AI Agent.
+3. `xone_ride` (User: `ride_user`): CSDL của Ride Service.
+4. `xone_restaurant` (User: `restaurant_user`): CSDL của Restaurant Service.
+5. `xone_healthcare` (User: `healthcare_user`): CSDL của Healthcare Service.
+6. `xone_food` (User: `food_user`): CSDL của Food Service.
 
 ```mermaid
 flowchart TB
-  Gateway --> Core[(xone_core)]
-  Agent --> AgentDb[(xone_agent)]
-  Ride --> RideDb[(xone_ride)]
-  Restaurant --> RestaurantDb[(xone_restaurant)]
-  Healthcare --> HealthcareDb[(xone_healthcare)]
-  Food --> FoodDb[(xone_food)]
+    Gateway[NestJS Gateway] --> Core[(xone_core)]
+    Agent[Agent Service] --> AgentDb[(xone_agent)]
+    Ride[Ride Service] --> RideDb[(xone_ride)]
+    Restaurant[Restaurant Service] --> RestaurantDb[(xone_restaurant)]
+    Healthcare[Healthcare Service] --> HealthcareDb[(xone_healthcare)]
+    Food[Food Service] --> FoodDb[(xone_food)]
 ```
 
-Core owns confirmations, confirmation executions, payment records, refunds, receipts, conversation state, profile context, Core saved addresses, multi-service workflow plans, idempotency evidence, audit events, Assistant action execution receipts, and identity/session evidence through additive Gateway migrations `001` through `011`. Migration `010_core_personal_context.sql` owns profile fields, actor-scoped saved addresses, and conversation metadata; migration `011_core_multi_service_workflows.sql` persists the actor-scoped workflow plan, dependency/compensation state, request hash, and workflow idempotency key. It is orchestration state, not a domain booking invariant. Credentials use Argon2id hashes; only SHA-256 hashes of opaque refresh/reset tokens persist. `token_family_id` represents a revocable logical browser session while each `user_sessions` row represents one rotated token generation. The recovery migrations add durable provider transactions, stale-confirmation claims, execution payloads, atomic payment/recovery claims, refund recovery scheduling, canonical refund scope, work-queue claims, and conversation versioning. Agent migration `002_agent_run_metadata.sql` stores only actor/workflow/run identifiers, phase, schema version, bounded capability names, latency/retry/error codes, and an idempotency hash; it explicitly excludes raw prompts, messages, conversation state, and domain payloads. The earlier `001_agent_workflow_states.sql` remains immutable migration history after the develop integration, but its broad JSON table has no runtime writer. Food owns catalog/cart/order JSON snapshots, actor-scoped address discovery, immutable status events, timed workflow fields, driver state, voucher redemptions, voucher eligibility indexes, transition-operation idempotency, and additive catalog provenance/version records through `008_food_catalog_search.sql`. Migration `007` atomically records actor/operation/key/payload-hash evidence with the resulting cart so exact retries return one logical mutation and changed payloads conflict. Migration `008` maintains an accent-insensitive `search_text` column and partial PostgreSQL trigram index owned by Food; the source JSON remains authoritative and is hydrated only for the selected result window. Runtime repositories use PostgreSQL; in-memory adapters are explicit unit-test adapters.
+---
 
-Ride owns quotes, tariffs, bookings, driver availability/assignment, tracking snapshots and append-only tracking events in `xone_ride`. Its owner-local Alembic revision `20260812_0003_ride_lifecycle` adds the explicit quote/booking lifecycle, `resource_version`, and persisted tracking-event state; revision `20260816_0006` additively binds `passenger_count` and a capacity-policy version snapshot to quotes and bookings while backfilling existing rows as one-passenger transactions; revision `20260827_0007_quote_snapshot` stores the immutable JSON quote snapshot on each booking so history/cancellation remains truthful after quote state changes. Tariff and driver rows remain authoritative for quote and assignment decisions. Ride writes enforce capacity, actor/operation idempotency and confirmation evidence, while Gateway only orchestrates and shapes the public response.
+### 1. Nguyên Tắc Phân Tách Logic Tuyệt Đối (Logical Isolation)
 
-Restaurant owns dine-in restaurant, hold, table-availability, reservation state, actor/operation-scoped lifecycle idempotency, and imported restaurant provenance/coordinate quality in its Alembic-managed database (`0001` through additive catalog revisions). The imported Hanoi source retains raw coordinates and marks the repeated default coordinate as `suspicious_default`; search/ranking does not treat it as a real location. Healthcare owns departments, doctors, patients, time slots, appointments, payment acknowledgement records, audit history, facility identity, and imported catalog provenance/version records. Healthcare migrations `002` through `005` preserve slot reuse, actor-patient links, facility/source metadata, and nullable consultation prices; compatibility migration `003a_healthcare_legacy_catalog_bridge.sql` upgrades old-develop catalog tables before `004` without dropping legacy IDs or rows. A missing price is returned as unknown and a slot without an authoritative price cannot be held; no zero price is fabricated. Gateway reaches these domains only through typed REST clients and never writes their tables directly.
+- **Không có truy vấn chéo (No Cross-Database Queries)**: Mỗi microservice chỉ được phép kết nối vào duy nhất CSDL logic của chính nó. Không bao giờ dùng SQL JOIN giữa các database.
+- **Không có khóa ngoại chéo (No Cross-Service Foreign Keys)**: Mọi liên kết giữa các dịch vụ đều được truyền tải thông qua API snapshot hoặc ID tham chiếu định kiểu.
+- **Không dùng chung ORM Entity**: Mỗi service tự định nghĩa Schema/Model nội bộ (TypeORM/Prisma cho NestJS và SQLAlchemy cho Python).
+- **Phân tách vật lý (Physical Separation)**: Ở giai đoạn hiện tại (MVP/Staging), việc dùng chung 1 instance PostgreSQL với 6 logical DB giúp tiết kiệm tài nguyên máy chủ. Khi quy mô tăng trưởng trong tương lai, các database này có thể dễ dàng tách sang các máy chủ vật lý độc lập mà không cần sửa code.
 
-Logical ownership is mandatory from the first vertical slice: each domain owns its schema/table/migration boundary, validates its own writes, and shares API snapshots/external references rather than tables. There are no cross-database queries/FKs or shared ORM entities. Each service owns its migration, seed, transaction boundary, and domain idempotency. Restaurant catalog provenance uses owner-local Alembic revisions `0004_restaurant_catalog` and `0005_restaurant_versions`; the latter owns the `catalog_dataset_versions` registry used by repeatable importer apply/audit.
+---
 
-Core/Gateway owns X-One user identity, credentials, sessions, reset evidence, audit trail, profile context, and saved addresses. Food and Ride persist immutable transaction address snapshots; when Gateway calls Food preview/order tools it maps an actor-owned Core address to a validated snapshot, and Food revalidates actor ownership. Healthcare owns patient identity, medical history, symptoms, appointments and actor-to-patient links; `003_patient_user_links.sql` is the actor-link boundary and `004_healthcare_catalog_provenance.sql`/`005_healthcare_catalog_nullable_price.sql` extend imported catalog quality. `HEALTHCARE_DEFAULT_PATIENT_ID` remains a development fallback only when no explicit patient link is selected. See ADR-0006 and ADR-0007.
+### 2. Chi Tiết Dữ Liệu Từng Phân Hệ
 
-Migration governance is additive and owner-local: applied migrations are immutable, no runtime `create_all()` or destructive startup migration is allowed, and a schema change requires an owned migration plus data-architecture/test updates. Core migrations `015_core_api_keys.sql` and `016_core_token_usage.sql` own Admin API-key metadata and token-usage aggregates respectively; neither becomes authority for another domain. The current filesystem baseline and next revision convention are recorded in [Database and Migrations](../development/database-and-migrations.md).
+#### A. CSDL Core (`xone_core`) — Sở hữu bởi Gateway
+- Quản lý qua các bản migration SQL lũy tiến từ `001` đến `016`:
+  - `001`–`009`: Bảng `users` (mật khẩu băm bằng Argon2id), `user_sessions` (quản lý token family, refresh token hash SHA-256), `audit_logs`, và các bằng chứng giao dịch sandbox.
+  - `010_core_personal_context.sql`: Quản lý hồ sơ người dùng, sổ địa chỉ đã lưu (`saved_addresses`) và metadata hội thoại.
+  - `011_core_multi_service_workflows.sql`: Lưu trữ kế hoạch workflow đa dịch vụ, trạng thái phụ thuộc, bù trừ lỗi (compensation) và bằng chứng Idempotency.
+  - `012_core_product_ops.sql`: Lưu trữ thông báo (`notifications`), yêu thích (`user_favorites`), đánh giá dịch vụ (`service_feedback`), và phiếu hỗ trợ (`support_tickets`).
+  - `013_core_admin_support_idempotency.sql`: Khóa chống lặp khi Admin xử lý ticket.
+  - `015_core_api_keys.sql` & `016_core_token_usage.sql`: Quản lý API Key nội bộ và thống kê lượng token AI tiêu thụ.
 
-Physical database-instance/cluster separation is a later operational decision, not a claim about the current Compose layout. Defer it until measured scale, reliability, security, compliance, team-ownership, deployment-independence, or isolation needs justify it. Bootstrap runs only on a new PostgreSQL volume.
+#### B. CSDL Ride (`xone_ride`) — Sở hữu bởi Ride Service
+- Quản lý bằng Alembic migrations:
+  - Bảng `quotes`: Lưu trữ báo giá lộ trình, mức cước (tariff), thời gian hết hạn của báo giá và snapshot lộ trình.
+  - Bảng `bookings`: Lưu trữ cuốc xe chính thức, thông tin tài xế nhận chuyến, trạng thái chuyến đi (`REQUESTED`, `ASSIGNED`, `ARRIVED`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`).
+  - Bảng `tracking_events`: Lưu trữ nhật ký tọa độ di chuyển theo thời gian thực (Append-only).
+  - Khắc phục phantom revision và snapshot bất biến: Mỗi đơn đặt xe lưu giữ toàn bộ snapshot JSON của báo giá tại thời điểm đặt xe để đảm bảo tính minh bạch.
 
-Restaurant catalog provenance is extended by the owner-local Alembic revisions
-`0004_restaurant_catalog` and `0005_restaurant_versions`. The latter creates
-the Restaurant-owned `catalog_dataset_versions` table used by the importer to
-record the active dataset version and repeatable apply/audit evidence; it does
-not create a cross-domain catalog or shared database authority.
+#### C. CSDL Restaurant (`xone_restaurant`) — Sở hữu bởi Restaurant Service
+- Quản lý bằng Alembic migrations:
+  - Bảng `restaurants`: Danh mục nhà hàng, địa chỉ, loại hình ẩm thực, tọa độ địa lý.
+  - Bảng `tables`: Quản lý danh sách bàn ăn và sức chứa (capacity).
+  - Bảng `holds`: Giữ chỗ bàn tạm thời trong 15 phút.
+  - Bảng `reservations`: Đơn đặt bàn đã được xác nhận chính thức.
+  - Bảng `catalog_dataset_versions`: Theo dõi phiên bản dữ liệu nhà hàng được nạp từ file CSV.
 
-Food and Restaurant discovery catalogs are imported PostgreSQL data at runtime.
-Operational seed commands do not create fixed restaurant or menu-item examples:
-Food runs its catalog importer, while Restaurant seed only adds owned booking
-resources (tables and opening hours) to already-imported restaurant rows. In
-development it additively maintains 32 `DEMO-XONE-*` tables of capacity 12 per
-active restaurant so repeated demo reservations do not exhaust catalog
-availability; it never alters reservations, holds, accounts, or conversations.
-The
-in-memory Food repository remains an explicit unit-test adapter and is never
-selected by the Compose runtime configuration.
+#### D. CSDL Healthcare (`xone_healthcare`) — Sở hữu bởi Healthcare Service
+- Quản lý qua SQL migrations từ `001` đến `005`:
+  - Bảng `departments`: Danh mục chuyên khoa khám bệnh.
+  - Bảng `doctors`: Thông tin bác sĩ chuyên khoa, học hàm/học vị.
+  - Bảng `time_slots`: Các khung giờ khám bệnh khả dụng.
+  - Bảng `patient_user_links`: Liên kết giữa tài khoản người dùng và hồ sơ bệnh nhân.
+  - Bảng `appointments`: Đơn hẹn khám bệnh chính thức, kèm mã xác nhận và trạng thái thanh toán.
 
-The repository version-controls static development catalog snapshots in
-`data/` for Food, Restaurant, and Healthcare. The catalog importer reads them
-and performs idempotent, owner-local upserts; the development deployment
-workflow imports and verifies them after migrations. These source files are not
-a database backup and never contain or restore accounts, sessions, conversation
-history, bookings, appointments, payments, audit records, or other mutable
-domain data.
+#### E. CSDL Food (`xone_food`) — Sở hữu bởi Food Service
+- Quản lý qua SQL migrations từ `001` đến `008`:
+  - Bảng `merchants`, `menus`, `menu_items`: Thực đơn, danh mục món ăn và giá bán.
+  - Bảng `carts`: Giỏ hàng của người dùng, tự động đồng bộ và tính toán tổng tiền.
+  - Bảng `orders`: Đơn hàng món ăn, địa chỉ giao hàng snapshot và tiến trình giao hàng.
+  - `008_food_catalog_search.sql`: Cung cấp cột `search_text` loại bỏ dấu tiếng Việt và chỉ mục Trigram (Trigram Index) để tìm kiếm món ăn cực nhanh.
 
-## Product/Ops and local demo persistence
+#### F. CSDL Agent (`xone_agent`) — Sở hữu bởi Agent Service
+- Quản lý qua migration `002_agent_run_metadata.sql`:
+  - Chỉ lưu trữ metadata: ID lượt chạy, phase, phiên bản schema, thời gian phản hồi, mã lỗi an toàn và hash payload.
+  - Tuyệt đối không lưu trữ prompt thô hay nội dung hội thoại nhạy cảm.
 
-Core migration `012_core_product_ops.sql` adds actor-scoped durable
-`notifications`, `user_favorites`, `service_feedback`, `support_tickets` and
-`support_ticket_events`. These tables store references such as
-`domain/resource_id`; they do not copy or become authoritative for Food, Ride,
-Restaurant or Healthcare transactions. Migration
-`013_core_admin_support_idempotency.sql` adds request-hash/idempotency evidence
-for Admin support updates so a replay returns the same ticket without a second
-audit side effect.
+---
 
-The additive local seed adds only recognizable demo records: Healthcare
-department/doctor/slot rows and 36 synthetic Ride drivers with complete
-vehicle/license fields. `scripts/demo-reset.ps1` deletes mutable records only
-for explicitly matched actors and preserves catalogs and dataset versions by
-default. Local geocode fallback coordinates and accelerated Ride tracking are
-configuration flags, not production data or domain authority.
+### 3. Quy Trình Nạp Dữ Liệu Mẫu (Catalog Importer & Seeding)
+
+1. **Catalog Importer tĩnh (DataOps)**:
+   - Toàn bộ dữ liệu nhà hàng, thực đơn và danh mục bác sĩ tại Hà Nội được lưu trữ dưới dạng file CSV phiên bản hóa trong thư mục [data/](file:///d:/VIN/Projects/P-018/data/).
+   - Khi chạy script hoặc khởi động staging, container `catalog-importer` sẽ nạp tự động dữ liệu vào PostgreSQL một cách tất định và lũy tiến (Idempotent Upsert).
+2. **Kịch bản Demo Seeding (`-SeedDemo`)**:
+   - Tự động tạo 36 tài xế Ride với biển số xe và thông tin đầy đủ.
+   - Tạo 32 bàn ăn mẫu `DEMO-XONE-*` tại các nhà hàng để tránh hết chỗ khi demo.
+   - Tạo các khung giờ khám bệnh khả dụng trong tương lai và liên kết bệnh nhân mẫu.
+   - Kịch bản dọn dẹp [scripts/database/demo-reset.ps1](file:///d:/VIN/Projects/P-018/scripts/database/demo-reset.ps1) chỉ xóa các đơn hàng phát sinh trong phiên demo, bảo toàn nguyên vẹn danh mục gốc.

@@ -1,166 +1,106 @@
-# X-One Design System
+# Hệ Thống Thiết Kế X-One (Design System)
 
-This is the canonical visual source for X-One landing, authentication, product
-shell and future service surfaces.
+Tài liệu này là chuẩn mực trực quan chính thức cho trang landing page, giao diện xác thực, khung sản phẩm (product shell) và các bề mặt dịch vụ của X-One.
 
-## Direction
+## Định Hướng Thiết Kế (Design Direction)
 
-**Calm Kinetic Concierge** is calm, capable, precise, human and trustworthy.
-The Phase 1 landing evolves that direction into a cinematic product editorial:
-strong scenes, real product media, clear reading order and controlled depth.
-It should feel like X-One is calmly keeping a thread together, not like a
-generic AI dashboard or a decorative technology demo.
+**Calm Kinetic Concierge** (Người trợ lý năng động, điềm tĩnh) mang tính chất: điềm đạm, đĩnh đạc, năng lực cao, chuẩn xác, gần gũi và đáng tin cậy.
 
-The X-One four-path junction remains a structural signature when a surface
-needs to explain orchestration. It is not a default hero decoration. Landing
-surfaces prefer the real Hanoi media, the composer and the service story.
+Trang landing page Giai đoạn 1 phát triển định hướng này thành một ấn phẩm sản phẩm điện ảnh (cinematic product editorial): bối cảnh rõ ràng, phương tiện truyền thông sản phẩm thực tế, thứ tự đọc mạch lạc và độ sâu trường ảnh được kiểm soát. Giao diện đem lại cảm giác X-One đang âm thầm kết nối mọi việc một cách thông suốt, không phải là một dashboard AI thông thường hay bản demo công nghệ nặng tính trang trí.
 
-## Colour and type tokens
+Giao lộ 4 hướng đặc trưng của X-One đóng vai trò là dấu ấn cấu trúc khi cần diễn giải cơ chế điều phối, không phải là vật trang trí mặc định ở hero. Các bề mặt landing ưu tiên video thực tế về Hà Nội, khung nhập liệu trợ lý (composer) và câu chuyện kết nối đa dịch vụ.
 
-The only canonical token definitions live in `apps/web/src/app/globals.css`.
-Marketing and product CSS should use these semantic names instead of scattering
-new hex values through components.
+## Bảng Token Màu Sắc & Kiểu Chữ (Colour & Type Tokens)
 
-| Token | Value | Role |
+Định nghĩa token chuẩn tắc duy nhất nằm trong `apps/web/src/app/globals.css`. CSS của marketing và sản phẩm bắt buộc phải dùng các tên biến ngữ nghĩa này thay vì rải các mã màu hex ngẫu nhiên:
+
+| Token | Giá trị Hex | Vai trò |
 | --- | --- | --- |
-| `--color-canvas` | `#F5F7F8` | shared porcelain canvas |
-| `--color-surface` | `#FFFFFF` | paper/card surface |
-| `--color-ink` | `#111827` | primary text |
-| `--color-muted` | `#667085` | supporting text |
-| `--color-navy` | `#16324F` | structural dark and primary headings |
-| `--color-primary` | `#315EF5` | primary action and active route |
-| `--color-success` | `#0E8E83` | connected/confirmed state |
-| `--color-border` | `#D9E0E7` | quiet visible boundary |
-| `--surface-ice` | `#F1F4FF` | supported-services atmosphere |
-| `--surface-sand` | `#F7F2EC` | multi-service story atmosphere |
-| `--surface-mist` | `#EEF8F6` | map/safety atmosphere |
-| `--surface-slate` | `#F1F5F8` | assistant atmosphere |
+| `--color-canvas` | `#F5F7F8` | Nền canvas sứ dùng chung |
+| `--color-surface` | `#FFFFFF` | Bề mặt giấy / card màu trắng |
+| `--color-ink` | `#111827` | Màu văn bản chính |
+| `--color-muted` | `#667085` | Màu văn bản phụ / mô tả |
+| `--color-navy` | `#16324F` | Màu tối cấu trúc và tiêu đề chính |
+| `--color-primary` | `#315EF5` | Hành động chính và tuyến đường đang kích hoạt (Cobalt) |
+| `--color-success` | `#0E8E83` | Trạng thái đã kết nối / xác nhận thành công (Teal) |
+| `--color-border` | `#D9E0E7` | Đường viền ngăn cách thanh mảnh, tinh tế |
+| `--surface-ice` | `#F1F4FF` | Không khí bề mặt khu vực Dịch vụ hỗ trợ |
+| `--surface-sand` | `#F7F2EC` | Không khí bề mặt khu vực Câu chuyện đa dịch vụ |
+| `--surface-mist` | `#EEF8F6` | Không khí bề mặt khu vực Bản đồ / An toàn |
+| `--surface-slate` | `#F1F5F8` | Không khí bề mặt khu vực Trợ lý AI |
 
-Domain accents are bounded to the local service media: muted amber for Food,
-cobalt for Ride, muted berry for Restaurant and teal for Healthcare. They are
-never used as full-section fills or as the only status signal.
+Màu nhấn riêng của từng domain gắn liền với hình ảnh dịch vụ cục bộ: hổ phách dịu cho Food, xanh cobalt cho Ride, đỏ mọng (berry) trầm cho Restaurant và xanh mòng két (teal) cho Healthcare. Chúng không bao giờ được dùng để lấp đầy toàn bộ section hoặc làm tín hiệu trạng thái duy nhất.
 
-Use **Be Vietnam Pro** for headings and prose, with controlled high-density
-headlines and roughly 1.5–1.7 body line height. Use **IBM Plex Mono** only for
-small status, timestamp or structured utility labels. Inter is not the intended
-product face.
+Sử dụng phông chữ **Be Vietnam Pro** cho tiêu đề và nội dung thông thường, với chiều cao dòng văn bản thân từ 1.5–1.7. Sử dụng **IBM Plex Mono** chỉ cho các nhãn trạng thái kỹ thuật nhỏ, mốc thời gian hoặc nhãn tiện ích. Phông chữ Inter không phải là phông chữ định hướng cho sản phẩm này.
 
-## Landing composition
+## Bố Cục Trang Landing (Landing Composition)
 
-The landing uses this tonal rhythm:
+Trang landing page tuân thủ nhịp điệu sắc thái sau:
 
-| Scene | Surface |
+| Phân cảnh | Bề mặt nền |
 | --- | --- |
-| Hero | white with Hanoi video |
-| Supported services | Ice Cobalt |
-| How X-One works | white |
-| Multi-service story | Warm Sand |
-| Map | Mist Teal |
-| Safety | white with a Mist Teal panel |
-| Assistant | Cool Slate |
-| Final CTA | Cool Slate, editorial light scene |
-| Footer | minimal legal strip integrated into the final scene |
+| **Hero** | Màu trắng kèm video phong cảnh Hà Nội |
+| **Dịch vụ hỗ trợ (Supported Services)** | Ice Cobalt |
+| **Cách thức hoạt động (How X-One Works)** | Màu trắng |
+| **Câu chuyện đa dịch vụ (Multi-service Story)** | Warm Sand (Cát ấm) |
+| **Bản đồ lộ trình (Map)** | Mist Teal (Sương mờ) |
+| **An toàn & Bảo mật (Safety)** | Nền trắng với bảng Mist Teal |
+| **Trợ lý (Assistant)** | Cool Slate |
+| **Kêu gọi hành động cuối (Final CTA)** | Cool Slate, cảnh sáng phong cách biên tập |
+| **Chân trang (Footer)** | Dải pháp lý tối giản tích hợp liền mạch vào cảnh cuối |
 
-The marketing header is fixed over the hero inside one transparent positioning
-frame containing two independent floating islands: a fit-content brand island
-near the page gutter and a navigation/action island near the opposite gutter.
-Each surface is approximately 54–60px tall with a restrained white surface,
-quiet border, 14–18px backdrop blur and soft tinted shadow. After the page
-leaves the top, both islands become only slightly more opaque and raised without
-changing shape. The islands never visually connect. Landing anchors account for
-the shell offset; mobile keeps the compact brand island and the existing Sheet
-menu as a separate island.
+Header marketing được cố định nổi phía trên hero bên trong một khung vị trí trong suốt chứa hai "đảo nổi" (floating islands) độc lập: đảo thương hiệu vừa vặn nội dung nằm ở mép trái và đảo điều hướng/hành động nằm ở mép phải. Khi cuộn trang, cả hai đảo chỉ tăng nhẹ độ đục và nâng nhẹ bóng mà không đổi hình dạng.
 
-The hero begins its meaningful content about 28–44px below the fixed header.
-There is no extra kicker above the title. Its video is a full cinematic bleed,
-while the title and composer remain the primary readable objects. On desktop
-the title is intentionally two lines:
+Hero bắt đầu nội dung chính khoảng 28–44px bên dưới header. Không có nhãn kicker thừa phía trên tiêu đề. Video bao phủ toàn màn hình kiểu điện ảnh, trong khi tiêu đề và khung soạn thảo trợ lý vẫn là các đối tượng dễ đọc nhất. Trên desktop, tiêu đề chính được ngắt thành hai dòng đầy chủ ý:
 
 ```text
 Một yêu cầu.
 Nhiều việc được kết nối.
 ```
 
-The supported-services scene is one asymmetric split: end-user introduction and
-active-service copy on the left, with a floating four-slab composition on the
-right. The supplied transparent WebP visuals for Food, Ride, Restaurant and
-Healthcare sit slightly above pale ice material slabs with varied sizes, poses
-and depth. Selection brings one slab forward without changing layout; there is
-no orbital wheel or autoplay.
+## Hợp Đồng Phương Tiện Truyền Thông (Media Contract)
 
-## Landing media contract
+Các tài nguyên công khai tùy chọn nằm tại `apps/web/public/media/`:
 
-Optional public assets live under `apps/web/public/media/`:
-
-| Purpose | Expected path | Fallback |
+| Mục đích | Đường dẫn dự kiến | Phương án dự phòng (Fallback) |
 | --- | --- | --- |
-| Hero ambient video | `/media/hero-loop.mp4` | hero poster or neutral media layer |
-| Hero poster / reduced-motion frame | `/media/hero-poster.webp` | porcelain neutral layer |
-| Service visual — Food | `/media/services/food.webp` | reserved image area with calm label |
-| Service visual — Ride | `/media/services/ride.webp` | reserved image area with calm label |
-| Service visual — Restaurant | `/media/services/restaurant.webp` | reserved image area with calm label |
-| Service visual — Healthcare | `/media/services/healthcare.webp` | reserved image area with calm label |
-| Hanoi marketing map | `/media/hanoi-map.webp` | neutral map presentation |
-| Optional multi-service capture | `/media/xone-multiservice-example.webp` | text-led relationship story |
-| X-One chat capture | `/media/xone-chat-example.webp` | polished neutral product panel |
-| X-One confirmation capture | `/media/xone-confirmation-example.webp` | polished neutral product panel |
-| Final editorial object | `/media/final/xone-object.webp` | quiet object composition fallback |
+| Video nền Hero | `/media/hero-loop.mp4` | Ảnh poster hero hoặc lớp media trung tính |
+| Poster Hero / Khung hình giảm chuyển động | `/media/hero-poster.webp` | Lớp nền sứ trung tính |
+| Hình ảnh dịch vụ — Đồ ăn (Food) | `/media/services/food.webp` | Khung ảnh bảo lưu kèm nhãn điềm đạm |
+| Hình ảnh dịch vụ — Di chuyển (Ride) | `/media/services/ride.webp` | Khung ảnh bảo lưu kèm nhãn điềm đạm |
+| Hình ảnh dịch vụ — Nhà hàng (Restaurant) | `/media/services/restaurant.webp` | Khung ảnh bảo lưu kèm nhãn điềm đạm |
+| Hình ảnh dịch vụ — Y tế (Healthcare) | `/media/services/healthcare.webp` | Khung ảnh bảo lưu kèm nhãn điềm đạm |
+| Bản đồ minh họa Hà Nội | `/media/hanoi-map.webp` | Khung hiển thị bản đồ trung tính |
+| Chụp màn hình đa dịch vụ | `/media/xone-multiservice-example.webp` | Câu chuyện kết nối dẫn dắt bằng văn bản |
+| Chụp màn hình chat trợ lý | `/media/xone-chat-example.webp` | Bảng sản phẩm trung tính trau chuốt |
+| Chụp màn hình bước xác nhận | `/media/xone-confirmation-example.webp` | Bảng sản phẩm trung tính trau chuốt |
+| Đối tượng biên tập cuối cùng | `/media/final/xone-object.webp` | Bố cục đối tượng tối giản dự phòng |
 
-`NEXT_PUBLIC_HERO_VIDEO_URL` and `NEXT_PUBLIC_HERO_POSTER_URL` may override
-the two hero paths. These are marketing assets only: they do not become
-authoritative UI, location state, Maps API integration or product data.
+## Khoảng Cách, Hình Khối & Độ Nổi (Spacing, Shape & Elevation)
 
-When an optional capture is absent, the public landing must not show `MEDIA
-SLOT`, a file path or developer-facing copy. It uses the intended text-led
-relationship fallback, and expected local media is checked before rendering so
-missing optional files do not create repeated broken-image requests.
+- Sử dụng thang đo khoảng cách cơ sở **4px**. Các khoảng cách phổ biến: 8, 12, 16, 24, 32, 48 và 64px.
+- Các section landing sử dụng khoảng cách đệm `clamp(54px, 6vw, 88px)`. Trên mobile, khoảng cách thường nằm trong khoảng 48–64px.
+- Bán kính bo góc: **8px** cho các bề mặt nhỏ phi hành động, **12px** cho ô nhập liệu/card/biểu mẫu, **16px** cho các bảng lớn, và **999px** (dạng con nhộng - pill) cho nút hành động, mũi tên carousel, bộ chọn dịch vụ và nút chuyển giai đoạn.
+- Đường viền nhẹ nhưng nhìn thấy rõ; không dùng kính mờ độ tương phản kém để thay thế cho việc nhóm khối. Đổ bóng ngắn, mềm mại và thưa thớt—tuyệt đối không dùng hiệu ứng hào quang phát sáng có màu.
+- Icon lấy từ thư viện Lucide, kích thước 16–20px trong nút bấm điều khiển và 20–24px trong ngữ cảnh dịch vụ.
 
-## Spacing, shape and elevation
+## Trợ Năng & Giới Hạn Nội Dung
 
-- Use a 4px base spacing scale. Common gaps: 8, 12, 16, 24, 32, 48 and 64px.
-- Landing sections use a restrained baseline of roughly `clamp(54px, 6vw,
-  88px)` and tune top/bottom rhythm per scene; adjacent scenes should feel
-  connected rather than separated by one repeated oversized gap. Mobile scenes
-  usually sit in the 48–64px range.
-- Use 8px radius for small non-action surfaces, 12px for inputs/cards/forms,
-  16px for large panels, and `999px` for action buttons, carousel arrows,
-  service selectors and stage controls.
-- Borders are light but visible; low-contrast glass panes are not a substitute
-  for grouping. Shadows are short, soft and sparse—never coloured glows.
-- Icons come from Lucide, normally 16–20px in controls and 20–24px in service
-  contexts. An icon supports a label; it is not a mystery control.
+- Xây dựng đáp ứng từ kích thước 320px trở lên; không để xuất hiện tràn ngang và có liên kết bỏ qua đầu trang (skip link).
+- Bản đồ được dán nhãn rõ ràng là hình ảnh minh họa marketing, không phải là định vị/theo dõi trực tiếp.
+- Trợ lý AI có thể chuẩn bị lựa chọn nhưng không được tuyên bố đơn/thanh toán đã hoàn tất khi chưa có kết quả xác nhận từ Gateway.
+- Khi bật chế độ `prefers-reduced-motion`, hệ thống hiển thị ảnh poster hero, ngừng xoay vòng gợi ý prompt và loại bỏ hiệu ứng biến đổi chuyển động trong khi vẫn giữ nguyên vẹn toàn bộ khối nội dung.
 
-## Accessibility and content guardrails
+## Các Mẫu Phản Thiết Kế Bị Cấm (Anti-patterns)
 
-- Build from 320px upward; preserve readable line lengths, tap targets,
-  keyboard focus, no horizontal overflow and a visible skip link.
-- The map is labelled as a marketing illustration, not live location/tracking.
-- The assistant may prepare a choice but cannot claim a booking/payment is
-  complete without the Gateway's confirmed result.
-- `prefers-reduced-motion` shows the hero poster, stops prompt rotation and
-  removes reveal/focus transforms while keeping every content block visible.
-- The How X-One Works carousel shows one coded product preview at a time,
-  keeps three labeled stage buttons and previous/next controls available,
-  advances every approximately 2.2 seconds, pauses on hover/focus, hidden
-  document and viewport exit, and disables autoplay under reduced motion.
-- The route scene uses the real Hanoi map with a bounded, aria-hidden SVG route
-  overlay with persistent base paths and bounded repeated cobalt tracers; it is
-  a marketing illustration and never implies live coordinates.
-- The multi-service scene is a coded conversation: one natural-language request
-  can introduce related restaurant and ride steps while the UI keeps important
-  confirmation boundaries visible. It is illustrative and has no side effects.
-- The final CTA is a light, full-height editorial scene with one strong cobalt
-  `Bắt đầu với X-One` action. Its optional object media is transparent,
-  text-free, fills the right side without a max-width container and never
-  carries a generated X-One mark.
-- Never expose secrets, raw reset tokens, internal workflow state, chain of
-  thought or fabricated transaction success in the UI.
+Nghiêm cấm:
+- Sử dụng gradient màu tím/xanh AI sáo rỗng.
+- Nền dạng lưới (mesh background), các khối cầu phát sáng lòe loẹt, biểu tượng robot hoạt hình chung chung.
+- Hiệu ứng kính mờ (glassmorphism) quá đà.
+- Các mẫu dashboard SaaS mẫu sẵn với số liệu giả tạo, logo đối tác giả.
+- Văn bản kích thước khổng lồ thiếu cân đối, các nút dạng pill không có ý nghĩa hành động.
+- Sơ đồ mạng lưới dịch vụ trang trí rối mắt, bản đồ SVG giả tạo.
+- Dải CTA tối sầm đột ngột ở cuối trang.
+- Sử dụng thuộc tính `transition: all`.
 
-## Anti-patterns
-
-Do not use purple/blue AI gradients, mesh backgrounds, glowing orbs, generic
-robot marks, chrome-like glassmorphism, stock SaaS dashboard templates, fake
-metrics, testimonials/logos, huge text, pills without action meaning,
-decorative service networks, fake SVG maps, floating service labels, repeated
-fake chat windows, an abrupt dark CTA strip, or `transition: all`. Calm clarity
-is more distinctive than visual noise.
+Sự trong sáng, điềm tĩnh và rõ ràng luôn mang lại bản sắc đẳng cấp hơn những ồn ào thị giác thừa thãi.

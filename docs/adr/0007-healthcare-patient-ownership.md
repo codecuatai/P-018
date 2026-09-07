@@ -1,23 +1,19 @@
-# ADR-0007: Healthcare Patient Identity Ownership
+# ADR-0007: Quyền Sở Hữu Danh Tính Bệnh Nhân Trong Dịch Vụ Y Tế (Healthcare Patient Ownership)
 
-- Status: Accepted decision for Phase 1/2
-- Date: 2026-08-10
-- Owners: Core/Gateway and Healthcare
+- Trạng thái: Đã chấp thuận và đã triển khai (Accepted & Implemented)
+- Ngày: 2026-08-10
+- Chủ sở hữu: Core / API Gateway và Healthcare Service
 
-## Decision
+## Quyết định (Decision)
 
-Core owns X-One user identity and authentication references. Healthcare owns the medical patient identity and medical data, including patient records, blood type, medical history, symptoms, doctor/slot/appointment relationships, and the `patient_user_links` actor mapping.
+Dịch vụ Core sở hữu danh tính tài khoản người dùng X-One (`users`) và các tham chiếu phiên xác thực. Dịch vụ Healthcare sở hữu danh tính y tế của bệnh nhân và toàn bộ dữ liệu y tế, bao gồm: hồ sơ bệnh nhân, nhóm máu, tiền sử bệnh, triệu chứng, mối quan hệ bác sĩ/khung giờ/lịch hẹn, và bảng ánh xạ liên kết người dùng với bệnh nhân (`patient_user_links`).
 
-Core may hold only the minimum opaque reference needed for authorization/orchestration. Core must not store Healthcare medical history or become a second medical record owner. Gateway passes the authenticated actor and an explicit Healthcare patient reference through the contract; Healthcare validates access and owns patient state.
+Core chỉ được lưu trữ tham chiếu mờ (opaque reference) tối thiểu phục vụ phân quyền và điều phối luồng. Core **tuyệt đối không lưu trữ tiền sử y tế** hay trở thành chủ sở hữu thứ hai của hồ sơ y tế. API Gateway truyền actor đã xác thực và tham chiếu bệnh nhân Healthcare tường minh qua hợp đồng gọi API; Healthcare tự thẩm định quyền truy cập và quản lý trạng thái bệnh nhân.
 
-## Current compatibility
+## Tính Tương Thích & Cơ Chế Dự Phòng
 
-`HEALTHCARE_DEFAULT_PATIENT_ID` and the current demo patient seed are legacy/demo compatibility only. The Healthcare-owned `003_patient_user_links.sql` mapping and actor-scoped Gateway `/api/v1/healthcare/patients` boundary now provide the real local identity path. The fallback remains only for development/test when no explicit patient link is selected; production returns `PATIENT_LINK_REQUIRED` rather than silently selecting it.
+Biến môi trường `HEALTHCARE_DEFAULT_PATIENT_ID` và dữ liệu mẫu bệnh nhân demo chỉ dùng cho mục đích tương thích phát triển/kiểm thử. Bảng ánh xạ `003_patient_user_links.sql` do Healthcare sở hữu và ranh giới Gateway `/api/v1/healthcare/patients` phân vùng theo actor hiện cung cấp luồng quản lý danh tính thực tế. Phương án fallback chỉ áp dụng trong dev/test khi chưa chọn liên kết bệnh nhân; trên môi trường production, nếu thiếu liên kết bệnh nhân, Gateway sẽ trả về lỗi `PATIENT_LINK_REQUIRED` thay vì tự ý chọn ngầm một bệnh nhân.
 
-## Migration path
+## Hệ quả (Consequences)
 
-Phase 1/2 added the Core identity/session boundary and a Healthcare-owned link/mapping contract, with authorization tests for actor-to-patient access. Existing appointments remain Healthcare-owned and retain their patient IDs. No patient migration is required; future production hardening may disable the development fallback entirely.
-
-## Consequences
-
-Healthcare API responses may return Healthcare-owned facility and patient/appointment facts. The Gateway may compose those facts but cannot invent, persist, or update medical data in Core.
+Các phản hồi API từ Healthcare có thể trả về thông tin cơ sở y tế và dữ kiện bệnh nhân/lịch hẹn do Healthcare sở hữu. API Gateway có thể tổng hợp các dữ kiện này để hiển thị trên giao diện nhưng không thể tự tạo, lưu trữ hoặc cập nhật dữ liệu y tế trong cơ sở dữ liệu của Core.

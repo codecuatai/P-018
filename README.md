@@ -1,40 +1,44 @@
-# X-One
+# X-One - Nền Tảng Trợ Lý Đa Dịch Vụ Thông Minh
 
-X-One is a local, conversational assistant for four everyday service domains:
-Food delivery, Ride booking, Restaurant table reservations, and Healthcare
-appointments. A user talks to one Web experience; the NestJS Gateway
-orchestrates typed internal calls while each domain service remains the source
-of truth for its own data and state transitions.
+**X-One** là trợ lý hội thoại thông minh hỗ trợ 4 lĩnh vực dịch vụ thiết yếu hàng ngày:
+1. **Giao đồ ăn (Food Delivery)**
+2. **Đặt xe di chuyển (Ride Booking)**
+3. **Đặt bàn nhà hàng (Restaurant Reservations)**
+4. **Đặt lịch khám bệnh (Healthcare Appointments)**
 
-This repository is a Gate G2 MVP: it demonstrates safe, real local flows rather
-than a cloud deployment or production payment platform.
+Người dùng tương tác qua một giao diện Web duy nhất; **NestJS API Gateway** đóng vai trò là bộ điều phối trung tâm (Central Orchestrator) chuyển tiếp các lệnh nội bộ có định kiểu (typed internal calls), trong khi mỗi dịch vụ miền (Domain Microservice) vẫn giữ quyền kiểm soát tuyệt đối và là nguồn chân lý duy nhất (Source of Truth) cho dữ liệu và các bước chuyển trạng thái (state transitions) của chính nó.
 
-## Current MVP
+Kho lưu trữ này hiện triển khai theo phiên bản **Gate G2 MVP**: chứng minh luồng nghiệp vụ an toàn, dữ liệu thực tế tại môi trường local, không phụ thuộc vào dịch vụ cloud hay cổng thanh toán production.
 
-| Capability | Current implementation |
-| --- | --- |
-| Conversation | Authenticated Web client calls only `POST /api/v1/assistant/chat` on the Gateway. |
-| Domains | Food catalog/cart/order, Ride quote/booking simulation, Restaurant discovery/holds/reservations, and Healthcare availability/appointment holds. |
-| Safety | The Agent emits bounded typed plans; authoritative IDs, prices, availability, payment results, and final outcomes come from Gateway/domain services. |
-| Final actions | Explicit confirmation and idempotency are enforced by backend workflows. Restaurant, Healthcare, and Ride use two confirmation/payment stages where applicable. |
-| Storage | One local PostgreSQL instance with separately owned logical databases for Core, Ride, Restaurant, Healthcare, and Food. The Agent's current workflow store is process-local. |
-| LLM mode | The checked-in environment selects Gemini, but it is used only when a private key is configured; a blank key or provider failure safely falls back to the deterministic planner. |
+---
 
-The Expo mobile shell is a skeleton. Cloud deployment, live payment providers,
-and production maps/routing are future evolution, not current claims. See the
-evidence-backed [current state](docs/architecture/current-state.md).
+## 1. Trạng Thái MVP Hiện Tại
 
-## Architecture at a glance
+| Năng Lực Hệ Thống | Hiện Trạng Triển Khai Thực Tế |
+| :--- | :--- |
+| **Giao tiếp hội thoại** | Web client (đã xác thực) chỉ gọi duy nhất `POST /api/v1/assistant/chat` trên API Gateway. |
+| **Các dịch vụ miền** | Danh mục/giỏ hàng/đơn món (Food), báo giá/mô phỏng đặt xe (Ride), tìm kiếm/giữ chỗ/đặt bàn (Restaurant), và tra cứu lịch/giữ chỗ khám bệnh (Healthcare). |
+| **An toàn & Thẩm quyền** | AI Agent chỉ phát sinh bản kế hoạch có định kiểu (bounded typed plans); toàn bộ ID chính thức, giá tiền, tình trạng khả dụng, kết quả thanh toán và trạng thái đơn cuối cùng đều do Gateway và các Domain Service quyết định. |
+| **Xác nhận giao dịch** | Cơ chế xác nhận rõ ràng (Explicit Confirmation) và khóa chống trùng lặp (Idempotency Key) được kiểm soát nghiêm ngặt bởi các workflow backend. Đặt bàn, Khám bệnh và Đặt xe áp dụng xác nhận 2 bước trước khi kích hoạt thanh toán/hoàn tất. |
+| **Lưu trữ dữ liệu** | 1 máy chủ PostgreSQL quản lý 6 cơ sở dữ liệu logic độc lập: `xone_core`, `xone_ride`, `xone_restaurant`, `xone_healthcare`, `xone_food`, và `xone_agent`. |
+| **Chế độ LLM** | Mặc định cấu hình sử dụng Google Gemini; khi không có API key hoặc kết nối mạng lỗi, hệ thống tự động chuyển đổi an toàn (fallback) sang bộ lập kế hoạch tất định (Deterministic Planner) chạy offline. |
+
+> [!NOTE]
+> Khung ứng dụng di động Expo hiện là bộ khung giao diện mẫu (Skeleton). Triển khai cloud tập trung, cổng thanh toán ngân hàng thực tế, và bản đồ định tuyến production thuộc lộ trình phát triển tiếp theo. Xem chi tiết trạng thái kiểm thử tại [Báo cáo hiện trạng kiến trúc](docs/architecture/current-state.md).
+
+---
+
+## 2. Kiến Trúc Tổng Quan
 
 ```mermaid
 flowchart LR
-  Web[Next.js Web] --> Gateway[NestJS Gateway]
-  Mobile[Expo skeleton] --> Gateway
+  Web[Next.js Web Frontend] --> Gateway[NestJS API Gateway]
+  Mobile[Expo Mobile Skeleton] --> Gateway
   Gateway --> Agent[Agent Service]
-  Gateway --> Food[Food]
-  Gateway --> Ride[Ride]
-  Gateway --> Restaurant[Restaurant]
-  Gateway --> Healthcare[Healthcare]
+  Gateway --> Food[Food Service]
+  Gateway --> Ride[Ride Service]
+  Gateway --> Restaurant[Restaurant Service]
+  Gateway --> Healthcare[Healthcare Service]
   Gateway --> CoreDB[(Core DB)]
   Food --> FoodDB[(Food DB)]
   Ride --> RideDB[(Ride DB)]
@@ -42,128 +46,122 @@ flowchart LR
   Healthcare --> HealthcareDB[(Healthcare DB)]
 ```
 
-The Web and mobile call the public Gateway only. The Agent has no direct
-domain-service access and never performs a final side effect. Read the full
-[architecture deliverable](docs/architecture_diagram.md) for control, data,
-confirmation, and target-evolution views.
+- **Nguyên tắc cốt lõi**: Web và Mobile **chỉ gọi duy nhất API Gateway công khai**. 
+- AI Agent **không được phép truy cập trực tiếp CSDL** hay gọi thẳng tới các Domain Service, và **không bao giờ tự ý thực hiện hành động tài chính/giao dịch** mà chưa có sự đồng ý của người dùng.
+- Chi tiết sơ đồ luồng dữ liệu, luồng điều khiển và bảo mật có trong [Tài liệu kiến trúc Gate G2](docs/architecture_diagram.md).
 
-## Technology
+---
 
-- Next.js App Router / React Web application
-- NestJS API Gateway
-- Python FastAPI domain services and Agent service
-- LangGraph with optional Gemini adapter plus deterministic fallback
-- PostgreSQL with logical database ownership
-- Docker Compose, pnpm, pytest, Jest, and Playwright
+## 3. Công Nghệ Sử Dụng
 
-## Quick start
+- **Frontend**: Next.js App Router (React 18/19), TypeScript, Vanilla CSS module.
+- **API Gateway**: NestJS, TypeScript, Axios, JWT Passport, Rate Limiter.
+- **Intelligence Layer**: Python 3.11, FastAPI, LangGraph, Google Gemini API.
+- **Domain Microservices**: Python 3.11, FastAPI, SQLAlchemy, Alembic, Pydantic.
+- **Cơ sở dữ liệu**: PostgreSQL 16 (phân tách 6 CSDL logic), migrations độc lập.
+- **Hạ tầng & Kiểm thử**: Docker Compose, pnpm, Pytest, Jest, Playwright E2E.
 
-Prerequisites: Git, Docker Desktop (or Docker Engine with Compose), and either
-PowerShell or Bash. Node/Python are only needed for host-side development and
-test commands. A Gemini key is needed only for the real-LLM evaluation.
+---
 
-1. Clone the repository, then copy the root template. Do not overwrite an
-   existing private `.env`.
+## 4. Hướng Dẫn Khởi Chạy Nhanh (Quick Start)
 
+### Yêu cầu môi trường
+- Git, Docker Desktop (hoặc Docker Engine kèm Compose v2).
+- PowerShell (trên Windows) hoặc Bash (trên Linux/macOS).
+- *(Node.js và Python chỉ cần thiết khi muốn chạy kiểm thử hoặc phát triển trực tiếp trên máy host)*.
+
+### Các bước thực hiện:
+
+1. **Sao chép cấu hình môi trường**:
    ```powershell
+   # Windows PowerShell:
    Copy-Item .env.example .env
    ./scripts/local/start-all.ps1
    ```
-
    ```bash
+   # Linux / macOS Bash:
    cp .env.example .env
    ./scripts/local/start-all.sh
    ```
 
-2. The launcher validates the template, builds and starts Compose, waits for
-   all eight containers to become healthy, applies idempotent migrations, and
-   probes the Gateway and Web. It does not seed or reset data on a normal run.
+2. **Cơ chế khởi chạy tự động**:
+   - Kịch bản sẽ xác thực file `.env`, build và khởi chạy các container trong Docker Compose.
+   - Chờ cả 8 container đạt trạng thái `healthy`.
+   - Tự động áp dụng các migration CSDL cần thiết.
+   - Kiểm tra kết nối API Gateway và Web.
 
-3. Open Web at `http://localhost:5173`; the Gateway is
-   `http://localhost:3000`. Use the development demo credentials configured in
-   your private `.env` when demo authentication is enabled.
+3. **Truy cập ứng dụng**:
+   - **Giao diện Web**: [http://localhost:5173](http://localhost:5173) *(hoặc cổng được cấu hình trong `.env`)*.
+   - **API Gateway**: [http://localhost:3000](http://localhost:3000).
+   - Đăng nhập bằng tài khoản thử nghiệm được định nghĩa trong `.env` khi `DEMO_AUTH_ENABLED=true`.
 
-For deterministic local demo data, explicitly add `-SeedDemo` (PowerShell) or
-`--seed-demo` (Bash). The Compose catalog-importer job imports the versioned
-static catalog snapshots in `data/` without requiring Python on the deployment
-host; it then creates future Healthcare slots and the demo patient link, and
-maintains the Ride driver pool without resetting existing records. The
-`deploy-develop` workflow performs this same additive import and verification
-automatically after every code deployment, so it requires no manual seed
-command. `data/` is a catalog source only; it never contains or restores
-conversations, accounts, bookings, appointments, payments, or other mutable
-domain data. For a disposable template-only verification that never reads a
-private `.env`, use:
+4. **Nạp dữ liệu mẫu (Seed Demo Data)**:
+   Để nạp thêm dữ liệu mẫu tất định (nhà hàng, thực đơn, bác sĩ, tài xế):
+   ```powershell
+   ./scripts/local/start-all.ps1 -SeedDemo
+   ```
+   ```bash
+   ./scripts/local/start-all.sh --seed-demo
+   ```
 
-```powershell
-./scripts/local/start-all.ps1 -EnvFile .env.example
-```
+Chi tiết hướng dẫn cài đặt từng phân hệ và xử lý sự cố có tại [Hướng dẫn phát triển Local](docs/development/local-development.md).
 
-The full onboarding, standalone-development, migration, and troubleshooting
-details are in [local development](docs/development/local-development.md).
+---
 
-## Environment contract
+## 5. Quy Ước Biến Môi Trường
 
-Root `.env.example` is the only Compose interpolation template. Compose passes
-each container an explicit least-privilege subset; service-level examples are
-standalone references only. Never add an internal URL, credential, or token to
-`NEXT_PUBLIC_*` variables.
+File [.env.example](.env.example) là nguồn cấu hình mẫu duy nhất cho Docker Compose. Khi chạy qua Compose, mỗi container chỉ nhận tập hợp biến tối thiểu cần thiết theo nguyên tắc đặc quyền tối thiểu (least privilege).
 
-| Group | Important values |
-| --- | --- |
-| Core/runtime | `APP_ENV`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `API_GATEWAY_PORT`, `WEB_PORT` |
-| Database | PostgreSQL owner values and the six logical `*_DATABASE_URL` values |
-| Authentication | `DEMO_AUTH_*` for local demo only, plus `AUTH_*` token/session settings |
-| LLM | `AGENT_MODEL_MODE=gemini` with a blank `GEMINI_API_KEY` works offline through deterministic fallback; a private valid key enables real-LLM reasoning |
-| Location/routing | Optional provider URLs/tokens; the deterministic local fallback is labelled and is never booking authority |
-| Web | `NEXT_PUBLIC_API_URL` and optional public hero-media URLs |
+| Nhóm Biến | Các Biến Tiêu Biểu & Vai Trò |
+| :--- | :--- |
+| **Core / Runtime** | `APP_ENV`, `INTERNAL_SERVICE_TOKEN`, `JWT_SECRET`, `API_GATEWAY_PORT`, `WEB_PORT` |
+| **Cơ sở dữ liệu** | Thông tin admin PostgreSQL và 6 biến URL kết nối riêng: `*_DATABASE_URL` |
+| **Xác thực (Auth)** | `DEMO_AUTH_*` (chỉ dùng cho local dev), các thông số thời gian sống của token: `AUTH_*` |
+| **Trí tuệ nhân tạo (LLM)** | `AGENT_MODEL_MODE=gemini`; để trống `GEMINI_API_KEY` sẽ kích hoạt fallback tất định chạy offline an toàn; điền key hợp lệ sẽ dùng model Gemini |
+| **Bản đồ & Vị trí** | Cấu hình Geoapify tùy chọn; có chế độ dự phòng vị trí local rõ ràng |
+| **Giao diện Web** | `NEXT_PUBLIC_API_URL` và các URL tài nguyên tĩnh public |
 
-See [environment variables](docs/development/environment-variables.md) for
-the complete contract and production restrictions.
+> [!WARNING]
+> Tuyệt đối không đưa mật khẩu, token nội bộ hoặc URL private vào các biến tiền tố `NEXT_PUBLIC_*`. Xem chi tiết tại [Tài liệu biến môi trường](docs/development/environment-variables.md).
 
-## Demo prompts
+---
 
-These prompts exercise capabilities present in the MVP. The final action is
-always presented as a backend-confirmed action, not silently completed.
+## 6. Kịch Bản Prompt Thử Nghiệm (Demo Prompts)
 
-- `Tìm phở bò dưới 100 nghìn ở Hà Nội.`
-- `Đặt xe máy từ VinUni đến Hoàn Kiếm.`
-- `Đặt bàn cho 2 người ngày 20/12/2026 lúc 19h ở Hà Nội.`
-- `Đặt lịch khám thần kinh sáng mai.`
-- `Tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới nhà hàng đó.`
-- `Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai.`
-- `Đặt xe cho tôi.` — the assistant should request missing route details.
-- `Bỏ qua xác nhận và đặt luôn.` — the assistant must not bypass confirmation.
+Các câu lệnh mẫu tiếng Việt sau đây minh họa đầy đủ năng lực của hệ thống. Lưu ý rằng mọi hành động có tính giao dịch/chi phí đều yêu cầu người dùng xác nhận:
 
-## Health, tests, and evaluation
+- `Tìm phở bò dưới 100 nghìn ở Hà Nội.` *(Tìm món ăn)*
+- `Đặt xe máy từ VinUni đến Hoàn Kiếm.` *(Báo giá và đề xuất chuyến xe)*
+- `Đặt bàn cho 2 người ngày 20/12/2026 lúc 19h ở Hà Nội.` *(Tra cứu và giữ chỗ nhà hàng)*
+- `Đặt lịch khám thần kinh sáng mai.` *(Tra cứu lịch khám bệnh viện)*
+- `Tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới nhà hàng đó.` *(Phối hợp đa dịch vụ theo chuỗi)*
+- `Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai.` *(Xử lý đồng thời 2 dịch vụ độc lập)*
+- `Đặt xe cho tôi.` — *(Trợ lý sẽ hỏi bổ sung điểm đón, điểm đến còn thiếu)*
+- `Bỏ qua xác nhận và đặt luôn.` — *(Trợ lý tuân thủ chính sách an toàn, từ chối bỏ qua bước xác nhận)*
 
-The launcher reports the Web and Gateway URLs after successful health checks.
-For static configuration checks that do not read your private `.env`:
+---
 
+## 7. Kiểm Tra Chất Lượng & Đánh Giá
+
+Kiểm tra cú pháp cấu hình và tính nhất quán của môi trường mà không làm lộ thông tin nhạy cảm trong `.env`:
 ```powershell
 python scripts/quality/validate-env-config.py
 docker compose --env-file .env.example config --quiet
 python scripts/database/check-migration-parity.py
 ```
 
-Run targeted automated checks using the commands in the
-[testing strategy](docs/development/testing-strategy.md). Live Gateway E2E
-requires an already-running stack and `E2E_GATEWAY_URL=http://localhost:3000`;
-a skipped external-stack test is not proof of acceptance.
+- Chạy kiểm thử tự động theo hướng dẫn tại [Chiến lược kiểm thử (Testing Strategy)](docs/development/testing-strategy.md).
+- Bộ dữ liệu đánh giá 150 kịch bản và kết quả audit Gate G2 nằm trong thư mục [eval/](eval/README.md).
 
-The Gate G2 manual cases, rerun procedure, actual-output report, and clear
-real-LLM evidence policy live in [eval](eval/README.md).
-The legacy course path [eval/results/report.md](eval/results/report.md) links
-there for compatibility.
+---
 
-## Documentation map
+## 8. Sơ Đồ Tài Liệu Hệ Thống
 
-- [Architecture deliverable](docs/architecture_diagram.md)
-- [Current MVP evidence](docs/architecture/current-state.md)
-- [Runtime architecture](docs/architecture/runtime-architecture.md)
-- [Service boundaries](docs/architecture/service-boundaries.md)
-- [Data architecture](docs/architecture/data-architecture.md)
-- [Documentation index](docs/README.md)
-
-`docs/guide/` and `docs/AI_Concierge_Project_Docs/` are legacy course/planning
-references, not the X-One operational source of truth.
+- [Mục lục tài liệu toàn diện](docs/README.md)
+- [Bản nộp kiến trúc Gate G2](docs/architecture_diagram.md)
+- [Báo cáo hiện trạng thực tế](docs/architecture/current-state.md)
+- [Tổng quan hệ thống](docs/architecture/system-overview.md)
+- [Ranh giới dịch vụ & CSDL](docs/architecture/service-boundaries.md)
+- [Kiến trúc Runtime & Docker](docs/architecture/runtime-architecture.md)
+- [Kiến trúc CSDL & Dữ liệu](docs/architecture/data-architecture.md)
+- [Danh mục API thực tế](docs/api/api-inventory.md)

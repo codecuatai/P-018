@@ -1,7 +1,6 @@
-# Catalog DataOps
+# Vận Hành Dữ Liệu Danh Mục (Catalog DataOps)
 
-The three domain-owned wrappers validate the committed Hanoi source files and
-write a versioned import plan without touching raw CSV files:
+Ba script wrapper do từng domain sở hữu chịu trách nhiệm thẩm định các tệp dữ liệu nguồn Hà Nội và tạo kế hoạch import có phiên bản mà không can thiệp vào các tệp CSV gốc:
 
 ```powershell
 python scripts/data/import_food_dataset.py --dataset-version hanoi_food_2026_08_v1
@@ -9,18 +8,12 @@ python scripts/data/import_restaurant_dataset.py --dataset-version hanoi_restaur
 python scripts/data/import_healthcare_dataset.py --dataset-version hanoi_healthcare_2026_08_v1
 ```
 
-Each plan contains `manifest.json`, `normalized.jsonl`, and
-`rejected.jsonl` under `artifacts/dataops/`. Apply is an explicit operator
-action after the owned migration is current:
+Mỗi kế hoạch bao gồm `manifest.json`, `normalized.jsonl`, và `rejected.jsonl` được lưu trữ dưới thư mục `artifacts/dataops/`. Việc áp dụng (apply) là một thao tác vận hành chủ động sau khi các migration tương ứng đã hoàn tất:
 
 ```powershell
 python scripts/data/import_food_dataset.py --dataset-version hanoi_food_2026_08_v1 --apply
 ```
 
-The command uses the domain-specific `*_DATABASE_URL` process environment
-variable only when `--apply` is supplied. Re-running the same version is an
-upsert keyed by the stable source record ID/content hash. Activating a new
-version marks older domain catalog records inactive; `--deactivate-version`
-deactivates a known bad release. The specialty CSV is repaired only in the
-staging projection: the raw file remains unchanged and rows without a source
-URL stay importable with an explicit quality flag.
+Lệnh chỉ sử dụng biến môi trường `*_DATABASE_URL` của domain tương ứng khi cờ `--apply` được cung cấp. Chạy lại cùng một phiên bản sẽ thực hiện thao tác upsert dựa trên ID bản ghi nguồn / mã băm nội dung ổn định. Việc kích hoạt một phiên bản mới sẽ đánh dấu các bản ghi danh mục cũ là không hoạt động (inactive); cờ `--deactivate-version` cho phép vô hiệu hóa một phiên bản phát hành bị lỗi.
+
+Tệp CSV chuyên khoa y tế được sửa lỗi chỉ trong bản chiếu staging: tệp thô gốc được giữ nguyên vẹn và các dòng thiếu URL nguồn vẫn được import kèm cờ cảnh báo chất lượng rõ ràng.

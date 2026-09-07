@@ -1,23 +1,23 @@
-# ADR-0002: Each service owns a logical database
+# ADR-0002: Mỗi Service Sở Hữu Độc Quyền Một Cơ Sở Dữ Liệu Logic (Logical Database Ownership)
 
-Status: Accepted
+Trạng thái: Đã chấp thuận (Accepted)
 
-## Context
+## Ngữ cảnh (Context)
 
-One local PostgreSQL container is convenient, but shared schemas couple services.
+Một container PostgreSQL dùng chung cho môi trường phát triển cục bộ mang lại sự tiện lợi, nhưng việc dùng chung schema hoặc bảng sẽ gây thắt chặt phụ thuộc (tight coupling) giữa các domain service.
 
-## Decision
+## Quyết định (Decision)
 
-Use a database/user per service with no cross-database queries or foreign keys.
+Sử dụng cơ sở dữ liệu và người dùng riêng biệt (`database/user`) cho mỗi service; nghiêm cấm mọi truy vấn SQL chéo cơ sở dữ liệu, khóa ngoại chéo (foreign keys) hoặc chia sẻ mô hình ORM.
 
-## Consequences
+## Hệ quả (Consequences)
 
-Services communicate through contracts; later deployment can split database instances.
+Các service bắt buộc phải giao tiếp thông qua các hợp đồng API được kiểm soát; việc tách rời thành các cụm máy chủ cơ sở dữ liệu vật lý riêng biệt trong tương lai có thể thực hiện dễ dàng mà không làm thay đổi mã nguồn.
 
-## Clarification
+## Làm rõ thêm (Clarification)
 
-Logical ownership is mandatory from the first slice. The current local Compose setup uses one PostgreSQL instance with separate logical databases/roles; physical instance/cluster separation remains deferred until measured operational or organizational needs justify it.
+Quyền sở hữu logic là bắt buộc ngay từ lát cắt đầu tiên. Cấu hình Docker Compose cục bộ hiện tại sử dụng một máy chủ PostgreSQL duy nhất với 6 database/user logic độc lập; việc phân tách thành các cụm database vật lý sẽ được trì hoãn cho đến khi có nhu cầu đo lường vận hành hoặc tổ chức nhóm thực tế.
 
-## Alternatives considered
+## Các phương án thay thế đã xem xét (Alternatives Considered)
 
-One shared schema and shared database credentials.
+- Dùng chung một schema duy nhất và một bộ thông tin xác thực database duy nhất cho toàn bộ hệ thống.

@@ -1,138 +1,76 @@
-# Agent Architecture
+# Kiến Trúc Trí Tuệ Nhân Tạo (AI Agent Architecture)
 
-The target agent boundary is structured state for intent, slots, workflow selection, tool request, tool-result resume, and safe response. Pydantic schemas constrain API and any future model output. The model adapter must remain isolated; default tests must mock it.
+Tầng trí tuệ nhân tạo (Intelligence Layer) của **X-One** được triển khai tại dịch vụ `apps/agent-service` sử dụng **Python 3.11**, **FastAPI** và **LangGraph**. Agent chịu trách nhiệm phân loại ý định (intent), trích xuất tham số (slots), lập kế hoạch gọi công cụ (tool requests) và sinh câu trả lời ngôn ngữ tự nhiên an toàn.
+
+---
+
+### 1. Luồng Xử Lý Cốt Lõi Của Agent
 
 ```mermaid
 flowchart LR
-  Input --> State --> Intent[Intent and slots]
-  Intent --> ToolRequest
-  ToolRequest --> Gateway
-  Gateway --> ToolResult
-  ToolResult --> Resume --> Response
+    UserInput[Tin nhắn người dùng] --> State[Trạng thái LangGraph]
+    State --> Intent[Phân loại Ý định & Slots]
+    Intent --> ToolRequest[Đề xuất gọi Tool có định kiểu]
+    ToolRequest --> Gateway[API Gateway thẩm định & thực thi]
+    Gateway --> ToolResult[Kết quả chuẩn từ Domain Service]
+    ToolResult --> Resume[Phục hồi ngữ cảnh]
+    Resume --> SafeResponse[Sinh câu trả lời an toàn]
 ```
 
-The Food slice implements this flow in `apps/agent-service/src/agents/graph.py`: configured Gemini uses LangChain's native Pydantic JSON-Schema structured-output path with `include_raw=True`; the graph accepts the validated native object and can recover the provider's raw fenced/plain JSON through a schema-validated decoder. Invalid output safely uses deterministic semantic fallback. `intent.py`, `reference_resolution.py`, and `tool_selection.py` are pure/testable boundaries. Model-supplied resource IDs and model tool calls are discarded. The graph emits bounded, versioned semantic proposals containing capability, workflow/tool-call reference, risk ceiling, and confirmation gate. Authoritative IDs are stripped from proposal arguments. Agent has no Gateway execution or domain client. Gateway validates every proposal, resolves IDs from actor-scoped Core/domain state, and is the only dispatcher. The public response contains no analysis, prompt, or chain-of-thought.
+### 2. Các Nguyên Tắc Ranh Giới Bất Biến Của Agent
 
-The Core A handoff is versioned as `core-a.v1` and carries the observed
-capability-catalog version. Gateway rejects mismatched versions, invalid DAGs,
-risk/gate drift, unsupported re-plan directives, and invalid blocked-task
-references. `WAIT_AND_RETRY_SAME_KEY` reuses the unchanged task revision;
-changed terms advance the revision. `confirmation_invalidated` removes pending
-evidence, the public confirmation card, and its action before re-planning.
-Gateway requires `planning_decision`, `core-a.v1`, and the exact observed
-capability-catalog version on every service turn. Missing, partially versioned,
-unversioned, and mismatched handoffs are rejected immediately; there is no
-date-based validation bypass or legacy execution fallback.
+1. **Đầu ra luôn có định kiểu (Pydantic Schema Constrained)**: Mọi kết quả từ mô hình ngôn ngữ lớn (LLM) đều phải được kiểm định qua Pydantic schema với `include_raw=True`.
+2. **Không tin cậy LLM trong việc tạo dữ liệu nghiệp vụ (Untrusted Authority)**:
+   - LLM **không được phép tự bịa ID đơn hàng, giá tiền, số lượng phòng/bàn hay kết quả thanh toán**.
+   - Mọi ID do LLM tự sinh đều bị loại bỏ. Toàn bộ ID thực tế, giá cước và trạng thái đều do Gateway và Domain Services cung cấp.
+3. **Không gọi trực tiếp Domain Service**: Agent không có client kết nối xuống database hay các dịch vụ Food, Ride, Restaurant, Healthcare. Agent chỉ phát sinh bản đề xuất công cụ (Tool Proposal) gửi về Gateway.
+4. **Không rò rỉ Chain-of-Thought**: Câu trả lời gửi cho người dùng không chứa prompt hệ thống, chuỗi suy luận nội bộ (chain-of-thought) hay thông tin nhạy cảm.
 
-## Unified assistant planner
+---
 
-`AssistantPlan`, `SemanticTurn`, and `PlanningDecision` carry a bounded
-`interaction_mode` plus `discarded_task_refs`. Chitchat and general advisory
-turns produce no service task, so Gateway can answer without replaying old
-cards while retaining pending state for a later turn. An explicit context
-switch can mark eligible unfinished conversation tasks as `DISCARDED`;
-dependent conversation tasks are discarded with their prerequisite.
-`DISCARDED` is orchestration attention state only, never evidence that a
-domain booking, order, reservation, appointment, hold, or payment was
-cancelled. Gateway refuses to discard a task backed by an active authoritative
-transaction; domain cancellation still uses its typed capability and required
-confirmation.
+### 3. Bộ Lập Kế Hoạch Hợp Nhất (Unified Assistant Planner)
 
-`apps/agent-service/src/agents/assistant_graph.py` is the top-level X-One
-planner. It accepts one conversation turn and returns a Pydantic-validated
-compatibility `AssistantPlan` plus a typed `SemanticTurn` and
-`PlanningDecision`, each bounded to at most four tasks for Ride, Food,
-Restaurant, and Healthcare. The compatibility projection may remain for
-non-executing consumers, but Gateway orchestration consumes only the versioned
-`PlanningDecision`; both Gemini output and deterministic fallback traverse that
-typed path. Core A is a deterministic kernel split across
-`assistant/contracts.py`, `assistant/understanding/`,
-`assistant/planning/`, and `assistant/policy/`; it proposes capabilities but
-never dispatches them. It can express a bounded dependency such as Restaurant selection
-before a Ride destination, or Healthcare hold before a Ride destination, while
-the Gateway—not the Agent—executes typed service calls and confirmation
-actions. A Healthcare-dependent Ride contains only the user-provided pickup;
-the facility destination is resolved from the authoritative Healthcare result.
-Gemini is the primary reasoning path when
-`AGENT_MODEL_MODE=gemini` and a key is configured; missing-key, quota/rate-limit and
-validation failures use the conservative deterministic planner. The internal
-Agent status endpoint exposes only model mode/name, fallback name, key
-configured boolean, and last-call diagnostics.
+Bộ lập kế hoạch cấp cao nhất được cài đặt tại `apps/agent-service/src/agents/assistant_graph.py`:
 
-The current implementation still constructs the `SemanticTurn` input to Core A
-from the compatibility `AssistantPlan` inside `_core_a_input`. This is a
-bounded transitional bridge, not evidence that the native Core-B replacement
-gate is complete; the full prompt-defined semantic matrices remain a separate
-acceptance requirement. The deterministic fallback is deliberately narrow for
-the live demo: contextual party phrases are separated from calendar digits,
-reference pronouns are not locations, and equivalent Ride wording is accepted.
+- **Giao diện Handoff Core A (`core-a.v1`)**:
+  - Nhận một lượt hội thoại và trả về bản kế hoạch `PlanningDecision` có định kiểu, giới hạn tối đa 4 task tương ứng với 4 domain (Ride, Food, Restaurant, Healthcare).
+  - Gateway sẽ từ chối ngay lập tức nếu phiên bản handoff hoặc catalog phiên bản không khớp, hoặc có chu trình phụ thuộc vòng (cyclic dependency).
+- **Cơ chế Phối Hợp Đa Dịch Vụ Có Thứ Tự (Multi-Service Dependency)**:
+  - Agent có thể diễn đạt các quan hệ phụ thuộc như: *Chọn nhà hàng xong mới có địa chỉ làm điểm đến cho cuốc xe*, hoặc *Giữ chỗ bệnh viện xong mới đặt xe tới viện*.
+  - Trong trường hợp cuốc xe phụ thuộc vào lịch khám bệnh, Agent chỉ trích xuất điểm đón của người dùng; điểm đến bệnh viện sẽ do Gateway tự động lấy từ kết quả chính thức của Healthcare Service.
+- **Xử lý Chitchat & Đổi Ngữ Cảnh (Context Switching)**:
+  - Khi người dùng hỏi các câu đệm, chào hỏi hoặc tư vấn chung (`interaction_mode: CHITCHAT`), hệ thống sẽ trả lời tự nhiên mà không kích hoạt gọi tool nghiệp vụ và không làm mất trạng thái đơn hàng đang chờ trước đó.
+  - Khi người dùng chủ động chuyển sang dịch vụ khác, task cũ có thể được đánh dấu `DISCARDED` ở tầng điều phối. Lưu ý rằng `DISCARDED` chỉ là trạng thái tập trung của hội thoại, không phải là lệnh hủy đơn/hủy thanh toán ở domain service.
 
-The planner sanitizes model slots before returning them. IDs, prices,
-availability, status, and other authoritative resource facts are resolved by
-the Gateway from domain results. The Gateway sends the top-level planner only a
-planner-safe projection of task references, domains, goals, phases, semantic
-slots, and bounded pending-choice summaries; confirmation/workflow/tool IDs,
-order/appointment/reservation IDs, provider references, raw authoritative
-payloads, and resource versions are excluded. The Gateway supplies the
-versioned capability snapshot separately and rejects a typed plan whose
-capability, domain, risk, confirmation gate, or dependency reference does not
-match that snapshot. A second composition call may
-explain sanitized results but cannot change their values.
+---
 
-Every typed Core A step is explicitly either `CAPABILITY` or
-`WAIT_FOR_CONFIRMATION`. A capability step must name an implemented Gateway
-snapshot capability and match its domain, risk ceiling, and confirmation gate.
-A waiting step names no capability and is valid only for the matching explicit
-service-details, payment, or cancellation confirmation phase. It is never a
-dispatch instruction. Gateway validates this shape again because Agent output,
-including deterministic and model-derived output, is untrusted.
+### 4. Cơ Chế Dự Phòng Tất Định (Conservative Deterministic Fallback)
 
-Gateway treats its persisted task graph as untrusted runtime state too. It
-rejects duplicate, self-referential, and dangling task dependencies before
-propagating a failure through a bounded worklist of dependents. This preserves
-the one-way `BLOCKED` transition without relying on an open-ended retry loop.
+Hệ thống được thiết kế để hoạt động hoàn toàn ổn định ngay cả khi không có kết nối Internet hoặc không có API key:
 
-Agent proposal IDs are deterministic trace references over workflow,
-correlation, capability, semantic arguments, and proposal index. They are not
-trusted idempotency keys. Gateway derives the downstream execution identity
-from actor-scoped persisted task state, its revision, and the proposal index;
-the domain still enforces exact replay and changed-payload conflict.
+- **Chế độ Gemini chính**: Kích hoạt khi cấu hình `AGENT_MODEL_MODE=gemini` và có biến `GEMINI_API_KEY` (hỗ trợ luân chuyển nhiều key qua `GEMINI_API_KEYS` với cơ chế Round-Robin và tự động Failover khi chạm quota).
+- **Chế độ Fallback Tất Định (Deterministic Fallback)**:
+  - Tự động kích hoạt khi: Không có API key, mạng lỗi, hoặc mô hình LLM trả về cấu trúc JSON không hợp lệ.
+  - Sử dụng các bộ trích xuất quy tắc regex và xử lý ngôn ngữ tiếng Việt tất định:
+    - Nhận biết số lượng người tách biệt với ngày giờ.
+    - Nhận diện loại phương tiện rõ ràng (`BIKE`, `CAR_4`, `CAR_7`).
+    - Phân tích khung giờ khám bệnh (`tomorrow_morning`, `buổi sáng`, `buổi chiều`).
+  - Đảm bảo các luồng Demo và kiểm thử tự động luôn chạy thông suốt 100% offline.
 
-Slot normalization is domain-specific: Ride accepts only bounded addresses and
-`BIKE`/`CAR_4`/`CAR_7`; Restaurant and Healthcare require timezone-aware
-`start_at` values and bounded party/symptom fields; Healthcare dayparts are
-bounded semantic preferences and explicit clock times remain exact; Food
-accepts bounded query, location, and delivery preference fields. The adapter records the configured
-primary/fallback, actual last model, fallback usage, call time, and safe status
-for `/api/v1/status`; it never reports keys or raw prompts.
+---
 
-Unambiguous constraints parsed directly from the current user turn remain
-authoritative over model guesses: an explicit Ride vehicle type cannot be
-changed by the model, and an explicit Healthcare relative daypart such as
-`tomorrow_morning` cannot be dropped. Response composition receives only the
-planner-safe task projection and sanitized authoritative results, not the raw
-user message. Gateway additionally rejects a composed final-success claim for
-any domain whose task has not reached `COMPLETED`.
+### 5. Thu Thập Dữ Liệu Đo Lường Từ Xa Với Langfuse (Telemetry Tracing)
 
-Heuristic location parsing is bounded independently of the API message limit:
-it examines at most 512 input characters and emits at most 160 location
-characters. These heuristics only propose semantic slots; authoritative place
-resolution remains a Gateway/domain responsibility.
+Hệ thống tích hợp giám sát Langfuse v4 thông qua adapter riêng biệt tại Agent:
+- Chỉ tự động kích hoạt khi có cả `LANGFUSE_PUBLIC_KEY` và `LANGFUSE_SECRET_KEY`.
+- **Chính sách an toàn dữ liệu (Data Privacy Policy)**:
+  - Langfuse tracer **tuyệt đối không ghi nhận**: Nội dung prompt thô, completion của người dùng, số thẻ thanh toán, PII (thông tin cá nhân nhạy cảm).
+  - Chỉ ghi nhận: Thời gian thực thi (latency), số lượt retry, mã lỗi an toàn, tên mô hình và tên công cụ được đề xuất.
+  - Lỗi gửi telemetry ra ngoài không bao giờ làm gián đoạn hoặc thay đổi phản hồi trả về cho người dùng.
 
-Agent migration `002_agent_run_metadata.sql` stores only actor/workflow/run identifiers, phase, schema version, bounded capability names, latency/retry/safe-error diagnostics, payload hash, optimistic version, and timestamps. A single Gateway correlation chain may invoke planning, a vertical agent, and composition; Agent derives a stable route/phase-scoped run identifier for each invocation so those distinct records cannot collide while the original correlation identifier remains unchanged in tracing. Migration `001_agent_workflow_states.sql` is retained as immutable develop-branch history, but no runtime component writes its broad JSON table. Required PostgreSQL mode has no memory fallback and readiness checks the allowlisted metadata schema. Explicit memory mode exists only for tests/standalone use. Raw chain-of-thought, prompts, messages, provider bodies, authoritative transaction facts, payment data, and confirmation evidence are rejected by the metadata schema. Conversation and domain workflow state is reconstructed from Gateway/Core and domain authority; it is not Agent-owned.
+---
 
-Optional Langfuse v4 tracing uses an Agent-owned, metadata-only adapter. It
-auto-enables only when both `LANGFUSE_SECRET_KEY` and
-`LANGFUSE_PUBLIC_KEY` are present; `LANGFUSE_BASE_URL` selects the
-credential-free HTTPS endpoint. Manual observations cover the Assistant run,
-request validation, planner route, model generation, Core A validation,
-bounded task/capability decisions, composition, fallback, and run-metadata
-persistence. The adapter never sets observation input/output, user/session
-identity, prompt, completion, graph state, semantic slots, authoritative
-results, or arbitrary exception text. It exports only SDK-owned spans through
-an isolated tracer provider and applies a second export-stage denylist before
-delivery. LangChain/LangGraph callbacks are not attached. Export failure is
-non-authoritative and does not change an Agent response; FastAPI shutdown
-performs a bounded telemetry flush.
-
-User messages, provider responses, retrieved documents, and tool results are untrusted data—not system instructions or authorization. External text cannot grant tool permission. Validate tool output against its schema, apply policy/code before sensitive actions, redact secrets/sensitive data in logs, and do not retain raw prompt/conversation content indefinitely until a retention policy exists.
+### 6. CSDL Trạng Thái Agent (`xone_agent`)
+- Agent sở hữu CSDL logic `xone_agent` với migration `002_agent_run_metadata.sql`.
+- Bảng metadata chỉ lưu trữ ID lượt chạy, phase, phiên bản schema, thời gian phản hồi, mã lỗi an toàn và hash payload.
+- Trạng thái hội thoại chính thức vẫn do Core Gateway nắm giữ để đảm bảo tính nhất quán trên toàn hệ thống.

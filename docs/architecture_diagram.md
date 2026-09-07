@@ -1,17 +1,14 @@
-# Gate G2 Architecture Deliverable
+# Tài Liệu Kiến Trúc Bàn Giao Gate G2 (Architecture Deliverable)
 
-This document is the submission-facing architecture view for X-One. It maps the
-checked-in local MVP first, then describes only the next justified evolution.
-Implementation status and historical verification detail remain canonical in
-[current state](architecture/current-state.md).
+Tài liệu này là góc nhìn kiến trúc phục vụ đánh giá nghiệm thu cho X-One. Tài liệu thể hiện cấu trúc MVP cục bộ đang hoạt động trong mã nguồn trước, sau đó mô tả định hướng tiến hóa tiếp theo có căn cứ kỹ thuật. Trạng thái triển khai và chi tiết xác minh lịch sử được lưu trữ chuẩn tắc tại [Trạng thái hiện tại](architecture/current-state.md).
 
-## 1. Current MVP
+## 1. MVP Hiện Tại
 
-### Runtime topology
+### Tô-pô thời gian chạy (Runtime Topology)
 
 ```mermaid
 flowchart TB
-  Browser[Browser] --> Web[Next.js Web :5173]
+  Browser[Trình duyệt Web] --> Web[Next.js Web :5173]
   Browser --> Gateway[NestJS API Gateway :3000]
 
   subgraph Compose private network
@@ -26,156 +23,129 @@ flowchart TB
     Ride --> RideDB[(xone_ride)]
     Restaurant --> RestaurantDB[(xone_restaurant)]
     Healthcare --> HealthcareDB[(xone_healthcare)]
-    Agent -. configured, not used by current workflow store .-> AgentDB[(xone_agent)]
+    Agent -. đã cấu hình, chưa gắn migration/client .-> AgentDB[(xone_agent)]
   end
 
-  Agent -. optional Gemini adapter .-> Gemini[Gemini API]
+  Agent -. adapter Gemini tùy chọn .-> Gemini[Gemini API]
 ```
 
-Web and mobile clients are public Gateway clients only. The Next.js
-`/api/health` route is a container probe, not a BFF or an authority. The Agent,
-all domain services, and PostgreSQL are internal Compose-network services; only
-Web, Gateway, and PostgreSQL are host-published for the local workflow.
+Client Web và Mobile chỉ gọi duy nhất vào API Gateway công khai. Tuyến `/api/health` của Next.js chỉ là container probe, không phải là BFF hay nguồn thẩm quyền nghiệp vụ. Agent, tất cả domain service, và PostgreSQL là các service nội bộ thuộc mạng riêng của Compose; chỉ có Web, Gateway và PostgreSQL được công khai cổng ra máy host phục vụ quy trình phát triển cục bộ.
 
-### Ownership and interfaces
+### Quyền sở hữu và Giao diện (Ownership and Interfaces)
 
-| Component | Responsibility | Interface | Persistence/status |
+| Thành phần | Trách nhiệm | Giao diện | Trạng thái / Lưu trữ |
 | --- | --- | --- | --- |
-| Web | Presentation, browser auth/session UX, conversation cards | Public Gateway REST only | Browser state is non-authoritative |
-| API Gateway | Public validation, authentication, response shaping, correlation/audit, confirmation orchestration, typed clients | `/api/v1` public; typed internal HTTP clients | Owns Core data in `xone_core` |
-| Agent | Bounded semantic planning and safe language composition | Gateway-to-Agent internal HTTP | Current `workflow_store` is process-local; `xone_agent` is provisioned but no Agent persistence client/migration is wired |
-| Food | Catalog, cart, quote, order and delivery state | Gateway-only internal REST | `xone_food` / asyncpg |
-| Ride | Quote, holds, booking and synthetic tracking | Gateway-only internal REST | `xone_ride` / SQLAlchemy |
-| Restaurant | Dine-in discovery, availability, holds, reservations | Gateway-only internal REST | `xone_restaurant` / SQLAlchemy |
-| Healthcare | Department/doctor/slot availability, holds, payment acknowledgement, appointment lifecycle | Gateway-only internal REST | `xone_healthcare` / SQLAlchemy |
-| PostgreSQL | One local instance with logical ownership separation | Private database connections | No cross-database query, FK, ORM model, or domain import |
+| **Web** | Hiển thị giao diện, xác thực/phiên trên trình duyệt, các thẻ hội thoại tương tác | Chỉ gọi REST Gateway công khai | Trạng thái trình duyệt không có thẩm quyền |
+| **API Gateway** | Xác thực đầu vào công khai, phân quyền, định hình phản hồi, correlation/audit, điều phối xác nhận 2 bước, typed client nội bộ | Public `/api/v1`; Typed HTTP client nội bộ | Sở hữu dữ liệu Core trong `xone_core` |
+| **Agent** | Lập kế hoạch ngữ nghĩa có giới hạn và tổng hợp ngôn ngữ an toàn | HTTP nội bộ từ Gateway sang Agent | `workflow_store` hiện tại chạy in-memory trong tiến trình; `xone_agent` đã cấp phát nhưng chưa gắn migration/client |
+| **Food** | Danh mục món ăn, giỏ hàng, báo giá, đơn hàng và trạng thái giao hàng | REST nội bộ (chỉ Gateway gọi) | `xone_food` / asyncpg |
+| **Ride** | Báo giá chuyến đi, giữ chỗ xe (hold), đặt chuyến và theo dõi mô phỏng (tracking) | REST nội bộ (chỉ Gateway gọi) | `xone_ride` / SQLAlchemy |
+| **Restaurant** | Khám phá quán ăn, kiểm tra bàn trống, giữ chỗ bàn, đặt bàn dine-in | REST nội bộ (chỉ Gateway gọi) | `xone_restaurant` / SQLAlchemy |
+| **Healthcare** | Lịch trống chuyên khoa/bác sĩ, giữ chỗ khám, xác nhận thanh toán, vòng đời lịch hẹn | REST nội bộ (chỉ Gateway gọi) | `xone_healthcare` / SQLAlchemy |
+| **PostgreSQL** | Một phiên bản DB cục bộ với sự phân tách logic triệt để | Kết nối cơ sở dữ liệu riêng biệt | Nghiêm cấm query chéo database, khóa ngoại chéo, chung ORM model hay import chéo domain |
 
-The canonical tool inventory is V2, while active Food/Restaurant/Healthcare
-compatibility flows still use bounded V1-shaped Agent requests through the
-Gateway. That compatibility surface is not evidence of full V2 parity; see
-[tool contracts](api/tool-contracts.md) and [API inventory](api/api-inventory.md).
+Tập danh mục tool chuẩn tắc là V2, trong khi các luồng tương thích Food/Restaurant/Healthcare đang dùng các request Agent định dạng V1 có giới hạn thông qua Gateway. Bề mặt tương thích đó không phải là bằng chứng cho việc đã tương đương 100% V2; xem thêm [hợp đồng công cụ (tool contracts)](api/tool-contracts.md) và [danh mục API (API inventory)](api/api-inventory.md).
 
-### Control flow
+### Luồng điều khiển (Control Flow)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant W as Web
-  participant G as Gateway
-  participant A as Agent
-  participant D as Owning domain
+  participant U as Người dùng (User)
+  participant W as Web Frontend
+  participant G as API Gateway
+  participant A as AI Agent
+  participant D as Domain Service sở hữu
 
-  U->>W: Send a request
+  U->>W: Gửi yêu cầu qua giao diện chat
   W->>G: POST /api/v1/assistant/chat
-  G->>A: Internal planner request with safe context
-  A-->>G: Validated semantic plan (untrusted)
-  G->>D: Typed read/hold/quote call
-  D-->>G: Authoritative result
-  G-->>W: Sanitized cards and explicit actions
-  U->>W: Select/confirm an action
+  G->>A: Yêu cầu lập kế hoạch nội bộ với ngữ cảnh an toàn
+  A-->>G: Kế hoạch ngữ nghĩa đã validate (untrusted)
+  G->>D: Gọi lệnh typed read / hold / quote
+  D-->>G: Kết quả có thẩm quyền từ Domain
+  G-->>W: Danh sách card đã làm sạch và action rõ ràng
+  U->>W: Chọn / xác nhận hành động (confirmation)
   W->>G: POST /api/v1/assistant/actions + Idempotency-Key
-  G->>D: Owner-validated state transition
-  D-->>G: Authoritative outcome
-  G-->>W: Sanitized receipt/status
+  G->>D: Chuyển đổi trạng thái có thẩm quyền (State transition)
+  D-->>G: Kết quả thực thi chính thức
+  G-->>W: Biên lai / trạng thái đã làm sạch
 ```
 
-The model never determines authoritative IDs, prices, availability, payment
-status, or final success. It does not reach a domain database or final action.
-Gateway orchestration does not let Gateway write a domain's database directly.
+Mô hình AI (LLM) không bao giờ tự quyết định các định danh ID có thẩm quyền, giá tiền, tình trạng phòng/bàn trống, trạng thái thanh toán hay thành công giao dịch. Model không có quyền truy cập trực tiếp database domain hoặc kích hoạt hành động cuối. Việc Gateway điều phối cũng không cho phép Gateway can thiệp trực tiếp vào database của domain service.
 
-### Confirmation and recovery
+### Cơ chế xác nhận và Phục hồi (Confirmation and Recovery)
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Discover_or_quote
-  Discover_or_quote --> Selection_required
-  Selection_required --> Service_confirmation
-  Service_confirmation --> Payment_confirmation: payment required
-  Service_confirmation --> Final_action: no payment stage
-  Payment_confirmation --> Final_action
-  Final_action --> Completed
-  Service_confirmation --> Expired_or_invalidated
-  Payment_confirmation --> Expired_or_invalidated
-  Expired_or_invalidated --> [*]
+  [*] --> Kiem_tra_hoac_bao_gia
+  Kiem_tra_hoac_bao_gia --> Yeu_cau_lua_chon
+  Yeu_cau_lua_chon --> Xac_nhan_dich_vu
+  Xac_nhan_dich_vu --> Xac_nhan_thanh_toan: Có bước thanh toán
+  Xac_nhan_dich_vu --> Hanh_dong_cuoi: Không có bước thanh toán
+  Xac_nhan_thanh_toan --> Hanh_dong_cuoi
+  Hanh_dong_cuoi --> Hoan_thanh
+  Xac_nhan_dich_vu --> Het_han_hoac_huy_bo
+  Xac_nhan_thanh_toan --> Het_han_hoac_huy_bo
+  Het_han_hoac_huy_bo --> [*]
 ```
 
-A retryable write begins with an idempotency key. The domain scopes the key to
-actor, operation, and normalized payload. Confirmation is bound to the actor,
-action, material values/version, expiry, and one-time audit evidence. A changed
-detail invalidates the prior action rather than silently reusing it.
+Một thao tác ghi có thể thử lại (retryable write) luôn bắt đầu với một `Idempotency-Key`. Domain service giới hạn phạm vi khóa theo actor, thao tác (operation), và payload đã chuẩn hóa. Xác nhận được ràng buộc chặt chẽ với actor, action, phiên bản/giá trị vật chất, thời gian hết hạn (expiry), và bằng chứng audit dùng một lần. Bất kỳ chi tiết nào thay đổi sẽ vô hiệu hóa hành động trước đó thay vì tái sử dụng âm thầm.
 
-### Local configuration and health
+### Cấu hình cục bộ và Kiểm tra sức khỏe (Healthcheck)
 
-The recommended local path is `scripts/local/start-all.ps1` or `scripts/local/start-all.sh`
-after copying root `.env.example` to private `.env`. Container liveness probes
-verify processes; Gateway `/health/ready` verifies the dependencies it actually
-checks. The launcher additionally applies explicit idempotent migrations and
-then verifies Gateway and Web reachability. It does not claim that every
-domain's `/health/ready` is a deep dependency probe.
+Quy trình khởi động cục bộ khuyến nghị là chạy `scripts/local/start-all.ps1` (hoặc `scripts/local/start-all.sh`) sau khi sao chép file cấu hình gốc `.env.example` thành `.env`. Các probe kiểm tra liveness của container xác minh tiến trình; Gateway `/health/ready` xác minh các dependency mà nó thực sự kiểm tra. Script khởi động chạy tuần tự các migration idempotent và kiểm tra khả năng kết nối của Gateway và Web.
 
-The normal template has no Gemini credential and uses deterministic planning.
-For a real-Gemini Gate G2 run, private configuration must set
-`AGENT_MODEL_MODE=gemini` and a valid `GEMINI_API_KEY`; the evaluation must
-prove `decision_source=model` for a multi-domain/non-fast-path case.
+Mẫu cấu hình mặc định không yêu cầu API key của Gemini và sẽ sử dụng bộ lập kế hoạch tất định (deterministic planning). Đối với lượt chạy nghiệm thu Gate G2 thực tế với Gemini, cấu hình môi trường cần đặt `AGENT_MODEL_MODE=gemini` cùng `GEMINI_API_KEY` hợp lệ; bài đánh giá phải chứng minh được `decision_source=model` cho các kịch bản đa dịch vụ / non-fast-path.
 
-## 2. Current MVP limitations
+## 2. Các Giới Hạn Của MVP Hiện Tại
 
-- The Agent database is not yet used for durable checkpoints; legacy Agent
-  workflow state is lost on Agent restart.
-- Gemini is optional; the 2026-08-16 isolated Gate G2 run recorded successful
-  Gemini diagnostics for the multi-domain cases without fallback. Deterministic
-  planning remains the supported local fallback, not Gemini evidence.
-- Ride tracking and payment are local/sandbox simulations.
-- The local Geoapify integration is optional; deterministic location fallback
-  is labelled and never booking authority.
-- Mobile is an Expo skeleton, not a second production client.
-- The legacy V1 Agent compatibility paths and one-way V2 registry parity check
-  need a bounded follow-up before they can be described as fully unified.
+- Cơ sở dữ liệu của Agent (`xone_agent`) chưa được nối dây cho checkpoint bền vững; trạng thái workflow cũ của Agent sẽ bị mất khi restart tiến trình Agent.
+- Gemini là tùy chọn; lượt chạy Gate G2 độc lập ngày 2026-08-16 đã ghi nhận chẩn đoán Gemini thành công cho các ca đa miền mà không cần fallback. Chế độ lập kế hoạch tất định đóng vai trò là phương án dự phòng cục bộ.
+- Tính năng theo dõi chuyến đi (Ride tracking) và thanh toán là mô phỏng nội bộ/sandbox.
+- Tích hợp Geoapify cục bộ là tùy chọn; phương án dự phòng vị trí tất định luôn được dán nhãn rõ ràng và không bao giờ đóng vai trò thẩm quyền đặt xe.
+- Mobile hiện tại là khung ứng dụng Expo (skeleton), chưa phải là client hoàn thiện thứ hai.
+- Các luồng tương thích Agent V1 cũ và kiểm tra tương đương registry V2 một chiều cần hoàn thiện thống nhất dứt điểm trong các chu kỳ sau.
 
-## 3. Target architecture
+## 3. Kiến Trúc Mục Tiêu (Target Architecture)
 
-The target evolves current boundaries rather than replacing them.
+Kiến trúc mục tiêu phát triển dựa trên ranh giới hiện tại thay vì đập đi xây lại:
 
 ```mermaid
 flowchart TB
   Client[Web / Mobile] --> Edge[Public Gateway]
-  Edge --> AgentTarget[Agent planner boundary]
-  Edge --> FoodTarget[Food owner]
-  Edge --> RideTarget[Ride owner]
-  Edge --> RestaurantTarget[Restaurant owner]
-  Edge --> HealthTarget[Healthcare owner]
+  Edge --> AgentTarget[Agent Planner Boundary]
+  Edge --> FoodTarget[Food Service]
+  Edge --> RideTarget[Ride Service]
+  Edge --> RestaurantTarget[Restaurant Service]
+  Edge --> HealthTarget[Healthcare Service]
 
-  AgentTarget --> AgentStore[(Agent checkpoint/run metadata)]
-  Edge --> CoreTarget[(Core)]
-  FoodTarget --> FoodTargetDB[(Food)]
-  RideTarget --> RideTargetDB[(Ride)]
-  RestaurantTarget --> RestaurantTargetDB[(Restaurant)]
-  HealthTarget --> HealthTargetDB[(Healthcare)]
+  AgentTarget --> AgentStore[(Agent checkpoint / run metadata)]
+  Edge --> CoreTarget[(xone_core)]
+  FoodTarget --> FoodTargetDB[(xone_food)]
+  RideTarget --> RideTargetDB[(xone_ride)]
+  RestaurantTarget --> RestaurantTargetDB[(xone_restaurant)]
+  HealthTarget --> HealthTargetDB[(xone_healthcare)]
 
-  Edge -. observability .-> Telemetry[Central logs, metrics, traces]
-  Edge -. managed secret injection .-> Secrets[Secret store]
-  AgentTarget -. approved adapter .-> Providers[LLM / maps / routing providers]
+  Edge -. khả năng quan sát .-> Telemetry[Central Logs, Metrics, Traces]
+  Edge -. quản lý bí mật .-> Secrets[Secret Store]
+  AgentTarget -. adapter phê duyệt .-> Providers[LLM / Maps / Routing Providers]
 ```
 
-| Evolution | Trigger | Preserved invariant |
+| Hướng tiến hóa | Điều kiện kích hoạt | Bất biến kiến trúc cần giữ |
 | --- | --- | --- |
-| Process-local Agent state → owner-local checkpoint/run persistence | Restart recovery and durable conversations need it | No raw prompts/chain-of-thought; Agent remains non-authoritative |
-| Local logical databases → independently managed domain databases | Operational/team isolation justifies it | One owner per domain; no cross-domain SQL |
-| Process-local rate limits → distributed edge/Gateway limiter | More than one Gateway instance | Gateway remains the public control boundary |
-| Local logs → central logs/metrics/traces | Operations need correlation across services | Do not log secrets, raw prompts, or unnecessary PII |
-| Local provider settings → managed secrets and provider adapters | Deployment and key-rotation needs | Provider output stays untrusted and cannot authorize actions |
-| Legacy V1 Agent flows → canonical V2 typed contract | Parity test and migration are complete | Agent cannot gain direct domain or final-action access |
+| Trạng thái Agent in-memory → Lưu trữ checkpoint / run metadata bền vững | Cần khôi phục sau sự cố restart và lưu trữ hội thoại lâu dài | Không lưu prompt thô / CoT; Agent tuyệt đối không có thẩm quyền giao dịch |
+| Logical database cục bộ → Các database server vật lý độc lập | Tải vận hành hoặc sự phân chia nhóm phát triển yêu cầu | Mỗi domain sở hữu 1 database; tuyệt đối không truy vấn SQL chéo domain |
+| Rate limit in-memory → Rate limiter phân tán tại Gateway edge | Mở rộng quy mô nhiều hơn 1 instance Gateway | Gateway vẫn giữ vai trò là biên kiểm soát công khai |
+| Log cục bộ → Centralized logs / metrics / traces (OTel, Grafana) | Vận hành hệ thống cần tương quan (correlation) giữa các service | Không bao giờ ghi log bí mật, prompt thô, hoặc PII nhạy cảm |
+| Cấu hình biến môi trường cục bộ → Quản lý secret tập trung (Vault) | Triển khai production và nhu cầu xoay vòng khóa bí mật định kỳ | Đầu ra provider luôn là untrusted và không thể tự ủy quyền hành động |
+| Luồng Agent V1 cũ → Hợp đồng dữ liệu typed V2 chuẩn tắc hoàn toàn | Hoàn tất kiểm thử tương thích và migration | Agent không được cấp quyền truy cập trực tiếp domain hoặc chốt hành động |
 
-Queues, event sourcing, service mesh, Kubernetes, multi-region topology, and a
-vector database are not target commitments for this MVP. They require measured
-needs and separate design decisions.
+Các giải pháp như Message Queue, Event Sourcing, Service Mesh, Kubernetes, Kiến trúc đa vùng (Multi-region), hay Vector Database chuyên biệt không phải là cam kết cho phiên bản MVP này. Chúng chỉ được áp dụng khi có nhu cầu đo lường thực tế và quyết định thiết kế riêng biệt.
 
-## 4. Review checklist
+## 4. Danh Mục Kiểm Tra Đánh Giá (Review Checklist)
 
-- Public clients call only the Gateway.
-- Every domain owns its data and state transition.
-- Agent output is validated/untrusted and cannot finalize a transaction.
-- Financial/final steps require explicit confirmation plus idempotency.
-- Current MVP claims are source-backed; target items are labelled as evolution.
-- The actual Gate G2 evaluation is recorded in
-  [root eval](../eval/README.md), not inferred from unit-test mocks.
+- Client công khai chỉ gọi duy nhất vào API Gateway.
+- Mỗi domain service sở hữu độc quyền dữ liệu và chuyển đổi trạng thái của chính nó.
+- Đầu ra của Agent luôn được validate chặt chẽ, coi là untrusted và không thể tự chốt giao dịch.
+- Các bước tài chính/quyết định cuối cùng yêu cầu xác nhận 2 bước rõ ràng và có Idempotency-Key.
+- Khẳng định MVP dựa trên mã nguồn thực tế; các hạng mục tương lai được dán nhãn rõ ràng là tiến hóa có lộ trình.
+- Kết quả đánh giá Gate G2 thực tế được ghi nhận chi tiết tại [root eval](../eval/README.md), không suy diễn từ mock unit test.

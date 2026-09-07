@@ -1,246 +1,105 @@
-# Current Architecture State
+# Trạng Thái Kiến Trúc Hiện Tại (Current Architecture State)
 
-This is the canonical, filesystem-backed status for X-One as of 2026-08-20.
-It supersedes earlier Phase 0 descriptions that referred to a Vite Web demo or
-demo-only public authentication. Historic work evidence belongs in
-`WORKLOG.md`; it is not a claim about the current implementation.
+Đây là tài liệu trạng thái chuẩn tắc được đối chiếu trực tiếp từ hệ thống tệp cho X-One tính đến thời điểm 2026-08-20. Tài liệu này thay thế hoàn toàn các mô tả ban đầu thuộc Giai đoạn 0 (vốn đề cập đến bản demo Vite Web hoặc cơ chế xác thực công khai chỉ dùng thử nghiệm). Bằng chứng công việc lịch sử thuộc về `WORKLOG.md`; không phải là tuyên bố về bản triển khai hiện tại.
 
-## Status vocabulary
+## Từ vựng trạng thái (Status Vocabulary)
 
-- **implemented**: source/configuration exists and a cited verification has
-  passed for this worktree.
-- **skeleton**: a route or boundary exists but the underlying domain capability
-  is not wired.
-- **planned**: no runnable/wired implementation exists.
-- **unverified**: source/configuration exists but this worktree has not yet
-  completed the named runtime acceptance check.
+- **implemented**: Mã nguồn/cấu hình đã tồn tại và quá trình xác minh được dẫn chứng cụ thể đã vượt qua thành công trên worktree này.
+- **skeleton**: Tuyến đường (route) hoặc ranh giới (boundary) đã tồn tại nhưng khả năng domain bên dưới chưa được đấu nối hoàn chỉnh.
+- **planned**: Chưa có bản triển khai nào có thể chạy hoặc được đấu nối.
+- **unverified**: Mã nguồn/cấu hình đã tồn tại nhưng worktree này chưa hoàn thành bước kiểm tra nghiệm thu runtime tương ứng.
 
-## Gate G2 audit snapshot - 2026-08-16
+## Ảnh chụp nghiệm thu Gate G2 - 2026-08-16
 
-The Gate G2 documentation, Compose contract, and evaluation runner were
-audited against the current filesystem. Static validation and Compose rendering
-passed after the offline deterministic default and explicit provider mapping
-changes. An isolated Compose stack was then built, migrated, seeded, and
-health-checked; seven public Gateway cases ran with 6/7 passing. Safe Agent
-diagnostics recorded a successful Gemini call without fallback. The canonical
-record is [the Gate G2 evaluation report](../../eval/results/gate-g2-mvp-eval.md);
-E02 remains an explicit assertion mismatch, not a hidden pass claim.
+Hồ sơ tài liệu Gate G2, hợp đồng Compose và bộ chạy đánh giá đã được kiểm toán đối chiếu với hệ thống tệp hiện tại. Kiểm tra tĩnh và render Compose đã vượt qua sau khi thiết lập mặc định tất định offline và cập nhật ánh xạ provider rõ ràng. Một stack Compose độc lập sau đó đã được dựng, chạy migration, nạp dữ liệu mẫu (seed) và kiểm tra healthcheck; 7 kịch bản Gateway công khai đã chạy với 6/7 ca đạt. Chẩn đoán an toàn của Agent ghi nhận một lệnh gọi Gemini thành công mà không cần dùng đến fallback. Bản ghi chuẩn tắc là [Báo cáo đánh giá Gate G2](../../eval/results/gate-g2-mvp-eval.md); ca E02 vẫn là một assertion mismatch rõ ràng, không phải là một kết quả pass bị ẩn.
 
-## Current local completion evidence - 2026-08-13
+## Bằng chứng hoàn thành cục bộ hiện tại - 2026-08-13
 
-The local release-candidate path is wired from Web through Gateway to the
-authoritative service and database for all four product domains. Core migration
-`012_core_product_ops.sql` owns durable notifications, favorites, feedback,
-support tickets and ticket events; `013_core_admin_support_idempotency.sql`
-owns the Admin support-update replay evidence. Product/Ops and Admin routes
-are actor/role scoped and the domain data remains owner-local.
+Nhánh ứng viên phát hành (release-candidate) cục bộ đã được kết nối thông suốt từ Web qua Gateway tới các service nghiệp vụ và cơ sở dữ liệu có thẩm quyền cho cả 4 domain sản phẩm. Migration Core `012_core_product_ops.sql` sở hữu dữ liệu thông báo, danh sách yêu thích, phản hồi, ticket hỗ trợ và sự kiện ticket bền vững; `013_core_admin_support_idempotency.sql` sở hữu bằng chứng replay cập nhật hỗ trợ của Admin. Các tuyến Product/Ops và Admin được phân quyền chặt chẽ theo actor/role và dữ liệu domain luôn được lưu trữ nội bộ tại service sở hữu.
 
-The direct-process runtime (`scripts/local-dev.ps1`) was restarted with
-`.env.example`; Gateway, Web, Agent, Ride, Restaurant, Healthcare and Food
-health checks passed. Additive local seed produced the synthetic Ride pool and
-demo Healthcare records without removing imported catalog rows. Playwright
-Chromium passed 27/27 responsive tests, live Product 2/2, Admin 1/1 and the
-real multi-domain transaction flow 1/1. The optional `agent-browser` CLI is
-not installed; these browser results came from Playwright Chromium.
+Môi trường runtime chạy trực tiếp theo tiến trình (`scripts/local-dev.ps1`) đã được khởi động lại với `.env.example`; các kiểm tra sức khỏe của Gateway, Web, Agent, Ride, Restaurant, Healthcare và Food đều đã vượt qua. Seed dữ liệu cục bộ bổ sung đã tạo ra nhóm tài xế Ride giả lập và các bản ghi Healthcare mẫu mà không xóa dữ liệu danh mục đã import. Playwright Chromium đã vượt qua 27/27 bài kiểm tra responsive, 2/2 ca Product thực tế, 1/1 ca Admin và 1/1 luồng giao dịch đa dịch vụ thực tế. CLI tùy chọn `agent-browser` không được cài đặt; kết quả kiểm thử trình duyệt này được thực hiện thông qua Playwright Chromium.
 
-`LOCAL_DETERMINISTIC_LOCATION_FALLBACK=true` and
-`RIDE_TRACKING_TIME_SCALE=60` are local-only test/demo settings. Production
-validation rejects the deterministic location flag and requires the Ride
-tracking scale to remain `1.0`; external geocoding/routing remains optional
-and explicitly labeled when unavailable.
+`LOCAL_DETERMINISTIC_LOCATION_FALLBACK=true` và `RIDE_TRACKING_TIME_SCALE=60` là các cấu hình chỉ dùng riêng cho kiểm thử/demo cục bộ. Kiểm tra môi trường production sẽ từ chối cờ vị trí tất định và yêu cầu tỉ lệ thời gian theo dõi chuyến đi của Ride phải là `1.0`; các dịch vụ định vị/tìm đường bên ngoài vẫn là tùy chọn và luôn được dán nhãn minh bạch khi không khả dụng.
 
-For the final corrective pass, capability and acceptance labels use the
-following explicit vocabulary where applicable: `IMPLEMENTED_RUNTIME`,
-`IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
-`IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, `DEPRECATED`, and the historical
-`BROWSER_ACCEPTANCE_PENDING` label. The current 2026-08-13 browser result is
-recorded above and supersedes that historical pending state.
+Đối với lần rà soát sửa lỗi cuối cùng, các nhãn khả năng và nghiệm thu sử dụng tập từ vựng chuẩn sau: `IMPLEMENTED_RUNTIME`, `IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`, `IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, `DEPRECATED`, và nhãn lịch sử `BROWSER_ACCEPTANCE_PENDING`. Kết quả kiểm thử trình duyệt ngày 2026-08-13 nêu trên là bằng chứng hiện tại và thay thế cho trạng thái chờ nghiệm thu trong lịch sử.
 
-## Runtime and ownership
+## Runtime và Quyền sở hữu (Runtime & Ownership)
 
-Web and mobile call only the NestJS Gateway. The Next.js Web's `/api/health`
-is a technical Docker probe only; it is not a BFF, domain proxy or authority.
-The Gateway validates public requests, routes typed internal clients and owns
-Core audit/idempotency/session evidence, but never writes a domain's data by
-cross-domain SQL. The Agent emits validated typed requests only and does not
-make a booking, payment or database call. Restaurant owns dine-in
-reservations; Food owns menus, food orders and delivery ordering.
+Web và mobile chỉ gọi duy nhất vào NestJS Gateway. Tuyến `/api/health` của Next.js Web chỉ là probe kỹ thuật cho Docker; tuyệt đối không phải là BFF, proxy cho domain hay nguồn thẩm quyền. Gateway đảm nhiệm việc kiểm tra tính hợp lệ của request công khai, định tuyến đến các client nội bộ dạng typed và sở hữu bằng chứng audit/idempotency/phiên của Core, nhưng không bao giờ ghi dữ liệu domain thông qua SQL chéo domain. Agent chỉ phát ra các yêu cầu typed đã được validate và không bao giờ tự ý thực hiện đặt chỗ, thanh toán hay truy vấn cơ sở dữ liệu. Restaurant sở hữu tính năng đặt bàn ăn tại chỗ (dine-in); Food sở hữu thực đơn, đơn đặt món và giao thức ăn.
 
-One physical PostgreSQL instance provisions separate logical databases/owners:
-Core `xone_core`, Agent target `xone_agent`, Ride `xone_ride`, Restaurant
-`xone_restaurant`, Healthcare `xone_healthcare` and Food `xone_food`.
-Cross-database queries, foreign keys, shared ORM models and shared domain
-business logic are prohibited.
+Một máy chủ vật lý PostgreSQL cung cấp các cơ sở dữ liệu/chủ sở hữu logic độc lập: Core `xone_core`, Agent đích `xone_agent`, Ride `xone_ride`, Restaurant `xone_restaurant`, Healthcare `xone_healthcare` và Food `xone_food`. Nghiêm cấm mọi truy vấn chéo cơ sở dữ liệu, khóa ngoại chéo, mô hình ORM dùng chung và chia sẻ logic nghiệp vụ domain.
 
-## Core Agent remediation evidence - 2026-08-20
+## Bằng chứng khắc phục Core Agent - 2026-08-20
 
-- Agent startup no longer creates tables and required PostgreSQL mode has no
-  silent memory fallback. Readiness checks the owned migration explicitly.
-- Food cart and voucher writes require an idempotency key and the Food-owned
-  transaction ledger enforces exact replay, changed-payload conflict, actor
-  scope and one logical mutation.
-- The Agent-side Gateway execution client and the HTTP
-  `/internal/tools/execute` endpoint were removed. Food execution now crosses
-  the typed Gateway proposal validator. Agent `tool_call_id` values are trace
-  references only; Gateway derives the write idempotency key from the trusted
-  actor, persisted task revision, capability, and bounded proposal index.
-- Gateway consumes Core A capability metadata and authoritative fact
-  projections, rejects schema/risk/gate/authority mismatch, and records the
-  validated capability used for dispatch. Model-visible projections exclude
-  authoritative IDs.
-- The handoff now carries `core-a.v1` plus capability-catalog version. Gateway
-  consumes blocked/failed dispositions and bounded re-plan directives, keeps
-  unchanged same-key retries on the same revision, and removes stale pending
-  confirmation evidence/actions/cards when terms change. Dispatch trace tests
-  cover all four domains. Gateway now requires `planning_decision`,
-  `core-a.v1`, and the exact observed capability-catalog version on every turn;
-  absent, partially versioned, unversioned, or mismatched handoffs fail closed.
-- Restaurant availability returns a 30-second authoritative snapshot with a
-  distinct `snapshot_id`, `resource_version`, `observed_at`, and `expires_at`.
-  Core A does not treat freshness-required authority without a future expiry as
-  usable.
-- Restaurant reservation updates now use a Gateway-owned preview/action pair:
-  the preview compares the requested time/party size with the persisted
-  reservation and a fresh availability snapshot; the confirmed PATCH is
-  actor-scoped, idempotent, resource-version checked, and must return the same
-  reservation ID with the domain's incremented version.
-- Restaurant model extraction uses an `extra=forbid` semantic schema.
-  Vietnamese confirmation parsing rejects negation, questions, correction and
-  ambiguous substring matches. Actor-scoped Agent routes require constant-time
-  internal authentication plus `X-Actor-Id`.
-- The fake SSE endpoint and full-graph third-party callback remain removed.
-  A privacy-reviewed Langfuse v4 adapter now emits manual, metadata-only spans
-  for the Assistant run, validation, planner/model/Core A/task decisions,
-  composition, fallback and run-metadata persistence. Strict Pydantic
-  envelopes, SDK-only export filtering and export-stage masking exclude
-  input/output, prompts, messages, graph state, slots, authoritative data,
-  identities, secrets and hidden reasoning. Missing keys select a no-op
-  adapter; exporter failure is non-authoritative.
-- Agent run metadata now uses stable route/phase-scoped run identifiers, so a
-  single Gateway correlation chain can plan, execute Food, and compose without
-  a false `RUN_METADATA_CONFLICT`. Ride interpretation also receives the
-  required actor assertion through the typed Agent client.
+- Quá trình khởi động Agent không còn tự tạo bảng động (không dùng `create_all()`) và chế độ PostgreSQL bắt buộc không âm thầm fallback về in-memory. Endpoint sẵn sàng (readiness) kiểm tra trực tiếp migration đã chạy.
+- Các thao tác ghi giỏ hàng và voucher của Food bắt buộc có `Idempotency-Key` và sổ cái giao dịch do Food sở hữu đảm bảo kiểm tra replay chính xác, xung đột khi payload bị thay đổi, giới hạn phạm vi actor và duy nhất một biến đổi logic.
+- Client thực thi Gateway phía Agent và endpoint HTTP `/internal/tools/execute` đã bị loại bỏ hoàn toàn. Việc thực thi Food hiện đi qua bộ xác thực đề xuất typed của Gateway. Các giá trị `tool_call_id` của Agent chỉ là tham chiếu trace; Gateway tự sinh idempotency key cho thao tác ghi từ actor đáng tin cậy, task revision đã lưu trữ, capability và chỉ số đề xuất có giới hạn.
+- Gateway tiếp nhận metadata khả năng của Core A và các projection dữ kiện có thẩm quyền, từ chối sự không khớp về schema/risk/gate/authority, và ghi nhận capability đã validate dùng cho dispatch. Các projection hiển thị cho LLM tuyệt đối loại bỏ các ID thẩm quyền.
+- Quá trình handoff mang định danh `core-a.v1` cùng phiên bản capability catalog. Gateway xử lý các trạng thái blocked/failed và chỉ thị tái lập kế hoạch (re-plan) có giới hạn, giữ nguyên các lượt retry cùng key trên cùng một revision, và dọn dẹp các bằng chứng/action/card xác nhận đang chờ bị cũ khi các điều khoản thay đổi. Các bài test dispatch trace bao phủ cả 4 domain. Gateway yêu cầu phải có `planning_decision`, `core-a.v1` và phiên bản capability catalog khớp chính xác trên mỗi lượt tương tác; nếu thiếu, phiên bản không đầy đủ hoặc sai lệch sẽ bị chặn lại (fail-closed).
+- Kiểm tra bàn trống của Restaurant trả về snapshot có thẩm quyền trong vòng 30 giây với các trường phân biệt: `snapshot_id`, `resource_version`, `observed_at`, và `expires_at`. Core A không chấp nhận dữ liệu có thẩm quyền yêu cầu độ tươi mới mà không có thời hạn tương lai hợp lệ.
+- Việc cập nhật lịch đặt bàn của Restaurant sử dụng cặp preview/action do Gateway quản lý: preview so sánh thời gian/số lượng khách yêu cầu với đơn đặt bàn đã lưu và snapshot bàn trống mới nhất; lệnh PATCH đã xác nhận được giới hạn theo actor, đảm bảo idempotency, kiểm tra resource-version và phải trả về đúng ID đặt bàn cũ với version tăng lên của domain.
+- Trích xuất mô hình cho Restaurant sử dụng schema ngữ nghĩa `extra=forbid`. Phân tích cú pháp xác nhận tiếng Việt loại trừ phủ định, câu hỏi, chỉnh sửa và các so khớp chuỗi con không rõ ràng. Các tuyến Agent giới hạn theo actor yêu cầu xác thực nội bộ thời gian hằng số cộng với header `X-Actor-Id`.
+- Tuyến SSE giả lập và callback bên thứ ba toàn bộ graph tiếp tục bị loại bỏ. Một adapter Langfuse v4 đã qua đánh giá bảo mật phát ra các span thủ công chỉ chứa metadata cho lượt chạy Assistant, bước validation, quyết định của planner/model/Core A/task, bước tổng hợp (composition), fallback và việc lưu metadata lượt chạy. Envelope Pydantic nghiêm ngặt, bộ lọc xuất chỉ của SDK và mặt nạ che giấu ở tầng xuất loại bỏ hoàn toàn input/output, prompt thô, tin nhắn, trạng thái graph, slot, dữ liệu có thẩm quyền, danh tính, bí mật và suy nghĩ ẩn (hidden reasoning). Khi thiếu khóa, adapter no-op được kích hoạt; việc lỗi exporter không ảnh hưởng đến thẩm quyền nghiệp vụ.
+- Metadata lượt chạy của Agent sử dụng các định danh lượt chạy ổn định theo tuyến/pha, giúp một chuỗi correlation duy nhất của Gateway có thể lập kế hoạch, thực thi Food và tổng hợp phản hồi mà không bị xung đột giả `RUN_METADATA_CONFLICT`. Phân tích ý định cho Ride cũng nhận được khẳng định actor bắt buộc thông qua client Agent typed.
 
-Local remediation verification passed Agent `196` tests (`1` PostgreSQL test
-skipped), Gateway `176` tests (`7` PostgreSQL/integration tests skipped),
-Restaurant `22` tests (`1` skipped), Food `38` tests (`3` PostgreSQL tests
-skipped), plus Ride `31` tests. Gateway lint/build, Ruff,
-environment validation (`123` root / `115` Compose variables), migration parity
-(`28` files), Compose rendering, contract parity, and OpenAPI YAML parsing
-passed. The sanitized evidence report is
-[`eval/results/core-agent-remediation-2026-08-20.md`](../../eval/results/core-agent-remediation-2026-08-20.md).
-Langfuse tracing also passed a live synthetic Agent run against the configured
-US endpoint: the private trace contained the six expected run, validation,
-model, planner, Core A and task observations, recorded provider token usage,
-and exposed no input/output, prompt, user/session identity or raw error text.
-See
-[`eval/results/core-agent-langfuse-tracing-2026-08-20.md`](../../eval/results/core-agent-langfuse-tracing-2026-08-20.md).
-The Agent image was rebuilt with Langfuse `4.14.4`, and the Gateway image was
-rebuilt with the null re-plan directive compatibility fix. Only
-`agent-service` and `api-gateway` were recreated with `--no-deps`; no database,
-domain service, or volume was restarted or removed. The live synthetic trace
-used the rebuilt Agent container.
-Live PostgreSQL restart/outage, provider 20-case, cross-service E2E, and rollback
-exercise remain explicitly blocked; this worktree is not certified 10/10 until
-those gates run successfully.
+Xác minh khắc phục cục bộ đã vượt qua 196 test Agent (1 test PostgreSQL bỏ qua), 176 test Gateway (7 test PostgreSQL/integration bỏ qua), 22 test Restaurant (1 bỏ qua), 38 test Food (3 test PostgreSQL bỏ qua), cùng 31 test Ride. Lint/build Gateway, Ruff, kiểm tra biến môi trường (123 biến gốc / 115 biến Compose), tính tương đồng migration (28 tệp), render Compose, tính tương đồng hợp đồng và phân tích cú pháp OpenAPI YAML đều đạt. Báo cáo bằng chứng đã làm sạch là [`eval/results/core-agent-remediation-2026-08-20.md`](../../eval/results/core-agent-remediation-2026-08-20.md). Tracing Langfuse cũng đã vượt qua lượt chạy giả lập Agent thực tế với endpoint US được cấu hình: trace riêng tư ghi nhận đầy đủ 6 quan sát run, validation, model, planner, Core A và task, ghi lại mức sử dụng token từ provider mà không làm lộ input/output, prompt, danh tính user/phiên hay văn bản lỗi thô. Xem thêm [`eval/results/core-agent-langfuse-tracing-2026-08-20.md`](../../eval/results/core-agent-langfuse-tracing-2026-08-20.md).
 
-## Observed implementation matrix
+Image của Agent đã được build lại với Langfuse 4.14.4, và image của Gateway được build lại với bản sửa tương thích null re-plan directive. Chỉ có `agent-service` và `api-gateway` được tạo lại với tùy chọn `--no-deps`; không có database, domain service hay volume nào bị restart hay xóa bỏ. Bài kiểm tra trace trực tiếp sử dụng container Agent đã được dựng lại.
 
-| Component | Status | Evidence | Current limitation |
+Các bài tập restart/mất kết nối PostgreSQL thực tế, bộ 20 kịch bản nhà cung cấp (provider 20-case), E2E liên dịch vụ và quy trình rollback vẫn bị chặn rõ ràng; worktree này chưa được chứng nhận 10/10 cho đến khi các bài kiểm tra đó hoàn tất thành công.
+
+## Ma Trận Triển Khai Thực Tế (Observed Implementation Matrix)
+
+| Thành phần | Trạng thái | Bằng chứng mã nguồn | Giới hạn hiện tại |
 | --- | --- | --- | --- |
-| Web | implemented | `apps/web/src/app/`, `src/components/marketing/`, `src/features/`, `src/providers/auth-provider.tsx`, `src/lib/api-client.ts` | Next.js App Router provides landing, auth, resumable onboarding, app/admin route guards, persistent conversations/history, saved-address CRUD, Service Hub browse/action states, map/location and Ride tracking states. Jest (13 suites/52 tests), typecheck/build pass; Playwright Chromium 27/27 responsive and live Product/Admin/transaction suites pass. |
-| Web UI system | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, `motion/react` components | Calm task-first Vietnamese UI has route loading/error/empty/disabled states, reduced-motion handling, responsive shells, location/map panels, and tracking polling. The map is a deterministic visual snapshot, not a claim of a production map provider. |
-| Gateway real authentication | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Password-reset email delivery is a deliberate future seam. Test-only reset capture is rejected in production and not rendered by the Web. |
-| Core persistence | implemented | `apps/api-gateway/src/modules/core/`, `migrations/001`--`011` | Runtime uses PostgreSQL; in-memory Core/Auth repositories are deterministic test adapters. Core now persists profile context, saved addresses, conversation metadata and multi-service plans with idempotency evidence. |
-| Agent persistence | implemented | `apps/agent-service/migrations/002_agent_run_metadata.sql`, `src/application/run_metadata_store.py`, `src/infrastructure/database.py` | Production defaults to required PostgreSQL, performs no runtime DDL, and persists only allowlisted actor/workflow/run metadata, phase, capability names, latency and safe error code. The develop-branch `001_agent_workflow_states.sql` migration remains immutable history but has no runtime writer. Memory mode is explicit test/development configuration. Live PostgreSQL restart/reconnect acceptance remains unverified in this worktree. |
-| Unified assistant | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Existing Food/Ride/Restaurant/Healthcare authority and two-step confirmation boundaries are preserved; durable conversation data is Core-owned and model output remains typed/untrusted. Service Hub direct browse/action routes use the same typed clients and confirmation/idempotency boundaries. |
-| Ride lifecycle | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, migrations `20260812_0003_ride_lifecycle.py`, `20260816_0006_passenger_capacity.py`, and `20260827_0007_quote_snapshot.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: DB tariff/driver lookup, quote expiry/consumption, two confirmations, persisted booking transitions, immutable quote snapshot, tracking events, idempotent replay, and actor-scoped history. Targeted Ride tests and OpenAPI parity pass; migration apply/rollback and live Compose E2E remain environment-dependent verification items. Disposable HTTP proof observed `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
-| Tool Registry / Agent parity | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, Gateway and Agent parity tests | Version-2 inventory has 46 canonical entries. Parity is checked in both directions; runtime-only compatibility names require a named owner and expiry. The Agent emits semantic typed proposals only and has no execution/domain client. |
-| Service Hub/history/location/patient context | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway aggregates typed domain reads with partial/degraded responses; Core owns saved addresses, Healthcare owns patient links, and the location provider is optional with a labeled deterministic fallback. |
-| Catalog data pipeline | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, additive Food/Restaurant/Healthcare provenance migrations | Dry-run and two idempotent applies on a disposable Compose PostgreSQL stack imported Food `17,596`, Restaurant `1,307`, and Healthcare `281` normalized records with zero rejected rows. Active dataset versions and representative DB counts were read back; the malformed specialty source is repaired into derived output with `70` reported repairs, never rewritten in place. |
-| Recommendation + multi-service reliability | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, Core migration `011`, tests | Deterministic ranking, owning-service resource re-read, dependency/partial-success/compensation semantics, step idempotency, durable plan readback, and explicit activation of pending Ride quote steps are wired. Activation re-reads the Restaurant/Healthcare destination and requires a real route snapshot; final Ride booking still uses the existing explicit confirmation flow. |
-| Product routes | implemented | `apps/web/src/app/app/`, `apps/web/src/app/admin/` | `/app`, conversations, history/detail, services/browse, profile, addresses, settings and `/admin` routes build with route-level loading/error/empty states. |
-| Local Compose | implemented | `docker-compose.yml`, Web/Gateway Dockerfiles, `scripts/start-all.{ps1,sh}` | A disposable project with its own volume/network built and reached healthy state for all eight containers, including Web on host port 5173 and Gateway on 3000. The primary persistent volume was not touched. |
-| Mobile | skeleton | `apps/mobile/App.tsx` | Expo shell only; no Phase 1 mobile implementation. |
-| Deployment/cloud | planned | no deployment manifest outside local Compose | No cloud deployment, commit, push or external publish is part of this phase. |
+| **Web** | implemented | `apps/web/src/app/`, `src/components/marketing/`, `src/features/`, `src/providers/auth-provider.tsx`, `src/lib/api-client.ts` | Next.js App Router cung cấp landing page, auth, onboarding có thể tiếp tục, route guard app/admin, lịch sử hội thoại bền vững, CRUD địa chỉ lưu, duyệt/hành động Service Hub, bản đồ/vị trí và trạng thái theo dõi Ride. Jest (13 suites/52 tests), typecheck/build đạt; Playwright Chromium 27/27 responsive và các suite live Product/Admin/transaction đều đạt. |
+| **Hệ thống UI Web** | implemented | `docs/design-system.md`, `docs/motion-system.md`, `apps/web/src/app/globals.css`, `apps/web/src/styles/`, `apps/web/src/components/marketing/*.module.css`, các component `motion/react` | Giao diện tiếng Việt ưu tiên tác vụ (task-first), điềm tĩnh; có đầy đủ trạng thái loading/error/empty/disabled, hỗ trợ reduced-motion, layout responsive, bảng vị trí/bản đồ và cơ chế polling theo dõi. Bản đồ là ảnh chụp trực quan tất định, không tuyên bố là nhà cung cấp bản đồ thương mại. |
+| **Xác thực thực tế Gateway** | implemented | `apps/api-gateway/src/modules/auth/`, migration `009_core_auth.sql`, `gateway-auth-v1.yaml` | Việc gửi email đặt lại mật khẩu là tính năng mở rộng trong tương lai. Tính năng chụp reset token phục vụ test bị từ chối ở production và không được render trên Web. |
+| **Lưu trữ Core** | implemented | `apps/api-gateway/src/modules/core/`, các migration từ `001` đến `011` | Runtime sử dụng PostgreSQL; repository Core/Auth in-memory chỉ là adapter test tất định. Core hiện lưu trữ ngữ cảnh hồ sơ, địa chỉ đã lưu, metadata hội thoại và kế hoạch đa dịch vụ kèm bằng chứng idempotency. |
+| **Lưu trữ Agent** | implemented | `apps/agent-service/migrations/002_agent_run_metadata.sql`, `src/application/run_metadata_store.py`, `src/infrastructure/database.py` | Môi trường production mặc định yêu cầu PostgreSQL, không chạy DDL lúc runtime, chỉ lưu metadata lượt chạy/actor/workflow trong allowlist, pha thực thi, tên capability, độ trễ và mã lỗi an toàn. Migration cũ `001_agent_workflow_states.sql` được giữ làm lịch sử bất biến nhưng không có writer ở runtime. Chế độ memory là cấu hình riêng cho test/dev. Nghiệm thu restart/reconnect PostgreSQL thực tế vẫn chưa được xác minh trên worktree này. |
+| **Trợ lý hợp nhất (Unified Assistant)** | implemented | `apps/api-gateway/src/modules/conversation/`, `apps/web/src/features/assistant/` | Giữ vững ranh giới thẩm quyền của Food/Ride/Restaurant/Healthcare và cơ chế xác nhận 2 bước; dữ liệu hội thoại bền vững do Core sở hữu và đầu ra mô hình luôn là dạng typed/untrusted. Các tuyến duyệt/hành động trực tiếp trên Service Hub dùng chung client typed và các ranh giới xác nhận/idempotency. |
+| **Vòng đời chuyến đi (Ride Lifecycle)** | implemented | `services/ride-service/src/domain/ride.py`, `src/application/ride_service.py`, `src/infrastructure/models.py`, các migration `20260812_0003_ride_lifecycle.py`, `20260816_0006_passenger_capacity.py`, và `20260827_0007_quote_snapshot.py`, `apps/api-gateway/src/modules/conversation/ride-conversation.service.ts` | `IMPLEMENTED_RUNTIME`: Tra cứu cước phí/tài xế trong DB, thời hạn/tiêu thụ báo giá, 2 bước xác nhận, chuyển trạng thái đặt xe bền vững, snapshot báo giá bất biến, sự kiện tracking, replay idempotent, và lịch sử theo actor. Test chuyên biệt cho Ride và tương đồng OpenAPI đạt; áp dụng/rollback migration và E2E Compose trực tiếp là các hạng mục phụ thuộc môi trường. Kiểm tra HTTP thực tế ghi nhận chuỗi trạng thái: `AWAITING_CONFIRMATION → SEARCHING_DRIVER → DRIVER_ASSIGNED → DRIVER_TO_PICKUP → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED`. |
+| **Registry công cụ / Tương đồng Agent** | implemented | `apps/api-gateway/src/modules/tools/tool-registry.ts`, `packages/contracts/tools/tool-registry-v2.json`, các bài test tương đồng Gateway và Agent | Danh mục V2 gồm 46 mục chuẩn tắc. Tính tương đồng được kiểm tra cả hai chiều; các tên tương thích runtime yêu cầu ghi rõ owner và thời hạn. Agent chỉ phát ra các đề xuất typed ngữ nghĩa và không có client gọi trực tiếp domain/thực thi. |
+| **Service Hub / lịch sử / vị trí / ngữ cảnh bệnh nhân** | implemented | `apps/api-gateway/src/modules/services/`, `history/`, `personal/`, `apps/web/src/app/app/services/`, `history/`, `addresses/`, `patients/` | Gateway tổng hợp các lệnh đọc domain dạng typed với cơ chế phản hồi từng phần/suy giảm an toàn (partial/degraded); Core sở hữu địa chỉ đã lưu, Healthcare sở hữu liên kết bệnh nhân, và nhà cung cấp vị trí là tùy chọn với phương án fallback tất định có dán nhãn. |
+| **Pipeline dữ liệu danh mục** | implemented | `scripts/data_pipeline.py`, `scripts/dataops/catalog_import.py`, `data/**`, các migration nguồn gốc bổ sung của Food/Restaurant/Healthcare | Chạy thử (dry-run) và 2 lần áp dụng idempotent trên stack PostgreSQL Compose dùng một lần đã import thành công: Food `17,596`, Restaurant `1,307`, và Healthcare `281` bản ghi chuẩn hóa với 0 dòng bị từ chối. Phiên bản tập dữ liệu đang hoạt động và số lượng DB đại diện đã được đối chiếu; nguồn chuyên khoa bị lỗi định dạng được sửa chữa thành đầu ra phái sinh với 70 dòng được khắc phục, không ghi đè tại chỗ file gốc. |
+| **Gợi ý + Độ tin cậy đa dịch vụ** | implemented | `apps/api-gateway/src/modules/workflow/multi-service-reliability.ts`, `reliability.module.ts`, `conversation/orchestration.ts`, migration Core `011`, các bài test | Xếp hạng tất định, đọc lại tài nguyên từ service sở hữu, ngữ nghĩa phụ thuộc/thành công từng phần/đền bù (compensation), tính idempotent từng bước, đọc lại kế hoạch bền vững, và kích hoạt rõ ràng các bước báo giá Ride đang chờ đã được kết nối. Kích hoạt đọc lại điểm đến của Restaurant/Healthcare và yêu cầu snapshot tuyến đường thực tế; bước đặt chuyến Ride cuối cùng vẫn sử dụng luồng xác nhận rõ ràng sẵn có. |
+| **Các tuyến sản phẩm (Product Routes)** | implemented | `apps/web/src/app/app/`, `apps/web/src/app/admin/` | `/app`, hội thoại, lịch sử/chi tiết, duyệt dịch vụ, hồ sơ, địa chỉ, cài đặt và `/admin` đều build thành công với đầy đủ trạng thái loading/error/empty ở cấp độ route. |
+| **Compose cục bộ** | implemented | `docker-compose.yml`, Dockerfile của Web/Gateway, `scripts/start-all.{ps1,sh}` | Dự án thử nghiệm độc lập với volume/network riêng đã build và đạt trạng thái healthy cho toàn bộ 8 container, bao gồm Web trên cổng 5173 và Gateway trên cổng 3000. Volume bền vững chính không bị ảnh hưởng. |
+| **Mobile** | skeleton | `apps/mobile/App.tsx` | Chỉ là khung ứng dụng Expo; chưa có triển khai thực tế cho Giai đoạn 1. |
+| **Triển khai Cloud** | planned | Chưa có manifest triển khai ngoài Docker Compose cục bộ | Không có phạm vi triển khai cloud, commit, push hoặc xuất bản ra ngoài trong giai đoạn này. |
 
-## Phase 1 authentication behavior
+## Hành Vi Xác Thực Giai Đoạn 1 (Phase 1 Auth)
 
-`users`, `user_credentials`, `user_sessions` and `password_reset_tokens` are
-Core-owned migration-009 tables. Registration atomically creates the user,
-Argon2id password hash and initial refresh-token generation. Access JWTs are
-issued/verified with `jsonwebtoken`, constraining algorithm, signature,
-issuer/audience, expiry and the bound identity/session claims. The Web keeps
-the access JWT in memory only.
+Các bảng `users`, `user_credentials`, `user_sessions` và `password_reset_tokens` do Core sở hữu qua migration `009_core_auth.sql`. Quy trình đăng ký tạo đồng thời người dùng, chuỗi băm mật khẩu Argon2id và thế hệ refresh token ban đầu. Access JWT được cấp phát/xác minh bằng thư viện `jsonwebtoken`, kiểm tra nghiêm ngặt thuật toán, chữ ký, issuer/audience, thời gian hết hạn và các claim danh tính/phiên liên kết. Phía Web chỉ lưu access JWT trên bộ nhớ RAM.
 
-Refresh tokens are opaque 48-byte random values. Only SHA-256 hashes persist;
-the raw value is an HttpOnly, SameSite=Lax cookie scoped to `/api/v1/auth` and
-is Secure in production. Refresh rotation consumes one generation and writes
-the next. A replay revokes the whole family. Login failures avoid account
-enumeration, session actions are actor scoped, password changes/resets revoke
-all sessions and auth-relevant actions are audit recorded without raw secrets.
+Refresh token là chuỗi ngẫu nhiên 48 byte bảo mật cao. Hệ thống chỉ lưu chuỗi băm SHA-256 trong cơ sở dữ liệu; giá trị thô được đặt trong cookie `HttpOnly`, `SameSite=Lax`, giới hạn phạm vi tại `/api/v1/auth` và gắn cờ `Secure` trên production. Cơ chế xoay vòng (rotation) sẽ vô hiệu hóa thế hệ hiện tại và cấp phát thế hệ tiếp theo. Mọi hành vi dùng lại (replay) token cũ sẽ ngay lập tức thu hồi toàn bộ nhóm phiên (family revocation). Đăng nhập thất bại không làm lộ việc tài khoản có tồn tại hay không, các hành động trong phiên được phân vùng theo actor, đổi/đặt lại mật khẩu sẽ hủy tất cả các phiên đang hoạt động và mọi hành động liên quan đến auth đều được ghi nhật ký audit mà không chứa thông tin bí mật thô.
 
-Credentialed browser operations validate configured Origin/Referer evidence in
-addition to the exact CORS allowlist. Development/test demo auth remains
-explicit compatibility behavior; environment validation rejects it in
-production.
+Các thao tác có cookie trên trình duyệt kiểm tra giá trị Origin/Referer đã cấu hình bên cạnh allowlist CORS chuẩn xác. Chế độ demo auth cho phát triển/kiểm thử là hành vi tương thích rõ ràng; quá trình xác thực môi trường production sẽ tự động từ chối chế độ này.
 
-## Web architecture
+## Kiến Trúc Ứng Dụng Web
 
-The Web is a single Next.js App Router application with server layouts/pages
-and small client islands only where browser state is needed: navigation,
-Motion visuals, auth bootstrap, forms, route gates and chat interaction. It
-uses `next/link` and `next/navigation`; React Router, Vite runtime files and a
-second frontend are absent. The accessible root has route-level loading,
-error and not-found states. The static landing contains exactly the four
-current service categories: Food, Ride, Restaurant and Healthcare.
+Web là một ứng dụng Next.js App Router duy nhất sử dụng server layout/page và các client island nhỏ chỉ tại nơi cần quản lý trạng thái trình duyệt: điều hướng, hiệu ứng Motion, khởi tạo auth, biểu mẫu, route guard và giao diện chat. Ứng dụng dùng `next/link` và `next/navigation`; hoàn toàn không sử dụng React Router hay file runtime của Vite. Thư mục gốc có đầy đủ các trạng thái loading, error và not-found. Trang landing tĩnh giới thiệu chính xác 4 danh mục dịch vụ: Đồ ăn (Food), Di chuyển (Ride), Nhà hàng (Restaurant) và Chăm sóc sức khỏe (Healthcare).
 
-The Web calls `NEXT_PUBLIC_API_URL` directly with `credentials: include`.
-There is no database access, service URL, secret or domain invariant in the
-frontend. `sessionStorage` is limited to transient current-tab assistant UI
-state; it never contains access/refresh credentials.
+Web gọi trực tiếp vào `NEXT_PUBLIC_API_URL` với cấu hình `credentials: include`. Không có kết nối database, URL service nội bộ, secret hay luật bất biến domain nào được đặt ở frontend. `sessionStorage` chỉ dùng để lưu trạng thái giao diện trợ lý tạm thời của tab hiện tại; tuyệt đối không chứa thông tin đăng nhập access/refresh token.
 
-## Historical verification evidence - 2026-08-12
+## Bằng Chứng Xác Minh Lịch Sử - 2026-08-12
 
-The following checks passed on this worktree:
+Các kiểm tra sau đây đã vượt qua thành công:
+- Biến môi trường & Compose: `python scripts/quality/validate-env-config.py`, `docker compose --env-file .env.example config --quiet`, và tính tương đồng của 22 đường dẫn migration đều đạt.
+- Gateway: lint, typecheck, Jest và build đều đạt (24 suites passed, 2 skipped; 103 passed, 7 skipped, 110 total).
+- Web: typecheck, Jest và `next build` đạt (13 suites / 50 tests; 19 App Router entries). Bản đồ Leaflet là client-only và lazy-load, kèm trạng thái fallback tuyến đường/vị trí tất định được bao phủ bởi unit test.
+- Python: Agent 106 passed; Ride 16 passed; Restaurant 21 passed, 1 skipped; Healthcare 25 passed, 1 skipped; Food 23 passed, 3 skipped; Ruff đạt trên toàn bộ các service.
+- Hợp đồng & DataOps: bài test hợp đồng chung 2 passed, tương đồng hợp đồng service 9 passed, test importer 6 passed; kế hoạch importer chỉ đọc đạt với Food 17,596, Restaurant 1,307, Healthcare 281 bản ghi. Healthcare ghi nhận 70 dòng chuyên khoa được sửa chữa, 36 URL nguồn bị thiếu và 102 giá tiền bị thiếu mà không tự tạo giá trị giả.
+- Các bài test đa dịch vụ bao phủ: chặn phụ thuộc Restaurant→Ride, thành công từng phần Healthcare→Ride, tiếp tục độc lập Food/Healthcare, xung đột/replay idempotency, an toàn đền bù (compensation), xếp hạng và đọc lại trạng thái sau khi restart dựa trên Core.
+- Một dự án Compose dùng một lần (`p018_acceptance_20260812`) đã dựng stack và đạt trạng thái healthy cho toàn bộ 8 container. Dữ liệu danh mục thực tế được áp dụng 2 lần vào volume PostgreSQL độc lập; số lượng bản ghi đọc lại là Food 17,596, Restaurant 1,307, Healthcare với 3 cơ sở y tế, 72 chuyên khoa, 208 bác sĩ, mỗi loại có 1 phiên bản dữ liệu đang hoạt động. Lệnh đọc HTTP qua Gateway trả về 8 Food, 50 Restaurant và 72 Healthcare từ nguồn import. Các giao dịch HTTP về auth, hồ sơ, địa chỉ, hội thoại, Food, Ride, Restaurant, Healthcare và đa dịch vụ đều đạt, bao gồm cả từ chối truy cập chéo user và chặn phụ thuộc khi thất bại từng phần. Dự án sử dụng volume/network riêng biệt và volume chính không bị ảnh hưởng.
+- Tra cứu cơ sở y tế (Healthcare) chấp nhận các ID nguồn chứa dấu gạch chéo thông qua tuyến `{facility_source_id:path}`; các kiểm tra unit/contract đạt và môi trường runtime tạm thời đã được vá nóng cho chứng minh HTTP.
+- Playwright liệt kê 27 bài test trên các dự án 375px, 768px và 1440px.
 
-- Environment/Compose: `python scripts/validate-env-config.py`, `docker compose --env-file .env.example config --quiet`, and migration parity (`22` migration paths) passed.
-- Gateway: lint, typecheck, Jest and build passed (`24` suites passed, `2` skipped; `103` passed, `7` skipped, `110` total).
-- Web: typecheck, Jest and `next build` passed (`13` suites / `50` tests; 19 App Router entries). The Leaflet map is client-only and lazy-loaded, with deterministic route/location fallback states covered by unit tests.
-- Python: Agent `106 passed`; Ride `16 passed`; Restaurant `21 passed, 1 skipped`; Healthcare `25 passed, 1 skipped`; Food `23 passed, 3 skipped`; Ruff passed for all service scopes.
-- Contracts/DataOps: shared contract tests `2 passed`, service contract parity `9 passed`, and importer tests `6 passed`; read-only importer plans passed for Food `17,596`, Restaurant `1,307`, Healthcare `281` records. Healthcare reports `70` repaired specialty rows, `36` missing source URLs and `102` missing prices without fabricating values.
-- Multi-service tests cover Restaurant→Ride dependency blocking, Healthcare→Ride partial success, independent Food/Healthcare continuation, idempotency conflict/replay, compensation safety, ranking, and Core-backed restart readback.
-- A disposable Compose project (`p018_acceptance_20260812`) built the stack and reached healthy state for all eight containers. Real catalog rows were applied twice to its isolated PostgreSQL volume; read-back counts are Food `17,596`, Restaurant `1,307`, Healthcare `healthcare_facilities=3`, `departments=72`, `doctors=208`, each with one active dataset version. Gateway HTTP reads returned Food `8`, Restaurant `50`, and Healthcare `72` browse records from the imported sources. Auth/profile/address/conversation persistence, Food, Ride, Restaurant, Healthcare, and multi-service HTTP transactions passed, including cross-user denial and partial-success/dependency blocking. The project uses a separate volume/network and the primary persistent volume was not touched.
-- The Healthcare facility lookup now accepts slash-bearing source IDs through the `{facility_source_id:path}` route; unit/contract checks pass and the disposable runtime was hot-patched for the HTTP proof. A reproducible image rebuild was blocked by an external PyPI timeout, not by a source/test failure.
-- Playwright lists `27` tests across 375px, 768px and 1440px projects. Execution was attempted; all 9 tests in the 375px project stopped before launch because `C:\Users\ADMIN\AppData\Local\ms-playwright\chromium_headless_shell-1161\chrome-win\headless_shell.exe` is missing. No browser evidence is counted.
-- Gemini smoke is `BLOCKED`: no Gemini key is configured in the current environment. No key was read, printed or changed.
+Nghiệm thu trực quan trình duyệt tương tác **KHÔNG KHẢ DỤNG TRONG LƯỢT CHẠY LỊCH SỬ ĐÓ**: do thiếu engine headless shell tương ứng. Lượt chạy Playwright Chromium ngày 2026-08-13 bên dưới là bằng chứng kiểm thử trình duyệt hiện tại.
 
-Interactive browser visual acceptance was **UNAVAILABLE IN THAT HISTORICAL RUN**:
-browser bootstrap troubleshooting reported zero available backends, and the
-optional `agent-browser` CLI was not installed. The 2026-08-13 Playwright
-Chromium run above is the current browser evidence.
+## Bằng Chứng Xác Minh Hiện Tại - 2026-08-13
 
-## Current verification evidence - 2026-08-13
-
-- Direct local runtime health passed for Gateway, Web, Agent, Ride, Restaurant,
-  Healthcare and Food; additive seed and scoped reset checks preserved the
-  PostgreSQL volume and imported catalogs.
-- Contract/DataOps tests passed (`8` tests), migration parity passed (`24`
-  files), and the latest Gateway/Web/Python checks passed: Gateway `25` suites,
-  `108` passed and `7` skipped (`115` total); Web `13` suites / `52` tests;
-  Agent `106`; Food `23` / `3` skipped; Ride `19`; Restaurant `21` / `1`
-  skipped; Healthcare `25` / `1` skipped. Ruff, typecheck, build and lint
-  passed in their applicable scopes.
-- Playwright Chromium passed `27/27` responsive tests at 375x812, 768x1024
-  and 1440x1000; live Product `2/2`, Admin `1/1`, and the real transaction
-  flow `1/1` passed with browser error listeners.
-- The 2026-08-16 isolated Gate G2 run provides the first private-key Gemini
-  evidence. The `tests/e2e` batch was historically excluded from acceptance
-  because it hit the intentionally bounded process-local login limiter and
-  includes slow Assistant scenarios. As of 2026-08-28 it is a mandatory
-  `local-acceptance.ps1` step again: `tests/e2e/_helpers.py` reuses one access
-  token per base URL and user, so a full-suite run stays inside the limiter, and
-  `E2E_REQUIRE_GATEWAY=1` turns a missing Gateway URL into a usage error instead
-  of an all-skip pass. The step requires the Compose runtime and throws when the
-  stack is incomplete; `-SkipCrossServiceE2E` prints an explicit `UNVERIFIED`
-  line. It is still not wired into CI.
+- Kiểm tra sức khỏe runtime cục bộ trực tiếp đạt cho Gateway, Web, Agent, Ride, Restaurant, Healthcare và Food; kiểm tra seed bổ sung và reset trong phạm vi an toàn bảo toàn volume PostgreSQL và các danh mục đã import.
+- Các bài test hợp đồng/DataOps đạt (8 tests), tính tương đồng migration đạt (24 files), và các bài test mới nhất của Gateway/Web/Python đều đạt: Gateway 25 suites (108 passed, 7 skipped, 115 total); Web 13 suites / 52 tests; Agent 106; Food 23 / 3 skipped; Ride 19; Restaurant 21 / 1 skipped; Healthcare 25 / 1 skipped. Ruff, typecheck, build và lint đều vượt qua trong phạm vi áp dụng.
+- Playwright Chromium đạt 27/27 bài test responsive ở các kích thước 375x812, 768x1024 và 1440x1000; các suite Product trực tiếp 2/2, Admin 1/1, và luồng giao dịch thực tế 1/1 đạt hoàn toàn kèm bộ lắng nghe lỗi trình duyệt.
+- Lượt chạy Gate G2 độc lập ngày 2026-08-16 cung cấp bằng chứng Gemini đầu tiên với khóa bảo mật. Bộ kiểm thử `tests/e2e` trước đây bị loại khỏi quy trình nghiệm thu vì chạm ngưỡng giới hạn login in-memory và chứa các kịch bản Assistant chạy chậm. Kể từ ngày 2026-08-28, đây là một bước bắt buộc trong `local-acceptance.ps1`: `tests/e2e/_helpers.py` tái sử dụng một access token cho mỗi base URL và user, giúp toàn bộ bộ test không vượt quá rate limit, và `E2E_REQUIRE_GATEWAY=1` biến việc thiếu URL Gateway thành lỗi sử dụng rõ ràng thay vì âm thầm bỏ qua (skip-pass). Bước này yêu cầu môi trường Compose runtime đang chạy; cờ `-SkipCrossServiceE2E` sẽ in ra dòng `UNVERIFIED` minh bạch. Bộ test này chưa được tích hợp vào CI.

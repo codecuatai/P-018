@@ -1,26 +1,26 @@
-# Pitch Deck & Demo Materials
+# Tài Liệu Thuyết Trình & Video Demo (Pitch Deck & Demo Materials)
 
-## Files
+## Các Tệp Tài Liệu
 
-- `pitch_deck.pptx` — Slide thuyết trình Demo Day
-- `video_demo.mp4` — Video demo sản phẩm (tối đa 5 phút)
+- `pitch_deck.pptx`: Slide thuyết trình cho ngày Demo Day.
+- `video_demo.mp4`: Video demo sản phẩm thực tế (tối đa 5 phút).
 
-## Pitch Deck Structure (10 slides)
+## Cấu Trúc Slide Thuyết Trình (10 Slide Chuẩn)
 
-1. **Title** — Tên dự án + Team
-2. **Problem** — Vấn đề là gì? Có bao nhiêu người gặp?
-3. **Solution** — Giải pháp AI của bạn
-4. **Demo** — Screenshot/Video ngắn
-5. **Architecture** — System diagram đơn giản
-6. **Tech Stack** — Technologies used
-7. **Traction** — Metrics, users, feedback
-8. **Market** — Quy mô thị trường
-9. **Team** — Ai làm gì
-10. **Ask** — Bạn cần gì tiếp theo?
+1. **Tiêu đề (Title)**: Tên dự án X-One + Giới thiệu đội ngũ phát triển.
+2. **Vấn đề (Problem)**: Người dùng phải chuyển đổi quá nhiều ứng dụng đơn lẻ cho các nhu cầu hàng ngày (Ăn uống, Đi lại, Nhà hàng, Khám bệnh); trải nghiệm rời rạc và mất thời gian.
+3. **Giải pháp (Solution)**: X-One — Siêu ứng dụng Trợ lý AI hợp nhất (AI Concierge Super-App), điều phối đa dịch vụ thông minh với quy trình xác nhận 2 bước an toàn.
+4. **Trình diễn (Demo)**: Video demo / Ảnh chụp tương tác thực tế giữa người dùng và Trợ lý AI.
+5. **Kiến trúc hệ thống (Architecture)**: Mô hình đa tầng với NestJS Gateway điều phối, AI Agent LangGraph và các domain microservices độc lập.
+6. **Ngăn xếp công nghệ (Tech Stack)**: Next.js App Router, NestJS, FastAPI, LangGraph, Google Gemini, PostgreSQL, Docker Compose.
+7. **Kết quả đạt được (Traction)**: Số lượng kịch bản đã kiểm thử, tỷ lệ vượt qua Gate G2 (6/7), độ trễ phản hồi và phản hồi tích cực từ người dùng thử nghiệm.
+8. **Quy mô thị trường (Market)**: Tiềm năng thị trường siêu ứng dụng và dịch vụ số tại Việt Nam và Đông Nam Á.
+9. **Đội ngũ (Team)**: Danh sách thành viên và vai trò phụ trách.
+10. **Kêu gọi & Định hướng (Ask & Roadmap)**: Kế hoạch mở rộng tích hợp thanh toán thực tế và ứng dụng di động hoàn chỉnh.
 
-## Video Demo Checklist
+## Danh Mục Kiểm Tra Video Demo
 
-- [ ] Giới thiệu problem (< 30 giây)
-- [ ] Demo live feature chính (2-3 phút)
-- [ ] Hiển thị kết quả AI (1 phút)
-- [ ] Tóm tắt impact (< 30 giây)
+- [ ] Giới thiệu vấn đề (< 30 giây)
+- [ ] Demo tính năng chính: Luồng đặt xe, đặt đồ ăn, đặt bàn, đặt lịch khám (2–3 phút)
+- [ ] Trình diễn điều phối kết hợp đa dịch vụ (1 phút)
+- [ ] Tóm tắt tác động và giá trị mang lại (< 30 giây)

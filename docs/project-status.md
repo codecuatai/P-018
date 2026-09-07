@@ -1,51 +1,29 @@
-# Project Status
+# Trạng Thái Dự Án (Project Status)
 
-## Gate G2 audit snapshot - 2026-08-16
+Tài liệu này tổng kết các mốc nghiệm thu và trạng thái thực tế của dự án X-One.
 
-- Docker/setup and canonical documentation were hardened, including an
-  offline deterministic Agent default, optional Gemini configuration, corrected
-  Gateway host/container port semantics, optional Geoapify mappings, and
-  configurable Python service ports.
-- The detailed architecture deliverable remains under `docs/`; all evaluation
-  protocol, runner, and results now live under the root `eval/` directory.
-- Static validation, Compose rendering, migration parity, Docker build, live
-  health, migration/seed, and Gateway evaluation ran successfully. The actual
-  Gate G2 result is **PASS_WITH_FINDING (6/7)**; E02 returned an honest
-  `healthcare_no_availability` response while its assertion expects
-  `healthcare_options`. Gemini evidence is paired with safe diagnostics showing
-  `model_mode=gemini`, configured key, successful model call, and no fallback.
-  See [the canonical evaluation report](../eval/results/gate-g2-mvp-eval.md).
+## Ảnh Chụp Nghiệm Thu Gate G2 - 2026-08-16
 
-## Local product-completion snapshot - 2026-08-13
+- Thiết lập Docker/setup và hồ sơ tài liệu chuẩn tắc đã được chuẩn hóa và tăng cường: thiết lập mặc định lập kế hoạch tất định offline cho Agent, cấu hình Gemini tùy chọn, chuẩn hóa ngữ nghĩa cổng host/container của Gateway, bổ sung ánh xạ Geoapify tùy chọn và cổng dịch vụ Python có thể cấu hình linh hoạt.
+- Bản giao nộp kiến trúc chi tiết nằm trong `docs/`; toàn bộ giao thức đánh giá, bộ chạy và kết quả được lưu trữ tại thư mục gốc `eval/`.
+- Kiểm tra tĩnh, render Compose, tính tương đồng migration, Docker build, healthcheck trực tiếp, migration/seed và đánh giá Gateway đều đã chạy thành công. Kết quả Gate G2 thực tế là **PASS_WITH_FINDING (6/7)**; ca E02 trả về phản hồi trung thực `healthcare_no_availability` trong khi assertion kỳ vọng `healthcare_options`. Bằng chứng Gemini đi kèm chẩn đoán an toàn ghi nhận `model_mode=gemini`, khóa đã cấu hình, lệnh gọi model thành công và không cần fallback. Xem thêm [Báo cáo đánh giá chuẩn tắc](../eval/results/gate-g2-mvp-eval.md).
 
-- Phase 1-9 local runtime scope: **PASS**. Targeted HTTP and browser gates
-  were executed against real PostgreSQL, Gateway and domain services.
-- Phase 11 Product/Ops: **PASS** for notifications, favorites, feedback,
-  reorder/book-again, support, Admin, dataset freshness and system health.
-- Local browser acceptance: **PASS**. Playwright Chromium passed 27/27 mock
-  scenarios at 375x812, 768x1024 and 1440x1000; live Product 2/2, Admin 1/1
-  and the real transaction flow 1/1 passed with browser error listeners.
-- Direct local runtime: all seven application health checks passed; additive
-  seed and dry-run reset tooling were exercised without deleting catalogs or
-  PostgreSQL volumes.
-- Gemini smoke: **BLOCKED** because no key is configured; no key was read or
-  printed.
+## Ảnh Chụp Hoàn Thành Sản Phẩm Cục Bộ - 2026-08-13
 
-The canonical, evidence-backed implementation matrix is [current architecture state](architecture/current-state.md). Keep status assertions there in the controlled vocabulary `implemented`, `skeleton`, or `planned`; this page intentionally does not duplicate it.
+- Phạm vi runtime cục bộ Giai đoạn 1-9: **PASS**. Các cổng kiểm tra HTTP và trình duyệt chuyên biệt đã được thực thi đối chiếu với PostgreSQL, Gateway và các domain service thực tế.
+- Giai đoạn 11 Product/Ops: **PASS** cho thông báo, yêu thích, phản hồi, đặt lại (reorder/book-again), hỗ trợ, Admin, độ tươi mới của dataset và sức khỏe hệ thống.
+- Nghiệm thu trình duyệt cục bộ: **PASS**. Playwright Chromium đạt 27/27 kịch bản ở các kích thước 375x812, 768x1024 và 1440x1000; các suite Product trực tiếp 2/2, Admin 1/1 và luồng giao dịch thực tế 1/1 đạt với các bộ lắng nghe lỗi trình duyệt.
+- Runtime cục bộ trực tiếp: Toàn bộ 7 kiểm tra sức khỏe ứng dụng đều đạt; công cụ seed bổ sung và reset dry-run đã được thực thi mà không xóa danh mục hay volume của PostgreSQL.
+- Gemini smoke: **BLOCKED** khi không có khóa được cấu hình; tuyệt đối không có khóa nào bị đọc hay in ra ngoài.
 
-## Final corrective-pass snapshot — 2026-08-12
+Ma trận triển khai chuẩn tắc có dẫn chứng đầy đủ được lưu giữ tại [Trạng thái kiến trúc hiện tại](architecture/current-state.md).
 
-- Phase 1–9 implementation: **PASS** for the non-browser requirements in
-  `work.md`.
-- Automated non-browser acceptance: **PASS**. Gateway, Web, Agent, domain,
-  contract, migration, DataOps, Compose, and live Gateway HTTP checks passed.
-- Playwright tests: **IMPLEMENTED** (27 tests: 9 scenarios × 3 viewports).
-- Browser execution: **BLOCKED_BY_ENVIRONMENT**. The Chromium executable is
-  not installed, so no screenshot, viewport, interaction, or console evidence
-  is claimed; final browser acceptance is **PENDING**.
-- Gemini smoke: **BLOCKED** because no Gemini key is configured in the
-  environment. No key was read or printed.
+## Ảnh Chụp Rà Soát Sửa Lỗi Lịch Sử — 2026-08-12
 
-The detailed evidence and current limitations are maintained in
-[current architecture state](architecture/current-state.md) and the
-[testing strategy](development/testing-strategy.md).
+- Triển khai Giai đoạn 1–9: **PASS** cho các yêu cầu phi trình duyệt trong `work.md`.
+- Nghiệm thu tự động phi trình duyệt: **PASS**. Các kiểm tra Gateway, Web, Agent, domain, hợp đồng, migration, DataOps, Compose và Gateway HTTP trực tiếp đều đạt.
+- Bộ test Playwright: **IMPLEMENTED** (27 test: 9 kịch bản × 3 viewport).
+- Thực thi trình duyệt lúc đó: **BLOCKED_BY_ENVIRONMENT** do thiếu tệp thực thi Chromium trong môi trường cũ; đã được giải quyết và nghiệm thu hoàn tất vào ngày 2026-08-13.
+- Gemini smoke: **BLOCKED** do chưa cấu hình khóa trong môi trường.
+
+Chi tiết bằng chứng và các giới hạn hiện tại được duy trì trong [Trạng thái kiến trúc hiện tại](architecture/current-state.md) và [Chiến lược kiểm thử](development/testing-strategy.md).

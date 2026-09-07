@@ -1,75 +1,41 @@
-# Tool Contracts
+# Hợp Đồng Công Cụ (Tool Contracts)
 
-A tool is a governed domain capability, not a raw REST endpoint. The Gateway
-owns the registry and public execution boundary. The target Agent contract is
-the versioned JSON-schema request described by
-[`tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json).
-The unified planner emits bounded semantic proposals only. Legacy Food and
-vertical workflow compatibility paths still ask the Gateway to execute a
-whitelisted read/draft/preview request; they do not call a domain directly or
-execute a final action. This is a migration exception, not an authority grant.
+Công cụ (Tool) là một khả năng nghiệp vụ được quản trị chặt chẽ của domain, không phải là một REST endpoint thô. API Gateway sở hữu registry và ranh giới thực thi công khai. Hợp đồng Agent mục tiêu là yêu cầu theo JSON-schema có phiên bản được định nghĩa tại [`tool-registry-v2.json`](../../packages/contracts/tools/tool-registry-v2.json). Bộ lập kế hoạch hợp nhất (Unified Planner) chỉ phát ra các đề xuất ngữ nghĩa có giới hạn. Các luồng tương thích cũ của Food và workflow dọc vẫn yêu cầu Gateway thực thi các yêu cầu read/draft/preview nằm trong allowlist; tuyệt đối không gọi trực tiếp domain hay tự ý chốt hành động cuối cùng.
 
-The canonical inventory contains 47 entries with the explicit classifications
-`IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`,
-`IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, and `DEPRECATED`. The Gateway
-parity test and Agent policy parity test verify the checked canonical entries
-and policy names. The current runtime has additional compatibility entries, so
-the check is not yet bidirectional full-registry parity.
+Danh mục chuẩn tắc bao gồm 47 mục với các phân loại rõ ràng: `IMPLEMENTED_AGENT_TOOL`, `IMPLEMENTED_GATEWAY_ACTION`, `IMPLEMENTED_DOMAIN_API`, `LEGACY_COMPAT`, và `DEPRECATED`. Các bài kiểm thử tương đồng tại Gateway và Agent xác minh các mục chuẩn tắc và tên chính sách được kiểm soát.
 
-| Risk | Example behavior | Confirmation |
+## Phân Cấp Mức Độ Rủi Ro (Risk Levels)
+
+| Mức độ rủi ro | Hành vi ví dụ | Yêu cầu xác nhận (Confirmation) |
 | --- | --- | --- |
-| `READ` | search, detail, availability, tracking | no |
-| `REVERSIBLE_WRITE` | cart update, hold, reservation cancellation | policy-dependent; domain idempotency required |
-| `FINANCIAL_OR_FINAL` | order/booking/appointment confirmation or payment | explicit Gateway confirmation required |
+| `READ` | Tìm kiếm, xem chi tiết, kiểm tra bàn/chuyến trống, theo dõi đơn | Không yêu cầu xác nhận |
+| `REVERSIBLE_WRITE` | Cập nhật giỏ hàng, giữ chỗ (hold), hủy đặt bàn | Tùy theo chính sách; bắt buộc đảm bảo tính idempotent của domain |
+| `FINANCIAL_OR_FINAL` | Xác nhận đơn hàng/đặt xe/lịch khám hoặc thanh toán tiền | **Bắt buộc** có bước xác nhận rõ ràng tại Gateway |
 
-The canonical `ToolRequest` requires `tool_name`, `risk_level`, `arguments`,
-`workflow_id`, `tool_call_id`, and `schema_version`; write-capable requests
-receive their idempotency key from the Gateway execution boundary, never from
-Agent output. `tool_call_id` is a validated trace reference only. The registry
-owns risk and confirmation metadata, so a model cannot elevate a read into a
-write or supply authoritative IDs, prices, availability, coordinates, status,
-payment, or final-success claims.
+Cấu trúc `ToolRequest` chuẩn tắc bắt buộc có: `tool_name`, `risk_level`, `arguments`, `workflow_id`, `tool_call_id`, và `schema_version`. Các yêu cầu có khả năng ghi nhận khóa idempotency từ ranh giới thực thi của Gateway, tuyệt đối không lấy từ đầu ra của Agent. `tool_call_id` chỉ là tham chiếu trace đã validate. Registry sở hữu metadata về rủi ro và xác nhận, do đó mô hình AI không thể tự nâng cấp một quyền đọc thành quyền ghi hoặc tự cung cấp các ID, giá tiền, tính sẵn sàng, tọa độ, trạng thái thanh toán hay tuyên bố thành công cuối cùng có thẩm quyền.
 
-## Domain execution boundaries
+## Ranh Giới Thực Thi Theo Từng Domain
 
-Food Agent tools cover discovery, menu/cart, delivery quote, preview, tracking
-and confirmation preparation. Food final order/cancellation/refund execution
-remains Gateway/Core confirmation work and calls `FoodClient` only after a
-fresh authoritative preview, payload/version/amount/currency/expiry binding,
-idempotency, and one-time confirmation claim.
+### 1. Dịch Vụ Đồ Ăn (Food)
+Các công cụ Agent của Food bao gồm: khám phá quán, xem thực đơn/giỏ hàng, báo giá giao hàng, xem trước (preview), theo dõi đơn và chuẩn bị xác nhận. Việc thực thi đặt hàng cuối cùng / hủy đơn / hoàn tiền vẫn thuộc trách nhiệm xác nhận của Gateway/Core và chỉ gọi `FoodClient` sau khi:
+- Có bản xem trước có thẩm quyền mới nhất,
+- Ràng buộc payload/phiên bản/số tiền/loại tiền tệ/thời hạn hết hạn,
+- Kiểm tra tính idempotent,
+- Và xác nhận dùng một lần được thực thi nguyên tử.
 
-Ride has one Agent-proposable quote tool. Booking preparation, final booking,
-tracking, status, list, and cancellation are Gateway/domain capabilities. The
-Ride domain owns tariff/driver selection, quote and booking transitions,
-tracking events, idempotency, and final status; two explicit confirmations are
-required before final payment/booking execution.
+### 2. Dịch Vụ Di Chuyển (Ride)
+Ride chỉ có duy nhất một công cụ do Agent đề xuất: tính toán báo giá chuyến đi (`ride_get_quote`). Chuẩn bị đặt xe, đặt xe chính thức, theo dõi hành trình, kiểm tra trạng thái, danh sách chuyến và hủy chuyến là các khả năng do Gateway/domain nắm giữ. Domain Ride sở hữu biểu phí/lựa chọn tài xế, chuyển đổi trạng thái báo giá và đặt xe, sự kiện tracking, tính idempotent và trạng thái cuối cùng; **bắt buộc phải qua hai bước xác nhận rõ ràng** trước khi tiến hành thanh toán/đặt chuyến chính thức.
 
-Restaurant Agent tools cover search, detail, availability and holds. Final
-reservation creation, same-ID reservation updates, read/list/cancel operations
-are represented in the registry. Update is a Gateway-owned final action with a
-fresh availability preview, actor/resource-version binding, explicit user
-confirmation, and domain idempotency.
+### 3. Dịch Vụ Nhà Hàng (Restaurant)
+Các công cụ Agent của Restaurant bao gồm: tìm kiếm quán, xem chi tiết, kiểm tra bàn trống và giữ chỗ tạm thời (hold). Tạo đơn đặt bàn chính thức, cập nhật đơn đặt bàn cùng ID, đọc/liệt kê/hủy đơn được biểu diễn trong registry. Thao tác cập nhật là hành động cuối do Gateway sở hữu với bản xem trước bàn trống mới nhất, ràng buộc actor/phiên bản tài nguyên, người dùng xác nhận rõ ràng và đảm bảo tính idempotent của domain.
 
-Healthcare Agent tools cover departments, slots, holds and cancellation.
-Facility/doctor/appointment reads and final confirmation are represented as
-domain or Gateway capabilities; payment acknowledgement is a separate
-Gateway/domain step between the hold and final confirmation.
+### 4. Dịch Vụ Y Tế (Healthcare)
+Các công cụ Agent của Healthcare bao gồm: tra cứu chuyên khoa, tìm khung giờ khám, giữ chỗ khung giờ và hủy lịch hẹn. Đọc thông tin cơ sở/bác sĩ/lịch hẹn và xác nhận chính thức được biểu diễn dưới dạng khả năng của domain hoặc Gateway; bước xác nhận thanh toán là một bước độc lập giữa Gateway/domain nằm giữa giữ chỗ và xác nhận cuối cùng.
 
-Legacy aliases remain `LEGACY_COMPAT` inputs during migration and do not create
-a second authority. The Agent never calls a domain service or database and
-never confirms on behalf of a user.
+## Trợ Lý Hợp Nhất & Kế Hoạch Đa Dịch Vụ
 
-## Unified assistant and multi-service plans
+Bộ lập kế hoạch của Trợ lý hợp nhất có thể phát ra các phụ thuộc tác vụ ngữ nghĩa, nhưng không bao giờ tự ý tạo ra tác dụng phụ cuối cùng. Một kế hoạch kết hợp Khám bệnh và Đặt xe (Healthcare-to-Ride) chỉ mang thông tin điểm đón ban đầu; Gateway sẽ tự động lấy thông tin điểm đến, giờ hẹn khám và cơ sở y tế từ Healthcare, đồng thời lấy thời lượng di chuyển ước tính từ Ride.
 
-The unified Assistant planner may emit semantic task dependencies, but never a
-final side effect. A Healthcare-to-Ride plan carries the pickup only; Gateway
-obtains the destination, appointment start and facility from Healthcare and
-the duration from Ride. Public action descriptors are the only executable
-Assistant surface. Core migration `007_core_assistant_action_executions.sql`
-records one durable action receipt per actor/conversation/action, while
-`011_core_multi_service_workflows.sql` records Gateway orchestration plans and
-typed step results. Neither migration becomes authority for a Restaurant,
-Healthcare, Ride, or Food booking/order.
+Các bộ mô tả hành động công khai (action descriptors) là bề mặt thực thi duy nhất của Trợ lý. Migration Core `007_core_assistant_action_executions.sql` ghi lại một biên lai hành động bền vững cho mỗi bộ ba `actor / conversation / action`, trong khi `011_core_multi_service_workflows.sql` ghi lại các kế hoạch điều phối của Gateway và kết quả từng bước dạng typed. Không có bất kỳ migration nào trong số này được phép trở thành nguồn thẩm quyền thay thế cho đơn hàng/đặt chỗ của Restaurant, Healthcare, Ride hay Food.
 
-Evidence: `apps/api-gateway/test/tools/tool-registry.spec.ts` and
-`apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.
+Bằng chứng kiểm thử: `apps/api-gateway/test/tools/tool-registry.spec.ts` và `apps/agent-service/tests/test_agents/test_tool_registry_parity.py`.

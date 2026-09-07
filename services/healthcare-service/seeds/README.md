@@ -1,15 +1,11 @@
-# Seeds
+# Dữ Liệu Khởi Tạo Dịch Vụ Healthcare (Healthcare Seeds)
 
-The shared development command uses the Compose `catalog-importer` job to
-import the Healthcare catalog, creates future slots only for imported priced
-doctors, and then runs `seed_demo_patient.py`.
-The latter additively creates the configured development demo user's patient
-record and self-link; it never runs when demo authentication is disabled.
+Lệnh phát triển dùng chung sử dụng job `catalog-importer` của Compose để import danh mục Healthcare, tạo các khung giờ tương lai cho các bác sĩ đã có giá niêm yết, sau đó chạy `seed_demo_patient.py`.
 
-```sh
+Script này tạo bổ sung hồ sơ bệnh nhân và liên kết bản thân cho tài khoản demo phát triển đã cấu hình; nó không bao giờ chạy khi demo authentication bị tắt.
+
+```bash
 sh scripts/database/seed.sh .env
 ```
 
-`seed_medical.py` is a legacy destructive fixture and is not part of the
-development or deployment workflow. Registered users create and select their
-own Healthcare patient links through the Gateway boundary.
+`seed_medical.py` là fixture phá hủy dữ liệu cũ và không nằm trong quy trình phát triển hay triển khai chính thức. Người dùng đã đăng ký tự tạo và chọn liên kết bệnh nhân thông qua ranh giới API Gateway.

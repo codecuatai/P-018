@@ -1,246 +1,150 @@
-# Workflows
+# Quy Trình Nghiệp Vụ & Vòng Đời Dịch Vụ (Workflows)
 
-## General chat and tools
+Tài liệu này mô tả chi tiết các luồng tương tác của trợ lý hội thoại **X-One**, quy trình nghiệp vụ đơn dịch vụ và cách thức phối hợp đa dịch vụ theo chuỗi phụ thuộc có độ tin cậy cao.
 
-```mermaid
-sequenceDiagram
-  participant C as Client
-  participant G as Gateway
-  participant A as Agent
-  participant D as Domain
-  C->>G: /api/v1 request
-  G->>A: structured context
-  A-->>G: typed tool request or reply
-  G->>D: validated internal REST call
-  D-->>G: authoritative result
-  G-->>C: safe response + correlation ID
-```
+---
 
-## Unified Web assistant routing
-
-The Web application is a thin Gateway client with one X-One conversation. It
-calls only `POST /api/v1/assistant/chat` and `POST /api/v1/assistant/actions`,
-renders consumer-facing cards/actions, and records activity only after a
-backend-confirmed result. Authentication uses `POST /api/v1/auth/login`
-followed by `GET /api/v1/auth/me`; the access token is held in the current
-browser session and is cleared on `401`. The Web does not call Agent or any
-domain service directly.
+### 1. Luồng Tương Tác Hội Thoại Tổng Quát (General Chat & Tools)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant W as Web
-  participant G as Gateway
-  participant A as Agent planner
-  participant D as Domain services
-  U->>W: One natural-language request
-  W->>G: /api/v1/assistant/chat
-  G->>A: bounded plan (max 4 tasks)
-  A-->>G: typed tasks and dependencies
-  G->>D: validated typed calls
-  D-->>G: authoritative options/holds/quotes
-  G-->>W: safe cards and explicit actions
-  U->>W: Select or confirm an action
-  W->>G: /api/v1/assistant/actions
-  G->>D: idempotent action/confirmation
-  D-->>G: authoritative result
-  G-->>W: updated conversation response
+  autonumber
+  actor User as Người dùng (Client)
+  participant GW as API Gateway
+  participant Agent as AI Agent Service
+  participant Domain as Domain Services (Food/Ride/Restaurant/Healthcare)
+
+  User->>GW: Gửi câu lệnh ngôn ngữ tự nhiên (POST /api/v1/assistant/chat)
+  GW->>Agent: Gửi ngữ cảnh chuẩn hóa (tối đa 4 tasks)
+  Agent-->>GW: Đề xuất kế hoạch gọi công cụ có định kiểu (Typed Tool Proposals)
+  GW->>Domain: Thẩm định chính sách an toàn & gọi API nội bộ
+  Domain-->>GW: Trả về kết quả chính thức (Authoritative Result)
+  GW-->>User: Trả về thẻ hiển thị an toàn (Cards) + Các hành động lựa chọn (Actions)
+  
+  User->>GW: Chọn một hành động hoặc Xác nhận (POST /api/v1/assistant/actions)
+  GW->>Domain: Thực thi giao dịch với Idempotency Key & Confirmation Token
+  Domain-->>GW: Kết quả giao dịch chính thức
+  GW-->>User: Cập nhật thẻ trạng thái và dòng thời gian hoạt động
 ```
 
-Restaurant-to-Ride composition keeps Ride blocked until the selected
-restaurant's authoritative location is available. No model-produced resource
-ID, price, availability, status, or final-success claim is trusted.
+---
 
-Healthcare-to-Ride composition keeps an early Ride quote available after
-Healthcare has held an appointment and returned its authoritative facility
-address and start time, but exposes no executable `ride_service` action until
-Healthcare is `COMPLETED`. Restaurant-to-Ride follows the same rule: selection
-may produce a quote, while the executable Ride action is withheld until the
-reservation is completed. The server rejects stale/manual dependent Ride
-actions when the prerequisite is not complete. The Gateway then requests a Ride
-quote using that address and uses the quote's authoritative duration to
-calculate `recommended_departure = appointment_start
-- duration - 20 minutes`. The 20-minute value is the named Gateway constant
-`HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES`. The card explicitly says that this
-is a recommendation: the local Ride contract does not schedule a future pickup,
-so X-One does not claim that dispatch was scheduled. If the recommended
-departure is already past or cannot be calculated, the Gateway persists a
-`ride_timing_conflict` card and does not book or cancel a Ride; completed
-Healthcare work remains in the conversation.
+### 2. Phối Hợp Đa Dịch Vụ Theo Chuỗi (Multi-Service Composition)
 
-Each unified task carries a revision. A turn processes only new or semantically
-changed tasks; a planner-targeted Food continuation also forwards the current
-message to the Food graph while preserving its cumulative Food context.
-Untouched pending/completed tasks keep their authoritative card and actions.
-Ambiguous short selections are clarified instead of mutating multiple tasks.
-Selection actions share a task revision/cohort, so choosing one alternative
-invalidates its siblings and stale actions return `ACTION_NOT_AVAILABLE` without
-a domain call. An unrelated Food or Healthcare follow-up therefore does not
-re-quote an awaiting Restaurant or Ride task.
+#### A. Chuỗi Nhà Hàng $\rightarrow$ Đặt Xe (Restaurant-to-Ride)
+- **Ràng buộc phụ thuộc (`STOP_DEPENDENTS`)**: Khi người dùng yêu cầu: *"Tìm quán lẩu Cầu Giấy rồi đặt xe đến đó"*, tác vụ Đặt xe (Ride) sẽ bị khóa ở trạng thái `NEEDS_INFO` cho đến khi người dùng chọn xong nhà hàng cụ thể.
+- Chỉ khi nhà hàng đã được chọn và trả về **địa chỉ chính xác từ CSDL Restaurant**, Gateway mới lấy địa chỉ đó làm điểm đến để yêu cầu Ride Service báo giá.
+- Thao tác đặt xe chỉ được phép kích hoạt sau khi việc giữ chỗ bàn tại nhà hàng hoàn tất.
 
-## Ride lifecycle (current runtime)
+#### B. Chuỗi Khám Bệnh $\rightarrow$ Đặt Xe (Healthcare-to-Ride)
+- Khi người dùng đặt lịch khám bệnh và yêu cầu xe đưa đón:
+  1. Người dùng chọn chuyên khoa/bác sĩ và slot giờ khám bệnh.
+  2. Bệnh viện giữ chỗ slot khám thành công và trả về địa chỉ cơ sở y tế kèm giờ hẹn khám (`appointment_start`).
+  3. Gateway tự động tính toán giờ khởi hành đề xuất:
+     $$\text{Giờ khởi hành đề xuất} = \text{Giờ khám} - \text{Thời gian di chuyển ước tính} - 20\text{ phút (Buffer)}$$
+     *(20 phút là hằng số `HEALTHCARE_RIDE_DEPARTURE_BUFFER_MINUTES`)*.
+  4. Nếu giờ khám quá gấp hoặc đã trôi qua, Gateway sẽ cảnh báo `ride_timing_conflict` để người dùng chủ động điều chỉnh.
 
-Ride is the authority for quote and booking state. A quote moves through
-`QUOTE_CREATED -> AWAITING_CONFIRMATION -> CONSUMED` or `EXPIRED`; a booking
-starts at `AWAITING_CONFIRMATION` and requires two explicit user confirmations:
-service details first, then payment/final confirmation. The normal dispatch
-path is:
+---
 
+### 3. Vòng Đời Dịch Vụ Đặt Xe (Ride Lifecycle)
+
+Ride Service là nguồn chân lý duy nhất cho giá cước và trạng thái cuốc xe:
+- **Vòng đời Báo giá (Quote)**:
+  $$\text{QUOTE\_CREATED} \longrightarrow \text{AWAITING\_CONFIRMATION} \longrightarrow \text{CONSUMED (hoặc EXPIRED)}$$
+- **Vòng đời Cuốc xe (Booking)**: Bắt buộc trải qua 2 bước xác nhận rõ ràng:
+  1. Xác nhận chi tiết lộ trình và loại xe.
+  2. Xác nhận thanh toán/đặt xe.
+- **Tiến trình mô phỏng tài xế thời gian thực**:
 ```text
-AWAITING_CONFIRMATION
-  -> SEARCHING_DRIVER
-  -> DRIVER_ASSIGNED
-  -> DRIVER_TO_PICKUP
-  -> DRIVER_ARRIVED
-  -> IN_PROGRESS
-  -> COMPLETED
+AWAITING_CONFIRMATION (Chờ người dùng xác nhận)
+  └──> SEARCHING_DRIVER (Đang tìm tài xế xung quanh)
+        └──> DRIVER_ASSIGNED (Đã tìm thấy tài xế - khởi tạo cách điểm đón 2-3km)
+              └──> DRIVER_TO_PICKUP (Tài xế đang di chuyển tới điểm đón)
+                    └──> DRIVER_ARRIVED (Tài xế đã đến điểm đón)
+                          └──> IN_PROGRESS (Đang chở khách tới điểm đến)
+                                └──> COMPLETED (Hoàn thành cuốc xe)
 ```
+- Các trạng thái kết thúc khác: `NO_DRIVER` (không tìm thấy tài xế), `PAYMENT_FAILED` (thanh toán thất bại), `CANCELLED` (người dùng hủy chuyến).
 
-`NO_DRIVER`, `PAYMENT_FAILED`, `FAILED`, and `CANCELLED` are terminal outcomes
-where applicable. The Ride domain validates every transition, persists a
-monotonic `resource_version`, records tracking events, resolves tariffs and
-drivers from its own database, and enforces actor/operation idempotency. The
-Gateway may retry or reconcile a result, but it never infers driver, price,
-availability, or final success from model output.
+---
 
-For local simulated dispatch, a newly assigned driver receives a stable spawn
-position 2â€“3 km from the pickup and a persisted tracking-speed factor of `0.2`.
-Its approach ETA is derived from the passenger route's distance/duration ratio,
-so the approach and passenger legs use the same simulated speed. Both legs
-therefore progress at 20% of the prior simulator rate (80% slower); existing
-bookings retain their stored behavior.
-
-## Food ordering (target flow)
+### 4. Vòng Đời Dịch Vụ Đặt Món & Giao Đồ Ăn (Food Ordering)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant G as Gateway
-  participant A as Agent
-  participant F as Food
-  U->>G: delivery intent/address
-  G->>A: structured context
-  A-->>G: food search tool request
-  G->>F: search menu/options
-  F-->>G: authoritative options
-  U->>G: select items
-  G-->>U: confirmation request
-  U->>G: explicit confirmation
-  G->>F: create/confirm order after payment sandbox
+  autonumber
+  actor User as Người dùng
+  participant GW as Gateway
+  participant Food as Food Service
+
+  User->>GW: Tìm món hoặc quán ăn ("Phở bò Hà Nội")
+  GW->>Food: Tra cứu danh mục & thực đơn (Search Menu/Items)
+  Food-->>GW: Danh sách món ăn chính thức
+  User->>GW: Thêm món vào giỏ hàng (Cart Mutation)
+  GW->>Food: Đồng bộ giỏ hàng & tính toán tạm tính
+  User->>GW: Xác nhận địa chỉ giao hàng & thanh toán Sandbox
+  GW->>Food: Tạo đơn hàng với Idempotency Key
+  Food-->>GW: Trạng thái: PAID -> RESTAURANT_CONFIRMING
+  Note over Food: Background worker tự động chuyển tiếp:
+  Note over Food: PREPARING -> READY_FOR_PICKUP -> DRIVER_ASSIGNED -> DELIVERING -> COMPLETED
 ```
 
-The Food flow is implemented for the backend slice. Final writes require an idempotency key from the first request, confirmation bound to action/payload/version/price/expiry, audit metadata, and an authoritative Food result. Payment success ends the request at `PAID -> RESTAURANT_CONFIRMING`; Food's due-workflow worker/lazy reconciliation advances later states. Restaurant rejection and cancellation are reconciled to one idempotent refund. Stale `PROCESSING` confirmations and `PENDING` payments are claimed/recovered by the Gateway worker using the same execution/payment keys.
+- **Xử lý sự cố**: Nếu nhà hàng từ chối (`RESTAURANT_REJECTED`) hoặc người dùng hủy đơn, hệ thống tự động hoàn tiền một cách idempotent (Refund Sandbox).
 
-The unified Food task passes its task-scoped cumulative workflow context back to
-the Food Agent (`previous_context` merged with each `state_updates` delta). If
-Food returns no authoritative options, the Gateway emits an empty/clarifying
-card instead of manufacturing catalog items or prices.
+---
 
-## Restaurant reservation
+### 5. Vòng Đời Dịch Vụ Đặt Bàn Nhà Hàng (Restaurant Reservation)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant G as Gateway
-  participant A as Agent
-  participant R as Restaurant
-  U->>G: booking details
-  G->>A: typed Restaurant request
-  A-->>G: search / availability request
-  G->>R: authoritative search and availability
-  R-->>G: candidates and available table
-  U->>G: select restaurant and accept hold
-  G->>R: create reversible hold
-  R-->>G: hold expiry and resource version
-  G-->>U: explicit final confirmation required
-  U->>G: confirm reservation
-  G->>R: create reservation with idempotency key
-  R-->>G: CONFIRMED reservation
+  autonumber
+  actor User as Người dùng
+  participant GW as Gateway
+  participant Rest as Restaurant Service
+
+  User->>GW: Tìm nhà hàng theo khu vực & số người
+  GW->>Rest: Tra cứu bàn ăn & tình trạng khả dụng
+  Rest-->>GW: Danh sách ứng viên & bàn còn trống
+  User->>GW: Chọn nhà hàng & đồng ý giữ chỗ tạm thời
+  GW->>Rest: Tạo lệnh giữ chỗ có thể hoàn tác (Reversible Hold - TTL 15 phút)
+  Rest-->>GW: Mã giữ chỗ & Resource Version
+  GW-->>User: Yêu cầu xác nhận đặt bàn chính thức
+  User->>GW: Xác nhận đặt bàn (Confirm Reservation)
+  GW->>Rest: Chuyển Hold thành Đặt bàn chính thức (CONFIRMED) với Idempotency Key
+  Rest-->>GW: Đơn đặt bàn CONFIRMED thành công
 ```
 
-## Healthcare appointment
+---
+
+### 6. Vòng Đời Dịch Vụ Khám Bệnh (Healthcare Appointment)
 
 ```mermaid
 sequenceDiagram
-  participant U as User
-  participant G as Gateway
-  participant A as Agent
-  participant H as Healthcare
-  U->>G: symptom or department request
-  G->>A: authoritative department/slot context
-  A-->>G: typed list/hold request
-  G->>H: list slots, then hold selected slot
-  H-->>G: DRAFT appointment and price
-  G-->>U: payment acknowledgement required
-  U->>G: local payment acknowledgement
-  G->>H: actor-scoped payment webhook
-  U->>G: explicit final confirmation
-  G->>H: confirm appointment
-  H-->>G: CONFIRMED appointment
-  U->>G: cancel appointment
-  G->>H: release slot; retain appointment history
+  autonumber
+  actor User as Người dùng
+  participant GW as Gateway
+  participant Health as Healthcare Service
+
+  User->>GW: Nhập triệu chứng hoặc chuyên khoa ("Khám mắt")
+  GW->>Health: Tra cứu chuyên khoa, bác sĩ & slot khám khả dụng
+  Health-->>GW: Danh sách slot khám còn trống
+  User->>GW: Chọn slot khám
+  GW->>Health: Giữ chỗ slot khám (Hold slot) -> Trạng thái DRAFT
+  GW-->>User: Hiển thị thẻ xác nhận thanh toán viện phí
+  User->>GW: Đồng ý thanh toán sandbox (Payment Acknowledgement)
+  GW->>Health: Gửi webhook xác nhận thanh toán
+  User->>GW: Xác nhận lịch hẹn lần cuối
+  GW->>Health: Chốt lịch khám chính thức (CONFIRMED)
+  Health-->>GW: Lịch khám CONFIRMED thành công
 ```
 
-Healthcare reconciles an expired hold before payment, confirmation, cancellation, and relevant reads. An expired hold becomes `EXPIRED`, releases the slot, clears its expiry, and remains unpaid; payment acknowledgement is only a local state acknowledgement and is not a provider refund. Healthcare write operations require actor-scoped idempotency keys. Restaurant and Healthcare final actions are never inferred from the first model turn. Gateway confirmation records bind actor, workflow, action, normalized payload, resource/quote version, expiry, and idempotency evidence before the domain write.
+- **Hủy lịch khám**: Người dùng có thể hủy slot giữ chỗ trước khi thanh toán (`healthcare_cancel`), slot sẽ được giải phóng ngay lập tức cho bệnh nhân khác.
 
-An explicit Healthcare clock is matched exactly when available. If no exact slot
-exists, the response labels nearby or other real alternatives as unavailable at
-the requested time; it never silently changes a request such as 10:00 to 14:00.
-Daypart requests such as “sáng mai” remain a morning range preference rather
-than an invented exact 08:00 slot. A date-only request such as “ngày kia” is
-kept as a local calendar-day filter, separate from an exact clock, so changing
-the day cannot retain an earlier appointment hour. Before payment, the held
-appointment card also exposes an idempotent `healthcare_cancel` action to
-release that temporary hold; it is removed once payment starts.
+---
 
-Assistant action execution receipts are Core-owned. The first successful
-`/api/v1/assistant/actions` request stores the actor, conversation, action,
-idempotency key, request hash, status, and sanitized response. Replaying the
-same action with the same key returns the exact stored response, while a
-different key receives `ACTION_NOT_AVAILABLE` and cannot re-run the domain
-side effect. This applies uniformly to Restaurant, Ride, Healthcare, and Food
-actions.
+### 7. Độ Tin Cậy & Xử Lý Sự Cố Đa Dịch Vụ (Multi-Service Reliability)
 
-## Multi-service reliability (Phase 9)
-
-The Gateway persists a Core-owned plan before a multi-service caller records
-domain results. `restaurant_ride` and `healthcare_ride` use
-`STOP_DEPENDENTS`: the selected authoritative resource must succeed before a
-Ride step can run. `food_healthcare` uses independent steps so a failure in one
-does not block the other. The state machine exposes `PENDING`, `RUNNING`,
-`COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `COMPENSATING`, and
-`RECOVERY_REQUIRED`.
-
-The public plan request carries only the selected resource ID and owning
-authority. The Gateway re-reads the active resource through the typed
-Restaurant or Healthcare client before creating the snapshot; caller-supplied
-address and coordinates are not authoritative. Restaurant/Healthcare
-coordinates enter Ride only through that domain-owned `AuthoritativeResource`
-snapshot. Suspicious default coordinates are retained as provenance but are not
-used as real distance inputs. A Healthcare success followed by `NO_DRIVER` is
-`PARTIAL_SUCCESS`; the appointment remains authoritative and is not
-auto-cancelled. Compensation is declared per step: Healthcare is `NONE`, Food
-may require a new user confirmation, and automatic compensation is permitted
-only for an explicitly safe domain policy.
-
-Workflow plans and step idempotency evidence are persisted in Core migration
-`011_core_multi_service_workflows.sql`. Re-reading the plan after Gateway
-process recreation returns the same state; domain writes still use their own
-typed clients, confirmation evidence, and domain idempotency keys.
-
-## Product/Ops workflow
-
-Completed domain events are projected by the Gateway into Core-owned,
-actor-scoped notifications using deterministic `event_key` values. Opening the
-notification center also creates missing Healthcare reminder records inside
-the local reminder window; polling and retries are idempotent. Favorites and
-feedback first validate the authoritative resource through its owning service.
-Feedback is accepted only for an actor-owned completed transaction.
-
-History actions create a fresh reorder/rebook preparation: current menu,
-tariff, availability or Healthcare slots are re-read and no old final price,
-hold or confirmation is replayed. Support tickets store a Core timeline and
-are linked to a transaction only after Gateway ownership validation. Admin
-support changes require the server-side Admin guard and a durable idempotency
-key; a same-payload replay returns the existing ticket without repeating the
-audit side effect.
+Khi thực thi nhiều dịch vụ cùng lúc, Gateway lưu trữ kế hoạch điều phối bền vững vào CSDL Core (`011_core_multi_service_workflows.sql`):
+- **Thành công một phần (`PARTIAL_SUCCESS`)**: Ví dụ người dùng đặt lịch khám bệnh thành công nhưng sau đó cuốc xe gặp lỗi `NO_DRIVER`. Hệ thống ghi nhận trạng thái `PARTIAL_SUCCESS`: **Lịch khám bệnh vẫn được bảo toàn nguyên vẹn**, không bị tự ý hủy bỏ, đồng thời thông báo rõ ràng cho người dùng để họ có thể tự bắt phương tiện khác.
+- **Bù trừ lỗi (Compensation)**: Mỗi bước có chính sách bù trừ riêng (ví dụ Food có thể hoàn tiền tự động, Healthcare yêu cầu người dùng xác nhận hủy chủ động).

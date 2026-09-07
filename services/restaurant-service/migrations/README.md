@@ -1,3 +1,18 @@
-# Migrations
+# Quản Lý Migration Dịch Vụ Restaurant (Restaurant Migrations)
 
-Restaurant owns the Alembic chain `versions/0001_restaurant_booking.py` followed by additive `versions/0002_restaurant_idempotency_records.py` (revision `0002_restaurant_idempotency`), `versions/0003_restaurant_legacy_idempotency_backfill.py` (revision `0003_restaurant_legacy_backfill`), `versions/0004_restaurant_catalog_provenance.py` (revision `0004_restaurant_catalog`), and `versions/0005_restaurant_catalog_versions.py` (revision `0005_restaurant_versions`). The second revision adds durable actor/operation/key response snapshots and keeps the legacy reservation idempotency columns for compatibility. The third revision backfills reconstructable legacy create/hold/lifecycle evidence and is intentionally irreversible because overwritten legacy keys cannot be recovered. The fourth revision adds catalog address/coordinate quality and source provenance for the controlled Hanoi import; its compact Alembic revision ID stays within Alembic's default `version_num` width. The fifth revision adds the Restaurant-owned dataset version registry used by the idempotent controlled Hanoi import. Run `alembic upgrade head` from this service directory with `DATABASE_URL` set, then use `scripts/data/catalog/catalog_import.py restaurant --apply`. Runtime startup does not create or alter schema.
+Dịch vụ Restaurant sở hữu chuỗi migration Alembic:
+- `versions/0001_restaurant_booking.py`
+- `versions/0002_restaurant_idempotency_records.py` (revision `0002_restaurant_idempotency`): Bổ sung snapshot phản hồi theo `actor / operation / key` bền vững.
+- `versions/0003_restaurant_legacy_idempotency_backfill.py` (revision `0003_restaurant_legacy_backfill`): Bổ sung bằng chứng tạo/giữ chỗ cũ.
+- `versions/0004_restaurant_catalog_provenance.py` (revision `0004_restaurant_catalog`): Bổ sung chất lượng tọa độ/địa chỉ và nguồn gốc dữ liệu cho việc import danh mục nhà hàng Hà Nội.
+- `versions/0005_restaurant_catalog_versions.py` (revision `0005_restaurant_versions`): Đăng ký phiên bản tập dữ liệu do Restaurant sở hữu.
+
+Chạy migration bằng lệnh:
+```bash
+alembic upgrade head
+```
+từ thư mục `services/restaurant-service/` với biến `DATABASE_URL` đã được thiết lập. Sau đó chạy:
+```bash
+python scripts/data/catalog/catalog_import.py restaurant --apply
+```
+để nạp dữ liệu.

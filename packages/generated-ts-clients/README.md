@@ -1,3 +1,3 @@
-# Generated TypeScript Clients
+# Các Client TypeScript Được Sinh Tự Động (Generated TypeScript Clients)
 
-Generated clients are intentionally absent until a versioned OpenAPI contract exists. Regenerate rather than hand-edit files in this directory.
+Các client được sinh tự động hiện chưa được tạo cho đến khi có quy trình hợp đồng OpenAPI tương ứng. Khi được áp dụng, luôn sử dụng lệnh sinh tự động từ script thay vì chỉnh sửa thủ công bằng tay các tệp trong thư mục này.
