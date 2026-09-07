@@ -42,6 +42,8 @@ export class MockGateway {
   private readonly bookings = new Map<string, JsonRecord>();
   private readonly quotes = new Map<string, JsonRecord>();
   private readonly resources = new Map<string, JsonRecord>();
+  private readonly providerProfiles = new Map<string, JsonRecord>();
+  private readonly providerItems = new Map<string, JsonRecord[]>();
   private refreshUserSub: string | null;
   private sequence = 0;
   private waitingRefreshes = 0;
@@ -118,7 +120,8 @@ export class MockGateway {
     if (path === "/api/v1/auth/register" && method === "POST") {
       const body = await this.body(request);
       const email = String(body.email ?? "new.user@example.test");
-      const user = this.makeUser(email, false, String(body.full_name ?? "Người dùng E2E"));
+      const role = body.role === "provider" ? "provider" : "user";
+      const user = this.makeUser(email, false, String(body.full_name ?? "Người dùng E2E"), role);
       this.users.set(user.sub, user);
       this.addresses.set(user.sub, []);
       this.refreshUserSub = user.sub;
@@ -358,6 +361,94 @@ export class MockGateway {
     if (path.includes("/confirmations/") && path.endsWith("/execute-cancellation") && method === "POST") return this.ok(route, { order: { id: "food-order-1", status: "CANCELLED" }, payment: { status: "REFUNDED" } });
     if (path.includes("/service-actions/restaurant/") && path.endsWith("/cancel") && method === "POST") return this.ok(route, { id: "reservation-1", status: "CANCELLED" });
     if (path.includes("/service-actions/healthcare/") && path.endsWith("/cancel") && method === "POST") return this.ok(route, { appointment_id: 91, status: "CANCELLED" });
+
+    if (path === "/api/v1/provider/services/profile") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      if (method === "GET") {
+        const profile = this.providerProfiles.get(actor.sub) ?? {
+          provider_id: actor.sub,
+          provider_type: "food",
+          business_name: actor.full_name || "Bếp Nhà X-One",
+          phone: actor.phone || "0900000000",
+          address: "123 Đường Sáng Tạo, Quận 1",
+          is_open: true,
+          status: "active",
+        };
+        return this.ok(route, profile);
+      }
+      if (method === "PUT") {
+        const body = await this.body(request);
+        const existing = this.providerProfiles.get(actor.sub) ?? {};
+        const updated = { ...existing, ...body, provider_id: actor.sub };
+        this.providerProfiles.set(actor.sub, updated);
+        return this.ok(route, updated);
+      }
+    }
+
+    if (path === "/api/v1/provider/services/items") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      if (method === "GET") {
+        const items = this.providerItems.get(actor.sub) ?? [
+          {
+            id: "item-init-1",
+            provider_id: actor.sub,
+            domain: "food",
+            name: "Cơm tấm đặc biệt X-One",
+            description: "Sườn bì chả ốp la",
+            price: 65000,
+            currency: "VND",
+            category: "Cơm",
+            is_available: true,
+            created_at: isoNow(),
+          },
+        ];
+        if (!this.providerItems.has(actor.sub)) {
+          this.providerItems.set(actor.sub, items);
+        }
+        return this.ok(route, { items });
+      }
+      if (method === "POST") {
+        const body = await this.body(request);
+        const current = this.providerItems.get(actor.sub) ?? [];
+        const newItem = {
+          id: this.nextId("prov-item"),
+          provider_id: actor.sub,
+          domain: body.domain ?? "food",
+          name: body.name ?? "Dịch vụ mới",
+          description: body.description ?? "",
+          price: Number(body.price ?? 50000),
+          currency: "VND",
+          category: body.category ?? "Chung",
+          is_available: true,
+          created_at: isoNow(),
+        };
+        current.push(newItem);
+        this.providerItems.set(actor.sub, current);
+        return this.ok(route, newItem);
+      }
+    }
+
+    const itemStatusMatch = path.match(/^\/api\/v1\/provider\/services\/items\/([^/]+)\/status$/);
+    if (itemStatusMatch && method === "PATCH") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      const id = decodeURIComponent(itemStatusMatch[1]);
+      const current = this.providerItems.get(actor.sub) ?? [];
+      const item = current.find((i) => i.id === id);
+      if (item) {
+        const body = await this.body(request);
+        item.is_available = body.is_available ?? !item.is_available;
+      }
+      return this.ok(route, item ?? { updated: true });
+    }
+
+    const itemDeleteMatch = path.match(/^\/api\/v1\/provider\/services\/items\/([^/]+)$/);
+    if (itemDeleteMatch && method === "DELETE") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      const id = decodeURIComponent(itemDeleteMatch[1]);
+      const current = this.providerItems.get(actor.sub) ?? [];
+      this.providerItems.set(actor.sub, current.filter((i) => i.id !== id));
+      return this.ok(route, { deleted: true });
+    }
 
     return this.fail(route, 404, "NOT_FOUND", `${method} ${path} is not part of the fixture`);
   }

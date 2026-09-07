@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, isRetryableError, login as apiLogin, loginWithGoogle as apiLoginWithGoogle, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile } from "@/lib/api-client";
+import { clearAuthSession, configureApiClient, getAccessToken, getCurrentUser, isRetryableError, login as apiLogin, loginWithGoogle as apiLoginWithGoogle, logout as apiLogout, refreshAccessToken, register as apiRegister, updateProfile as apiUpdateProfile, type RegisterOptions } from "@/lib/api-client";
 import type { AuthUser } from "@/types";
 
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "signed-out" | "recoverable";
@@ -13,7 +13,7 @@ interface AuthContextValue {
   status: AuthStatus;
   login: (email: string, password: string) => Promise<AuthUser>;
   loginWithGoogle: (code: string, redirectUri?: string) => Promise<AuthUser>;
-  register: (fullName: string, email: string, password: string) => Promise<AuthUser>;
+  register: (fullName: string, email: string, password: string, options?: RegisterOptions) => Promise<AuthUser>;
   updateProfile: (patch: Parameters<typeof apiUpdateProfile>[0]) => Promise<AuthUser>;
   logout: () => Promise<void>;
   retrySession: () => void;
@@ -117,9 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return authenticated;
   }, []);
 
-  const register = useCallback(async (fullName: string, email: string, password: string) => {
+  const register = useCallback(async (fullName: string, email: string, password: string, options?: RegisterOptions) => {
     const generation = ++authGeneration.current;
-    const authenticated = await apiRegister(fullName, email, password, () => authGeneration.current === generation);
+    const authenticated = await apiRegister(fullName, email, password, options, () => authGeneration.current === generation);
     if (authGeneration.current !== generation) return authenticated;
     setUser(authenticated);
     setStatus("authenticated");

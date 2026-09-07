@@ -173,8 +173,38 @@ export async function loginWithGoogle(code: string, redirectUri?: string, should
   return result.user;
 }
 
-export async function register(fullName: string, email: string, password: string, shouldCommit?: () => boolean): Promise<AuthUser> {
-  const result = await request<AuthResult>("/api/v1/auth/register", { method: "POST", body: JSON.stringify({ full_name: fullName, email, password }) }, { includeAuth: false, retryAuth: false });
+export interface RegisterOptions {
+  role?: "customer" | "provider";
+  providerType?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor";
+  businessName?: string;
+  phone?: string;
+  address?: string;
+}
+
+export async function register(
+  fullName: string,
+  email: string,
+  password: string,
+  options?: RegisterOptions,
+  shouldCommit?: () => boolean,
+): Promise<AuthUser> {
+  const result = await request<AuthResult>(
+    "/api/v1/auth/register",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        full_name: fullName,
+        email,
+        password,
+        role: options?.role,
+        provider_type: options?.providerType,
+        business_name: options?.businessName,
+        phone: options?.phone,
+        address: options?.address,
+      }),
+    },
+    { includeAuth: false, retryAuth: false },
+  );
   if (!shouldCommit || shouldCommit()) setAccessToken(result.access_token);
   return result.user;
 }
@@ -1083,3 +1113,92 @@ function problemFromResponse(body: unknown, status: number): ApiProblem {
   const requestId = stringValue(root.request_id) || stringValue(isRecord(root.meta) ? root.meta.request_id : undefined) || undefined;
   return { code, detail, status, retryable: root.retryable === true || nested.retryable === true || status >= 500, ...(requestId ? { requestId } : {}) };
 }
+
+export interface ProviderProfile {
+  userId: string;
+  providerType: string;
+  tenantId: string;
+  status: string;
+  businessName?: string;
+  description?: string;
+  address?: string;
+  phone?: string;
+  webhookUrl?: string;
+  isOpen: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderServiceItem {
+  id: string;
+  providerId: string;
+  domain: "ride" | "food" | "restaurant" | "healthcare";
+  name: string;
+  description?: string;
+  price: number;
+  currency: string;
+  category?: string;
+  metadata?: Record<string, unknown>;
+  isAvailable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function getProviderProfile(): Promise<ProviderProfile> {
+  const res = await request<ProviderProfile>("/api/v1/provider/services/profile", { method: "GET" });
+  return res;
+}
+
+export async function updateProviderProfile(patch: {
+  business_name?: string;
+  description?: string;
+  address?: string;
+  phone?: string;
+  webhook_url?: string;
+  is_open?: boolean;
+  provider_type?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor";
+}): Promise<ProviderProfile> {
+  const res = await request<ProviderProfile>("/api/v1/provider/services/profile", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+  return res;
+}
+
+export async function getProviderItems(domain?: string): Promise<ProviderServiceItem[]> {
+  const url = domain ? `/api/v1/provider/services/items?domain=${encodeURIComponent(domain)}` : "/api/v1/provider/services/items";
+  const res = await request<{ items: ProviderServiceItem[] }>(url, { method: "GET" });
+  return res.items ?? [];
+}
+
+export async function createProviderItem(item: {
+  domain: "ride" | "food" | "restaurant" | "healthcare";
+  name: string;
+  price: number;
+  description?: string;
+  category?: string;
+  currency?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<ProviderServiceItem> {
+  const res = await request<ProviderServiceItem>("/api/v1/provider/services/items", {
+    method: "POST",
+    body: JSON.stringify(item),
+  });
+  return res;
+}
+
+export async function toggleProviderItemStatus(id: string, isAvailable: boolean): Promise<ProviderServiceItem> {
+  const res = await request<ProviderServiceItem>(`/api/v1/provider/services/items/${encodeURIComponent(id)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_available: isAvailable }),
+  });
+  return res;
+}
+
+export async function deleteProviderItem(id: string): Promise<{ deleted: boolean; id: string }> {
+  const res = await request<{ deleted: boolean; id: string }>(`/api/v1/provider/services/items/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return res;
+}
+

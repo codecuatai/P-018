@@ -24,6 +24,30 @@ class RegisterDto {
   @MaxLength(128, { message: 'Mật khẩu không được vượt quá 128 ký tự.' })
   @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt.' })
   password!: string;
+
+  @IsString()
+  @IsOptional()
+  role?: 'customer' | 'provider';
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor';
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(200)
+  business_name?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(50)
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(255)
+  address?: string;
 }
 
 class GoogleAuthDto {
@@ -92,7 +116,20 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() body: RegisterDto, @Req() request: CorrelatedRequest, @Res({ passthrough: true }) response: Response): Promise<object> {
-    const issued = await this.auth.register({ email: body.email, fullName: body.full_name, password: body.password }, requestMetadata(request), request.correlationId ?? 'cor_unknown');
+    const issued = await this.auth.register(
+      {
+        email: body.email,
+        fullName: body.full_name,
+        password: body.password,
+        role: body.role === 'provider' ? 'provider' : 'customer',
+        providerType: body.provider_type,
+        businessName: body.business_name,
+        phone: body.phone,
+        address: body.address,
+      },
+      requestMetadata(request),
+      request.correlationId ?? 'cor_unknown',
+    );
     setRefreshCookie(response, issued.refreshToken, this.auth.settings, this.config.getOrThrow<string>('APP_ENV'));
     return authResponse(issued, request.correlationId);
   }

@@ -56,17 +56,32 @@ export class AuthService {
     };
   }
 
-  async register(input: { email: string; fullName: string; password: string }, metadata: AuthRequestMetadata, correlationId: string): Promise<IssuedAuthSession> {
+  async register(
+    input: {
+      email: string;
+      fullName: string;
+      password: string;
+      role?: 'customer' | 'provider';
+      providerType?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor';
+      businessName?: string;
+      phone?: string;
+      address?: string;
+    },
+    metadata: AuthRequestMetadata,
+    correlationId: string,
+  ): Promise<IssuedAuthSession> {
     const emailNormalized = normalizeEmail(input.email);
     const fullName = normalizeFullName(input.fullName);
     assertPasswordPolicy(input.password);
     const now = new Date().toISOString();
+    const role = input.role === 'provider' ? 'provider' : 'customer';
     const account: AuthAccount = {
       id: randomUUID(),
       email: emailNormalized,
       emailNormalized,
       fullName,
-      role: 'customer',
+      phone: input.phone?.trim() || undefined,
+      role,
       status: 'active',
       passwordHash: await argon2.hash(input.password, ARGON2_OPTIONS),
       passwordChangedAt: now,
@@ -75,7 +90,11 @@ export class AuthService {
     };
     const next = this.newSession(account.id, randomUUID(), metadata);
     try {
-      await this.store.createUserWithSession(account, next.session);
+      await this.store.createUserWithSession(account, next.session, {
+        providerType: input.providerType,
+        businessName: input.businessName,
+        address: input.address,
+      });
     } catch (error) {
       if (error instanceof DuplicateAuthEmailError) {
         throw new ConflictException({ code: 'ACCOUNT_ALREADY_EXISTS', detail: 'Không thể tạo tài khoản với email này.', retryable: false });

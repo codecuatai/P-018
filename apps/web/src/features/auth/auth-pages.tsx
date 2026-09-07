@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, LoaderCircle, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { Car, Eye, EyeOff, HeartPulse, LoaderCircle, LockKeyhole, Mail, ShieldCheck, Store, User, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -130,6 +130,10 @@ export function LoginForm({ onSuccess, onSwitch }: AuthFormProps) {
 
 export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
   const { register } = useAuth();
+  const [accountType, setAccountType] = useState<"user" | "provider">("user");
+  const [providerType, setProviderType] = useState<"ride_driver" | "restaurant_merchant" | "healthcare_doctor">("ride_driver");
+  const [businessName, setBusinessName] = useState("");
+  const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -148,10 +152,26 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
       setError("Mật khẩu xác nhận không khớp.");
       return;
     }
+    if (accountType === "provider" && !phone.trim()) {
+      setError("Vui lòng cung cấp số điện thoại liên hệ cho đối tác.");
+      return;
+    }
     setError("");
     setPending(true);
     try {
-      const user = await register(fullName, email, password);
+      const user = await register(
+        fullName,
+        email,
+        password,
+        accountType === "provider"
+          ? {
+              role: "provider",
+              providerType,
+              businessName: businessName.trim() || fullName,
+              phone: phone.trim(),
+            }
+          : { role: "customer" },
+      );
       onSuccess(user);
     } catch (requestError) {
       setError(errorText(requestError));
@@ -162,9 +182,168 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
 
   return (
     <>
-      <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />
+      <div
+        style={{
+          display: "flex",
+          gap: "4px",
+          padding: "4px",
+          background: "#F1F5F9",
+          borderRadius: "10px",
+          marginBottom: "16px",
+          border: "1px solid #E2E8F0",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => setAccountType("user")}
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "8px 10px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            fontWeight: 650,
+            border: "none",
+            cursor: "pointer",
+            background: accountType === "user" ? "#FFFFFF" : "transparent",
+            color: accountType === "user" ? "#1D4ED8" : "#64748B",
+            boxShadow: accountType === "user" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <User size={14} />
+          <span>Người dùng cá nhân</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setAccountType("provider")}
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "6px",
+            padding: "8px 10px",
+            borderRadius: "8px",
+            fontSize: "12px",
+            fontWeight: 650,
+            border: "none",
+            cursor: "pointer",
+            background: accountType === "provider" ? "#FFFFFF" : "transparent",
+            color: accountType === "provider" ? "#047857" : "#64748B",
+            boxShadow: accountType === "provider" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Store size={14} />
+          <span>Đối tác dịch vụ (Provider)</span>
+        </button>
+      </div>
+
+      {accountType === "user" && <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />}
+
       <form onSubmit={submit}>
-        <Field label="Họ và tên" id="register-name" value={fullName} onChange={setFullName} autoComplete="name" required />
+        {accountType === "provider" && (
+          <div style={{ marginBottom: "16px", padding: "14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px" }}>
+            <Label style={{ fontSize: "12px", fontWeight: 650, marginBottom: "8px", display: "block", color: "#334155" }}>
+              Lĩnh vực đối tác hoạt động
+            </Label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "12px" }}>
+              <button
+                type="button"
+                onClick={() => setProviderType("ride_driver")}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "8px 4px",
+                  borderRadius: "8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  border: `1px solid ${providerType === "ride_driver" ? "#3B82F6" : "#CBD5E1"}`,
+                  background: providerType === "ride_driver" ? "#EFF6FF" : "#FFFFFF",
+                  color: providerType === "ride_driver" ? "#1D4ED8" : "#475569",
+                  cursor: "pointer",
+                }}
+              >
+                <Car size={16} />
+                <span>Tài xế di chuyển</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProviderType("restaurant_merchant")}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "8px 4px",
+                  borderRadius: "8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  border: `1px solid ${providerType === "restaurant_merchant" ? "#F59E0B" : "#CBD5E1"}`,
+                  background: providerType === "restaurant_merchant" ? "#FFFBEB" : "#FFFFFF",
+                  color: providerType === "restaurant_merchant" ? "#B45309" : "#475569",
+                  cursor: "pointer",
+                }}
+              >
+                <UtensilsCrossed size={16} />
+                <span>Quán ăn / Món</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setProviderType("healthcare_doctor")}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                  padding: "8px 4px",
+                  borderRadius: "8px",
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  border: `1px solid ${providerType === "healthcare_doctor" ? "#10B981" : "#CBD5E1"}`,
+                  background: providerType === "healthcare_doctor" ? "#ECFDF5" : "#FFFFFF",
+                  color: providerType === "healthcare_doctor" ? "#065F46" : "#475569",
+                  cursor: "pointer",
+                }}
+              >
+                <HeartPulse size={16} />
+                <span>Phòng khám</span>
+              </button>
+            </div>
+
+            <Field
+              label="Tên thương hiệu / Cơ sở / Phương tiện"
+              id="register-business-name"
+              value={businessName}
+              onChange={setBusinessName}
+              placeholder="VD: Phở Gia Truyền, Xe 4 Chỗ Bác Minh..."
+              required
+            />
+            <Field
+              label="Số điện thoại liên hệ"
+              id="register-phone"
+              value={phone}
+              onChange={setPhone}
+              placeholder="VD: 0912345678"
+              required
+            />
+          </div>
+        )}
+
+        <Field
+          label={accountType === "provider" ? "Họ tên người đại diện" : "Họ và tên"}
+          id="register-name"
+          value={fullName}
+          onChange={setFullName}
+          autoComplete="name"
+          required
+        />
         <Field label="Email" id="register-email" value={email} onChange={setEmail} autoComplete="email" required />
         <PasswordField id="register-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
         <PasswordField id="register-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
@@ -172,7 +351,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
         <FormFeedback error={error} />
         <Button className="button-wide" disabled={pending} type="submit">
           {pending ? <LoaderCircle className="spinner" size={17} /> : <ShieldCheck size={17} />}
-          {pending ? "Đang tạo tài khoản…" : "Tạo tài khoản"}
+          {pending ? "Đang xử lý đăng ký…" : accountType === "provider" ? "Đăng ký làm Đối tác X-One" : "Tạo tài khoản"}
         </Button>
       </form>
       <p className="auth-switch">Đã có tài khoản? <button type="button" onClick={onSwitch}>Đăng nhập</button></p>
@@ -249,8 +428,8 @@ function AuthCard({ eyebrow, title, intro, children }: { eyebrow: string; title:
   return <section className="auth-page" aria-labelledby="auth-title"><div className="auth-motif" aria-hidden="true"><XOneMark size={72} /><span /><span /><span /><span /></div><article className="auth-card"><div className="auth-card-heading"><span className="eyebrow">{eyebrow}</span><h1 id="auth-title">{title}</h1><p>{intro}</p></div>{children}</article></section>;
 }
 
-function Field({ label, id, value, onChange, type = "text", autoComplete, required = false }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean }) {
-  return <div className="form-field"><Label htmlFor={id}>{label}</Label><Input id={id} name={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} required={required} /> </div>;
+function Field({ label, id, value, onChange, type = "text", autoComplete, required = false, placeholder }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean; placeholder?: string }) {
+  return <div className="form-field"><Label htmlFor={id}>{label}</Label><Input id={id} name={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} required={required} placeholder={placeholder} /> </div>;
 }
 
 function PasswordField({ id, label, value, onChange, autoComplete, disabled = false, minLength, maxLength }: { id: string; label: string; value: string; onChange: (value: string) => void; autoComplete: string; disabled?: boolean; minLength?: number; maxLength?: number }) {

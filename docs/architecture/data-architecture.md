@@ -41,6 +41,7 @@ flowchart TB
   - `015_core_api_keys.sql` & `016_core_token_usage.sql`: Quản lý API Key nội bộ và thống kê lượng token AI tiêu thụ.
   - `017_core_four_roles_rbac.sql`: Mở rộng RBAC 4 tầng (`admin`, `manager`, `provider`, `user`) và bảng `provider_profiles`.
   - `018_core_seed_four_roles.sql`: Hạt giống tất định 4 tài khoản role chuẩn cho toàn bộ môi trường và production.
+  - `019_core_provider_offerings.sql`: Cập nhật `provider_profiles` (thương hiệu, địa chỉ, webhook, trạng thái nhận khách) và tạo bảng `provider_service_items` cho phép đối tác tự đăng ký và gắn danh mục dịch vụ (món ăn, phương tiện, gói khám) vào hệ thống X-One.
 
 #### B. CSDL Ride (`xone_ride`) — Sở hữu bởi Ride Service
 - Quản lý bằng Alembic migrations:

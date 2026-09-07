@@ -390,5 +390,26 @@ function parseCoordinate(value: string | undefined, minimum: number, maximum: nu
   return Number.isFinite(number) && number >= minimum && number <= maximum ? number : undefined;
 }
 
-@Module({ imports: [AuthModule, PersonalModule], controllers: [ServiceHubController, RideTrackingController, ServiceActionsController, RideActionsController], providers: [ServiceHubService, FoodClient, RideClient, RestaurantClient, HealthcareClient], exports: [ServiceHubService] })
+import { ProviderServicesController } from './provider-services.controller';
+import { ProviderOfferingsStore } from './provider-offerings.store';
+
+@Module({
+  imports: [AuthModule, PersonalModule],
+  controllers: [
+    ServiceHubController,
+    RideTrackingController,
+    ServiceActionsController,
+    RideActionsController,
+    ProviderServicesController,
+  ],
+  providers: [
+    ServiceHubService,
+    FoodClient,
+    RideClient,
+    RestaurantClient,
+    HealthcareClient,
+    ProviderOfferingsStore,
+  ],
+  exports: [ServiceHubService, ProviderOfferingsStore],
+})
 export class ServicesModule {}

@@ -45,7 +45,7 @@ export type ResetConsumption =
 
 export interface AuthRepository {
   createUser(account: AuthAccount): Promise<AuthAccount>;
-  createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount>;
+  createUserWithSession(account: AuthAccount, session: AuthSession, providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount>;
   getUserByEmailNormalized(emailNormalized: string): Promise<AuthAccount | undefined>;
   getUserById(id: string): Promise<AuthAccount | undefined>;
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }>;
@@ -90,7 +90,7 @@ export class InMemoryAuthRepository implements AuthRepository {
     return clone(account);
   }
 
-  async createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount> {
+  async createUserWithSession(account: AuthAccount, session: AuthSession, _providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount> {
     const created = await this.createUser(account);
     await this.createSession(session);
     return created;
@@ -313,7 +313,7 @@ export class PostgresAuthRepository implements AuthRepository {
     });
   }
 
-  async createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount> {
+  async createUserWithSession(account: AuthAccount, session: AuthSession, providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount> {
     return this.transaction(async (client) => {
       const inserted = await client.query(
         `INSERT INTO users (id,email,email_normalized,full_name,phone,role,status,created_at,updated_at)
@@ -333,6 +333,20 @@ export class PostgresAuthRepository implements AuthRepository {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [session.id, session.userId, session.refreshTokenHash, session.familyId, session.expiresAt, session.createdAt, session.lastUsedAt, session.userAgent ?? null, session.ipHash ?? null],
       );
+      if (account.role === 'provider') {
+        const providerType = providerMeta?.providerType || 'ride_driver';
+        const tenantId = `partner-${account.id.slice(0, 8)}`;
+        await client.query(
+          `INSERT INTO provider_profiles (user_id, provider_type, tenant_id, status, business_name, phone, address, created_at, updated_at)
+           VALUES ($1, $2, $3, 'active', $4, $5, $6, now(), now())
+           ON CONFLICT (user_id) DO UPDATE
+           SET business_name = COALESCE(EXCLUDED.business_name, provider_profiles.business_name),
+               phone = COALESCE(EXCLUDED.phone, provider_profiles.phone),
+               address = COALESCE(EXCLUDED.address, provider_profiles.address),
+               updated_at = now()`,
+          [account.id, providerType, tenantId, providerMeta?.businessName ?? account.fullName, account.phone ?? null, providerMeta?.address ?? null],
+        );
+      }
       return account;
     });
   }
@@ -634,7 +648,7 @@ export class AuthStore implements OnModuleDestroy {
   }
 
   createUser(account: AuthAccount): Promise<AuthAccount> { return this.repository.createUser(account); }
-  createUserWithSession(account: AuthAccount, session: AuthSession): Promise<AuthAccount> { return this.repository.createUserWithSession(account, session); }
+  createUserWithSession(account: AuthAccount, session: AuthSession, providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount> { return this.repository.createUserWithSession(account, session, providerMeta); }
   getUserByEmailNormalized(email: string): Promise<AuthAccount | undefined> { return this.repository.getUserByEmailNormalized(email); }
   getUserById(id: string): Promise<AuthAccount | undefined> { return this.repository.getUserById(id); }
   listUsers(page: number, pageSize: number): Promise<{ items: AdminUserSummary[]; total: number }> { return this.repository.listUsers(page, pageSize); }
