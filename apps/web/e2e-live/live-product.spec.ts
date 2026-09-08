@@ -23,6 +23,7 @@ async function registerThroughLanding(page: Page, email: string, password: strin
   await page.locator("#register-name").fill("Người dùng E2E");
   await page.locator("#register-email").fill(email);
   await page.locator("#register-password").fill(password);
+  await page.locator("#register-confirm-password").fill(password);
   await page.getByRole("button", { name: /Tạo tài khoản/i }).click();
   await expect(page).toHaveURL(/\/app\/onboarding|\/app(?:\?|$)/, { timeout: 30_000 });
   await completeOnboarding(page, "Người dùng E2E");

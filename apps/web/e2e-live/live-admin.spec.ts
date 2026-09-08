@@ -16,8 +16,8 @@ async function login(page: Page, email: string, password: string, name: string):
   await page.goto("/?auth=login");
   await page.locator("#login-email").fill(email);
   await page.locator("#login-password").fill(password);
-  await page.getByRole("button", { name: /Đăng nhập/i }).click();
-  await expect(page).toHaveURL(/\/app(?:\/onboarding)?(?:\?|$)/, { timeout: 30_000 });
+  await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  await expect(page).toHaveURL(/\/app|\/admin/, { timeout: 30_000 });
   await completeOnboarding(page, name);
 }
 
@@ -52,8 +52,7 @@ test.describe("live local admin", () => {
     }
     await expect(page.getByText("gateway-core", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
-    await page.goto("/app");
-    await page.getByRole("button", { name: /Đăng xuất/i }).click();
+    await page.locator("button[aria-label='Đăng xuất']").first().click();
     await expect(page).toHaveURL(/\/$/);
     await login(page, normalEmail, normalPassword, "Normal User");
     await page.goto("/admin");
