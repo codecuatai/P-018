@@ -61,7 +61,23 @@ test.describe("Production Live Verification - All 4 Roles Features", () => {
     await page.locator("#login-password").fill("Password123!");
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 
-    await expect(page).toHaveURL(/\/app/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/app(?:\/onboarding)?/, { timeout: 20_000 });
+
+    if (page.url().includes("/app/onboarding")) {
+      await page.getByRole("button", { name: "Bắt đầu" }).click();
+      await page.getByLabel("Họ và tên").fill("Người dùng X-One");
+      await page.getByRole("button", { name: "Tiếp tục" }).click();
+      await page.locator("#onboarding-phone").fill("0901234567");
+      await page.getByRole("button", { name: "Tiếp tục" }).click();
+      await page.getByRole("button", { name: "Tiếp tục không dùng vị trí" }).click();
+      await page.getByRole("button", { name: "Bỏ qua địa chỉ" }).click();
+      await page.waitForURL("**/app", { timeout: 20_000 });
+    }
+
+    const newChatBtn = page.getByRole("button", { name: /Đoạn chat mới/i });
+    if (await newChatBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      await newChatBtn.click();
+    }
 
     // 2. Verify Proactive AI Banner in WelcomeState
     const proactiveBanner = page.locator(".proactive-ai-banner");
