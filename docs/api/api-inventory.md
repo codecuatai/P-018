@@ -62,6 +62,11 @@ Nguồn: `apps/api-gateway/src/modules/**`, `apps/api-gateway/src/main.ts`, và 
 | Gateway | GET, POST | `/api/v1/support/tickets/**` | Web/Mobile | Bearer token; actor Core | `PUBLIC_CANONICAL` | Dòng thời gian ticket hỗ trợ kỹ thuật. |
 | Gateway | POST | `/api/v1/reorders/{service}/{resourceId}` | Web/Mobile | Bearer token; validate domain mới nhất | `PUBLIC_CANONICAL` | Chuẩn bị đặt lại; không tái sử dụng giá cũ hay hành động cũ. |
 | Gateway | GET, PATCH, POST | `/api/v1/admin/**` | Admin Web | `AdminGuard` phía server + `Idempotency-Key` | `PUBLIC_CANONICAL` | Tổng quan quản trị, giao dịch, người dùng, ticket hỗ trợ và dataset. |
+| Gateway | GET, PUT | `/api/v1/provider/services/profile` | Provider Web/API | Bearer token (`provider` role) | `PUBLIC_CANONICAL` | Quản lý hồ sơ cơ sở, địa chỉ, số điện thoại và URL Webhook của đối tác. |
+| Gateway | GET, POST | `/api/v1/provider/services/items` | Provider Web/API | Bearer token (`provider` role) | `PUBLIC_CANONICAL` | Quản lý danh mục món ăn/dịch vụ/xe gắn vào hệ sinh thái X-One. |
+| Gateway | PATCH, DELETE | `/api/v1/provider/services/items/{id}/**` | Provider Web/API | Bearer token (`provider` role) | `PUBLIC_CANONICAL` | Bật/tắt mở bán hoặc gỡ dịch vụ khỏi danh mục. |
+| Gateway | GET, PATCH | `/api/v1/provider/services/operations/**` | Provider Web/API | Bearer token (`provider` role) | `PUBLIC_CANONICAL` | Truy vấn và cập nhật trạng thái vận hành điều phối đơn hàng/chuyến xe/lịch khám thực tế. Chi tiết xem [provider-integration-and-webhook-spec.md](provider-integration-and-webhook-spec.md). |
+
 
 ---
 
