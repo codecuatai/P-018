@@ -62,6 +62,7 @@ Một máy chủ PostgreSQL duy nhất phân chia thành 6 logical database đ�
 | `GATEWAY_ASSISTANT_CHAT_RATE_LIMIT` | Giới hạn số tin nhắn chat gửi tới Assistant | `30` | Ngăn chặn lạm dụng tài nguyên LLM |
 | `GATEWAY_ASSISTANT_ACTION_RATE_LIMIT` | Giới hạn thao tác thực thi action | `30` | Bảo vệ các giao dịch chốt đơn/chuyến |
 | `GATEWAY_FUTURE_AUTH_RATE_LIMIT` | Giới hạn các endpoint auth khác | `30` | Áp dụng cho đăng ký, quên mật khẩu |
+| `GATEWAY_PROVIDER_SERVICES_RATE_LIMIT` | Giới hạn ghi/sửa/xóa dịch vụ đối tác và cập nhật hồ sơ | `60` | Ngăn chặn spam cập nhật và DDoS các endpoint provider |
 | `AUTH_ACCESS_TOKEN_TTL_SECONDS` | Thời gian sống của Access Token JWT | `900` (15 phút) | Ngắn hạn, lưu trên RAM |
 | `AUTH_REFRESH_TOKEN_TTL_SECONDS` | Thời gian sống của Refresh Token | `604800` (7 ngày) | Opaque token, lưu hash trong DB |
 | `AUTH_REFRESH_REUSE_GRACE_SECONDS` | Thời gian ân hạn tái sử dụng refresh token vừa dùng | `5` (0 - 300 giây) | Chống race-condition khi trình duyệt mở nhiều tab |

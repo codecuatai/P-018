@@ -12,6 +12,7 @@ describe('environment validation', () => {
     GATEWAY_ASSISTANT_ACTION_RATE_LIMIT: '20',
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: '5',
     GATEWAY_AUTH_REFRESH_RATE_LIMIT: '60',
+    GATEWAY_PROVIDER_SERVICES_RATE_LIMIT: '60',
     DATABASE_URL: 'postgresql://core_user:password@postgres:5432/xone_core',
     AGENT_SERVICE_URL: 'http://agent-service:8001',
     RIDE_SERVICE_URL: 'http://ride-service:8101',
@@ -65,6 +66,14 @@ describe('environment validation', () => {
     const profiles = getGatewaySecurityConfig(completeConfig).rateLimitProfiles;
     expect(profiles.find((profile) => profile.name === 'auth.refresh')?.maxRequests).toBe(60);
     expect(profiles.find((profile) => profile.name === 'auth.register')?.maxRequests).toBe(5);
+  });
+
+  it('configures provider services rate-limit profiles', () => {
+    const profiles = getGatewaySecurityConfig(completeConfig).rateLimitProfiles;
+    expect(profiles.find((profile) => profile.name === 'provider.profile')?.maxRequests).toBe(60);
+    expect(profiles.find((profile) => profile.name === 'provider.items.create')?.maxRequests).toBe(60);
+    expect(profiles.find((profile) => profile.name === 'provider.items.modify')?.maxRequests).toBe(60);
+    expect(profiles.find((profile) => profile.name === 'provider.items.delete')?.maxRequests).toBe(60);
   });
 
   it('accepts an explicitly bounded refresh reuse grace window', () => {
