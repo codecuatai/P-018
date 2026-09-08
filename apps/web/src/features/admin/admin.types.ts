@@ -23,7 +23,9 @@ export type SubTabId =
   | "token-usage"
   | "support-queue"
   | "feedback-ratings"
-  | "logs-view";
+  | "logs-view"
+  | "feature-flags"
+  | "audit-trail";
 
 export interface TabDefinition {
   id: MainTabId;

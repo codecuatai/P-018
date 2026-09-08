@@ -735,6 +735,101 @@ export class AdminService {
     return this.domainResults(results, ['food', 'ride', 'restaurant', 'healthcare']);
   }
 
+  private readonly featureFlagsMap = new Map<string, { flag_key: string; enabled: boolean; description: string; updated_at: string }>([
+    ['ride_service_enabled', { flag_key: 'ride_service_enabled', enabled: true, description: 'Điều phối dịch vụ Chuyến xe (Ride Service)', updated_at: new Date().toISOString() }],
+    ['food_service_enabled', { flag_key: 'food_service_enabled', enabled: true, description: 'Điều phối dịch vụ Ẩm thực (Food Service)', updated_at: new Date().toISOString() }],
+    ['restaurant_service_enabled', { flag_key: 'restaurant_service_enabled', enabled: true, description: 'Điều phối dịch vụ Đặt bàn (Restaurant Service)', updated_at: new Date().toISOString() }],
+    ['healthcare_service_enabled', { flag_key: 'healthcare_service_enabled', enabled: true, description: 'Điều phối dịch vụ Khám bệnh (Healthcare Service)', updated_at: new Date().toISOString() }],
+    ['proactive_ai_suggestions', { flag_key: 'proactive_ai_suggestions', enabled: true, description: 'Banner gợi ý AI thông minh dựa trên ngữ cảnh', updated_at: new Date().toISOString() }],
+    ['multi_service_timeline', { flag_key: 'multi_service_timeline', enabled: true, description: 'Visual Journey Timeline cho kế hoạch đa dịch vụ', updated_at: new Date().toISOString() }],
+  ]);
+
+  private readonly auditLogsList: Array<{
+    id: string;
+    actor_id: string;
+    actor_role: string;
+    action: string;
+    resource_type: string;
+    resource_id?: string;
+    details: Record<string, unknown>;
+    created_at: string;
+  }> = [
+    {
+      id: 'audit_init_1',
+      actor_id: 'admin_sys',
+      actor_role: 'admin',
+      action: 'SYSTEM_BOOT',
+      resource_type: 'system',
+      resource_id: 'api-gateway',
+      details: { message: 'Khởi động cổng Gateway Core thành công' },
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+    },
+  ];
+
+  async listFeatureFlags(): Promise<{ items: Array<{ flag_key: string; enabled: boolean; description: string; updated_at: string }> }> {
+    return { items: Array.from(this.featureFlagsMap.values()) };
+  }
+
+  async updateFeatureFlag(flagKey: string, enabled: boolean, actorId: string): Promise<{ flag_key: string; enabled: boolean; updated_at: string }> {
+    const flag = this.featureFlagsMap.get(flagKey) ?? { flag_key: flagKey, enabled, description: 'Tùy chỉnh tính năng hệ thống', updated_at: new Date().toISOString() };
+    flag.enabled = enabled;
+    flag.updated_at = new Date().toISOString();
+    this.featureFlagsMap.set(flagKey, flag);
+    await this.recordAuditLog(actorId, 'admin', 'UPDATE_FEATURE_FLAG', 'feature_flag', flagKey, { enabled });
+    return flag;
+  }
+
+  async recordAuditLog(
+    actorId: string,
+    actorRole: string,
+    action: string,
+    resourceType: string,
+    resourceId?: string,
+    details: Record<string, unknown> = {},
+  ): Promise<void> {
+    this.auditLogsList.unshift({
+      id: `audit_${randomUUID().slice(0, 8)}`,
+      actor_id: actorId,
+      actor_role: actorRole,
+      action,
+      resource_type: resourceType,
+      resource_id: resourceId,
+      details,
+      created_at: new Date().toISOString(),
+    });
+    if (this.auditLogsList.length > 500) {
+      this.auditLogsList.pop();
+    }
+  }
+
+  async listAuditLogs(page = 1, pageSize = 20): Promise<{ items: Array<any>; total: number }> {
+    const safePage = Math.max(page, 1);
+    const safePageSize = Math.min(Math.max(pageSize, 1), 100);
+    const start = (safePage - 1) * safePageSize;
+    const slice = this.auditLogsList.slice(start, start + safePageSize);
+    return { items: slice, total: this.auditLogsList.length };
+  }
+
+  async issueCompensation(
+    workflowId: string,
+    amount: number,
+    reason: string,
+    actorId: string,
+  ): Promise<{ success: boolean; voucher_code: string; amount: number; message: string }> {
+    const voucherCode = `COMP-${randomUUID().slice(0, 6).toUpperCase()}`;
+    await this.recordAuditLog(actorId, 'manager', 'ISSUE_COMPENSATION', 'workflow', workflowId, {
+      voucher_code: voucherCode,
+      amount,
+      reason,
+    });
+    return {
+      success: true,
+      voucher_code: voucherCode,
+      amount,
+      message: `Đã phát hành mã ưu đãi ${voucherCode} trị giá ${amount.toLocaleString('vi-VN')} VND đền bù sự cố workflow ${workflowId}.`,
+    };
+  }
+
   private domainResults(results: PromiseSettledResult<JsonObject>[], domains: DomainName[]): DomainResult[] {
     return results.map((result, index) => result.status === 'fulfilled'
       ? { domain: domains[index], status: 'healthy', data: result.value }

@@ -544,6 +544,77 @@ export class MockGateway {
       return this.ok(route, { success: true, booking_id: "ride-op-sample-100" });
     }
 
+    if (path === "/api/v1/provider/services/webhook/test" && method === "POST") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, {
+        success: true,
+        status_code: 200,
+        status_text: "OK",
+        latency_ms: 38,
+        signature_sent: "sha256=mock_signature_test_abc123",
+        response_body: JSON.stringify({ acknowledged: true, test_received: true }),
+        target_url: "https://api.partner.test/v1/webhook",
+        event_sent: "food.order.created",
+      });
+    }
+
+    if (path === "/api/v1/provider/services/earnings/summary" && method === "GET") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, {
+        gross_revenue: 1250000,
+        completed_orders: 8,
+        completed_rides: 5,
+        total_completed_transactions: 13,
+        platform_fee: 125000,
+        platform_fee_rate: "10%",
+        net_payout: 1125000,
+        currency: "VND",
+        payout_status: "AVAILABLE_FOR_SETTLEMENT",
+        last_calculated_at: isoNow(),
+      });
+    }
+
+    if (path === "/api/v1/admin/feature-flags" && method === "GET") {
+      return this.ok(route, {
+        items: [
+          { flag_key: "ride_service_enabled", enabled: true, description: "Dịch vụ Chuyến xe", updated_at: isoNow() },
+          { flag_key: "food_service_enabled", enabled: true, description: "Dịch vụ Ẩm thực", updated_at: isoNow() },
+          { flag_key: "restaurant_service_enabled", enabled: true, description: "Dịch vụ Đặt bàn", updated_at: isoNow() },
+          { flag_key: "healthcare_service_enabled", enabled: true, description: "Dịch vụ Khám bệnh", updated_at: isoNow() },
+        ],
+      });
+    }
+
+    if (path.startsWith("/api/v1/admin/feature-flags/") && method === "PATCH") {
+      return this.ok(route, { updated: true });
+    }
+
+    if (path.startsWith("/api/v1/admin/audit-logs") && method === "GET") {
+      return this.ok(route, {
+        items: [
+          {
+            id: "aud-mock-1",
+            actor_id: actor.sub,
+            actor_role: actor.role,
+            action: "SYSTEM_BOOT",
+            resource_type: "system",
+            details: { status: "ready" },
+            created_at: isoNow(),
+          },
+        ],
+        total: 1,
+      });
+    }
+
+    if (path === "/api/v1/admin/operations/recovery/compensate" && method === "POST") {
+      return this.ok(route, {
+        success: true,
+        voucher_code: "COMP-MOCK88",
+        amount: 50000,
+        message: "Đã phát hành mã ưu đãi COMP-MOCK88 trị giá 50.000 VND đền bù sự cố workflow.",
+      });
+    }
+
     return this.fail(route, 404, "NOT_FOUND", `${method} ${path} is not part of the fixture`);
   }
 

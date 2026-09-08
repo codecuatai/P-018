@@ -635,12 +635,91 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
     },
   ];
 
+  const currentHour = new Date().getHours();
+  let proactive = {
+    badge: "Gợi ý thông minh buổi tối",
+    title: "Đặt bàn ăn ngon & xe 4 chỗ đưa đón trọn gói",
+    desc: "Tự động tìm nhà hàng lãng mạn cho 2 người lúc 19h và điều phối xe đón tận nơi.",
+    prompt: "Tìm nhà hàng cho 2 người tối nay và đặt xe 4 chỗ đưa đón",
+  };
+  if (currentHour >= 5 && currentHour < 11) {
+    proactive = {
+      badge: "Gợi ý khởi đầu ngày mới",
+      title: "Ăn sáng nóng hổi & xe đưa đón đi làm",
+      desc: "Tìm món phở bò hoặc cà phê sáng giao nhanh và đặt xe đến công sở đúng giờ.",
+      prompt: "Tìm phở bò giao tận nơi và đặt xe 4 chỗ đi làm",
+    };
+  } else if (currentHour >= 11 && currentHour < 14) {
+    proactive = {
+      badge: "Gợi ý giờ nghỉ trưa",
+      title: "Cơm trưa văn phòng hoặc bàn ăn trưa nhóm",
+      desc: "Gợi ý món cơm trưa giao nhanh trong 25 phút hoặc bàn ăn trưa cùng đồng nghiệp.",
+      prompt: "Giao cơm tấm sườn trứng về công ty",
+    };
+  } else if (currentHour >= 14 && currentHour < 17) {
+    proactive = {
+      badge: "Gợi ý xế chiều",
+      title: "Trà sữa, bánh ngọt & lên lịch tối",
+      desc: "Nạp năng lượng xế chiều và chuẩn bị kế hoạch di chuyển buổi tối thảnh thơi.",
+      prompt: "Tìm đồ uống trà sữa và đồ ăn nhẹ giao tận nơi",
+    };
+  }
+
   return (
     <div className="welcome-state">
       <div className="welcome-hero-badge">
         <span className="welcome-sparkle"><Sparkles size={14} /></span>
         <span>X-ONE CONCIERGE</span>
       </div>
+
+      {/* Context-aware Proactive AI Banner */}
+      <div
+        className="proactive-ai-banner"
+        style={{
+          margin: "12px auto 16px auto",
+          maxWidth: "680px",
+          width: "100%",
+          padding: "16px 20px",
+          background: "linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(240, 253, 250, 0.95) 100%)",
+          border: "1px solid #BFDBFE",
+          borderRadius: "14px",
+          boxShadow: "0 4px 16px -2px rgba(37, 99, 235, 0.08)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "8px",
+          cursor: "pointer",
+          textAlign: "left",
+          transition: "transform 0.15s ease, box-shadow 0.15s ease",
+        }}
+        onClick={() => onStart(proactive.prompt)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onStart(proactive.prompt);
+          }
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700, color: "#1D4ED8", background: "#DBEAFE", padding: "3px 10px", borderRadius: "100px" }}>
+            <Sparkles size={12} />
+            <span>{proactive.badge}</span>
+          </div>
+          <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 650 }}>
+            Thực hiện ngay →
+          </span>
+        </div>
+        <div>
+          <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: 750, color: "#0F172A" }}>
+            {proactive.title}
+          </h3>
+          <p style={{ margin: 0, fontSize: "12px", color: "#475569", lineHeight: 1.5 }}>
+            {proactive.desc}
+          </p>
+        </div>
+      </div>
+
       <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
       <p className="welcome-sub">
         Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.

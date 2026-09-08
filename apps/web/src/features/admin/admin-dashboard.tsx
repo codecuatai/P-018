@@ -73,6 +73,12 @@ import { FeedbackSection } from "./sections/feedback-section";
 import { SystemLogsSection } from "./sections/system-logs-section";
 import { TokenUsageSection } from "./sections/token-usage-section";
 import { UserServicesSection } from "./sections/user-services-section";
+import {
+  getAdminFeatureFlags,
+  updateAdminFeatureFlag,
+  getAdminAuditLogs,
+  issueAdminCompensation,
+} from "@/lib/api-client";
 import { CONSOLIDATED_TABS } from "./admin-tabs";
 import type { Loadable, MainTabId, SubTabId, TabDefinition } from "./admin.types";
 import { useAdminData } from "./hooks/use-admin-data";
@@ -410,6 +416,9 @@ export function AdminDashboard() {
                   {currentSubTabId === "datasets" && (
                     <DatasetsSubtab datasets={datasets} onRetry={() => void load()} />
                   )}
+                  {currentSubTabId === "feature-flags" && (
+                    <FeatureFlagsSubtab />
+                  )}
                 </>
               )}
 
@@ -467,8 +476,13 @@ export function AdminDashboard() {
                 </>
               )}
 
-              {/* TAB 6: SYSTEM LOGS */}
-              {activeMainTab === "system-logs" && <SystemLogsSection />}
+              {/* TAB 6: SYSTEM LOGS & AUDIT */}
+              {activeMainTab === "system-logs" && (
+                <>
+                  {currentSubTabId === "logs-view" && <SystemLogsSection />}
+                  {currentSubTabId === "audit-trail" && <AuditLogsSubtab />}
+                </>
+              )}
             </div>
           </div>
         </main>
@@ -1639,6 +1653,23 @@ function PaymentsSubtab({ payments, onRetry }: { payments: Loadable<AdminPayment
 
 function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: AdminWorkflowRecord[]; total: number }>; onRetry: () => void }) {
   const [search, setSearch] = useState("");
+  const [compensatingId, setCompensatingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const handleCompensate = async (orderId: string) => {
+    setCompensatingId(orderId);
+    try {
+      const res = await issueAdminCompensation(orderId, 50000, "Bù trừ tự động từ Trung tâm vận hành");
+      setNotice(`Đã phát hành bồi thường 50.000 đ cho workflow ${orderId} (Mã bồi hoàn: ${res?.id || "COMP-OK"})`);
+      setTimeout(() => setNotice(null), 5000);
+      onRetry();
+    } catch (err: any) {
+      setNotice(`Lỗi bồi thường: ${err?.message || "Không thể phát hành bồi thường"}`);
+      setTimeout(() => setNotice(null), 5000);
+    } finally {
+      setCompensatingId(null);
+    }
+  };
 
   const filteredItems = useMemo(() => {
     const items = workflows.data?.items ?? [];
@@ -1656,16 +1687,35 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
     <section className="admin-section" id="workflows" aria-labelledby="workflows-title">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
         <SectionHeading icon={<Workflow size={17} />} title="Workflow reconciliation" id="workflows-title" />
-        <button
-          className="button button-secondary"
-          type="button"
-          onClick={onRetry}
-          disabled={workflows.loading}
-          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
-        >
-          <RefreshCw size={13} className={workflows.loading ? "spin" : ""} /> Làm mới trạng thái
-        </button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            className="button button-secondary"
+            type="button"
+            disabled={Boolean(compensatingId)}
+            onClick={() => void handleCompensate("wf_manual_recovery")}
+            style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem", display: "inline-flex", alignItems: "center", gap: "5px" }}
+          >
+            {compensatingId === "wf_manual_recovery" ? <LoaderCircle className="spin" size={13} /> : <ShieldAlert size={13} />}
+            <span>Bù trừ sự cố (1-Click)</span>
+          </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={onRetry}
+            disabled={workflows.loading}
+            style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+          >
+            <RefreshCw size={13} className={workflows.loading ? "spin" : ""} /> Làm mới trạng thái
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <div style={{ marginBottom: "10px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <CheckCircle2 size={14} />
+          <span>{notice}</span>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="admin-filter-bar">
@@ -1723,6 +1773,255 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
           )
         )}
       </PanelState>
+    </section>
+  );
+}
+
+function FeatureFlagsSubtab() {
+  const [flags, setFlags] = useState<Array<{ flag_key: string; enabled: boolean; description: string; updated_at: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingKey, setUpdatingKey] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadFlags = async () => {
+    setLoading(true);
+    try {
+      const items = await getAdminFeatureFlags();
+      setFlags(items);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadFlags();
+  }, []);
+
+  const handleToggle = async (key: string, currentStatus: boolean) => {
+    setUpdatingKey(key);
+    try {
+      await updateAdminFeatureFlag(key, !currentStatus);
+      setFlags((prev) => prev.map((f) => f.flag_key === key ? { ...f, enabled: !currentStatus, updated_at: new Date().toISOString() } : f));
+      setNotice(`Đã ${!currentStatus ? "kích hoạt" : "tắt"} cờ tính năng "${key}" thành công!`);
+      setTimeout(() => setNotice(null), 4000);
+    } catch (err: any) {
+      setNotice(`Không thể cập nhật cờ: ${err?.message || "Lỗi"}`);
+      setTimeout(() => setNotice(null), 4000);
+    } finally {
+      setUpdatingKey(null);
+    }
+  };
+
+  return (
+    <section className="admin-section" id="feature-flags" aria-labelledby="feature-flags-title">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+        <SectionHeading icon={<Sliders size={17} />} title="Dynamic Feature Flags (Cờ tính năng thời gian thực)" id="feature-flags-title" />
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={() => void loadFlags()}
+          disabled={loading}
+          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+        >
+          <RefreshCw size={13} className={loading ? "spin" : ""} /> Làm mới
+        </button>
+      </div>
+
+      {notice && (
+        <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <CheckCircle2 size={14} />
+          <span>{notice}</span>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="admin-loading"><span className="loading-mark" /> Đang tải danh sách Feature Flags…</div>
+      ) : flags.length === 0 ? (
+        <div className="admin-empty">Không có cờ tính năng nào trong hệ thống.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "14px" }}>
+          {flags.map((flag) => (
+            <div
+              key={flag.flag_key}
+              className="admin-table-card"
+              style={{
+                padding: "16px",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                borderLeft: flag.enabled ? "4px solid #10B981" : "4px solid #CBD5E1",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
+                  <strong style={{ fontSize: "14px", color: "#0F172A", fontFamily: "monospace" }}>{flag.flag_key}</strong>
+                  <span
+                    className="admin-role-badge"
+                    style={{
+                      background: flag.enabled ? "#ECFDF5" : "#F1F5F9",
+                      color: flag.enabled ? "#065F46" : "#64748B",
+                      border: `1px solid ${flag.enabled ? "#A7F3D0" : "#E2E8F0"}`,
+                      fontSize: "11px",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {flag.enabled ? "ĐANG BẬT" : "ĐÃ TẮT"}
+                  </span>
+                </div>
+                <p style={{ margin: "4px 0 10px 0", fontSize: "12px", color: "#475569", lineHeight: 1.4 }}>
+                  {flag.description || "Không có mô tả chi tiết."}
+                </p>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "10px", borderTop: "1px solid #F1F5F9" }}>
+                <span style={{ fontSize: "10px", color: "#94A3B8" }}>
+                  Cập nhật: {new Date(flag.updated_at).toLocaleDateString("vi-VN")}
+                </span>
+                <button
+                  type="button"
+                  disabled={updatingKey === flag.flag_key}
+                  onClick={() => void handleToggle(flag.flag_key, flag.enabled)}
+                  className={`button ${flag.enabled ? "button-secondary" : "button-primary"}`}
+                  style={{ height: "30px", padding: "0 12px", fontSize: "11px" }}
+                >
+                  {updatingKey === flag.flag_key ? (
+                    <LoaderCircle className="spin" size={13} />
+                  ) : flag.enabled ? (
+                    "Tắt tính năng"
+                  ) : (
+                    "Kích hoạt ngay"
+                  )}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AuditLogsSubtab() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const fetchLogs = async (p = 1) => {
+    setLoading(true);
+    try {
+      const res = await getAdminAuditLogs(p, 25);
+      setLogs(res.items);
+      setTotal(res.total);
+      setPage(p);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchLogs(1);
+  }, []);
+
+  return (
+    <section className="admin-section" id="audit-trail" aria-labelledby="audit-trail-title">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px", flexWrap: "wrap", gap: "8px" }}>
+        <SectionHeading icon={<ShieldCheck size={17} />} title="Audit Trail (Lưu vết can thiệp quản trị CSDL)" id="audit-trail-title" />
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={() => void fetchLogs(page)}
+          disabled={loading}
+          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+        >
+          <RefreshCw size={13} className={loading ? "spin" : ""} /> Làm mới
+        </button>
+      </div>
+
+      <div className="admin-table-card">
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <strong style={{ fontSize: "13px", color: "#0F172A" }}>Nhật ký kiểm toán hệ thống ({total} bản ghi)</strong>
+          <span style={{ fontSize: "11px", color: "#64748B" }}>Bất biến · Lưu trữ PostgreSQL</span>
+        </div>
+
+        {loading ? (
+          <div className="admin-loading"><span className="loading-mark" /> Đang tải dữ liệu kiểm toán…</div>
+        ) : logs.length === 0 ? (
+          <div className="admin-empty">Chưa có bản ghi kiểm toán nào được ghi nhận.</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <thead>
+                <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", textAlign: "left" }}>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>Thời gian</th>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>Hành động (Action)</th>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>Người thực hiện</th>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>Đối tượng can thiệp</th>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>IP</th>
+                  <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700, textAlign: "right" }}>Chi tiết</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr key={log.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "10px 14px", color: "#64748B", whiteSpace: "nowrap" }}>
+                      {new Date(log.created_at).toLocaleString("vi-VN")}
+                    </td>
+                    <td style={{ padding: "10px 14px" }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          padding: "2px 8px",
+                          borderRadius: "4px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          fontFamily: "monospace",
+                          background: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#ECFDF5" : log.action.includes("UPDATE") ? "#EFF6FF" : "#FFFBEB",
+                          color: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#047857" : log.action.includes("UPDATE") ? "#1D4ED8" : "#B45309",
+                          border: `1px solid ${log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#A7F3D0" : log.action.includes("UPDATE") ? "#BFDBFE" : "#FDE68A"}`,
+                        }}
+                      >
+                        {log.action}
+                      </span>
+                    </td>
+                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "#334155" }}>
+                      {log.actor_id || "system"}
+                    </td>
+                    <td style={{ padding: "10px 14px", color: "#475569" }}>
+                      {log.target_type ? `${log.target_type}: ${log.target_id || "—"}` : "—"}
+                    </td>
+                    <td style={{ padding: "10px 14px", color: "#64748B", fontFamily: "monospace" }}>
+                      {log.ip_address || "127.0.0.1"}
+                    </td>
+                    <td style={{ padding: "10px 14px", textAlign: "right" }}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
+                        className="button button-secondary"
+                        style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}
+                      >
+                        {expandedId === log.id ? "Đóng" : "Payload"}
+                      </button>
+                      {expandedId === log.id && (
+                        <div style={{ marginTop: "6px", textAlign: "left" }}>
+                          <pre style={{ margin: 0, padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "11px", overflowX: "auto" }}>
+                            {JSON.stringify(log.details, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

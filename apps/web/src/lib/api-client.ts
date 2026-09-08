@@ -1257,4 +1257,76 @@ export async function seedProviderSampleOperation(domain: string): Promise<any> 
   });
 }
 
+export interface WebhookTestResult {
+  success: boolean;
+  status_code: number;
+  status_text?: string;
+  latency_ms: number;
+  signature_sent?: string;
+  response_body?: string;
+  error_message?: string;
+  target_url: string;
+  event_sent: string;
+}
+
+export interface ProviderEarningsSummary {
+  gross_revenue: number;
+  completed_orders: number;
+  completed_rides: number;
+  total_completed_transactions: number;
+  platform_fee: number;
+  platform_fee_rate: string;
+  net_payout: number;
+  currency: string;
+  payout_status: string;
+  last_calculated_at: string;
+}
+
+export async function testProviderWebhook(event?: string, payload?: Record<string, unknown>): Promise<WebhookTestResult> {
+  const res = await request<{ data: WebhookTestResult } | WebhookTestResult>("/api/v1/provider/services/webhook/test", {
+    method: "POST",
+    body: JSON.stringify({ event, payload }),
+  });
+  return (res as any).data ?? res;
+}
+
+export async function getProviderEarningsSummary(): Promise<ProviderEarningsSummary> {
+  const res = await request<{ data: ProviderEarningsSummary } | ProviderEarningsSummary>("/api/v1/provider/services/earnings/summary", {
+    method: "GET",
+  });
+  return (res as any).data ?? res;
+}
+
+export async function getAdminFeatureFlags(): Promise<Array<{ flag_key: string; enabled: boolean; description: string; updated_at: string }>> {
+  try {
+    const res = await request<{ items: any[] }>("/api/v1/admin/feature-flags", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function updateAdminFeatureFlag(key: string, enabled: boolean): Promise<any> {
+  return request(`/api/v1/admin/feature-flags/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function getAdminAuditLogs(page = 1, pageSize = 20): Promise<{ items: any[]; total: number }> {
+  try {
+    return await request<{ items: any[]; total: number }>(`/api/v1/admin/audit-logs?page=${page}&page_size=${pageSize}`, { method: "GET" });
+  } catch {
+    return { items: [], total: 0 };
+  }
+}
+
+export async function issueAdminCompensation(workflowId: string, amount = 50000, reason = "Bù trừ sự cố điều phối"): Promise<any> {
+  return request("/api/v1/admin/operations/recovery/compensate", {
+    method: "POST",
+    body: JSON.stringify({ workflow_id: workflowId, amount, reason }),
+  });
+}
+
+
 

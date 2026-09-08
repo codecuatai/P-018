@@ -212,6 +212,37 @@ export class AdminController {
     return this.reply(ticket, request);
   }
 
+  @Get('feature-flags')
+  async listFeatureFlags(@Req() request: AdminRequest): Promise<object> {
+    return this.reply(await this.admin.listFeatureFlags(), request);
+  }
+
+  @Patch('feature-flags/:key')
+  @UseGuards(AdminGuard)
+  async updateFeatureFlag(
+    @Param('key') key: string,
+    @Body() body: { enabled: boolean },
+    @Req() request: AdminRequest,
+  ): Promise<object> {
+    return this.reply(await this.admin.updateFeatureFlag(key, Boolean(body.enabled), request.user.sub), request);
+  }
+
+  @Get('audit-logs')
+  async listAuditLogs(@Query() query: PageQuery, @Req() request: AdminRequest): Promise<object> {
+    return this.reply(await this.admin.listAuditLogs(query.page, query.page_size), request);
+  }
+
+  @Post('operations/recovery/compensate')
+  async issueCompensation(
+    @Body() body: { workflow_id: string; amount?: number; reason?: string },
+    @Req() request: AdminRequest,
+  ): Promise<object> {
+    const workflowId = body.workflow_id || 'wf_unknown';
+    const amount = Number(body.amount ?? 50000);
+    const reason = body.reason || 'Sự cố điều phối dịch vụ hoặc chậm trễ ngoài ý muốn';
+    return this.reply(await this.admin.issueCompensation(workflowId, amount, reason, request.user.sub), request);
+  }
+
   private reply(data: unknown, request: AdminRequest): object {
     return { data, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
   }

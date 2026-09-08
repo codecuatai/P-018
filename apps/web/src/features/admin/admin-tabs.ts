@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   ShoppingBag,
+  Sliders,
   Sparkles,
   Star,
   ScrollText,
@@ -28,6 +29,7 @@ export const CONSOLIDATED_TABS: TabDefinition[] = [
       { id: "summary", label: "Tổng quan", icon: LayoutDashboard, hashName: "overview" },
       { id: "health", label: "Sức khỏe hệ thống", icon: HeartPulse, hashName: "health" },
       { id: "datasets", label: "Dataset & độ tươi", icon: Database, hashName: "datasets" },
+      { id: "feature-flags", label: "Feature Flags", icon: Sliders, hashName: "feature-flags" },
     ],
   },
   {
@@ -76,13 +78,16 @@ export const CONSOLIDATED_TABS: TabDefinition[] = [
     label: "System Logs & Audit",
     subtitle: "Truy vết nhật ký vận hành và audit trail thời gian thực",
     icon: ScrollText,
-    subtabs: [{ id: "logs-view", label: "System Logs", icon: ScrollText, hashName: "system-logs" }],
+    subtabs: [
+      { id: "logs-view", label: "System Logs", icon: ScrollText, hashName: "system-logs" },
+      { id: "audit-trail", label: "Audit Trail CSDL", icon: ShieldCheck, hashName: "audit-logs" },
+    ],
   },
 ];
 
 export function getConsolidatedTabs(userRole?: string): TabDefinition[] {
   if (userRole === "manager") {
-    return CONSOLIDATED_TABS.filter((tab) => tab.id !== "ai-integrations" && tab.id !== "system-logs");
+    return CONSOLIDATED_TABS.filter((tab) => tab.id !== "ai-integrations");
   }
   return CONSOLIDATED_TABS;
 }

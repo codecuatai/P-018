@@ -16,13 +16,22 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, createHmac, randomUUID } from 'crypto';
 
 import { FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
 import { ProviderOfferingsStore, ProviderServiceItemRecord } from './provider-offerings.store';
+
+class TestWebhookDto {
+  @IsOptional()
+  @IsString()
+  event?: string;
+
+  @IsOptional()
+  payload?: Record<string, unknown>;
+}
 
 function extractOpsItems(payload: unknown): Record<string, unknown>[] {
   if (!payload || typeof payload !== 'object') return [];
@@ -422,5 +431,163 @@ export class ProviderServicesController {
     }
 
     return { data: { created: true, domain }, meta: { request_id: correlationId } };
+  }
+
+  @Post('webhook/test')
+  async testWebhook(
+    @Body() body: TestWebhookDto,
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_webhook_test';
+    const profile = await this.store.getProfile(request.user.sub);
+    const webhookUrl = profile?.webhookUrl?.trim();
+    if (!webhookUrl) {
+      throw new BadRequestException({
+        code: 'WEBHOOK_URL_MISSING',
+        detail: 'Chưa cấu hình Webhook URL trong hồ sơ đối tác.',
+        retryable: false,
+      });
+    }
+
+    try {
+      const parsed = new URL(webhookUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Giao thức URL phải là http hoặc https');
+      }
+      const host = parsed.hostname.toLowerCase();
+      if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(host) || host.startsWith('169.254.')) {
+        throw new Error('Không được dùng địa chỉ loopback/nội bộ làm Webhook ngoài');
+      }
+    } catch (e: any) {
+      throw new BadRequestException({
+        code: 'INVALID_WEBHOOK_URL',
+        detail: `Webhook URL không hợp lệ: ${e.message}`,
+        retryable: false,
+      });
+    }
+
+    const eventName = body.event || 'food.order.created';
+    const samplePayload = body.payload || {
+      event: eventName,
+      event_id: `evt_test_${randomUUID().slice(0, 8)}`,
+      timestamp: new Date().toISOString(),
+      provider_id: request.user.sub,
+      test_mode: true,
+      data: {
+        message: 'Kiểm thử kết nối Webhook từ X-One Cổng Đối Tác.',
+        sample_id: `sample_${Date.now()}`,
+        status: 'RECEIVED',
+      },
+    };
+
+    const signature = 'sha256=' + createHmac('sha256', 'xone-webhook-secret-key').update(JSON.stringify(samplePayload)).digest('hex');
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-XOne-Event': eventName,
+          'X-XOne-Delivery': randomUUID(),
+          'X-XOne-Timestamp': new Date().toISOString(),
+          'X-XOne-Signature': signature,
+        },
+        body: JSON.stringify(samplePayload),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const latencyMs = Date.now() - startTime;
+      const text = await response.text();
+      return {
+        data: {
+          success: response.ok,
+          status_code: response.status,
+          status_text: response.statusText,
+          latency_ms: latencyMs,
+          signature_sent: signature,
+          response_body: text.slice(0, 300),
+          target_url: webhookUrl,
+          event_sent: eventName,
+        },
+        meta: { request_id: correlationId },
+      };
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      const latencyMs = Date.now() - startTime;
+      return {
+        data: {
+          success: false,
+          status_code: 0,
+          error_message: err.name === 'AbortError' ? 'Webhook request timed out (5000ms)' : (err.message || 'Connection failed'),
+          latency_ms: latencyMs,
+          target_url: webhookUrl,
+          event_sent: eventName,
+        },
+        meta: { request_id: correlationId },
+      };
+    }
+  }
+
+  @Get('earnings/summary')
+  async getEarningsSummary(
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_earnings_summary';
+
+    let totalRidesFare = 0;
+    let completedRidesCount = 0;
+    try {
+      const rawRides = await this.ride.opsTransactions(correlationId, 100, 0);
+      const rides = extractOpsItems(rawRides);
+      for (const ride of rides) {
+        if (ride.status === 'COMPLETED') {
+          completedRidesCount++;
+          totalRidesFare += Number(ride.fare_amount ?? ride.fare ?? 90000);
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    let totalOrdersAmount = 0;
+    let completedOrdersCount = 0;
+    try {
+      const rawOrders = await this.food.opsTransactions(correlationId, 100, 0);
+      const orders = extractOpsItems(rawOrders);
+      for (const order of orders) {
+        if (order.status === 'READY_FOR_PICKUP' || order.status === 'COMPLETED' || order.status === 'DELIVERED') {
+          completedOrdersCount++;
+          totalOrdersAmount += Number(order.total_amount ?? order.total ?? 65000);
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    const totalGrossRevenue = totalRidesFare + totalOrdersAmount;
+    const platformFeeRate = 0.10; // 10%
+    const platformFee = Math.round(totalGrossRevenue * platformFeeRate);
+    const netPayout = totalGrossRevenue - platformFee;
+
+    return {
+      data: {
+        gross_revenue: totalGrossRevenue,
+        completed_orders: completedOrdersCount,
+        completed_rides: completedRidesCount,
+        total_completed_transactions: completedOrdersCount + completedRidesCount,
+        platform_fee: platformFee,
+        platform_fee_rate: '10%',
+        net_payout: netPayout,
+        currency: 'VND',
+        payout_status: 'AVAILABLE_FOR_SETTLEMENT',
+        last_calculated_at: new Date().toISOString(),
+      },
+      meta: { request_id: correlationId },
+    };
   }
 }

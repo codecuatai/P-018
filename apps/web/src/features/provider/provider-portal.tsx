@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  AlertTriangle,
   Building2,
   Car,
   Check,
   CheckCircle2,
   Clock,
+  Code,
   CreditCard,
   Globe,
   HeartPulse,
@@ -17,12 +19,14 @@ import {
   Plus,
   Power,
   RefreshCw,
+  Send,
   Settings2,
   Star,
   Store,
   Trash2,
   TrendingUp,
   UtensilsCrossed,
+  Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -32,20 +36,24 @@ import { XOneMark } from "@/components/XOneMark";
 import {
   createProviderItem,
   deleteProviderItem,
+  getProviderEarningsSummary,
   getProviderItems,
   getProviderOperationsAppointments,
   getProviderOperationsOrders,
   getProviderOperationsRides,
   getProviderProfile,
   seedProviderSampleOperation,
+  testProviderWebhook,
   toggleProviderItemStatus,
   updateProviderOperationAppointmentStatus,
   updateProviderOperationOrderStatus,
   updateProviderOperationRideStatus,
   updateProviderProfile,
   updateRideStatus,
+  type ProviderEarningsSummary,
   type ProviderProfile,
   type ProviderServiceItem,
+  type WebhookTestResult,
 } from "@/lib/api-client";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -239,9 +247,51 @@ export function ProviderPortal() {
   });
   const [submittingItem, setSubmittingItem] = useState(false);
 
+  // Earnings & Settlement State
+  const [earnings, setEarnings] = useState<ProviderEarningsSummary | null>(null);
+  const [loadingEarnings, setLoadingEarnings] = useState(false);
+
+  // Webhook Sandbox Test State
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookEvent, setWebhookEvent] = useState("ride.booking.confirmed");
+  const [webhookTestResult, setWebhookTestResult] = useState<WebhookTestResult | null>(null);
+
   const notify = (text: string, type: "success" | "error" = "success") => {
     setActionNotice({ text, type });
     setTimeout(() => setActionNotice(null), 4000);
+  };
+
+  const reloadEarnings = async () => {
+    setLoadingEarnings(true);
+    try {
+      const data = await getProviderEarningsSummary();
+      setEarnings(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingEarnings(false);
+    }
+  };
+
+  const handleTestWebhook = async () => {
+    if (!profileForm.webhookUrl.trim()) {
+      notify("Vui lòng nhập Webhook URL trước khi thử nghiệm.", "error");
+      return;
+    }
+    setTestingWebhook(true);
+    try {
+      const res = await testProviderWebhook(webhookEvent);
+      setWebhookTestResult(res);
+      if (res.success) {
+        notify(`Webhook gửi thành công! HTTP ${res.status_code} (${res.latency_ms}ms)`);
+      } else {
+        notify(`Webhook thất bại (${res.status_code || "Error"}): ${res.error_message || "Lỗi giao tiếp"}`, "error");
+      }
+    } catch (err: any) {
+      notify(`Lỗi gửi webhook: ${err.message || "Lỗi mạng"}`, "error");
+    } finally {
+      setTestingWebhook(false);
+    }
   };
 
   const reloadOperations = async () => {
@@ -347,6 +397,7 @@ export function ProviderPortal() {
           }
         }
         await reloadOperations();
+        await reloadEarnings();
       } catch {
         // use default state
       } finally {
@@ -847,6 +898,82 @@ export function ProviderPortal() {
               {/* TAB 4: SERVICE INTEGRATION / SETUP */}
               {activeTab === "services" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  {/* Earnings & Settlement Summary Card */}
+                  <div className="admin-table-card" style={{ padding: "20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#ECFDF5", color: "#059669", display: "grid", placeItems: "center" }}>
+                          <Wallet size={18} />
+                        </div>
+                        <div>
+                          <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                            Doanh thu & Quyết toán Đối tác
+                          </h2>
+                          <span style={{ fontSize: "12px", color: "#64748B" }}>
+                            Tổng hợp doanh thu từ các chuyến đi, đơn món thực tế và khấu trừ tự động
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span className="admin-role-badge" style={{ background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0" }}>
+                          Chu kỳ: Hàng tuần (Thứ 2)
+                        </span>
+                        <button
+                          type="button"
+                          disabled={loadingEarnings}
+                          onClick={() => void reloadEarnings()}
+                          className="button button-secondary"
+                          style={{ height: "30px", padding: "0 10px", fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
+                        >
+                          <RefreshCw size={12} className={loadingEarnings ? "spin" : ""} />
+                          <span>Làm mới</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px" }}>
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Tổng doanh thu (Gross)</span>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                          {(earnings?.gross_revenue ?? 0).toLocaleString("vi-VN")} đ
+                        </div>
+                        <span style={{ fontSize: "11px", color: "#059669", marginTop: "2px", display: "block" }}>
+                          Tích lũy từ {earnings?.total_completed_transactions ?? 0} đơn / cuốc thành công
+                        </span>
+                      </div>
+
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Chiết khấu nền tảng X-One ({earnings?.platform_fee_rate ?? "10%"})</span>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#DC2626", marginTop: "4px" }}>
+                          -{(earnings?.platform_fee ?? 0).toLocaleString("vi-VN")} đ
+                        </div>
+                        <span style={{ fontSize: "11px", color: "#64748B", marginTop: "2px", display: "block" }}>
+                          Phí duy trì hạ tầng & điều phối AI
+                        </span>
+                      </div>
+
+                      <div style={{ padding: "14px", background: "#ECFDF5", borderRadius: "10px", border: "1px solid #A7F3D0" }}>
+                        <span style={{ fontSize: "11px", color: "#065F46", fontWeight: 600 }}>Thực nhận đối tác (Net Payout)</span>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669", marginTop: "4px" }}>
+                          {(earnings?.net_payout ?? 0).toLocaleString("vi-VN")} đ
+                        </div>
+                        <span style={{ fontSize: "11px", color: "#047857", marginTop: "2px", display: "block" }}>
+                          Số dư sẵn sàng rút về tài khoản ngân hàng
+                        </span>
+                      </div>
+
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Trạng thái quyết toán</span>
+                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#2563EB", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <CheckCircle2 size={16} /> {earnings?.payout_status ?? "Sẵn sàng quyết toán"}
+                        </div>
+                        <span style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", display: "block" }}>
+                          Cập nhật: {earnings?.last_calculated_at ? new Date(earnings.last_calculated_at).toLocaleTimeString("vi-VN") : "Thời gian thực"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Business Profile Configuration Card */}
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
@@ -946,8 +1073,74 @@ export function ProviderPortal() {
                           />
                         </div>
                         <span style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", display: "block" }}>
-                          X-One sẽ gửi webhook HTTP POST khi có cuốc xe hoặc đơn món mới được khách hàng xác nhận.
+                          X-One sẽ gửi webhook HTTP POST kèm chữ ký bảo mật HMAC-SHA256 khi có cuốc xe hoặc đơn món mới.
                         </span>
+
+                        {/* Webhook Sandbox & Test Console */}
+                        <div style={{ marginTop: "12px", padding: "14px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <Code size={15} style={{ color: "#2563EB" }} />
+                              <strong style={{ fontSize: "13px", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
+                            </div>
+                            <span style={{ fontSize: "11px", color: "#64748B" }}>HMAC-SHA256 Signed · Timeout 5s</span>
+                          </div>
+
+                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                            <select
+                              value={webhookEvent}
+                              onChange={(e) => setWebhookEvent(e.target.value)}
+                              style={{ height: "34px", padding: "0 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "12px", background: "#FFFFFF" }}
+                            >
+                              <option value="ride.booking.confirmed">ride.booking.confirmed (Cuốc xe đã xác nhận)</option>
+                              <option value="food.order.received">food.order.received (Đơn món quán ăn mới)</option>
+                              <option value="healthcare.appointment.booked">healthcare.appointment.booked (Lịch hẹn khám mới)</option>
+                            </select>
+
+                            <button
+                              type="button"
+                              disabled={testingWebhook}
+                              onClick={() => void handleTestWebhook()}
+                              className="button button-secondary"
+                              style={{ height: "34px", padding: "0 14px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            >
+                              {testingWebhook ? <LoaderCircle className="spin" size={13} /> : <Send size={13} />}
+                              <span>{testingWebhook ? "Đang phát webhook…" : "Gửi thử nghiệm Live"}</span>
+                            </button>
+                          </div>
+
+                          {webhookTestResult && (
+                            <div style={{ marginTop: "12px", padding: "12px", borderRadius: "6px", background: webhookTestResult.success ? "#ECFDF5" : "#FEF2F2", border: `1px solid ${webhookTestResult.success ? "#A7F3D0" : "#FECACA"}` }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  {webhookTestResult.success ? <CheckCircle2 size={15} color="#059669" /> : <AlertTriangle size={15} color="#DC2626" />}
+                                  <strong style={{ fontSize: "12px", color: webhookTestResult.success ? "#065F46" : "#991B1B" }}>
+                                    {webhookTestResult.success ? `Giao tiếp thành công (HTTP ${webhookTestResult.status_code})` : `Giao tiếp thất bại (HTTP ${webhookTestResult.status_code || "Error"})`}
+                                  </strong>
+                                </div>
+                                <span style={{ fontSize: "11px", color: "#64748B" }}>Độ trễ: <strong>{webhookTestResult.latency_ms}ms</strong></span>
+                              </div>
+
+                              {webhookTestResult.error_message && (
+                                <div style={{ fontSize: "12px", color: "#DC2626", marginBottom: "6px" }}>
+                                  Chi tiết lỗi: {webhookTestResult.error_message}
+                                </div>
+                              )}
+
+                              <details style={{ marginTop: "6px" }}>
+                                <summary style={{ fontSize: "11px", color: "#475569", cursor: "pointer", fontWeight: 600 }}>Xem Chi tiết Giao tiếp & Chữ ký HMAC</summary>
+                                <pre style={{ margin: "6px 0 0", padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "4px", fontSize: "11px", overflowX: "auto" }}>
+                                  {JSON.stringify({
+                                    target_url: webhookTestResult.target_url,
+                                    event_sent: webhookTestResult.event_sent,
+                                    signature_sent: webhookTestResult.signature_sent,
+                                    response_body: webhookTestResult.response_body,
+                                  }, null, 2)}
+                                </pre>
+                              </details>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>

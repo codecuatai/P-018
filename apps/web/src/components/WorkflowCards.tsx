@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, CarFront, Check, ChevronLeft, ChevronRight, CircleDollarSign, MapPin, Minus, Plus, RefreshCw, ShieldCheck, Soup, Stethoscope, Utensils } from "lucide-react";
+import { CalendarDays, CarFront, Check, ChevronLeft, ChevronRight, CircleDollarSign, MapPin, Minus, Plus, RefreshCw, ShieldCheck, Soup, Sparkles, Stethoscope, Utensils, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useState } from "react";
@@ -23,9 +23,109 @@ export type FoodSelection = {
 
 type FoodSelectionChangeHandler = (selection: FoodSelection) => void;
 
+function getStepLabel(item: AssistantItem): string {
+  if (item.kind.startsWith("restaurant") || item.kind === "reservation") return "Nhà hàng";
+  if (item.kind.startsWith("food")) return "Món ăn";
+  if (item.kind.startsWith("ride")) return "Chuyến xe";
+  if (item.kind.startsWith("healthcare") || item.kind.startsWith("appointment")) return "Khám bệnh";
+  return "Dịch vụ tiếp theo";
+}
+
+function getStepIcon(kind: string) {
+  if (kind.startsWith("restaurant") || kind === "reservation") return UtensilsCrossed;
+  if (kind.startsWith("food")) return Soup;
+  if (kind.startsWith("ride")) return CarFront;
+  if (kind.startsWith("healthcare") || kind.startsWith("appointment")) return Stethoscope;
+  return Sparkles;
+}
+
+function JourneyTimeline({ response }: { response: AssistantResponse }) {
+  const allSteps: Array<{ kind: string; title: string; status: "completed" | "in_progress"; icon: any }> = [];
+
+  for (const item of (response.completed ?? [])) {
+    allSteps.push({
+      kind: item.kind,
+      title: getStepLabel(item),
+      status: "completed",
+      icon: getStepIcon(item.kind),
+    });
+  }
+
+  for (const item of response.items) {
+    allSteps.push({
+      kind: item.kind,
+      title: getStepLabel(item),
+      status: "in_progress",
+      icon: getStepIcon(item.kind),
+    });
+  }
+
+  if (allSteps.length <= 1) return null;
+
+  return (
+    <div
+      className="journey-timeline-card"
+      style={{
+        marginBottom: "12px",
+        padding: "12px 14px",
+        background: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)",
+        borderRadius: "12px",
+        border: "1px solid #E2E8F0",
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <span style={{ fontSize: "11px", fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+          <Sparkles size={12} /> Hành trình liên kết dịch vụ ({allSteps.length} bước)
+        </span>
+        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>
+          {allSteps.filter((s) => s.status === "completed").length}/{allSteps.length} hoàn tất
+        </span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", overflowX: "auto", paddingBottom: "2px" }}>
+        {allSteps.map((step, idx) => {
+          const Icon = step.icon;
+          const isDone = step.status === "completed";
+          return (
+            <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  padding: "5px 10px",
+                  borderRadius: "100px",
+                  background: isDone ? "#ECFDF5" : "#EFF6FF",
+                  border: `1px solid ${isDone ? "#A7F3D0" : "#BFDBFE"}`,
+                  color: isDone ? "#065F46" : "#1D4ED8",
+                  fontSize: "12px",
+                  fontWeight: 650,
+                }}
+              >
+                <Icon size={13} />
+                <span>{step.title}</span>
+                {isDone ? (
+                  <span style={{ background: "#059669", color: "#FFFFFF", borderRadius: "50%", width: "13px", height: "13px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "9px" }}>✓</span>
+                ) : (
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#2563EB", display: "inline-block" }} />
+                )}
+              </div>
+              {idx < allSteps.length - 1 && (
+                <span style={{ color: "#94A3B8", fontSize: "13px", fontWeight: 700 }}>→</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function AssistantCards({ response, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { response: AssistantResponse; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
   const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "restaurant_update", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
+    <JourneyTimeline response={response} />
     {(response.completed ?? []).map((item, index) => <AssistantCard key={`completed-${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
