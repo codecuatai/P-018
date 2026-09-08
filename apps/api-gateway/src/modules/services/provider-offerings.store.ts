@@ -111,16 +111,22 @@ export class PostgresProviderOfferingsRepository implements ProviderOfferingsRep
   }
 
   private profileFromRow(row: Record<string, unknown>): ProviderProfileRecord {
+    const cleanStr = (val: unknown): string | undefined => {
+      if (!val) return undefined;
+      const s = String(val).replace(/\uFFFD/g, '').trim();
+      return s.length > 0 ? s : undefined;
+    };
+
     return {
       userId: String(row.user_id),
       providerType: String(row.provider_type),
       tenantId: String(row.tenant_id),
       status: row.status === 'suspended' ? 'suspended' : 'active',
-      businessName: row.business_name ? String(row.business_name) : undefined,
-      description: row.description ? String(row.description) : undefined,
-      address: row.address ? String(row.address) : undefined,
-      phone: row.phone ? String(row.phone) : undefined,
-      webhookUrl: row.webhook_url ? String(row.webhook_url) : undefined,
+      businessName: cleanStr(row.business_name),
+      description: cleanStr(row.description),
+      address: cleanStr(row.address),
+      phone: cleanStr(row.phone),
+      webhookUrl: cleanStr(row.webhook_url),
       isOpen: row.is_open !== false,
       createdAt: new Date(String(row.created_at)).toISOString(),
       updatedAt: new Date(String(row.updated_at)).toISOString(),
@@ -128,15 +134,21 @@ export class PostgresProviderOfferingsRepository implements ProviderOfferingsRep
   }
 
   private itemFromRow(row: Record<string, unknown>): ProviderServiceItemRecord {
+    const cleanStr = (val: unknown): string | undefined => {
+      if (!val) return undefined;
+      const s = String(val).replace(/\uFFFD/g, '').trim();
+      return s.length > 0 ? s : undefined;
+    };
+
     return {
       id: String(row.id),
       providerId: String(row.provider_id),
       domain: row.domain as ProviderServiceItemRecord['domain'],
-      name: String(row.name),
-      description: row.description ? String(row.description) : undefined,
+      name: cleanStr(row.name) || String(row.name),
+      description: cleanStr(row.description),
       price: Number(row.price ?? 0),
       currency: String(row.currency ?? 'VND'),
-      category: row.category ? String(row.category) : undefined,
+      category: cleanStr(row.category),
       metadata: typeof row.metadata === 'object' && row.metadata !== null ? (row.metadata as Record<string, unknown>) : {},
       isAvailable: row.is_available !== false,
       createdAt: new Date(String(row.created_at)).toISOString(),
@@ -150,14 +162,20 @@ export class PostgresProviderOfferingsRepository implements ProviderOfferingsRep
   }
 
   async upsertProfile(userId: string, patch: Partial<ProviderProfileRecord>): Promise<ProviderProfileRecord> {
+    const cleanStr = (val?: string | null): string | null => {
+      if (!val) return null;
+      const s = val.replace(/\uFFFD/g, '').trim();
+      return s.length > 0 ? s : null;
+    };
+
     const existing = await this.getProfile(userId);
     const providerType = patch.providerType ?? existing?.providerType ?? 'ride_driver';
     const tenantId = existing?.tenantId ?? `partner-${userId.slice(0, 8)}`;
-    const businessName = patch.businessName ?? existing?.businessName ?? null;
-    const description = patch.description ?? existing?.description ?? null;
-    const address = patch.address ?? existing?.address ?? null;
-    const phone = patch.phone ?? existing?.phone ?? null;
-    const webhookUrl = patch.webhookUrl ?? existing?.webhookUrl ?? null;
+    const businessName = cleanStr(patch.businessName) ?? existing?.businessName ?? null;
+    const description = cleanStr(patch.description) ?? existing?.description ?? null;
+    const address = cleanStr(patch.address) ?? existing?.address ?? null;
+    const phone = cleanStr(patch.phone) ?? existing?.phone ?? null;
+    const webhookUrl = cleanStr(patch.webhookUrl) ?? existing?.webhookUrl ?? null;
     const isOpen = patch.isOpen !== undefined ? patch.isOpen : (existing?.isOpen ?? true);
 
     const result = await this.pool.query(

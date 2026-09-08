@@ -97,7 +97,7 @@ export async function request<T>(path: string, init: RequestInit = {}, options: 
   if (options.signal?.aborted) controller.abort();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body !== undefined && init.body !== null) headers.set("Content-Type", "application/json");
+  if (init.body !== undefined && init.body !== null) headers.set("Content-Type", "application/json; charset=utf-8");
   const correlationId = createRequestId("cor");
   headers.set("X-Correlation-Id", correlationId);
   if (options.idempotencyKey) headers.set("Idempotency-Key", options.idempotencyKey);

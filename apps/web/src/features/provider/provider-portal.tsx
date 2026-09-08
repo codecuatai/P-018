@@ -189,6 +189,12 @@ const DEFAULT_OFFERINGS: ProviderServiceItem[] = [
   },
 ];
 
+function sanitizeDisplayText(val?: string | null, fallback = ""): string {
+  if (!val) return fallback;
+  const cleaned = val.replace(/\uFFFD/g, "").trim();
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
 export function ProviderPortal() {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
@@ -378,11 +384,13 @@ export function ProviderPortal() {
           getProviderItems(),
         ]);
         if (profData.status === "fulfilled" && profData.value) {
+          const rawBiz = profData.value.businessName;
+          const cleanBiz = sanitizeDisplayText(rawBiz, "");
           setProfile(profData.value);
           setProfileForm({
-            businessName: profData.value.businessName || user?.full_name || "",
-            phone: profData.value.phone || user?.phone || "",
-            address: profData.value.address || "",
+            businessName: cleanBiz || user?.full_name || (isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : ""),
+            phone: sanitizeDisplayText(profData.value.phone, user?.phone || ""),
+            address: sanitizeDisplayText(profData.value.address, ""),
             webhookUrl: profData.value.webhookUrl || "",
             isOpen: profData.value.isOpen !== false,
           });
@@ -596,11 +604,11 @@ export function ProviderPortal() {
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "6px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <div className="admin-user-avatar">
-                {(profileForm.businessName?.[0] || user?.full_name?.[0] || user?.email?.[0] || "P").toUpperCase()}
+                {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email, "P")[0].toUpperCase()}
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: "12px", fontWeight: 650, color: "#0F172A", lineHeight: 1.2 }}>
-                  {profileForm.businessName || user?.full_name || user?.email?.split("@")[0] || "Đối tác"}
+                  {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email?.split("@")[0], isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác")}
                 </span>
                 <span style={{ fontSize: "10px", color: isMaster ? "#1D4ED8" : "#059669", fontWeight: 650 }}>
                   {isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
@@ -744,7 +752,7 @@ export function ProviderPortal() {
                 </div>
                 <div>
                   <h1 className="admin-banner-title">
-                    Chào mừng, {profileForm.businessName || user?.full_name || "Đối tác X-One"}
+                    Chào mừng, {sanitizeDisplayText(profileForm.businessName || user?.full_name, isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác X-One")}
                   </h1>
                   <p className="admin-banner-subtitle">
                     Bảng điều khiển tác vụ dịch vụ đối tác · {getPartnerTypeLabel()}
