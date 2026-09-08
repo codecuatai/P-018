@@ -182,137 +182,77 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          gap: "4px",
-          padding: "4px",
-          background: "#F1F5F9",
-          borderRadius: "10px",
-          marginBottom: "16px",
-          border: "1px solid #E2E8F0",
-        }}
-      >
+      <div className="account-type-switch" role="group" aria-label="Chọn loại tài khoản">
         <button
           type="button"
           onClick={() => setAccountType("user")}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            padding: "8px 10px",
-            borderRadius: "8px",
-            fontSize: "12px",
-            fontWeight: 650,
-            border: "none",
-            cursor: "pointer",
-            background: accountType === "user" ? "#FFFFFF" : "transparent",
-            color: accountType === "user" ? "#1D4ED8" : "#64748B",
-            boxShadow: accountType === "user" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-            transition: "all 0.15s ease",
-          }}
+          aria-pressed={accountType === "user"}
+          data-active={accountType === "user"}
+          data-variant="user"
+          className="account-type-option"
         >
-          <User size={14} />
+          <User size={14} aria-hidden="true" />
           <span>Người dùng cá nhân</span>
         </button>
         <button
           type="button"
           onClick={() => setAccountType("provider")}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            padding: "8px 10px",
-            borderRadius: "8px",
-            fontSize: "12px",
-            fontWeight: 650,
-            border: "none",
-            cursor: "pointer",
-            background: accountType === "provider" ? "#FFFFFF" : "transparent",
-            color: accountType === "provider" ? "#047857" : "#64748B",
-            boxShadow: accountType === "provider" ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-            transition: "all 0.15s ease",
-          }}
+          aria-pressed={accountType === "provider"}
+          data-active={accountType === "provider"}
+          data-variant="provider"
+          className="account-type-option"
         >
-          <Store size={14} />
-          <span>Đối tác dịch vụ (Provider)</span>
+          <Store size={14} aria-hidden="true" />
+          <span>Đối tác dịch vụ</span>
         </button>
       </div>
 
-      {accountType === "user" && <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />}
+      {accountType === "user" ? (
+        <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />
+      ) : (
+        <p className="form-notice" role="note">
+          Tài khoản đối tác cần thông tin cơ sở kinh doanh nên vui lòng hoàn tất biểu mẫu bên dưới. Bạn có thể liên kết Google sau khi tạo tài khoản.
+        </p>
+      )}
 
       <form onSubmit={submit}>
         {accountType === "provider" && (
-          <div style={{ marginBottom: "16px", padding: "14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px" }}>
-            <Label style={{ fontSize: "12px", fontWeight: 650, marginBottom: "8px", display: "block", color: "#334155" }}>
+          <fieldset className="provider-fieldset">
+            <legend className="provider-fieldset-legend">
               Lĩnh vực đối tác hoạt động
-            </Label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "12px" }}>
+            </legend>
+            <div className="provider-type-grid" role="group" aria-label="Chọn lĩnh vực đối tác">
               <button
                 type="button"
                 onClick={() => setProviderType("ride_driver")}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "8px 4px",
-                  borderRadius: "8px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  border: `1px solid ${providerType === "ride_driver" ? "#3B82F6" : "#CBD5E1"}`,
-                  background: providerType === "ride_driver" ? "#EFF6FF" : "#FFFFFF",
-                  color: providerType === "ride_driver" ? "#1D4ED8" : "#475569",
-                  cursor: "pointer",
-                }}
+                aria-pressed={providerType === "ride_driver"}
+                data-active={providerType === "ride_driver"}
+                data-tone="ride"
+                className="provider-type-option"
               >
-                <Car size={16} />
+                <Car size={16} aria-hidden="true" />
                 <span>Tài xế di chuyển</span>
               </button>
               <button
                 type="button"
                 onClick={() => setProviderType("restaurant_merchant")}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "8px 4px",
-                  borderRadius: "8px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  border: `1px solid ${providerType === "restaurant_merchant" ? "#F59E0B" : "#CBD5E1"}`,
-                  background: providerType === "restaurant_merchant" ? "#FFFBEB" : "#FFFFFF",
-                  color: providerType === "restaurant_merchant" ? "#B45309" : "#475569",
-                  cursor: "pointer",
-                }}
+                aria-pressed={providerType === "restaurant_merchant"}
+                data-active={providerType === "restaurant_merchant"}
+                data-tone="food"
+                className="provider-type-option"
               >
-                <UtensilsCrossed size={16} />
+                <UtensilsCrossed size={16} aria-hidden="true" />
                 <span>Quán ăn / Món</span>
               </button>
               <button
                 type="button"
                 onClick={() => setProviderType("healthcare_doctor")}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: "4px",
-                  padding: "8px 4px",
-                  borderRadius: "8px",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  border: `1px solid ${providerType === "healthcare_doctor" ? "#10B981" : "#CBD5E1"}`,
-                  background: providerType === "healthcare_doctor" ? "#ECFDF5" : "#FFFFFF",
-                  color: providerType === "healthcare_doctor" ? "#065F46" : "#475569",
-                  cursor: "pointer",
-                }}
+                aria-pressed={providerType === "healthcare_doctor"}
+                data-active={providerType === "healthcare_doctor"}
+                data-tone="health"
+                className="provider-type-option"
               >
-                <HeartPulse size={16} />
+                <HeartPulse size={16} aria-hidden="true" />
                 <span>Phòng khám</span>
               </button>
             </div>
@@ -323,17 +263,18 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
               value={businessName}
               onChange={setBusinessName}
               placeholder="VD: Phở Gia Truyền, Xe 4 Chỗ Bác Minh..."
-              required
             />
             <Field
               label="Số điện thoại liên hệ"
               id="register-phone"
+              type="tel"
               value={phone}
               onChange={setPhone}
+              autoComplete="tel"
               placeholder="VD: 0912345678"
               required
             />
-          </div>
+          </fieldset>
         )}
 
         <Field

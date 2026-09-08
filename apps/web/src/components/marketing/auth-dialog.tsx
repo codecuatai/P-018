@@ -34,7 +34,7 @@ export function AuthDialog({ open, mode, nextPath, onOpenChange, onModeChange }:
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className={isLogin ? undefined : "auth-dialog-wide"}>
         <div className={styles.heading}>
           <span className="eyebrow">X-ONE / TÀI KHOẢN</span>
           <DialogTitle>{isLogin ? "Đăng nhập" : "Bắt đầu với X-One"}</DialogTitle>

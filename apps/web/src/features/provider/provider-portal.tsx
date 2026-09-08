@@ -25,6 +25,7 @@ import {
   Store,
   Trash2,
   TrendingUp,
+  UserRound,
   UtensilsCrossed,
   Wallet,
   X,
@@ -601,6 +602,15 @@ export function ProviderPortal() {
             </span>
           </div>
 
+          <Link
+            href="/app"
+            className="role-switch-link role-badge-customer"
+            title="Xem giao diện người dùng / khách hàng"
+          >
+            <UserRound size={13} />
+            <span>Giao diện Khách hàng</span>
+          </Link>
+
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginLeft: "6px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               <div className="admin-user-avatar">
@@ -631,9 +641,9 @@ export function ProviderPortal() {
       </header>
 
       {/* Body with Sidebar and Main Content */}
-      <div className="app-body" style={{ gridTemplateColumns: "250px minmax(0, 1fr)" }}>
+      <div className="app-body provider-body">
         {/* Sidebar */}
-        <aside className="app-sidebar admin-sidebar" style={{ width: 250, borderRight: "1px solid #E2E8F0" }}>
+        <aside className="app-sidebar admin-sidebar provider-sidebar">
           <div className="admin-sidebar-inner" style={{ padding: "16px 12px" }}>
             <div className="admin-nav-group">
               <span className="admin-nav-group-title">
@@ -818,8 +828,12 @@ export function ProviderPortal() {
                     <CreditCard size={14} />
                   </div>
                 </div>
-                <strong style={{ color: "#059669" }}>1.240.000 đ</strong>
-                <span className="admin-metric-subtext">3 giao dịch đã quyết toán</span>
+                <strong style={{ color: "#059669" }}>
+                  {(earnings?.net_payout ?? 1240000).toLocaleString("vi-VN")} đ
+                </strong>
+                <span className="admin-metric-subtext">
+                  {earnings?.total_completed_transactions ?? 3} giao dịch đã quyết toán
+                </span>
               </div>
 
               <div className="admin-metric">
@@ -856,6 +870,7 @@ export function ProviderPortal() {
                 >
                   <Car size={14} />
                   <span>Chuyến xe (Ride Partner)</span>
+                  <span className="admin-subtab-badge">{allRides.length}</span>
                 </button>
               )}
 

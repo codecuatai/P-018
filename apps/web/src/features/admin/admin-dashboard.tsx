@@ -40,6 +40,7 @@ import {
   Sparkles,
   Star,
   Stethoscope,
+  Store,
   Ticket,
   UserCheck,
   UserRound,
@@ -260,7 +261,16 @@ export function AdminDashboard() {
             <span className="admin-header-status-text">gateway-core</span>
           </div>
 
-          <AdminUserMenu userEmail={user?.email ?? ""} onLogout={handleLogout} />
+          <Link
+            href="/app"
+            className="role-switch-link role-badge-customer"
+            title="Xem giao diện người dùng / khách hàng"
+          >
+            <UserRound size={13} />
+            <span>Giao diện Khách hàng</span>
+          </Link>
+
+          <AdminUserMenu userEmail={user?.email ?? ""} userRole={user?.role} onLogout={handleLogout} />
         </div>
       </header>
 
@@ -310,7 +320,7 @@ export function AdminDashboard() {
         <header className="app-mobile-header">
           <Link className="brand-link" href="/admin">
             <XOneMark size={27} />
-            <span>Admin</span>
+            <span>{user?.role === "manager" ? "Vận hành" : "Admin"}</span>
           </Link>
           <div className="app-mobile-actions">
             <Sheet>
@@ -319,7 +329,7 @@ export function AdminDashboard() {
                   <Menu size={20} />
                 </button>
               </SheetTrigger>
-              <SheetContent title="Quản trị X-One">
+              <SheetContent title={user?.role === "manager" ? "Trung tâm vận hành" : "Quản trị X-One"}>
                 <AdminSidebarContent
                   activeMainTab={activeMainTab}
                   onSelectTab={switchMainTab}
@@ -345,7 +355,9 @@ export function AdminDashboard() {
                   <CurrentIcon size={20} />
                 </div>
                 <div>
-                  <h1 className="admin-banner-title">Trung tâm vận hành X-One</h1>
+                  <h1 className="admin-banner-title">
+                    {user?.role === "manager" ? "Trung tâm vận hành X-One" : "Trung tâm quản trị & vận hành X-One"}
+                  </h1>
                   <p className="admin-banner-subtitle">{currentTabDef.subtitle}</p>
                 </div>
               </div>
@@ -608,16 +620,19 @@ function AdminSidebarContent({
 // User Menu Component
 // ---------------------------------------------------------------------------
 
-function AdminUserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: () => Promise<void> }) {
+function AdminUserMenu({ userEmail, userRole, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
+  const isManager = userRole === "manager";
 
   return (
     <div className="user-menu-wrap" ref={ref}>
       <button
         className="user-avatar-btn"
         type="button"
-        aria-label="Tài khoản Quản trị"
+        aria-label={isManager ? "Tài khoản Quản lý" : "Tài khoản Quản trị"}
+        aria-haspopup="menu"
+        aria-expanded={open}
         onClick={() => setOpen((val) => !val)}
       >
         <span className="user-avatar-circle">{initials(userEmail)}</span>
@@ -626,11 +641,30 @@ function AdminUserMenu({ userEmail, onLogout }: { userEmail: string; onLogout: (
       {open && (
         <div className="user-dropdown" role="menu">
           <div className="user-dropdown-header">
-            <strong>{userEmail || "Quản trị viên"}</strong>
+            <strong title={userEmail}>{userEmail || (isManager ? "Quản lý vận hành" : "Quản trị viên")}</strong>
             <small>
-              <ShieldCheck size={12} /> Phiên Admin bảo mật
+              <ShieldCheck size={12} /> {isManager ? "Quyền Manager · Phiên bảo mật" : "Quyền Admin · Phiên bảo mật"}
             </small>
           </div>
+          <div className="dropdown-divider" />
+          <Link
+            className="dropdown-item"
+            href="/app"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            <UserRound size={15} />
+            <span>Giao diện Khách hàng</span>
+          </Link>
+          <Link
+            className="dropdown-item"
+            href="/app/provider"
+            role="menuitem"
+            onClick={() => setOpen(false)}
+          >
+            <Store size={15} />
+            <span>Cổng Đối tác</span>
+          </Link>
           <div className="dropdown-divider" />
           <button
             className="dropdown-item dropdown-item-danger"

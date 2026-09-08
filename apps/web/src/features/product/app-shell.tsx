@@ -36,11 +36,26 @@ import type { ConversationRecord } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
 
 const navigation = [
-  { href: "/app", label: "Trợ lý AI", icon: Bot },
-  { href: "/app/services", label: "Dịch vụ", icon: Store },
-  { href: "/app/history", label: "Lịch sử", icon: History },
-  { href: "/app/favorites", label: "Đã lưu", icon: BookmarkCheck },
+  { href: "/app", label: "Trợ lý AI", description: "Chat với X-One AI", icon: Bot },
+  { href: "/app/services", label: "Dịch vụ", description: "Đồ ăn, chuyến xe, nhà hàng, lịch khám", icon: Store },
+  { href: "/app/history", label: "Lịch sử", description: "Chuyến xe, đơn hàng và lịch khám đã dùng", icon: History },
+  { href: "/app/favorites", label: "Đã lưu", description: "Địa điểm và dịch vụ hay dùng", icon: BookmarkCheck },
 ];
+
+function getRoleBadge(role?: string): { label: string; className: string; switchHref?: string; switchLabel?: string } {
+  switch (role) {
+    case "admin":
+      return { label: "Admin", className: "role-badge-admin", switchHref: "/admin", switchLabel: "Admin Console" };
+    case "manager":
+      return { label: "Quản lý", className: "role-badge-manager", switchHref: "/admin", switchLabel: "Trung tâm vận hành" };
+    case "provider":
+      return { label: "Đối tác", className: "role-badge-provider", switchHref: "/app/provider", switchLabel: "Cổng đối tác" };
+    case "user":
+    case "customer":
+    default:
+      return { label: "Khách hàng", className: "role-badge-customer" };
+  }
+}
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
@@ -148,6 +163,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
         <div className="app-global-header-right">
+          {user?.role && ["admin", "manager", "provider"].includes(user.role) ? (
+            <Link
+              href={getRoleBadge(user.role).switchHref ?? "/app"}
+              className={`role-switch-link ${getRoleBadge(user.role).className}`}
+              title={`Chuyển sang ${getRoleBadge(user.role).switchLabel}`}
+            >
+              <ShieldCheck size={13} aria-hidden="true" />
+              <span>{getRoleBadge(user.role).switchLabel}</span>
+              <ChevronRight size={12} aria-hidden="true" />
+            </Link>
+          ) : (
+            <span className="role-pill role-badge-customer" title="Khách hàng cá nhân">
+              <UserRound size={12} aria-hidden="true" />
+              <span>Khách hàng</span>
+            </span>
+          )}
           <NotificationBell />
           <UserMenu userEmail={user?.email ?? ""} userRole={user?.role} onLogout={handleLogout} />
         </div>
@@ -186,17 +217,18 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function Sidebar({ userEmail, userRole, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; userRole?: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
   return <div className="sidebar-content">
-    <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới và xóa bớt ngữ cảnh cũ"><Plus size={16} /><span>Đoạn chat mới</span></Link>
-    <nav className="app-nav" aria-label="Không gian X-One">{navigation.map(({ href, label, icon: Icon }) => {
+    <p className="sidebar-eyebrow">X-One cho khách hàng</p>
+    <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới với trợ lý X-One"><Plus size={16} /><span>Đoạn chat mới</span></Link>
+    <nav className="app-nav" aria-label="Điều hướng chính">{navigation.map(({ href, label, description, icon: Icon }) => {
       const isAssistant = href === "/app";
       const targetHref = isAssistant ? assistantHref : href;
       const current = isAssistant ? assistantWorkspace : pathname === href || pathname?.startsWith(`${href}/`);
-      const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={targetHref} aria-current={current ? "page" : undefined} onClick={isAssistant && assistantWorkspace ? (event) => event.preventDefault() : undefined}><Icon size={17} /><span>{label}</span></Link>;
+      const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={targetHref} title={description} aria-current={current ? "page" : undefined} onClick={isAssistant && assistantWorkspace ? (event) => event.preventDefault() : undefined}><Icon size={17} /><span>{label}</span></Link>;
       return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>;
     })}</nav>
     <RecentConversations pathname={pathname} compact={compact} />
     <div className="sidebar-spacer" />
-    <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} userRole={userRole} /></div>
+    <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials" aria-hidden="true">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong title={userEmail}>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} aria-hidden="true" /> {getRoleBadge(userRole).label} · Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} userRole={userRole} /></div>
   </div>;
 }
 
@@ -340,11 +372,11 @@ function NotificationBell() {
   );
 }
 
-function UserMenu({ userEmail, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
+function UserMenu({ userEmail, userRole, onLogout }: { userEmail: string; userRole?: string; onLogout: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
   const items = [...accountMenuItems];
-  return <div className="user-menu-wrap" ref={ref}><button className="user-avatar-btn" type="button" aria-label="Tài khoản" onClick={() => setOpen((value) => !value)}><span className="user-avatar-circle">{initials(userEmail)}</span></button>{open && <div className="user-dropdown" role="menu"><div className="user-dropdown-header"><strong>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} /> Phiên bảo mật</small></div><div className="dropdown-divider" />{items.map(({ href, icon: Icon, label }) => <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
+  return <div className="user-menu-wrap" ref={ref}><button className="user-avatar-btn" type="button" aria-label="Tài khoản" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)}><span className="user-avatar-circle">{initials(userEmail)}</span></button>{open && <div className="user-dropdown" role="menu"><div className="user-dropdown-header"><strong title={userEmail}>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} aria-hidden="true" /> {getRoleBadge(userRole).label} · Phiên bảo mật</small></div><div className="dropdown-divider" />{items.map(({ href, icon: Icon, label }) => <Link className="dropdown-item" href={href} role="menuitem" key={href} onClick={() => setOpen(false)}><Icon size={15} className="dropdown-item-icon" /><span>{label}</span></Link>)}<div className="dropdown-divider" /><button className="dropdown-item dropdown-item-danger" type="button" role="menuitem" onClick={() => { setOpen(false); void onLogout(); }}><LogOut size={15} className="dropdown-item-danger-icon" /><span>Đăng xuất</span></button></div>}</div>;
 }
 
 function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick: () => void) {
@@ -358,7 +390,7 @@ function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick:
   return ref;
 }
 
-function RecentConversations({ pathname, compact }: { pathname: string | null; compact: boolean }) {
+function RecentConversations({ pathname, compact }: { pathname: string | null; compact?: boolean }) {
   const [items, setItems] = useState<ConversationRecord[]>([]);
   useEffect(() => {
     let active = true;
