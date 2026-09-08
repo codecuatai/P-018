@@ -124,4 +124,37 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     // Verify item appears in table
     await expect(page.getByText("Bún Chả Nem Cua Bể", { exact: true })).toBeVisible({ timeout: 10_000 });
   });
+
+  test("3. Master Provider views real PostgreSQL operational data and transitions", async ({ page }) => {
+    // Navigate to login
+    await page.goto("/?auth=login");
+    await expect(page.locator("#login-email")).toBeVisible({ timeout: 15_000 });
+
+    await page.locator("#login-email").fill("provider@xone.local");
+    await page.locator("#login-password").fill("Password123!");
+    await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+
+    await expect(page).toHaveURL(/\/app\/provider/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
+
+    // 1. Verify Tab 1 (Ride) - Either active ride or empty state with PostgreSQL connect
+    const rideTab = page.getByRole("button", { name: /Chuyến xe|Ride Partner/i }).first();
+    await rideTab.click();
+    await page.waitForTimeout(1000);
+    const hasRide = await page.getByText(/Cuốc xe đang điều phối/i).count();
+    const hasEmptyRide = await page.getByText(/Chưa có chuyến xe nào đang điều phối/i).count();
+    expect(hasRide + hasEmptyRide).toBeGreaterThan(0);
+
+    // 2. Verify Tab 2 (Food) - PostgreSQL Live Data badge
+    const foodTab = page.getByRole("button", { name: /Đơn món|Food Merchant/i }).first();
+    await foodTab.click();
+    await page.waitForTimeout(1000);
+    await expect(page.getByText(/PostgreSQL Live Data/i).first()).toBeVisible({ timeout: 10_000 });
+
+    // 3. Verify Tab 3 (Healthcare) - PostgreSQL Live Data badge
+    const healthTab = page.getByRole("button", { name: /Lịch khám|Healthcare/i }).first();
+    await healthTab.click();
+    await page.waitForTimeout(1000);
+    await expect(page.getByText(/PostgreSQL Live Data/i).first()).toBeVisible({ timeout: 10_000 });
+  });
 });
