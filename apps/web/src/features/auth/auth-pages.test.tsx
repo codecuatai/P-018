@@ -55,7 +55,7 @@ describe("registration screen", () => {
     fireEvent.change(screen.getByLabelText("Xác nhận mật khẩu"), { target: { value: "ValidPass123!" } });
     fireEvent.submit(screen.getByRole("button", { name: "Tạo tài khoản" }).closest("form")!);
 
-    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("Nguyễn An", "an@example.test", "ValidPass123!"));
+    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith("Nguyễn An", "an@example.test", "ValidPass123!", { role: "customer" }));
     await waitFor(() => expect(mockSuccess).toHaveBeenCalled());
   });
 });

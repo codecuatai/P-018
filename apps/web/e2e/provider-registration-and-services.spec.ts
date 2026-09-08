@@ -42,9 +42,9 @@ test.describe("Provider Self-Registration & Service Offerings Management", () =>
     await expect(page).toHaveURL(/\/app\/provider/, { timeout: 15_000 });
     await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
 
-    // 7. Navigate to "Gắn & Quản lý Dịch vụ" tab
-    const servicesTab = page.getByRole("button", { name: /Gắn & Quản lý Dịch vụ/i }).first();
-    await expect(servicesTab).toBeVisible();
+    // 7. Navigate to "Gắn & Quản lý Dịch vụ" subtab
+    const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
+    await expect(servicesTab).toBeVisible({ timeout: 10_000 });
     await servicesTab.click();
 
     // 8. Verify provider service catalog elements

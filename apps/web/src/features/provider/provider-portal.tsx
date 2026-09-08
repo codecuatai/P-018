@@ -189,6 +189,28 @@ const DEFAULT_OFFERINGS: ProviderServiceItem[] = [
 
 export function ProviderPortal() {
   const { user, logout } = useAuth();
+  const [profile, setProfile] = useState<ProviderProfile | null>(null);
+
+  const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01";
+  const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "restaurant_merchant");
+
+  const isAllowedTab = (tab: "ride" | "food" | "health" | "services") => {
+    if (tab === "services") return true;
+    if (isMaster) return true;
+    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food";
+    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride";
+    if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return tab === "health";
+    return false;
+  };
+
+  const getPartnerTypeLabel = () => {
+    if (isMaster) return "Cổng Giả Lập Hệ Thống (Master 4 Dịch Vụ)";
+    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "Cổng Đối Tác: Nhà hàng & Ẩm thực";
+    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "Cổng Đối Tác: Vận chuyển & Tài xế";
+    if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return "Cổng Đối Tác: Cơ sở Y tế & Khám bệnh";
+    return "Cổng Đối Tác Dịch Vụ Chuyên Ngành";
+  };
+
   const [activeTab, setActiveTab] = useState<"ride" | "food" | "health" | "services">("ride");
   const [activeRide, setActiveRide] = useState<ActiveRide>(INITIAL_RIDE);
   const [orders, setOrders] = useState<FoodOrder[]>(INITIAL_ORDERS);
@@ -197,7 +219,6 @@ export function ProviderPortal() {
   const [actionNotice, setActionNotice] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // Provider Service Offerings State
-  const [profile, setProfile] = useState<ProviderProfile | null>(null);
   const [profileForm, setProfileForm] = useState({
     businessName: "",
     phone: "",
@@ -207,7 +228,9 @@ export function ProviderPortal() {
   });
   const [savingProfile, setSavingProfile] = useState(false);
 
-  const [serviceItems, setServiceItems] = useState<ProviderServiceItem[]>(DEFAULT_OFFERINGS);
+  const [serviceItems, setServiceItems] = useState<ProviderServiceItem[]>(() =>
+    user?.email === "provider@xone.local" ? DEFAULT_OFFERINGS : []
+  );
   const [loadingItems, setLoadingItems] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [newItem, setNewItem] = useState({
@@ -223,6 +246,41 @@ export function ProviderPortal() {
     setActionNotice({ text, type });
     setTimeout(() => setActionNotice(null), 4000);
   };
+
+  const openAddItemModal = () => {
+    const defaultDomain: ProviderServiceItem["domain"] = isMaster
+      ? "food"
+      : rawProviderType === "ride_driver" || rawProviderType === "ride"
+        ? "ride"
+        : rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare"
+          ? "healthcare"
+          : "food";
+    const defaultCategory =
+      defaultDomain === "ride" ? "Xe 4 chỗ" : defaultDomain === "healthcare" ? "Gói khám" : "Món ăn";
+    setNewItem({
+      name: "",
+      domain: defaultDomain,
+      price: 50000,
+      category: defaultCategory,
+      description: "",
+    });
+    setShowAddItemModal(true);
+  };
+
+  // Switch active tab if current tab is not allowed for this provider
+  useEffect(() => {
+    if (!isAllowedTab(activeTab)) {
+      if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") {
+        setActiveTab("food");
+      } else if (rawProviderType === "ride_driver" || rawProviderType === "ride") {
+        setActiveTab("ride");
+      } else if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") {
+        setActiveTab("health");
+      } else {
+        setActiveTab("services");
+      }
+    }
+  }, [rawProviderType, isMaster, activeTab]);
 
   // Load Profile and Service Items
   useEffect(() => {
@@ -243,8 +301,14 @@ export function ProviderPortal() {
             isOpen: profData.value.isOpen !== false,
           });
         }
-        if (itemsData.status === "fulfilled" && itemsData.value.length > 0) {
-          setServiceItems(itemsData.value);
+        if (itemsData.status === "fulfilled") {
+          if (itemsData.value.length > 0) {
+            setServiceItems(itemsData.value);
+          } else if (user?.email === "provider@xone.local") {
+            setServiceItems(DEFAULT_OFFERINGS);
+          } else {
+            setServiceItems([]);
+          }
         }
       } catch {
         // use default state
@@ -400,13 +464,13 @@ export function ProviderPortal() {
           <span
             className="admin-badge-header"
             style={{
-              background: "#ECFDF5",
-              borderColor: "#A7F3D0",
-              color: "#065F46",
+              background: isMaster ? "#EFF6FF" : "#ECFDF5",
+              borderColor: isMaster ? "#BFDBFE" : "#A7F3D0",
+              color: isMaster ? "#1D4ED8" : "#065F46",
             }}
           >
             <Store size={13} />
-            <span>Cổng Đối Tác Dịch Vụ</span>
+            <span>{getPartnerTypeLabel()}</span>
           </span>
         </div>
 
@@ -436,8 +500,8 @@ export function ProviderPortal() {
                 <span style={{ fontSize: "12px", fontWeight: 650, color: "#0F172A", lineHeight: 1.2 }}>
                   {profileForm.businessName || user?.full_name || user?.email?.split("@")[0] || "Đối tác"}
                 </span>
-                <span style={{ fontSize: "10px", color: "#059669", fontWeight: 600 }}>
-                  Đối tác xác thực
+                <span style={{ fontSize: "10px", color: isMaster ? "#1D4ED8" : "#059669", fontWeight: 650 }}>
+                  {isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
                 </span>
               </div>
             </div>
@@ -462,43 +526,51 @@ export function ProviderPortal() {
         <aside className="app-sidebar admin-sidebar" style={{ width: 250, borderRight: "1px solid #E2E8F0" }}>
           <div className="admin-sidebar-inner" style={{ padding: "16px 12px" }}>
             <div className="admin-nav-group">
-              <span className="admin-nav-group-title">Phân hệ nghiệp vụ đối tác</span>
+              <span className="admin-nav-group-title">
+                {isMaster ? "Hệ thống 4 Dịch vụ Giả lập" : "Phân hệ nghiệp vụ đối tác"}
+              </span>
               <div className="admin-nav-group-items">
-                <button
-                  type="button"
-                  className={`admin-nav-btn ${activeTab === "ride" ? "is-active" : ""}`}
-                  onClick={() => setActiveTab("ride")}
-                >
-                  <span className="admin-nav-btn-icon">
-                    <Car size={16} />
-                  </span>
-                  <span className="admin-nav-btn-label">Tài xế di chuyển (Ride)</span>
-                  {activeTab === "ride" && <span className="admin-nav-active-pill" />}
-                </button>
+                {isAllowedTab("ride") && (
+                  <button
+                    type="button"
+                    className={`admin-nav-btn ${activeTab === "ride" ? "is-active" : ""}`}
+                    onClick={() => setActiveTab("ride")}
+                  >
+                    <span className="admin-nav-btn-icon">
+                      <Car size={16} />
+                    </span>
+                    <span className="admin-nav-btn-label">Tài xế di chuyển (Ride)</span>
+                    {activeTab === "ride" && <span className="admin-nav-active-pill" />}
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  className={`admin-nav-btn ${activeTab === "food" ? "is-active" : ""}`}
-                  onClick={() => setActiveTab("food")}
-                >
-                  <span className="admin-nav-btn-icon">
-                    <UtensilsCrossed size={16} />
-                  </span>
-                  <span className="admin-nav-btn-label">Quán ăn & Nhà hàng (Food)</span>
-                  {activeTab === "food" && <span className="admin-nav-active-pill" />}
-                </button>
+                {isAllowedTab("food") && (
+                  <button
+                    type="button"
+                    className={`admin-nav-btn ${activeTab === "food" ? "is-active" : ""}`}
+                    onClick={() => setActiveTab("food")}
+                  >
+                    <span className="admin-nav-btn-icon">
+                      <UtensilsCrossed size={16} />
+                    </span>
+                    <span className="admin-nav-btn-label">Quán ăn & Nhà hàng (Food)</span>
+                    {activeTab === "food" && <span className="admin-nav-active-pill" />}
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  className={`admin-nav-btn ${activeTab === "health" ? "is-active" : ""}`}
-                  onClick={() => setActiveTab("health")}
-                >
-                  <span className="admin-nav-btn-icon">
-                    <HeartPulse size={16} />
-                  </span>
-                  <span className="admin-nav-btn-label">Khám bệnh (Healthcare)</span>
-                  {activeTab === "health" && <span className="admin-nav-active-pill" />}
-                </button>
+                {isAllowedTab("health") && (
+                  <button
+                    type="button"
+                    className={`admin-nav-btn ${activeTab === "health" ? "is-active" : ""}`}
+                    onClick={() => setActiveTab("health")}
+                  >
+                    <span className="admin-nav-btn-icon">
+                      <HeartPulse size={16} />
+                    </span>
+                    <span className="admin-nav-btn-label">Khám bệnh (Healthcare)</span>
+                    {activeTab === "health" && <span className="admin-nav-active-pill" />}
+                  </button>
+                )}
 
                 <div style={{ height: "1px", background: "#E2E8F0", margin: "8px 0" }} />
 
@@ -573,7 +645,7 @@ export function ProviderPortal() {
                     Chào mừng, {profileForm.businessName || user?.full_name || "Đối tác X-One"}
                   </h1>
                   <p className="admin-banner-subtitle">
-                    Bảng điều khiển tác vụ dịch vụ đối tác thời gian thực · Cổng Gateway Core RBAC
+                    Bảng điều khiển tác vụ dịch vụ đối tác · {getPartnerTypeLabel()}
                   </p>
                 </div>
               </div>
@@ -661,40 +733,43 @@ export function ProviderPortal() {
 
             {/* Subtabs Bar (Segmented Control) */}
             <div className="admin-subtab-bar" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "ride"}
-                className={`admin-subtab-pill ${activeTab === "ride" ? "is-active" : ""}`}
-                onClick={() => setActiveTab("ride")}
-              >
-                <Car size={14} />
-                <span>Chuyến xe (Ride Partner)</span>
-              </button>
+              {isAllowedTab("ride") && (
+                <button
+                  type="button"
+                  aria-selected={activeTab === "ride"}
+                  className={`admin-subtab-pill ${activeTab === "ride" ? "is-active" : ""}`}
+                  onClick={() => setActiveTab("ride")}
+                >
+                  <Car size={14} />
+                  <span>Chuyến xe (Ride Partner)</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "food"}
-                className={`admin-subtab-pill ${activeTab === "food" ? "is-active" : ""}`}
-                onClick={() => setActiveTab("food")}
-              >
-                <UtensilsCrossed size={14} />
-                <span>Đơn món (Food Merchant)</span>
-                <span className="admin-subtab-badge">{orders.length}</span>
-              </button>
+              {isAllowedTab("food") && (
+                <button
+                  type="button"
+                  aria-selected={activeTab === "food"}
+                  className={`admin-subtab-pill ${activeTab === "food" ? "is-active" : ""}`}
+                  onClick={() => setActiveTab("food")}
+                >
+                  <UtensilsCrossed size={14} />
+                  <span>Đơn món (Food Merchant)</span>
+                  <span className="admin-subtab-badge">{orders.length}</span>
+                </button>
+              )}
 
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "health"}
-                className={`admin-subtab-pill ${activeTab === "health" ? "is-active" : ""}`}
-                onClick={() => setActiveTab("health")}
-              >
-                <HeartPulse size={14} />
-                <span>Lịch khám (Healthcare)</span>
-                <span className="admin-subtab-badge">{appointments.length}</span>
-              </button>
+              {isAllowedTab("health") && (
+                <button
+                  type="button"
+                  aria-selected={activeTab === "health"}
+                  className={`admin-subtab-pill ${activeTab === "health" ? "is-active" : ""}`}
+                  onClick={() => setActiveTab("health")}
+                >
+                  <HeartPulse size={14} />
+                  <span>Lịch khám (Healthcare)</span>
+                  <span className="admin-subtab-badge">{appointments.length}</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -848,7 +923,7 @@ export function ProviderPortal() {
 
                       <button
                         type="button"
-                        onClick={() => setShowAddItemModal(true)}
+                        onClick={() => openAddItemModal()}
                         className="button button-primary"
                         style={{ height: "36px", padding: "0 16px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}
                       >
@@ -865,7 +940,7 @@ export function ProviderPortal() {
                         </p>
                         <button
                           type="button"
-                          onClick={() => setShowAddItemModal(true)}
+                          onClick={() => openAddItemModal()}
                           className="button button-primary"
                           style={{ fontSize: "12px", padding: "6px 14px" }}
                         >
@@ -1023,57 +1098,63 @@ export function ProviderPortal() {
                     <form onSubmit={handleAddItem} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                       <div>
                         <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
-                          Lĩnh vực dịch vụ
+                          Lĩnh vực dịch vụ {isMaster ? "(Toàn quyền Master 4 Dịch vụ)" : "(Cố định theo lĩnh vực đăng ký)"}
                         </label>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
-                          <button
-                            type="button"
-                            onClick={() => setNewItem({ ...newItem, domain: "food", category: "Món ăn" })}
-                            style={{
-                              padding: "8px",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              border: `1px solid ${newItem.domain === "food" ? "#F59E0B" : "#CBD5E1"}`,
-                              background: newItem.domain === "food" ? "#FFFBEB" : "#FFFFFF",
-                              color: newItem.domain === "food" ? "#B45309" : "#475569",
-                              cursor: "pointer",
-                            }}
-                          >
-                            🍲 Món ăn
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewItem({ ...newItem, domain: "ride", category: "Xe 4 chỗ" })}
-                            style={{
-                              padding: "8px",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              border: `1px solid ${newItem.domain === "ride" ? "#3B82F6" : "#CBD5E1"}`,
-                              background: newItem.domain === "ride" ? "#EFF6FF" : "#FFFFFF",
-                              color: newItem.domain === "ride" ? "#1D4ED8" : "#475569",
-                              cursor: "pointer",
-                            }}
-                          >
-                            🚗 Chuyến xe
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewItem({ ...newItem, domain: "healthcare", category: "Gói khám" })}
-                            style={{
-                              padding: "8px",
-                              borderRadius: "8px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              border: `1px solid ${newItem.domain === "healthcare" ? "#10B981" : "#CBD5E1"}`,
-                              background: newItem.domain === "healthcare" ? "#ECFDF5" : "#FFFFFF",
-                              color: newItem.domain === "healthcare" ? "#065F46" : "#475569",
-                              cursor: "pointer",
-                            }}
-                          >
-                            🩺 Khám bệnh
-                          </button>
+                        <div style={{ display: "grid", gridTemplateColumns: isMaster ? "repeat(3, 1fr)" : "1fr", gap: "8px" }}>
+                          {(isMaster || rawProviderType === "restaurant_merchant" || rawProviderType === "food") && (
+                            <button
+                              type="button"
+                              onClick={() => setNewItem({ ...newItem, domain: "food", category: "Món ăn" })}
+                              style={{
+                                padding: "8px",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                border: `1px solid ${newItem.domain === "food" ? "#F59E0B" : "#CBD5E1"}`,
+                                background: newItem.domain === "food" ? "#FFFBEB" : "#FFFFFF",
+                                color: newItem.domain === "food" ? "#B45309" : "#475569",
+                                cursor: isMaster ? "pointer" : "default",
+                              }}
+                            >
+                              🍲 Món ăn {isMaster ? "" : "(Phân hệ Quán ăn & Nhà hàng)"}
+                            </button>
+                          )}
+                          {(isMaster || rawProviderType === "ride_driver" || rawProviderType === "ride") && (
+                            <button
+                              type="button"
+                              onClick={() => setNewItem({ ...newItem, domain: "ride", category: "Xe 4 chỗ" })}
+                              style={{
+                                padding: "8px",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                border: `1px solid ${newItem.domain === "ride" ? "#3B82F6" : "#CBD5E1"}`,
+                                background: newItem.domain === "ride" ? "#EFF6FF" : "#FFFFFF",
+                                color: newItem.domain === "ride" ? "#1D4ED8" : "#475569",
+                                cursor: isMaster ? "pointer" : "default",
+                              }}
+                            >
+                              🚗 Chuyến xe {isMaster ? "" : "(Phân hệ Tài xế & Vận chuyển)"}
+                            </button>
+                          )}
+                          {(isMaster || rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") && (
+                            <button
+                              type="button"
+                              onClick={() => setNewItem({ ...newItem, domain: "healthcare", category: "Gói khám" })}
+                              style={{
+                                padding: "8px",
+                                borderRadius: "8px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                border: `1px solid ${newItem.domain === "healthcare" ? "#10B981" : "#CBD5E1"}`,
+                                background: newItem.domain === "healthcare" ? "#ECFDF5" : "#FFFFFF",
+                                color: newItem.domain === "healthcare" ? "#065F46" : "#475569",
+                                cursor: isMaster ? "pointer" : "default",
+                              }}
+                            >
+                              🩺 Khám bệnh {isMaster ? "" : "(Phân hệ Cơ sở Y tế)"}
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1159,7 +1240,7 @@ export function ProviderPortal() {
               )}
 
               {/* TAB 1: RIDE PARTNER */}
-              {activeTab === "ride" && (
+              {activeTab === "ride" && isAllowedTab("ride") && (
                 <div className="admin-table-card" style={{ padding: "20px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                     <div>
@@ -1297,8 +1378,8 @@ export function ProviderPortal() {
                 </div>
               )}
 
-              {/* TAB 2: FOOD / RESTAURANT */}
-              {activeTab === "food" && (
+              {/* TAB 2: FOOD MERCHANT */}
+              {activeTab === "food" && isAllowedTab("food") && (
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
@@ -1436,8 +1517,8 @@ export function ProviderPortal() {
                 </div>
               )}
 
-              {/* TAB 3: HEALTHCARE */}
-              {activeTab === "health" && (
+              {/* TAB 3: HEALTHCARE DOCTOR */}
+              {activeTab === "health" && isAllowedTab("health") && (
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>

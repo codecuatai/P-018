@@ -22,6 +22,7 @@ type MockUser = {
   authentication_kind: "real";
   language: "vi";
   timezone: "Asia/Ho_Chi_Minh";
+  provider_type?: string;
 };
 
 const isoNow = (): string => new Date().toISOString();
@@ -122,9 +123,25 @@ export class MockGateway {
       const email = String(body.email ?? "new.user@example.test");
       const role = body.role === "provider" ? "provider" : "user";
       const user = this.makeUser(email, false, String(body.full_name ?? "Người dùng E2E"), role);
+      if (typeof body.provider_type === "string") {
+        user.provider_type = body.provider_type;
+      }
       this.users.set(user.sub, user);
       this.addresses.set(user.sub, []);
       this.refreshUserSub = user.sub;
+      if (role === "provider") {
+        this.providerProfiles.set(user.sub, {
+          provider_id: user.sub,
+          provider_type: body.provider_type || "restaurant_merchant",
+          business_name: body.business_name || user.full_name,
+          phone: body.phone || "0900000000",
+          address: body.address || "",
+          is_open: true,
+          status: "active",
+          tenant_id: `partner-${user.sub.slice(0, 8)}`,
+        });
+        this.providerItems.set(user.sub, []);
+      }
       return this.authSuccess(route, user);
     }
     if (path === "/api/v1/auth/login" && method === "POST") {
@@ -365,14 +382,16 @@ export class MockGateway {
     if (path === "/api/v1/provider/services/profile") {
       if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
       if (method === "GET") {
+        const isMaster = actor.email === "provider@xone.local";
         const profile = this.providerProfiles.get(actor.sub) ?? {
           provider_id: actor.sub,
-          provider_type: "food",
-          business_name: actor.full_name || "Bếp Nhà X-One",
+          provider_type: isMaster ? "all" : (actor.provider_type || "restaurant_merchant"),
+          business_name: actor.full_name || (isMaster ? "Đối tác Tổng hợp X-One" : "Đối tác X-One"),
           phone: actor.phone || "0900000000",
           address: "123 Đường Sáng Tạo, Quận 1",
           is_open: true,
           status: "active",
+          tenant_id: isMaster ? "partner-xone-01" : `partner-${actor.sub.slice(0, 8)}`,
         };
         return this.ok(route, profile);
       }
@@ -388,20 +407,24 @@ export class MockGateway {
     if (path === "/api/v1/provider/services/items") {
       if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
       if (method === "GET") {
-        const items = this.providerItems.get(actor.sub) ?? [
-          {
-            id: "item-init-1",
-            provider_id: actor.sub,
-            domain: "food",
-            name: "Cơm tấm đặc biệt X-One",
-            description: "Sườn bì chả ốp la",
-            price: 65000,
-            currency: "VND",
-            category: "Cơm",
-            is_available: true,
-            created_at: isoNow(),
-          },
-        ];
+        const isMaster = actor.email === "provider@xone.local";
+        const defaultItems = isMaster
+          ? [
+              {
+                id: "item-init-1",
+                provider_id: actor.sub,
+                domain: "food",
+                name: "Cơm tấm đặc biệt X-One",
+                description: "Sườn bì chả ốp la",
+                price: 65000,
+                currency: "VND",
+                category: "Cơm",
+                is_available: true,
+                created_at: isoNow(),
+              },
+            ]
+          : [];
+        const items = this.providerItems.get(actor.sub) ?? defaultItems;
         if (!this.providerItems.has(actor.sub)) {
           this.providerItems.set(actor.sub, items);
         }

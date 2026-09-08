@@ -164,6 +164,33 @@ export class ProviderServicesController {
   ): Promise<object> {
     this.assertProvider(request.user);
     const userId = request.user.sub;
+
+    // Check domain permissions: Master provider (@xone.local) can manage all domains.
+    // Scoped providers are restricted to their registered domain.
+    const isMaster = request.user.email === 'provider@xone.local' || request.user.tenant_id === 'partner-xone-01';
+    if (!isMaster) {
+      const profile = await this.store.getProfile(userId);
+      const pType = profile?.providerType || request.user.provider_type;
+      if (pType) {
+        const allowedDomainsMap: Record<string, string[]> = {
+          restaurant_merchant: ['food', 'restaurant'],
+          food: ['food', 'restaurant'],
+          ride_driver: ['ride'],
+          ride: ['ride'],
+          healthcare_doctor: ['healthcare'],
+          healthcare: ['healthcare'],
+        };
+        const allowed = allowedDomainsMap[pType];
+        if (allowed && !allowed.includes(body.domain)) {
+          throw new BadRequestException({
+            code: 'DOMAIN_NOT_PERMITTED',
+            detail: `Đối tác ngành ${pType} chỉ được phép gắn dịch vụ thuộc phạm vi: ${allowed.join(', ')}.`,
+            retryable: false,
+          });
+        }
+      }
+    }
+
     const now = new Date().toISOString();
     const item: ProviderServiceItemRecord = {
       id: randomUUID(),
