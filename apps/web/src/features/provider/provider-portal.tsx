@@ -575,9 +575,9 @@ export function ProviderPortal() {
           <span
             className="admin-badge-header"
             style={{
-              background: isMaster ? "#EFF6FF" : "#ECFDF5",
-              borderColor: isMaster ? "#BFDBFE" : "#A7F3D0",
-              color: isMaster ? "#1D4ED8" : "#065F46",
+              background: isMaster ? "#EEF2FF" : "#ECFDF5",
+              borderColor: isMaster ? "#C7D2FE" : "#A7F3D0",
+              color: isMaster ? "#4338CA" : "#065F46",
             }}
           >
             <Store size={13} />
@@ -620,7 +620,7 @@ export function ProviderPortal() {
                 <span style={{ fontSize: "12px", fontWeight: 650, color: "#0F172A", lineHeight: 1.2 }}>
                   {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email?.split("@")[0], isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác")}
                 </span>
-                <span style={{ fontSize: "10px", color: isMaster ? "#1D4ED8" : "#059669", fontWeight: 650 }}>
+                <span style={{ fontSize: "10px", color: isMaster ? "#4338CA" : "#059669", fontWeight: 650 }}>
                   {isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
                 </span>
               </div>
@@ -698,9 +698,9 @@ export function ProviderPortal() {
                   type="button"
                   className={`admin-nav-btn ${activeTab === "services" ? "is-active" : ""}`}
                   onClick={() => setActiveTab("services")}
-                  style={{ background: activeTab === "services" ? "#EFF6FF" : "transparent" }}
+                  style={{ background: activeTab === "services" ? "#EEF2FF" : "transparent" }}
                 >
-                  <span className="admin-nav-btn-icon" style={{ color: activeTab === "services" ? "#1D4ED8" : "#059669" }}>
+                  <span className="admin-nav-btn-icon" style={{ color: activeTab === "services" ? "#4338CA" : "#059669" }}>
                     <Layers size={16} />
                   </span>
                   <span className="admin-nav-btn-label" style={{ fontWeight: 700 }}>
@@ -733,7 +733,7 @@ export function ProviderPortal() {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600, color: "#334155" }}>Dịch vụ đã gắn:</span>
-                  <span style={{ fontWeight: 700, color: "#1D4ED8" }}>{serviceItems.length} dịch vụ</span>
+                  <span style={{ fontWeight: 700, color: "#4338CA" }}>{serviceItems.length} dịch vụ</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600, color: "#334155" }}>Trạng thái:</span>
@@ -813,8 +813,8 @@ export function ProviderPortal() {
               <div className="admin-metric">
                 <div className="admin-metric-top">
                   <span className="admin-metric-label">Đánh giá dịch vụ</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#FEF3C7", color: "#B45309" }}>
-                    <Star size={14} fill="#B45309" />
+                  <div className="admin-metric-icon-box" style={{ background: "#FEF3C7", color: "#EA580C" }}>
+                    <Star size={14} fill="#EA580C" />
                   </div>
                 </div>
                 <strong>4.96 ★</strong>
@@ -839,7 +839,7 @@ export function ProviderPortal() {
               <div className="admin-metric">
                 <div className="admin-metric-top">
                   <span className="admin-metric-label">Dịch vụ đã gắn</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#EFF6FF", color: "#2563EB" }}>
+                  <div className="admin-metric-icon-box" style={{ background: "#EEF2FF", color: "#4F46E5" }}>
                     <Layers size={14} />
                   </div>
                 </div>
@@ -987,7 +987,7 @@ export function ProviderPortal() {
 
                       <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
                         <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Trạng thái quyết toán</span>
-                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#2563EB", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#4F46E5", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
                           <CheckCircle2 size={16} /> {earnings?.payout_status ?? "Sẵn sàng quyết toán"}
                         </div>
                         <span style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", display: "block" }}>
@@ -1001,7 +1001,7 @@ export function ProviderPortal() {
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#EFF6FF", color: "#2563EB", display: "grid", placeItems: "center" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#EEF2FF", color: "#4F46E5", display: "grid", placeItems: "center" }}>
                           <Building2 size={18} />
                         </div>
                         <div>
@@ -1103,7 +1103,7 @@ export function ProviderPortal() {
                         <div style={{ marginTop: "12px", padding: "14px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <Code size={15} style={{ color: "#2563EB" }} />
+                              <Code size={15} style={{ color: "#4F46E5" }} />
                               <strong style={{ fontSize: "13px", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
                             </div>
                             <span style={{ fontSize: "11px", color: "#64748B" }}>HMAC-SHA256 Signed · Timeout 5s</span>
@@ -1247,19 +1247,19 @@ export function ProviderPortal() {
                                         item.domain === "food"
                                           ? "#FFFBEB"
                                           : item.domain === "ride"
-                                          ? "#EFF6FF"
+                                          ? "#EEF2FF"
                                           : "#ECFDF5",
                                       color:
                                         item.domain === "food"
-                                          ? "#B45309"
+                                          ? "#EA580C"
                                           : item.domain === "ride"
-                                          ? "#1D4ED8"
+                                          ? "#4338CA"
                                           : "#065F46",
                                       border: `1px solid ${
                                         item.domain === "food"
                                           ? "#FDE68A"
                                           : item.domain === "ride"
-                                          ? "#BFDBFE"
+                                          ? "#C7D2FE"
                                           : "#A7F3D0"
                                       }`,
                                       fontWeight: 650,
@@ -1383,7 +1383,7 @@ export function ProviderPortal() {
                                 fontWeight: 600,
                                 border: `1px solid ${newItem.domain === "food" ? "#F59E0B" : "#CBD5E1"}`,
                                 background: newItem.domain === "food" ? "#FFFBEB" : "#FFFFFF",
-                                color: newItem.domain === "food" ? "#B45309" : "#475569",
+                                color: newItem.domain === "food" ? "#EA580C" : "#475569",
                                 cursor: isMaster ? "pointer" : "default",
                               }}
                             >
@@ -1399,9 +1399,9 @@ export function ProviderPortal() {
                                 borderRadius: "8px",
                                 fontSize: "12px",
                                 fontWeight: 600,
-                                border: `1px solid ${newItem.domain === "ride" ? "#3B82F6" : "#CBD5E1"}`,
-                                background: newItem.domain === "ride" ? "#EFF6FF" : "#FFFFFF",
-                                color: newItem.domain === "ride" ? "#1D4ED8" : "#475569",
+                                border: `1px solid ${newItem.domain === "ride" ? "#6366F1" : "#CBD5E1"}`,
+                                background: newItem.domain === "ride" ? "#EEF2FF" : "#FFFFFF",
+                                color: newItem.domain === "ride" ? "#4338CA" : "#475569",
                                 cursor: isMaster ? "pointer" : "default",
                               }}
                             >
@@ -1520,13 +1520,13 @@ export function ProviderPortal() {
                           width: "52px",
                           height: "52px",
                           borderRadius: "14px",
-                          background: "#EFF6FF",
-                          color: "#2563EB",
+                          background: "#EEF2FF",
+                          color: "#4F46E5",
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
                           marginBottom: "16px",
-                          border: "1px solid #DBEAFE",
+                          border: "1px solid #C7D2FE",
                         }}
                       >
                         <Car size={26} />
@@ -1629,7 +1629,7 @@ export function ProviderPortal() {
                         >
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                              <div className="admin-user-avatar" style={{ background: "#EFF6FF", color: "#2563EB" }}>
+                              <div className="admin-user-avatar" style={{ background: "#EEF2FF", color: "#4F46E5" }}>
                                 {activeRide.passengerName[0]}
                               </div>
                               <div>
@@ -1642,7 +1642,7 @@ export function ProviderPortal() {
 
                             <span
                               className="admin-role-badge role-customer"
-                              style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}
+                              style={{ background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }}
                             >
                               {activeRide.passengers} Hành khách
                             </span>
@@ -1662,7 +1662,7 @@ export function ProviderPortal() {
                           >
                             <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
                               <div style={{ width: "20px", display: "flex", justifyContent: "center", paddingTop: "3px" }}>
-                                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#2563EB" }} />
+                                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#4F46E5" }} />
                               </div>
                               <div>
                                 <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
@@ -1693,9 +1693,9 @@ export function ProviderPortal() {
                             <span
                               className="admin-role-badge"
                               style={{
-                                background: activeRide.status === "COMPLETED" ? "#ECFDF5" : "#EFF6FF",
-                                color: activeRide.status === "COMPLETED" ? "#065F46" : "#1D4ED8",
-                                border: `1px solid ${activeRide.status === "COMPLETED" ? "#A7F3D0" : "#BFDBFE"}`,
+                                background: activeRide.status === "COMPLETED" ? "#ECFDF5" : "#EEF2FF",
+                                color: activeRide.status === "COMPLETED" ? "#065F46" : "#4338CA",
+                                border: `1px solid ${activeRide.status === "COMPLETED" ? "#A7F3D0" : "#C7D2FE"}`,
                                 fontWeight: 700,
                                 fontSize: "11px",
                                 padding: "4px 10px",
@@ -1820,7 +1820,7 @@ export function ProviderPortal() {
                           height: "52px",
                           borderRadius: "14px",
                           background: "#FEF3C7",
-                          color: "#D97706",
+                          color: "#EA580C",
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -1871,19 +1871,19 @@ export function ProviderPortal() {
                                       ? "#ECFDF5"
                                       : order.status === "PREPARING"
                                       ? "#FFFBEB"
-                                      : "#EFF6FF",
+                                      : "#EEF2FF",
                                   color:
                                     order.status === "READY_FOR_PICKUP"
                                       ? "#065F46"
                                       : order.status === "PREPARING"
-                                      ? "#B45309"
-                                      : "#1D4ED8",
+                                      ? "#EA580C"
+                                      : "#4338CA",
                                   border: `1px solid ${
                                     order.status === "READY_FOR_PICKUP"
                                       ? "#A7F3D0"
                                       : order.status === "PREPARING"
                                       ? "#FDE68A"
-                                      : "#BFDBFE"
+                                      : "#C7D2FE"
                                   }`,
                                   fontWeight: 700,
                                 }}
@@ -1917,7 +1917,7 @@ export function ProviderPortal() {
                               <div
                                 style={{
                                   fontSize: "12px",
-                                  color: "#B45309",
+                                  color: "#EA580C",
                                   backgroundColor: "#FFFBEB",
                                   border: "1px solid #FDE68A",
                                   padding: "8px 12px",
@@ -2013,13 +2013,13 @@ export function ProviderPortal() {
                           width: "52px",
                           height: "52px",
                           borderRadius: "14px",
-                          background: "#EFF6FF",
-                          color: "#2563EB",
+                          background: "#EEF2FF",
+                          color: "#4F46E5",
                           display: "inline-flex",
                           alignItems: "center",
                           justifyContent: "center",
                           marginBottom: "16px",
-                          border: "1px solid #DBEAFE",
+                          border: "1px solid #C7D2FE",
                         }}
                       >
                         <HeartPulse size={24} />
@@ -2062,12 +2062,12 @@ export function ProviderPortal() {
                                 width: "42px",
                                 height: "42px",
                                 borderRadius: "10px",
-                                backgroundColor: "#EFF6FF",
+                                backgroundColor: "#EEF2FF",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                color: "#2563EB",
-                                border: "1px solid #DBEAFE",
+                                color: "#4F46E5",
+                                border: "1px solid #C7D2FE",
                               }}
                             >
                               <HeartPulse size={20} />
@@ -2102,19 +2102,19 @@ export function ProviderPortal() {
                                     ? "#ECFDF5"
                                     : apt.status === "IN_CONSULTATION"
                                     ? "#FFFBEB"
-                                    : "#EFF6FF",
+                                    : "#EEF2FF",
                                 color:
                                   apt.status === "COMPLETED"
                                     ? "#065F46"
                                     : apt.status === "IN_CONSULTATION"
-                                    ? "#B45309"
-                                    : "#1D4ED8",
+                                    ? "#EA580C"
+                                    : "#4338CA",
                                 border: `1px solid ${
                                   apt.status === "COMPLETED"
                                     ? "#A7F3D0"
                                     : apt.status === "IN_CONSULTATION"
                                     ? "#FDE68A"
-                                    : "#BFDBFE"
+                                    : "#C7D2FE"
                                 }`,
                                 fontWeight: 700,
                               }}

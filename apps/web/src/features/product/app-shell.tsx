@@ -210,6 +210,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">{children}</main>
+        <nav className="mobile-bottom-nav" aria-label="Điều hướng nhanh">
+          {navigation.map(({ href, label, icon: Icon }) => {
+            const isAssistant = href === "/app";
+            const targetHref = isAssistant ? assistantHref : href;
+            const current = isAssistant ? assistantWorkspace : pathname === href || pathname?.startsWith(`${href}/`);
+            return <Link key={href} className={`mobile-bottom-nav-link${current ? " is-active" : ""}`} href={targetHref} aria-current={current ? "page" : undefined}><Icon size={19} /><span>{label}</span></Link>;
+          })}
+        </nav>
       </div>
     </div>
   );

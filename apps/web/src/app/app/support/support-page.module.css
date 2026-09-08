@@ -111,7 +111,7 @@
 .ticketButton.is-selected .expandControl { color: var(--color-navy); background: #EDF2FF; border-color: #B7C8F5; }
 .ticketButton.is-selected .expandControl svg { transform: rotate(180deg); }
 .statusOpen { color: #176B63; background: #ECFDF5; border-color: #B7E5D6; }
-.statusProgress { color: #2458B8; background: #EFF6FF; border-color: #C7D9FF; }
+.statusProgress { color: #4338CA; background: #EEF2FF; border-color: #C7D2FE; }
 .statusResolved { color: #176B63; background: #EEF9F5; border-color: #C5E6D9; }
 .statusClosed { color: #64748B; background: #F1F5F9; border-color: #D9E2EC; }
 .ticketDetailBody { padding: 17px 14px 14px; margin: 0; background: #F8FAFC; border-top: 1px solid #DCE5EC; }

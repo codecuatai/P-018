@@ -75,7 +75,7 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, color: "#1D4ED8", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+        <span style={{ fontSize: "11px", fontWeight: 700, color: "#4338CA", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
           <Sparkles size={12} /> Hành trình liên kết dịch vụ ({allSteps.length} bước)
         </span>
         <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>
@@ -96,9 +96,9 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
                   gap: "6px",
                   padding: "5px 10px",
                   borderRadius: "100px",
-                  background: isDone ? "#ECFDF5" : "#EFF6FF",
-                  border: `1px solid ${isDone ? "#A7F3D0" : "#BFDBFE"}`,
-                  color: isDone ? "#065F46" : "#1D4ED8",
+                  background: isDone ? "#ECFDF5" : "#EEF2FF",
+                  border: `1px solid ${isDone ? "#A7F3D0" : "#C7D2FE"}`,
+                  color: isDone ? "#065F46" : "#4338CA",
                   fontSize: "12px",
                   fontWeight: 650,
                 }}
@@ -108,7 +108,7 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
                 {isDone ? (
                   <span style={{ background: "#059669", color: "#FFFFFF", borderRadius: "50%", width: "13px", height: "13px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "9px" }}>✓</span>
                 ) : (
-                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#2563EB", display: "inline-block" }} />
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4F46E5", display: "inline-block" }} />
                 )}
               </div>
               {idx < allSteps.length - 1 && (

@@ -24,35 +24,42 @@
   --text-xs: 0.75rem;    /* 12px */
   --text-micro: 0.6875rem; /* 11px */
 
-  --color-canvas: #F5F7F8;
+  --color-canvas: #F8FAFC;
   --color-surface: #FFFFFF;
-  --color-ink: #111827;
-  --color-muted: #667085;
-  --color-muted-soft: #7A8794;
-  --color-navy: #16324F;
-  --color-navy-deep: #08243D;
-  --color-primary: #315EF5;
-  --color-primary-strong: #274BC4;
-  --color-success: #0E8E83;
-  --color-success-ink: #0B625A;
-  --color-border: #D9E0E7;
-  --color-border-strong: #B8C7D1;
-  --color-danger: #B54237;
-  --color-danger-surface: #FFF5F3;
-  --color-ring: rgb(49 94 245 / 35%);
+  --color-ink: #0F172A;
+  --color-muted: #64748B;
+  --color-muted-soft: #94A3B8;
+  --color-navy: #0F172A;
+  --color-navy-deep: #020617;
+  --color-primary: #4F46E5;
+  --color-primary-strong: #3730A3;
+  --color-primary-light: #EEF2FF;
+  --color-success: #10B981;
+  --color-success-ink: #065F46;
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
+  --color-danger: #EF4444;
+  --color-danger-surface: #FEF2F2;
+  --color-ring: rgb(79 70 229 / 28%);
 
-  --surface-ice: #F1F4FF;
-  --surface-sand: #F7F2EC;
-  --surface-mist: #EEF8F6;
-  --surface-slate: #F1F5F8;
+  --surface-ice: #EEF2FF;
+  --surface-sand: #FFFBEB;
+  --surface-mist: #ECFDF5;
+  --surface-slate: #F1F5F9;
 
-  --accent-food: #B67A2D;
-  --accent-ride: #315EF5;
-  --accent-restaurant: #A65B70;
-  --accent-healthcare: #0E8E83;
+  --accent-food: #EA580C;
+  --accent-ride: #0284C7;
+  --accent-restaurant: #E11D48;
+  --accent-healthcare: #059669;
 
-  --shadow-soft: 0 18px 48px rgb(22 50 79 / 10%);
-  --shadow-tight: 0 6px 20px rgb(22 50 79 / 8%);
+  --shadow-soft: 0 20px 40px -15px rgb(15 23 42 / 0.08), 0 0 1px rgb(15 23 42 / 0.12);
+  --shadow-tight: 0 4px 12px -2px rgb(15 23 42 / 0.06), 0 0 1px rgb(15 23 42 / 0.1);
+  --shadow-glow: 0 8px 24px -4px rgb(79 70 229 / 0.28);
+  --shadow-card: 0 4px 14px -2px rgb(15 23 42 / 0.06), 0 0 0 1px rgb(15 23 42 / 0.04);
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-full: 9999px;
 }
 
 * { box-sizing: border-box; }

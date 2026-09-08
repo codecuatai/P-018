@@ -283,7 +283,7 @@ export function ApiKeysSection() {
         <div className="admin-card admin-api-form-card">
           <div className="admin-card-title admin-api-form-heading">
             <h3>
-              <Key size={16} color="var(--color-brand, #3B82F6)" /> Cấu hình API Key mới
+              <Key size={16} color="var(--color-brand, #6366F1)" /> Cấu hình API Key mới
             </h3>
             <span>
               Khóa được mã hóa AES-256-GCM và lưu an toàn, tuyệt đối không lộ secret ra ngoài.

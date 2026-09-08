@@ -1419,7 +1419,7 @@ function UsersSubtab({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
-              <ShieldAlert size={22} style={{ color: "#D97706" }} />
+              <ShieldAlert size={22} style={{ color: "#EA580C" }} />
               <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600, color: "#0F172A" }}>
                 Xác nhận thay đổi vai trò người dùng
               </h3>
@@ -2015,9 +2015,9 @@ function AuditLogsSubtab() {
                           fontSize: "11px",
                           fontWeight: 700,
                           fontFamily: "monospace",
-                          background: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#ECFDF5" : log.action.includes("UPDATE") ? "#EFF6FF" : "#FFFBEB",
-                          color: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#047857" : log.action.includes("UPDATE") ? "#1D4ED8" : "#B45309",
-                          border: `1px solid ${log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#A7F3D0" : log.action.includes("UPDATE") ? "#BFDBFE" : "#FDE68A"}`,
+                          background: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#ECFDF5" : log.action.includes("UPDATE") ? "#EEF2FF" : "#FFFBEB",
+                          color: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#047857" : log.action.includes("UPDATE") ? "#4338CA" : "#EA580C",
+                          border: `1px solid ${log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#A7F3D0" : log.action.includes("UPDATE") ? "#C7D2FE" : "#FDE68A"}`,
                         }}
                       >
                         {log.action}

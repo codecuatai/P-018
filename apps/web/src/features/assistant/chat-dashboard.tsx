@@ -681,7 +681,7 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
           width: "100%",
           padding: "16px 20px",
           background: "linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(240, 253, 250, 0.95) 100%)",
-          border: "1px solid #BFDBFE",
+          border: "1px solid #C7D2FE",
           borderRadius: "14px",
           boxShadow: "0 4px 16px -2px rgba(37, 99, 235, 0.08)",
           display: "flex",
@@ -702,11 +702,11 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700, color: "#1D4ED8", background: "#DBEAFE", padding: "3px 10px", borderRadius: "100px" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700, color: "#4338CA", background: "#C7D2FE", padding: "3px 10px", borderRadius: "100px" }}>
             <Sparkles size={12} />
             <span>{proactive.badge}</span>
           </div>
-          <span style={{ fontSize: "12px", color: "#2563EB", fontWeight: 650 }}>
+          <span style={{ fontSize: "12px", color: "#4F46E5", fontWeight: 650 }}>
             Thực hiện ngay →
           </span>
         </div>
@@ -720,7 +720,7 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
         </div>
       </div>
 
-      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
+      <h2 className="welcome-headline">Bạn cần <span className="welcome-headline-gradient">hỗ trợ gì</span> hôm nay?</h2>
       <p className="welcome-sub">
         Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
       </p>

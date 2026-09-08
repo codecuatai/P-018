@@ -46,8 +46,8 @@ const DRIVER_MOTION_DURATION_MS = 1_250;
 const MARKER_STYLES: Record<MarkerKey, { color: string; label: string }> = {
   origin: { color: "#102A43", label: "Điểm đón" },
   destination: { color: "#1F9D68", label: "Điểm đến" },
-  current: { color: "#315EF5", label: "Vị trí hiện tại" },
-  user: { color: "#315EF5", label: "Vị trí của bạn" },
+  current: { color: "#4F46E5", label: "Vị trí hiện tại" },
+  user: { color: "#4F46E5", label: "Vị trí của bạn" },
   driver: { color: "#E07A3F", label: "Tài xế" },
   restaurant: { color: "#E07A3F", label: "Nhà hàng" },
   healthcare: { color: "#A54D86", label: "Cơ sở y tế" },
@@ -227,7 +227,7 @@ export function XOneMap({
     const route = mapData.route.length > 1 ? mapData.route : [];
     if (route.length > 1) {
       if (!polylineRef.current) {
-        polylineRef.current = L.polyline(route.map(toLatLng), { color: "#315EF5", weight: 5, opacity: 0.86, lineCap: "round", lineJoin: "round" }).addTo(map);
+        polylineRef.current = L.polyline(route.map(toLatLng), { color: "#4F46E5", weight: 5, opacity: 0.86, lineCap: "round", lineJoin: "round" }).addTo(map);
       } else {
         polylineRef.current.setLatLngs(route.map(toLatLng));
       }
@@ -262,7 +262,7 @@ export function XOneMap({
     }
 
     stopoverMarkerRefs.current.forEach((marker) => marker.remove());
-    stopoverMarkerRefs.current = mapData.stopovers.map((point, index) => L.circleMarker(toLatLng(point), { radius: 8, color: "#FFFFFF", weight: 2, fillColor: "#315EF5", fillOpacity: 0.95 })
+    stopoverMarkerRefs.current = mapData.stopovers.map((point, index) => L.circleMarker(toLatLng(point), { radius: 8, color: "#FFFFFF", weight: 2, fillColor: "#4F46E5", fillOpacity: 0.95 })
       .addTo(map)
       .bindTooltip(point.label ?? `Điểm dừng ${index + 1}`, { direction: "top", offset: [0, -6] }));
 
@@ -293,7 +293,7 @@ export function XOneMap({
         )}
       </>
     ) : <MapFallback label={label} points={mapData.points} providerUnavailable={providerUnavailable} locationDenied={locationDenied} routeProvider={routeProvider} routeStatus={routeStatus} routeDistanceMeters={routeDistanceMeters} routeDurationSeconds={routeDurationSeconds} onRetry={() => { setMapState("loading"); setRetryVersion((value) => value + 1); }} />}
-    {variant === "default" && mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><span hidden={!mapData.stopovers.length}><i className="legend-dot" style={{ backgroundColor: "#315EF5" }} />Điểm dừng</span><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
+    {variant === "default" && mapData.points.length ? <div className="xone-map-legend"><LegendDot marker="origin" label="Điểm đi" show={Boolean(mapData.markers.origin)} /><LegendDot marker="destination" label="Điểm đến" show={Boolean(mapData.markers.destination)} /><span hidden={!mapData.stopovers.length}><i className="legend-dot" style={{ backgroundColor: "#4F46E5" }} />Điểm dừng</span><LegendDot marker="healthcare" label="Cơ sở khám" show={Boolean(mapData.markers.healthcare)} /><LegendDot marker="current" label="Vị trí hiện tại" show={Boolean(mapData.markers.current || mapData.markers.driver)} /></div> : null}
   </section>;
 }
 

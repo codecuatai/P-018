@@ -84,8 +84,8 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
     ? [
         { key: "food", name: "Ẩm thực (Food)", icon: <ShoppingBag size={18} />, iconStyle: { background: "#FFF7ED", color: "#EA580C" }, count: userSummary.data.food_count, unit: "đơn hàng đã đặt" },
         { key: "ride", name: "Di chuyển (Ride)", icon: <Car size={18} />, iconStyle: { background: "#ECFDF5", color: "#059669" }, count: userSummary.data.ride_count, unit: "chuyến xe hoàn tất" },
-        { key: "restaurant", name: "Đặt bàn (Restaurant)", icon: <Utensils size={18} />, iconStyle: { background: "#FEF3C7", color: "#D97706" }, count: userSummary.data.restaurant_count, unit: "lượt đặt bàn" },
-        { key: "healthcare", name: "Y tế (Healthcare)", icon: <HeartPulse size={18} />, iconStyle: { background: "#EFF6FF", color: "#2563EB" }, count: userSummary.data.healthcare_count, unit: "lịch khám đã đặt" },
+        { key: "restaurant", name: "Đặt bàn (Restaurant)", icon: <Utensils size={18} />, iconStyle: { background: "#FEF3C7", color: "#EA580C" }, count: userSummary.data.restaurant_count, unit: "lượt đặt bàn" },
+        { key: "healthcare", name: "Y tế (Healthcare)", icon: <HeartPulse size={18} />, iconStyle: { background: "#EEF2FF", color: "#4F46E5" }, count: userSummary.data.healthcare_count, unit: "lịch khám đã đặt" },
       ]
     : [];
 
