@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../src/clients/service.clients';
 import { AuthGuard } from '../src/modules/auth/auth.guard';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { ProviderServicesController } from '../src/modules/services/provider-services.controller';
@@ -70,6 +71,36 @@ describe('ProviderServicesController (Multi-Tenant Isolation)', () => {
         { provide: ProviderOfferingsStore, useValue: mockStore },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('test-value'), getOrThrow: jest.fn().mockReturnValue('test-value') } },
         { provide: AuthService, useValue: { authenticateAccessToken: jest.fn() } },
+        {
+          provide: RideClient,
+          useValue: {
+            opsTransactions: jest.fn().mockResolvedValue({ items: [{ id: 'ride_1', status: 'IN_PROGRESS' }] }),
+            updateBookingStatus: jest.fn().mockResolvedValue({ id: 'ride_1', status: 'COMPLETED' }),
+            createQuote: jest.fn().mockResolvedValue({ id: 'q_1', quote_version: 'qv_1', amount: 50000, currency: 'VND', passenger_count: 2, capacity_policy_version: 'v1' }),
+            prepareBooking: jest.fn().mockResolvedValue({ id: 'bk_1', status: 'DRIVER_ASSIGNED' }),
+          },
+        },
+        {
+          provide: FoodClient,
+          useValue: {
+            opsTransactions: jest.fn().mockResolvedValue({ items: [{ id: 'order_1', status: 'PREPARING' }] }),
+            updateOrderStatus: jest.fn().mockResolvedValue({ id: 'order_1', status: 'READY_FOR_PICKUP' }),
+          },
+        },
+        {
+          provide: HealthcareClient,
+          useValue: {
+            opsTransactions: jest.fn().mockResolvedValue({ items: [{ id: 1, status: 'CONFIRMED' }] }),
+            confirmAppointment: jest.fn().mockResolvedValue({ id: 1, status: 'CONFIRMED' }),
+            cancelAppointment: jest.fn().mockResolvedValue({ id: 1, status: 'CANCELLED' }),
+          },
+        },
+        {
+          provide: RestaurantClient,
+          useValue: {
+            opsTransactions: jest.fn().mockResolvedValue({ items: [] }),
+          },
+        },
       ],
     })
       .overrideGuard(AuthGuard)
@@ -176,6 +207,47 @@ describe('ProviderServicesController (Multi-Tenant Isolation)', () => {
 
       const listA = (await controller.listItems(undefined, reqA)) as any;
       expect(listA.data.items).toHaveLength(0);
+    });
+  });
+
+  describe('Real Operations & Transitions', () => {
+    it('retrieves operational rides from ride-service', async () => {
+      const res = (await controller.getOperationalRides(createReq(providerUserA))) as any;
+      expect(res.data.items).toHaveLength(1);
+      expect(res.data.items[0].id).toBe('ride_1');
+    });
+
+    it('retrieves operational orders from food-service', async () => {
+      const res = (await controller.getOperationalOrders(createReq(providerUserA))) as any;
+      expect(res.data.items).toHaveLength(1);
+      expect(res.data.items[0].id).toBe('order_1');
+    });
+
+    it('retrieves operational appointments from healthcare-service', async () => {
+      const res = (await controller.getOperationalAppointments(createReq(providerUserA))) as any;
+      expect(res.data.items).toHaveLength(1);
+      expect(res.data.items[0].id).toBe(1);
+    });
+
+    it('updates operational ride status', async () => {
+      const res = (await controller.updateOperationalRideStatus('ride_1', { status: 'COMPLETED' }, undefined, createReq(providerUserA))) as any;
+      expect(res.data.status).toBe('COMPLETED');
+    });
+
+    it('updates operational food order status', async () => {
+      const res = (await controller.updateOperationalOrderStatus('order_1', { status: 'READY_FOR_PICKUP' }, undefined, createReq(providerUserA))) as any;
+      expect(res.data.status).toBe('READY_FOR_PICKUP');
+    });
+
+    it('updates operational healthcare appointment status', async () => {
+      const res = (await controller.updateOperationalAppointmentStatus('1', { status: 'CONFIRMED' }, undefined, createReq(providerUserA))) as any;
+      expect(res.data.status).toBe('CONFIRMED');
+    });
+
+    it('seeds a sample operational ride booking', async () => {
+      const res = (await controller.seedOperationalSample({ domain: 'ride' }, createReq(providerUserA))) as any;
+      expect(res.data.id).toBe('bk_1');
+      expect(res.data.status).toBe('DRIVER_ASSIGNED');
     });
   });
 });

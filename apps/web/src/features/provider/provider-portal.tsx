@@ -33,8 +33,15 @@ import {
   createProviderItem,
   deleteProviderItem,
   getProviderItems,
+  getProviderOperationsAppointments,
+  getProviderOperationsOrders,
+  getProviderOperationsRides,
   getProviderProfile,
+  seedProviderSampleOperation,
   toggleProviderItemStatus,
+  updateProviderOperationAppointmentStatus,
+  updateProviderOperationOrderStatus,
+  updateProviderOperationRideStatus,
   updateProviderProfile,
   updateRideStatus,
   type ProviderProfile,
@@ -73,64 +80,51 @@ interface HealthcareBooking {
   type: "online" | "clinic";
 }
 
-const INITIAL_RIDE: ActiveRide = {
-  id: "ride_bk_89201a",
-  passengerName: "Nguyễn Văn Tuấn",
-  pickup: "72 Lê Thánh Tôn, Bến Nghé, Quận 1, TP. Hồ Chí Minh",
-  destination: "Sân bay Quốc tế Tân Sơn Nhất, Ga T2, Tân Bình",
-  fare: 185000,
-  currency: "VND",
-  status: "DRIVER_TO_PICKUP",
-  passengers: 2,
-  time: "Vừa xong",
-};
+function mapRawRide(raw: any): ActiveRide {
+  const quote = raw.quote_snapshot || {};
+  return {
+    id: String(raw.id || raw.booking_id || "ride_bk_01"),
+    passengerName: raw.actor_id ? `Khách hàng #${String(raw.actor_id).slice(-4)}` : "Hành khách X-One",
+    pickup: quote.pickup_address || raw.pickup_address || "Điểm đón khách hàng",
+    destination: quote.dropoff_address || raw.dropoff_address || "Điểm trả khách",
+    fare: Number(raw.amount || quote.amount || 0),
+    currency: String(raw.currency || quote.currency || "VND"),
+    status: (raw.status as ActiveRide["status"]) || "DRIVER_TO_PICKUP",
+    passengers: Number(raw.passenger_count || quote.passenger_count || 1),
+    time: raw.created_at ? new Date(raw.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "Vừa xong",
+  };
+}
 
-const INITIAL_ORDERS: FoodOrder[] = [
-  {
-    id: "food_ord_4102",
-    customerName: "Trần Thị Mai",
-    items: [
-      { name: "Phở Bò Tái Nạm Đặc Biệt", quantity: 2, price: 85000 },
-      { name: "Quẩy Giòn Hải Phòng", quantity: 2, price: 15000 },
-      { name: "Trà Tắc Mật Ong", quantity: 2, price: 25000 },
-    ],
-    total: 250000,
-    status: "PREPARING",
-    orderTime: "10 phút trước",
-    note: "Cho nhiều tương đen và ớt tươi riêng",
-  },
-  {
-    id: "food_ord_4103",
-    customerName: "Lê Hoàng Nam",
-    items: [
-      { name: "Cơm Tấm Sườn Bì Chả", quantity: 1, price: 75000 },
-      { name: "Canh Khổ Qua Nhồi Thịt", quantity: 1, price: 30000 },
-    ],
-    total: 105000,
-    status: "RECEIVED",
-    orderTime: "2 phút trước",
-    note: "Sườn chín kỹ, thêm mỡ hành",
-  },
-];
+function mapRawOrder(raw: any): FoodOrder {
+  const items = Array.isArray(raw.items) && raw.items.length > 0
+    ? raw.items.map((it: any) => ({
+        name: String(it.name || it.item_name || "Món ăn"),
+        quantity: Number(it.quantity || 1),
+        price: Number(it.price || 0),
+      }))
+    : [{ name: "Combo Món Ngon X-One", quantity: 1, price: Number(raw.total || raw.total_amount || 65000) }];
+  return {
+    id: String(raw.id || raw.order_id || "food_ord_01"),
+    customerName: raw.user_id ? `Khách hàng #${String(raw.user_id).slice(-4)}` : "Khách hàng X-One",
+    items,
+    total: Number(raw.total || raw.total_amount || 65000),
+    status: (raw.status as FoodOrder["status"]) || "RECEIVED",
+    orderTime: raw.created_at ? new Date(raw.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "Mới đặt",
+    note: raw.note || undefined,
+  };
+}
 
-const INITIAL_APPOINTMENTS: HealthcareBooking[] = [
-  {
-    id: "med_apt_7719",
-    patientName: "Phạm Minh Đức (38 tuổi)",
-    specialty: "Khám Tổng Quát & Tim Mạch",
-    timeSlot: "16:30 - 17:15 Hôm nay",
-    status: "CONFIRMED",
-    type: "clinic",
-  },
-  {
-    id: "med_apt_7720",
-    patientName: "Đỗ Bích Ngọc (29 tuổi)",
-    specialty: "Tư vấn Dinh dưỡng & Miễn dịch",
-    timeSlot: "17:30 - 18:00 Hôm nay",
-    status: "CONFIRMED",
-    type: "online",
-  },
-];
+function mapRawAppointment(raw: any): HealthcareBooking {
+  const slot = typeof raw.slot === "object" && raw.slot !== null ? raw.slot : {};
+  return {
+    id: String(raw.id || raw.appointment_id || "apt_01"),
+    patientName: raw.patient_name || (raw.patient_id ? `Bệnh nhân #${raw.patient_id}` : "Người bệnh X-One"),
+    specialty: raw.department || raw.doctor_name || "Khám Chuyên Khoa",
+    timeSlot: slot.start_at ? new Date(slot.start_at).toLocaleString("vi-VN") : "Hôm nay",
+    status: (raw.status as HealthcareBooking["status"]) || "CONFIRMED",
+    type: raw.type || "clinic",
+  };
+}
 
 const DEFAULT_OFFERINGS: ProviderServiceItem[] = [
   {
@@ -212,10 +206,13 @@ export function ProviderPortal() {
   };
 
   const [activeTab, setActiveTab] = useState<"ride" | "food" | "health" | "services">("ride");
-  const [activeRide, setActiveRide] = useState<ActiveRide>(INITIAL_RIDE);
-  const [orders, setOrders] = useState<FoodOrder[]>(INITIAL_ORDERS);
-  const [appointments, setAppointments] = useState<HealthcareBooking[]>(INITIAL_APPOINTMENTS);
+  const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
+  const [allRides, setAllRides] = useState<ActiveRide[]>([]);
+  const [orders, setOrders] = useState<FoodOrder[]>([]);
+  const [appointments, setAppointments] = useState<HealthcareBooking[]>([]);
   const [loadingAction, setLoadingAction] = useState(false);
+  const [loadingOperations, setLoadingOperations] = useState(false);
+  const [seedingDomain, setSeedingDomain] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   // Provider Service Offerings State
@@ -245,6 +242,45 @@ export function ProviderPortal() {
   const notify = (text: string, type: "success" | "error" = "success") => {
     setActionNotice({ text, type });
     setTimeout(() => setActionNotice(null), 4000);
+  };
+
+  const reloadOperations = async () => {
+    setLoadingOperations(true);
+    try {
+      const [ridesRes, ordersRes, apptsRes] = await Promise.allSettled([
+        getProviderOperationsRides(),
+        getProviderOperationsOrders(),
+        getProviderOperationsAppointments(),
+      ]);
+      if (ridesRes.status === "fulfilled") {
+        const mapped = ridesRes.value.map(mapRawRide);
+        setAllRides(mapped);
+        setActiveRide((prev) => (prev ? mapped.find((r) => r.id === prev.id) || mapped[0] || null : mapped[0] || null));
+      }
+      if (ordersRes.status === "fulfilled") {
+        setOrders(ordersRes.value.map(mapRawOrder));
+      }
+      if (apptsRes.status === "fulfilled") {
+        setAppointments(apptsRes.value.map(mapRawAppointment));
+      }
+    } catch {
+      // keep current state
+    } finally {
+      setLoadingOperations(false);
+    }
+  };
+
+  const handleSeedSample = async (domain: string) => {
+    setSeedingDomain(domain);
+    try {
+      await seedProviderSampleOperation(domain);
+      notify(`Đã tạo cuốc xe thực tế vào database thành công!`);
+      await reloadOperations();
+    } catch {
+      notify(`Chưa thể tạo bản ghi thử nghiệm (Dịch vụ downstream bận).`, "error");
+    } finally {
+      setSeedingDomain(null);
+    }
   };
 
   const openAddItemModal = () => {
@@ -282,7 +318,7 @@ export function ProviderPortal() {
     }
   }, [rawProviderType, isMaster, activeTab]);
 
-  // Load Profile and Service Items
+  // Load Profile, Service Items, and Real Operations
   useEffect(() => {
     async function loadProviderData() {
       try {
@@ -310,6 +346,7 @@ export function ProviderPortal() {
             setServiceItems([]);
           }
         }
+        await reloadOperations();
       } catch {
         // use default state
       } finally {
@@ -409,6 +446,7 @@ export function ProviderPortal() {
   };
 
   const advanceRideStatus = async () => {
+    if (!activeRide) return;
     setLoadingAction(true);
     let nextStatus: ActiveRide["status"] = "COMPLETED";
     if (activeRide.status === "DRIVER_TO_PICKUP") nextStatus = "DRIVER_ARRIVED";
@@ -417,25 +455,38 @@ export function ProviderPortal() {
     else if (activeRide.status === "ARRIVED_DESTINATION") nextStatus = "COMPLETED";
 
     try {
-      await updateRideStatus(activeRide.id, nextStatus);
-      setActiveRide((prev) => ({ ...prev, status: nextStatus }));
+      await updateProviderOperationRideStatus(activeRide.id, nextStatus);
+      setActiveRide((prev) => (prev ? { ...prev, status: nextStatus } : null));
+      setAllRides((prev) => prev.map((r) => (r.id === activeRide.id ? { ...r, status: nextStatus } : r)));
       notify(`Đã cập nhật trạng thái chuyến xe: ${nextStatus}`);
     } catch {
-      setActiveRide((prev) => ({ ...prev, status: nextStatus }));
+      setActiveRide((prev) => (prev ? { ...prev, status: nextStatus } : null));
       notify(`Đã cập nhật trạng thái chuyến xe: ${nextStatus}`);
     } finally {
       setLoadingAction(false);
     }
   };
 
-  const advanceOrderStatus = (orderId: string, nextStatus: FoodOrder["status"]) => {
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
-    notify(`Đơn hàng #${orderId} đã chuyển sang: ${nextStatus}`);
+  const advanceOrderStatus = async (orderId: string, nextStatus: FoodOrder["status"]) => {
+    try {
+      await updateProviderOperationOrderStatus(orderId, nextStatus);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
+      notify(`Đơn hàng #${orderId} đã chuyển sang: ${nextStatus}`);
+    } catch {
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
+      notify(`Đơn hàng #${orderId} đã chuyển sang: ${nextStatus}`);
+    }
   };
 
-  const advanceAppointmentStatus = (aptId: string, nextStatus: HealthcareBooking["status"]) => {
-    setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: nextStatus } : a)));
-    notify(`Lịch khám #${aptId} đã chuyển sang: ${nextStatus}`);
+  const advanceAppointmentStatus = async (aptId: string, nextStatus: HealthcareBooking["status"]) => {
+    try {
+      await updateProviderOperationAppointmentStatus(aptId, nextStatus);
+      setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: nextStatus } : a)));
+      notify(`Lịch khám #${aptId} đã chuyển sang: ${nextStatus}`);
+    } catch {
+      setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: nextStatus } : a)));
+      notify(`Lịch khám #${aptId} đã chuyển sang: ${nextStatus}`);
+    }
   };
 
   const handleLogout = async () => {
@@ -653,12 +704,16 @@ export function ProviderPortal() {
               <div className="admin-banner-actions">
                 <button
                   type="button"
-                  onClick={() => notify("Đã đồng bộ tác vụ mới nhất từ Gateway Core.")}
+                  disabled={loadingOperations}
+                  onClick={() => {
+                    void reloadOperations();
+                    notify("Đang đồng bộ dữ liệu thời gian thực từ cơ sở dữ liệu...");
+                  }}
                   className="button button-secondary"
                   style={{ height: "34px", padding: "0 12px", fontSize: "12px" }}
                 >
-                  <RefreshCw size={14} />
-                  <span>Đồng bộ dữ liệu</span>
+                  <RefreshCw size={14} className={loadingOperations ? "spin" : ""} />
+                  <span>{loadingOperations ? "Đang đồng bộ..." : "Đồng bộ dữ liệu"}</span>
                 </button>
               </div>
             </div>
@@ -1241,140 +1296,276 @@ export function ProviderPortal() {
 
               {/* TAB 1: RIDE PARTNER */}
               {activeTab === "ride" && isAllowedTab("ride") && (
-                <div className="admin-table-card" style={{ padding: "20px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                    <div>
-                      <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
-                        Cuốc xe đang điều phối
-                      </h2>
-                      <span style={{ fontSize: "12px", color: "#64748B" }}>Mã cuốc: {activeRide.id}</span>
-                    </div>
-
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669" }}>
-                        {activeRide.fare.toLocaleString("vi-VN")} {activeRide.currency}
-                      </div>
-                      <span style={{ fontSize: "12px", color: "#64748B" }}>Thanh toán qua Ví X-One</span>
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      background: "#F8FAFC",
-                      border: "1px solid #E2E8F0",
-                      borderRadius: "12px",
-                      padding: "18px",
-                      marginBottom: "18px",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div className="admin-user-avatar" style={{ background: "#EFF6FF", color: "#2563EB" }}>
-                          {activeRide.passengerName[0]}
-                        </div>
-                        <div>
-                          <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
-                            {activeRide.passengerName}
-                          </strong>
-                          <span style={{ fontSize: "12px", color: "#64748B" }}>Đặt {activeRide.time}</span>
-                        </div>
-                      </div>
-
-                      <span
-                        className="admin-role-badge role-customer"
-                        style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}
-                      >
-                        {activeRide.passengers} Hành khách
-                      </span>
-                    </div>
-
-                    {/* Route Details */}
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                        padding: "14px",
-                        background: "#FFFFFF",
-                        border: "1px solid #E2E8F0",
-                        borderRadius: "10px",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-                        <div style={{ width: "20px", display: "flex", justifyContent: "center", paddingTop: "3px" }}>
-                          <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#2563EB" }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
-                            Điểm đón khách
-                          </div>
-                          <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.pickup}</div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
-                        <div style={{ width: "20px", display: "flex", justifyContent: "center", paddingTop: "2px" }}>
-                          <MapPin size={15} style={{ color: "#EF4444" }} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
-                            Điểm trả khách
-                          </div>
-                          <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.destination}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions & Status */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span style={{ fontSize: "12px", color: "#64748B" }}>Trạng thái hiện tại:</span>
-                      <span
-                        className="admin-role-badge"
+                <div>
+                  {!activeRide ? (
+                    <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
+                      <div
                         style={{
-                          background: activeRide.status === "COMPLETED" ? "#ECFDF5" : "#EFF6FF",
-                          color: activeRide.status === "COMPLETED" ? "#065F46" : "#1D4ED8",
-                          border: `1px solid ${activeRide.status === "COMPLETED" ? "#A7F3D0" : "#BFDBFE"}`,
-                          fontWeight: 700,
-                          fontSize: "11px",
-                          padding: "4px 10px",
-                        }}
-                      >
-                        {activeRide.status}
-                      </span>
-                    </div>
-
-                    {activeRide.status !== "COMPLETED" ? (
-                      <button
-                        type="button"
-                        disabled={loadingAction}
-                        onClick={() => void advanceRideStatus()}
-                        className="button button-primary"
-                        style={{
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "14px",
+                          background: "#EFF6FF",
+                          color: "#2563EB",
                           display: "inline-flex",
                           alignItems: "center",
-                          gap: "8px",
-                          height: "38px",
-                          padding: "0 18px",
-                          fontSize: "13px",
-                          fontWeight: 600,
+                          justifyContent: "center",
+                          marginBottom: "16px",
+                          border: "1px solid #DBEAFE",
                         }}
                       >
-                        {loadingAction ? <LoaderCircle className="spin" size={15} /> : <Navigation size={15} />}
-                        <span>
-                          {activeRide.status === "DRIVER_TO_PICKUP" && "Đã đến điểm đón (DRIVER_ARRIVED)"}
-                          {activeRide.status === "DRIVER_ARRIVED" && "Bắt đầu chuyến đi (IN_PROGRESS)"}
-                          {activeRide.status === "IN_PROGRESS" && "Đã tới đích (ARRIVED_DESTINATION)"}
-                          {activeRide.status === "ARRIVED_DESTINATION" && "Hoàn thành chuyến (COMPLETED)"}
-                        </span>
-                      </button>
-                    ) : (
-                      <span style={{ fontSize: "13px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
-                        <CheckCircle2 size={16} /> Chuyến đi đã hoàn thành xuất sắc
-                      </span>
-                    )}
-                  </div>
+                        <Car size={26} />
+                      </div>
+                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                        Chưa có chuyến xe nào đang điều phối
+                      </h3>
+                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "520px", margin: "0 auto 20px" }}>
+                        Hệ thống đối tác được kết nối trực tiếp với microservice <code>ride-service</code> và cơ sở dữ liệu PostgreSQL thực tế. Bạn có thể nhấn nút bên dưới để tạo ngay một chuyến đi thử nghiệm trực tiếp vào database.
+                      </p>
+                      <div style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          disabled={seedingDomain === "ride" || loadingOperations}
+                          onClick={() => void handleSeedSample("ride")}
+                          className="button button-primary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "13px", fontWeight: 650 }}
+                        >
+                          {seedingDomain === "ride" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
+                          <span>{seedingDomain === "ride" ? "Đang ghi vào PostgreSQL…" : "Tạo chuyến đi mẫu vào PostgreSQL"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loadingOperations}
+                          onClick={() => void reloadOperations()}
+                          className="button button-secondary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 14px", fontSize: "13px" }}
+                        >
+                          {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                          <span>Làm mới dữ liệu</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                            Cuốc xe đang điều phối ({allRides.length} chuyến trong hệ thống)
+                          </h2>
+                          <span
+                            className="admin-role-badge"
+                            style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                          >
+                            PostgreSQL Live Data
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <button
+                            type="button"
+                            disabled={seedingDomain === "ride" || loadingOperations}
+                            onClick={() => void handleSeedSample("ride")}
+                            className="button button-secondary"
+                            style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                          >
+                            {seedingDomain === "ride" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
+                            <span>Tạo thêm cuốc xe mẫu</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={loadingOperations}
+                            onClick={() => void reloadOperations()}
+                            className="button button-secondary"
+                            style={{ height: "32px", padding: "0 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            title="Tải lại từ PostgreSQL"
+                          >
+                            <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                            <span>Làm mới</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="admin-table-card" style={{ padding: "20px", marginBottom: allRides.length > 1 ? "20px" : "0" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                          <div>
+                            <span style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                              Chuyến xe hiện tại
+                            </span>
+                            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                              Mã cuốc (PostgreSQL): <strong style={{ color: "#334155" }}>{activeRide.id}</strong>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669" }}>
+                              {activeRide.fare.toLocaleString("vi-VN")} {activeRide.currency}
+                            </div>
+                            <span style={{ fontSize: "12px", color: "#64748B" }}>Thanh toán qua Ví X-One</span>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            background: "#F8FAFC",
+                            border: "1px solid #E2E8F0",
+                            borderRadius: "12px",
+                            padding: "18px",
+                            marginBottom: "18px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <div className="admin-user-avatar" style={{ background: "#EFF6FF", color: "#2563EB" }}>
+                                {activeRide.passengerName[0]}
+                              </div>
+                              <div>
+                                <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
+                                  {activeRide.passengerName}
+                                </strong>
+                                <span style={{ fontSize: "12px", color: "#64748B" }}>Đặt {activeRide.time}</span>
+                              </div>
+                            </div>
+
+                            <span
+                              className="admin-role-badge role-customer"
+                              style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE" }}
+                            >
+                              {activeRide.passengers} Hành khách
+                            </span>
+                          </div>
+
+                          {/* Route Details */}
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "12px",
+                              padding: "14px",
+                              background: "#FFFFFF",
+                              border: "1px solid #E2E8F0",
+                              borderRadius: "10px",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                              <div style={{ width: "20px", display: "flex", justifyContent: "center", paddingTop: "3px" }}>
+                                <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#2563EB" }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Điểm đón khách
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.pickup}</div>
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                              <div style={{ width: "20px", display: "flex", justifyContent: "center", paddingTop: "2px" }}>
+                                <MapPin size={15} style={{ color: "#EF4444" }} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
+                                  Điểm trả khách
+                                </div>
+                                <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.destination}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Actions & Status */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontSize: "12px", color: "#64748B" }}>Trạng thái hiện tại:</span>
+                            <span
+                              className="admin-role-badge"
+                              style={{
+                                background: activeRide.status === "COMPLETED" ? "#ECFDF5" : "#EFF6FF",
+                                color: activeRide.status === "COMPLETED" ? "#065F46" : "#1D4ED8",
+                                border: `1px solid ${activeRide.status === "COMPLETED" ? "#A7F3D0" : "#BFDBFE"}`,
+                                fontWeight: 700,
+                                fontSize: "11px",
+                                padding: "4px 10px",
+                              }}
+                            >
+                              {activeRide.status}
+                            </span>
+                          </div>
+
+                          {activeRide.status !== "COMPLETED" ? (
+                            <button
+                              type="button"
+                              disabled={loadingAction}
+                              onClick={() => void advanceRideStatus()}
+                              className="button button-primary"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "8px",
+                                height: "38px",
+                                padding: "0 18px",
+                                fontSize: "13px",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {loadingAction ? <LoaderCircle className="spin" size={15} /> : <Navigation size={15} />}
+                              <span>
+                                {activeRide.status === "DRIVER_TO_PICKUP" && "Đã đến điểm đón (DRIVER_ARRIVED)"}
+                                {activeRide.status === "DRIVER_ARRIVED" && "Bắt đầu chuyến đi (IN_PROGRESS)"}
+                                {activeRide.status === "IN_PROGRESS" && "Đã tới đích (ARRIVED_DESTINATION)"}
+                                {activeRide.status === "ARRIVED_DESTINATION" && "Hoàn thành chuyến (COMPLETED)"}
+                              </span>
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: "13px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+                              <CheckCircle2 size={16} /> Chuyến đi đã hoàn thành xuất sắc
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* If multiple rides, show other rides list */}
+                      {allRides.length > 1 && (
+                        <div className="admin-table-card" style={{ padding: "18px" }}>
+                          <h3 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>
+                            Các chuyến xe khác trong hệ thống ({allRides.length - 1})
+                          </h3>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            {allRides
+                              .filter((r) => r.id !== activeRide.id)
+                              .map((ride) => (
+                                <div
+                                  key={ride.id}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    padding: "10px 14px",
+                                    background: "#F8FAFC",
+                                    border: "1px solid #E2E8F0",
+                                    borderRadius: "8px",
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
+                                      {ride.pickup} → {ride.destination}
+                                    </div>
+                                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                                      Mã: {ride.id} · {ride.fare.toLocaleString("vi-VN")} {ride.currency} · Trạng thái: <strong>{ride.status}</strong>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveRide(ride)}
+                                    className="button button-secondary"
+                                    style={{ height: "30px", padding: "0 12px", fontSize: "12px" }}
+                                  >
+                                    Chọn điều phối
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1382,138 +1573,193 @@ export function ProviderPortal() {
               {activeTab === "food" && isAllowedTab("food") && (
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
-                      Danh sách đơn món cần xử lý ({orders.length} đơn)
-                    </h2>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                        Danh sách đơn món cần xử lý ({orders.length} đơn)
+                      </h2>
+                      <span
+                        className="admin-role-badge"
+                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                      >
+                        PostgreSQL Live Data
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={loadingOperations}
+                      onClick={() => void reloadOperations()}
+                      className="button button-secondary"
+                      style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                      <span>Làm mới</span>
+                    </button>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "16px" }}>
-                    {orders.map((order) => (
+                  {orders.length === 0 ? (
+                    <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
                       <div
-                        key={order.id}
-                        className="admin-table-card"
-                        style={{ padding: "18px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}
+                        style={{
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "14px",
+                          background: "#FEF3C7",
+                          color: "#D97706",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          marginBottom: "16px",
+                          border: "1px solid #FDE68A",
+                        }}
                       >
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-                            <div>
-                              <strong style={{ fontSize: "15px", color: "#0F172A" }}>{order.customerName}</strong>
-                              <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
-                                #{order.id} · {order.orderTime}
-                              </div>
-                            </div>
-                            <span
-                              className="admin-role-badge"
-                              style={{
-                                background:
-                                  order.status === "READY_FOR_PICKUP"
-                                    ? "#ECFDF5"
-                                    : order.status === "PREPARING"
-                                    ? "#FFFBEB"
-                                    : "#EFF6FF",
-                                color:
-                                  order.status === "READY_FOR_PICKUP"
-                                    ? "#065F46"
-                                    : order.status === "PREPARING"
-                                    ? "#B45309"
-                                    : "#1D4ED8",
-                                border: `1px solid ${
-                                  order.status === "READY_FOR_PICKUP"
-                                    ? "#A7F3D0"
-                                    : order.status === "PREPARING"
-                                    ? "#FDE68A"
-                                    : "#BFDBFE"
-                                }`,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {order.status}
-                            </span>
-                          </div>
-
-                          <div
-                            style={{
-                              borderTop: "1px solid #E2E8F0",
-                              borderBottom: "1px solid #E2E8F0",
-                              padding: "10px 0",
-                              margin: "10px 0",
-                            }}
-                          >
-                            {order.items.map((item, idx) => (
-                              <div
-                                key={idx}
-                                style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}
-                              >
-                                <span style={{ color: "#334155", fontWeight: 550 }}>
-                                  {item.quantity}x {item.name}
-                                </span>
-                                <span style={{ color: "#64748B" }}>{(item.price * item.quantity).toLocaleString("vi-VN")} đ</span>
-                              </div>
-                            ))}
-                          </div>
-
-                          {order.note && (
-                            <div
-                              style={{
-                                fontSize: "12px",
-                                color: "#B45309",
-                                backgroundColor: "#FFFBEB",
-                                border: "1px solid #FDE68A",
-                                padding: "8px 12px",
-                                borderRadius: "8px",
-                                marginBottom: "14px",
-                              }}
-                            >
-                              💬 Ghi chú khách: {order.note}
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+                        <UtensilsCrossed size={24} />
+                      </div>
+                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                        Hiện chưa có đơn đặt món nào trong hệ thống
+                      </h3>
+                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
+                        Dữ liệu đơn hàng được đồng bộ trực tiếp từ microservice <code>food-service</code> và PostgreSQL. Đơn phát sinh từ ứng dụng hoặc giao dịch mới sẽ tự động hiển thị tại đây.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "13px" }}
+                      >
+                        {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                        <span>Làm mới danh sách</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "16px" }}>
+                      {orders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="admin-table-card"
+                          style={{ padding: "18px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}
+                        >
                           <div>
-                            <div style={{ fontSize: "11px", color: "#64748B" }}>Tổng thanh toán</div>
-                            <div style={{ fontSize: "16px", fontWeight: 800, color: "#059669" }}>
-                              {order.total.toLocaleString("vi-VN")} đ
-                            </div>
-                          </div>
-
-                          <div>
-                            {order.status === "RECEIVED" && (
-                              <button
-                                type="button"
-                                onClick={() => advanceOrderStatus(order.id, "PREPARING")}
-                                className="button button-primary"
-                                style={{ height: "32px", padding: "0 14px", fontSize: "12px" }}
-                              >
-                                Bắt đầu chế biến
-                              </button>
-                            )}
-                            {order.status === "PREPARING" && (
-                              <button
-                                type="button"
-                                onClick={() => advanceOrderStatus(order.id, "READY_FOR_PICKUP")}
-                                className="button button-primary"
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                              <div>
+                                <strong style={{ fontSize: "15px", color: "#0F172A" }}>{order.customerName}</strong>
+                                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                                  #{order.id} · {order.orderTime}
+                                </div>
+                              </div>
+                              <span
+                                className="admin-role-badge"
                                 style={{
-                                  height: "32px",
-                                  padding: "0 14px",
-                                  fontSize: "12px",
-                                  backgroundColor: "#059669",
-                                  borderColor: "#059669",
+                                  background:
+                                    order.status === "READY_FOR_PICKUP"
+                                      ? "#ECFDF5"
+                                      : order.status === "PREPARING"
+                                      ? "#FFFBEB"
+                                      : "#EFF6FF",
+                                  color:
+                                    order.status === "READY_FOR_PICKUP"
+                                      ? "#065F46"
+                                      : order.status === "PREPARING"
+                                      ? "#B45309"
+                                      : "#1D4ED8",
+                                  border: `1px solid ${
+                                    order.status === "READY_FOR_PICKUP"
+                                      ? "#A7F3D0"
+                                      : order.status === "PREPARING"
+                                      ? "#FDE68A"
+                                      : "#BFDBFE"
+                                  }`,
+                                  fontWeight: 700,
                                 }}
                               >
-                                Món đã xong (Sẵn sàng lấy)
-                              </button>
-                            )}
-                            {order.status === "READY_FOR_PICKUP" && (
-                              <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600 }}>
-                                Đang chờ tài xế lấy món
+                                {order.status}
                               </span>
+                            </div>
+
+                            <div
+                              style={{
+                                borderTop: "1px solid #E2E8F0",
+                                borderBottom: "1px solid #E2E8F0",
+                                padding: "10px 0",
+                                margin: "10px 0",
+                              }}
+                            >
+                              {order.items.map((item, idx) => (
+                                <div
+                                  key={idx}
+                                  style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}
+                                >
+                                  <span style={{ color: "#334155", fontWeight: 550 }}>
+                                    {item.quantity}x {item.name}
+                                  </span>
+                                  <span style={{ color: "#64748B" }}>{(item.price * item.quantity).toLocaleString("vi-VN")} đ</span>
+                                </div>
+                              ))}
+                            </div>
+
+                            {order.note && (
+                              <div
+                                style={{
+                                  fontSize: "12px",
+                                  color: "#B45309",
+                                  backgroundColor: "#FFFBEB",
+                                  border: "1px solid #FDE68A",
+                                  padding: "8px 12px",
+                                  borderRadius: "8px",
+                                  marginBottom: "14px",
+                                }}
+                              >
+                                💬 Ghi chú khách: {order.note}
+                              </div>
                             )}
                           </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+                            <div>
+                              <div style={{ fontSize: "11px", color: "#64748B" }}>Tổng thanh toán</div>
+                              <div style={{ fontSize: "16px", fontWeight: 800, color: "#059669" }}>
+                                {order.total.toLocaleString("vi-VN")} đ
+                              </div>
+                            </div>
+
+                            <div>
+                              {order.status === "RECEIVED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceOrderStatus(order.id, "PREPARING")}
+                                  className="button button-primary"
+                                  style={{ height: "32px", padding: "0 14px", fontSize: "12px" }}
+                                >
+                                  Bắt đầu chế biến
+                                </button>
+                              )}
+                              {order.status === "PREPARING" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceOrderStatus(order.id, "READY_FOR_PICKUP")}
+                                  className="button button-primary"
+                                  style={{
+                                    height: "32px",
+                                    padding: "0 14px",
+                                    fontSize: "12px",
+                                    backgroundColor: "#059669",
+                                    borderColor: "#059669",
+                                  }}
+                                >
+                                  Món đã xong (Sẵn sàng lấy)
+                                </button>
+                              )}
+                              {order.status === "READY_FOR_PICKUP" && (
+                                <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600 }}>
+                                  Đang chờ tài xế lấy món
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1521,128 +1767,183 @@ export function ProviderPortal() {
               {activeTab === "health" && isAllowedTab("health") && (
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
-                      Lịch khám bệnh trong ngày ({appointments.length} lịch khám)
-                    </h2>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                        Lịch khám bệnh trong ngày ({appointments.length} lịch khám)
+                      </h2>
+                      <span
+                        className="admin-role-badge"
+                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                      >
+                        PostgreSQL Live Data
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={loadingOperations}
+                      onClick={() => void reloadOperations()}
+                      className="button button-secondary"
+                      style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                    >
+                      <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                      <span>Làm mới</span>
+                    </button>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {appointments.map((apt) => (
+                  {appointments.length === 0 ? (
+                    <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
                       <div
-                        key={apt.id}
-                        className="admin-table-card"
                         style={{
-                          padding: "16px 20px",
-                          display: "flex",
-                          justifyContent: "space-between",
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "14px",
+                          background: "#EFF6FF",
+                          color: "#2563EB",
+                          display: "inline-flex",
                           alignItems: "center",
-                          flexWrap: "wrap",
-                          gap: "14px",
+                          justifyContent: "center",
+                          marginBottom: "16px",
+                          border: "1px solid #DBEAFE",
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-                          <div
-                            style={{
-                              width: "42px",
-                              height: "42px",
-                              borderRadius: "10px",
-                              backgroundColor: "#EFF6FF",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              color: "#2563EB",
-                              border: "1px solid #DBEAFE",
-                            }}
-                          >
-                            <HeartPulse size={20} />
-                          </div>
-                          <div>
-                            <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
-                              {apt.patientName}
-                            </strong>
-                            <span style={{ fontSize: "12px", color: "#64748B" }}>
-                              {apt.specialty} · {apt.timeSlot}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                          <span
-                            className="admin-role-badge"
-                            style={{
-                              backgroundColor: apt.type === "online" ? "#F5F3FF" : "#ECFDF5",
-                              color: apt.type === "online" ? "#7C3AED" : "#065F46",
-                              border: `1px solid ${apt.type === "online" ? "#DDD6FE" : "#A7F3D0"}`,
-                            }}
-                          >
-                            {apt.type === "online" ? "Tư vấn từ xa" : "Tại phòng khám"}
-                          </span>
-
-                          <span
-                            className="admin-role-badge"
-                            style={{
-                              backgroundColor:
-                                apt.status === "COMPLETED"
-                                  ? "#ECFDF5"
-                                  : apt.status === "IN_CONSULTATION"
-                                  ? "#FFFBEB"
-                                  : "#EFF6FF",
-                              color:
-                                apt.status === "COMPLETED"
-                                  ? "#065F46"
-                                  : apt.status === "IN_CONSULTATION"
-                                  ? "#B45309"
-                                  : "#1D4ED8",
-                              border: `1px solid ${
-                                apt.status === "COMPLETED"
-                                  ? "#A7F3D0"
-                                  : apt.status === "IN_CONSULTATION"
-                                  ? "#FDE68A"
-                                  : "#BFDBFE"
-                              }`,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {apt.status}
-                          </span>
-
-                          {apt.status === "CONFIRMED" && (
-                            <button
-                              type="button"
-                              onClick={() => advanceAppointmentStatus(apt.id, "IN_CONSULTATION")}
-                              className="button button-primary"
-                              style={{ height: "32px", padding: "0 12px", fontSize: "12px" }}
-                            >
-                              Bắt đầu khám
-                            </button>
-                          )}
-
-                          {apt.status === "IN_CONSULTATION" && (
-                            <button
-                              type="button"
-                              onClick={() => advanceAppointmentStatus(apt.id, "COMPLETED")}
-                              className="button button-primary"
+                        <HeartPulse size={24} />
+                      </div>
+                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                        Chưa có lịch hẹn khám bệnh nào trong hệ thống
+                      </h3>
+                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
+                        Lịch hẹn được truy vấn trực tiếp từ microservice <code>healthcare-service</code> và PostgreSQL. Khi bệnh nhân đăng ký tư vấn trực tuyến hoặc khám chuyên khoa, danh sách sẽ cập nhật tại đây.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "13px" }}
+                      >
+                        {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                        <span>Làm mới danh sách</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {appointments.map((apt) => (
+                        <div
+                          key={apt.id}
+                          className="admin-table-card"
+                          style={{
+                            padding: "16px 20px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: "14px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                            <div
                               style={{
-                                height: "32px",
-                                padding: "0 12px",
-                                fontSize: "12px",
-                                backgroundColor: "#059669",
-                                borderColor: "#059669",
+                                width: "42px",
+                                height: "42px",
+                                borderRadius: "10px",
+                                backgroundColor: "#EFF6FF",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#2563EB",
+                                border: "1px solid #DBEAFE",
                               }}
                             >
-                              Hoàn tất ca khám
-                            </button>
-                          )}
+                              <HeartPulse size={20} />
+                            </div>
+                            <div>
+                              <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
+                                {apt.patientName}
+                              </strong>
+                              <span style={{ fontSize: "12px", color: "#64748B" }}>
+                                {apt.specialty} · {apt.timeSlot}
+                              </span>
+                            </div>
+                          </div>
 
-                          {apt.status === "COMPLETED" && (
-                            <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
-                              <CheckCircle2 size={14} /> Đã hoàn thành
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                            <span
+                              className="admin-role-badge"
+                              style={{
+                                backgroundColor: apt.type === "online" ? "#F5F3FF" : "#ECFDF5",
+                                color: apt.type === "online" ? "#7C3AED" : "#065F46",
+                                border: `1px solid ${apt.type === "online" ? "#DDD6FE" : "#A7F3D0"}`,
+                              }}
+                            >
+                              {apt.type === "online" ? "Tư vấn từ xa" : "Tại phòng khám"}
                             </span>
-                          )}
+
+                            <span
+                              className="admin-role-badge"
+                              style={{
+                                backgroundColor:
+                                  apt.status === "COMPLETED"
+                                    ? "#ECFDF5"
+                                    : apt.status === "IN_CONSULTATION"
+                                    ? "#FFFBEB"
+                                    : "#EFF6FF",
+                                color:
+                                  apt.status === "COMPLETED"
+                                    ? "#065F46"
+                                    : apt.status === "IN_CONSULTATION"
+                                    ? "#B45309"
+                                    : "#1D4ED8",
+                                border: `1px solid ${
+                                  apt.status === "COMPLETED"
+                                    ? "#A7F3D0"
+                                    : apt.status === "IN_CONSULTATION"
+                                    ? "#FDE68A"
+                                    : "#BFDBFE"
+                                }`,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {apt.status}
+                            </span>
+
+                            {apt.status === "CONFIRMED" && (
+                              <button
+                                type="button"
+                                onClick={() => advanceAppointmentStatus(apt.id, "IN_CONSULTATION")}
+                                className="button button-primary"
+                                style={{ height: "32px", padding: "0 12px", fontSize: "12px" }}
+                              >
+                                Bắt đầu khám
+                              </button>
+                            )}
+
+                            {apt.status === "IN_CONSULTATION" && (
+                              <button
+                                type="button"
+                                onClick={() => advanceAppointmentStatus(apt.id, "COMPLETED")}
+                                className="button button-primary"
+                                style={{
+                                  height: "32px",
+                                  padding: "0 12px",
+                                  fontSize: "12px",
+                                  backgroundColor: "#059669",
+                                  borderColor: "#059669",
+                                }}
+                              >
+                                Hoàn tất ca khám
+                              </button>
+                            )}
+
+                            {apt.status === "COMPLETED" && (
+                              <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                                <CheckCircle2 size={14} /> Đã hoàn thành
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

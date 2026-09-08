@@ -1202,3 +1202,59 @@ export async function deleteProviderItem(id: string): Promise<{ deleted: boolean
   return res;
 }
 
+export async function getProviderOperationsRides(): Promise<any[]> {
+  try {
+    const res = await request<{ items: any[]; count: number }>("/api/v1/provider/services/operations/rides", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getProviderOperationsOrders(): Promise<any[]> {
+  try {
+    const res = await request<{ items: any[]; count: number }>("/api/v1/provider/services/operations/orders", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getProviderOperationsAppointments(): Promise<any[]> {
+  try {
+    const res = await request<{ items: any[]; count: number }>("/api/v1/provider/services/operations/appointments", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function updateProviderOperationRideStatus(bookingId: string, status: string): Promise<any> {
+  return request(`/api/v1/provider/services/operations/rides/${encodeURIComponent(bookingId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateProviderOperationOrderStatus(orderId: string, status: string): Promise<any> {
+  return request(`/api/v1/provider/services/operations/orders/${encodeURIComponent(orderId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateProviderOperationAppointmentStatus(appointmentId: string, status: string): Promise<any> {
+  return request(`/api/v1/provider/services/operations/appointments/${encodeURIComponent(appointmentId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function seedProviderSampleOperation(domain: string): Promise<any> {
+  return request("/api/v1/provider/services/operations/seed-sample", {
+    method: "POST",
+    body: JSON.stringify({ domain }),
+  });
+}
+
+

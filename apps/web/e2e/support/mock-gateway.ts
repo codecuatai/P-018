@@ -473,6 +473,77 @@ export class MockGateway {
       return this.ok(route, { deleted: true });
     }
 
+    if (path === "/api/v1/provider/services/operations/rides" && method === "GET") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, {
+        items: [
+          {
+            id: "ride-op-1",
+            passenger_name: "Nguyễn Văn A",
+            pickup_address: "123 Lê Lợi, Quận 1",
+            dropoff_address: "456 Nguyễn Huệ, Quận 1",
+            fare_amount: 55000,
+            currency: "VND",
+            status: "DRIVER_TO_PICKUP",
+            passengers: 1,
+            created_at: isoNow(),
+          },
+        ],
+      });
+    }
+
+    if (path === "/api/v1/provider/services/operations/orders" && method === "GET") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, {
+        items: [
+          {
+            id: "order-op-1",
+            customer_name: "Trần Thị B",
+            items: [{ name: "Cơm tấm sườn bì chả", quantity: 2, price: 65000 }],
+            total_amount: 130000,
+            status: "RECEIVED",
+            created_at: isoNow(),
+          },
+        ],
+      });
+    }
+
+    if (path === "/api/v1/provider/services/operations/appointments" && method === "GET") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, {
+        items: [
+          {
+            id: "appt-op-1",
+            patient_name: "Lê Văn C",
+            specialty: "Khám Nội tổng quát",
+            type: "offline",
+            status: "CONFIRMED",
+            start_time: isoNow(),
+          },
+        ],
+      });
+    }
+
+    if (path.startsWith("/api/v1/provider/services/operations/rides/") && method === "PATCH") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, { updated: true });
+    }
+
+    if (path.startsWith("/api/v1/provider/services/operations/orders/") && method === "PATCH") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, { updated: true });
+    }
+
+    if (path.startsWith("/api/v1/provider/services/operations/appointments/") && method === "PATCH") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, { updated: true });
+    }
+
+    if (path === "/api/v1/provider/services/operations/seed-sample" && method === "POST") {
+      if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
+      return this.ok(route, { success: true, booking_id: "ride-op-sample-100" });
+    }
+
     return this.fail(route, 404, "NOT_FOUND", `${method} ${path} is not part of the fixture`);
   }
 
