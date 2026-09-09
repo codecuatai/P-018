@@ -24,6 +24,9 @@ const DEFAULT_VOICE_TRANSCRIBE_RATE_LIMIT = 20;
 const DEFAULT_FUTURE_AUTH_RATE_LIMIT = 5;
 const DEFAULT_AUTH_REFRESH_RATE_LIMIT = 60;
 const DEFAULT_PROVIDER_SERVICES_RATE_LIMIT = 60;
+const DEFAULT_MCP_RPC_RATE_LIMIT = 120;
+const DEFAULT_MCP_SESSION_TTL_SECONDS = 1800;
+const DEFAULT_MCP_ENABLED = true;
 const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
 const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS = 2_592_000;
 const DEFAULT_AUTH_REFRESH_REUSE_GRACE_SECONDS = 10;
@@ -173,6 +176,10 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   const futureAuthRateLimit = positiveInteger(config, 'GATEWAY_FUTURE_AUTH_RATE_LIMIT', DEFAULT_FUTURE_AUTH_RATE_LIMIT, 10_000);
   const authRefreshRateLimit = positiveInteger(config, 'GATEWAY_AUTH_REFRESH_RATE_LIMIT', DEFAULT_AUTH_REFRESH_RATE_LIMIT, 10_000);
   const providerServicesRateLimit = positiveInteger(config, 'GATEWAY_PROVIDER_SERVICES_RATE_LIMIT', DEFAULT_PROVIDER_SERVICES_RATE_LIMIT, 10_000);
+  const mcpRpcRateLimit = positiveInteger(config, 'GATEWAY_MCP_RPC_RATE_LIMIT', DEFAULT_MCP_RPC_RATE_LIMIT, 10_000);
+  const mcpSessionTtlSeconds = positiveInteger(config, 'MCP_SESSION_TTL_SECONDS', DEFAULT_MCP_SESSION_TTL_SECONDS, 86_400);
+  const mcpEnabledRaw = String(config.MCP_ENABLED ?? (DEFAULT_MCP_ENABLED ? 'true' : 'false')).toLowerCase();
+  if (!['true', 'false'].includes(mcpEnabledRaw)) throw new Error('MCP_ENABLED must be true or false.');
   const accessTokenTtlSeconds = positiveInteger(config, 'AUTH_ACCESS_TOKEN_TTL_SECONDS', DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECONDS, 3_600);
   const refreshTokenTtlSeconds = positiveInteger(config, 'AUTH_REFRESH_TOKEN_TTL_SECONDS', DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECONDS, 7_776_000);
   const refreshReuseGraceSeconds = nonNegativeInteger(config, 'AUTH_REFRESH_REUSE_GRACE_SECONDS', DEFAULT_AUTH_REFRESH_REUSE_GRACE_SECONDS, 300);
@@ -190,6 +197,9 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     GATEWAY_FUTURE_AUTH_RATE_LIMIT: futureAuthRateLimit,
     GATEWAY_AUTH_REFRESH_RATE_LIMIT: authRefreshRateLimit,
     GATEWAY_PROVIDER_SERVICES_RATE_LIMIT: providerServicesRateLimit,
+    GATEWAY_MCP_RPC_RATE_LIMIT: mcpRpcRateLimit,
+    MCP_SESSION_TTL_SECONDS: mcpSessionTtlSeconds,
+    MCP_ENABLED: mcpEnabledRaw === 'true',
     AUTH_ACCESS_TOKEN_TTL_SECONDS: accessTokenTtlSeconds,
     AUTH_REFRESH_TOKEN_TTL_SECONDS: refreshTokenTtlSeconds,
     AUTH_REFRESH_REUSE_GRACE_SECONDS: refreshReuseGraceSeconds,
@@ -248,6 +258,8 @@ export function getGatewaySecurityConfig(config: Record<string, unknown> = proce
       { name: 'provider.items.create', method: 'POST', path: '/api/v1/provider/services/items', maxRequests: Number(validated.GATEWAY_PROVIDER_SERVICES_RATE_LIMIT), windowMs },
       { name: 'provider.items.modify', method: 'PATCH', path: /^\/api\/v1\/provider\/services\/items\/[^/]+\/status$/, maxRequests: Number(validated.GATEWAY_PROVIDER_SERVICES_RATE_LIMIT), windowMs },
       { name: 'provider.items.delete', method: 'DELETE', path: /^\/api\/v1\/provider\/services\/items\/[^/]+$/, maxRequests: Number(validated.GATEWAY_PROVIDER_SERVICES_RATE_LIMIT), windowMs },
+      { name: 'mcp.rpc', method: 'POST', path: '/mcp', maxRequests: Number(validated.GATEWAY_MCP_RPC_RATE_LIMIT), windowMs },
+      { name: 'mcp.keys.create', method: 'POST', path: '/api/v1/provider/mcp-keys', maxRequests: Number(validated.GATEWAY_FUTURE_AUTH_RATE_LIMIT), windowMs },
     ],
   };
 }

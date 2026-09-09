@@ -262,7 +262,7 @@ export interface AssistantActionSuccessCommit {
   response: Record<string, unknown>;
 }
 
-export type ApiKeyProvider = 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other';
+export type ApiKeyProvider = 'gemini' | 'trello' | 'geoapify' | 'google_maps' | 'other' | 'mcp';
 export type ApiKeyStatus = 'active' | 'disabled' | 'expired';
 
 export interface ApiKeyRecord {

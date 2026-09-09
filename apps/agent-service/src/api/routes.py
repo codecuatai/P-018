@@ -664,6 +664,72 @@ async def ride_chat(
             raise HTTPException(status_code=500, detail="Unable to process the ride workflow.") from None
 
 
+@router.get("/external-mcp/configs")
+async def external_mcp_configs(_auth: None = Depends(require_internal_auth)) -> dict[str, Any]:
+    """List active external partner MCP configurations (no secrets)."""
+    from src.services.mcp_client.registry import get_mcp_config_registry
+
+    registry = get_mcp_config_registry()
+    configs = [
+        {
+            "provider_id": c.provider_id,
+            "mcp_url": c.mcp_url,
+            "enabled": c.enabled,
+            "allowed_tools": list(c.allowed_tools),
+        }
+        for c in registry.list_active()
+    ]
+    return {"data": {"configs": configs, "source": "external-mcp"}}
+
+
+@router.post("/external-mcp/tools/list")
+async def external_mcp_list_tools(
+    payload: dict[str, Any],
+    _auth: None = Depends(require_internal_auth),
+) -> dict[str, Any]:
+    """List tools from an external partner MCP server (allowlist filtered)."""
+    from src.services.mcp_client.router import get_external_mcp_router
+
+    provider_id = str(payload.get("provider_id", "")).strip()
+    if not provider_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "PROVIDER_ID_REQUIRED", "detail": "provider_id is required."},
+        )
+    result = await get_external_mcp_router().list_external_tools(provider_id)
+    return {"data": result}
+
+
+@router.post("/external-mcp/tools/call")
+async def external_mcp_call_tool(
+    payload: dict[str, Any],
+    _auth: None = Depends(require_internal_auth),
+) -> dict[str, Any]:
+    """Call an external partner MCP tool; falls back to internal on failure."""
+    from src.services.mcp_client.router import get_external_mcp_router
+
+    provider_id = str(payload.get("provider_id", "")).strip()
+    tool_name = str(payload.get("tool_name", "")).strip()
+    arguments = payload.get("arguments", {})
+    if not provider_id or not tool_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "PARAMS_REQUIRED", "detail": "provider_id and tool_name are required."},
+        )
+    if not isinstance(arguments, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "ARGUMENTS_INVALID", "detail": "arguments must be an object."},
+        )
+    result = await get_external_mcp_router().call_external_tool(
+        provider_id,
+        tool_name,
+        arguments,
+        correlation_id=payload.get("correlation_id"),
+    )
+    return {"data": result}
+
+
 @router.get("/status")
 async def agent_status(_auth: None = Depends(require_internal_auth)) -> dict[str, Any]:
     """Check agent readiness without exposing provider details."""

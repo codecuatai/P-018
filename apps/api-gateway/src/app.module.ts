@@ -19,6 +19,7 @@ import { ReliabilityModule } from './modules/workflow/reliability.module';
 import { ProductOpsModule } from './modules/product-ops/product-ops.controller';
 import { AdminModule } from './modules/admin/admin.module';
 import { VoiceModule } from './modules/voice/voice.module';
+import { McpModule } from './modules/mcp/mcp.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { VoiceModule } from './modules/voice/voice.module';
     ProductOpsModule,
     AdminModule,
     VoiceModule,
+    McpModule,
   ],
 })
 export class AppModule {}

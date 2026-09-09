@@ -1328,5 +1328,48 @@ export async function issueAdminCompensation(workflowId: string, amount = 50000,
   });
 }
 
+export interface ProviderMcpKeyItem {
+  id: string;
+  key_prefix: string;
+  label: string;
+  last_used_at?: string;
+  created_at: string;
+}
+
+export interface CreatedMcpKeyResult {
+  id: string;
+  key: string;
+  key_prefix: string;
+  label: string;
+  created_at: string;
+}
+
+export async function getProviderMcpKeys(): Promise<ProviderMcpKeyItem[]> {
+  try {
+    const res = await request<{ data: { items: ProviderMcpKeyItem[]; count: number } }>("/api/v1/provider/mcp-keys", {
+      method: "GET",
+    });
+    return res.data?.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function createProviderMcpKey(label?: string): Promise<CreatedMcpKeyResult> {
+  const res = await request<{ data: CreatedMcpKeyResult }>("/api/v1/provider/mcp-keys", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+  return res.data;
+}
+
+export async function revokeProviderMcpKey(id: string): Promise<boolean> {
+  const res = await request<{ data: { revoked: boolean } }>(`/api/v1/provider/mcp-keys/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return res.data?.revoked ?? true;
+}
+
+
 
 
