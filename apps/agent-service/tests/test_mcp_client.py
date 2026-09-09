@@ -4,7 +4,6 @@ import json
 
 import httpx
 import pytest
-
 from src.services.mcp_client.client import McpClient, McpClientError
 from src.services.mcp_client.registry import McpConfigRegistry, McpExternalConfig
 from src.services.mcp_client.router import ExternalMcpRouter
@@ -96,9 +95,7 @@ def test_registry_allowlist_behaviour():
     assert registry.is_tool_allowed("chain-b", "anything.at_all") is True
 
     # Disabled provider blocks everything
-    registry.register(
-        McpExternalConfig(provider_id="off-c", mcp_url="http://off.test", enabled=False)
-    )
+    registry.register(McpExternalConfig(provider_id="off-c", mcp_url="http://off.test", enabled=False))
     assert registry.is_tool_allowed("off-c", "anything.at_all") is False
 
 

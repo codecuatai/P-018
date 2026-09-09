@@ -85,7 +85,6 @@ class McpClient:
             req_headers["X-Correlation-Id"] = correlation_id
 
         # Retry once on transient connection failure
-        last_exc: Exception | None = None
         for attempt in range(2):
             try:
                 response = await self._client.post(
@@ -95,7 +94,6 @@ class McpClient:
                 )
                 break
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
-                last_exc = exc
                 if attempt == 0:
                     continue
                 raise McpClientError(f"Network error connecting to MCP server: {exc}") from exc
@@ -145,7 +143,11 @@ class McpClient:
     async def list_tools(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """List available tools with 10-minute caching."""
         now = time.time()
-        if not force_refresh and self._tools_cache is not None and (now - self._tools_cached_at) < self._cache_ttl_seconds:
+        if (
+            not force_refresh
+            and self._tools_cache is not None
+            and (now - self._tools_cached_at) < self._cache_ttl_seconds
+        ):
             return self._tools_cache
 
         result = await self._send_rpc("tools/list", {})
