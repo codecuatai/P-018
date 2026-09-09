@@ -369,7 +369,7 @@ export function AdminDashboard() {
                   onClick={() => void load()}
                   disabled={refreshing}
                   aria-label="Làm mới dashboard"
-                  style={{ height: "34px", padding: "0 12px", fontSize: "12px" }}
+                  style={{ height: "34px", padding: "0 12px", fontSize: "var(--text-xs)" }}
                 >
                   <RefreshCw size={14} className={refreshing ? "spin" : undefined} />
                   <span>{refreshing ? "Đang tải…" : "Làm mới"}</span>
@@ -781,7 +781,7 @@ function OverviewSummarySubtab({
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--color-border)", paddingBottom: "10px", marginBottom: "8px" }}>
                 <CardTitle title="Tín hiệu hệ thống" note="Probe thời gian thực" noBorder />
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.72rem", cursor: "pointer", color: "var(--color-muted)" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "var(--text-xs)", cursor: "pointer", color: "var(--color-muted)" }}>
                     <input
                       type="checkbox"
                       checked={autoPollHealth}
@@ -789,7 +789,7 @@ function OverviewSummarySubtab({
                     />
                     Auto-refresh (15s)
                   </label>
-                  <button className="button button-secondary" type="button" onClick={onRefreshHealth} style={{ padding: "0.2rem 0.5rem", fontSize: "0.7rem", height: "26px" }}>
+                  <button className="button button-secondary" type="button" onClick={onRefreshHealth} style={{ padding: "0.2rem 0.5rem", fontSize: "var(--text-xs)", height: "26px" }}>
                     <RefreshCw size={12} /> Probe ngay
                   </button>
                 </div>
@@ -854,7 +854,7 @@ function HealthSubtab({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.76rem", cursor: "pointer", color: "#166534", fontWeight: 600 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "var(--text-sm)", cursor: "pointer", color: "#166534", fontWeight: 600 }}>
             <input
               type="checkbox"
               checked={autoPollHealth}
@@ -862,7 +862,7 @@ function HealthSubtab({
             />
             Auto-refresh (15s)
           </label>
-          <button className="button button-secondary" type="button" onClick={onRefreshHealth} style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}>
+          <button className="button button-secondary" type="button" onClick={onRefreshHealth} style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)" }}>
             <RefreshCw size={13} /> Probe ngay
           </button>
         </div>
@@ -1115,7 +1115,7 @@ function UsersSubtab({
           className="button button-secondary"
           type="button"
           onClick={onManageServices}
-          style={{ fontSize: "11px", height: "32px", padding: "0 12px" }}
+          style={{ fontSize: "var(--text-micro)", height: "32px", padding: "0 12px" }}
         >
           <ShieldCheck size={14} />
           <span>Quản lý phân quyền dịch vụ →</span>
@@ -1129,7 +1129,7 @@ function UsersSubtab({
           style={{
             marginBottom: "12px",
             padding: "8px 14px",
-            fontSize: "12px",
+            fontSize: "var(--text-xs)",
             borderRadius: "8px",
             display: "flex",
             alignItems: "center",
@@ -1227,10 +1227,10 @@ function UsersSubtab({
                           <div className="admin-user-cell">
                             <span className="admin-user-avatar">{initials(u.full_name || u.email)}</span>
                             <div>
-                              <strong style={{ display: "block", color: "#0F172A", fontSize: "12px" }}>
+                              <strong style={{ display: "block", color: "#0F172A", fontSize: "var(--text-xs)" }}>
                                 {u.full_name || "Chưa đặt tên"}
                               </strong>
-                              <span style={{ color: "#64748B", fontSize: "11px" }}>{u.email}</span>
+                              <span style={{ color: "#64748B", fontSize: "var(--text-micro)" }}>{u.email}</span>
                             </div>
                           </div>
                         </td>
@@ -1249,7 +1249,7 @@ function UsersSubtab({
                               aria-label={`Thay đổi vai trò cho ${u.email}`}
                               style={{
                                 padding: "2px 8px",
-                                fontSize: "11px",
+                                fontSize: "var(--text-micro)",
                                 height: "26px",
                                 borderRadius: "6px",
                                 border: "1px solid #CBD5E1",
@@ -1275,7 +1275,7 @@ function UsersSubtab({
                         <td style={{ color: "#64748B" }}>{formatDate(u.created_at)}</td>
                         <td style={{ textAlign: "right", paddingRight: "16px" }}>
                           {currentUserId === u.id ? (
-                            <span style={{ fontSize: "11px", color: "#94A3B8", fontStyle: "italic" }}>Tài khoản của bạn</span>
+                            <span style={{ fontSize: "var(--text-micro)", color: "#94A3B8", fontStyle: "italic" }}>Tài khoản của bạn</span>
                           ) : u.status === "active" ? (
                             <button
                               className="admin-action-btn-suspend"
@@ -1319,7 +1319,7 @@ function UsersSubtab({
                       setCurrentPage(1);
                     }}
                     className="admin-select-filter"
-                    style={{ height: "28px", padding: "0 6px", fontSize: "11px" }}
+                    style={{ height: "28px", padding: "0 6px", fontSize: "var(--text-micro)" }}
                     aria-label="Số hàng mỗi trang"
                   >
                     <option value={5}>5 / trang</option>
@@ -1420,11 +1420,11 @@ function UsersSubtab({
           >
             <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
               <ShieldAlert size={22} style={{ color: "#EA580C" }} />
-              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600, color: "#0F172A" }}>
+              <h3 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 600, color: "#0F172A" }}>
                 Xác nhận thay đổi vai trò người dùng
               </h3>
             </div>
-            <p style={{ fontSize: "13px", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+            <p style={{ fontSize: "var(--text-sm)", color: "#475569", lineHeight: "var(--leading-normal)", marginBottom: "16px" }}>
               Bạn đang chuyển vai trò của tài khoản <strong>{roleChangeModal.user.full_name || roleChangeModal.user.email}</strong> từ{" "}
               <code style={{ background: "#F1F5F9", padding: "2px 6px", borderRadius: "4px" }}>{roleChangeModal.user.role}</code>{" "}
               sang{" "}
@@ -1434,7 +1434,7 @@ function UsersSubtab({
             </p>
             <div
               style={{
-                fontSize: "12px",
+                fontSize: "var(--text-xs)",
                 color: "#64748B",
                 background: "#F8FAFC",
                 padding: "10px 14px",
@@ -1516,7 +1516,7 @@ function TransactionsSubtab({
           type="button"
           onClick={onRetry}
           disabled={transactions.loading}
-          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+          style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)" }}
         >
           <RefreshCw size={13} className={transactions.loading ? "spin" : ""} /> Làm mới dữ liệu
         </button>
@@ -1727,7 +1727,7 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
             type="button"
             disabled={Boolean(compensatingId)}
             onClick={() => void handleCompensate("wf_manual_recovery")}
-            style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem", display: "inline-flex", alignItems: "center", gap: "5px" }}
+            style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)", display: "inline-flex", alignItems: "center", gap: "5px" }}
           >
             {compensatingId === "wf_manual_recovery" ? <LoaderCircle className="spin" size={13} /> : <ShieldAlert size={13} />}
             <span>Bù trừ sự cố (1-Click)</span>
@@ -1737,7 +1737,7 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
             type="button"
             onClick={onRetry}
             disabled={workflows.loading}
-            style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+            style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)" }}
           >
             <RefreshCw size={13} className={workflows.loading ? "spin" : ""} /> Làm mới trạng thái
           </button>
@@ -1745,7 +1745,7 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
       </div>
 
       {notice && (
-        <div style={{ marginBottom: "10px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+        <div style={{ marginBottom: "10px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-xs)", display: "flex", alignItems: "center", gap: "6px" }}>
           <CheckCircle2 size={14} />
           <span>{notice}</span>
         </div>
@@ -1857,14 +1857,14 @@ function FeatureFlagsSubtab() {
           type="button"
           onClick={() => void loadFlags()}
           disabled={loading}
-          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+          style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)" }}
         >
           <RefreshCw size={13} className={loading ? "spin" : ""} /> Làm mới
         </button>
       </div>
 
       {notice && (
-        <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+        <div style={{ marginBottom: "12px", padding: "8px 12px", borderRadius: "8px", background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-xs)", display: "flex", alignItems: "center", gap: "6px" }}>
           <CheckCircle2 size={14} />
           <span>{notice}</span>
         </div>
@@ -1890,27 +1890,27 @@ function FeatureFlagsSubtab() {
             >
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6px" }}>
-                  <strong style={{ fontSize: "14px", color: "#0F172A", fontFamily: "monospace" }}>{flag.flag_key}</strong>
+                  <strong style={{ fontSize: "var(--text-base)", color: "#0F172A", fontFamily: "var(--font-mono)" }}>{flag.flag_key}</strong>
                   <span
                     className="admin-role-badge"
                     style={{
                       background: flag.enabled ? "#ECFDF5" : "#F1F5F9",
                       color: flag.enabled ? "#065F46" : "#64748B",
                       border: `1px solid ${flag.enabled ? "#A7F3D0" : "#E2E8F0"}`,
-                      fontSize: "11px",
+                      fontSize: "var(--text-micro)",
                       fontWeight: 700,
                     }}
                   >
                     {flag.enabled ? "ĐANG BẬT" : "ĐÃ TẮT"}
                   </span>
                 </div>
-                <p style={{ margin: "4px 0 10px 0", fontSize: "12px", color: "#475569", lineHeight: 1.4 }}>
+                <p style={{ margin: "4px 0 10px 0", fontSize: "var(--text-xs)", color: "#475569", lineHeight: 1.4 }}>
                   {flag.description || "Không có mô tả chi tiết."}
                 </p>
               </div>
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "10px", borderTop: "1px solid #F1F5F9" }}>
-                <span style={{ fontSize: "10px", color: "#94A3B8" }}>
+                <span style={{ fontSize: "var(--text-micro)", color: "#94A3B8" }}>
                   Cập nhật: {new Date(flag.updated_at).toLocaleDateString("vi-VN")}
                 </span>
                 <button
@@ -1918,7 +1918,7 @@ function FeatureFlagsSubtab() {
                   disabled={updatingKey === flag.flag_key}
                   onClick={() => void handleToggle(flag.flag_key, flag.enabled)}
                   className={`button ${flag.enabled ? "button-secondary" : "button-primary"}`}
-                  style={{ height: "30px", padding: "0 12px", fontSize: "11px" }}
+                  style={{ height: "30px", padding: "0 12px", fontSize: "var(--text-micro)" }}
                 >
                   {updatingKey === flag.flag_key ? (
                     <LoaderCircle className="spin" size={13} />
@@ -1971,7 +1971,7 @@ function AuditLogsSubtab() {
           type="button"
           onClick={() => void fetchLogs(page)}
           disabled={loading}
-          style={{ height: "32px", padding: "0 10px", fontSize: "0.74rem" }}
+          style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)" }}
         >
           <RefreshCw size={13} className={loading ? "spin" : ""} /> Làm mới
         </button>
@@ -1979,8 +1979,8 @@ function AuditLogsSubtab() {
 
       <div className="admin-table-card">
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <strong style={{ fontSize: "13px", color: "#0F172A" }}>Nhật ký kiểm toán hệ thống ({total} bản ghi)</strong>
-          <span style={{ fontSize: "11px", color: "#64748B" }}>Bất biến · Lưu trữ PostgreSQL</span>
+          <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>Nhật ký kiểm toán hệ thống ({total} bản ghi)</strong>
+          <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Bất biến · Lưu trữ PostgreSQL</span>
         </div>
 
         {loading ? (
@@ -1989,7 +1989,7 @@ function AuditLogsSubtab() {
           <div className="admin-empty">Chưa có bản ghi kiểm toán nào được ghi nhận.</div>
         ) : (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-xs)" }}>
               <thead>
                 <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", textAlign: "left" }}>
                   <th style={{ padding: "10px 14px", color: "#475569", fontWeight: 700 }}>Thời gian</th>
@@ -2012,9 +2012,9 @@ function AuditLogsSubtab() {
                           display: "inline-block",
                           padding: "2px 8px",
                           borderRadius: "4px",
-                          fontSize: "11px",
+                          fontSize: "var(--text-micro)",
                           fontWeight: 700,
-                          fontFamily: "monospace",
+                          fontFamily: "var(--font-mono)",
                           background: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#ECFDF5" : log.action.includes("UPDATE") ? "#EEF2FF" : "#FFFBEB",
                           color: log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#047857" : log.action.includes("UPDATE") ? "#4338CA" : "#EA580C",
                           border: `1px solid ${log.action.includes("CREATE") || log.action.includes("COMPENSAT") ? "#A7F3D0" : log.action.includes("UPDATE") ? "#C7D2FE" : "#FDE68A"}`,
@@ -2023,13 +2023,13 @@ function AuditLogsSubtab() {
                         {log.action}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 14px", fontFamily: "monospace", color: "#334155" }}>
+                    <td style={{ padding: "10px 14px", fontFamily: "var(--font-mono)", color: "#334155" }}>
                       {log.actor_id || "system"}
                     </td>
                     <td style={{ padding: "10px 14px", color: "#475569" }}>
                       {log.target_type ? `${log.target_type}: ${log.target_id || "—"}` : "—"}
                     </td>
-                    <td style={{ padding: "10px 14px", color: "#64748B", fontFamily: "monospace" }}>
+                    <td style={{ padding: "10px 14px", color: "#64748B", fontFamily: "var(--font-mono)" }}>
                       {log.ip_address || "127.0.0.1"}
                     </td>
                     <td style={{ padding: "10px 14px", textAlign: "right" }}>
@@ -2037,13 +2037,13 @@ function AuditLogsSubtab() {
                         type="button"
                         onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}
                         className="button button-secondary"
-                        style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}
+                        style={{ height: "26px", padding: "0 8px", fontSize: "var(--text-micro)" }}
                       >
                         {expandedId === log.id ? "Đóng" : "Payload"}
                       </button>
                       {expandedId === log.id && (
                         <div style={{ marginTop: "6px", textAlign: "left" }}>
-                          <pre style={{ margin: 0, padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "11px", overflowX: "auto" }}>
+                          <pre style={{ margin: 0, padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "var(--text-micro)", overflowX: "auto" }}>
                             {JSON.stringify(log.details, null, 2)}
                           </pre>
                         </div>
@@ -2308,7 +2308,7 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
             padding: "8px 14px",
             background: "#F7FAFC",
             borderBottom: "1px solid #E7EDF1",
-            fontSize: "0.64rem",
+            fontSize: "var(--text-micro)",
             fontWeight: 700,
             color: "var(--color-muted-soft)",
             textTransform: "uppercase",
@@ -2336,7 +2336,7 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
               <span className={`admin-status-dot status-${item.status}`} aria-hidden="true" />
               <div>
                 <strong>{item.service}</strong>
-                {info && <span style={{ fontSize: "0.62rem", color: "var(--color-muted)", display: "block" }}>{info.tag}</span>}
+                {info && <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)", display: "block" }}>{info.tag}</span>}
               </div>
               <span
                 className={`admin-latency-badge ${
@@ -2357,7 +2357,7 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
                 {item.detail && Object.keys(item.detail).length > 0 ? (
                   <button
                     className="button button-secondary"
-                    style={{ padding: "0.15rem 0.5rem", fontSize: "0.7rem", height: "26px" }}
+                    style={{ padding: "0.15rem 0.5rem", fontSize: "var(--text-xs)", height: "26px" }}
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2367,7 +2367,7 @@ function HealthList({ items, compact = false }: { items: AdminHealthCheck[]; com
                     {isExpanded ? "Ẩn" : "Chi tiết"}
                   </button>
                 ) : (
-                  <span style={{ fontSize: "0.68rem", color: "var(--color-muted-soft)" }}>—</span>
+                  <span style={{ fontSize: "var(--text-xs)", color: "var(--color-muted-soft)" }}>—</span>
                 )}
               </div>
             </div>
@@ -2387,13 +2387,13 @@ function HealthDetailViewer({ detail }: { detail: Record<string, unknown> }) {
   return (
     <div className="admin-health-detail-card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", borderBottom: "1px dashed #E2E8F0", paddingBottom: "6px" }}>
-        <span style={{ fontSize: "0.66rem", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+        <span style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "#334155", textTransform: "uppercase", letterSpacing: "var(--tracking-normal)" }}>
           Kết quả kiểm tra chẩn đoán (Live Probe Response)
         </span>
         <button
           type="button"
           className="button button-secondary"
-          style={{ padding: "0.1rem 0.4rem", fontSize: "0.62rem", height: "22px" }}
+          style={{ padding: "0.1rem 0.4rem", fontSize: "var(--text-micro)", height: "22px" }}
           onClick={() => setShowJson(!showJson)}
         >
           {showJson ? "Ẩn JSON" : "Xem Raw JSON"}
@@ -2414,7 +2414,7 @@ function HealthDetailViewer({ detail }: { detail: Record<string, unknown> }) {
         })}
       </div>
       {showJson && (
-        <pre style={{ margin: "8px 0 0", padding: "8px 12px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "0.68rem", fontFamily: "monospace", overflowX: "auto" }}>
+        <pre style={{ margin: "8px 0 0", padding: "8px 12px", background: "#0F172A", color: "#F8FAFC", borderRadius: "6px", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", overflowX: "auto" }}>
           {JSON.stringify(detail, null, 2)}
         </pre>
       )}
@@ -2616,7 +2616,7 @@ function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void
     >
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <AlertTriangle size={18} color="#DC2626" />
-        <span style={{ fontSize: "0.76rem", fontWeight: 500 }}>{message}</span>
+        <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{message}</span>
       </div>
       <button
         className="button button-secondary"
@@ -2628,7 +2628,7 @@ function ErrorPanel({ message, onRetry }: { message: string; onRetry: () => void
           color: "#B91C1C",
           height: "30px",
           padding: "0 12px",
-          fontSize: "0.72rem",
+          fontSize: "var(--text-xs)",
           whiteSpace: "nowrap",
         }}
       >

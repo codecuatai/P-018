@@ -1,21 +1,21 @@
 .carousel { width: 100%; margin-top: 42px; }
 
 .sectionHeading { max-width: 720px; margin: 0 auto; text-align: center; }
-.sectionHeading h2 { margin: 0; color: var(--color-navy); font-size: clamp(2rem, 4vw, 3.45rem); font-weight: 760; letter-spacing: -0.065em; line-height: 1.03; }
-.sectionHeading p { max-width: 450px; margin: 17px auto 0; color: var(--color-muted); font-size: 0.92rem; line-height: 1.65; }
+.sectionHeading h2 { margin: 0; color: var(--color-navy); font-size: clamp(1.75rem, 3vw, 2.35rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
+.sectionHeading p { max-width: 450px; margin: 17px auto 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 
 .stageLayout {
   display: grid;
   grid-template-columns: minmax(0, 1.85fr) minmax(230px, 0.9fr);
-  gap: clamp(28px, 5vw, 72px);
+  gap: clamp(20px, 3vw, 40px);
   align-items: center;
   margin-top: 38px;
 }
 
 .previewColumn { min-width: 0; }
 .stageIntro { max-width: 450px; margin-bottom: 18px; }
-.stageIntro h3 { margin: 0; color: var(--color-navy); font-size: clamp(1.5rem, 2.7vw, 2.2rem); letter-spacing: -0.055em; }
-.stageIntro p { max-width: 390px; margin: 8px 0 0; color: var(--color-muted); font-size: 0.88rem; line-height: 1.65; }
+.stageIntro h3 { margin: 0; color: var(--color-navy); font-size: clamp(1.3rem, 2.2vw, 1.75rem); letter-spacing: -0.025em; }
+.stageIntro p { max-width: 390px; margin: 8px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 
 .previewStage { display: flex; min-width: 0; align-items: center; gap: 12px; }
 .previewViewport {
@@ -62,23 +62,23 @@
 .productTopbar { display: flex; align-items: center; gap: 12px; min-height: 55px; padding: 10px 16px; border-bottom: 1px solid var(--color-border); }
 .productBrand { display: inline-flex; align-items: center; gap: 7px; color: var(--color-navy); }
 .productBrand svg { color: var(--color-primary); }
-.productBrand strong { font-size: 0.84rem; letter-spacing: -0.03em; }
-.productView { color: var(--color-muted); font-size: 0.71rem; font-weight: 700; }
+.productBrand strong { font-size: var(--text-sm); letter-spacing: -0.03em; }
+.productView { color: var(--color-muted); font-size: var(--text-xs); font-weight: 700; }
 .productStatus { display: none; }
 
 .previewBody { display: grid; gap: 22px; padding: clamp(20px, 4vw, 36px); }
 .previewGreeting { display: grid; gap: 7px; }
-.previewGreeting span { color: var(--color-muted-soft); font-size: 0.72rem; }
-.previewGreeting strong { color: var(--color-navy); font-size: clamp(1.05rem, 2vw, 1.3rem); letter-spacing: -0.04em; }
+.previewGreeting span { color: var(--color-muted-soft); font-size: var(--text-xs); }
+.previewGreeting strong { color: var(--color-navy); font-size: clamp(1.05rem, 2vw, 1.3rem); letter-spacing: var(--tracking-tight); }
 
 .conversation { display: grid; gap: 16px; min-height: 170px; align-content: center; }
-.userBubble { justify-self: end; max-width: 78%; margin: 0; padding: 12px 14px; color: var(--color-surface); background: var(--color-primary); border-radius: 14px 14px 4px 14px; font-size: 0.78rem; line-height: 1.55; }
+.userBubble { justify-self: end; max-width: 78%; margin: 0; padding: 12px 14px; color: var(--color-surface); background: var(--color-primary); border-radius: 14px 14px 4px 14px; font-size: var(--text-sm); line-height: var(--leading-normal); }
 .assistantMessage { display: flex; align-items: flex-start; gap: 10px; max-width: 84%; }
 .assistantAvatar { display: grid; flex: 0 0 auto; width: 32px; height: 32px; place-items: center; color: var(--color-primary); background: var(--surface-ice); border: 1px solid #d6dffb; border-radius: 10px; }
-.assistantMessage strong { display: block; margin: 1px 0 5px; color: var(--color-navy); font-size: 0.73rem; }
-.assistantMessage p { margin: 0; padding: 12px 14px; color: var(--color-ink); background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 4px 14px 14px 14px; font-size: 0.78rem; line-height: 1.55; }
+.assistantMessage strong { display: block; margin: 1px 0 5px; color: var(--color-navy); font-size: var(--text-xs); }
+.assistantMessage p { margin: 0; padding: 12px 14px; color: var(--color-ink); background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: 4px 14px 14px 14px; font-size: var(--text-sm); line-height: var(--leading-normal); }
 
-.composerBar { display: flex; align-items: center; gap: 12px; min-height: 53px; padding: 8px 8px 8px 14px; color: var(--color-muted-soft); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 10px; font-size: 0.75rem; }
+.composerBar { display: flex; align-items: center; gap: 12px; min-height: 53px; padding: 8px 8px 8px 14px; color: var(--color-muted-soft); background: var(--color-surface); border: 1px solid var(--color-border-strong); border-radius: 10px; font-size: var(--text-sm); }
 .composerBar button { display: grid; width: 36px; height: 36px; margin-left: auto; place-items: center; color: var(--color-surface); background: var(--color-primary); border: 0; border-radius: 999px; }
 
 .resultStack { display: grid; gap: 7px; }
@@ -87,28 +87,28 @@
 .restaurantGlyph { color: var(--accent-restaurant); background: #faeef1; }
 .rideGlyph { color: var(--accent-ride); background: #eaf0ff; }
 .resultCard strong,
-.confirmationRow strong { display: block; color: var(--color-navy); font-size: 0.82rem; letter-spacing: -0.025em; }
+.confirmationRow strong { display: block; color: var(--color-navy); font-size: var(--text-sm); letter-spacing: -0.025em; }
 .resultCard p,
-.confirmationRow p { margin: 4px 0 0; color: var(--color-muted); font-size: 0.71rem; line-height: 1.45; }
-.resultAction { padding: 6px 9px; color: var(--color-primary-strong); background: var(--surface-ice); border: 1px solid rgb(49 94 245 / 16%); border-radius: 999px; font-size: 0.64rem; font-weight: 750; white-space: nowrap; }
+.confirmationRow p { margin: 4px 0 0; color: var(--color-muted); font-size: var(--text-xs); line-height: var(--leading-snug); }
+.resultAction { padding: 6px 9px; color: var(--color-primary-strong); background: var(--surface-ice); border: 1px solid rgb(49 94 245 / 16%); border-radius: 999px; font-size: var(--text-xs); font-weight: 700; white-space: nowrap; }
 .connector { display: flex; align-items: center; gap: 7px; height: 25px; margin-left: 18px; color: var(--color-primary); }
 .connector span { width: 1px; height: 100%; background: var(--color-primary); opacity: 0.35; }
-.previewHint { margin: 0; color: var(--color-muted-soft); font-size: 0.68rem; line-height: 1.5; }
+.previewHint { margin: 0; color: var(--color-muted-soft); font-size: var(--text-xs); line-height: 1.5; }
 
-.confirmationStatus { display: flex; align-items: center; justify-content: space-between; color: var(--color-success-ink); font-size: 0.74rem; font-weight: 750; }
+.confirmationStatus { display: flex; align-items: center; justify-content: space-between; color: var(--color-success-ink); font-size: var(--text-xs); font-weight: 700; }
 .confirmationStatus span { display: inline-flex; align-items: center; gap: 7px; }
 .confirmationStatus > svg { color: var(--color-success); }
 .confirmationRows { display: grid; gap: 0; border-top: 1px solid var(--color-border); border-bottom: 1px solid var(--color-border); }
 .confirmationRow { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 15px 0; }
 .confirmationRow + .confirmationRow { border-top: 1px solid var(--color-border); }
-.confirmationPrice { font-size: 0.78rem !important; white-space: nowrap; }
+.confirmationPrice { font-size: var(--text-xs) !important; white-space: nowrap; }
 .confirmationActions { display: flex; gap: 9px; }
-.confirmationActions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 9px 13px; border-radius: 999px; font-size: 0.73rem; font-weight: 750; transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.confirmationActions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 9px 13px; border-radius: 999px; font-size: var(--text-xs); font-weight: 700; transition: transform 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
 .confirmationActions button:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgb(22 50 79 / 9%); }
 .confirmationActions button:active { transform: scale(0.98); }
 .editButton { color: var(--color-navy); background: var(--color-surface); border: 1px solid var(--color-border-strong); }
 .confirmButton { color: var(--color-surface); background: var(--color-primary); border: 1px solid var(--color-primary); }
-.confirmationNote { margin: 0; color: var(--color-muted-soft); font-size: 0.67rem; }
+.confirmationNote { margin: 0; color: var(--color-muted-soft); font-size: var(--text-xs); }
 
 .stageControls {
   position: relative;
@@ -133,7 +133,7 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 13px;
-  font-size: 0.86rem;
+  font-size: var(--text-sm);
   font-weight: 680;
   text-align: left;
   isolation: isolate;
@@ -149,8 +149,8 @@
 .stageIcon { position: relative; z-index: 1; display: grid; width: 34px; height: 34px; place-items: center; color: var(--color-muted); background: var(--color-surface); border: 1px solid rgb(22 50 79 / 12%); border-radius: 50%; }
 .stageButtonActive .stageIcon { color: var(--color-primary-strong); border-color: rgb(49 94 245 / 30%); }
 .stageContent { position: relative; z-index: 1; display: grid; min-width: 0; gap: 3px; }
-.stageLabel { color: inherit; font-size: 0.86rem; font-weight: 700; line-height: 1.25; }
-.stageSupport { color: var(--color-muted); font-size: 0.69rem; font-weight: 500; line-height: 1.35; text-wrap: pretty; }
+.stageLabel { color: inherit; font-size: var(--text-sm); font-weight: 700; line-height: 1.25; }
+.stageSupport { color: var(--color-muted); font-size: var(--text-xs); font-weight: 500; line-height: 1.35; text-wrap: pretty; }
 .stageButtonActive .stageSupport { color: var(--color-navy); }
 
 @media (prefers-reduced-motion: reduce) {
@@ -173,13 +173,13 @@
   .previewSlide { align-items: start; padding: 14px; }
   .productTopbar { min-height: 49px; padding: 8px 12px; }
   .productView { display: none; }
-  .productStatus { font-size: 0.5rem; }
+  .productStatus { font-size: var(--text-micro); }
   .previewBody { gap: 18px; padding: 20px 16px; }
   .userBubble { max-width: 90%; }
   .resultCard { grid-template-columns: 34px minmax(0, 1fr); }
   .resultAction { grid-column: 2; justify-self: start; }
   .stageControls { padding-left: 24px; }
-  .stageButton { min-height: 72px; padding: 11px 12px; font-size: 0.69rem; }
-  .stageLabel { font-size: 0.73rem; }
-  .stageSupport { font-size: 0.62rem; }
+  .stageButton { min-height: 72px; padding: 11px 12px; font-size: var(--text-xs); }
+  .stageLabel { font-size: var(--text-xs); }
+  .stageSupport { font-size: var(--text-xs); }
 }

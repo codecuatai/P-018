@@ -17,14 +17,14 @@
 .heroStage { position: relative; z-index: 1; padding-top: clamp(45px, 8svh, 80px); }
 .heroCopy { position: relative; z-index: 0; max-width: 1120px; margin: 0 auto; isolation: isolate; text-align: center; }
 .heroCopy::before { position: absolute; z-index: -1; top: -112px; right: -220px; bottom: -92px; left: -220px; content: ""; background: radial-gradient(ellipse at center, rgb(245 248 250 / 80%) 0%, rgb(245 248 250 / 44%) 38%, rgb(245 248 250 / 12%) 65%, transparent 78%); filter: blur(11px); pointer-events: none; }
-.heroTitle { display: grid; row-gap: clamp(4px, 0.5vw, 10px); margin: 0; color: var(--color-navy); font-size: clamp(3.2rem, 5.15vw, 5rem); font-weight: 780; letter-spacing: -0.075em; line-height: 1.08; }
+.heroTitle { display: grid; row-gap: clamp(4px, 0.5vw, 10px); margin: 0; color: var(--color-navy); font-size: clamp(2.1rem, 4.2vw, 3.4rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
 .heroTitleLine { display: block; }
 .heroTitleSecond { font-size: 0.94em; }
-.heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-ink); font-size: 0.98rem; line-height: 1.7; }
-.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-navy); font-size: 0.79rem; font-weight: 650; }
+.heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-ink); font-size: var(--text-base); line-height: var(--leading-normal); }
+.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-navy); font-size: var(--text-sm); font-weight: 600; }
 .heroNote svg { color: var(--color-success); }
 
-.section { padding: clamp(54px, 6vw, 88px) 0; overflow: hidden; width: 100%; }
+.section { padding: var(--section-gap) 0; overflow: hidden; width: 100%; }
 .sectionHeading { max-width: 780px; }
 .sectionHeading h2,
 .storyCopy h2,
@@ -33,10 +33,10 @@
 .assistantCopy h2 {
   margin: 12px 0 0;
   color: var(--color-navy);
-  font-size: clamp(2rem, 4vw, 3.45rem);
-  font-weight: 760;
-  letter-spacing: -0.065em;
-  line-height: 1.03;
+  font-size: clamp(1.75rem, 3.2vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: var(--leading-tight);
 }
 
 .services { padding: 72px 0 84px; background: var(--surface-ice); }
@@ -44,27 +44,27 @@
 
 .how { padding: 68px 0 84px; background: var(--color-surface); }
 .howHeading { max-width: 720px; margin: 0 auto; text-align: center; }
-.howLead { max-width: 450px; margin: 17px auto 0; color: var(--color-muted); font-size: 0.92rem; line-height: 1.65; }
+.howLead { max-width: 450px; margin: 17px auto 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 .howCarouselReveal { width: 100%; }
 
 .story { padding: 72px 0 78px; background: var(--surface-sand); }
 .storyLayout,
-.editorialSplit { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(400px, 1.18fr); gap: clamp(40px, 8vw, 110px); align-items: center; }
+.editorialSplit { display: grid; grid-template-columns: minmax(0, 0.82fr) minmax(400px, 1.18fr); gap: clamp(24px, 4vw, 48px); align-items: center; }
 .storyCopy p,
 .mapCopy p,
 .safetyCopy > p,
-.assistantCopy > p { max-width: 550px; margin: 19px 0 0; color: var(--color-muted); font-size: 0.94rem; line-height: 1.7; }
+.assistantCopy > p { max-width: 550px; margin: 19px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 .storyVisual { min-width: 0; justify-self: end; }
 
 .map { padding: 64px 0 74px; background: var(--surface-mist); }
-.mapLayout { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(260px, 0.58fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
+.mapLayout { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(260px, 0.58fr); gap: clamp(20px, 3.5vw, 40px); align-items: center; }
 .mapCopy { min-width: 0; }
-.mediaNote { display: inline-block; margin-top: 25px; color: var(--color-muted-soft); font-size: 0.69rem; line-height: 1.5; }
+.mediaNote { display: inline-block; margin-top: 25px; color: var(--color-muted-soft); font-size: var(--text-xs); line-height: 1.5; }
 
 .safety { padding: 64px 0 72px; background: var(--color-surface); }
-.safetyPanel { grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr); gap: clamp(32px, 6vw, 84px); padding: clamp(24px, 4vw, 48px); background: var(--surface-mist); border: 1px solid #D5EAE5; border-radius: 16px; }
+.safetyPanel { grid-template-columns: minmax(0, 1.08fr) minmax(280px, 0.92fr); gap: clamp(20px, 3.5vw, 36px); padding: clamp(24px, 4vw, 48px); background: var(--surface-mist); border: 1px solid #D5EAE5; border-radius: 16px; }
 .safetyChecklist { position: relative; display: grid; gap: 0; padding: 4px 0; }
-.safetyChecklistItem { display: flex; align-items: flex-start; gap: 11px; padding: 14px 0; color: var(--color-navy); border-bottom: 1px solid rgb(14 142 131 / 16%); font-size: 1rem; font-weight: 500; line-height: 1.55; }
+.safetyChecklistItem { display: flex; align-items: flex-start; gap: 11px; padding: 14px 0; color: var(--color-navy); border-bottom: 1px solid rgb(14 142 131 / 16%); font-size: var(--text-base); font-weight: 500; line-height: var(--leading-normal); }
 .safetyChecklistItem:last-child { border-bottom: 0; }
 .safetyIcon { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; margin-top: -1px; color: var(--color-success); background: rgb(255 255 255 / 48%); border: 1px solid rgb(14 142 131 / 18%); border-radius: 8px; }
 .safetyChecklistItem > span:last-child { min-width: 0; text-wrap: pretty; }
@@ -74,8 +74,8 @@
 .assistantCopy { order: 1; }
 .assistantSignal { order: 2; display: grid; max-width: 600px; gap: 17px; padding: 30px; color: var(--color-navy); background: var(--color-surface); border: 1px solid rgb(22 50 79 / 12%); border-radius: 16px; box-shadow: 0 14px 30px rgb(22 50 79 / 6%); }
 .assistantSignal svg { color: var(--color-primary); }
-.assistantSignal p { margin: 0; font-size: clamp(1.2rem, 2.3vw, 1.65rem); font-weight: 650; letter-spacing: -0.045em; line-height: 1.25; }
-.assistantSignal span { color: var(--color-muted); font-size: 0.8rem; line-height: 1.6; }
+.assistantSignal p { margin: 0; font-size: clamp(1.2rem, 2.3vw, 1.65rem); font-weight: 600; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.assistantSignal span { color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .assistantUnderline { display: block; width: min(190px, 46%); height: 3px; margin-top: 24px; background: var(--color-primary); border-radius: 99px; transform-origin: left center; }
 .assistantCopy .textLink { margin-top: 26px; border-radius: 999px; text-decoration: none; }
 .assistantCopy .textLink:active { transform: translateY(0) scale(0.98); }
@@ -84,8 +84,8 @@
 .finalCtaLayout { position: relative; display: grid; grid-template-columns: minmax(0, 0.6fr) minmax(0, 0.4fr); min-height: 100svh; align-items: stretch; }
 .finalCtaCopy { position: relative; z-index: 2; align-self: end; padding: 0 clamp(28px, 5vw, 84px) clamp(92px, 30vh, 142px) max(24px, calc((100vw - 1160px) / 2)); }
 .finalCtaCopy > svg { color: var(--color-primary); }
-.finalCtaCopy h2 { max-width: 620px; margin: 22px 0 0; color: var(--color-navy); font-size: clamp(2.25rem, 4.7vw, 4.65rem); font-weight: 760; letter-spacing: -0.075em; line-height: 1.03; }
-.finalCtaCopy p { max-width: 360px; margin: 20px 0 0; color: var(--color-muted); font-size: 0.92rem; line-height: 1.65; }
+.finalCtaCopy h2 { max-width: 620px; margin: 22px 0 0; color: var(--color-navy); font-size: clamp(1.85rem, 3.8vw, 2.8rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
+.finalCtaCopy p { max-width: 360px; margin: 20px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 .ctaActions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; margin-top: 28px; }
 .cta :global(.button) { border-radius: 999px; transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, transform 200ms ease, box-shadow 200ms ease; }
 .cta :global(.button):hover { box-shadow: 0 9px 18px rgb(49 94 245 / 19%); }
@@ -93,7 +93,7 @@
 .finalCtaObject { position: absolute; z-index: 1; inset: 0 0 0 42%; display: flex; align-items: stretch; justify-content: flex-end; pointer-events: none; }
 .finalCtaObject img { display: block; width: auto; max-width: none; height: 100%; object-fit: contain; object-position: right bottom; transform: scale(1.16) translateX(2.5%); transform-origin: right bottom; }
 .finalObjectFallback { width: min(58vw, 820px); height: 100%; background: radial-gradient(circle at 55% 45%, rgb(49 94 245 / 24%), transparent 28%), linear-gradient(145deg, transparent 30%, rgb(217 224 231 / 84%) 30% 70%, transparent 70%); border-radius: 46% 54% 20% 24%; opacity: 0.75; }
-.footer { position: absolute; right: 0; bottom: 0; left: 0; padding: 17px 0; color: var(--color-muted); border-top: 1px solid rgb(22 50 79 / 11%); font-size: 0.68rem; }
+.footer { position: absolute; right: 0; bottom: 0; left: 0; padding: 17px 0; color: var(--color-muted); border-top: 1px solid rgb(22 50 79 / 11%); font-size: var(--text-xs); }
 .footer .container { display: flex; align-items: center; justify-content: space-between; }
 .footer span { flex-shrink: 0; white-space: nowrap; }
 
@@ -129,9 +129,9 @@
   .hero { min-height: 680px; padding: 90px 0 58px; }
   .heroCopy::before { top: -30px; right: -12px; bottom: -30px; left: -12px; }
   .heroStage { padding-top: clamp(24px, 4svh, 36px); }
-  .heroTitle { font-size: clamp(2.55rem, 10.9vw, 3.3rem); line-height: 1.08; }
+  .heroTitle { font-size: clamp(1.75rem, 5.5vw, 2.25rem); line-height: var(--leading-tight); }
   .heroTitleLine { white-space: normal; }
-  .heroLede { font-size: 0.91rem; }
+  .heroLede { font-size: var(--text-base); }
   .section { padding: 56px 0; }
   .services { padding: 56px 0 64px; }
   .how { padding: 52px 0 64px; }
@@ -143,11 +143,11 @@
   .storyCopy h2,
   .mapCopy h2,
   .safetyCopy h2,
-  .assistantCopy h2 { font-size: 1.82rem; }
+  .assistantCopy h2 { font-size: var(--text-3xl); }
   .safetyPanel { padding: 22px 18px; border-radius: 14px; }
   .assistantSignal { padding: 24px; }
   .finalCtaLayout { padding-top: 60px; padding-bottom: 78px; }
-  .finalCtaCopy h2 { font-size: clamp(2.2rem, 11vw, 3.1rem); }
+  .finalCtaCopy h2 { font-size: clamp(1.6rem, 5vw, 2.1rem); }
   .ctaActions { align-items: flex-start; flex-direction: column; gap: 15px; }
   .finalCtaObject { width: min(90vw, 470px); max-width: 100%; min-height: 52svh; margin: 12px 0 0 auto; }
   .finalObjectFallback { height: 52svh; }

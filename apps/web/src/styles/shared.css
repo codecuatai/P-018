@@ -12,7 +12,7 @@
 
 .skip-link:focus { transform: translateY(0); }
 
-.brand-link { display: inline-flex; align-items: center; gap: 9px; color: var(--color-navy); font-size: var(--text-lg); font-weight: 780; letter-spacing: -0.04em; white-space: nowrap; }
+.brand-link { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-navy); font-size: var(--text-lg); font-weight: 700; letter-spacing: var(--tracking-tighter); line-height: var(--leading-tight); white-space: nowrap; }
 
 .eyebrow {
   display: block;
@@ -21,8 +21,8 @@
   font-family: var(--font-sans);
   font-size: var(--text-micro);
   font-weight: 700;
-  letter-spacing: 0.11em;
-  line-height: 1.35;
+  letter-spacing: var(--tracking-wider);
+  line-height: var(--leading-snug);
 }
 
 .button {
@@ -36,7 +36,7 @@
   border-radius: 10px;
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.25;
   transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 120ms ease;
 }
@@ -88,7 +88,7 @@
   color: var(--color-primary);
   font-family: inherit;
   font-size: var(--text-base);
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: underline;
   text-decoration-color: rgb(79 70 229 / 35%);
   text-underline-offset: 4px;

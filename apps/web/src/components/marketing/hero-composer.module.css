@@ -18,13 +18,13 @@
 .topline { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 3px 12px; }
 .topline label,
 .topline span { flex-shrink: 0; white-space: nowrap; }
-.topline label { color: var(--color-navy); font-size: 0.86rem; font-weight: 750; }
-.topline span { color: var(--color-muted-soft); font-family: var(--font-sans); font-size: 0.61rem; letter-spacing: 0.08em; text-transform: uppercase; }
+.topline label { color: var(--color-navy); font-size: var(--text-sm); font-weight: 700; }
+.topline span { color: var(--color-muted-soft); font-family: var(--font-sans); font-size: var(--text-xs); letter-spacing: var(--tracking-wider); text-transform: uppercase; }
 
 .field { position: relative; min-height: 112px; padding: 13px 67px 12px 3px; border-top: 1px solid #E4E9ED; }
-.field textarea { position: relative; z-index: 1; display: block; width: 100%; min-height: 86px; padding: 0; color: var(--color-ink); background: transparent; border: 0; outline: 0; resize: none; font-size: 1rem; line-height: 1.6; }
+.field textarea { position: relative; z-index: 1; display: block; width: 100%; min-height: 86px; padding: 0; color: var(--color-ink); background: transparent; border: 0; outline: 0; resize: none; font-size: var(--text-lg); line-height: var(--leading-normal); }
 .field textarea::placeholder { color: transparent; }
-.prompt { position: absolute; top: 13px; right: 67px; left: 3px; color: #718093; font-size: 1rem; line-height: 1.6; pointer-events: none; }
+.prompt { position: absolute; top: 13px; right: 67px; left: 3px; color: #718093; font-size: var(--text-lg); line-height: var(--leading-normal); pointer-events: none; }
 .prompt span { display: block; }
 
 .submit {
@@ -45,7 +45,7 @@
 
 .submit:hover { background: var(--color-primary-strong); box-shadow: 0 7px 15px rgb(49 94 245 / 22%); transform: translateY(-1px); }
 .submit:active { transform: translateY(0) scale(0.98); }
-.footnote { display: flex; align-items: center; gap: 7px; margin: 11px 3px 0; color: var(--color-muted-soft); font-size: 0.68rem; }
+.footnote { display: flex; align-items: center; gap: 7px; margin: 11px 3px 0; color: var(--color-muted-soft); font-size: var(--text-xs); }
 .footnote svg { color: var(--color-success); }
 
 @media (min-width: 561px) {
@@ -56,8 +56,8 @@
   .composer { padding: 17px 16px 14px; margin-top: 27px; border-radius: 13px; }
   .topline span { display: none; }
   .field { min-height: 125px; padding-right: 58px; }
-  .prompt { right: 58px; font-size: 0.88rem; }
-  .field textarea { min-height: 100px; font-size: 0.9rem; }
+  .prompt { right: 58px; font-size: var(--text-base); }
+  .field textarea { min-height: 100px; font-size: var(--text-base); }
   .submit { width: 44px; height: 44px; }
-  .footnote { font-size: 0.63rem; line-height: 1.45; }
+  .footnote { font-size: var(--text-xs); line-height: var(--leading-snug); }
 }

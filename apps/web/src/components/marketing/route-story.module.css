@@ -77,7 +77,7 @@
 .destinationMarker text {
   fill: var(--color-navy);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: var(--text-base);
   font-weight: 700;
   paint-order: stroke;
   stroke: rgb(255 255 255 / 84%);
@@ -95,7 +95,7 @@
   background: rgb(255 255 255 / 78%);
   border: 1px solid rgb(22 50 79 / 9%);
   border-radius: 999px;
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -120,24 +120,24 @@
 .fallbackKicker {
   color: var(--color-primary-strong);
   font-family: var(--font-sans);
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   font-weight: 700;
-  letter-spacing: 0.09em;
+  letter-spacing: var(--tracking-wider);
 }
 
-.fallbackPanel strong { font-size: 1.12rem; letter-spacing: -0.04em; }
-.fallbackPanel p { margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.6; }
+.fallbackPanel strong { font-size: var(--text-xl); letter-spacing: var(--tracking-tight); }
+.fallbackPanel p { margin: 0; color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 
 @media (max-width: 820px) {
   .scene { min-height: 390px; }
   .originMarker text,
-  .destinationMarker text { font-size: 15px; }
+  .destinationMarker text { font-size: var(--text-sm); }
 }
 
 @media (max-width: 560px) {
   .scene,
   .sceneFallback { min-height: 300px; }
   .originMarker text,
-  .destinationMarker text { font-size: 12px; stroke-width: 6px; }
-  .sceneCaption { right: 9px; bottom: 9px; max-width: calc(100% - 18px); overflow: hidden; font-size: 0.56rem; text-overflow: ellipsis; }
+  .destinationMarker text { font-size: var(--text-xs); stroke-width: 6px; }
+  .sceneCaption { right: 9px; bottom: 9px; max-width: calc(100% - 18px); overflow: hidden; font-size: var(--text-micro); text-overflow: ellipsis; }
 }

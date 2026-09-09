@@ -617,10 +617,10 @@ export function ProviderPortal() {
                 {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email, "P")[0].toUpperCase()}
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: "12px", fontWeight: 650, color: "#0F172A", lineHeight: 1.2 }}>
+                <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "#0F172A", lineHeight: 1.2 }}>
                   {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email?.split("@")[0], isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác")}
                 </span>
-                <span style={{ fontSize: "10px", color: isMaster ? "#4338CA" : "#059669", fontWeight: 650 }}>
+                <span style={{ fontSize: "var(--text-micro)", color: isMaster ? "#4338CA" : "#059669", fontWeight: 600 }}>
                   {isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
                 </span>
               </div>
@@ -718,7 +718,7 @@ export function ProviderPortal() {
                   background: "#F1F5F9",
                   borderRadius: "10px",
                   border: "1px solid #E2E8F0",
-                  fontSize: "11px",
+                  fontSize: "var(--text-micro)",
                   color: "#64748B",
                   display: "flex",
                   flexDirection: "column",
@@ -727,7 +727,7 @@ export function ProviderPortal() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600, color: "#334155" }}>Mã đối tác:</span>
-                  <span style={{ fontFamily: "monospace", color: "#0F172A", fontWeight: 700 }}>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "#0F172A", fontWeight: 700 }}>
                     {profile?.tenantId || "PRV-ACTIVE"}
                   </span>
                 </div>
@@ -779,7 +779,7 @@ export function ProviderPortal() {
                     notify("Đang đồng bộ dữ liệu thời gian thực từ cơ sở dữ liệu...");
                   }}
                   className="button button-secondary"
-                  style={{ height: "34px", padding: "0 12px", fontSize: "12px" }}
+                  style={{ height: "34px", padding: "0 12px", fontSize: "var(--text-xs)" }}
                 >
                   <RefreshCw size={14} className={loadingOperations ? "spin" : ""} />
                   <span>{loadingOperations ? "Đang đồng bộ..." : "Đồng bộ dữ liệu"}</span>
@@ -794,7 +794,7 @@ export function ProviderPortal() {
                   marginBottom: "14px",
                   padding: "10px 14px",
                   borderRadius: "10px",
-                  fontSize: "13px",
+                  fontSize: "var(--text-sm)",
                   display: "flex",
                   alignItems: "center",
                   gap: "10px",
@@ -929,10 +929,10 @@ export function ProviderPortal() {
                           <Wallet size={18} />
                         </div>
                         <div>
-                          <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                          <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                             Doanh thu & Quyết toán Đối tác
                           </h2>
-                          <span style={{ fontSize: "12px", color: "#64748B" }}>
+                          <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
                             Tổng hợp doanh thu từ các chuyến đi, đơn món thực tế và khấu trừ tự động
                           </span>
                         </div>
@@ -946,7 +946,7 @@ export function ProviderPortal() {
                           disabled={loadingEarnings}
                           onClick={() => void reloadEarnings()}
                           className="button button-secondary"
-                          style={{ height: "30px", padding: "0 10px", fontSize: "11px", display: "flex", alignItems: "center", gap: "4px" }}
+                          style={{ height: "30px", padding: "0 10px", fontSize: "var(--text-micro)", display: "flex", alignItems: "center", gap: "4px" }}
                         >
                           <RefreshCw size={12} className={loadingEarnings ? "spin" : ""} />
                           <span>Làm mới</span>
@@ -956,41 +956,41 @@ export function ProviderPortal() {
 
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px" }}>
                       <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Tổng doanh thu (Gross)</span>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#0F172A", marginTop: "4px" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>Tổng doanh thu (Gross)</span>
+                        <div style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
                           {(earnings?.gross_revenue ?? 0).toLocaleString("vi-VN")} đ
                         </div>
-                        <span style={{ fontSize: "11px", color: "#059669", marginTop: "2px", display: "block" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#059669", marginTop: "2px", display: "block" }}>
                           Tích lũy từ {earnings?.total_completed_transactions ?? 0} đơn / cuốc thành công
                         </span>
                       </div>
 
                       <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Chiết khấu nền tảng X-One ({earnings?.platform_fee_rate ?? "10%"})</span>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#DC2626", marginTop: "4px" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>Chiết khấu nền tảng X-One ({earnings?.platform_fee_rate ?? "10%"})</span>
+                        <div style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "#DC2626", marginTop: "4px" }}>
                           -{(earnings?.platform_fee ?? 0).toLocaleString("vi-VN")} đ
                         </div>
-                        <span style={{ fontSize: "11px", color: "#64748B", marginTop: "2px", display: "block" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "2px", display: "block" }}>
                           Phí duy trì hạ tầng & điều phối AI
                         </span>
                       </div>
 
                       <div style={{ padding: "14px", background: "#ECFDF5", borderRadius: "10px", border: "1px solid #A7F3D0" }}>
-                        <span style={{ fontSize: "11px", color: "#065F46", fontWeight: 600 }}>Thực nhận đối tác (Net Payout)</span>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669", marginTop: "4px" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#065F46", fontWeight: 600 }}>Thực nhận đối tác (Net Payout)</span>
+                        <div style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "#059669", marginTop: "4px" }}>
                           {(earnings?.net_payout ?? 0).toLocaleString("vi-VN")} đ
                         </div>
-                        <span style={{ fontSize: "11px", color: "#047857", marginTop: "2px", display: "block" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#047857", marginTop: "2px", display: "block" }}>
                           Số dư sẵn sàng rút về tài khoản ngân hàng
                         </span>
                       </div>
 
                       <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
-                        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>Trạng thái quyết toán</span>
-                        <div style={{ fontSize: "14px", fontWeight: 700, color: "#4F46E5", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>Trạng thái quyết toán</span>
+                        <div style={{ fontSize: "var(--text-base)", fontWeight: 700, color: "#4F46E5", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
                           <CheckCircle2 size={16} /> {earnings?.payout_status ?? "Sẵn sàng quyết toán"}
                         </div>
-                        <span style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", display: "block" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "4px", display: "block" }}>
                           Cập nhật: {earnings?.last_calculated_at ? new Date(earnings.last_calculated_at).toLocaleTimeString("vi-VN") : "Thời gian thực"}
                         </span>
                       </div>
@@ -1005,17 +1005,17 @@ export function ProviderPortal() {
                           <Building2 size={18} />
                         </div>
                         <div>
-                          <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                          <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                             Hồ sơ Cơ sở & Thiết lập Kết nối
                           </h2>
-                          <span style={{ fontSize: "12px", color: "#64748B" }}>
+                          <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
                             Thông tin thương hiệu hiển thị cho khách hàng và cấu hình nhận thông báo tự động
                           </span>
                         </div>
                       </div>
 
                       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontSize: "12px", fontWeight: 600, color: profileForm.isOpen ? "#059669" : "#64748B" }}>
+                        <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: profileForm.isOpen ? "#059669" : "#64748B" }}>
                           {profileForm.isOpen ? "Cửa hàng đang mở" : "Đang tạm đóng"}
                         </span>
                         <button
@@ -1027,8 +1027,8 @@ export function ProviderPortal() {
                             gap: "6px",
                             padding: "6px 12px",
                             borderRadius: "8px",
-                            fontSize: "12px",
-                            fontWeight: 650,
+                            fontSize: "var(--text-xs)",
+                            fontWeight: 600,
                             cursor: "pointer",
                             border: "none",
                             background: profileForm.isOpen ? "#ECFDF5" : "#F1F5F9",
@@ -1043,7 +1043,7 @@ export function ProviderPortal() {
 
                     <form onSubmit={handleSaveProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
                       <div>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Tên thương hiệu / Cơ sở kinh doanh
                         </label>
                         <input
@@ -1051,13 +1051,13 @@ export function ProviderPortal() {
                           value={profileForm.businessName}
                           onChange={(e) => setProfileForm({ ...profileForm, businessName: e.target.value })}
                           placeholder="VD: Quán Ăn Ngon Sài Gòn, Taxi Công Nghệ Hùng..."
-                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                           required
                         />
                       </div>
 
                       <div>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Số điện thoại liên hệ
                         </label>
                         <input
@@ -1065,12 +1065,12 @@ export function ProviderPortal() {
                           value={profileForm.phone}
                           onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                           placeholder="VD: 0901234567"
-                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                         />
                       </div>
 
                       <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Địa chỉ cơ sở / Trụ sở hoạt động
                         </label>
                         <input
@@ -1078,12 +1078,12 @@ export function ProviderPortal() {
                           value={profileForm.address}
                           onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
                           placeholder="VD: 123 Nguyễn Huệ, Bến Nghé, Quận 1, TP. Hồ Chí Minh"
-                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                         />
                       </div>
 
                       <div style={{ gridColumn: "1 / -1" }}>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Webhook URL nhận sự kiện từ X-One (Tùy chọn dành cho tích hợp hệ thống ngoài / POS)
                         </label>
                         <div style={{ display: "flex", gap: "8px" }}>
@@ -1092,10 +1092,10 @@ export function ProviderPortal() {
                             value={profileForm.webhookUrl}
                             onChange={(e) => setProfileForm({ ...profileForm, webhookUrl: e.target.value })}
                             placeholder="https://api.doitac.vn/webhooks/xone-events"
-                            style={{ flex: 1, height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                            style={{ flex: 1, height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                           />
                         </div>
-                        <span style={{ fontSize: "11px", color: "#64748B", marginTop: "4px", display: "block" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "4px", display: "block" }}>
                           X-One sẽ gửi webhook HTTP POST kèm chữ ký bảo mật HMAC-SHA256 khi có cuốc xe hoặc đơn món mới.
                         </span>
 
@@ -1104,16 +1104,16 @@ export function ProviderPortal() {
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                               <Code size={15} style={{ color: "#4F46E5" }} />
-                              <strong style={{ fontSize: "13px", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
+                              <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
                             </div>
-                            <span style={{ fontSize: "11px", color: "#64748B" }}>HMAC-SHA256 Signed · Timeout 5s</span>
+                            <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>HMAC-SHA256 Signed · Timeout 5s</span>
                           </div>
 
                           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
                             <select
                               value={webhookEvent}
                               onChange={(e) => setWebhookEvent(e.target.value)}
-                              style={{ height: "34px", padding: "0 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "12px", background: "#FFFFFF" }}
+                              style={{ height: "34px", padding: "0 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "var(--text-xs)", background: "#FFFFFF" }}
                             >
                               <option value="ride.booking.confirmed">ride.booking.confirmed (Cuốc xe đã xác nhận)</option>
                               <option value="food.order.received">food.order.received (Đơn món quán ăn mới)</option>
@@ -1125,7 +1125,7 @@ export function ProviderPortal() {
                               disabled={testingWebhook}
                               onClick={() => void handleTestWebhook()}
                               className="button button-secondary"
-                              style={{ height: "34px", padding: "0 14px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                              style={{ height: "34px", padding: "0 14px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
                             >
                               {testingWebhook ? <LoaderCircle className="spin" size={13} /> : <Send size={13} />}
                               <span>{testingWebhook ? "Đang phát webhook…" : "Gửi thử nghiệm Live"}</span>
@@ -1137,22 +1137,22 @@ export function ProviderPortal() {
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                                   {webhookTestResult.success ? <CheckCircle2 size={15} color="#059669" /> : <AlertTriangle size={15} color="#DC2626" />}
-                                  <strong style={{ fontSize: "12px", color: webhookTestResult.success ? "#065F46" : "#991B1B" }}>
+                                  <strong style={{ fontSize: "var(--text-xs)", color: webhookTestResult.success ? "#065F46" : "#991B1B" }}>
                                     {webhookTestResult.success ? `Giao tiếp thành công (HTTP ${webhookTestResult.status_code})` : `Giao tiếp thất bại (HTTP ${webhookTestResult.status_code || "Error"})`}
                                   </strong>
                                 </div>
-                                <span style={{ fontSize: "11px", color: "#64748B" }}>Độ trễ: <strong>{webhookTestResult.latency_ms}ms</strong></span>
+                                <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Độ trễ: <strong>{webhookTestResult.latency_ms}ms</strong></span>
                               </div>
 
                               {webhookTestResult.error_message && (
-                                <div style={{ fontSize: "12px", color: "#DC2626", marginBottom: "6px" }}>
+                                <div style={{ fontSize: "var(--text-xs)", color: "#DC2626", marginBottom: "6px" }}>
                                   Chi tiết lỗi: {webhookTestResult.error_message}
                                 </div>
                               )}
 
                               <details style={{ marginTop: "6px" }}>
-                                <summary style={{ fontSize: "11px", color: "#475569", cursor: "pointer", fontWeight: 600 }}>Xem Chi tiết Giao tiếp & Chữ ký HMAC</summary>
-                                <pre style={{ margin: "6px 0 0", padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "4px", fontSize: "11px", overflowX: "auto" }}>
+                                <summary style={{ fontSize: "var(--text-micro)", color: "#475569", cursor: "pointer", fontWeight: 600 }}>Xem Chi tiết Giao tiếp & Chữ ký HMAC</summary>
+                                <pre style={{ margin: "6px 0 0", padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "4px", fontSize: "var(--text-micro)", overflowX: "auto" }}>
                                   {JSON.stringify({
                                     target_url: webhookTestResult.target_url,
                                     event_sent: webhookTestResult.event_sent,
@@ -1171,7 +1171,7 @@ export function ProviderPortal() {
                           type="submit"
                           disabled={savingProfile}
                           className="button button-primary"
-                          style={{ height: "36px", padding: "0 18px", fontSize: "13px", fontWeight: 650 }}
+                          style={{ height: "36px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
                         >
                           {savingProfile ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
                           <span>{savingProfile ? "Đang lưu…" : "Lưu cập nhật hồ sơ"}</span>
@@ -1184,10 +1184,10 @@ export function ProviderPortal() {
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
                       <div>
-                        <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                        <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                           Danh sách Dịch vụ / Sản phẩm đã gắn vào X-One ({serviceItems.length})
                         </h2>
-                        <span style={{ fontSize: "12px", color: "#64748B" }}>
+                        <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
                           Các món ăn, phương tiện, chuyên khoa này sẵn sàng được tìm kiếm và đặt bởi người dùng X-One
                         </span>
                       </div>
@@ -1196,7 +1196,7 @@ export function ProviderPortal() {
                         type="button"
                         onClick={() => openAddItemModal()}
                         className="button button-primary"
-                        style={{ height: "36px", padding: "0 16px", fontSize: "13px", display: "flex", alignItems: "center", gap: "6px" }}
+                        style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", gap: "6px" }}
                       >
                         <Plus size={15} />
                         <span>Gắn Dịch Vụ / Món Ăn Mới</span>
@@ -1206,21 +1206,21 @@ export function ProviderPortal() {
                     {serviceItems.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
                         <Layers size={36} style={{ margin: "0 auto 10px", color: "#94A3B8" }} />
-                        <p style={{ margin: "0 0 10px", fontSize: "14px", fontWeight: 600, color: "#0F172A" }}>
+                        <p style={{ margin: "0 0 10px", fontSize: "var(--text-base)", fontWeight: 600, color: "#0F172A" }}>
                           Chưa có dịch vụ nào được gắn vào hệ thống.
                         </p>
                         <button
                           type="button"
                           onClick={() => openAddItemModal()}
                           className="button button-primary"
-                          style={{ fontSize: "12px", padding: "6px 14px" }}
+                          style={{ fontSize: "var(--text-xs)", padding: "6px 14px" }}
                         >
                           Bấm để gắn dịch vụ đầu tiên
                         </button>
                       </div>
                     ) : (
                       <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                           <thead>
                             <tr style={{ borderBottom: "1px solid #E2E8F0", textAlign: "left", background: "#F8FAFC" }}>
                               <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Tên Dịch vụ / Món</th>
@@ -1236,7 +1236,7 @@ export function ProviderPortal() {
                                 <td style={{ padding: "12px 14px" }}>
                                   <strong style={{ color: "#0F172A", display: "block" }}>{item.name}</strong>
                                   {item.description && (
-                                    <span style={{ fontSize: "11px", color: "#64748B" }}>{item.description}</span>
+                                    <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>{item.description}</span>
                                   )}
                                 </td>
                                 <td style={{ padding: "12px 14px" }}>
@@ -1262,7 +1262,7 @@ export function ProviderPortal() {
                                           ? "#C7D2FE"
                                           : "#A7F3D0"
                                       }`,
-                                      fontWeight: 650,
+                                      fontWeight: 600,
                                     }}
                                   >
                                     {item.category || (item.domain === "food" ? "Món ăn" : item.domain === "ride" ? "Xe di chuyển" : "Y tế")}
@@ -1279,8 +1279,8 @@ export function ProviderPortal() {
                                       gap: "5px",
                                       padding: "3px 8px",
                                       borderRadius: "6px",
-                                      fontSize: "11px",
-                                      fontWeight: 650,
+                                      fontSize: "var(--text-micro)",
+                                      fontWeight: 600,
                                       background: item.isAvailable ? "#ECFDF5" : "#F1F5F9",
                                       color: item.isAvailable ? "#047857" : "#64748B",
                                     }}
@@ -1302,7 +1302,7 @@ export function ProviderPortal() {
                                       type="button"
                                       onClick={() => void handleToggleItem(item.id, item.isAvailable)}
                                       className="admin-action-btn admin-action-btn-test"
-                                      style={{ height: "28px", padding: "0 8px", fontSize: "11px" }}
+                                      style={{ height: "28px", padding: "0 8px", fontSize: "var(--text-micro)" }}
                                       title="Bật / Tắt trạng thái"
                                     >
                                       {item.isAvailable ? "Tạm ẩn" : "Mở bán"}
@@ -1354,7 +1354,7 @@ export function ProviderPortal() {
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                      <h3 style={{ fontSize: "16px", fontWeight: 750, margin: 0, color: "#0F172A" }}>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 750, margin: 0, color: "#0F172A" }}>
                         Gắn Dịch Vụ / Món Ăn Mới Vào X-One
                       </h3>
                       <button
@@ -1368,7 +1368,7 @@ export function ProviderPortal() {
 
                     <form onSubmit={handleAddItem} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                       <div>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Lĩnh vực dịch vụ {isMaster ? "(Toàn quyền Master 4 Dịch vụ)" : "(Cố định theo lĩnh vực đăng ký)"}
                         </label>
                         <div style={{ display: "grid", gridTemplateColumns: isMaster ? "repeat(3, 1fr)" : "1fr", gap: "8px" }}>
@@ -1379,7 +1379,7 @@ export function ProviderPortal() {
                               style={{
                                 padding: "8px",
                                 borderRadius: "8px",
-                                fontSize: "12px",
+                                fontSize: "var(--text-xs)",
                                 fontWeight: 600,
                                 border: `1px solid ${newItem.domain === "food" ? "#F59E0B" : "#CBD5E1"}`,
                                 background: newItem.domain === "food" ? "#FFFBEB" : "#FFFFFF",
@@ -1397,7 +1397,7 @@ export function ProviderPortal() {
                               style={{
                                 padding: "8px",
                                 borderRadius: "8px",
-                                fontSize: "12px",
+                                fontSize: "var(--text-xs)",
                                 fontWeight: 600,
                                 border: `1px solid ${newItem.domain === "ride" ? "#6366F1" : "#CBD5E1"}`,
                                 background: newItem.domain === "ride" ? "#EEF2FF" : "#FFFFFF",
@@ -1415,7 +1415,7 @@ export function ProviderPortal() {
                               style={{
                                 padding: "8px",
                                 borderRadius: "8px",
-                                fontSize: "12px",
+                                fontSize: "var(--text-xs)",
                                 fontWeight: 600,
                                 border: `1px solid ${newItem.domain === "healthcare" ? "#10B981" : "#CBD5E1"}`,
                                 background: newItem.domain === "healthcare" ? "#ECFDF5" : "#FFFFFF",
@@ -1430,7 +1430,7 @@ export function ProviderPortal() {
                       </div>
 
                       <div>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Tên dịch vụ / Món ăn / Phương tiện
                         </label>
                         <input
@@ -1438,14 +1438,14 @@ export function ProviderPortal() {
                           value={newItem.name}
                           onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                           placeholder="VD: Bún Bò Huế Đặc Biệt, Xe Sedona 7 Chỗ..."
-                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                          style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                           required
                         />
                       </div>
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                         <div>
-                          <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                          <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                             Đơn giá (VND)
                           </label>
                           <input
@@ -1454,13 +1454,13 @@ export function ProviderPortal() {
                             onChange={(e) => setNewItem({ ...newItem, price: Number(e.target.value) })}
                             min={0}
                             step={1000}
-                            style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                            style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                             required
                           />
                         </div>
 
                         <div>
-                          <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                          <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                             Phân loại / Chuyên mục
                           </label>
                           <input
@@ -1468,13 +1468,13 @@ export function ProviderPortal() {
                             value={newItem.category}
                             onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
                             placeholder="VD: Món chính, Xe cao cấp..."
-                            style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px" }}
+                            style={{ width: "100%", height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
                           />
                         </div>
                       </div>
 
                       <div>
-                        <label style={{ display: "block", fontSize: "12px", fontWeight: 650, color: "#334155", marginBottom: "6px" }}>
+                        <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Mô tả dịch vụ
                         </label>
                         <textarea
@@ -1482,7 +1482,7 @@ export function ProviderPortal() {
                           onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
                           placeholder="Mô tả thành phần, tiện ích phương tiện hoặc khung giờ tiếp nhận..."
                           rows={3}
-                          style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "13px", resize: "none" }}
+                          style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)", resize: "none" }}
                         />
                       </div>
 
@@ -1491,7 +1491,7 @@ export function ProviderPortal() {
                           type="button"
                           onClick={() => setShowAddItemModal(false)}
                           className="button button-secondary"
-                          style={{ height: "36px", padding: "0 14px", fontSize: "13px" }}
+                          style={{ height: "36px", padding: "0 14px", fontSize: "var(--text-sm)" }}
                         >
                           Hủy
                         </button>
@@ -1499,7 +1499,7 @@ export function ProviderPortal() {
                           type="submit"
                           disabled={submittingItem}
                           className="button button-primary"
-                          style={{ height: "36px", padding: "0 18px", fontSize: "13px", fontWeight: 650 }}
+                          style={{ height: "36px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
                         >
                           {submittingItem ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />}
                           <span>{submittingItem ? "Đang gắn…" : "Xác nhận gắn dịch vụ"}</span>
@@ -1531,10 +1531,10 @@ export function ProviderPortal() {
                       >
                         <Car size={26} />
                       </div>
-                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
                         Chưa có chuyến xe nào đang điều phối
                       </h3>
-                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "520px", margin: "0 auto 20px" }}>
+                      <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "520px", margin: "0 auto 20px" }}>
                         Hệ thống đối tác được kết nối trực tiếp với microservice <code>ride-service</code> và cơ sở dữ liệu PostgreSQL thực tế. Bạn có thể nhấn nút bên dưới để tạo ngay một chuyến đi thử nghiệm trực tiếp vào database.
                       </p>
                       <div style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
@@ -1543,7 +1543,7 @@ export function ProviderPortal() {
                           disabled={seedingDomain === "ride" || loadingOperations}
                           onClick={() => void handleSeedSample("ride")}
                           className="button button-primary"
-                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "13px", fontWeight: 650 }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
                         >
                           {seedingDomain === "ride" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
                           <span>{seedingDomain === "ride" ? "Đang ghi vào PostgreSQL…" : "Tạo chuyến đi mẫu vào PostgreSQL"}</span>
@@ -1553,7 +1553,7 @@ export function ProviderPortal() {
                           disabled={loadingOperations}
                           onClick={() => void reloadOperations()}
                           className="button button-secondary"
-                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 14px", fontSize: "13px" }}
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 14px", fontSize: "var(--text-sm)" }}
                         >
                           {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
                           <span>Làm mới dữ liệu</span>
@@ -1564,12 +1564,12 @@ export function ProviderPortal() {
                     <div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                          <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                             Cuốc xe đang điều phối ({allRides.length} chuyến trong hệ thống)
                           </h2>
                           <span
                             className="admin-role-badge"
-                            style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                            style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                           >
                             PostgreSQL Live Data
                           </span>
@@ -1580,7 +1580,7 @@ export function ProviderPortal() {
                             disabled={seedingDomain === "ride" || loadingOperations}
                             onClick={() => void handleSeedSample("ride")}
                             className="button button-secondary"
-                            style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
                           >
                             {seedingDomain === "ride" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
                             <span>Tạo thêm cuốc xe mẫu</span>
@@ -1590,7 +1590,7 @@ export function ProviderPortal() {
                             disabled={loadingOperations}
                             onClick={() => void reloadOperations()}
                             className="button button-secondary"
-                            style={{ height: "32px", padding: "0 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                            style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
                             title="Tải lại từ PostgreSQL"
                           >
                             <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
@@ -1602,19 +1602,19 @@ export function ProviderPortal() {
                       <div className="admin-table-card" style={{ padding: "20px", marginBottom: allRides.length > 1 ? "20px" : "0" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                           <div>
-                            <span style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A" }}>
+                            <span style={{ fontSize: "var(--text-base)", fontWeight: 700, color: "#0F172A" }}>
                               Chuyến xe hiện tại
                             </span>
-                            <div style={{ fontSize: "12px", color: "#64748B", marginTop: "2px" }}>
+                            <div style={{ fontSize: "var(--text-xs)", color: "#64748B", marginTop: "2px" }}>
                               Mã cuốc (PostgreSQL): <strong style={{ color: "#334155" }}>{activeRide.id}</strong>
                             </div>
                           </div>
 
                           <div style={{ textAlign: "right" }}>
-                            <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669" }}>
+                            <div style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "#059669" }}>
                               {activeRide.fare.toLocaleString("vi-VN")} {activeRide.currency}
                             </div>
-                            <span style={{ fontSize: "12px", color: "#64748B" }}>Thanh toán qua Ví X-One</span>
+                            <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>Thanh toán qua Ví X-One</span>
                           </div>
                         </div>
 
@@ -1633,10 +1633,10 @@ export function ProviderPortal() {
                                 {activeRide.passengerName[0]}
                               </div>
                               <div>
-                                <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
+                                <strong style={{ fontSize: "var(--text-base)", color: "#0F172A", display: "block" }}>
                                   {activeRide.passengerName}
                                 </strong>
-                                <span style={{ fontSize: "12px", color: "#64748B" }}>Đặt {activeRide.time}</span>
+                                <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>Đặt {activeRide.time}</span>
                               </div>
                             </div>
 
@@ -1665,10 +1665,10 @@ export function ProviderPortal() {
                                 <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#4F46E5" }} />
                               </div>
                               <div>
-                                <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
+                                <div style={{ fontSize: "var(--text-micro)", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
                                   Điểm đón khách
                                 </div>
-                                <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.pickup}</div>
+                                <div style={{ fontSize: "var(--text-sm)", color: "#0F172A", fontWeight: 600 }}>{activeRide.pickup}</div>
                               </div>
                             </div>
 
@@ -1677,10 +1677,10 @@ export function ProviderPortal() {
                                 <MapPin size={15} style={{ color: "#EF4444" }} />
                               </div>
                               <div>
-                                <div style={{ fontSize: "10px", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
+                                <div style={{ fontSize: "var(--text-micro)", color: "#64748B", textTransform: "uppercase", fontWeight: 700 }}>
                                   Điểm trả khách
                                 </div>
-                                <div style={{ fontSize: "13px", color: "#0F172A", fontWeight: 600 }}>{activeRide.destination}</div>
+                                <div style={{ fontSize: "var(--text-sm)", color: "#0F172A", fontWeight: 600 }}>{activeRide.destination}</div>
                               </div>
                             </div>
                           </div>
@@ -1689,7 +1689,7 @@ export function ProviderPortal() {
                         {/* Actions & Status */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span style={{ fontSize: "12px", color: "#64748B" }}>Trạng thái hiện tại:</span>
+                            <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>Trạng thái hiện tại:</span>
                             <span
                               className="admin-role-badge"
                               style={{
@@ -1697,7 +1697,7 @@ export function ProviderPortal() {
                                 color: activeRide.status === "COMPLETED" ? "#065F46" : "#4338CA",
                                 border: `1px solid ${activeRide.status === "COMPLETED" ? "#A7F3D0" : "#C7D2FE"}`,
                                 fontWeight: 700,
-                                fontSize: "11px",
+                                fontSize: "var(--text-micro)",
                                 padding: "4px 10px",
                               }}
                             >
@@ -1717,7 +1717,7 @@ export function ProviderPortal() {
                                 gap: "8px",
                                 height: "38px",
                                 padding: "0 18px",
-                                fontSize: "13px",
+                                fontSize: "var(--text-sm)",
                                 fontWeight: 600,
                               }}
                             >
@@ -1730,7 +1730,7 @@ export function ProviderPortal() {
                               </span>
                             </button>
                           ) : (
-                            <span style={{ fontSize: "13px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ fontSize: "var(--text-sm)", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
                               <CheckCircle2 size={16} /> Chuyến đi đã hoàn thành xuất sắc
                             </span>
                           )}
@@ -1740,7 +1740,7 @@ export function ProviderPortal() {
                       {/* If multiple rides, show other rides list */}
                       {allRides.length > 1 && (
                         <div className="admin-table-card" style={{ padding: "18px" }}>
-                          <h3 style={{ fontSize: "14px", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>
+                          <h3 style={{ fontSize: "var(--text-base)", fontWeight: 700, color: "#0F172A", marginBottom: "12px" }}>
                             Các chuyến xe khác trong hệ thống ({allRides.length - 1})
                           </h3>
                           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -1760,10 +1760,10 @@ export function ProviderPortal() {
                                   }}
                                 >
                                   <div>
-                                    <div style={{ fontSize: "13px", fontWeight: 600, color: "#0F172A" }}>
+                                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "#0F172A" }}>
                                       {ride.pickup} → {ride.destination}
                                     </div>
-                                    <div style={{ fontSize: "11px", color: "#64748B" }}>
+                                    <div style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>
                                       Mã: {ride.id} · {ride.fare.toLocaleString("vi-VN")} {ride.currency} · Trạng thái: <strong>{ride.status}</strong>
                                     </div>
                                   </div>
@@ -1771,7 +1771,7 @@ export function ProviderPortal() {
                                     type="button"
                                     onClick={() => setActiveRide(ride)}
                                     className="button button-secondary"
-                                    style={{ height: "30px", padding: "0 12px", fontSize: "12px" }}
+                                    style={{ height: "30px", padding: "0 12px", fontSize: "var(--text-xs)" }}
                                   >
                                     Chọn điều phối
                                   </button>
@@ -1790,12 +1790,12 @@ export function ProviderPortal() {
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                      <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                         Danh sách đơn món cần xử lý ({orders.length} đơn)
                       </h2>
                       <span
                         className="admin-role-badge"
-                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                       >
                         PostgreSQL Live Data
                       </span>
@@ -1805,7 +1805,7 @@ export function ProviderPortal() {
                       disabled={loadingOperations}
                       onClick={() => void reloadOperations()}
                       className="button button-secondary"
-                      style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
                       <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
                       <span>Làm mới</span>
@@ -1830,10 +1830,10 @@ export function ProviderPortal() {
                       >
                         <UtensilsCrossed size={24} />
                       </div>
-                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
                         Hiện chưa có đơn đặt món nào trong hệ thống
                       </h3>
-                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
+                      <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
                         Dữ liệu đơn hàng được đồng bộ trực tiếp từ microservice <code>food-service</code> và PostgreSQL. Đơn phát sinh từ ứng dụng hoặc giao dịch mới sẽ tự động hiển thị tại đây.
                       </p>
                       <button
@@ -1841,7 +1841,7 @@ export function ProviderPortal() {
                         disabled={loadingOperations}
                         onClick={() => void reloadOperations()}
                         className="button button-secondary"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "13px" }}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
                       >
                         {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
                         <span>Làm mới danh sách</span>
@@ -1858,8 +1858,8 @@ export function ProviderPortal() {
                           <div>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
                               <div>
-                                <strong style={{ fontSize: "15px", color: "#0F172A" }}>{order.customerName}</strong>
-                                <div style={{ fontSize: "11px", color: "#64748B", marginTop: "2px" }}>
+                                <strong style={{ fontSize: "var(--text-base)", color: "#0F172A" }}>{order.customerName}</strong>
+                                <div style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "2px" }}>
                                   #{order.id} · {order.orderTime}
                                 </div>
                               </div>
@@ -1903,7 +1903,7 @@ export function ProviderPortal() {
                               {order.items.map((item, idx) => (
                                 <div
                                   key={idx}
-                                  style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", marginBottom: "6px" }}
+                                  style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--text-sm)", marginBottom: "6px" }}
                                 >
                                   <span style={{ color: "#334155", fontWeight: 550 }}>
                                     {item.quantity}x {item.name}
@@ -1916,7 +1916,7 @@ export function ProviderPortal() {
                             {order.note && (
                               <div
                                 style={{
-                                  fontSize: "12px",
+                                  fontSize: "var(--text-xs)",
                                   color: "#EA580C",
                                   backgroundColor: "#FFFBEB",
                                   border: "1px solid #FDE68A",
@@ -1932,8 +1932,8 @@ export function ProviderPortal() {
 
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
                             <div>
-                              <div style={{ fontSize: "11px", color: "#64748B" }}>Tổng thanh toán</div>
-                              <div style={{ fontSize: "16px", fontWeight: 800, color: "#059669" }}>
+                              <div style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Tổng thanh toán</div>
+                              <div style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#059669" }}>
                                 {order.total.toLocaleString("vi-VN")} đ
                               </div>
                             </div>
@@ -1944,7 +1944,7 @@ export function ProviderPortal() {
                                   type="button"
                                   onClick={() => advanceOrderStatus(order.id, "PREPARING")}
                                   className="button button-primary"
-                                  style={{ height: "32px", padding: "0 14px", fontSize: "12px" }}
+                                  style={{ height: "32px", padding: "0 14px", fontSize: "var(--text-xs)" }}
                                 >
                                   Bắt đầu chế biến
                                 </button>
@@ -1957,7 +1957,7 @@ export function ProviderPortal() {
                                   style={{
                                     height: "32px",
                                     padding: "0 14px",
-                                    fontSize: "12px",
+                                    fontSize: "var(--text-xs)",
                                     backgroundColor: "#059669",
                                     borderColor: "#059669",
                                   }}
@@ -1966,7 +1966,7 @@ export function ProviderPortal() {
                                 </button>
                               )}
                               {order.status === "READY_FOR_PICKUP" && (
-                                <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600 }}>
+                                <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600 }}>
                                   Đang chờ tài xế lấy món
                                 </span>
                               )}
@@ -1984,12 +1984,12 @@ export function ProviderPortal() {
                 <div>
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                      <h2 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                      <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
                         Lịch khám bệnh trong ngày ({appointments.length} lịch khám)
                       </h2>
                       <span
                         className="admin-role-badge"
-                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "11px" }}
+                        style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                       >
                         PostgreSQL Live Data
                       </span>
@@ -1999,7 +1999,7 @@ export function ProviderPortal() {
                       disabled={loadingOperations}
                       onClick={() => void reloadOperations()}
                       className="button button-secondary"
-                      style={{ height: "32px", padding: "0 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
                     >
                       <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
                       <span>Làm mới</span>
@@ -2024,10 +2024,10 @@ export function ProviderPortal() {
                       >
                         <HeartPulse size={24} />
                       </div>
-                      <h3 style={{ fontSize: "16px", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
                         Chưa có lịch hẹn khám bệnh nào trong hệ thống
                       </h3>
-                      <p style={{ fontSize: "13px", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
+                      <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
                         Lịch hẹn được truy vấn trực tiếp từ microservice <code>healthcare-service</code> và PostgreSQL. Khi bệnh nhân đăng ký tư vấn trực tuyến hoặc khám chuyên khoa, danh sách sẽ cập nhật tại đây.
                       </p>
                       <button
@@ -2035,7 +2035,7 @@ export function ProviderPortal() {
                         disabled={loadingOperations}
                         onClick={() => void reloadOperations()}
                         className="button button-secondary"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "13px" }}
+                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
                       >
                         {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
                         <span>Làm mới danh sách</span>
@@ -2073,10 +2073,10 @@ export function ProviderPortal() {
                               <HeartPulse size={20} />
                             </div>
                             <div>
-                              <strong style={{ fontSize: "15px", color: "#0F172A", display: "block" }}>
+                              <strong style={{ fontSize: "var(--text-base)", color: "#0F172A", display: "block" }}>
                                 {apt.patientName}
                               </strong>
-                              <span style={{ fontSize: "12px", color: "#64748B" }}>
+                              <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
                                 {apt.specialty} · {apt.timeSlot}
                               </span>
                             </div>
@@ -2127,7 +2127,7 @@ export function ProviderPortal() {
                                 type="button"
                                 onClick={() => advanceAppointmentStatus(apt.id, "IN_CONSULTATION")}
                                 className="button button-primary"
-                                style={{ height: "32px", padding: "0 12px", fontSize: "12px" }}
+                                style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)" }}
                               >
                                 Bắt đầu khám
                               </button>
@@ -2141,7 +2141,7 @@ export function ProviderPortal() {
                                 style={{
                                   height: "32px",
                                   padding: "0 12px",
-                                  fontSize: "12px",
+                                  fontSize: "var(--text-xs)",
                                   backgroundColor: "#059669",
                                   borderColor: "#059669",
                                 }}
@@ -2151,7 +2151,7 @@ export function ProviderPortal() {
                             )}
 
                             {apt.status === "COMPLETED" && (
-                              <span style={{ fontSize: "12px", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                              <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
                                 <CheckCircle2 size={14} /> Đã hoàn thành
                               </span>
                             )}

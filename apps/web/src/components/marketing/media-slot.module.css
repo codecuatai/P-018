@@ -36,16 +36,16 @@
 .mapImage img { width: 100%; height: 100%; object-fit: cover; }
 .mapFallback { display: grid; min-height: 360px; place-items: center; padding: 30px; }
 .mapFallbackPanel { display: grid; width: min(100%, 330px); gap: 12px; padding: 22px; background: rgb(255 255 255 / 76%); border: 1px solid rgb(22 50 79 / 12%); border-radius: 12px; }
-.mapFallbackPanel strong { color: var(--color-navy); font-size: 1.08rem; letter-spacing: -0.03em; }
-.mapFallbackPanel p { margin: 0; color: var(--color-muted); font-size: 0.76rem; line-height: 1.6; }
+.mapFallbackPanel strong { color: var(--color-navy); font-size: var(--text-xl); letter-spacing: var(--tracking-tight); }
+.mapFallbackPanel p { margin: 0; color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .mapFallbackGrid { height: 82px; background: #E1ECEA; border: 1px solid #D2E1DE; border-radius: 8px; }
 
 .routeAccent { position: absolute; z-index: 2; top: 47%; left: 34%; width: 38%; height: 3px; background: var(--color-primary); border-radius: 999px; opacity: 0.92; transform: rotate(-18deg); transform-origin: left center; }
-.marker { position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; color: var(--color-navy); background: rgb(255 255 255 / 94%); border: 1px solid rgb(22 50 79 / 18%); border-radius: 7px; box-shadow: var(--shadow-tight); font-size: 0.66rem; font-weight: 750; }
+.marker { position: absolute; z-index: 3; display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; color: var(--color-navy); background: rgb(255 255 255 / 94%); border: 1px solid rgb(22 50 79 / 18%); border-radius: 7px; box-shadow: var(--shadow-tight); font-size: var(--text-xs); font-weight: 700; }
 .marker svg { color: var(--color-primary); }
 .markerPickup { bottom: 28%; left: 17%; }
 .markerDestination { top: 18%; right: 17%; }
-.mapCaption { position: absolute; z-index: 3; right: 13px; bottom: 11px; color: rgb(17 24 39 / 72%); background: rgb(255 255 255 / 72%); font-size: 0.61rem; }
+.mapCaption { position: absolute; z-index: 3; right: 13px; bottom: 11px; color: rgb(17 24 39 / 72%); background: rgb(255 255 255 / 72%); font-size: var(--text-xs); }
 
 .productMediaSlot {
   position: relative;
@@ -58,13 +58,13 @@
 }
 
 .productMediaSlot > img { display: block; width: 100%; height: auto; min-height: 340px; object-fit: cover; }
-.productMediaSlot figcaption { position: absolute; right: 14px; bottom: 12px; left: 14px; color: rgb(17 24 39 / 72%); background: rgb(255 255 255 / 78%); font-size: 0.64rem; line-height: 1.45; }
+.productMediaSlot figcaption { position: absolute; right: 14px; bottom: 12px; left: 14px; color: rgb(17 24 39 / 72%); background: rgb(255 255 255 / 78%); font-size: var(--text-xs); line-height: var(--leading-snug); }
 .productMediaSlotFallback { display: grid; min-height: 340px; place-items: center; padding: 30px; }
 
 .productFallback { display: grid; width: min(100%, 340px); gap: 12px; color: var(--color-navy); }
-.fallbackKicker { color: var(--color-primary-strong); font-family: var(--font-sans); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; }
-.productFallback strong { font-size: 1.18rem; letter-spacing: -0.04em; }
-.productFallback p { margin: 0; color: var(--color-muted); font-size: 0.78rem; line-height: 1.6; }
+.fallbackKicker { color: var(--color-primary-strong); font-family: var(--font-sans); font-size: var(--text-xs); font-weight: 700; letter-spacing: var(--tracking-wider); }
+.productFallback strong { font-size: var(--text-xl); letter-spacing: var(--tracking-tight); }
+.productFallback p { margin: 0; color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .fallbackWindow { display: grid; gap: 12px; padding: 16px; background: rgb(255 255 255 / 78%); border: 1px solid rgb(22 50 79 / 13%); border-radius: 10px; box-shadow: var(--shadow-tight); }
 .fallbackWindowBar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 11px; border-bottom: 1px solid var(--color-border); }
 .fallbackWindowBar span { width: 26px; height: 6px; background: #C7D5DB; border-radius: 999px; }
@@ -87,10 +87,10 @@
   .mapFallback,
   .productMediaSlot,
   .productMediaSlotFallback { min-height: 250px; }
-  .marker { font-size: 0.59rem; }
+  .marker { font-size: var(--text-micro); }
   .markerPickup { left: 8%; }
   .markerDestination { right: 8%; }
-  .productMediaSlot figcaption { font-size: 0.59rem; }
+  .productMediaSlot figcaption { font-size: var(--text-micro); }
   .productFallback { gap: 9px; }
   .fallbackWindow { padding: 12px; }
 }

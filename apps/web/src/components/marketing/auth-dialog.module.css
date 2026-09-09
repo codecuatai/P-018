@@ -7,18 +7,18 @@
 .heading h2 {
   margin: 9px 0 0;
   color: var(--color-navy);
-  font-size: 1.55rem;
-  letter-spacing: -0.055em;
-  line-height: 1.08;
+  font-size: var(--text-2xl);
+  letter-spacing: -0.025em;
+  line-height: var(--leading-tight);
 }
 
 .heading p {
   margin: 10px 0 0;
   color: var(--color-muted);
-  font-size: 0.82rem;
-  line-height: 1.6;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
 }
 
 .form { padding-top: 3px; }
 .form :global(.auth-switch) { margin-bottom: 0; }
-.form :global(.auth-switch) button { padding: 0; color: var(--color-primary-strong); background: transparent; border: 0; font-size: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
+.form :global(.auth-switch) button { padding: 0; color: var(--color-primary-strong); background: transparent; border: 0; font-size: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
