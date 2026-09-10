@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, Eye, EyeOff, HeartPulse, LoaderCircle, LockKeyhole, Mail, ShieldCheck, Store, User, UtensilsCrossed } from "lucide-react";
+import { Car, Eye, EyeOff, HeartPulse, LoaderCircle, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Store, User, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -191,8 +191,8 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
           data-variant="user"
           className="account-type-option"
         >
-          <User size={14} aria-hidden="true" />
-          <span>Người dùng cá nhân</span>
+          <span className="opt-icon"><User size={17} aria-hidden="true" /></span>
+          <span className="opt-text"><span className="opt-title">Cá nhân</span><span className="opt-sub">Đặt món, xe, khám</span></span>
         </button>
         <button
           type="button"
@@ -202,8 +202,8 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
           data-variant="provider"
           className="account-type-option"
         >
-          <Store size={14} aria-hidden="true" />
-          <span>Đối tác dịch vụ</span>
+          <span className="opt-icon"><Store size={17} aria-hidden="true" /></span>
+          <span className="opt-text"><span className="opt-title">Đối tác</span><span className="opt-sub">Kinh doanh cùng X-One</span></span>
         </button>
       </div>
 
@@ -230,8 +230,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="ride"
                 className="provider-type-option"
               >
-                <Car size={16} aria-hidden="true" />
-                <span>Tài xế di chuyển</span>
+                <span className="tone-icon"><Car size={20} aria-hidden="true" /></span>
+                <span className="tone-title">Tài xế di chuyển</span>
+                <span className="tone-sub">Xe máy / Ô tô</span>
+                <span className="tone-check">✓</span>
               </button>
               <button
                 type="button"
@@ -241,8 +243,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="food"
                 className="provider-type-option"
               >
-                <UtensilsCrossed size={16} aria-hidden="true" />
-                <span>Quán ăn / Món</span>
+                <span className="tone-icon"><UtensilsCrossed size={20} aria-hidden="true" /></span>
+                <span className="tone-title">Quán ăn / Món</span>
+                <span className="tone-sub">Nhà hàng & F&B</span>
+                <span className="tone-check">✓</span>
               </button>
               <button
                 type="button"
@@ -252,8 +256,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="health"
                 className="provider-type-option"
               >
-                <HeartPulse size={16} aria-hidden="true" />
-                <span>Phòng khám</span>
+                <span className="tone-icon"><HeartPulse size={20} aria-hidden="true" /></span>
+                <span className="tone-title">Phòng khám</span>
+                <span className="tone-sub">Y tế & Bác sĩ</span>
+                <span className="tone-check">✓</span>
               </button>
             </div>
 
@@ -366,16 +372,64 @@ export function ResetPasswordPage() {
 }
 
 function AuthCard({ eyebrow, title, intro, children }: { eyebrow: string; title: string; intro: string; children: ReactNode }) {
-  return <section className="auth-page" aria-labelledby="auth-title"><div className="auth-motif" aria-hidden="true"><XOneMark size={72} /><span /><span /><span /><span /></div><article className="auth-card"><div className="auth-card-heading"><span className="eyebrow">{eyebrow}</span><h1 id="auth-title">{title}</h1><p>{intro}</p></div>{children}</article></section>;
+  return (
+    <section className="auth-page" aria-labelledby="auth-title">
+      <div className="auth-motif" aria-hidden="true">
+        <div className="auth-motif-brand"><span className="brand-mark"><XOneMark size={22} /></span>X-One<span className="auth-motif-badge">4 DỊCH VỤ / 1 APP</span></div>
+        <h2>{title}</h2>
+        <p>{intro}</p>
+        <ul className="auth-motif-services">
+          <li><span data-tone="ride"><Car size={17} /></span><span>Đặt xe & giao hàng<small>Nhanh, đúng giờ</small></span></li>
+          <li><span data-tone="food"><UtensilsCrossed size={17} /></span><span>Món ngon mỗi ngày<small>Quán chuẩn vị</small></span></li>
+          <li><span data-tone="health"><HeartPulse size={17} /></span><span>Khám & tư vấn<small>Bác sĩ tận tâm</small></span></li>
+          <li><span data-tone="ai"><Sparkles size={17} /></span><span>Trợ lý AI X-One<small>Hỏi là có ngay</small></span></li>
+        </ul>
+        <div className="auth-motif-stats">
+          <div><strong>4.9/5</strong><span>Đánh giá hài lòng</span></div>
+          <div><strong>24/7</strong><span>Hỗ trợ tận nơi</span></div>
+          <div><strong>1 chạm</strong><span>Đặt mọi dịch vụ</span></div>
+        </div>
+      </div>
+      <article className="auth-card"><div className="auth-card-heading"><span className="eyebrow">{eyebrow}</span><h1 id="auth-title">{title}</h1><p>{intro}</p></div>{children}</article>
+    </section>
+  );
 }
 
-function Field({ label, id, value, onChange, type = "text", autoComplete, required = false, placeholder }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean; placeholder?: string }) {
-  return <div className="form-field"><Label htmlFor={id}>{label}</Label><Input id={id} name={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} required={required} placeholder={placeholder} /> </div>;
+function fieldIconFor(id: string, type: string) {
+  if (type === "email") return <Mail size={17} aria-hidden="true" />;
+  if (type === "tel") return <Phone size={17} aria-hidden="true" />;
+  if (id.includes("business")) return <Store size={17} aria-hidden="true" />;
+  if (id.includes("phone")) return <Phone size={17} aria-hidden="true" />;
+  if (id.includes("name")) return <User size={17} aria-hidden="true" />;
+  return <User size={17} aria-hidden="true" />;
 }
 
-function PasswordField({ id, label, value, onChange, autoComplete, disabled = false, minLength, maxLength }: { id: string; label: string; value: string; onChange: (value: string) => void; autoComplete: string; disabled?: boolean; minLength?: number; maxLength?: number }) {
+const FLAT_INPUT_STYLE = { border: 0, background: "transparent", boxShadow: "none", height: "46px", padding: "0 10px 0 0", borderRadius: 0 } as const;
+
+function Field({ label, id, value, onChange, type = "text", autoComplete, required = false, placeholder, icon }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean; placeholder?: string; icon?: ReactNode }) {
+  return (
+    <div className="form-field">
+      <Label htmlFor={id}>{label}</Label>
+      <span className="field-control">
+        <span className="field-icon">{icon ?? fieldIconFor(id, type)}</span>
+        <Input id={id} name={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} required={required} placeholder={placeholder} style={{ ...FLAT_INPUT_STYLE }} />
+      </span>
+    </div>
+  );
+}
+
+function PasswordField({ id, label, value, onChange, autoComplete, disabled = false, minLength, maxLength, placeholder }: { id: string; label: string; value: string; onChange: (value: string) => void; autoComplete: string; disabled?: boolean; minLength?: number; maxLength?: number; placeholder?: string }) {
   const [visible, setVisible] = useState(false);
-  return <div className="form-field"><Label htmlFor={id}>{label}</Label><span className="password-input"><Input id={id} name={id} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} minLength={minLength} maxLength={maxLength} required disabled={disabled} /><button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible((state) => !state)}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></div>;
+  return (
+    <div className="form-field">
+      <Label htmlFor={id}>{label}</Label>
+      <span className="password-input">
+        <span className="field-icon"><LockKeyhole size={17} aria-hidden="true" /></span>
+        <Input id={id} name={id} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} minLength={minLength} maxLength={maxLength} required disabled={disabled} placeholder={placeholder} style={{ ...FLAT_INPUT_STYLE }} />
+        <button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible((state) => !state)}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+      </span>
+    </div>
+  );
 }
 
 function FormFeedback({ error, message }: { error?: string; message?: string }) {
