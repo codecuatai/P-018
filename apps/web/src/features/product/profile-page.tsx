@@ -233,7 +233,7 @@ export function ProfilePage() {
           <label className="form-field"><span>Số điện thoại</span><input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" inputMode="tel" /></label>
 
           <div className="form-field">
-            <span className="field-label" style={{ fontWeight: 600, fontSize: "0.875rem", marginBottom: "0.5rem", display: "block" }}>Địa chỉ giao hàng</span>
+            <span className="field-label" style={{ fontWeight: 600, fontSize: "var(--text-sm)", marginBottom: "0.5rem", display: "block" }}>Địa chỉ giao hàng</span>
             <div className="address-inline-new">
               <div className="address-dropdown">
                 <button type="button" className="address-dropdown-trigger" onClick={() => setAddressDropdownOpen((open) => !open)} aria-expanded={addressDropdownOpen} aria-haspopup="listbox">

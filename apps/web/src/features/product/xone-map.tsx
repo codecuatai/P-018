@@ -288,7 +288,7 @@ export function XOneMap({
         {mapState === "loading" && (
           <div className="xone-map-loading-overlay">
             <LoaderCircle className="spinner" size={28} style={{ color: "var(--color-primary-strong)" }} />
-            <span style={{ marginTop: "10px", fontSize: "0.75rem", color: "var(--color-navy)", fontWeight: 700 }}>Đang tải bản đồ...</span>
+            <span style={{ marginTop: "10px", fontSize: "var(--text-xs)", color: "var(--color-navy)", fontWeight: 700 }}>Đang tải bản đồ...</span>
           </div>
         )}
       </>
@@ -313,9 +313,9 @@ function MapFallback({ label, points, providerUnavailable, locationDenied, route
   const isErrorWithPoints = providerUnavailable || points.length > 0;
 
   return <div className="xone-map-fallback" role="img" aria-label={`${label}: ${reason}`} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "24px 20px", minHeight: "160px" }}>
-    <strong style={{ color: "var(--color-navy)", fontSize: "0.85rem" }}>{isErrorWithPoints ? "Hiện chưa tải được bản đồ." : reason}</strong>
+    <strong style={{ color: "var(--color-navy)", fontSize: "var(--text-sm)" }}>{isErrorWithPoints ? "Hiện chưa tải được bản đồ." : reason}</strong>
     {isErrorWithPoints ? <button className="button button-secondary" type="button" onClick={onRetry} style={{ marginTop: "12px" }}>Thử lại</button> : null}
-    <span style={{ marginTop: "8px", color: "var(--color-muted)", fontSize: "0.75rem", maxWidth: "300px" }}>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
+    <span style={{ marginTop: "8px", color: "var(--color-muted)", fontSize: "var(--text-xs)", maxWidth: "300px" }}>{points.length ? `${points.length} điểm đã xác minh sẵn sàng cho bản đồ.` : "Hãy chọn địa điểm có dữ liệu định vị hoặc bật quyền vị trí."}</span>
     {routeProvider || routeStatus || routeDistanceMeters || routeDurationSeconds ? <dl style={{ marginTop: "16px" }}><div><dt>Lộ trình</dt><dd>{routeStatus ? statusLabel(routeStatus) : "Đã cập nhật"}</dd></div>{routeDistanceMeters ? <div><dt>Khoảng cách</dt><dd>{(routeDistanceMeters / 1000).toFixed(1)} km</dd></div> : null}{routeDurationSeconds ? <div><dt>Thời lượng</dt><dd>{Math.ceil(routeDurationSeconds / 60)} phút</dd></div> : null}</dl> : null}
   </div>;
 }

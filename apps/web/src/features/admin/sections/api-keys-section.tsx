@@ -274,7 +274,7 @@ export function ApiKeysSection() {
           }}
         >
           {actionMessage.type === "success" ? <CheckCircle2 size={16} /> : <ShieldAlert size={16} />}
-          <span style={{ fontSize: "0.74rem", fontWeight: 500 }}>{actionMessage.text}</span>
+          <span style={{ fontSize: "var(--text-xs)", fontWeight: 500 }}>{actionMessage.text}</span>
         </div>
       )}
 
@@ -381,8 +381,8 @@ export function ApiKeysSection() {
           }}
         >
           <div className="admin-card-title">
-            <h3 style={{ fontSize: "0.84rem", fontWeight: 700, color: "#92400E" }}>Xoay API Key mới</h3>
-            <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>Nhập secret mới để thay thế khóa hiện tại</span>
+            <h3 style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "#92400E" }}>Xoay API Key mới</h3>
+            <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>Nhập secret mới để thay thế khóa hiện tại</span>
           </div>
           <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
             <input
@@ -429,11 +429,11 @@ export function ApiKeysSection() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <ShieldCheck size={16} color="var(--color-navy)" />
-            <h3 style={{ fontSize: "0.82rem", fontWeight: 700, margin: 0, color: "var(--color-navy)" }}>
+            <h3 style={{ fontSize: "var(--text-sm)", fontWeight: 700, margin: 0, color: "var(--color-navy)" }}>
               Danh sách khóa API đã đăng ký
             </h3>
           </div>
-          <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
             {filteredKeys.length} / {keys.items.length} khóa
           </span>
         </div>
@@ -473,7 +473,7 @@ export function ApiKeysSection() {
                         <span
                           style={{
                             fontWeight: 700,
-                            fontSize: "0.72rem",
+                            fontSize: "var(--text-micro)",
                             textTransform: "uppercase",
                             letterSpacing: "0.3px",
                             color: "var(--color-navy)",
@@ -484,8 +484,8 @@ export function ApiKeysSection() {
                       </td>
                       <td>
                         <div style={{ display: "flex", flexDirection: "column" }}>
-                          <strong style={{ fontSize: "0.74rem", color: "var(--color-navy)" }}>{key.label}</strong>
-                          <span style={{ fontSize: "0.65rem", color: "var(--color-muted)" }}>ID: {key.id}</span>
+                          <strong style={{ fontSize: "var(--text-xs)", color: "var(--color-navy)" }}>{key.label}</strong>
+                          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>ID: {key.id}</span>
                         </div>
                       </td>
                       <td>
@@ -534,7 +534,7 @@ export function ApiKeysSection() {
                         )}
                       </td>
                       <td>
-                        <span style={{ fontSize: "0.7rem", color: "var(--color-muted-soft)" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted-soft)" }}>
                           {formatTimestamp(updatedAt)}
                         </span>
                       </td>

@@ -344,7 +344,7 @@ export function OnboardingPage() {
                         <div>
                           <strong>{candidate.address_text}</strong>
                           {candidate.latitude !== null && candidate.longitude !== null && (
-                            <small style={{ display: "block", color: "var(--color-muted)", fontSize: "0.7rem" }}>
+                            <small style={{ display: "block", color: "var(--color-muted)", fontSize: "var(--text-micro)" }}>
                               {candidate.latitude.toFixed(5)}, {candidate.longitude.toFixed(5)}
                             </small>
                           )}

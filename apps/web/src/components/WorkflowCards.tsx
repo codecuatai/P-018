@@ -75,10 +75,10 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-        <span style={{ fontSize: "11px", fontWeight: 700, color: "#4338CA", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+        <span style={{ fontSize: "var(--text-micro)", fontWeight: 700, color: "#4338CA", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
           <Sparkles size={12} /> Hành trình liên kết dịch vụ ({allSteps.length} bước)
         </span>
-        <span style={{ fontSize: "11px", color: "#64748B", fontWeight: 600 }}>
+        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>
           {allSteps.filter((s) => s.status === "completed").length}/{allSteps.length} hoàn tất
         </span>
       </div>
@@ -99,20 +99,20 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
                   background: isDone ? "#ECFDF5" : "#EEF2FF",
                   border: `1px solid ${isDone ? "#A7F3D0" : "#C7D2FE"}`,
                   color: isDone ? "#065F46" : "#4338CA",
-                  fontSize: "12px",
+                  fontSize: "var(--text-xs)",
                   fontWeight: 650,
                 }}
               >
                 <Icon size={13} />
                 <span>{step.title}</span>
                 {isDone ? (
-                  <span style={{ background: "#059669", color: "#FFFFFF", borderRadius: "50%", width: "13px", height: "13px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "9px" }}>✓</span>
+                  <span style={{ background: "#059669", color: "#FFFFFF", borderRadius: "50%", width: "13px", height: "13px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "var(--text-micro)" }}>✓</span>
                 ) : (
                   <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4F46E5", display: "inline-block" }} />
                 )}
               </div>
               {idx < allSteps.length - 1 && (
-                <span style={{ color: "#94A3B8", fontSize: "13px", fontWeight: 700 }}>→</span>
+                <span style={{ color: "#94A3B8", fontSize: "var(--text-sm)", fontWeight: 700 }}>→</span>
               )}
             </div>
           );
@@ -236,7 +236,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
       </div>
       {totalPages > 1 ? (
         <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-          <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
             Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} quán)
           </span>
           <div style={{ display: "flex", gap: "6px" }}>
@@ -245,7 +245,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
               type="button"
               onClick={() => setPage((c) => Math.max(1, c - 1))}
               disabled={page <= 1}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
+              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
               aria-label="Trang trước"
             >
               <ChevronLeft size={13} /> Trước
@@ -255,7 +255,7 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
               type="button"
               onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
               disabled={page >= totalPages}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
+              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
               aria-label="Trang sau"
             >
               Sau <ChevronRight size={13} />
@@ -477,7 +477,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
     </div>;
   })}</div>{totalPages > 1 ? (
     <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-      <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+      <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
         Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} món)
       </span>
       <div style={{ display: "flex", gap: "6px" }}>
@@ -486,7 +486,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
           type="button"
           onClick={() => setPage((c) => Math.max(1, c - 1))}
           disabled={page <= 1}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
+          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
           aria-label="Trang trước"
         >
           <ChevronLeft size={13} /> Trước
@@ -496,7 +496,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
           type="button"
           onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
           disabled={page >= totalPages}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "0.7rem" }}
+          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
           aria-label="Trang sau"
         >
           Sau <ChevronRight size={13} />

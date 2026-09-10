@@ -120,14 +120,33 @@ h3 { font-size: var(--text-2xl); }
 p { line-height: var(--leading-normal); }
 small { font-size: var(--text-xs); }
 
+/* Tablet: tighten spacing scale, keep type scale fluid */
+@media (max-width: 1024px) {
+  :root {
+    --container-px: 20px;
+    --section-gap: 36px;
+    --card-padding: 18px;
+    --card-gap: 14px;
+  }
+}
+
+@media (max-width: 820px) {
+  :root {
+    --container-px: 18px;
+    --section-gap: 32px;
+  }
+  img, video, svg { max-width: 100%; }
+}
+
 @media (max-width: 560px) {
   :root {
     --container-px: 16px;
     --section-gap: 28px;
     --card-padding: 16px;
+    --card-gap: 12px;
     --text-lg: 0.96875rem;
   }
-  body { line-height: var(--leading-relaxed); }
+  body { line-height: var(--leading-relaxed); padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
 
 body,

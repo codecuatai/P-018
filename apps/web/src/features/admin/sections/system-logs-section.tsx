@@ -101,14 +101,14 @@ export function SystemLogsSection() {
                     <td>
                       <button
                         className="button button-secondary"
-                        style={{ padding: "0.2rem 0.5rem", fontSize: "0.75rem" }}
+                        style={{ padding: "0.2rem 0.5rem", fontSize: "var(--text-xs)" }}
                         type="button"
                         onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
                       >
                         {expandedLogId === log.id ? "Đóng" : "Payload"}
                       </button>
                       {expandedLogId === log.id && (
-                        <pre style={{ marginTop: "0.5rem", padding: "0.5rem", background: "var(--bg-card, #18181b)", borderRadius: "4px", fontSize: "0.75rem", overflowX: "auto" }}>
+                        <pre style={{ marginTop: "0.5rem", padding: "0.5rem", background: "var(--bg-card, #18181b)", borderRadius: "4px", fontSize: "var(--text-xs)", overflowX: "auto" }}>
                           {JSON.stringify(log.metadata, null, 2)}
                         </pre>
                       )}

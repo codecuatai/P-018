@@ -702,19 +702,19 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", fontWeight: 700, color: "#4338CA", background: "#C7D2FE", padding: "3px 10px", borderRadius: "100px" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "var(--text-micro)", fontWeight: 700, color: "#4338CA", background: "#C7D2FE", padding: "3px 10px", borderRadius: "100px" }}>
             <Sparkles size={12} />
             <span>{proactive.badge}</span>
           </div>
-          <span style={{ fontSize: "12px", color: "#4F46E5", fontWeight: 650 }}>
+          <span style={{ fontSize: "var(--text-xs)", color: "#4F46E5", fontWeight: 650 }}>
             Thực hiện ngay →
           </span>
         </div>
         <div>
-          <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: 750, color: "#0F172A" }}>
+          <h3 style={{ margin: "0 0 4px 0", fontSize: "var(--text-base)", fontWeight: 750, color: "#0F172A" }}>
             {proactive.title}
           </h3>
-          <p style={{ margin: 0, fontSize: "12px", color: "#475569", lineHeight: 1.5 }}>
+          <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "#475569", lineHeight: 1.5 }}>
             {proactive.desc}
           </p>
         </div>

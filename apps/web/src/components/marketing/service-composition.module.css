@@ -7,7 +7,7 @@
 }
 
 .copyColumn { min-width: 0; }
-.copyColumn h2 { max-width: 520px; margin: 13px 0 0; color: var(--color-navy); font-size: clamp(1.75rem, 3.2vw, 2.5rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
+.copyColumn h2 { max-width: 520px; margin: 13px 0 0; color: var(--color-navy); font-size: var(--text-hero); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
 .lead { max-width: 430px; margin: 20px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); text-wrap: pretty; }
 
 .activeCopy {
@@ -19,7 +19,7 @@
 }
 
 .activeCopy::before { position: absolute; top: 0; left: -2px; width: 34px; height: 2px; content: ""; background: var(--color-primary); }
-.activeCopy h3 { margin: 0; color: var(--color-navy); font-size: clamp(1.35rem, 2.2vw, 1.8rem); letter-spacing: -0.025em; }
+.activeCopy h3 { margin: 0; color: var(--color-navy); font-size: var(--text-3xl); letter-spacing: -0.025em; }
 .activeCopy p { max-width: 390px; margin: 8px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); text-wrap: pretty; }
 
 .scene {

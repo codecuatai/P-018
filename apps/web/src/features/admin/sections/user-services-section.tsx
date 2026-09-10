@@ -136,7 +136,7 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
                 <span
                   className="admin-badge"
                   style={{
-                    fontSize: "0.65rem",
+                    fontSize: "var(--text-micro)",
                     background: selectedUser.role === "admin" ? "#FEF3C7" : "#F1F5F9",
                     color: selectedUser.role === "admin" ? "#92400E" : "#475569",
                     border: selectedUser.role === "admin" ? "1px solid #FDE68A" : "1px solid #E2E8F0",
@@ -185,10 +185,10 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
           {/* Multi-Service Activity Matrix (read-only) */}
           <div style={{ marginTop: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-              <h3 style={{ fontSize: "0.82rem", fontWeight: 700, color: "var(--color-navy)", margin: 0 }}>
+              <h3 style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--color-navy)", margin: 0 }}>
                 Hoạt động 4 Domain dịch vụ
               </h3>
-              <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>
+              <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
                 Số liệu sử dụng dịch vụ theo tài khoản
               </span>
             </div>
@@ -202,7 +202,7 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
                     </div>
                   </div>
                   <div>
-                    <strong style={{ fontSize: "0.78rem", color: "var(--color-navy)" }}>{svc.name}</strong>
+                    <strong style={{ fontSize: "var(--text-xs)", color: "var(--color-navy)" }}>{svc.name}</strong>
                     <div className="admin-service-item-stat">
                       <strong>{svc.count}</strong>
                       <span>{svc.unit}</span>
@@ -227,11 +227,11 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <MessageSquare size={16} color="var(--color-navy)" />
-                <h3 style={{ fontSize: "0.82rem", fontWeight: 700, margin: 0, color: "var(--color-navy)" }}>
+                <h3 style={{ fontSize: "var(--text-sm)", fontWeight: 700, margin: 0, color: "var(--color-navy)" }}>
                   Đánh giá & Phản hồi gần đây của người dùng
                 </h3>
               </div>
-              <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+              <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
                 {userFeedback.data?.items.length ?? 0} đánh giá đã ghi nhận
               </span>
             </div>
@@ -263,7 +263,7 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
                             className="admin-badge"
                             style={{
                               fontWeight: 700,
-                              fontSize: "0.68rem",
+                              fontSize: "var(--text-micro)",
                               textTransform: "uppercase",
                             }}
                           >
@@ -271,19 +271,19 @@ export function UserServicesSection({ users }: { users: AdminUserRecord[] }) {
                           </span>
                         </td>
                         <td>
-                          <span style={{ color: "#F59E0B", letterSpacing: "1px", fontSize: "0.85rem" }}>
+                          <span style={{ color: "#F59E0B", letterSpacing: "1px", fontSize: "var(--text-sm)" }}>
                             {"★".repeat(Math.max(0, Math.min(5, fb.rating)))}
                             {"☆".repeat(Math.max(0, 5 - fb.rating))}
                           </span>{" "}
-                          <span style={{ fontSize: "0.7rem", color: "var(--color-muted)" }}>({fb.rating}/5)</span>
+                          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>({fb.rating}/5)</span>
                         </td>
                         <td>
-                          <span style={{ fontSize: "0.74rem", color: "var(--color-ink)" }}>
+                          <span style={{ fontSize: "var(--text-xs)", color: "var(--color-ink)" }}>
                             {fb.comment || "—"}
                           </span>
                         </td>
                         <td style={{ textAlign: "right" }}>
-                          <span style={{ fontSize: "0.7rem", color: "var(--color-muted-soft)" }}>
+                          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted-soft)" }}>
                             {new Date(fb.created_at).toLocaleString("vi-VN")}
                           </span>
                         </td>

@@ -578,7 +578,7 @@ function RestaurantBrowse() {
           </div>
           {pageCount > 1 ? (
             <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--color-muted)", textAlign: "left" }}>
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-muted)", textAlign: "left" }}>
                 Trang <strong>{page}</strong> / {pageCount} · ({totalItems} nhà hàng)
               </span>
               <div style={{ display: "flex", gap: "8px" }}>
@@ -588,7 +588,7 @@ function RestaurantBrowse() {
                   onClick={() => void load(debouncedKeyword, Math.max(1, page - 1), true)}
                   disabled={page <= 1 || paging}
                   aria-label="Trang trước"
-                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
+                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "var(--text-xs)" }}
                 >
                   <ChevronLeft size={15} /> Trước
                 </button>
@@ -598,7 +598,7 @@ function RestaurantBrowse() {
                   onClick={() => void load(debouncedKeyword, Math.min(pageCount, page + 1), true)}
                   disabled={page >= pageCount || paging}
                   aria-label="Trang sau"
-                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "0.75rem" }}
+                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "var(--text-xs)" }}
                 >
                   Sau <ChevronRight size={15} />
                 </button>
@@ -942,7 +942,7 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
                     </div>
                     {totalSlotPages > 1 ? (
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "12px", padding: "6px 0" }}>
-                        <span style={{ fontSize: "0.72rem", color: "var(--color-muted)" }}>
+                        <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
                           Trang <strong>{slotPage}</strong> / {totalSlotPages} ({slots.length} lịch khám)
                         </span>
                         <div style={{ display: "flex", gap: "6px" }}>
@@ -951,7 +951,7 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
                             type="button"
                             onClick={() => setSlotPage((c) => Math.max(1, c - 1))}
                             disabled={slotPage <= 1}
-                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }}
+                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "var(--text-micro)" }}
                             aria-label="Trang trước"
                           >
                             <ChevronLeft size={14} /> Trước
@@ -961,7 +961,7 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
                             type="button"
                             onClick={() => setSlotPage((c) => Math.min(totalSlotPages, c + 1))}
                             disabled={slotPage >= totalSlotPages}
-                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "0.7rem" }}
+                            style={{ minHeight: "30px", padding: "4px 8px", fontSize: "var(--text-micro)" }}
                             aria-label="Trang sau"
                           >
                             Sau <ChevronRight size={14} />

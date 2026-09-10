@@ -1139,7 +1139,7 @@ export function ProviderPortal() {
                       </div>
                     </div>
 
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(200px, 100%), 1fr))", gap: "14px" }}>
                       <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
                         <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>Tổng doanh thu (Gross)</span>
                         <div style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "#0F172A", marginTop: "4px" }}>
@@ -1226,7 +1226,7 @@ export function ProviderPortal() {
                       </div>
                     </div>
 
-                    <form onSubmit={handleSaveProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+                    <form onSubmit={handleSaveProfile} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "16px" }}>
                       <div>
                         <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Tên thương hiệu / Cơ sở kinh doanh
@@ -1556,7 +1556,7 @@ export function ProviderPortal() {
                         <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                           Lĩnh vực dịch vụ {isMaster ? "(Toàn quyền Master 4 Dịch vụ)" : "(Cố định theo lĩnh vực đăng ký)"}
                         </label>
-                        <div style={{ display: "grid", gridTemplateColumns: isMaster ? "repeat(3, 1fr)" : "1fr", gap: "8px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: isMaster ? "repeat(auto-fit, minmax(min(140px, 100%), 1fr))" : "1fr", gap: "8px" }}>
                           {(isMaster || rawProviderType === "restaurant_merchant" || rawProviderType === "food") && (
                             <button
                               type="button"
@@ -1628,7 +1628,7 @@ export function ProviderPortal() {
                         />
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "12px" }}>
                         <div>
                           <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
                             Đơn giá (VND)
@@ -2033,7 +2033,7 @@ export function ProviderPortal() {
                       </button>
                     </div>
                   ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "16px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: "16px" }}>
                       {orders.map((order) => (
                         <div
                           key={order.id}
@@ -2503,7 +2503,7 @@ export function ProviderPortal() {
                               background: "#0F172A",
                               padding: "10px 14px",
                               borderRadius: "8px",
-                              fontFamily: "monospace",
+                              fontFamily: "var(--font-mono)",
                               fontSize: "var(--text-sm)",
                               color: "#38BDF8",
                               overflowX: "auto",
@@ -2540,7 +2540,7 @@ export function ProviderPortal() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
                       gap: "20px",
                     }}
                   >
@@ -2745,7 +2745,7 @@ export function ProviderPortal() {
                         background: "#0F172A",
                         color: "#F8FAFC",
                         fontSize: "var(--text-xs)",
-                        fontFamily: "monospace",
+                        fontFamily: "var(--font-mono)",
                         overflowX: "auto",
                         lineHeight: 1.5,
                       }}
@@ -2771,7 +2771,7 @@ export function ProviderPortal() {
                     <h3 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: "0 0 12px", color: "#0F172A" }}>
                       Hướng dẫn tích hợp trong 3 bước
                     </h3>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: "14px" }}>
                       <div style={{ padding: "12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
                         <div style={{ width: "24px", height: "24px", borderRadius: "50%", background: "#2563EB", color: "#fff", display: "grid", placeItems: "center", fontSize: "var(--text-xs)", fontWeight: 700, marginBottom: "8px" }}>
                           1

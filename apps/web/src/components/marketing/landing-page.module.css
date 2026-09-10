@@ -17,7 +17,7 @@
 .heroStage { position: relative; z-index: 1; padding-top: clamp(45px, 8svh, 80px); }
 .heroCopy { position: relative; z-index: 0; max-width: 1120px; margin: 0 auto; isolation: isolate; text-align: center; }
 .heroCopy::before { position: absolute; z-index: -1; top: -112px; right: -220px; bottom: -92px; left: -220px; content: ""; background: radial-gradient(ellipse at center, rgb(245 248 250 / 80%) 0%, rgb(245 248 250 / 44%) 38%, rgb(245 248 250 / 12%) 65%, transparent 78%); filter: blur(11px); pointer-events: none; }
-.heroTitle { display: grid; row-gap: clamp(4px, 0.5vw, 10px); margin: 0; color: var(--color-navy); font-size: clamp(2.1rem, 4.2vw, 3.4rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
+.heroTitle { display: grid; row-gap: clamp(4px, 0.5vw, 10px); margin: 0; color: var(--color-navy); font-size: var(--text-display); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
 .heroTitleLine { display: block; }
 .heroTitleSecond { font-size: 0.94em; }
 .heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-ink); font-size: var(--text-base); line-height: var(--leading-normal); }
@@ -33,7 +33,7 @@
 .assistantCopy h2 {
   margin: 12px 0 0;
   color: var(--color-navy);
-  font-size: clamp(1.75rem, 3.2vw, 2.4rem);
+  font-size: var(--text-hero);
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: var(--leading-tight);
@@ -74,7 +74,7 @@
 .assistantCopy { order: 1; }
 .assistantSignal { order: 2; display: grid; max-width: 600px; gap: 17px; padding: 30px; color: var(--color-navy); background: var(--color-surface); border: 1px solid rgb(22 50 79 / 12%); border-radius: 16px; box-shadow: 0 14px 30px rgb(22 50 79 / 6%); }
 .assistantSignal svg { color: var(--color-primary); }
-.assistantSignal p { margin: 0; font-size: clamp(1.2rem, 2.3vw, 1.65rem); font-weight: 600; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
+.assistantSignal p { margin: 0; font-size: var(--text-2xl); font-weight: 600; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
 .assistantSignal span { color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
 .assistantUnderline { display: block; width: min(190px, 46%); height: 3px; margin-top: 24px; background: var(--color-primary); border-radius: 99px; transform-origin: left center; }
 .assistantCopy .textLink { margin-top: 26px; border-radius: 999px; text-decoration: none; }
@@ -84,7 +84,7 @@
 .finalCtaLayout { position: relative; display: grid; grid-template-columns: minmax(0, 0.6fr) minmax(0, 0.4fr); min-height: 100svh; align-items: stretch; }
 .finalCtaCopy { position: relative; z-index: 2; align-self: end; padding: 0 clamp(28px, 5vw, 84px) clamp(92px, 30vh, 142px) max(24px, calc((100vw - 1160px) / 2)); }
 .finalCtaCopy > svg { color: var(--color-primary); }
-.finalCtaCopy h2 { max-width: 620px; margin: 22px 0 0; color: var(--color-navy); font-size: clamp(1.85rem, 3.8vw, 2.8rem); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
+.finalCtaCopy h2 { max-width: 620px; margin: 22px 0 0; color: var(--color-navy); font-size: var(--text-display); font-weight: 700; letter-spacing: -0.035em; line-height: var(--leading-tight); }
 .finalCtaCopy p { max-width: 360px; margin: 20px 0 0; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
 .ctaActions { display: flex; align-items: center; flex-wrap: wrap; gap: 18px; margin-top: 28px; }
 .cta :global(.button) { border-radius: 999px; transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease, transform 200ms ease, box-shadow 200ms ease; }
@@ -129,7 +129,7 @@
   .hero { min-height: 680px; padding: 90px 0 58px; }
   .heroCopy::before { top: -30px; right: -12px; bottom: -30px; left: -12px; }
   .heroStage { padding-top: clamp(24px, 4svh, 36px); }
-  .heroTitle { font-size: clamp(1.75rem, 5.5vw, 2.25rem); line-height: var(--leading-tight); }
+  .heroTitle { font-size: var(--text-hero); line-height: var(--leading-tight); }
   .heroTitleLine { white-space: normal; }
   .heroLede { font-size: var(--text-base); }
   .section { padding: 56px 0; }
@@ -147,7 +147,7 @@
   .safetyPanel { padding: 22px 18px; border-radius: 14px; }
   .assistantSignal { padding: 24px; }
   .finalCtaLayout { padding-top: 60px; padding-bottom: 78px; }
-  .finalCtaCopy h2 { font-size: clamp(1.6rem, 5vw, 2.1rem); }
+  .finalCtaCopy h2 { font-size: var(--text-3xl); }
   .ctaActions { align-items: flex-start; flex-direction: column; gap: 15px; }
   .finalCtaObject { width: min(90vw, 470px); max-width: 100%; min-height: 52svh; margin: 12px 0 0 auto; }
   .finalObjectFallback { height: 52svh; }

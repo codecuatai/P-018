@@ -61,10 +61,10 @@ function GoogleCallbackContent() {
         <div style={{ display: "inline-flex", padding: 12, borderRadius: "50%", background: "#FEE2E2", color: "#DC2626", marginBottom: 16 }}>
           <AlertCircle size={28} />
         </div>
-        <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: 8, color: "var(--color-navy)" }}>
+        <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 700, marginBottom: 8, color: "var(--color-navy)" }}>
           Đăng nhập Google không thành công
         </h2>
-        <p style={{ fontSize: "0.875rem", color: "var(--color-muted)", marginBottom: 24, lineHeight: 1.5 }}>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)", marginBottom: 24, lineHeight: 1.5 }}>
           {error}
         </p>
         <Link href="/?auth=login" className="button button-primary button-wide">
@@ -77,10 +77,10 @@ function GoogleCallbackContent() {
   return (
     <div className="auth-card" style={{ maxWidth: 440, margin: "80px auto", textAlign: "center", padding: "40px 24px" }}>
       <LoaderCircle className="spinner" size={36} style={{ color: "var(--color-primary)", margin: "0 auto 16px" }} />
-      <h2 style={{ fontSize: "1.15rem", fontWeight: 600, color: "var(--color-navy)", marginBottom: 6 }}>
+      <h2 style={{ fontSize: "var(--text-xl)", fontWeight: 600, color: "var(--color-navy)", marginBottom: 6 }}>
         Đang xử lý đăng nhập Google...
       </h2>
-      <p style={{ fontSize: "0.875rem", color: "var(--color-muted)" }}>
+      <p style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>
         Vui lòng đợi trong giây lát, hệ thống đang hoàn tất phiên làm việc.
       </p>
     </div>
@@ -94,7 +94,7 @@ export default function GoogleCallbackPage() {
         fallback={
           <div className="auth-card" style={{ maxWidth: 440, margin: "80px auto", textAlign: "center", padding: "40px 24px" }}>
             <LoaderCircle className="spinner" size={36} style={{ color: "var(--color-primary)", margin: "0 auto 16px" }} />
-            <p style={{ fontSize: "0.875rem", color: "var(--color-muted)" }}>Đang tải...</p>
+            <p style={{ fontSize: "var(--text-sm)", color: "var(--color-muted)" }}>Đang tải...</p>
           </div>
         }
       >

@@ -1875,7 +1875,7 @@ function FeatureFlagsSubtab() {
       ) : flags.length === 0 ? (
         <div className="admin-empty">Không có cờ tính năng nào trong hệ thống.</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "14px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: "14px" }}>
           {flags.map((flag) => (
             <div
               key={flag.flag_key}
