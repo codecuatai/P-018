@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
@@ -36,16 +36,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [foodSelectionSubmitted, setFoodSelectionSubmitted] = useState(false);
   
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [railWidth, setRailWidth] = useState(280);
-  const [isResizingRail, setIsResizingRail] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 1040);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
@@ -55,7 +45,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const consumedActionIds = useRef<Set<string>>(new Set());
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const railWidthRef = useRef(railWidth);
   const activeRequestController = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -71,7 +60,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     return () => activeRequestController.current?.abort();
   }, []);
 
-  // Resize Rail Logic
+  // Rail collapse persists as a simple toggle (layout sizing is pure CSS now).
   useEffect(() => {
     try {
       const saved = localStorage.getItem("xone_rail_collapsed");
@@ -79,14 +68,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         const parsed = saved === "true";
         setRailCollapsed(parsed);
         window.dispatchEvent(new CustomEvent("xone-rail-state-changed", { detail: { collapsed: parsed } }));
-      }
-      const savedWidth = localStorage.getItem("xone_rail_width");
-      if (savedWidth) {
-        const parsed = parseInt(savedWidth, 10);
-        if (!Number.isNaN(parsed) && parsed >= 220 && parsed <= 500) {
-          railWidthRef.current = parsed;
-          setRailWidth(parsed);
-        }
       }
     } catch {}
 
@@ -102,32 +83,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     window.addEventListener("xone-toggle-rail", handleToggleEvent);
     return () => window.removeEventListener("xone-toggle-rail", handleToggleEvent);
   }, []);
-
-  const handleRailMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setIsResizingRail(true);
-  };
-
-  useEffect(() => {
-    if (!isResizingRail) return;
-    const handleMouseMove = (event: MouseEvent) => {
-      const newWidth = Math.min(Math.max(window.innerWidth - event.clientX, 220), 500);
-      railWidthRef.current = newWidth;
-      setRailWidth(newWidth);
-    };
-    const handleMouseUp = () => {
-      setIsResizingRail(false);
-      try {
-        localStorage.setItem("xone_rail_width", String(railWidthRef.current));
-      } catch {}
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizingRail]);
 
   function toggleRail(collapsed: boolean) {
     setRailCollapsed(collapsed);
@@ -479,8 +434,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
       </header>
       
       <div
-        className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${isResizingRail ? " is-resizing-active" : ""}`}
-        style={isMobile ? undefined : { gridTemplateColumns: railCollapsed ? "minmax(0, 1fr) 0px" : `minmax(0, 1fr) ${railWidth}px` }}
+        className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${activeItems.length ? " has-active-work" : ""}`}
       >
         <div className="chat-column">
           <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
@@ -558,7 +512,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           aria-label={railCollapsed ? "Mở tiện ích bên phải" : "Thu gọn tiện ích bên phải"}
           title={railCollapsed ? "Mở tiện ích" : "Thu gọn tiện ích"}
           onClick={() => toggleRail(!railCollapsed)}
-          style={isMobile ? undefined : { right: railCollapsed ? "10px" : `${railWidth}px` }}
         >
           {railCollapsed ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
         </button>
@@ -568,12 +521,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
           description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
           onCollapse={() => toggleRail(true)}
-          style={isMobile ? undefined : { width: railCollapsed ? 0 : railWidth }}
-          resizer={
-            !railCollapsed && !isMobile ? (
-              <div className="rail-resizer" onMouseDown={handleRailMouseDown} onDoubleClick={() => toggleRail(true)} title="Kéo để chỉnh kích thước tiện ích, nhấp đúp để ẩn" />
-            ) : undefined
-          }
         >
           {activeItems.length ? (
             <div className="active-work-list">
@@ -669,28 +616,12 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
     <div className="welcome-state">
       <div className="welcome-hero-badge">
         <span className="welcome-sparkle"><Sparkles size={14} /></span>
-        <span>X-ONE CONCIERGE</span>
+        <span>X-One Concierge</span>
       </div>
 
       {/* Context-aware Proactive AI Banner */}
       <div
         className="proactive-ai-banner"
-        style={{
-          margin: "12px auto 16px auto",
-          maxWidth: "680px",
-          width: "100%",
-          padding: "16px 20px",
-          background: "linear-gradient(135deg, rgba(239, 246, 255, 0.95) 0%, rgba(240, 253, 250, 0.95) 100%)",
-          border: "1px solid #C7D2FE",
-          borderRadius: "14px",
-          boxShadow: "0 4px 16px -2px rgba(37, 99, 235, 0.08)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          cursor: "pointer",
-          textAlign: "left",
-          transition: "transform 0.15s ease, box-shadow 0.15s ease",
-        }}
         onClick={() => onStart(proactive.prompt)}
         role="button"
         tabIndex={0}
@@ -701,26 +632,26 @@ function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
           }
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "var(--text-micro)", fontWeight: 700, color: "#4338CA", background: "#C7D2FE", padding: "3px 10px", borderRadius: "100px" }}>
+        <div className="proactive-ai-banner-top">
+          <div className="proactive-ai-banner-badge">
             <Sparkles size={12} />
             <span>{proactive.badge}</span>
           </div>
-          <span style={{ fontSize: "var(--text-xs)", color: "#4F46E5", fontWeight: 650 }}>
+          <span className="proactive-ai-banner-cta">
             Thực hiện ngay →
           </span>
         </div>
         <div>
-          <h3 style={{ margin: "0 0 4px 0", fontSize: "var(--text-base)", fontWeight: 750, color: "#0F172A" }}>
+          <h3 className="proactive-ai-banner-title">
             {proactive.title}
           </h3>
-          <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "#475569", lineHeight: 1.5 }}>
+          <p className="proactive-ai-banner-desc">
             {proactive.desc}
           </p>
         </div>
       </div>
 
-      <h2 className="welcome-headline">Bạn cần <span className="welcome-headline-gradient">hỗ trợ gì</span> hôm nay?</h2>
+      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
       <p className="welcome-sub">
         Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
       </p>

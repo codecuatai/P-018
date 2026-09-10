@@ -63,56 +63,33 @@ function JourneyTimeline({ response }: { response: AssistantResponse }) {
   if (allSteps.length <= 1) return null;
 
   return (
-    <div
-      className="journey-timeline-card"
-      style={{
-        marginBottom: "12px",
-        padding: "12px 14px",
-        background: "linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)",
-        borderRadius: "12px",
-        border: "1px solid #E2E8F0",
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.03)",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-        <span style={{ fontSize: "var(--text-micro)", fontWeight: 700, color: "#4338CA", textTransform: "uppercase", letterSpacing: "0.04em", display: "inline-flex", alignItems: "center", gap: "5px" }}>
+    <div className="journey-timeline-card">
+      <div className="journey-timeline-head">
+        <span className="journey-timeline-label">
           <Sparkles size={12} /> Hành trình liên kết dịch vụ ({allSteps.length} bước)
         </span>
-        <span style={{ fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 600 }}>
+        <span className="journey-timeline-count">
           {allSteps.filter((s) => s.status === "completed").length}/{allSteps.length} hoàn tất
         </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", overflowX: "auto", paddingBottom: "2px" }}>
+      <div className="journey-timeline-steps">
         {allSteps.map((step, idx) => {
           const Icon = step.icon;
           const isDone = step.status === "completed";
           return (
-            <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  padding: "5px 10px",
-                  borderRadius: "100px",
-                  background: isDone ? "#ECFDF5" : "#EEF2FF",
-                  border: `1px solid ${isDone ? "#A7F3D0" : "#C7D2FE"}`,
-                  color: isDone ? "#065F46" : "#4338CA",
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 650,
-                }}
-              >
+            <div key={idx} className="journey-timeline-step">
+              <div className={`journey-timeline-pill${isDone ? " is-done" : ""}`}>
                 <Icon size={13} />
                 <span>{step.title}</span>
                 {isDone ? (
-                  <span style={{ background: "#059669", color: "#FFFFFF", borderRadius: "50%", width: "13px", height: "13px", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "var(--text-micro)" }}>✓</span>
+                  <span className="journey-timeline-check">✓</span>
                 ) : (
-                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#4F46E5", display: "inline-block" }} />
+                  <span className="journey-timeline-dot" />
                 )}
               </div>
               {idx < allSteps.length - 1 && (
-                <span style={{ color: "#94A3B8", fontSize: "var(--text-sm)", fontWeight: 700 }}>→</span>
+                <span className="journey-timeline-arrow">→</span>
               )}
             </div>
           );
@@ -235,27 +212,25 @@ function RestaurantCard({ item, actions, onAction, disabledActionId }: { item: A
         </div>)}
       </div>
       {totalPages > 1 ? (
-        <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-          <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
+        <div className="card-pagination">
+          <span className="card-pagination-meta">
             Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} quán)
           </span>
-          <div style={{ display: "flex", gap: "6px" }}>
+          <div className="card-pagination-actions">
             <button
-              className="button button-secondary"
+              className="button button-secondary card-pagination-btn"
               type="button"
               onClick={() => setPage((c) => Math.max(1, c - 1))}
               disabled={page <= 1}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
               aria-label="Trang trước"
             >
               <ChevronLeft size={13} /> Trước
             </button>
             <button
-              className="button button-secondary"
+              className="button button-secondary card-pagination-btn"
               type="button"
               onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
               disabled={page >= totalPages}
-              style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
               aria-label="Trang sau"
             >
               Sau <ChevronRight size={13} />
@@ -476,27 +451,25 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
       </div>
     </div>;
   })}</div>{totalPages > 1 ? (
-    <div className="card-pagination" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 4px", borderTop: "1px solid var(--color-border)", marginTop: "8px" }}>
-      <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
+    <div className="card-pagination">
+      <span className="card-pagination-meta">
         Trang <strong>{page}</strong> / {totalPages} ({allOptions.length} món)
       </span>
-      <div style={{ display: "flex", gap: "6px" }}>
+      <div className="card-pagination-actions">
         <button
-          className="button button-secondary"
+          className="button button-secondary card-pagination-btn"
           type="button"
           onClick={() => setPage((c) => Math.max(1, c - 1))}
           disabled={page <= 1}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
           aria-label="Trang trước"
         >
           <ChevronLeft size={13} /> Trước
         </button>
         <button
-          className="button button-secondary"
+          className="button button-secondary card-pagination-btn"
           type="button"
           onClick={() => setPage((c) => Math.min(totalPages, c + 1))}
           disabled={page >= totalPages}
-          style={{ minHeight: "28px", padding: "3px 8px", fontSize: "var(--text-micro)" }}
           aria-label="Trang sau"
         >
           Sau <ChevronRight size={13} />

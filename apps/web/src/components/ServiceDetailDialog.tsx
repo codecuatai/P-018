@@ -110,7 +110,7 @@ function HealthcareDetail({ option, title, address, facilityName, resolvedPoint,
 
 function FoodDetail({ option, title, restaurantName, address, resolvedPoint, resolving }: { option: AssistantOption | null; title: string; restaurantName: string; address: string; resolvedPoint?: XOnePoint; resolving: boolean }) {
   return (
-    <div className="food-detail-modal-layout" style={{ textAlign: "left" }}>
+    <div className="food-detail-modal-layout">
       <div className="food-detail-media-column">
         {option?.image_url ? (
           <ImageWithFallback source={option.image_url} alt={title} />
@@ -122,7 +122,7 @@ function FoodDetail({ option, title, restaurantName, address, resolvedPoint, res
             </div>
           ) : resolving ? (
             <div className="food-detail-map-loading">
-              <LoaderCircle className="spinner" size={24} style={{ color: "var(--color-primary-strong)" }} />
+              <LoaderCircle className="spinner food-detail-spinner" size={24} />
               <span>Đang tải vị trí nhà hàng...</span>
             </div>
           ) : (

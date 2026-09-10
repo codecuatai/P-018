@@ -46,15 +46,15 @@
 
 .button-primary {
   color: #FFFFFF;
-  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
-  border-color: #4F46E5;
-  box-shadow: 0 2px 8px -1px rgb(79 70 229 / 0.32);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-card);
 }
 .button-primary:not(:disabled):hover {
   color: #FFFFFF;
-  background: linear-gradient(135deg, #4338CA 0%, #4F46E5 100%);
-  border-color: #4338CA;
-  box-shadow: 0 6px 16px -2px rgb(79 70 229 / 0.45);
+  background: var(--color-primary-strong);
+  border-color: var(--color-primary-strong);
+  box-shadow: var(--shadow-soft);
 }
 .button-secondary {
   color: var(--color-navy);

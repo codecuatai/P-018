@@ -63,18 +63,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [activeConversationId, setActiveConversationId] = useState<string>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(240);
-  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
   const assistantHref = activeConversationId ? `/app/conversations/${encodeURIComponent(activeConversationId)}` : "/app";
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 820);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   useEffect(() => {
     const match = pathname?.match(/^\/app\/conversations\/([^/]+)/);
@@ -99,11 +89,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       const savedCollapsed = localStorage.getItem("xone_sidebar_collapsed");
       if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "true");
-      const savedWidth = localStorage.getItem("xone_sidebar_width");
-      if (savedWidth) {
-        const parsed = parseInt(savedWidth, 10);
-        if (!Number.isNaN(parsed) && parsed >= 180 && parsed <= 450) setSidebarWidth(parsed);
-      }
     } catch {
       // Ignore localStorage errors in private browsing.
     }
@@ -121,21 +106,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
-
-  useEffect(() => {
-    if (!isResizingSidebar) return;
-    const handleMouseMove = (event: MouseEvent) => setSidebarWidth(Math.min(Math.max(event.clientX, 180), 450));
-    const handleMouseUp = () => {
-      setIsResizingSidebar(false);
-      try { localStorage.setItem("xone_sidebar_width", String(sidebarWidth)); } catch { /* best effort */ }
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isResizingSidebar, sidebarWidth]);
 
   function toggleSidebar() {
     setSidebarCollapsed((previous) => {
@@ -184,13 +154,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div
-        className={`app-body${isResizingSidebar ? " is-resizing-active" : ""}`}
-        style={isMobile ? undefined : { gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)` }}
-      >
-        <aside className="app-sidebar" style={isMobile ? undefined : { width: sidebarCollapsed ? 0 : sidebarWidth }}>
+      <div className="app-body">
+        <aside className="app-sidebar">
           <Sidebar userEmail={user?.email ?? ""} userRole={user?.role} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} />
-          {!sidebarCollapsed && <div className="sidebar-resizer" onMouseDown={(event) => { event.preventDefault(); setIsResizingSidebar(true); }} onDoubleClick={toggleSidebar} title="Kéo để chỉnh kích thước sidebar, nhấp đúp để ẩn" />}
         </aside>
         <button
           className={`sidebar-edge-toggle${sidebarCollapsed ? " is-collapsed" : ""}`}
@@ -198,7 +164,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
           title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
           onClick={toggleSidebar}
-          style={isMobile ? undefined : { left: sidebarCollapsed ? "10px" : `${sidebarWidth}px` }}
         >
           {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>

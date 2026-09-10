@@ -22,27 +22,27 @@ export function ContextRail({
   title,
   description,
   onCollapse,
-  style,
-  resizer,
   children,
 }: {
   mode: ContextRailMode;
   title: string;
   description: string;
   onCollapse?: () => void;
-  style?: React.CSSProperties;
-  resizer?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra" style={style}>
-      {resizer}
+    <aside className={`context-rail context-rail-${mode}`} aria-label="Dịch vụ đang diễn ra">
       <div className="context-rail-heading">
         <div className="context-rail-heading-copy">
-          {mode !== "idle" ? <span className="eyebrow">ĐANG DIỄN RA</span> : <span className="eyebrow">TIỆN ÍCH</span>}
+          {mode !== "idle" ? <span className="eyebrow">Đang diễn ra</span> : <span className="eyebrow">Tiện ích</span>}
           <h2>{title}</h2>
           {description ? <p>{description}</p> : null}
         </div>
+        {onCollapse ? (
+          <button className="icon-button context-rail-close" type="button" onClick={onCollapse} aria-label="Đóng panel việc đang xử lý">
+            <PanelRightClose size={16} aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
       {children}
     </aside>
