@@ -42,6 +42,10 @@ const navigation = [
   { href: "/app/favorites", label: "Đã lưu", description: "Địa điểm và dịch vụ hay dùng", icon: BookmarkCheck },
 ];
 
+const DEFAULT_SIDEBAR_WIDTH = 280;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 540;
+
 function getRoleBadge(role?: string): { label: string; className: string; switchHref?: string; switchLabel?: string } {
   switch (role) {
     case "admin":
@@ -63,6 +67,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [activeConversationId, setActiveConversationId] = useState<string>();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
   const assistantWorkspace = pathname === "/app" || pathname?.startsWith("/app/conversations/");
   const assistantHref = activeConversationId ? `/app/conversations/${encodeURIComponent(activeConversationId)}` : "/app";
 
@@ -89,6 +95,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     try {
       const savedCollapsed = localStorage.getItem("xone_sidebar_collapsed");
       if (savedCollapsed !== null) setSidebarCollapsed(savedCollapsed === "true");
+
+      const savedWidth = localStorage.getItem("xone_sidebar_width");
+      if (savedWidth) {
+        const parsed = parseInt(savedWidth, 10);
+        if (!isNaN(parsed) && parsed >= MIN_SIDEBAR_WIDTH && parsed <= MAX_SIDEBAR_WIDTH) {
+          setSidebarWidth(parsed);
+        }
+      }
     } catch {
       // Ignore localStorage errors in private browsing.
     }
@@ -107,6 +121,42 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const startResizing = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  const resetSidebarWidth = useCallback(() => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    try {
+      localStorage.setItem("xone_sidebar_width", String(DEFAULT_SIDEBAR_WIDTH));
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const maxAllowed = Math.min(MAX_SIDEBAR_WIDTH, Math.floor(window.innerWidth * 0.45));
+      const clamped = Math.max(MIN_SIDEBAR_WIDTH, Math.min(event.clientX, maxAllowed));
+      setSidebarWidth(clamped);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      try {
+        localStorage.setItem("xone_sidebar_width", String(sidebarWidth));
+      } catch {}
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, sidebarWidth]);
+
   function toggleSidebar() {
     setSidebarCollapsed((previous) => {
       const next = !previous;
@@ -124,7 +174,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${isResizing ? " is-sidebar-resizing" : ""}`}>
       <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
       <header className="app-global-header">
         <div className="app-global-header-left">
@@ -154,19 +204,51 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <div className="app-body">
-        <aside className="app-sidebar">
-          <Sidebar userEmail={user?.email ?? ""} userRole={user?.role} pathname={pathname} assistantHref={assistantHref} assistantWorkspace={assistantWorkspace} onLogout={handleLogout} />
-        </aside>
-        <button
-          className={`sidebar-edge-toggle${sidebarCollapsed ? " is-collapsed" : ""}`}
-          type="button"
-          aria-label={sidebarCollapsed ? "Mở menu bên trái (Ctrl+B)" : "Thu gọn menu bên trái (Ctrl+B)"}
-          title={sidebarCollapsed ? "Mở menu (Ctrl+B)" : "Thu gọn menu (Ctrl+B)"}
-          onClick={toggleSidebar}
+      <div
+        className="app-body"
+        style={{
+          gridTemplateColumns: sidebarCollapsed ? "0px minmax(0, 1fr)" : `${sidebarWidth}px minmax(0, 1fr)`,
+        }}
+      >
+        <aside
+          className="app-sidebar"
+          style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
         >
-          {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
+          <Sidebar
+            userEmail={user?.email ?? ""}
+            userRole={user?.role}
+            pathname={pathname}
+            assistantHref={assistantHref}
+            assistantWorkspace={assistantWorkspace}
+            onLogout={handleLogout}
+            onCollapse={toggleSidebar}
+          />
+          {!sidebarCollapsed && (
+            <div
+              className={`sidebar-resizer${isResizing ? " is-active" : ""}`}
+              onMouseDown={startResizing}
+              onDoubleClick={resetSidebarWidth}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Kéo để mở rộng hoặc thu nhỏ thanh bên"
+              title="Kéo để mở rộng / thu nhỏ (Nhấp đúp: đặt lại mặc định 280px)"
+            >
+              <div className="sidebar-resizer-handle" />
+            </div>
+          )}
+        </aside>
+        {sidebarCollapsed && (
+          <button
+            className="sidebar-expand-btn"
+            type="button"
+            aria-label="Mở menu bên trái (Ctrl+B)"
+            title="Mở menu bên trái (Ctrl+B)"
+            onClick={toggleSidebar}
+          >
+            <ChevronRight size={15} />
+            <span>Mở menu</span>
+          </button>
+        )}
         <header className="app-mobile-header">
           <Link className="brand-link" href={assistantHref} onClick={assistantWorkspace ? (event) => event.preventDefault() : undefined}><XOneMark size={27} /><span>X-One</span></Link>
           <div className="app-mobile-actions">
@@ -188,11 +270,46 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Sidebar({ userEmail, userRole, pathname, assistantHref, assistantWorkspace, onLogout, compact = false }: { userEmail: string; userRole?: string; pathname: string | null; assistantHref: string; assistantWorkspace: boolean; onLogout: () => Promise<void>; compact?: boolean }) {
-  return <div className="sidebar-content">
-    <p className="sidebar-eyebrow">X-One cho khách hàng</p>
-    <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới với trợ lý X-One"><Plus size={16} /><span>Đoạn chat mới</span></Link>
-    <nav className="app-nav" aria-label="Điều hướng chính">{navigation.map(({ href, label, description, icon: Icon }) => {
+function Sidebar({
+  userEmail,
+  userRole,
+  pathname,
+  assistantHref,
+  assistantWorkspace,
+  onLogout,
+  onCollapse,
+  compact = false,
+}: {
+  userEmail: string;
+  userRole?: string;
+  pathname: string | null;
+  assistantHref: string;
+  assistantWorkspace: boolean;
+  onLogout: () => Promise<void>;
+  onCollapse?: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="sidebar-content">
+      <div className="sidebar-header">
+        <div className="sidebar-brand-group">
+          <span className="sidebar-brand-badge" aria-hidden="true" />
+          <p className="sidebar-eyebrow">X-One cho khách hàng</p>
+        </div>
+        {onCollapse && !compact && (
+          <button
+            className="sidebar-collapse-btn"
+            type="button"
+            onClick={onCollapse}
+            aria-label="Thu gọn menu bên trái (Ctrl+B)"
+            title="Thu gọn menu bên trái (Ctrl+B)"
+          >
+            <ChevronLeft size={15} />
+          </button>
+        )}
+      </div>
+      <Link className="sidebar-new-btn" href="/app" onClick={emitNewConversation} title="Bắt đầu đoạn chat mới với trợ lý X-One"><Plus size={16} /><span>Đoạn chat mới</span></Link>
+      <nav className="app-nav" aria-label="Điều hướng chính">{navigation.map(({ href, label, description, icon: Icon }) => {
       const isAssistant = href === "/app";
       const targetHref = isAssistant ? assistantHref : href;
       const current = isAssistant ? assistantWorkspace : pathname === href || pathname?.startsWith(`${href}/`);
@@ -202,7 +319,8 @@ function Sidebar({ userEmail, userRole, pathname, assistantHref, assistantWorksp
     <RecentConversations pathname={pathname} compact={compact} />
     <div className="sidebar-spacer" />
     <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials" aria-hidden="true">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong title={userEmail}>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} aria-hidden="true" /> {getRoleBadge(userRole).label} · Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} userRole={userRole} /></div>
-  </div>;
+  </div>
+  );
 }
 
 const accountMenuItems = [

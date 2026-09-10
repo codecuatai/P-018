@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Plus, PlusCircle, RefreshCw, Sparkles, Car, Utensils, UtensilsCrossed, Stethoscope, type LucideIcon } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Plus, PlusCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -440,7 +440,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
             {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
             {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
-            {messages.length === 0 && !loadingHistory && !conversationLoadError ? <WelcomeState onStart={(prompt) => void send(prompt)} /> : null}
             {messages.map((message, index) => (
               <MessageBubble
                 key={message.id || index}
@@ -537,153 +536,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   );
 }
 
-type ServiceCard = {
-  icon: LucideIcon;
-  service: string;
-  desc: string;
-  accent: string;
-  prompt: string;
-  example: string;
-};
-
-function WelcomeState({ onStart }: { onStart: (prompt: string) => void }) {
-  const services: ServiceCard[] = [
-    {
-      icon: Car,
-      service: "Đặt xe di chuyển",
-      desc: "Xe 4 chỗ, 7 chỗ đón tận nơi",
-      accent: "welcome-card-ride",
-      prompt: "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
-      example: "VinUni → Hồ Gươm (4 chỗ)",
-    },
-    {
-      icon: Utensils,
-      service: "Giao đồ ăn ngon",
-      desc: "Tìm quán ngon và đặt món nóng",
-      accent: "welcome-card-food",
-      prompt: "Tìm phở bò giao về nhà",
-      example: "Tìm phở bò giao tận nơi",
-    },
-    {
-      icon: UtensilsCrossed,
-      service: "Đặt bàn nhà hàng",
-      desc: "Hẹn hò, tiệc gia đình, tiếp khách",
-      accent: "welcome-card-restaurant",
-      prompt: "Tối nay tìm nhà hàng cho 2 người ở Hà Nội",
-      example: "Bàn 2 người tối nay ở Hà Nội",
-    },
-    {
-      icon: Stethoscope,
-      service: "Đặt lịch khám bệnh",
-      desc: "Bác sĩ chuyên khoa, đặt hẹn nhanh",
-      accent: "welcome-card-healthcare",
-      prompt: "Giúp tôi đặt lịch khám thần kinh sáng mai",
-      example: "Khám chuyên khoa thần kinh",
-    },
-  ];
-
-  const currentHour = new Date().getHours();
-  let proactive = {
-    badge: "Gợi ý thông minh buổi tối",
-    title: "Đặt bàn ăn ngon & xe 4 chỗ đưa đón trọn gói",
-    desc: "Tự động tìm nhà hàng lãng mạn cho 2 người lúc 19h và điều phối xe đón tận nơi.",
-    prompt: "Tìm nhà hàng cho 2 người tối nay và đặt xe 4 chỗ đưa đón",
-  };
-  if (currentHour >= 5 && currentHour < 11) {
-    proactive = {
-      badge: "Gợi ý khởi đầu ngày mới",
-      title: "Ăn sáng nóng hổi & xe đưa đón đi làm",
-      desc: "Tìm món phở bò hoặc cà phê sáng giao nhanh và đặt xe đến công sở đúng giờ.",
-      prompt: "Tìm phở bò giao tận nơi và đặt xe 4 chỗ đi làm",
-    };
-  } else if (currentHour >= 11 && currentHour < 14) {
-    proactive = {
-      badge: "Gợi ý giờ nghỉ trưa",
-      title: "Cơm trưa văn phòng hoặc bàn ăn trưa nhóm",
-      desc: "Gợi ý món cơm trưa giao nhanh trong 25 phút hoặc bàn ăn trưa cùng đồng nghiệp.",
-      prompt: "Giao cơm tấm sườn trứng về công ty",
-    };
-  } else if (currentHour >= 14 && currentHour < 17) {
-    proactive = {
-      badge: "Gợi ý xế chiều",
-      title: "Trà sữa, bánh ngọt & lên lịch tối",
-      desc: "Nạp năng lượng xế chiều và chuẩn bị kế hoạch di chuyển buổi tối thảnh thơi.",
-      prompt: "Tìm đồ uống trà sữa và đồ ăn nhẹ giao tận nơi",
-    };
-  }
-
-  return (
-    <div className="welcome-state">
-      <div className="welcome-hero-badge">
-        <span className="welcome-sparkle"><Sparkles size={14} /></span>
-        <span>X-One Concierge</span>
-      </div>
-
-      {/* Context-aware Proactive AI Banner */}
-      <div
-        className="proactive-ai-banner"
-        onClick={() => onStart(proactive.prompt)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onStart(proactive.prompt);
-          }
-        }}
-      >
-        <div className="proactive-ai-banner-top">
-          <div className="proactive-ai-banner-badge">
-            <Sparkles size={12} />
-            <span>{proactive.badge}</span>
-          </div>
-          <span className="proactive-ai-banner-cta">
-            Thực hiện ngay →
-          </span>
-        </div>
-        <div>
-          <h3 className="proactive-ai-banner-title">
-            {proactive.title}
-          </h3>
-          <p className="proactive-ai-banner-desc">
-            {proactive.desc}
-          </p>
-        </div>
-      </div>
-
-      <h2 className="welcome-headline">Bạn cần hỗ trợ gì hôm nay?</h2>
-      <p className="welcome-sub">
-        Nhắn tin tự nhiên như trò chuyện. Bạn có thể chọn 1 dịch vụ bên dưới hoặc gõ yêu cầu kết hợp nhiều việc cùng lúc.
-      </p>
-      <div className="welcome-services-grid">
-        {services.map(({ icon: Icon, service, desc, accent, prompt, example }) => (
-          <button
-            key={service}
-            type="button"
-            className={`welcome-service-card ${accent}`}
-            onClick={() => onStart(prompt)}
-          >
-            <div className="welcome-card-icon-wrap">
-              <Icon size={20} aria-hidden="true" />
-            </div>
-            <div className="welcome-card-body">
-              <div className="welcome-card-title-row">
-                <strong>{service}</strong>
-                <span className="welcome-card-arrow" aria-hidden="true">↗</span>
-              </div>
-              <p className="welcome-card-desc">{desc}</p>
-              <div className="welcome-card-prompt-pill">
-                <span>Ví dụ:</span> &ldquo;{example}&rdquo;
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({ 
+function MessageBubble({
   message, 
   onAction, 
   onFoodSelectionChange, 
