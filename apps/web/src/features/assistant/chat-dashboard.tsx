@@ -424,7 +424,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     <section className="assistant-page" aria-labelledby="assistant-title">
       <header className="assistant-header">
         <div className="assistant-heading">
-          <span className="eyebrow">X-ONE ASSISTANT</span>
+          <span className="eyebrow">TRỢ LÝ X-ONE</span>
           <h1 id="assistant-title">Xin chào<span className="visually-hidden"> · Trợ lý X-One</span></h1>
           <p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p>
         </div>

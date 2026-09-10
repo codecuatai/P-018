@@ -46,7 +46,7 @@ import { RideTrackingPanel } from "./ride-tracking";
 import { useRideTracking } from "./ride-tracking-cache";
 import { FoodTrackingPanel } from "./food-tracking";
 import { XOneMap } from "./xone-map";
-import { formatAddress, formatDateTime, formatMoney as presentMoney, statusLabel } from "@/lib/presentation";
+import { formatAddress, formatDateTime, formatMoney as presentMoney, serviceLabel, statusLabel } from "@/lib/presentation";
 import { FavoriteToggle } from "./favorite-toggle";
 import { ServiceDetailDialog } from "@/components/ServiceDetailDialog";
 
@@ -65,7 +65,7 @@ export function ServiceBrowse({ service, resumeAppointmentId }: { service: Servi
   const Icon = icons[service];
   return <section className="service-browse" aria-labelledby="service-browse-title">
     <div className="service-browse-top"><Link className="text-link" href="/app/services"><ArrowLeft size={16} /> Dịch vụ</Link><Link className="text-link" href={`/app?service=${service}&mode=assistant`}>Tiếp tục với X-One AI <ArrowRight size={16} /></Link></div>
-    <header className="service-browse-heading"><span className="service-browse-icon"><Icon size={22} /></span><div><span className="eyebrow">{service.toUpperCase()}</span><h1 id="service-browse-title">{copy[service].label}</h1><p>{copy[service].description}</p></div></header>
+    <header className="service-browse-heading"><span className="service-browse-icon"><Icon size={22} /></span><div><span className="eyebrow">{serviceLabel(service).toUpperCase()}</span><h1 id="service-browse-title">{copy[service].label}</h1><p>{copy[service].description}</p></div></header>
     {service === "food" ? <FoodBrowse /> : service === "restaurant" ? <RestaurantBrowse /> : service === "healthcare" ? <HealthcareBrowseWithFavorite resumeAppointmentId={resumeAppointmentId} /> : <RideBrowse />}
   </section>;
 }
@@ -1127,7 +1127,7 @@ function DetailHeading({ item, service }: { item: JsonRecord; service: ServiceKe
   return <div className={`service-detail-heading${point ? "" : " no-map"}${service === "restaurant" ? " restaurant-service-detail-heading" : ""}`}>
     <div className="service-detail-copy">
       <AuthoritativeImage source={item.image_url} alt={display(item.name ?? item.title ?? "Địa điểm")} />
-      <span className="eyebrow">{service.toUpperCase()} · CHI TIẾT</span>
+      <span className="eyebrow">{serviceLabel(service).toUpperCase()} · CHI TIẾT</span>
       <h2>{display(item.name ?? item.title ?? "Địa điểm")}</h2>
       <p>{address}</p>
       {service !== "ride" ? <FavoriteToggle domain={service} resourceId={resourceId} /> : null}

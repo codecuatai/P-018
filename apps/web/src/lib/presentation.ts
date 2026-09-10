@@ -108,11 +108,22 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function serviceLabel(service: unknown): string {
+  const key = String(service ?? "").trim().toLowerCase();
+  switch (key) {
+    case "food": return "Đồ ăn";
+    case "ride": return "Chuyến xe";
+    case "restaurant": return "Nhà hàng";
+    case "healthcare": return "Lịch khám";
+    default: return String(service ?? "Dịch vụ");
+  }
+}
+
 export function conversationTitle(record: { title?: string; serviceContext?: string; messages?: Array<{ role: string; content: string }> }): string {
   const explicit = typeof record.title === "string" ? record.title.trim() : "";
   if (explicit) return explicit;
   const firstUserMessage = record.messages?.find((message) => message.role === "user" && message.content.trim())?.content.trim();
   if (firstUserMessage) return firstUserMessage.length > 42 ? `${firstUserMessage.slice(0, 42).trimEnd()}…` : firstUserMessage;
   const service = typeof record.serviceContext === "string" ? record.serviceContext.trim() : "";
-  return service ? `Cuộc trò chuyện · ${service}` : "Cuộc trò chuyện mới";
+  return service ? `Cuộc trò chuyện · ${serviceLabel(service)}` : "Cuộc trò chuyện mới";
 }
