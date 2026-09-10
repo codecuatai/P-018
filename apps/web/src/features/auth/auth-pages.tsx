@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, Eye, EyeOff, HeartPulse, LoaderCircle, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Store, User, UtensilsCrossed } from "lucide-react";
+import { Car, Check, Eye, EyeOff, HeartPulse, Info, LoaderCircle, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Store, User, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -210,17 +210,19 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
       {accountType === "user" ? (
         <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />
       ) : (
-        <p className="form-notice" role="note">
-          Tài khoản đối tác cần thông tin cơ sở kinh doanh nên vui lòng hoàn tất biểu mẫu bên dưới. Bạn có thể liên kết Google sau khi tạo tài khoản.
+        <p className="provider-notice" role="note">
+          <Info size={15} aria-hidden="true" />
+          <span>Hoàn tất hồ sơ kinh doanh bên dưới — bạn có thể liên kết Google sau.</span>
         </p>
       )}
 
       <form onSubmit={submit}>
         {accountType === "provider" && (
-          <fieldset className="provider-fieldset">
-            <legend className="provider-fieldset-legend">
-              Lĩnh vực đối tác hoạt động
-            </legend>
+          <div className="provider-section">
+            <div className="provider-section-header">
+              <span className="provider-section-badge">Lĩnh vực hợp tác</span>
+              <span className="provider-section-hint">Chọn dịch vụ bạn muốn đăng ký</span>
+            </div>
             <div className="provider-type-grid" role="group" aria-label="Chọn lĩnh vực đối tác">
               <button
                 type="button"
@@ -230,10 +232,12 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="ride"
                 className="provider-type-option"
               >
-                <span className="tone-icon"><Car size={20} aria-hidden="true" /></span>
-                <span className="tone-title">Tài xế di chuyển</span>
-                <span className="tone-sub">Xe máy / Ô tô</span>
-                <span className="tone-check">✓</span>
+                <span className="tone-icon"><Car size={18} aria-hidden="true" /></span>
+                <span className="tone-body">
+                  <span className="tone-title">Di chuyển</span>
+                  <span className="tone-sub">Tài xế xe / Giao hàng</span>
+                </span>
+                <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
               </button>
               <button
                 type="button"
@@ -243,10 +247,12 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="food"
                 className="provider-type-option"
               >
-                <span className="tone-icon"><UtensilsCrossed size={20} aria-hidden="true" /></span>
-                <span className="tone-title">Quán ăn / Món</span>
-                <span className="tone-sub">Nhà hàng & F&B</span>
-                <span className="tone-check">✓</span>
+                <span className="tone-icon"><UtensilsCrossed size={18} aria-hidden="true" /></span>
+                <span className="tone-body">
+                  <span className="tone-title">Ẩm thực</span>
+                  <span className="tone-sub">Quán ăn, nhà hàng, F&B</span>
+                </span>
+                <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
               </button>
               <button
                 type="button"
@@ -256,19 +262,21 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 data-tone="health"
                 className="provider-type-option"
               >
-                <span className="tone-icon"><HeartPulse size={20} aria-hidden="true" /></span>
-                <span className="tone-title">Phòng khám</span>
-                <span className="tone-sub">Y tế & Bác sĩ</span>
-                <span className="tone-check">✓</span>
+                <span className="tone-icon"><HeartPulse size={18} aria-hidden="true" /></span>
+                <span className="tone-body">
+                  <span className="tone-title">Y tế</span>
+                  <span className="tone-sub">Bác sĩ, phòng khám</span>
+                </span>
+                <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
               </button>
             </div>
 
             <Field
-              label="Tên thương hiệu / Cơ sở / Phương tiện"
+              label="Tên thương hiệu / Cơ sở kinh doanh"
               id="register-business-name"
               value={businessName}
               onChange={setBusinessName}
-              placeholder="VD: Phở Gia Truyền, Xe 4 Chỗ Bác Minh..."
+              placeholder="VD: Phở Bát Đàn, Xe Hợp Đồng Bác Minh..."
             />
             <Field
               label="Số điện thoại liên hệ"
@@ -280,7 +288,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
               placeholder="VD: 0912345678"
               required
             />
-          </fieldset>
+          </div>
         )}
 
         <Field

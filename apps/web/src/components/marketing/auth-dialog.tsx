@@ -75,12 +75,14 @@ export function AuthDialog({ open, mode, nextPath, onOpenChange, onModeChange }:
               Đăng ký
             </button>
           </div>
-          <ul className={styles.heroServices} aria-label="Các dịch vụ X-One">
-            <li><Car size={14} aria-hidden="true" />Đặt xe</li>
-            <li><UtensilsCrossed size={14} aria-hidden="true" />Món ngon</li>
-            <li><HeartPulse size={14} aria-hidden="true" />Khám bệnh</li>
-            <li><Sparkles size={14} aria-hidden="true" />Trợ lý AI</li>
-          </ul>
+          {isLogin && (
+            <ul className={styles.heroServices} aria-label="Các dịch vụ X-One">
+              <li><Car size={14} aria-hidden="true" />Đặt xe</li>
+              <li><UtensilsCrossed size={14} aria-hidden="true" />Món ngon</li>
+              <li><HeartPulse size={14} aria-hidden="true" />Khám bệnh</li>
+              <li><Sparkles size={14} aria-hidden="true" />Trợ lý AI</li>
+            </ul>
+          )}
         </div>
         <div className={styles.form}>
           {isLogin ? (
