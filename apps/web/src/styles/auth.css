@@ -34,17 +34,26 @@
   position: absolute;
   top: 18px;
   right: 18px;
+  z-index: 2;
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  color: var(--color-navy);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.auth-dialog-close:hover { background: var(--color-canvas); border-color: var(--color-border); }
+.auth-dialog-close:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: scale(1.04);
+}
 
 .auth-dialog-wide { width: min(560px, calc(100vw - 32px)); }
 

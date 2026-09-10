@@ -1,34 +1,169 @@
-.heading {
-  padding-bottom: 18px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--color-border);
+.dialogNarrow {
+  width: min(480px, calc(100vw - 28px)) !important;
 }
 
-.eyebrowWrap {
+.dialogWide {
+  width: min(580px, calc(100vw - 28px)) !important;
+}
+
+.hero {
+  position: relative;
+  margin: -30px -30px 22px -30px;
+  padding: 26px 28px 20px;
+  color: #FFFFFF;
+  background: linear-gradient(155deg, #0F172A 0%, #1E1B4B 48%, #3730A3 85%, #4F46E5 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px 22px 0 0;
+  overflow: hidden;
+}
+
+.hero::before {
+  position: absolute;
+  top: -80px;
+  right: -60px;
+  width: 220px;
+  height: 220px;
+  content: "";
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.35) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.heroTop {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-.heading h2 {
-  margin: 4px 0 0;
-  color: var(--color-navy);
-  font-size: var(--text-2xl);
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--text-base);
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: var(--tracking-tight);
+}
+
+.brandMark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+
+.heroBadge {
+  padding: 3px 10px;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: #E0E7FF;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  color: #FFFFFF !important;
+  font-size: var(--text-2xl) !important;
+  font-weight: 800 !important;
+  letter-spacing: var(--tracking-tight);
   line-height: var(--leading-tight);
 }
 
-.heading p {
-  margin: 6px 0 0;
-  color: var(--color-muted);
-  font-size: var(--text-sm);
+.subtitle {
+  position: relative;
+  z-index: 1;
+  margin: 6px 0 16px;
+  color: rgba(226, 232, 240, 0.92) !important;
+  font-size: var(--text-sm) !important;
   line-height: var(--leading-normal);
 }
 
-.form { padding-top: 0; }
-.form :global(.auth-switch) { margin-top: 18px; margin-bottom: 0; }
+.modeSwitch {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 13px;
+  backdrop-filter: blur(8px);
+}
+
+.modeOption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.85);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.modeOption:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.10);
+}
+
+.modeOption[data-active="true"] {
+  color: #1E1B4B;
+  background: #FFFFFF;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.20);
+}
+
+.heroServices {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  list-style: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: var(--text-xs);
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.heroServices li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+
+.form {
+  padding-top: 0;
+}
+
+.form :global(.auth-switch) {
+  margin-top: 18px;
+  margin-bottom: 0;
+}
+
 .form :global(.auth-switch) button {
   padding: 0;
   color: var(--color-primary-strong);
@@ -38,4 +173,18 @@
   font-weight: 700;
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+
+@media (max-width: 560px) {
+  .hero {
+    margin: -23px -18px 18px -18px;
+    padding: 20px 18px 16px;
+    border-radius: 14px 14px 0 0;
+  }
+  .title {
+    font-size: var(--text-xl) !important;
+  }
+  .heroServices {
+    display: none;
+  }
 }
