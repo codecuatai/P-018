@@ -4,11 +4,12 @@
 .app-global-header-right { display: flex; align-items: center; gap: 12px; }
 .header-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: var(--text-xl); color: var(--color-navy); text-decoration: none; }
 
-.app-body { position: relative; display: grid; grid-template-columns: 280px minmax(0, 1fr); height: calc(100dvh - 54px); min-height: 0; flex: 1; overflow: hidden; }
-.app-sidebar { position: relative; height: 100%; max-height: 100%; padding: 14px 12px; background: #FFFFFF; border-right: 1px solid var(--color-border); overflow: visible; display: flex; flex-direction: column; box-sizing: border-box; transition: opacity 160ms ease, border-color 160ms ease; }
+.app-body { position: relative; display: grid; grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; height: calc(100dvh - 54px); min-height: 0; max-height: calc(100dvh - 54px); flex: 1 1 auto; overflow: hidden; }
+.app-body > * { min-height: 0; min-width: 0; }
+.app-sidebar { position: relative; height: 100%; max-height: 100%; min-height: 0; min-width: 0; align-self: stretch; padding: 14px 12px; background: #FFFFFF; border-right: 1px solid var(--color-border); overflow: visible; display: flex; flex-direction: column; box-sizing: border-box; transition: opacity 160ms ease, border-color 160ms ease; }
 .app-shell.is-sidebar-collapsed .app-body { grid-template-columns: 0px minmax(0, 1fr) !important; }
 .app-shell.is-sidebar-collapsed .app-sidebar { width: 0 !important; min-width: 0; padding: 0 !important; border-right: 0 !important; opacity: 0; pointer-events: none; }
-.sidebar-content { display: flex; height: 100%; min-height: 0; width: 100%; min-width: 0; flex-direction: column; overflow: hidden; }
+.sidebar-content { display: flex; height: 100%; max-height: 100%; min-height: 0; width: 100%; min-width: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
 
 /* Resizable Sidebar Styles */
 .app-shell.is-sidebar-resizing * {
@@ -198,7 +199,7 @@
 }
 
 /* Recent Conversations */
-.sidebar-recent { display: flex; flex-direction: column; min-height: 0; flex: 1; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); overflow: hidden; }
+.sidebar-recent { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); overflow: hidden; }
 .sidebar-recent-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 6px; color: var(--color-muted-soft); font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; letter-spacing: var(--tracking-wide); text-transform: uppercase; line-height: var(--leading-snug); }
 .sidebar-recent-heading > span { display: inline-flex; align-items: center; line-height: 1; }
 .sidebar-recent-heading a { display: inline-flex; align-items: center; color: var(--color-primary-strong); font-family: inherit; font-size: var(--text-micro); font-weight: 600; letter-spacing: 0; text-transform: none; text-decoration: none; line-height: 1; }
@@ -244,7 +245,7 @@
 .dropdown-item-danger:hover { background: #FEF2F2; color: #DC2626; }
 .dropdown-divider { height: 1px; background: var(--color-border); margin: 3px 0; }
 .app-content { position: relative; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; padding: 36px clamp(20px, 3.5vw, 48px) 48px; background: #F8FAFC; }
-.app-content-assistant { display: flex; flex-direction: column; height: 100%; max-height: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; padding: 0; background: #F8FAFC; }
+.app-content-assistant { display: flex; flex-direction: column; height: 100%; max-height: 100%; min-height: 0; min-width: 0; flex: 1 1 auto; align-self: stretch; overflow: hidden; padding: 0; background: #F8FAFC; }
 
 .role-pill,
 .role-switch-link { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border-radius: 999px; font-size: var(--text-micro); font-weight: 700; text-decoration: none; border: 1px solid var(--color-border); }

@@ -3,8 +3,9 @@
 .assistant-page > .assistant-header { display: none; }
 
 /* Quiet-concierge layout: single chat column centred, rail is an opt-in overlay (pure CSS, no JS measurement). */
-.assistant-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; height: 100%; max-height: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; align-items: stretch; background: var(--color-canvas); }
-.chat-column { position: relative; display: flex; min-height: 0; height: 100%; max-height: 100%; min-width: 0; flex: 1 1 auto; flex-direction: column; overflow: hidden; background: var(--color-canvas); border: 0; border-radius: 0; box-shadow: none; }
+.assistant-layout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; height: 100%; max-height: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; align-items: stretch; justify-items: stretch; background: var(--color-canvas); }
+.assistant-layout > * { min-height: 0; min-width: 0; }
+.chat-column { position: relative; display: flex; min-height: 0; height: 100%; max-height: 100%; min-width: 0; flex: 1 1 auto; align-self: stretch; justify-self: stretch; flex-direction: column; overflow: hidden; background: var(--color-canvas); border: 0; border-radius: 0; box-shadow: none; }
 /* Chat feed centred at max 760px per plan */
 .chat-feed > * { width: 100%; max-width: var(--xone-chat-max); margin-inline: auto; }
 
