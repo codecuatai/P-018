@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 
 export function CollapsibleAgentCard({
@@ -9,6 +9,7 @@ export function CollapsibleAgentCard({
   status,
   summary,
   defaultCollapsed = false,
+  isCompleted = false,
   children,
 }: {
   label: string;
@@ -16,6 +17,7 @@ export function CollapsibleAgentCard({
   status?: string;
   summary?: ReactNode;
   defaultCollapsed?: boolean;
+  isCompleted?: boolean;
   children: ReactNode;
 }) {
   const contentId = useId();
@@ -32,12 +34,17 @@ export function CollapsibleAgentCard({
   };
 
   return (
-    <section className="collapsible-agent-card" aria-label={title}>
+    <section className={`collapsible-agent-card${isCompleted ? " is-completed" : ""}`} aria-label={title}>
       <header className="collapsible-card-header">
         <div className="collapsible-card-copy">
           <span className="collapsible-card-eyebrow">{label}</span>
           <h3 className="collapsible-card-title">{title}</h3>
-          {collapsed && status ? <span className="collapsible-card-status">{status}</span> : null}
+          {collapsed && (status || isCompleted) ? (
+            <span className={`collapsible-card-status${isCompleted ? " is-completed" : ""}`}>
+              {isCompleted ? <Check size={11} aria-hidden="true" /> : null}
+              {status || "Đã hoàn tất"}
+            </span>
+          ) : null}
           {collapsed && summary ? <p className="collapsible-card-summary">{summary}</p> : null}
         </div>
         <button

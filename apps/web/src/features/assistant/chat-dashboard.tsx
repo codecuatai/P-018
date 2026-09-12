@@ -437,9 +437,22 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
         className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${activeItems.length ? " has-active-work" : ""}`}
       >
         <div className="chat-column">
-          <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory}>
+          <div className="chat-feed" ref={feedRef} aria-busy={loadingHistory} aria-live="polite">
             {loadingHistory && messages.length === 0 ? <div className="inline-note">Đang tải cuộc trò chuyện…</div> : null}
             {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
+            {!loadingHistory && !conversationLoadError && messages.length === 0 ? (
+              <div className="chat-empty">
+                <h2 className="chat-empty-title">Hôm nay mình giúp gì cho bạn?</h2>
+                <p className="chat-empty-sub">Cứ nói như nhắn cho người quen — X-One lo phần còn lại.</p>
+                <div className="chat-empty-suggestions" role="group" aria-label="Gợi ý để bắt đầu">
+                  {["Đặt xe đi sân bay sáng mai", "Tìm quán phở gần đây", "Đặt lịch khám da liễu cuối tuần"].map((suggestion) => (
+                    <button key={suggestion} className="chat-empty-suggestion" type="button" onClick={() => void send(suggestion)} disabled={sending}>
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {messages.map((message, index) => (
               <MessageBubble
                 key={message.id || index}
@@ -469,7 +482,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 disabled={sending}
                 onChange={(event) => setComposer(event.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Ví dụ: Tối nay tìm nhà hàng cho 2 người rồi gọi xe tới đó…"
+                placeholder="Nhờ X-One đặt xe 8h sáng mai ra sân bay…"
                 rows={1}
                 value={composer}
               />
@@ -517,7 +530,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
         <ContextRail
           mode={activeItems.length ? "active" : "idle"}
-          title={activeItems.length ? "Việc đang xử lý" : "Dịch vụ đang diễn ra"}
+          title={activeItems.length ? "Việc đang chạy" : "Dịch vụ đang diễn ra"}
           description={activeItems.length ? "Cập nhật mới nhất của các dịch vụ bạn đang dùng." : ""}
           onCollapse={() => toggleRail(true)}
         >

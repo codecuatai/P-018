@@ -103,12 +103,12 @@ export function AssistantCards({ response, onAction, disabledActionId, foodSelec
   const secondaryActions = response.actions.filter((action) => !["ride_service", "ride_payment", "select_restaurant", "restaurant_confirm", "restaurant_update", "select_healthcare_slot", "healthcare_cancel", "select_food_item", "food_cart_increment", "food_cart_decrement", "food_cart_remove", "food_checkout", "food_confirm", "food_payment"].includes(action.kind));
   return <div className="assistant-cards">
     <JourneyTimeline response={response} />
-    {(response.completed ?? []).map((item, index) => <AssistantCard key={`completed-${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
+    {(response.completed ?? []).map((item, index) => <AssistantCard key={`completed-${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} isCompleted />)}
     {response.items.map((item, index) => <AssistantCard key={`${item.kind}-${index}`} item={item} actions={response.actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />)}
     {secondaryActions.length > 0 ? <div className="action-list">{secondaryActions.map((action) => <button className="card-action" key={action.id} type="button" onClick={() => onAction(action)} disabled={Boolean(disabledActionId)}><ShieldCheck size={15} /> {action.label}</button>)}</div> : null}
   </div>;
 }
-function AssistantCard({ item, actions, onAction, disabledActionId, foodSelections, onFoodSelectionChange }: { item: AssistantItem; actions: AssistantAction[]; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler }) {
+function AssistantCard({ item, actions, onAction, disabledActionId, foodSelections, onFoodSelectionChange, isCompleted = false }: { item: AssistantItem; actions: AssistantAction[]; onAction: ActionHandler; disabledActionId?: string; foodSelections?: Record<string, FoodSelection>; onFoodSelectionChange?: FoodSelectionChangeHandler; isCompleted?: boolean }) {
   if (!isKnownAssistantItem(item)) return <FallbackCard item={item} />;
   switch (item.kind) {
     case "restaurant_options":
@@ -116,32 +116,32 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
       const restaurantOptions = item.options ?? [];
       const isUnavailable = item.kind === "restaurant_unavailable";
       const selectedName = text(item.restaurant?.name, "Quán đã chọn");
-      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, isUnavailable ? "Quán đã chọn chưa còn bàn" : "Chọn nhà hàng")} summary={isUnavailable ? selectedName : restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."}>
+      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, isUnavailable ? "Quán đã chọn chưa còn bàn" : "Chọn nhà hàng")} summary={isUnavailable ? selectedName : restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."} isCompleted={isCompleted}>
         <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
     case "restaurant_confirmation":
     case "reservation": {
       const reservationSummary = [text(item.restaurant?.name), item.party_size ? `${item.party_size} người` : undefined].filter(Boolean).join(" · ");
-      return <CollapsibleAgentCard label="Đặt bàn" title={text(item.title, "Xác nhận đặt bàn")} status={item.status ? statusLabel(item.status) : undefined} summary={reservationSummary}>
+      return <CollapsibleAgentCard label="Đặt bàn" title={text(item.title, "Xác nhận đặt bàn")} status={item.status ? statusLabel(item.status) : undefined} summary={reservationSummary} isCompleted={isCompleted}>
         <RestaurantConfirmation item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
     case "ride_quote":
     case "ride_booking": {
       const rideSummary = [text(item.pickup), text(item.dropoff)].filter(Boolean).join(" → ");
-      return <CollapsibleAgentCard label="Chuyến xe" title="Chuyến xe" status={item.status ? statusLabel(item.status) : undefined} summary={rideSummary || "Đang cập nhật hành trình"}>
+      return <CollapsibleAgentCard label="Chuyến xe" title="Chuyến xe" status={item.status ? statusLabel(item.status) : undefined} summary={rideSummary || "Đang cập nhật hành trình"} isCompleted={isCompleted}>
         <RideCardWithCancel item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
     case "ride_timing_conflict":
-      return <CollapsibleAgentCard label="Chuyến xe" title={text(item.title, "Chuyến xe")} summary="Cần cập nhật lịch khám hoặc điểm đón để thử lại.">
+      return <CollapsibleAgentCard label="Chuyến xe" title={text(item.title, "Chuyến xe")} summary="Cần cập nhật lịch khám hoặc điểm đón để thử lại." isCompleted={isCompleted}>
         <RideTimingConflictCard item={item} />
       </CollapsibleAgentCard>;
     case "healthcare_options":
     case "healthcare_no_availability": {
       const healthcareSlots = item.options ?? [];
-      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám phù hợp")} summary={healthcareSlots.length ? `${healthcareSlots.length} khung giờ khả dụng` : "Chưa có lịch trống phù hợp."}>
+      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám phù hợp")} summary={healthcareSlots.length ? `${healthcareSlots.length} khung giờ khả dụng` : "Chưa có lịch trống phù hợp."} isCompleted={isCompleted}>
         <HealthcareCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
@@ -151,7 +151,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
       const appointment = item.appointment;
       const appointmentTime = item.start_time ?? appointment?.start_time;
       const appointmentSummary = [text(item.doctor ?? appointment?.doctor_name), appointmentTime ? formatDateTime(appointmentTime) : undefined].filter(Boolean).join(" · ");
-      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám")} status={item.status ?? appointment?.status ? statusLabel(item.status ?? appointment?.status) : undefined} summary={appointmentSummary}>
+      return <CollapsibleAgentCard label="Lịch khám" title={text(item.title, "Lịch khám")} status={item.status ?? appointment?.status ? statusLabel(item.status ?? appointment?.status) : undefined} summary={appointmentSummary} isCompleted={isCompleted}>
         <HealthcareAppointment item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
@@ -161,7 +161,7 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
     case "food_empty":
     case "food_cart": {
       const foodItems = item.options ?? [];
-      return <CollapsibleAgentCard label="Đồ ăn" title={text(item.title, "Món ăn")} status={item.order?.status ? statusLabel(item.order.status) : undefined} summary={foodItems.length ? `${foodItems.length} món phù hợp` : item.kind === "food_cart" ? "Giỏ hàng đã được cập nhật." : "Đang lấy danh sách món ăn."}>
+      return <CollapsibleAgentCard label="Đồ ăn" title={text(item.title, "Món ăn")} status={item.order?.status ? statusLabel(item.order.status) : undefined} summary={foodItems.length ? `${foodItems.length} món phù hợp` : item.kind === "food_cart" ? "Giỏ hàng đã được cập nhật." : "Đang lấy danh sách món ăn."} isCompleted={isCompleted}>
         <FoodCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} />
       </CollapsibleAgentCard>;
     }

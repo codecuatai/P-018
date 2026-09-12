@@ -483,6 +483,7 @@ function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick:
 
 function RecentConversations({ pathname, compact }: { pathname: string | null; compact?: boolean }) {
   const [items, setItems] = useState<ConversationRecord[]>([]);
+  const [query, setQuery] = useState("");
   useEffect(() => {
     let active = true;
     let controller: AbortController | undefined;
@@ -495,9 +496,9 @@ function RecentConversations({ pathname, compact }: { pathname: string | null; c
     window.addEventListener(CONVERSATIONS_CHANGED_EVENT, load);
     return () => { active = false; controller?.abort(); window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, load); };
   }, []);
-  const groups = groupConversations(items.filter((item) => item.status !== "ARCHIVED")).slice(0, 3);
-  if (!groups.length) return null;
-  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history/conversations">Xem tất cả</Link></div><nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav></div>;
+  const visible = items.filter((item) => item.status !== "ARCHIVED" && (!query.trim() || conversationTitle(item).toLowerCase().includes(query.trim().toLowerCase())));
+  const groups = groupConversations(visible).slice(0, 3);
+  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history/conversations">Xem tất cả</Link></div><div className="sidebar-recent-search"><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm cuộc trò chuyện…" aria-label="Tìm cuộc trò chuyện" /></div>{groups.length ? <nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); const alive = (item.status ?? "ACTIVE") === "ACTIVE"; return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}${alive ? " is-alive" : " is-done"}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-status" aria-hidden="true" /><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav> : <p className="sidebar-recent-empty">Không tìm thấy cuộc trò chuyện nào.</p>}</div>;
 }
 
 function conversationIcon(title: string) { const lower = title.toLowerCase(); if (lower.includes("xe") || lower.includes("chuyến") || lower.includes("đi") || lower.includes("đón")) return CarFront; if (lower.includes("ăn") || lower.includes("phở") || lower.includes("món") || lower.includes("quán") || lower.includes("bàn") || lower.includes("nhà hàng")) return Utensils; if (lower.includes("khám") || lower.includes("bệnh") || lower.includes("bác sĩ") || lower.includes("y tế")) return Stethoscope; return MessageSquareText; }
