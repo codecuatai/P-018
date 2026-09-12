@@ -2423,3 +2423,285 @@
   .admin-nav-btn { flex: 0 0 auto; white-space: nowrap; }
   .admin-main-content { padding: 20px 14px 120px !important; }
 }
+
+/* ==========================================================================
+   Provider Portal Redesign — "Bến hàng của người bán"
+   UI-REDESIGN-PLAN Nhịp 3: Hôm nay strip, segmented navigation, warm tone
+   ========================================================================== */
+
+.provider-shell {
+  background: #F6F7F9 !important;
+}
+
+.provider-main {
+  padding: 24px 28px 48px;
+  max-width: 1200px;
+}
+
+.provider-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* "Hôm nay" strip: 3 con số lớn + 1 CTA duy nhất */
+.provider-today-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 22px;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.provider-today-metrics {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.provider-today-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.provider-today-label {
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--color-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.provider-today-number {
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 800;
+  color: var(--color-text);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.provider-today-number--revenue {
+  color: #059669; /* Rêu */
+}
+
+.provider-today-number--new {
+  color: #EA580C; /* Phù sa */
+}
+
+.provider-today-number--urgent {
+  color: #DC2626;
+}
+
+.provider-today-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.provider-cta-btn {
+  height: 40px;
+  padding: 0 20px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  background: #4F46E5 !important; /* Chàm Hội An duy nhất */
+  border-color: #4F46E5 !important;
+  color: #FFFFFF !important;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.25);
+  transition: background 140ms ease;
+}
+
+.provider-cta-btn:hover {
+  background: #4338CA !important;
+}
+
+/* Provider sidebar: warm & shop-like, not clinical admin */
+.provider-sidebar-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.provider-nav-group-title {
+  display: block;
+  padding: 0 10px 8px;
+  font-size: var(--text-micro);
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.provider-nav-group-title-sub {
+  margin-top: 4px;
+}
+
+.provider-nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.provider-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: #334155;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+  position: relative;
+}
+
+.provider-nav-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+}
+
+.provider-nav-btn.is-active {
+  background: #EEF2FF;
+  color: #4F46E5;
+  font-weight: 700;
+}
+
+.provider-nav-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.provider-nav-btn-label {
+  flex: 1 1 auto;
+}
+
+.provider-nav-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #EA580C; /* Phù sa active work */
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.provider-nav-divider {
+  height: 1px;
+  background: #E2E8F0;
+  margin: 8px 4px;
+}
+
+/* Provider subtab bar: segmented control, warmer than admin tabs */
+.provider-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #F1F5F9;
+  border-radius: var(--radius-lg);
+  border: 1px solid #E2E8F0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.provider-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.provider-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: #475569;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.provider-tab:hover {
+  color: #0F172A;
+}
+
+.provider-tab.is-active {
+  background: #FFFFFF;
+  color: #0F172A;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.provider-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #F8FAFC;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid #E2E8F0;
+}
+
+.provider-tab.is-active .provider-tab-badge {
+  background: #EEF2FF;
+  color: #4F46E5;
+  border-color: #C7D2FE;
+}
+
+/* Provider tab viewport */
+.provider-tab-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Responsive adjustments for provider */
+@media (max-width: 820px) {
+  .provider-today-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+  .provider-today-metrics {
+    width: 100%;
+    justify-content: space-between;
+    gap: 14px;
+  }
+  .provider-today-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .provider-cta-btn {
+    flex: 1;
+  }
+  .provider-main {
+    padding: 16px 12px 90px;
+  }
+}

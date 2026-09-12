@@ -6,11 +6,8 @@ import {
   Car,
   Check,
   CheckCircle2,
-  Clock,
   Code,
   Copy,
-  CreditCard,
-  Globe,
   HeartPulse,
   KeyRound,
   Layers,
@@ -24,10 +21,8 @@ import {
   RefreshCw,
   Send,
   Settings2,
-  Star,
   Store,
   Trash2,
-  TrendingUp,
   UserRound,
   UtensilsCrossed,
   Wallet,
@@ -706,8 +701,26 @@ export function ProviderPortal() {
     }
   };
 
+  // Derived "Hôm nay" numbers
+  const todayRevenue = earnings?.net_payout ?? 0;
+  const todayNewOrders = orders.filter((o) => o.status === "RECEIVED").length + allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length;
+  const todayNeedsAction = orders.filter((o) => o.status !== "COMPLETED").length + allRides.filter((r) => r.status !== "COMPLETED").length + appointments.filter((a) => a.status !== "COMPLETED").length;
+
+  const domainCta = (): { label: string; tab: typeof activeTab } => {
+    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return { label: "Nhận cuốc", tab: "ride" };
+    if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return { label: "Mở lịch khám", tab: "health" };
+    return { label: profileForm.isOpen ? "Bếp bận — tạm dừng" : "Mở nhận đơn", tab: "food" };
+  };
+  const cta = domainCta();
+
+  const tabLabel = (tab: "ride" | "food" | "health"): string => {
+    if (tab === "ride") return "Cuốc xe";
+    if (tab === "food") return "Món ăn";
+    return "Lịch khám";
+  };
+
   return (
-    <div className="app-shell admin-shell" style={{ minHeight: "100vh", background: "#F8FAFC" }}>
+    <div className="app-shell provider-shell" style={{ minHeight: "100vh", background: "var(--color-bg, #F6F7F9)" }}>
       <a className="skip-link" href="#provider-content">
         Bỏ qua điều hướng
       </a>
@@ -790,98 +803,107 @@ export function ProviderPortal() {
       {/* Body with Sidebar and Main Content */}
       <div className="app-body provider-body">
         {/* Sidebar */}
-        <aside className="app-sidebar admin-sidebar provider-sidebar">
-          <div className="admin-sidebar-inner" style={{ padding: "16px 12px" }}>
-            <div className="admin-nav-group">
-              <span className="admin-nav-group-title">
+        <aside className="app-sidebar provider-sidebar">
+          <div className="provider-sidebar-inner" style={{ padding: "16px 12px" }}>
+            <div className="provider-nav-group">
+              <span className="provider-nav-group-title">
                 {isMaster ? "Hệ thống 4 Dịch vụ Giả lập" : "Phân hệ nghiệp vụ đối tác"}
               </span>
-              <div className="admin-nav-group-items">
+              <div className="provider-nav-group-items" role="tablist" aria-label="Phân hệ đối tác">
                 {isAllowedTab("ride") && (
                   <button
                     type="button"
-                    className={`admin-nav-btn ${activeTab === "ride" ? "is-active" : ""}`}
+                    role="tab"
+                    aria-selected={activeTab === "ride"}
+                    className={`provider-nav-btn${activeTab === "ride" ? " is-active" : ""}`}
                     onClick={() => setActiveTab("ride")}
                   >
-                    <span className="admin-nav-btn-icon">
+                    <span className="provider-nav-btn-icon">
                       <Car size={16} />
                     </span>
-                    <span className="admin-nav-btn-label">Tài xế di chuyển (Ride)</span>
-                    {activeTab === "ride" && <span className="admin-nav-active-pill" />}
+                    <span className="provider-nav-btn-label">{tabLabel("ride")}</span>
+                    {allRides.filter((r) => r.status !== "COMPLETED").length > 0 && (
+                      <span className="provider-nav-count">{allRides.filter((r) => r.status !== "COMPLETED").length}</span>
+                    )}
                   </button>
                 )}
 
                 {isAllowedTab("food") && (
                   <button
                     type="button"
-                    className={`admin-nav-btn ${activeTab === "food" ? "is-active" : ""}`}
+                    role="tab"
+                    aria-selected={activeTab === "food"}
+                    className={`provider-nav-btn${activeTab === "food" ? " is-active" : ""}`}
                     onClick={() => setActiveTab("food")}
                   >
-                    <span className="admin-nav-btn-icon">
+                    <span className="provider-nav-btn-icon">
                       <UtensilsCrossed size={16} />
                     </span>
-                    <span className="admin-nav-btn-label">Quán ăn & Nhà hàng (Food)</span>
-                    {activeTab === "food" && <span className="admin-nav-active-pill" />}
+                    <span className="provider-nav-btn-label">{tabLabel("food")}</span>
+                    {orders.filter((o) => o.status !== "COMPLETED").length > 0 && (
+                      <span className="provider-nav-count">{orders.filter((o) => o.status !== "COMPLETED").length}</span>
+                    )}
                   </button>
                 )}
 
                 {isAllowedTab("health") && (
                   <button
                     type="button"
-                    className={`admin-nav-btn ${activeTab === "health" ? "is-active" : ""}`}
+                    role="tab"
+                    aria-selected={activeTab === "health"}
+                    className={`provider-nav-btn${activeTab === "health" ? " is-active" : ""}`}
                     onClick={() => setActiveTab("health")}
                   >
-                    <span className="admin-nav-btn-icon">
+                    <span className="provider-nav-btn-icon">
                       <HeartPulse size={16} />
                     </span>
-                    <span className="admin-nav-btn-label">Khám bệnh (Healthcare)</span>
-                    {activeTab === "health" && <span className="admin-nav-active-pill" />}
+                    <span className="provider-nav-btn-label">{tabLabel("health")}</span>
+                    {appointments.filter((a) => a.status !== "COMPLETED").length > 0 && (
+                      <span className="provider-nav-count">{appointments.filter((a) => a.status !== "COMPLETED").length}</span>
+                    )}
                   </button>
                 )}
 
-                <div style={{ height: "1px", background: "#E2E8F0", margin: "8px 0" }} />
+                <div className="provider-nav-divider" />
 
                 <button
                   type="button"
-                  className={`admin-nav-btn ${activeTab === "services" ? "is-active" : ""}`}
+                  role="tab"
+                  aria-selected={activeTab === "services"}
+                  className={`provider-nav-btn${activeTab === "services" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("services")}
-                  style={{ background: activeTab === "services" ? "#EEF2FF" : "transparent" }}
                 >
-                  <span className="admin-nav-btn-icon" style={{ color: activeTab === "services" ? "#4338CA" : "#059669" }}>
+                  <span className="provider-nav-btn-icon">
                     <Layers size={16} />
                   </span>
-                  <span className="admin-nav-btn-label" style={{ fontWeight: 700 }}>
-                    Gắn & Quản lý Dịch vụ
+                  <span className="provider-nav-btn-label">
+                    Món và dịch vụ của tôi
                   </span>
-                  {activeTab === "services" && <span className="admin-nav-active-pill" />}
                 </button>
 
-                <div style={{ height: "1px", background: "#E2E8F0", margin: "8px 0" }} />
-                <span
-                  className="admin-nav-group-title"
-                  style={{ display: "block", padding: "0 12px", marginBottom: "6px", fontSize: "var(--text-micro)", color: "#64748B", fontWeight: 700 }}
-                >
+                <div className="provider-nav-divider" />
+                <span className="provider-nav-group-title provider-nav-group-title-sub">
                   Kết nối AI bên ngoài
                 </span>
 
                 <button
                   type="button"
-                  className={`admin-nav-btn ${activeTab === "mcp" ? "is-active" : ""}`}
+                  role="tab"
+                  aria-selected={activeTab === "mcp"}
+                  className={`provider-nav-btn${activeTab === "mcp" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("mcp")}
-                  style={{ background: activeTab === "mcp" ? "#EFF6FF" : "transparent" }}
                 >
-                  <span className="admin-nav-btn-icon" style={{ color: activeTab === "mcp" ? "#2563EB" : "#0284C7" }}>
+                  <span className="provider-nav-btn-icon">
                     <Plug2 size={16} />
                   </span>
-                  <span className="admin-nav-btn-label" style={{ fontWeight: 700 }}>
-                    Kết nối MCP & API Key
+                  <span className="provider-nav-btn-label">
+                    Kết nối
                   </span>
-                  {activeTab === "mcp" && <span className="admin-nav-active-pill" />}
                 </button>
               </div>
             </div>
 
-            <div className="admin-sidebar-footer" style={{ marginTop: "auto", paddingTop: "16px" }}>
+            <div className="provider-sidebar-footer" style={{ marginTop: "auto", paddingTop: "16px" }}>
               <div
                 style={{
                   padding: "12px",
@@ -915,44 +937,54 @@ export function ProviderPortal() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="app-content admin-main-content" id="provider-content">
-          <div className="admin-page">
-            {/* Banner Card */}
-            <div className="admin-banner-card">
-              <div className="admin-banner-left">
-                <div
-                  className="admin-banner-icon"
-                  style={{
-                    background: "linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)",
-                    borderColor: "#A7F3D0",
-                    color: "#059669",
-                  }}
-                >
-                  <Store size={20} />
+        <main className="app-content provider-main" id="provider-content">
+          <div className="provider-page">
+            {/* Hôm nay strip */}
+            <div className="provider-today-strip">
+              <div className="provider-today-metrics">
+                <div className="provider-today-metric">
+                  <span className="provider-today-label">Doanh thu hôm nay</span>
+                  <strong className="provider-today-number provider-today-number--revenue">
+                    {todayRevenue > 0 ? `${todayRevenue.toLocaleString("vi-VN")} đ` : "—"}
+                  </strong>
                 </div>
-                <div>
-                  <h1 className="admin-banner-title">
-                    Chào mừng, {sanitizeDisplayText(profileForm.businessName || user?.full_name, isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác X-One")}
-                  </h1>
-                  <p className="admin-banner-subtitle">
-                    Bảng điều khiển tác vụ dịch vụ đối tác · {getPartnerTypeLabel()}
-                  </p>
+                <div className="provider-today-metric">
+                  <span className="provider-today-label">Đơn mới</span>
+                  <strong className="provider-today-number provider-today-number--new">
+                    {todayNewOrders}
+                  </strong>
+                </div>
+                <div className="provider-today-metric">
+                  <span className="provider-today-label">Cần xử lý</span>
+                  <strong className={`provider-today-number${todayNeedsAction > 0 ? " provider-today-number--urgent" : ""}`}>
+                    {todayNeedsAction}
+                  </strong>
                 </div>
               </div>
-
-              <div className="admin-banner-actions">
+              <div className="provider-today-actions">
+                <button
+                  type="button"
+                  className="button button-primary provider-cta-btn"
+                  onClick={() => {
+                    if (cta.tab === "food") {
+                      setProfileForm((prev) => ({ ...prev, isOpen: !prev.isOpen }));
+                      notify(profileForm.isOpen ? "Đã chuyển bếp sang bận." : "Đã mở nhận đơn.");
+                    } else {
+                      setActiveTab(cta.tab);
+                    }
+                  }}
+                >
+                  {cta.label}
+                </button>
                 <button
                   type="button"
                   disabled={loadingOperations}
-                  onClick={() => {
-                    void reloadOperations();
-                    notify("Đang đồng bộ dữ liệu thời gian thực từ cơ sở dữ liệu...");
-                  }}
+                  onClick={() => { void reloadOperations(); }}
                   className="button button-secondary"
-                  style={{ height: "34px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                  style={{ height: "36px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                  title="Đồng bộ dữ liệu"
                 >
                   <RefreshCw size={14} className={loadingOperations ? "spin" : ""} />
-                  <span>{loadingOperations ? "Đang đồng bộ..." : "Đồng bộ dữ liệu"}</span>
                 </button>
               </div>
             </div>
@@ -978,131 +1010,71 @@ export function ProviderPortal() {
               </div>
             )}
 
-            {/* Metric KPI Grid */}
-            <div className="admin-metric-grid">
-              <div className="admin-metric">
-                <div className="admin-metric-top">
-                  <span className="admin-metric-label">Đánh giá dịch vụ</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#FEF3C7", color: "#EA580C" }}>
-                    <Star size={14} fill="#EA580C" />
-                  </div>
-                </div>
-                <strong>4.96 ★</strong>
-                <span className="admin-metric-subtext">Dựa trên 184 lượt đánh giá</span>
-              </div>
-
-              <div className="admin-metric">
-                <div className="admin-metric-top">
-                  <span className="admin-metric-label">Doanh thu hôm nay</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#ECFDF5", color: "#059669" }}>
-                    <CreditCard size={14} />
-                  </div>
-                </div>
-                <strong style={{ color: "#059669" }}>
-                  {(earnings?.net_payout ?? 1240000).toLocaleString("vi-VN")} đ
-                </strong>
-                <span className="admin-metric-subtext">
-                  {earnings?.total_completed_transactions ?? 3} giao dịch đã quyết toán
-                </span>
-              </div>
-
-              <div className="admin-metric">
-                <div className="admin-metric-top">
-                  <span className="admin-metric-label">Dịch vụ đã gắn</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#EEF2FF", color: "#4F46E5" }}>
-                    <Layers size={14} />
-                  </div>
-                </div>
-                <strong>{serviceItems.length} dịch vụ</strong>
-                <span className="admin-metric-subtext">Đang kết nối hệ thống X-One</span>
-              </div>
-
-              <div className="admin-metric">
-                <div className="admin-metric-top">
-                  <span className="admin-metric-label">Tỷ lệ nhận việc</span>
-                  <div className="admin-metric-icon-box" style={{ background: "#F5F3FF", color: "#7C3AED" }}>
-                    <TrendingUp size={14} />
-                  </div>
-                </div>
-                <strong>99.4%</strong>
-                <span className="admin-metric-subtext">Sẵn sàng điều phối tự động</span>
-              </div>
-            </div>
-
-            {/* Subtabs Bar (Segmented Control) */}
-            <div className="admin-subtab-bar" role="tablist">
+            {/* Provider tab bar */}
+            <div className="provider-tab-bar" role="tablist" aria-label="Phân hệ vận hành">
               {isAllowedTab("ride") && (
                 <button
                   type="button"
+                  role="tab"
                   aria-selected={activeTab === "ride"}
-                  className={`admin-subtab-pill ${activeTab === "ride" ? "is-active" : ""}`}
+                  className={`provider-tab${activeTab === "ride" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("ride")}
                 >
-                  <Car size={14} />
-                  <span>Chuyến xe (Ride Partner)</span>
-                  <span className="admin-subtab-badge">{allRides.length}</span>
+                  <Car size={14} aria-hidden="true" />
+                  <span>{tabLabel("ride")}</span>
+                  {allRides.length > 0 && <span className="provider-tab-badge">{allRides.length}</span>}
                 </button>
               )}
-
               {isAllowedTab("food") && (
                 <button
                   type="button"
+                  role="tab"
                   aria-selected={activeTab === "food"}
-                  className={`admin-subtab-pill ${activeTab === "food" ? "is-active" : ""}`}
+                  className={`provider-tab${activeTab === "food" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("food")}
                 >
-                  <UtensilsCrossed size={14} />
-                  <span>Đơn món (Food Merchant)</span>
-                  <span className="admin-subtab-badge">{orders.length}</span>
+                  <UtensilsCrossed size={14} aria-hidden="true" />
+                  <span>{tabLabel("food")}</span>
+                  {orders.length > 0 && <span className="provider-tab-badge">{orders.length}</span>}
                 </button>
               )}
-
               {isAllowedTab("health") && (
                 <button
                   type="button"
+                  role="tab"
                   aria-selected={activeTab === "health"}
-                  className={`admin-subtab-pill ${activeTab === "health" ? "is-active" : ""}`}
+                  className={`provider-tab${activeTab === "health" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("health")}
                 >
-                  <HeartPulse size={14} />
-                  <span>Lịch khám (Healthcare)</span>
-                  <span className="admin-subtab-badge">{appointments.length}</span>
+                  <HeartPulse size={14} aria-hidden="true" />
+                  <span>{tabLabel("health")}</span>
+                  {appointments.length > 0 && <span className="provider-tab-badge">{appointments.length}</span>}
                 </button>
               )}
-
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "services"}
-                className={`admin-subtab-pill ${activeTab === "services" ? "is-active" : ""}`}
+                className={`provider-tab${activeTab === "services" ? " is-active" : ""}`}
                 onClick={() => setActiveTab("services")}
-                style={{ fontWeight: 700 }}
               >
-                <Settings2 size={14} />
-                <span>Gắn & Quản lý Dịch vụ</span>
-                <span className="admin-subtab-badge" style={{ background: "#DCFCE7", color: "#166534" }}>
-                  {serviceItems.length}
-                </span>
+                <Settings2 size={14} aria-hidden="true" />
+                <span>Dịch vụ của tôi</span>
               </button>
-
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "mcp"}
-                className={`admin-subtab-pill ${activeTab === "mcp" ? "is-active" : ""}`}
+                className={`provider-tab${activeTab === "mcp" ? " is-active" : ""}`}
                 onClick={() => setActiveTab("mcp")}
-                style={{ fontWeight: 700 }}
               >
-                <Plug2 size={14} />
-                <span>Kết nối MCP (AI Partner)</span>
-                <span className="admin-subtab-badge" style={{ background: "#EFF6FF", color: "#1D4ED8" }}>
-                  {mcpKeys.length}
-                </span>
+                <Plug2 size={14} aria-hidden="true" />
+                <span>Kết nối</span>
               </button>
             </div>
 
             {/* TAB VIEWPORT */}
-            <div className="admin-tab-viewport">
+            <div className="provider-tab-viewport">
               {/* TAB 4: SERVICE INTEGRATION / SETUP */}
               {activeTab === "services" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
