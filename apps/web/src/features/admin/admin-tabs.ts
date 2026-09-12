@@ -87,7 +87,8 @@ export const CONSOLIDATED_TABS: TabDefinition[] = [
 
 export function getConsolidatedTabs(userRole?: string): TabDefinition[] {
   if (userRole === "manager") {
-    return CONSOLIDATED_TABS.filter((tab) => tab.id !== "ai-integrations");
+    // Manager: hide AI Engine and collapse System Logs to the bottom, deprioritised
+    return CONSOLIDATED_TABS.filter((tab) => tab.id !== "ai-integrations" && tab.id !== "system-logs");
   }
   return CONSOLIDATED_TABS;
 }

@@ -193,6 +193,16 @@ export function OnboardingPage() {
   return (
     <main className="onboarding-page" id="main-content">
       <section className="onboarding-card" aria-labelledby="onboarding-title">
+        <div
+          className="onboarding-progress-track"
+          role="progressbar"
+          aria-valuenow={step + 1}
+          aria-valuemin={1}
+          aria-valuemax={STEPS.length}
+          aria-label={`Tiến trình thiết lập: ${step + 1} trên ${STEPS.length}`}
+        >
+          <div className="onboarding-progress-fill" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
+        </div>
         <div className="onboarding-progress" aria-label={`Bước ${step + 1} trên ${STEPS.length}`}>
           {STEPS.map((item, index) => (
             <span className={index <= step ? "is-active" : ""} key={item}>
@@ -202,7 +212,7 @@ export function OnboardingPage() {
           ))}
         </div>
         <div className="onboarding-content">
-          <span className="eyebrow">THIẾT LẬP LẦN ĐẦU · 0{step + 1}</span>
+          <span className="eyebrow">Thiết lập tài khoản X-One</span>
           {step === 0 && (
             <StepView
               icon={<ShieldCheck size={24} />}

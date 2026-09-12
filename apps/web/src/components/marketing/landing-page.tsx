@@ -32,7 +32,7 @@ export function LandingPage() {
               <span className={styles.heroTitleLine}>Một yêu cầu.</span>
               <span className={`${styles.heroTitleLine} ${styles.heroTitleSecond}`}>Nhiều việc được kết nối.</span>
             </h1>
-            <p className={styles.heroLede}>Hỗ trợ bạn trong mọi thứ, từ bữa ăn, chuyến xe đến cuộc hẹn. Nhanh gọn, dễ dàng. Tất cả mọi thứ trong cái chớp mắt</p>
+            <p className={styles.heroLede}>Một tài khoản, xong cả xe, món và lịch khám. Nhờ X-One lo việc lặp lại, bạn giữ quyết định cuối cùng.</p>
 
             <HeroComposer />
             <p className={styles.heroNote}><ShieldCheck size={16} /> Bạn vẫn là người quyết định ở mỗi bước quan trọng.</p>

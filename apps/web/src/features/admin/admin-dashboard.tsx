@@ -356,7 +356,7 @@ export function AdminDashboard() {
                 </div>
                 <div>
                   <h1 className="admin-banner-title">
-                    {user?.role === "manager" ? "Trung tâm vận hành X-One" : "Trung tâm quản trị & vận hành X-One"}
+                    {user?.role === "manager" ? "Trung tâm vận hành X-One" : "Trung tâm vận hành X-One"}
                   </h1>
                   <p className="admin-banner-subtitle">{currentTabDef.subtitle}</p>
                 </div>
@@ -2078,6 +2078,7 @@ function SupportSubtab({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const allItems = support.data?.items ?? [];
 
   const queueStats = useMemo(() => ({
@@ -2103,6 +2104,17 @@ function SupportSubtab({
   }, [allItems, search, statusFilter, priorityFilter]);
 
   const hasFilters = Boolean(search || statusFilter !== "all" || priorityFilter !== "all");
+
+  // Auto-select first ticket whenever the filtered list changes
+  useEffect(() => {
+    setSelectedTicketId((prev) => {
+      if (filteredItems.length === 0) return null;
+      const stillExists = filteredItems.some((t) => t.id === prev);
+      return stillExists ? prev : (filteredItems[0]?.id ?? null);
+    });
+  }, [filteredItems]);
+
+  const selectedTicket = filteredItems.find((t) => t.id === selectedTicketId) ?? null;
 
   return (
     <section className={`admin-section ${styles.queue}`} id="support" aria-labelledby="support-title">
@@ -2197,10 +2209,56 @@ function SupportSubtab({
               <p>Thử tìm kiếm với từ khóa khác hoặc điều chỉnh bộ lọc.</p>
             </div>
           ) : (
-            <div className={`admin-support-list ${styles.ticketList}`}>
-              {filteredItems.map((ticket) => (
-                <SupportRow key={ticket.id} ticket={ticket} onUpdate={onUpdateTicket} onAddMessage={onAddMessage} />
-              ))}
+            <div className={`admin-support-split ${styles.supportSplit}`}>
+              {/* Cột trái: Hàng đợi ticket */}
+              <div className={`admin-support-queue-col ${styles.supportQueueCol}`} role="list" aria-label="Hàng đợi ticket">
+                {filteredItems.map((ticket) => {
+                  const isSelected = ticket.id === selectedTicketId;
+                  return (
+                    <button
+                      key={ticket.id}
+                      type="button"
+                      role="listitem"
+                      className={`${styles.queueCard} ${isSelected ? styles.queueCardActive : ""}`}
+                      onClick={() => setSelectedTicketId(ticket.id)}
+                      aria-current={isSelected ? "true" : undefined}
+                    >
+                      <div className={styles.queueCardHeader}>
+                        <span className={styles.ticketId}>{ticket.id}</span>
+                        <span className={`${styles.statusTag} ${styles[`status${ticket.status}`]}`}>
+                          {supportStatusLabel(ticket.status)}
+                        </span>
+                        <span className={`${styles.priorityTag} ${styles[`priority${ticket.priority}`]}`}>
+                          {priorityLabel(ticket.priority)}
+                        </span>
+                      </div>
+                      <h4 className={styles.queueCardSubject}>{ticket.subject}</h4>
+                      <p className={styles.queueCardSnippet}>{ticket.description}</p>
+                      <div className={styles.queueCardFooter}>
+                        <span><UserRound size={12} /> {ticket.actor_id}</span>
+                        <time dateTime={ticket.updated_at}><Clock3 size={12} /> {formatDate(ticket.updated_at)}</time>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Cột phải: Chi tiết & Điều phối ticket đang chọn */}
+              <div className={`admin-support-detail-col ${styles.supportDetailCol}`}>
+                {selectedTicket ? (
+                  <SupportRow
+                    key={selectedTicket.id}
+                    ticket={selectedTicket}
+                    onUpdate={onUpdateTicket}
+                    onAddMessage={onAddMessage}
+                  />
+                ) : (
+                  <div className={styles.emptyDetail}>
+                    <LifeBuoy size={32} />
+                    <p>Chọn một ticket bên trái để xem chi tiết và xử lý.</p>
+                  </div>
+                )}
+              </div>
             </div>
           )
         )}
@@ -2491,57 +2549,77 @@ function SupportRow({
   }
 
   return (
-    <article className={`admin-support-row ${styles.ticketCard}`}>
-      <div className={styles.ticketMain}>
+    <article className={`admin-support-detail ${styles.detailPanel}`}>
+      {/* Header */}
+      <div className={styles.detailHeader}>
         <div className={styles.ticketMeta}>
           <span className={styles.ticketId}>{ticket.id}</span>
           <span className={`${styles.statusTag} ${styles[`status${ticket.status}`]}`}>{supportStatusLabel(ticket.status)}</span>
           <span className={`${styles.priorityTag} ${styles[`priority${ticket.priority}`]}`}>{priorityLabel(ticket.priority)}</span>
         </div>
-        <h3>{ticket.subject}</h3>
-        <p className={styles.ticketDescription}>{ticket.description}</p>
+        <h3 className={styles.detailSubject}>{ticket.subject}</h3>
         <div className={styles.ticketFooter}>
           <span><UserRound size={14} /> {ticket.actor_id}</span>
           <time dateTime={ticket.updated_at}><Clock3 size={14} /> Cập nhật {formatDate(ticket.updated_at)}</time>
         </div>
       </div>
-      <div className={styles.ticketControls}>
-        <div className={styles.controlsHeading}><Sliders size={15} /><span>Điều phối ticket</span></div>
-        <label>
-          <span>Trạng thái</span>
-          <select
-            value={ticket.status}
-            onChange={(event) => void onUpdate(ticket.id, { status: event.target.value as SupportTicketStatus })}
-          >
-            <option value="OPEN">Mở</option>
-            <option value="IN_PROGRESS">Đang xử lý</option>
-            <option value="RESOLVED">Đã xử lý</option>
-            <option value="CLOSED">Đóng</option>
-          </select>
-        </label>
-        <label>
-          <span>Ưu tiên</span>
-          <select
-            value={ticket.priority}
-            onChange={(event) => void onUpdate(ticket.id, { priority: event.target.value as SupportPriority })}
-          >
-            <option value="LOW">Thấp</option>
-            <option value="NORMAL">Thường</option>
-            <option value="HIGH">Cao</option>
-            <option value="URGENT">Khẩn</option>
-          </select>
-        </label>
+
+      {/* Description */}
+      <div className={styles.detailBody}>
+        <p className={styles.detailDescription}>{ticket.description}</p>
       </div>
-      {ticket.status !== "CLOSED" ? <form className={styles.replyForm} onSubmit={(event) => void submitMessage(event)}>
-        <div className={styles.replyHeading}><MessageSquare size={15} /><span>Phản hồi khách hàng</span></div>
-        <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={5000} rows={3} placeholder="Nhập lời cảm ơn hoặc phản hồi cho khách hàng…" aria-label={`Phản hồi ticket ${ticket.id}`} />
-        <div className={styles.quickReplies} aria-label="Mẫu phản hồi nhanh">
-          <span>Gợi ý:</span>
-          {QUICK_REPLIES.map((reply) => <button key={reply} type="button" onClick={() => setMessage(reply)}>{reply}</button>)}
+
+      {/* Điều phối */}
+      <div className={styles.detailControls}>
+        <div className={styles.controlsHeading}><Sliders size={15} /><span>Điều phối ticket</span></div>
+        <div className={styles.controlsRow}>
+          <label>
+            <span>Trạng thái</span>
+            <select
+              value={ticket.status}
+              onChange={(event) => void onUpdate(ticket.id, { status: event.target.value as SupportTicketStatus })}
+            >
+              <option value="OPEN">Mở</option>
+              <option value="IN_PROGRESS">Đang xử lý</option>
+              <option value="RESOLVED">Đã xử lý</option>
+              <option value="CLOSED">Đóng</option>
+            </select>
+          </label>
+          <label>
+            <span>Ưu tiên</span>
+            <select
+              value={ticket.priority}
+              onChange={(event) => void onUpdate(ticket.id, { priority: event.target.value as SupportPriority })}
+            >
+              <option value="LOW">Thấp</option>
+              <option value="NORMAL">Thường</option>
+              <option value="HIGH">Cao</option>
+              <option value="URGENT">Khẩn</option>
+            </select>
+          </label>
         </div>
-        <div className={styles.replyFooter}><span>Khách sẽ thấy nội dung này trong timeline.</span><button className="button button-primary" type="submit" disabled={messagePending || !message.trim()}><Send size={14} />{messagePending ? "Đang gửi…" : "Gửi phản hồi"}</button></div>
-        {messageError ? <p className={styles.replyError} role="alert">{messageError}</p> : null}
-      </form> : <p className={styles.closedNote}>Ticket đã đóng, không thể gửi thêm phản hồi.</p>}
+      </div>
+
+      {/* Phản hồi */}
+      {ticket.status !== "CLOSED" ? (
+        <form className={styles.replyForm} onSubmit={(event) => void submitMessage(event)}>
+          <div className={styles.replyHeading}><MessageSquare size={15} /><span>Phản hồi khách hàng</span></div>
+          <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={5000} rows={3} placeholder="Nhập lời cảm ơn hoặc phản hồi cho khách hàng…" aria-label={`Phản hồi ticket ${ticket.id}`} />
+          <div className={styles.quickReplies} aria-label="Mẫu phản hồi nhanh">
+            <span>Gợi ý:</span>
+            {QUICK_REPLIES.map((reply) => <button key={reply} type="button" onClick={() => setMessage(reply)}>{reply}</button>)}
+          </div>
+          <div className={styles.replyFooter}>
+            <span>Khách sẽ thấy nội dung này trong timeline.</span>
+            <button className="button button-primary" type="submit" disabled={messagePending || !message.trim()}>
+              <Send size={14} />{messagePending ? "Đang gửi…" : "Gửi phản hồi"}
+            </button>
+          </div>
+          {messageError ? <p className={styles.replyError} role="alert">{messageError}</p> : null}
+        </form>
+      ) : (
+        <p className={styles.closedNote}>Ticket đã đóng, không thể gửi thêm phản hồi.</p>
+      )}
     </article>
   );
 }

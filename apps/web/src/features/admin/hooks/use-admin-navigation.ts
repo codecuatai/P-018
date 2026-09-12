@@ -14,7 +14,8 @@ const DEFAULT_SUBTABS: Record<MainTabId, SubTabId> = {
 
 export function useAdminNavigation(userRole?: string) {
   const tabs = getConsolidatedTabs(userRole);
-  const [activeMainTab, setActiveMainTab] = useState<MainTabId>("overview");
+  const defaultMain: MainTabId = userRole === "manager" ? "support" : "overview";
+  const [activeMainTab, setActiveMainTab] = useState<MainTabId>(defaultMain);
   const [activeSubTab, setActiveSubTab] = useState<Record<MainTabId, SubTabId>>(DEFAULT_SUBTABS);
 
   useEffect(() => {
