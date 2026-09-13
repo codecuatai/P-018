@@ -80,22 +80,75 @@
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
 }
 
-/* Tablet: icon rail 72px */
+/* Vertical center edge toggle (admin/manager shell).
+   MUST stay position:absolute: .app-body is a 2-column grid, so any
+   in-flow direct child would steal column 2 and push <main> down
+   into the narrow sidebar column. */
+.sidebar-edge-toggle {
+  position: absolute;
+  top: 50%;
+  z-index: 40;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 50%;
+  color: #64748B;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%), 0 1px 2px rgb(0 0 0 / 4%);
+  transform: translate(-50%, -50%);
+  transition: all 140ms ease;
+}
+.sidebar-edge-toggle.is-collapsed {
+  transform: translateY(-50%);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 12%);
+}
+.sidebar-edge-toggle:hover {
+  background: #2563EB;
+  color: #FFFFFF;
+  border-color: #2563EB;
+  box-shadow: 0 4px 12px rgb(37 99 235 / 35%);
+  transform: translate(-50%, -50%) scale(1.1);
+}
+.sidebar-edge-toggle.is-collapsed:hover {
+  transform: translateY(-50%) scale(1.1);
+}
+
+/* Harden .app-body grid placement: only sidebar + main own the two columns.
+   Auxiliary direct children (edge toggle, mobile header, bottom nav) must
+   never participate as grid cells on desktop. */
+.app-body > .app-sidebar { grid-column: 1; grid-row: 1; }
+.app-body > .app-content { grid-column: 2; grid-row: 1; }
+.app-body > .sidebar-edge-toggle,
+.app-body > .sidebar-expand-btn { position: absolute; }
+.app-body > .app-mobile-header,
+.app-body > .mobile-bottom-nav { grid-column: 1 / -1; }
+
+/* Tablet: customer shell icon rail 72px.
+   Scoped to customer shell only — admin and provider keep their workspace
+   sidebars instead of being crushed into a 72px rail. */
 @media (max-width: 1199px) and (min-width: 821px) {
-  .app-body { grid-template-columns: 72px minmax(0, 1fr) !important; }
-  .app-shell.is-sidebar-collapsed .app-body { grid-template-columns: 0px minmax(0, 1fr) !important; }
-  .app-sidebar { width: 72px !important; padding: 14px 8px; }
-  .sidebar-resizer { display: none !important; }
-  .sidebar-content .sidebar-header,
-  .sidebar-content .sidebar-eyebrow,
-  .sidebar-content .sidebar-new-btn span,
-  .sidebar-content .app-nav-link span,
-  .sidebar-content .sidebar-recent,
-  .sidebar-content .sidebar-identity-copy,
-  .sidebar-content .sidebar-user-menu { display: none !important; }
-  .sidebar-content .app-nav-link { justify-content: center; padding: 10px 0; }
-  .sidebar-content .sidebar-new-btn { border-radius: 12px; justify-content: center; }
-  .sidebar-content .sidebar-footer { justify-content: center; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .app-body { grid-template-columns: 72px minmax(0, 1fr) !important; }
+  .app-shell:not(.admin-shell):not(.provider-shell).is-sidebar-collapsed .app-body { grid-template-columns: 0px minmax(0, 1fr) !important; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .app-sidebar { width: 72px !important; padding: 14px 8px; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-resizer { display: none !important; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-header,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-eyebrow,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-new-btn span,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .app-nav-link span,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-recent,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-identity-copy,
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-user-menu { display: none !important; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .app-nav-link { justify-content: center; padding: 10px 0; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-new-btn { border-radius: 12px; justify-content: center; }
+  .app-shell:not(.admin-shell):not(.provider-shell) .sidebar-content .sidebar-footer { justify-content: center; }
+  /* Admin / provider keep usable sidebars on tablet */
+  .admin-shell .app-body { grid-template-columns: 220px minmax(0, 1fr); }
+  .provider-shell .provider-body { grid-template-columns: 220px minmax(0, 1fr); }
+  .admin-shell .app-sidebar,
+  .provider-shell .provider-sidebar { width: 220px; }
 }
 
 /* Modernized Sidebar Header & Brand */
@@ -1275,7 +1328,7 @@
 .admin-sidebar-footer { margin-top: auto; }
 
 /* Admin Main Content & Banner */
-.admin-main-content { padding: 18px clamp(14px, 2.5vw, 28px) 36px; max-width: 1440px; margin: 0 auto; width: 100%; }
+.admin-main-content { grid-column: 2; grid-row: 1; padding: 18px clamp(14px, 2.5vw, 28px) 36px; max-width: 1440px; margin: 0 auto; width: 100%; box-sizing: border-box; }
 .admin-banner-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; background: linear-gradient(135deg, #FFFFFF 0%, #F8FAFF 100%); border: 1px solid #E2E8F0; border-radius: 16px; margin-bottom: 14px; box-shadow: var(--shadow-card); }
 .admin-banner-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .admin-banner-icon { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 12px; background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); border: 0; color: #FFFFFF; flex: 0 0 auto; box-shadow: 0 3px 10px rgb(79 70 229 / 30%); }
@@ -2409,22 +2462,75 @@
 
 @media (max-width: 820px) {
   .admin-shell .app-global-header { display: none !important; }
-  .provider-body {
-    display: flex;
-    flex-direction: column;
-    grid-template-columns: 1fr;
-  }
-  .provider-sidebar,
-  .admin-sidebar.provider-sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid #E2E8F0;
-  }
-  .admin-sidebar-inner { padding: 10px 12px !important; }
-  .admin-nav-group-items { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-  .admin-nav-group-items::-webkit-scrollbar { display: none; }
-  .admin-nav-btn { flex: 0 0 auto; white-space: nowrap; }
   .admin-main-content { padding: 20px 14px 120px !important; }
+
+  /* Provider responsive mobile styles:
+     Keep header visible and adapt sidebar into a sticky horizontal nav strip. */
+  .provider-shell .app-global-header {
+    display: flex !important;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    padding: 0 14px;
+    height: 52px;
+    min-height: 52px;
+    overflow-x: auto;
+  }
+  .provider-body {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: none !important;
+    height: auto !important;
+    min-height: 100dvh !important;
+    width: 100% !important;
+  }
+  .provider-body .provider-sidebar {
+    display: flex !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 10px 12px !important;
+    border-right: none !important;
+    border-bottom: 1px solid #E2E8F0;
+    background: #FFFFFF;
+    position: sticky;
+    top: 52px;
+    z-index: 30;
+  }
+  .provider-sidebar-inner { padding: 0 !important; }
+  .provider-nav-group-title { display: none !important; }
+  .provider-nav-group-items {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .provider-nav-group-items::-webkit-scrollbar { display: none; }
+  .provider-nav-btn {
+    flex: 0 0 auto !important;
+    white-space: nowrap !important;
+    padding: 7px 12px !important;
+  }
+  .provider-nav-divider { display: none !important; }
+  .provider-sidebar-footer { display: none !important; }
+  .provider-main {
+    padding: 16px 14px 64px !important;
+    width: 100% !important;
+  }
+  .provider-today-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .provider-today-actions {
+    width: 100%;
+  }
+  .provider-cta-btn {
+    width: 100%;
+  }
 }
 
 /* ==========================================================================
@@ -2437,8 +2543,13 @@
 }
 
 .provider-main {
-  padding: 24px 28px 48px;
+  grid-column: 2;
+  grid-row: 1;
+  width: 100%;
   max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 24px 28px 48px;
 }
 
 .provider-page {
