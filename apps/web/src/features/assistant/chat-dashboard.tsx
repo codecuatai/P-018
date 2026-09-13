@@ -444,6 +444,36 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
               <div className="chat-empty">
                 <h2 className="chat-empty-title">Hôm nay mình giúp gì cho bạn?</h2>
                 <p className="chat-empty-sub">Cứ nói như nhắn cho người quen — X-One lo phần còn lại.</p>
+                {(() => {
+                  const top = activeItems[0];
+                  const labels: Record<string, string> = { ride: "Chuyến xe", food: "Đơn đồ ăn", restaurant: "Đặt bàn", healthcare: "Lịch khám" };
+                  const label = top ? (labels[top.type] ?? "Dịch vụ") : "Lên kế hoạch";
+                  const prompt = top
+                    ? `Kiểm tra trạng thái ${label.toLowerCase()} của tôi`
+                    : "Lập kế hoạch đi ăn tối và đặt xe đưa đón";
+                  return (
+                    <button
+                      type="button"
+                      className="proactive-ai-banner"
+                      onClick={() => void send(prompt)}
+                      disabled={sending}
+                      aria-label={`Gợi ý: ${prompt}`}
+                    >
+                      <div className="proactive-ai-banner-top">
+                        <span className="proactive-ai-banner-badge">✦ Gợi ý</span>
+                        <span className="proactive-ai-banner-cta">Thực hiện ngay →</span>
+                      </div>
+                      <p className="proactive-ai-banner-title">
+                        {top ? `${label} của bạn đang hoạt động` : "Kế hoạch thông minh cho ngày hôm nay"}
+                      </p>
+                      <p className="proactive-ai-banner-desc">
+                        {top
+                          ? `X-One phát hiện bạn có ${label.toLowerCase()} đang diễn ra — nhấn để kiểm tra trạng thái ngay.`
+                          : "Kết hợp đặt xe và chọn nhà hàng trong 1 lần yêu cầu — nhấn để thử ngay."}
+                      </p>
+                    </button>
+                  );
+                })()}
                 <div className="chat-empty-suggestions" role="group" aria-label="Gợi ý để bắt đầu">
                   {["Đặt xe đi sân bay sáng mai", "Tìm quán phở gần đây", "Đặt lịch khám da liễu cuối tuần"].map((suggestion) => (
                     <button key={suggestion} className="chat-empty-suggestion" type="button" onClick={() => void send(suggestion)} disabled={sending}>

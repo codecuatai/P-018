@@ -16,7 +16,8 @@ test.describe("Production Live Verification - All 4 Roles Features", () => {
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 
     await expect(page).toHaveURL(/\/app\/provider/, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
+    // Provider portal identifies itself via the partner-type badge in the header
+    await expect(page.getByText(/Cổng Giả Lập Hệ Thống|Cổng Đối Tác/i).first()).toBeVisible({ timeout: 15_000 });
 
     // 2. Navigate to "Gắn & Quản lý Dịch vụ"
     const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
@@ -122,14 +123,9 @@ test.describe("Production Live Verification - All 4 Roles Features", () => {
     await compensateBtn.click();
     await expect(page.getByText(/Đã phát hành bồi thường/i)).toBeVisible({ timeout: 10_000 });
 
-    // 4. Open System Logs & Audit
-    await page.getByRole("button", { name: /System Logs & Audit/i }).click();
-    const auditSubtab = page.getByRole("tab", { name: /Audit Trail/i });
-    if (await auditSubtab.isVisible()) {
-      await auditSubtab.click();
-      await expect(page.getByRole("heading", { name: /Audit Trail/i })).toBeVisible({ timeout: 10_000 });
-      await expect(page.getByText(/Nhật ký kiểm toán hệ thống/i)).toBeVisible();
-    }
+    // 4. RBAC: Manager must NOT see "System Logs & Audit" (admin-only per getConsolidatedTabs).
+    // Audit Trail verification is covered by Role 4 (Admin) test below.
+    await expect(page.getByRole("button", { name: /System Logs & Audit/i })).toBeHidden({ timeout: 10_000 });
   });
 
   test("Role 4: Admin - Dynamic Feature Flag Toggle and Audit Trail Recording", async ({ page }) => {
