@@ -3693,3 +3693,509 @@
   line-height: 1.6;
   transition: all 200ms ease;
 }
+
+/* ==========================================================================
+   GIAI ĐOẠN 1: Bookings Hub (Sắp tới / Lịch sử / Đã hủy)
+   ========================================================================== */
+.bookings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.bookings-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.booking-tabs-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.booking-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 12px;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.booking-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted, #667085);
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+  white-space: nowrap;
+}
+
+.booking-tab:hover {
+  background: #F2F4F7;
+  color: var(--color-ink, #101828);
+}
+
+.booking-tab.active {
+  background: var(--color-primary, #4F46E5);
+  color: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.1);
+}
+
+.booking-tab .tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.booking-service-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.booking-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 999px;
+  background: var(--color-surface, #FFFFFF);
+  color: var(--color-muted, #667085);
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.booking-filter-chip:hover {
+  border-color: var(--color-primary, #4F46E5);
+  color: var(--color-ink, #101828);
+}
+
+.booking-filter-chip.is-selected {
+  background: #EEF2FF;
+  border-color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #4F46E5);
+}
+
+.bookings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .bookings-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .bookings-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.booking-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.booking-card:hover {
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+
+.booking-service-ride,
+.booking-service-ride_booking {
+  border-left-color: #0284C7;
+  background: linear-gradient(to right, #F0F9FF 0%, #FFFFFF 28%);
+}
+.booking-service-food,
+.booking-service-food_order {
+  border-left-color: #EA580C;
+  background: linear-gradient(to right, #FFF7ED 0%, #FFFFFF 28%);
+}
+.booking-service-restaurant {
+  border-left-color: #E11D48;
+  background: linear-gradient(to right, #FFF1F2 0%, #FFFFFF 28%);
+}
+.booking-service-healthcare {
+  border-left-color: #059669;
+  background: linear-gradient(to right, #ECFDF5 0%, #FFFFFF 28%);
+}
+
+.booking-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.booking-card-service {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.booking-service-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+}
+
+.booking-service-badge.badge-ride,
+.booking-service-badge.badge-ride_booking {
+  background: #F0F9FF;
+  color: #0284C7;
+}
+.booking-service-badge.badge-food,
+.booking-service-badge.badge-food_order {
+  background: #FFF7ED;
+  color: #EA580C;
+}
+.booking-service-badge.badge-restaurant {
+  background: #FFF1F2;
+  color: #E11D48;
+}
+.booking-service-badge.badge-healthcare {
+  background: #ECFDF5;
+  color: #059669;
+}
+
+.countdown-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #EEF2FF;
+  color: var(--color-primary, #4F46E5);
+  font-size: var(--text-xs, 12px);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.countdown-pill.is-urgent {
+  background: #FFFAEB;
+  color: #B54708;
+}
+
+.countdown-pill.is-due {
+  background: #ECFDF3;
+  color: var(--color-success, #067647);
+}
+
+.booking-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.booking-card-title {
+  font-size: var(--text-base, 15px);
+  font-weight: 700;
+  color: var(--color-ink, #101828);
+  line-height: 1.45;
+}
+
+.booking-card-detail {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-ink, #101828);
+  font-weight: 500;
+}
+
+.booking-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.booking-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-muted, #667085);
+}
+
+.meta-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.booking-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.bookings-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.booking-skeleton {
+  height: 150px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #F2F4F7 25%, #E4E7EC 50%, #F2F4F7 75%);
+  background-size: 200% 100%;
+  animation: booking-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes booking-skeleton-pulse {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Upcoming Hero Card (trang chủ /app) */
+.assistant-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.upcoming-hero-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.07);
+}
+
+.upcoming-service-ride_booking { border-left-color: #0284C7; }
+.upcoming-service-food_order { border-left-color: #EA580C; }
+.upcoming-service-restaurant_reservation { border-left-color: #E11D48; }
+.upcoming-service-healthcare_appointment { border-left-color: #059669; }
+
+.upcoming-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 260px;
+}
+
+.upcoming-hero-title {
+  font-size: var(--text-hero, clamp(26px, 3vw, 32px));
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-ink, #101828);
+  line-height: 1.25;
+}
+
+.upcoming-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.upcoming-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-muted, #667085);
+}
+
+.upcoming-countdown-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 4px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #EEF2FF;
+  color: var(--color-primary, #4F46E5);
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+}
+
+.upcoming-countdown-pill.is-urgent {
+  background: #FFFAEB;
+  color: #B54708;
+}
+
+.upcoming-countdown-pill.is-due {
+  background: #ECFDF3;
+  color: var(--color-success, #067647);
+}
+
+.upcoming-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Modal (dùng cho dialog hủy lịch) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(16, 24, 40, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--color-surface, #FFFFFF);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(16, 24, 40, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 0 20px;
+}
+
+.modal-header h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-ink, #101828);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 20px;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-ink, #101828);
+  line-height: 1.55;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 20px 20px 20px;
+}
+
+.field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-sm, 14px);
+  font-weight: 600;
+  color: var(--color-ink, #101828);
+}
+
+.field-label span {
+  font-weight: 600;
+}
+
+.field-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 10px;
+  font-size: var(--text-sm, 14px);
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.field-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #4F46E5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+/* Mobile Bottom Nav (5 tabs, 48px touch target) */
+.mobile-bottom-nav {
+  grid-template-columns: repeat(5, 1fr) !important;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.mobile-bottom-nav-link {
+  min-height: 56px;
+  min-width: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+@media (max-width: 820px) {
+  .booking-tabs {
+    width: 100%;
+  }
+
+  .booking-tab {
+    flex: 1;
+    justify-content: center;
+    padding: 10px 8px;
+    font-size: 13px;
+  }
+
+  .bookings-header-actions {
+    width: 100%;
+  }
+
+  .bookings-header-actions .button-primary {
+    flex: 1;
+    justify-content: center;
+  }
+}

@@ -4,11 +4,13 @@ import {
   Bell,
   BookmarkCheck,
   Bot,
+  CalendarDays,
   CarFront,
   ChevronLeft,
   ChevronRight,
   Gift,
   History,
+  Home,
   LifeBuoy,
   Loader2,
   LogOut,
@@ -20,6 +22,7 @@ import {
   ShieldCheck,
   Stethoscope,
   Store,
+  User,
   UserRound,
   Utensils,
   X,
@@ -38,10 +41,19 @@ import { useAuth } from "@/providers/auth-provider";
 
 const navigation = [
   { href: "/app", label: "Trợ lý AI", description: "Chat với X-One AI", icon: Bot },
+  { href: "/app/bookings", label: "Lịch hẹn", description: "Quản lý lịch hẹn và đơn hàng", icon: CalendarDays },
   { href: "/app/services", label: "Dịch vụ", description: "Đồ ăn, chuyến xe, nhà hàng, lịch khám", icon: Store },
   { href: "/app/history", label: "Lịch sử", description: "Chuyến xe, đơn hàng và lịch khám đã dùng", icon: History },
   { href: "/app/rewards", label: "Ưu đãi", description: "Điểm thưởng, voucher và mời bạn", icon: Gift },
   { href: "/app/favorites", label: "Đã lưu", description: "Địa điểm và dịch vụ hay dùng", icon: BookmarkCheck },
+];
+
+const mobileNavigation = [
+  { href: "/app", label: "Home", icon: Home },
+  { href: "/app/bookings", label: "Lịch", icon: CalendarDays },
+  { href: "/app/rewards", label: "Ưu đãi", icon: Gift },
+  { href: "/app/notifications", label: "Thông báo", icon: Bell },
+  { href: "/app/profile", label: "Tôi", icon: User },
 ];
 
 const DEFAULT_SIDEBAR_WIDTH = 280;
@@ -260,11 +272,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
         <main className={`app-content${assistantWorkspace ? " app-content-assistant" : ""}`} id="app-content">{children}</main>
         <nav className="mobile-bottom-nav" aria-label="Điều hướng nhanh">
-          {navigation.map(({ href, label, icon: Icon }) => {
+          {mobileNavigation.map(({ href, label, icon: Icon }) => {
             const isAssistant = href === "/app";
             const targetHref = isAssistant ? assistantHref : href;
             const current = isAssistant ? assistantWorkspace : pathname === href || pathname?.startsWith(`${href}/`);
-            return <Link key={href} className={`mobile-bottom-nav-link${current ? " is-active" : ""}`} href={targetHref} aria-current={current ? "page" : undefined}><Icon size={19} /><span>{label}</span></Link>;
+            return <Link key={href} className={`mobile-bottom-nav-link${current ? " is-active" : ""}`} href={targetHref} aria-current={current ? "page" : undefined}><Icon size={22} /><span>{label}</span></Link>;
           })}
         </nav>
       </div>

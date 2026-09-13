@@ -376,6 +376,15 @@ export function executeCancellation(confirmationId: string): Promise<Record<stri
   return request(`/api/v1/confirmations/${encodeURIComponent(confirmationId)}/execute-cancellation`, { method: "POST", body: JSON.stringify({}) }, { idempotencyKey: createIdempotencyKey("food-cancel") });
 }
 
+export async function cancelFoodOrder(orderId: string): Promise<Record<string, unknown>> {
+  const prep = await prepareFoodCancellation(orderId);
+  const confirmationId = String(prep.confirmation_id ?? prep.id ?? "");
+  if (!confirmationId) {
+    throw new Error("Không thể chuẩn bị hủy đơn hàng.");
+  }
+  return executeCancellation(confirmationId);
+}
+
 export function getRestaurantDetail(id: string): Promise<Record<string, unknown>> {
   return request(`/api/v1/service-actions/restaurant/${encodeURIComponent(id)}`, { method: "GET" });
 }
