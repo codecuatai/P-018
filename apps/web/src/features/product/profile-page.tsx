@@ -2,16 +2,204 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, CircleUserRound, ChevronDown, HeartPulse, Loader2, MapPinned, Save, Search, Settings, ShieldCheck, Plus } from "lucide-react";
+import { ArrowRight, Camera, ChevronDown, CircleUserRound, HeartPulse, Loader2, MapPinned, Save, Search, Settings, ShieldCheck, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, useCallback, useRef } from "react";
 
-import { ApiError, autocompleteAddress, errorText, listSavedAddresses, createSavedAddress, setSavedAddressDefault, updateSavedAddress } from "@/lib/api-client";
+import { ApiError, autocompleteAddress, errorText, listSavedAddresses, createSavedAddress, setSavedAddressDefault, updateSavedAddress, uploadAvatar, updateProfile as apiUpdateProfile } from "@/lib/api-client";
 import type { GeocodeCandidate, SavedAddress } from "@/types";
+import type { AuthUser } from "@/types";
 import { useAuth } from "@/providers/auth-provider";
 import { AddressPage } from "./address-page";
 import { XOneMap } from "./xone-map";
 import { PatientPage } from "./patient-page";
 import { SettingsPage } from "./settings-page";
+
+// ─── Profile Completion ─────────────────────────────────────────────────────
+
+interface CompletionItem {
+  label: string;
+  done: boolean;
+  points: number;
+}
+
+function getCompletionItems(user: AuthUser | null): CompletionItem[] {
+  return [
+    { label: "Ảnh đại diện", done: Boolean(user?.avatar_url), points: 20 },
+    { label: "Số điện thoại", done: Boolean(user?.phone), points: 20 },
+    { label: "Hoàn tất onboarding", done: Boolean(user?.onboarding_completed_at), points: 20 },
+    { label: "Email xác minh", done: Boolean(user?.email), points: 20 },
+    { label: "Ngôn ngữ", done: Boolean(user?.language), points: 10 },
+    { label: "Múi giờ", done: Boolean(user?.timezone), points: 10 },
+  ];
+}
+
+function ProfileCompletionRing({ user }: { user: AuthUser | null }) {
+  const items = getCompletionItems(user);
+  const score = items.reduce((sum, item) => sum + (item.done ? item.points : 0), 0);
+  const nextItem = items.find((item) => !item.done);
+
+  return (
+    <div className="profile-completion-bar">
+      <div className="profile-completion-header">
+        <span className="profile-completion-label">
+          Độ hoàn thiện hồ sơ
+        </span>
+        <span className="profile-completion-score">{score}%</span>
+      </div>
+      <div className="profile-completion-track" role="progressbar" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} aria-label={`Hoàn thiện hồ sơ ${score}%`}>
+        <div className="profile-completion-fill" style={{ width: `${score}%` }} />
+      </div>
+      {score < 100 ? (
+        <p className="profile-completion-hint">
+          <strong>Hoàn thiện hồ sơ để nhận 50 điểm thưởng.</strong>{" "}
+          {nextItem ? `Tiếp theo: ${nextItem.label}` : ""}
+        </p>
+      ) : (
+        <p className="profile-completion-hint profile-completion-done">
+          🎉 Hồ sơ đã hoàn thiện 100%!
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Avatar Upload ───────────────────────────────────────────────────────────
+
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_SIZE_MB = 5;
+const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+
+interface AvatarUploadProps {
+  currentUrl?: string;
+  onSaved: (url: string | null) => void;
+}
+
+function AvatarUpload({ currentUrl, onSaved }: AvatarUploadProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [clearing, setClearing] = useState(false);
+
+  const displayUrl = preview ?? currentUrl ?? null;
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploadError("");
+
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setUploadError("Chỉ chấp nhận file JPG, PNG hoặc WebP.");
+      return;
+    }
+    if (file.size > MAX_SIZE_BYTES) {
+      setUploadError(`Kích thước file tối đa ${MAX_SIZE_MB}MB.`);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreview(objectUrl);
+    setSelectedFile(file);
+  }
+
+  async function handleUpload() {
+    if (!selectedFile || uploading) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      const result = await uploadAvatar(selectedFile);
+      onSaved(result.avatar_url);
+      setSelectedFile(null);
+      if (preview) {
+        URL.revokeObjectURL(preview);
+        setPreview(null);
+      }
+    } catch (reason) {
+      setUploadError(errorText(reason));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleClear() {
+    if (clearing) return;
+    setClearing(true);
+    setUploadError("");
+    try {
+      await apiUpdateProfile({ avatar_url: undefined });
+      onSaved(null);
+      setSelectedFile(null);
+      if (preview) {
+        URL.revokeObjectURL(preview);
+        setPreview(null);
+      }
+    } catch (reason) {
+      setUploadError(errorText(reason));
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  return (
+    <div className="avatar-upload-zone">
+      <button
+        type="button"
+        className="avatar-upload-trigger"
+        onClick={() => fileInputRef.current?.click()}
+        aria-label="Chọn ảnh đại diện"
+      >
+        {displayUrl ? (
+          <img src={displayUrl} alt="Ảnh đại diện" className="avatar-upload-img" />
+        ) : (
+          <span className="avatar-upload-placeholder">
+            <CircleUserRound size={44} />
+          </span>
+        )}
+        <span className="avatar-upload-overlay">
+          <Camera size={18} />
+        </span>
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+        aria-hidden="true"
+      />
+      <div className="avatar-upload-actions">
+        {selectedFile ? (
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={() => void handleUpload()}
+            disabled={uploading}
+          >
+            {uploading ? <Loader2 className="spinner" size={15} /> : null}
+            {uploading ? "Đang tải lên…" : "Lưu ảnh"}
+          </button>
+        ) : null}
+        {(currentUrl || preview) && !selectedFile ? (
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => void handleClear()}
+            disabled={clearing}
+            aria-label="Xóa ảnh đại diện"
+          >
+            {clearing ? <Loader2 className="spinner" size={15} /> : <Trash2 size={15} />}
+            {clearing ? "Đang xóa…" : "Xóa ảnh"}
+          </button>
+        ) : null}
+        <small className="field-hint">JPG, PNG hoặc WebP · Tối đa {MAX_SIZE_MB}MB</small>
+      </div>
+      {uploadError ? <p className="form-error" role="alert">{uploadError}</p> : null}
+    </div>
+  );
+}
+
+// ─── ProfilePage ─────────────────────────────────────────────────────────────
 
 export function ProfilePage() {
   const { user, updateProfile } = useAuth();
@@ -221,11 +409,20 @@ export function ProfilePage() {
     setError("");
   }
 
+  function handleAvatarSaved(url: string | null): void {
+    // Trigger a profile refresh — updateProfile with avatar_url to sync state
+    void updateProfile({ avatar_url: url ?? undefined });
+  }
+
   return <section className="account-page" aria-labelledby="profile-title">
     <header className="section-heading"><div><span className="eyebrow">HỒ SƠ</span><h1 id="profile-title">Thông tin tài khoản</h1><p>Danh tính này được dùng để giữ ngữ cảnh, địa chỉ và lịch sử đúng theo tài khoản của bạn.</p></div></header>
+    <ProfileCompletionRing user={user} />
     {!user?.onboarding_completed_at ? <article className="onboarding-card"><div><span className="eyebrow">BƯỚC TIẾP THEO</span><h2>Hoàn tất ngữ cảnh cá nhân</h2><p>Thêm tên và số điện thoại là đủ để bắt đầu. Địa chỉ hiện tại và hồ sơ người bệnh đều là bước tùy chọn, có thể làm sau.</p></div><div className="onboarding-actions"><button className="button button-primary" type="button" onClick={() => void skipOptionalOnboarding()} disabled={onboardingSaving}>{onboardingSaving ? "Đang xử lý…" : "Đã xong, bắt đầu dùng"}</button></div></article> : null}
     <div className="profile-grid">
-      <article className="profile-identity"><span className="profile-avatar"><CircleUserRound size={34} /></span><span className="eyebrow">X-ONE</span><h2>{user?.full_name || "Tài khoản X-One"}</h2><p>{user?.email}</p><span className="status-badge"><ShieldCheck size={15} /> {user?.status === "active" ? "Đang hoạt động" : "Trạng thái tài khoản"}</span></article>
+      <article className="profile-identity">
+        <AvatarUpload currentUrl={user?.avatar_url ?? undefined} onSaved={handleAvatarSaved} />
+        <span className="eyebrow">X-ONE</span><h2>{user?.full_name || "Tài khoản X-One"}</h2><p>{user?.email}</p><span className="status-badge"><ShieldCheck size={15} /> {user?.status === "active" ? "Đang hoạt động" : "Trạng thái tài khoản"}</span>
+      </article>
       <article className="profile-details">
         <h2>Chỉnh sửa hồ sơ</h2>
         <div className="profile-form">
@@ -278,7 +475,7 @@ export function ProfilePage() {
         </div>
       </article>
     </div>
-    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt & phiên bảo mật</strong><small>Quản lý mật khẩu và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
+    <section className="profile-sections" aria-labelledby="profile-sections-title"><div className="panel-heading"><div><span className="eyebrow">KHÔNG GIAN TÀI KHOẢN</span><h2 id="profile-sections-title">Dữ liệu dùng chung cho các dịch vụ</h2></div></div><div className="profile-section-links"><Link scroll={false} className={`profile-section-link ${section === "addresses" ? "is-selected" : ""}`} href="/app/profile?section=addresses"><span className="profile-section-icon"><MapPinned size={18} /></span><span><strong>Địa chỉ đã lưu</strong><small>Dùng lại cho chuyến xe và giao hàng, với tọa độ đã xác minh.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "patients" ? "is-selected" : ""}`} href="/app/profile?section=patients"><span className="profile-section-icon"><HeartPulse size={18} /></span><span><strong>Hồ sơ người bệnh</strong><small>Liên kết người thân cho luồng Healthcare.</small></span><ArrowRight size={16} /></Link><Link scroll={false} className={`profile-section-link ${section === "settings" ? "is-selected" : ""}`} href="/app/profile?section=settings"><span className="profile-section-icon"><Settings size={18} /></span><span><strong>Cài đặt &amp; phiên bảo mật</strong><small>Quản lý mật khẩu và các phiên đăng nhập.</small></span><ArrowRight size={16} /></Link></div></section>
     {section === "addresses" ? <div className="profile-section-content"><AddressPage items={addresses} loading={addressesLoading} onReload={loadAddresses} onItemsChange={setAddresses} /></div> : section === "patients" ? <div className="profile-section-content"><PatientPage /></div> : section === "settings" ? <div className="profile-section-content"><SettingsPage /></div> : null}
   </section>;
 }

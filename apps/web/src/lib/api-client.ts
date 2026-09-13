@@ -703,6 +703,47 @@ export function getSessions(): Promise<{ items: AuthSessionSummary[] }> {
   return request("/api/v1/auth/sessions", { method: "GET" });
 }
 
+export interface TwoFactorSetupResult {
+  qr_code_url: string;
+  secret: string;
+  backup_codes: string[];
+}
+
+export interface TwoFactorVerifyResult {
+  enabled: boolean;
+  backup_codes: string[];
+}
+
+export function setup2FA(): Promise<TwoFactorSetupResult> {
+  return request("/api/v1/auth/2fa/setup", { method: "GET" });
+}
+
+export function verify2FA(code: string): Promise<TwoFactorVerifyResult> {
+  return request("/api/v1/auth/2fa/verify", { method: "POST", body: JSON.stringify({ code }) });
+}
+
+export function disable2FA(password: string): Promise<{ disabled: boolean }> {
+  return request("/api/v1/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password }) });
+}
+
+export async function uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+  const form = new FormData();
+  form.append("avatar", file);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const headers = new Headers();
+  headers.set("Accept", "application/json");
+  headers.set("X-Correlation-Id", createRequestId("avatar"));
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/avatar`, { method: "POST", headers, body: form, signal: controller.signal, credentials: "include" });
+    const body = await parseJson(response);
+    if (!response.ok) throw new ApiError(problemFromResponse(body, response.status));
+    if (!isRecord(body) || !("data" in body)) throw new ApiError({ code: "INVALID_RESPONSE", detail: "Không thể tải lên ảnh đại diện.", status: response.status, retryable: false });
+    return body.data as { avatar_url: string };
+  } finally { globalThis.clearTimeout(timeout); }
+}
+
 export function revokeSession(sessionId: string): Promise<{ revoked: boolean }> {
   return request(`/api/v1/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" }, { retryAuth: false });
 }
