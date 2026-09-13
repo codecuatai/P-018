@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException, ServiceUnavailableExc
 import { createHash, randomUUID } from 'crypto';
 
 import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
-import { CoreProductOpsStore, FavoriteDomain, FeedbackRecord, NotificationRecord, ProductOpsDomain, SupportPriority, SupportTicketEventRecord, SupportTicketRecord, SupportTicketStatus } from '../core/product-ops.store';
+import { CoreProductOpsStore, FavoriteDomain, FeedbackRecord, NotificationPreferencesRecord, NotificationRecord, ProductOpsDomain, SupportPriority, SupportTicketEventRecord, SupportTicketRecord, SupportTicketStatus } from '../core/product-ops.store';
 
 export type FeedbackDomain = ProductOpsDomain;
 export type FeedbackResourceType = 'food_order' | 'ride_booking' | 'restaurant_reservation' | 'healthcare_appointment';
@@ -65,6 +65,24 @@ export class ProductOpsService {
     if (!isCompleted(input.domain, resource)) throw new ConflictException({ code: 'RESOURCE_NOT_COMPLETED', detail: 'Chỉ giao dịch đã hoàn tất mới có thể được đánh giá.', retryable: false });
     const now = new Date().toISOString();
     return this.store.upsertFeedback({ id: randomUUID(), actorId, domain: input.domain, resourceType: input.resourceType, resourceId: input.resourceId, rating: input.rating, ...(input.comment ? { comment: input.comment } : {}), createdAt: now, updatedAt: now });
+  }
+
+  async updateFeedback(id: string, actorId: string, patch: { rating?: number; comment?: string }): Promise<FeedbackRecord> {
+    const existing = await this.store.getFeedback(id, actorId);
+    if (!existing) throw new NotFoundException({ code: 'FEEDBACK_NOT_FOUND', detail: 'Không tìm thấy đánh giá.', retryable: false });
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (existing.createdAt < sevenDaysAgo) throw new ConflictException({ code: 'FEEDBACK_EDIT_WINDOW_EXPIRED', detail: 'Chỉ có thể sửa đánh giá trong vòng 7 ngày.', retryable: false });
+    const updated = await this.store.updateFeedback(id, actorId, patch, new Date().toISOString());
+    if (!updated) throw new NotFoundException({ code: 'FEEDBACK_NOT_FOUND', detail: 'Không tìm thấy đánh giá.', retryable: false });
+    return updated;
+  }
+
+  async getNotificationPreferences(actorId: string): Promise<NotificationPreferencesRecord> {
+    return this.store.getNotificationPreferences(actorId);
+  }
+
+  async updateNotificationPreferences(actorId: string, patch: { bookingUpdates?: boolean; promotions?: boolean; system?: boolean; emailEnabled?: boolean }): Promise<NotificationPreferencesRecord> {
+    return this.store.updateNotificationPreferences(actorId, patch);
   }
 
   async listSupportTickets(actorId: string, options: { status?: SupportTicketStatus; page?: number; pageSize?: number } = {}): Promise<Awaited<ReturnType<CoreProductOpsStore['listSupportTickets']>>> {

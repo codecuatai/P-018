@@ -63,6 +63,34 @@ class FeedbackDto {
   comment?: string;
 }
 
+class FeedbackPatchDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  comment?: string;
+}
+
+class NotificationPreferencesPatchDto {
+  @IsOptional()
+  booking_updates?: boolean;
+
+  @IsOptional()
+  promotions?: boolean;
+
+  @IsOptional()
+  system?: boolean;
+
+  @IsOptional()
+  email_enabled?: boolean;
+}
+
 class SupportTicketDto {
   @IsString()
   @MinLength(3)
@@ -147,6 +175,19 @@ export class NotificationsController {
   @Post('read-all')
   @HttpCode(200)
   async readAll(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: await this.productOps.markAllNotificationsRead(request.user.sub), meta: { request_id: request.correlationId } }; }
+
+  @Get('preferences')
+  async getPreferences(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const prefs = await this.productOps.getNotificationPreferences(request.user.sub);
+    return { data: { booking_updates: prefs.bookingUpdates, promotions: prefs.promotions, system: prefs.system, email_enabled: prefs.emailEnabled }, meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('preferences')
+  @HttpCode(200)
+  async updatePreferences(@Body() body: NotificationPreferencesPatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const prefs = await this.productOps.updateNotificationPreferences(request.user.sub, { ...(body.booking_updates !== undefined ? { bookingUpdates: body.booking_updates } : {}), ...(body.promotions !== undefined ? { promotions: body.promotions } : {}), ...(body.system !== undefined ? { system: body.system } : {}), ...(body.email_enabled !== undefined ? { emailEnabled: body.email_enabled } : {}) });
+    return { data: { booking_updates: prefs.bookingUpdates, promotions: prefs.promotions, system: prefs.system, email_enabled: prefs.emailEnabled }, meta: { request_id: request.correlationId } };
+  }
 }
 
 @Controller('api/v1/favorites')
@@ -174,6 +215,9 @@ export class FeedbackController {
 
   @Post()
   async create(@Body() body: FeedbackDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: presentFeedback(await this.productOps.createFeedback(request.user.sub, correlation(request), { domain: body.domain, resourceType: body.resource_type, resourceId: body.resource_id.trim(), rating: body.rating, ...(body.comment?.trim() ? { comment: body.comment.trim() } : {}) })), meta: { request_id: request.correlationId } }; }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() body: FeedbackPatchDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { return { data: presentFeedback(await this.productOps.updateFeedback(id, request.user.sub, { ...(body.rating !== undefined ? { rating: body.rating } : {}), ...(body.comment !== undefined ? { comment: body.comment } : {}) })), meta: { request_id: request.correlationId } }; }
 }
 
 @Controller('api/v1/support/tickets')
@@ -212,7 +256,9 @@ export class ReordersController {
   async healthcare(@Param('appointmentId') appointmentId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> { const id = Number(appointmentId); if (!Number.isInteger(id) || id < 1) throw new BadRequestException({ code: 'APPOINTMENT_ID_INVALID', detail: 'Mã lịch khám không hợp lệ.', retryable: false }); return { data: await this.productOps.prepareHealthcareRebook(request.user.sub, correlation(request), id), meta: { request_id: request.correlationId } }; }
 }
 
-@Module({ imports: [AuthModule, CoreModule], controllers: [NotificationsController, FavoritesController, FeedbackController, SupportController, ReordersController], providers: [ProductOpsService], exports: [ProductOpsService] })
+import { RewardsController } from './rewards.controller';
+
+@Module({ imports: [AuthModule, CoreModule], controllers: [NotificationsController, FavoritesController, FeedbackController, SupportController, ReordersController, RewardsController], providers: [ProductOpsService], exports: [ProductOpsService] })
 export class ProductOpsModule {}
 
 function presentNotification(value: Awaited<ReturnType<ProductOpsService['markNotificationRead']>>): Record<string, unknown> {

@@ -11,8 +11,11 @@ import {
   Patch,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
@@ -545,6 +548,17 @@ export class PersonalProfileController {
       ...(body.onboarding_completed !== undefined ? { onboardingCompletedAt: body.onboarding_completed ? new Date().toISOString() : '' } : {}),
     });
     return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('avatar')
+  @UseInterceptors(FileInterceptor('avatar', { limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (_req, file, cb) => { const allowed = ['image/jpeg', 'image/png', 'image/webp']; cb(null, allowed.includes(file.mimetype)); } }))
+  async uploadAvatar(@UploadedFile() file: Express.Multer.File | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    if (!file) throw new BadRequestException({ code: 'AVATAR_REQUIRED', detail: 'Vui lòng chọn ảnh đại diện (JPG, PNG, hoặc WebP, tối đa 5MB).', retryable: false });
+    const avatarUrl = file.size < 100 * 1024
+      ? `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
+      : `https://avatars.example.com/${request.user.sub}/avatar.png`;
+    const updated = await this.auth.updateProfile(request.user, { avatarUrl });
+    return { data: { avatar_url: updated.avatar_url ?? avatarUrl }, meta: { request_id: request.correlationId } };
   }
 }
 

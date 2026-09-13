@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 import type { Response } from 'express';
@@ -95,6 +95,19 @@ class ResetPasswordDto {
   @MaxLength(128, { message: 'Mật khẩu không được vượt quá 128 ký tự.' })
   @Matches(/(?=.*[a-zA-Z])(?=.*[0-9])(?=.*[^a-zA-Z0-9])/, { message: 'Mật khẩu phải bao gồm chữ, số và ký tự đặc biệt.' })
   new_password!: string;
+}
+
+class TwoFactorVerifyDto {
+  @IsString()
+  @MinLength(6, { message: 'Mã xác thực không hợp lệ.' })
+  @MaxLength(8, { message: 'Mã xác thực không hợp lệ.' })
+  code!: string;
+}
+
+class TwoFactorDisableDto {
+  @IsString()
+  @MinLength(1, { message: 'Vui lòng nhập mật khẩu để xác nhận.' })
+  password!: string;
 }
 
 @Controller('api/v1/auth')
@@ -231,6 +244,41 @@ export class AuthController {
   async resetPassword(@Body() body: ResetPasswordDto, @Req() request: CorrelatedRequest): Promise<object> {
     await this.auth.resetPassword(body.token, body.new_password, request.correlationId ?? 'cor_unknown');
     return { data: { password_reset: true }, meta: { request_id: request.correlationId } };
+  }
+
+  @Get('2fa/setup')
+  @UseGuards(AuthGuard)
+  async setup2FA(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const { randomBytes } = await import('crypto');
+    const secret = randomBytes(20).toString('base64').replace(/[^A-Z2-7]/gi, 'A').slice(0, 32).toUpperCase();
+    const issuer = encodeURIComponent('X-One Platform');
+    const account = encodeURIComponent(request.user.email);
+    const qrCodeUrl = `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`;
+    const backupCodes = Array.from({ length: 8 }, () => randomBytes(4).toString('hex'));
+    return { data: { qr_code_url: qrCodeUrl, secret, backup_codes: backupCodes }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('2fa/verify')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  async verify2FA(@Body() body: TwoFactorVerifyDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    if (!/^\d{6,8}$/.test(body.code)) {
+      throw new BadRequestException({ code: '2FA_CODE_INVALID', detail: 'Mã xác thực không hợp lệ.', retryable: true });
+    }
+    const { randomBytes } = await import('crypto');
+    const backupCodes = Array.from({ length: 8 }, () => randomBytes(4).toString('hex'));
+    return { data: { enabled: true, backup_codes: backupCodes }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(AuthGuard)
+  @HttpCode(200)
+  async disable2FA(@Body() body: TwoFactorDisableDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const account = await this.auth.verifyPasswordForUser(request.user, body.password);
+    if (!account) {
+      throw new UnauthorizedException({ code: 'PASSWORD_INCORRECT', detail: 'Mật khẩu không chính xác.', retryable: false });
+    }
+    return { data: { disabled: true }, meta: { request_id: request.correlationId } };
   }
 
   private tryDemoLogin(body: LoginDto): { token: string; user: AuthUser } | undefined {

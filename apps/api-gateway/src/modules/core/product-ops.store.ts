@@ -24,6 +24,15 @@ export interface NotificationRecord {
   readAt?: string;
 }
 
+export interface NotificationPreferencesRecord {
+  actorId: string;
+  bookingUpdates: boolean;
+  promotions: boolean;
+  system: boolean;
+  emailEnabled: boolean;
+  updatedAt: string;
+}
+
 export interface FavoriteRecord {
   id: string;
   actorId: string;
@@ -90,6 +99,10 @@ export interface ProductOpsStore {
   listFeedback(actorId: string): Promise<FeedbackRecord[]>;
   listAllFeedback(options?: { domain?: ProductOpsDomain; ratingMin?: number; ratingMax?: number; fromTime?: string; toTime?: string; actorId?: string; page?: number; pageSize?: number }): Promise<{ items: FeedbackRecord[]; total: number; stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> } }>;
   upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord>;
+  getFeedback(id: string, actorId?: string): Promise<FeedbackRecord | undefined>;
+  updateFeedback(id: string, actorId: string, patch: { rating?: number; comment?: string }, updatedAt: string): Promise<FeedbackRecord | undefined>;
+  getNotificationPreferences(actorId: string): Promise<NotificationPreferencesRecord>;
+  updateNotificationPreferences(actorId: string, patch: Partial<Omit<NotificationPreferencesRecord, 'actorId' | 'updatedAt'>>): Promise<NotificationPreferencesRecord>;
   createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord>;
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }>;
   listAllSupportTickets(options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }>;
@@ -108,6 +121,11 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
   private readonly feedback = new Map<string, FeedbackRecord>();
   private readonly tickets = new Map<string, SupportTicketRecord>();
   private readonly ticketEvents = new Map<string, SupportTicketEventRecord>();
+  private readonly notificationPrefs = new Map<string, NotificationPreferencesRecord>();
+
+  private defaultPrefs(actorId: string): NotificationPreferencesRecord {
+    return { actorId, bookingUpdates: true, promotions: true, system: true, emailEnabled: true, updatedAt: new Date().toISOString() };
+  }
 
   async upsertNotification(value: NotificationRecord): Promise<NotificationRecord> {
     const existing = [...this.notifications.values()].find((item) => item.eventKey === value.eventKey);
@@ -234,6 +252,32 @@ export class InMemoryProductOpsStore implements ProductOpsStore {
     }
     this.feedback.set(value.id, clone(value));
     return clone(value);
+  }
+
+  async getFeedback(id: string, actorId?: string): Promise<FeedbackRecord | undefined> {
+    const value = this.feedback.get(id);
+    if (!value || (actorId && value.actorId !== actorId)) return undefined;
+    return clone(value);
+  }
+
+  async updateFeedback(id: string, actorId: string, patch: { rating?: number; comment?: string }, updatedAt: string): Promise<FeedbackRecord | undefined> {
+    const value = this.feedback.get(id);
+    if (!value || value.actorId !== actorId) return undefined;
+    if (patch.rating !== undefined) value.rating = patch.rating;
+    if (patch.comment !== undefined) value.comment = patch.comment;
+    value.updatedAt = updatedAt;
+    return clone(value);
+  }
+
+  async getNotificationPreferences(actorId: string): Promise<NotificationPreferencesRecord> {
+    return clone(this.notificationPrefs.get(actorId) ?? this.defaultPrefs(actorId));
+  }
+
+  async updateNotificationPreferences(actorId: string, patch: Partial<Omit<NotificationPreferencesRecord, 'actorId' | 'updatedAt'>>): Promise<NotificationPreferencesRecord> {
+    const current = this.notificationPrefs.get(actorId) ?? this.defaultPrefs(actorId);
+    const updated: NotificationPreferencesRecord = { ...current, ...patch, actorId, updatedAt: new Date().toISOString() };
+    this.notificationPrefs.set(actorId, updated);
+    return clone(updated);
   }
 
   async createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord> {
@@ -397,6 +441,47 @@ export class PostgresProductOpsStore implements ProductOpsStore {
 
   async upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord> { const result = await this.pool.query('INSERT INTO service_feedback (id,actor_id,domain,resource_type,resource_id,rating,comment,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (actor_id,domain,resource_type,resource_id) DO UPDATE SET rating=EXCLUDED.rating,comment=EXCLUDED.comment,updated_at=EXCLUDED.updated_at RETURNING *', [value.id, value.actorId, value.domain, value.resourceType, value.resourceId, value.rating, value.comment ?? null, value.createdAt, value.updatedAt]); return this.feedbackFromRow(result.rows[0]); }
 
+  async getFeedback(id: string, actorId?: string): Promise<FeedbackRecord | undefined> {
+    const result = await this.pool.query(`SELECT * FROM service_feedback WHERE id=$1${actorId ? ' AND actor_id=$2' : ''}`, actorId ? [id, actorId] : [id]);
+    return result.rows[0] ? this.feedbackFromRow(result.rows[0]) : undefined;
+  }
+
+  async updateFeedback(id: string, actorId: string, patch: { rating?: number; comment?: string }, updatedAt: string): Promise<FeedbackRecord | undefined> {
+    const sets: string[] = ['updated_at=$3'];
+    const values: unknown[] = [id, actorId, updatedAt];
+    if (patch.rating !== undefined) { values.push(patch.rating); sets.push(`rating=$${values.length}`); }
+    if (patch.comment !== undefined) { values.push(patch.comment ?? null); sets.push(`comment=$${values.length}`); }
+    const result = await this.pool.query(`UPDATE service_feedback SET ${sets.join(', ')} WHERE id=$1 AND actor_id=$2 RETURNING *`, values);
+    return result.rows[0] ? this.feedbackFromRow(result.rows[0]) : undefined;
+  }
+
+  private prefsFromRow(row: Record<string, unknown>): NotificationPreferencesRecord {
+    return { actorId: String(row.actor_id), bookingUpdates: Boolean(row.booking_updates), promotions: Boolean(row.promotions), system: Boolean(row.system_notifications), emailEnabled: Boolean(row.email_enabled), updatedAt: new Date(String(row.updated_at)).toISOString() };
+  }
+
+  async getNotificationPreferences(actorId: string): Promise<NotificationPreferencesRecord> {
+    const result = await this.pool.query('SELECT * FROM notification_preferences WHERE actor_id=$1', [actorId]);
+    if (result.rows[0]) return this.prefsFromRow(result.rows[0]);
+    return { actorId, bookingUpdates: true, promotions: true, system: true, emailEnabled: true, updatedAt: new Date().toISOString() };
+  }
+
+  async updateNotificationPreferences(actorId: string, patch: Partial<Omit<NotificationPreferencesRecord, 'actorId' | 'updatedAt'>>): Promise<NotificationPreferencesRecord> {
+    const now = new Date().toISOString();
+    const result = await this.pool.query(
+      `INSERT INTO notification_preferences (actor_id, booking_updates, promotions, system_notifications, email_enabled, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (actor_id) DO UPDATE SET
+         booking_updates = COALESCE($2, notification_preferences.booking_updates),
+         promotions = COALESCE($3, notification_preferences.promotions),
+         system_notifications = COALESCE($4, notification_preferences.system_notifications),
+         email_enabled = COALESCE($5, notification_preferences.email_enabled),
+         updated_at = $6
+       RETURNING *`,
+      [actorId, patch.bookingUpdates ?? null, patch.promotions ?? null, patch.system ?? null, patch.emailEnabled ?? null, now]
+    );
+    return this.prefsFromRow(result.rows[0]);
+  }
+
   async createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord> {
     const client = await this.pool.connect();
     try {
@@ -472,6 +557,10 @@ export class CoreProductOpsStore implements OnModuleDestroy {
   listFeedback(actorId: string): Promise<FeedbackRecord[]> { return this.repository.listFeedback(actorId); }
   listAllFeedback(options?: { domain?: ProductOpsDomain; ratingMin?: number; ratingMax?: number; fromTime?: string; toTime?: string; actorId?: string; page?: number; pageSize?: number }): Promise<{ items: FeedbackRecord[]; total: number; stats: { averageRating: number; byDomain: Record<string, { count: number; averageRating: number }> } }> { return this.repository.listAllFeedback(options); }
   upsertFeedback(value: FeedbackRecord): Promise<FeedbackRecord> { return this.repository.upsertFeedback(value); }
+  getFeedback(id: string, actorId?: string): Promise<FeedbackRecord | undefined> { return this.repository.getFeedback(id, actorId); }
+  updateFeedback(id: string, actorId: string, patch: { rating?: number; comment?: string }, updatedAt: string): Promise<FeedbackRecord | undefined> { return this.repository.updateFeedback(id, actorId, patch, updatedAt); }
+  getNotificationPreferences(actorId: string): Promise<NotificationPreferencesRecord> { return this.repository.getNotificationPreferences(actorId); }
+  updateNotificationPreferences(actorId: string, patch: Partial<Omit<NotificationPreferencesRecord, 'actorId' | 'updatedAt'>>): Promise<NotificationPreferencesRecord> { return this.repository.updateNotificationPreferences(actorId, patch); }
   createSupportTicket(value: SupportTicketRecord, event: SupportTicketEventRecord): Promise<SupportTicketRecord> { return this.repository.createSupportTicket(value, event); }
   listSupportTickets(actorId: string, options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }> { return this.repository.listSupportTickets(actorId, options); }
   listAllSupportTickets(options?: { status?: SupportTicketStatus; page?: number; pageSize?: number }): Promise<{ items: SupportTicketRecord[]; total: number }> { return this.repository.listAllSupportTickets(options); }

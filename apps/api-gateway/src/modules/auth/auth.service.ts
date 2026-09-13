@@ -379,6 +379,13 @@ export class AuthService {
     return this.toPublicUser(updated, user.session_id);
   }
 
+  async verifyPasswordForUser(user: AuthUser, password: string): Promise<AuthAccount | null> {
+    const account = await this.store.getUserById(user.sub);
+    if (!account) return null;
+    const valid = await safelyVerifyPassword(account.passwordHash, password);
+    return valid ? account : null;
+  }
+
   toPublicUser(account: AuthAccount, sessionId?: string): AuthUser {
     return {
       id: account.id,
