@@ -1,134 +1,110 @@
-.dialogNarrow {
-  width: min(720px, calc(100vw - 28px)) !important;
-  max-width: 720px !important;
-  height: min(600px, calc(100dvh - 32px)) !important;
-  max-height: min(600px, calc(100dvh - 32px)) !important;
+.dialogLogin {
+  width: min(440px, calc(100vw - 28px)) !important;
+  max-width: 440px !important;
+  height: auto !important;
+  max-height: min(720px, calc(100dvh - 28px)) !important;
   padding: 0 !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
-  border-radius: 18px !important;
-  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.28), 0 0 0 1px rgba(16, 24, 40, 0.08) !important;
+  border-radius: 22px !important;
+  background: #FFFFFF !important;
+  border: 1px solid rgba(228, 231, 236, 0.8) !important;
+  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.18), 0 0 0 1px rgba(16, 24, 40, 0.05) !important;
+}
+
+.dialogRegister {
+  width: min(520px, calc(100vw - 28px)) !important;
+  max-width: 520px !important;
+  height: auto !important;
+  max-height: min(760px, calc(100dvh - 28px)) !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 22px !important;
+  background: #FFFFFF !important;
+  border: 1px solid rgba(228, 231, 236, 0.8) !important;
+  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.18), 0 0 0 1px rgba(16, 24, 40, 0.05) !important;
+}
+
+/* Backward compatibility aliases */
+.dialogNarrow {
+  composes: dialogLogin;
 }
 
 .dialogWide {
-  width: min(800px, calc(100vw - 28px)) !important;
-  max-width: 800px !important;
-  height: min(620px, calc(100dvh - 32px)) !important;
-  max-height: min(620px, calc(100dvh - 32px)) !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-  border-radius: 18px !important;
-  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.28), 0 0 0 1px rgba(16, 24, 40, 0.08) !important;
+  composes: dialogRegister;
 }
 
-.srHeading {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-
-.title {
-  font-size: var(--text-2xl);
-  font-weight: 800;
-  margin: 0;
-}
-
-.subtitle {
-  font-size: var(--text-sm);
-  margin: 0;
-}
-
-.dialogBody {
-  display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
-  height: 100%;
-  max-height: 100%;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-}
-
-.dialogBody :global(.auth-hero) {
-  height: 100%;
-  min-height: 0;
-  min-height: 100%;
-  padding: 28px 24px;
-  justify-content: flex-start;
-  gap: 14px;
-  border-radius: 0;
-  border: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-.dialogBody :global(.auth-hero)::-webkit-scrollbar {
-  display: none;
-}
-
-.dialogBody :global(.auth-hero-title) {
-  font-size: clamp(1.5rem, 2.4vw, 1.875rem);
-  line-height: 1.18;
-}
-
-.dialogBody :global(.auth-hero-body) {
-  gap: 8px;
-}
-
-.dialogBody :global(.auth-hero-sub) {
-  font-size: var(--text-sm);
-}
-
-.dialogBody :global(.auth-hero-services) {
-  gap: 6px;
-  margin-top: 0;
-}
-
-.dialogBody :global(.auth-hero-services li) {
-  padding: 8px 10px;
-  gap: 10px;
-  font-size: var(--text-xs);
-  border-radius: 11px;
-}
-
-.form {
+.header {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  align-items: center;
+  text-align: center;
+  padding: 30px 28px 10px;
+  gap: 6px;
+}
+
+.brandIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: #EEF2FF;
+  border: 1px solid #E0E7FF;
+  color: #4F46E5;
+  margin-bottom: 4px;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.08);
+}
+
+.title {
+  font-size: 1.35rem;
+  font-weight: 750;
+  color: #101828;
+  letter-spacing: -0.025em;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.subtitle {
+  font-size: 0.85rem;
+  color: #667085;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 320px;
+  text-wrap: balance;
+}
+
+.formWrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
-  max-height: 100%;
-  padding: 22px 24px 24px;
-  background: #FFFFFF;
+  padding: 0 28px 28px;
   overflow-y: auto !important;
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
-  scrollbar-color: #CBD5E1 transparent;
+  scrollbar-color: #E2E8F0 transparent;
 }
 
-.form::-webkit-scrollbar {
-  width: 6px;
+.formWrapper::-webkit-scrollbar {
+  width: 5px;
 }
-.form::-webkit-scrollbar-track {
+.formWrapper::-webkit-scrollbar-track {
   background: transparent;
 }
-.form::-webkit-scrollbar-thumb {
+.formWrapper::-webkit-scrollbar-thumb {
   background: #CBD5E1;
   border-radius: 999px;
 }
-.form::-webkit-scrollbar-thumb:hover {
+.formWrapper::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
 }
 
@@ -137,95 +113,54 @@
   grid-template-columns: 1fr 1fr;
   gap: 3px;
   padding: 3px;
-  margin-bottom: 14px;
+  margin: 4px 0 16px;
   background: #F1F5F9;
   border: 1px solid #E2E8F0;
-  border-radius: 9px;
+  border-radius: 11px;
 }
 
 .modeOption {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 32px;
+  gap: 7px;
+  min-height: 34px;
   padding: 0 12px;
   font-family: inherit;
-  font-size: var(--text-xs);
+  font-size: 0.82rem;
   font-weight: 500;
-  color: var(--color-muted);
+  color: #64748B;
   background: transparent;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 140ms ease;
 }
 
 .modeOption:hover {
-  color: var(--color-ink);
+  color: #0F172A;
 }
 
 .modeOption[data-active="true"] {
-  color: var(--color-ink);
+  color: #0F172A;
   background: #FFFFFF;
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
 }
 
-.form :global(.auth-switch) {
-  margin-top: 18px;
-  margin-bottom: 0;
-}
-
-.form :global(.auth-switch) button {
-  padding: 0;
-  color: var(--color-primary-strong);
-  background: transparent;
-  border: 0;
-  font-size: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-@media (max-width: 768px) {
-  .dialogNarrow,
-  .dialogWide {
-    width: min(480px, calc(100vw - 24px)) !important;
-    height: calc(100dvh - 24px) !important;
-    max-height: calc(100dvh - 24px) !important;
-    border-radius: 18px !important;
+@media (max-width: 560px) {
+  .dialogLogin,
+  .dialogRegister {
+    width: calc(100vw - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    border-radius: 20px !important;
   }
 
-  .dialogBody {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-    height: 100%;
-    max-height: calc(100dvh - 24px);
-    min-height: 0;
-    overflow: hidden;
+  .header {
+    padding: 24px 20px 8px;
   }
 
-  .dialogBody :global(.auth-hero) {
-    height: auto;
-    min-height: auto;
-    max-height: 210px;
-    padding: 20px 20px 16px;
-    gap: 12px;
-    border-right: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    overflow: hidden;
-  }
-
-  .dialogBody :global(.auth-hero-services) {
-    display: none;
-  }
-
-  .form {
-    height: auto;
-    min-height: 0;
-    max-height: 100%;
-    padding: 20px 18px 24px;
-    overflow-y: auto !important;
+  .formWrapper {
+    padding: 0 20px 24px;
   }
 }

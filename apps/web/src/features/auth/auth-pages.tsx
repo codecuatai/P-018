@@ -74,7 +74,7 @@ export function GoogleSignInButton({ pending, text = "Tiếp tục với Google"
       </button>
       {error ? <p className="form-error" style={{ marginTop: 8 }}>{error}</p> : null}
       <div className="auth-divider">
-        <span>Hoặc</span>
+        <span>hoặc bằng email</span>
       </div>
     </div>
   );
@@ -123,22 +123,40 @@ export function LoginForm({ onSuccess, onSwitch }: AuthFormProps) {
   return (
     <>
       <GoogleSignInButton pending={pending} text="Đăng nhập bằng Google" />
-      <form onSubmit={submit}>
-        <Field label="Email" id="login-email" type="email" value={email} onChange={setEmail} autoComplete="username" required />
-        <PasswordField id="login-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="current-password" />
-        <div className="form-row-end">
-          <Link className="text-link" href="/forgot-password">Quên mật khẩu?</Link>
-        </div>
+      <form onSubmit={submit} className="auth-form">
+        <Field
+          label="Email"
+          id="login-email"
+          type="email"
+          value={email}
+          onChange={setEmail}
+          autoComplete="username"
+          placeholder="name@example.com"
+          required
+        />
+        <PasswordField
+          id="login-password"
+          label="Mật khẩu"
+          value={password}
+          onChange={setPassword}
+          autoComplete="current-password"
+          placeholder="••••••••"
+          forgotPasswordAction={
+            <Link className="forgot-password-link" href="/forgot-password">
+              Quên mật khẩu?
+            </Link>
+          }
+        />
         <FormFeedback error={error} message={sessionExpiredMessage} />
-        <Button className="button-wide button-primary" disabled={pending} type="submit">
+        <Button className="button-wide button-primary button-auth-submit" disabled={pending} type="submit">
           {pending ? <LoaderCircle className="spinner" size={17} /> : <LockKeyhole size={17} />}
           {pending ? "Đang đăng nhập…" : "Đăng nhập"}
         </Button>
       </form>
       <p className="auth-switch">
-        Lần đầu đến X-One?{" "}
+        Chưa có tài khoản?{" "}
         <button type="button" onClick={onSwitch}>
-          Tạo tài khoản miễn phí
+          Tạo tài khoản mới
         </button>
       </p>
     </>
@@ -208,8 +226,11 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
           data-variant="user"
           className="account-type-option"
         >
-          <span className="opt-icon"><User size={17} aria-hidden="true" /></span>
-          <span className="opt-text"><span className="opt-title">Cá nhân</span><span className="opt-sub">Đặt món, xe, khám</span></span>
+          <span className="opt-icon"><User size={16} aria-hidden="true" /></span>
+          <span className="opt-text">
+            <span className="opt-title">Cá nhân</span>
+            <span className="opt-sub">Đặt xe, gọi món, khám bệnh</span>
+          </span>
         </button>
         <button
           type="button"
@@ -219,21 +240,24 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
           data-variant="provider"
           className="account-type-option"
         >
-          <span className="opt-icon"><Store size={17} aria-hidden="true" /></span>
-          <span className="opt-text"><span className="opt-title">Đối tác</span><span className="opt-sub">Kinh doanh cùng X-One</span></span>
+          <span className="opt-icon"><Store size={16} aria-hidden="true" /></span>
+          <span className="opt-text">
+            <span className="opt-title">Đối tác dịch vụ</span>
+            <span className="opt-sub">Kinh doanh cùng X-One</span>
+          </span>
         </button>
       </div>
 
       {accountType === "user" ? (
         <GoogleSignInButton pending={pending} text="Đăng ký bằng Google" />
       ) : (
-        <p className="provider-notice" role="note">
+        <div className="provider-notice" role="note">
           <Info size={15} aria-hidden="true" />
-          <span>Hoàn tất hồ sơ 3 bước bên dưới — bạn có thể liên kết Google sau.</span>
-        </p>
+          <span>Đăng ký thông tin cơ sở — bạn có thể liên kết đăng nhập Google sau.</span>
+        </div>
       )}
 
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="auth-form">
         {accountType === "provider" ? (
           <div className="provider-steps">
             {/* Bước 1: Chọn lĩnh vực */}
@@ -243,7 +267,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   <span className="provider-step-badge">1</span>
                   Lĩnh vực hợp tác
                 </span>
-                <p className="provider-step-desc">Chọn mô hình kinh doanh bạn muốn hợp tác cùng X-One</p>
+                <p className="provider-step-desc">Chọn mô hình kinh doanh bạn muốn cung cấp trên X-One</p>
               </div>
               <div className="provider-type-grid" role="group" aria-label="Chọn lĩnh vực đối tác">
                 <button
@@ -254,10 +278,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="ride"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><Car size={16} aria-hidden="true" /></span>
+                  <span className="tone-icon"><Car size={15} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Di chuyển</span>
-                    <span className="tone-sub">Tài xế xe</span>
+                    <span className="tone-sub">Tài xế / Chuyến xe</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -269,10 +293,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="food"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><UtensilsCrossed size={16} aria-hidden="true" /></span>
+                  <span className="tone-icon"><UtensilsCrossed size={15} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Ẩm thực</span>
-                    <span className="tone-sub">Quán ăn, F&B</span>
+                    <span className="tone-sub">Quán ăn / Món</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -284,10 +308,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="health"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><HeartPulse size={16} aria-hidden="true" /></span>
+                  <span className="tone-icon"><HeartPulse size={15} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Y tế</span>
-                    <span className="tone-sub">Phòng khám</span>
+                    <span className="tone-sub">Bác sĩ / Phòng khám</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -305,11 +329,11 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
               </div>
               <div className="auth-fields-grid">
                 <Field
-                  label="Tên cơ sở kinh doanh"
+                  label="Tên thương hiệu / Cơ sở"
                   id="register-business-name"
                   value={businessName}
                   onChange={setBusinessName}
-                  placeholder="VD: Cơm Tấm Sài Gòn..."
+                  placeholder="VD: Quán ăn Phố Cổ..."
                 />
                 <Field
                   label="Số điện thoại liên hệ"
@@ -318,7 +342,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   value={phone}
                   onChange={setPhone}
                   autoComplete="tel"
-                  placeholder="VD: 0912 345 678"
+                  placeholder="0912 345 678"
                   required
                 />
               </div>
@@ -331,7 +355,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   <span className="provider-step-badge">3</span>
                   Tài khoản quản trị
                 </span>
-                <p className="provider-step-desc">Thông tin người đại diện để đăng nhập cổng vận hành</p>
+                <p className="provider-step-desc">Thông tin người đại diện để đăng nhập cổng đối tác</p>
               </div>
               <div className="auth-fields-grid">
                 <Field
@@ -429,7 +453,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
         )}
 
         <FormFeedback error={error} />
-        <Button className="button-wide button-primary" disabled={pending} type="submit">
+        <Button className="button-wide button-primary button-auth-submit" disabled={pending} type="submit">
           {pending ? <LoaderCircle className="spinner" size={17} /> : <ShieldCheck size={17} />}
           {pending ? "Đang xử lý đăng ký…" : accountType === "provider" ? "Đăng ký làm Đối tác X-One" : "Tạo tài khoản"}
         </Button>
@@ -447,9 +471,9 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
 export function ForgotPasswordPage() {
   return (
     <AuthCard
-      eyebrow="KHÔI PHỤC TRUY CẬP"
-      title="Quên mật khẩu?"
-      intro="Nhập email tài khoản của bạn để nhận hướng dẫn đặt lại mật khẩu an toàn."
+      eyebrow="BẢO MẬT & TÀI KHOẢN"
+      title="Khôi phục mật khẩu"
+      intro="Nhập địa chỉ email tài khoản của bạn để nhận liên kết đặt lại mật khẩu an toàn."
     >
       <ForgotPasswordForm />
     </AuthCard>
@@ -478,25 +502,34 @@ export function ForgotPasswordForm() {
 
   return sent ? (
     <div className="auth-success" role="status">
-      <Mail size={22} aria-hidden="true" />
+      <div className="auth-success-icon"><Mail size={24} aria-hidden="true" /></div>
       <h2>Đã gửi liên kết khôi phục</h2>
       <p>
-        Mở email của bạn, bấm vào liên kết trong thư để đặt lại mật khẩu, rồi quay lại đây đăng nhập.
+        Vui lòng kiểm tra hộp thư đến của bạn và nhấn vào liên kết được gửi kèm để đặt lại mật khẩu.
       </p>
       <Link className="button button-primary button-wide" href="/?auth=login">
         Quay lại đăng nhập
       </Link>
     </div>
   ) : (
-    <form onSubmit={submit}>
-      <Field label="Email" id="forgot-email" type="email" value={email} onChange={setEmail} autoComplete="email" required />
+    <form onSubmit={submit} className="auth-form">
+      <Field
+        label="Email"
+        id="forgot-email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+        placeholder="name@example.com"
+        required
+      />
       <FormFeedback error={error} />
-      <Button className="button-wide button-primary" disabled={pending} type="submit">
+      <Button className="button-wide button-primary button-auth-submit" disabled={pending} type="submit">
         {pending ? <LoaderCircle className="spinner" size={17} /> : <Mail size={17} />}
-        {pending ? "Đang gửi yêu cầu…" : "Gửi yêu cầu"}
+        {pending ? "Đang gửi yêu cầu…" : "Gửi liên kết khôi phục"}
       </Button>
       <p className="auth-switch">
-        Nhớ mật khẩu rồi? <Link href="/?auth=login">Đăng nhập</Link>
+        Nhớ mật khẩu rồi? <Link href="/?auth=login">Đăng nhập ngay</Link>
       </p>
     </form>
   );
@@ -539,26 +572,46 @@ export function ResetPasswordPage() {
 
   return (
     <AuthCard
-      eyebrow="MẬT KHẨU MỚI"
+      eyebrow="BẢO MẬT & TÀI KHOẢN"
       title="Đặt lại mật khẩu"
-      intro={`Chọn mật khẩu mới, ${PASSWORD_POLICY_HINT.toLowerCase()}`}
+      intro={`Vui lòng nhập mật khẩu mới, ${PASSWORD_POLICY_HINT.toLowerCase()}`}
     >
       {success ? (
         <div className="auth-success" role="status">
-          <ShieldCheck size={22} aria-hidden="true" />
+          <div className="auth-success-icon"><ShieldCheck size={24} aria-hidden="true" /></div>
           <h2>Mật khẩu đã được cập nhật thành công</h2>
-          <p>Phiên đăng nhập cũ đã được kết thúc. Đang chuyển hướng bạn về trang đăng nhập…</p>
+          <p>Phiên đăng nhập cũ đã được kết thúc an toàn. Đang tự động chuyển hướng về trang đăng nhập…</p>
           <Link className="button button-primary button-wide" href="/?auth=login">
             Đăng nhập ngay
           </Link>
         </div>
       ) : (
-        <form onSubmit={submit}>
-          <PasswordField id="reset-password" label="Mật khẩu mới" value={password} onChange={setPassword} autoComplete="new-password" disabled={!token} minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
-          <PasswordField id="reset-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" disabled={!token} minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
+        <form onSubmit={submit} className="auth-form">
+          <PasswordField
+            id="reset-password"
+            label="Mật khẩu mới"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+            disabled={!token}
+            minLength={PASSWORD_MIN_LENGTH}
+            maxLength={PASSWORD_MAX_LENGTH}
+            placeholder="••••••••"
+          />
+          <PasswordField
+            id="reset-confirm-password"
+            label="Xác nhận mật khẩu mới"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+            autoComplete="new-password"
+            disabled={!token}
+            minLength={PASSWORD_MIN_LENGTH}
+            maxLength={PASSWORD_MAX_LENGTH}
+            placeholder="••••••••"
+          />
           <p className="field-hint">{PASSWORD_POLICY_HINT}</p>
           <FormFeedback error={error} />
-          <Button className="button-wide button-primary" disabled={pending || !token} type="submit">
+          <Button className="button-wide button-primary button-auth-submit" disabled={pending || !token} type="submit">
             {pending ? <LoaderCircle className="spinner" size={17} /> : <LockKeyhole size={17} />}
             {pending ? "Đang cập nhật…" : "Cập nhật mật khẩu"}
           </Button>
@@ -569,7 +622,7 @@ export function ResetPasswordPage() {
 }
 
 export function AuthHero({
-  title = "Một tài khoản, xong cả xe, món và lịch khám.",
+  title = "Một tài khoản, trọn vẹn di chuyển, ẩm thực và y tế.",
   subtitle,
 }: {
   title?: string;
@@ -590,15 +643,15 @@ export function AuthHero({
       <ul className="auth-hero-services" aria-label="Các dịch vụ X-One">
         <li>
           <span className="auth-hero-icon" data-tone="ride"><Car size={15} aria-hidden="true" /></span>
-          <span><strong>Xe</strong> — Đặt xe trong 1 chạm</span>
+          <span><strong>Xe</strong> — Đặt xe đón tận nơi nhanh chóng</span>
         </li>
         <li>
           <span className="auth-hero-icon" data-tone="food"><UtensilsCrossed size={15} aria-hidden="true" /></span>
-          <span><strong>Món</strong> — Quán chuẩn vị gần bạn</span>
+          <span><strong>Món</strong> — Quán ngon giao nhanh tận nhà</span>
         </li>
         <li>
           <span className="auth-hero-icon" data-tone="health"><HeartPulse size={15} aria-hidden="true" /></span>
-          <span><strong>Khám</strong> — Bác sĩ tận tâm chu đáo</span>
+          <span><strong>Khám</strong> — Đặt lịch bác sĩ chu đáo</span>
         </li>
       </ul>
     </div>
@@ -617,52 +670,136 @@ function AuthCard({
   children: ReactNode;
 }) {
   return (
-    <section className="auth-page" aria-labelledby="auth-title">
-      <AuthHero />
-      <article className="auth-card">
-        <div className="auth-card-heading">
-          {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-          <h1 id="auth-title">{title}</h1>
-          {intro && <p>{intro}</p>}
+    <div className="auth-standalone-layout">
+      <div className="auth-standalone-card">
+        <div className="auth-standalone-header">
+          <Link href="/" className="auth-standalone-brand" aria-label="Trang chủ X-One">
+            <span className="auth-standalone-mark"><XOneMark size={24} /></span>
+            <span className="auth-standalone-name">X-One</span>
+          </Link>
+          {eyebrow && <span className="auth-standalone-eyebrow">{eyebrow}</span>}
+          <h1 id="auth-title" className="auth-standalone-title">{title}</h1>
+          {intro && <p className="auth-standalone-intro">{intro}</p>}
         </div>
         {children}
-      </article>
-    </section>
+      </div>
+    </div>
   );
 }
 
 function fieldIconFor(id: string, type: string) {
-  if (type === "email") return <Mail size={17} aria-hidden="true" />;
-  if (type === "tel") return <Phone size={17} aria-hidden="true" />;
-  if (id.includes("business")) return <Store size={17} aria-hidden="true" />;
-  if (id.includes("phone")) return <Phone size={17} aria-hidden="true" />;
-  if (id.includes("name")) return <User size={17} aria-hidden="true" />;
-  return <User size={17} aria-hidden="true" />;
+  if (type === "email") return <Mail size={16} aria-hidden="true" />;
+  if (type === "tel") return <Phone size={16} aria-hidden="true" />;
+  if (id.includes("business")) return <Store size={16} aria-hidden="true" />;
+  if (id.includes("phone")) return <Phone size={16} aria-hidden="true" />;
+  if (id.includes("name")) return <User size={16} aria-hidden="true" />;
+  return <User size={16} aria-hidden="true" />;
 }
 
-const FLAT_INPUT_STYLE = { border: 0, background: "transparent", boxShadow: "none", height: "40px", padding: "0 8px 0 0", borderRadius: 0 } as const;
+const FLAT_INPUT_STYLE = {
+  border: 0,
+  background: "transparent",
+  boxShadow: "none",
+  height: "100%",
+  padding: 0,
+  borderRadius: 0,
+} as const;
 
-function Field({ label, id, value, onChange, type = "text", autoComplete, required = false, placeholder, icon }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean; placeholder?: string; icon?: ReactNode }) {
+function Field({
+  label,
+  id,
+  value,
+  onChange,
+  type = "text",
+  autoComplete,
+  required = false,
+  placeholder,
+  icon,
+}: {
+  label: string;
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  autoComplete?: string;
+  required?: boolean;
+  placeholder?: string;
+  icon?: ReactNode;
+}) {
   return (
     <div className="form-field">
       <Label htmlFor={id}>{label}</Label>
       <span className="field-control">
         <span className="field-icon">{icon ?? fieldIconFor(id, type)}</span>
-        <Input id={id} name={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} required={required} placeholder={placeholder} style={{ ...FLAT_INPUT_STYLE }} />
+        <Input
+          id={id}
+          name={id}
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          required={required}
+          placeholder={placeholder}
+          style={{ ...FLAT_INPUT_STYLE }}
+        />
       </span>
     </div>
   );
 }
 
-function PasswordField({ id, label, value, onChange, autoComplete, disabled = false, minLength, maxLength, placeholder }: { id: string; label: string; value: string; onChange: (value: string) => void; autoComplete: string; disabled?: boolean; minLength?: number; maxLength?: number; placeholder?: string }) {
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  autoComplete,
+  disabled = false,
+  minLength,
+  maxLength,
+  placeholder,
+  forgotPasswordAction,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: string;
+  disabled?: boolean;
+  minLength?: number;
+  maxLength?: number;
+  placeholder?: string;
+  forgotPasswordAction?: ReactNode;
+}) {
   const [visible, setVisible] = useState(false);
   return (
     <div className="form-field">
-      <Label htmlFor={id}>{label}</Label>
+      <div className="form-field-label-row">
+        <Label htmlFor={id}>{label}</Label>
+        {forgotPasswordAction}
+      </div>
       <span className="password-input">
         <span className="field-icon"><LockKeyhole size={16} aria-hidden="true" /></span>
-        <Input id={id} name={id} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} minLength={minLength} maxLength={maxLength} required disabled={disabled} placeholder={placeholder} style={{ ...FLAT_INPUT_STYLE }} />
-        <button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible((state) => !state)}>{visible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+        <Input
+          id={id}
+          name={id}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          minLength={minLength}
+          maxLength={maxLength}
+          required
+          disabled={disabled}
+          placeholder={placeholder}
+          style={{ ...FLAT_INPUT_STYLE }}
+        />
+        <button
+          type="button"
+          aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+          onClick={() => setVisible((state) => !state)}
+        >
+          {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
       </span>
     </div>
   );
