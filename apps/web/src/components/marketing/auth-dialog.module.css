@@ -1,17 +1,27 @@
 .dialogNarrow {
-  width: min(780px, calc(100vw - 28px)) !important;
-  max-width: 780px !important;
+  width: min(720px, calc(100vw - 28px)) !important;
+  max-width: 720px !important;
+  height: min(600px, calc(100dvh - 32px)) !important;
+  max-height: min(600px, calc(100dvh - 32px)) !important;
   padding: 0 !important;
   overflow: hidden !important;
-  border-radius: 22px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.28), 0 0 0 1px rgba(16, 24, 40, 0.08) !important;
 }
 
 .dialogWide {
-  width: min(840px, calc(100vw - 28px)) !important;
-  max-width: 840px !important;
+  width: min(800px, calc(100vw - 28px)) !important;
+  max-width: 800px !important;
+  height: min(620px, calc(100dvh - 32px)) !important;
+  max-height: min(620px, calc(100dvh - 32px)) !important;
   padding: 0 !important;
   overflow: hidden !important;
-  border-radius: 22px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  border-radius: 18px !important;
+  box-shadow: 0 24px 60px -12px rgba(16, 24, 40, 0.28), 0 0 0 1px rgba(16, 24, 40, 0.08) !important;
 }
 
 .srHeading {
@@ -39,54 +49,116 @@
 
 .dialogBody {
   display: grid;
-  grid-template-columns: 310px minmax(0, 1fr);
-  min-height: 480px;
-  max-height: min(760px, calc(100dvh - 36px));
+  grid-template-columns: 270px minmax(0, 1fr);
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .dialogBody :global(.auth-hero) {
+  height: 100%;
+  min-height: 0;
+  min-height: 100%;
+  padding: 28px 24px;
+  justify-content: flex-start;
+  gap: 14px;
   border-radius: 0;
   border: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.dialogBody :global(.auth-hero)::-webkit-scrollbar {
+  display: none;
+}
+
+.dialogBody :global(.auth-hero-title) {
+  font-size: clamp(1.5rem, 2.4vw, 1.875rem);
+  line-height: 1.18;
+}
+
+.dialogBody :global(.auth-hero-body) {
+  gap: 8px;
+}
+
+.dialogBody :global(.auth-hero-sub) {
+  font-size: var(--text-sm);
+}
+
+.dialogBody :global(.auth-hero-services) {
+  gap: 6px;
+  margin-top: 0;
+}
+
+.dialogBody :global(.auth-hero-services li) {
+  padding: 8px 10px;
+  gap: 10px;
+  font-size: var(--text-xs);
+  border-radius: 11px;
 }
 
 .form {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 30px 28px 24px;
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  padding: 22px 24px 24px;
   background: #FFFFFF;
-  overflow-y: auto;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
+}
+
+.form::-webkit-scrollbar {
+  width: 6px;
+}
+.form::-webkit-scrollbar-track {
+  background: transparent;
+}
+.form::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 999px;
+}
+.form::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 .modeSwitch {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: 18px;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 14px;
   background: #F1F5F9;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  border-radius: 9px;
 }
 
 .modeOption {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 14px;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
   font-family: inherit;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--color-muted);
   background: transparent;
   border: 0;
-  border-radius: 9px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: all 150ms ease;
+  transition: all 140ms ease;
 }
 
 .modeOption:hover {
@@ -94,10 +166,10 @@
 }
 
 .modeOption[data-active="true"] {
-  color: var(--color-primary-strong);
+  color: var(--color-ink);
   background: #FFFFFF;
-  font-weight: 700;
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.08);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
 }
 
 .form :global(.auth-switch) {
@@ -120,22 +192,29 @@
   .dialogNarrow,
   .dialogWide {
     width: min(480px, calc(100vw - 24px)) !important;
+    height: calc(100dvh - 24px) !important;
     max-height: calc(100dvh - 24px) !important;
     border-radius: 18px !important;
   }
 
   .dialogBody {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: 100%;
     max-height: calc(100dvh - 24px);
-    overflow-y: auto;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .dialogBody :global(.auth-hero) {
+    height: auto;
     min-height: auto;
+    max-height: 210px;
     padding: 20px 20px 16px;
     gap: 12px;
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
   }
 
   .dialogBody :global(.auth-hero-services) {
@@ -143,6 +222,10 @@
   }
 
   .form {
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
     padding: 20px 18px 24px;
+    overflow-y: auto !important;
   }
 }

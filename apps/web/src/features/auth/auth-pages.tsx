@@ -254,10 +254,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="ride"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><Car size={18} aria-hidden="true" /></span>
+                  <span className="tone-icon"><Car size={16} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Di chuyển</span>
-                    <span className="tone-sub">Tài xế xe & Giao hàng</span>
+                    <span className="tone-sub">Tài xế xe</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -269,10 +269,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="food"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><UtensilsCrossed size={18} aria-hidden="true" /></span>
+                  <span className="tone-icon"><UtensilsCrossed size={16} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Ẩm thực</span>
-                    <span className="tone-sub">Quán ăn, nhà hàng, F&B</span>
+                    <span className="tone-sub">Quán ăn, F&B</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -284,10 +284,10 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   data-tone="health"
                   className="provider-type-option"
                 >
-                  <span className="tone-icon"><HeartPulse size={18} aria-hidden="true" /></span>
+                  <span className="tone-icon"><HeartPulse size={16} aria-hidden="true" /></span>
                   <span className="tone-body">
                     <span className="tone-title">Y tế</span>
-                    <span className="tone-sub">Bác sĩ, phòng khám</span>
+                    <span className="tone-sub">Phòng khám</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>
@@ -303,23 +303,25 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 </span>
                 <p className="provider-step-desc">Tên thương hiệu và số điện thoại liên hệ xác minh</p>
               </div>
-              <Field
-                label="Tên thương hiệu / Cơ sở kinh doanh"
-                id="register-business-name"
-                value={businessName}
-                onChange={setBusinessName}
-                placeholder="VD: Cơm Tấm Sài Gòn, Xe Hợp Đồng Bác Minh..."
-              />
-              <Field
-                label="Số điện thoại liên hệ"
-                id="register-phone"
-                type="tel"
-                value={phone}
-                onChange={setPhone}
-                autoComplete="tel"
-                placeholder="VD: 0912 345 678"
-                required
-              />
+              <div className="auth-fields-grid">
+                <Field
+                  label="Tên cơ sở kinh doanh"
+                  id="register-business-name"
+                  value={businessName}
+                  onChange={setBusinessName}
+                  placeholder="VD: Cơm Tấm Sài Gòn..."
+                />
+                <Field
+                  label="Số điện thoại liên hệ"
+                  id="register-phone"
+                  type="tel"
+                  value={phone}
+                  onChange={setPhone}
+                  autoComplete="tel"
+                  placeholder="VD: 0912 345 678"
+                  required
+                />
+              </div>
             </div>
 
             {/* Bước 3: Tài khoản quản trị */}
@@ -331,33 +333,97 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                 </span>
                 <p className="provider-step-desc">Thông tin người đại diện để đăng nhập cổng vận hành</p>
               </div>
-              <Field
-                label="Họ tên người đại diện"
-                id="register-name"
-                value={fullName}
-                onChange={setFullName}
-                autoComplete="name"
-                required
-              />
-              <Field label="Email" id="register-email" value={email} onChange={setEmail} autoComplete="email" required />
-              <PasswordField id="register-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
-              <PasswordField id="register-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
+              <div className="auth-fields-grid">
+                <Field
+                  label="Họ tên người đại diện"
+                  id="register-name"
+                  value={fullName}
+                  onChange={setFullName}
+                  autoComplete="name"
+                  placeholder="Nguyễn Văn An"
+                  required
+                />
+                <Field
+                  label="Email"
+                  id="register-email"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  autoComplete="email"
+                  placeholder="ban@example.com"
+                  required
+                />
+              </div>
+              <div className="auth-fields-grid">
+                <PasswordField
+                  id="register-password"
+                  label="Mật khẩu"
+                  value={password}
+                  onChange={setPassword}
+                  autoComplete="new-password"
+                  placeholder="Tối thiểu 8 ký tự"
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                />
+                <PasswordField
+                  id="register-confirm-password"
+                  label="Xác nhận mật khẩu"
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  autoComplete="new-password"
+                  placeholder="Nhập lại mật khẩu"
+                  minLength={PASSWORD_MIN_LENGTH}
+                  maxLength={PASSWORD_MAX_LENGTH}
+                />
+              </div>
               <p className="field-hint">{PASSWORD_POLICY_HINT}</p>
             </div>
           </div>
         ) : (
           <>
-            <Field
-              label="Họ và tên"
-              id="register-name"
-              value={fullName}
-              onChange={setFullName}
-              autoComplete="name"
-              required
-            />
-            <Field label="Email" id="register-email" value={email} onChange={setEmail} autoComplete="email" required />
-            <PasswordField id="register-password" label="Mật khẩu" value={password} onChange={setPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
-            <PasswordField id="register-confirm-password" label="Xác nhận mật khẩu" value={confirmPassword} onChange={setConfirmPassword} autoComplete="new-password" minLength={PASSWORD_MIN_LENGTH} maxLength={PASSWORD_MAX_LENGTH} />
+            <div className="auth-fields-grid">
+              <Field
+                label="Họ và tên"
+                id="register-name"
+                value={fullName}
+                onChange={setFullName}
+                autoComplete="name"
+                placeholder="Nguyễn Văn An"
+                required
+              />
+              <Field
+                label="Email"
+                id="register-email"
+                type="email"
+                value={email}
+                onChange={setEmail}
+                autoComplete="email"
+                placeholder="ban@example.com"
+                required
+              />
+            </div>
+            <div className="auth-fields-grid">
+              <PasswordField
+                id="register-password"
+                label="Mật khẩu"
+                value={password}
+                onChange={setPassword}
+                autoComplete="new-password"
+                placeholder="Tối thiểu 8 ký tự"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+              />
+              <PasswordField
+                id="register-confirm-password"
+                label="Xác nhận mật khẩu"
+                value={confirmPassword}
+                onChange={setConfirmPassword}
+                autoComplete="new-password"
+                placeholder="Nhập lại mật khẩu"
+                minLength={PASSWORD_MIN_LENGTH}
+                maxLength={PASSWORD_MAX_LENGTH}
+              />
+            </div>
             <p className="field-hint">{PASSWORD_POLICY_HINT}</p>
           </>
         )}
@@ -574,7 +640,7 @@ function fieldIconFor(id: string, type: string) {
   return <User size={17} aria-hidden="true" />;
 }
 
-const FLAT_INPUT_STYLE = { border: 0, background: "transparent", boxShadow: "none", height: "46px", padding: "0 10px 0 0", borderRadius: 0 } as const;
+const FLAT_INPUT_STYLE = { border: 0, background: "transparent", boxShadow: "none", height: "40px", padding: "0 8px 0 0", borderRadius: 0 } as const;
 
 function Field({ label, id, value, onChange, type = "text", autoComplete, required = false, placeholder, icon }: { label: string; id: string; value: string; onChange: (value: string) => void; type?: string; autoComplete?: string; required?: boolean; placeholder?: string; icon?: ReactNode }) {
   return (
@@ -594,9 +660,9 @@ function PasswordField({ id, label, value, onChange, autoComplete, disabled = fa
     <div className="form-field">
       <Label htmlFor={id}>{label}</Label>
       <span className="password-input">
-        <span className="field-icon"><LockKeyhole size={17} aria-hidden="true" /></span>
+        <span className="field-icon"><LockKeyhole size={16} aria-hidden="true" /></span>
         <Input id={id} name={id} type={visible ? "text" : "password"} value={value} onChange={(event) => onChange(event.target.value)} autoComplete={autoComplete} minLength={minLength} maxLength={maxLength} required disabled={disabled} placeholder={placeholder} style={{ ...FLAT_INPUT_STYLE }} />
-        <button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible((state) => !state)}>{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button>
+        <button type="button" aria-label={visible ? "Ẩn mật khẩu" : "Hiện mật khẩu"} onClick={() => setVisible((state) => !state)}>{visible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
       </span>
     </div>
   );
