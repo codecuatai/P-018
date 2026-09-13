@@ -2819,3 +2819,696 @@
     padding: 16px 12px 90px;
   }
 }
+
+/* ==========================================================================
+   GIAI ĐOẠN 3: Loyalty & Rewards
+   ========================================================================== */
+.rewards-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.rewards-hero-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: var(--radius-xl, 14px);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.05);
+}
+
+.rewards-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.rewards-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #EEF2FF;
+  color: #4338CA;
+  border: 1px solid #C7D2FE;
+  border-radius: 999px;
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+}
+
+.rewards-points {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.rewards-points strong {
+  font-size: var(--text-3xl, 30px);
+  font-weight: 700;
+  color: var(--color-ink, #101828);
+  letter-spacing: -0.02em;
+}
+
+.rewards-points small {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-muted, #667085);
+  font-weight: 600;
+}
+
+.tier-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tier-progress p {
+  margin: 0;
+  font-size: var(--text-xs, 12px);
+  color: var(--color-muted, #667085);
+}
+
+.tier-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #F1F5F9;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.tier-progress-fill {
+  display: block;
+  height: 100%;
+  width: 65%;
+  background: linear-gradient(90deg, #4F46E5 0%, #818CF8 100%);
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+.rewards-expiry-warning {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #FEF3F2;
+  color: var(--color-danger, #D92D20);
+  border: 1px solid #FECDCA;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+}
+
+.rewards-expiry-warning-text {
+  color: var(--color-danger, #D92D20) !important;
+}
+
+.rewards-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+@media (max-width: 640px) {
+  .rewards-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.rewards-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 10px;
+}
+
+.rewards-stat small {
+  color: var(--color-muted, #667085);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+}
+
+.rewards-stat strong {
+  color: var(--color-ink, #101828);
+  font-size: var(--text-base, 16px);
+  font-weight: 700;
+}
+
+.voucher-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 11px;
+  transition: box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.voucher-card.service-ride {
+  border-left-color: #0284C7;
+  background: #F8FAFC;
+}
+
+.voucher-card.service-food {
+  border-left-color: #EA580C;
+  background: #FFFDF9;
+}
+
+.voucher-card.service-restaurant {
+  border-left-color: #E11D48;
+  background: #FFF9FA;
+}
+
+.voucher-card.service-healthcare {
+  border-left-color: #059669;
+  background: #F7FCFB;
+}
+
+.voucher-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.voucher-service-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: var(--text-micro, 11px);
+  font-weight: 700;
+}
+
+.voucher-copy strong {
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+  color: var(--color-ink, #101828);
+}
+
+.voucher-copy p {
+  margin: 0;
+  color: var(--color-muted, #667085);
+  font-size: var(--text-xs, 12px);
+}
+
+.voucher-copy small {
+  color: var(--color-muted, #667085);
+  font-size: var(--text-micro, 11px);
+}
+
+.voucher-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 600px) {
+  .voucher-card {
+    flex-direction: column;
+  }
+  .voucher-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+.ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-border, #E4E7EC);
+  border-radius: 10px;
+}
+
+.ledger-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: var(--text-sm, 14px);
+  flex: 0 0 auto;
+}
+
+.ledger-icon.is-earn {
+  background: #ECFDF5;
+  color: var(--color-success, #067647);
+  border: 1px solid #A7F3D0;
+}
+
+.ledger-icon.is-burn {
+  background: #FEF2F2;
+  color: var(--color-danger, #D92D20);
+  border: 1px solid #FECACA;
+}
+
+.ledger-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ledger-copy strong {
+  font-size: var(--text-sm, 14px);
+  font-weight: 700;
+}
+
+.ledger-earn {
+  color: var(--color-success, #067647);
+}
+
+.ledger-burn {
+  color: var(--color-danger, #D92D20);
+}
+
+.ledger-copy p {
+  margin: 0;
+  color: var(--color-ink, #101828);
+  font-size: var(--text-xs, 12px);
+}
+
+.ledger-copy small {
+  color: var(--color-muted, #667085);
+  font-size: var(--text-micro, 11px);
+}
+
+.referral-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 20px;
+  background: linear-gradient(180deg, #F8FAFC 0%, #FFFFFF 100%);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 14px;
+  text-align: center;
+}
+
+.referral-card small {
+  color: var(--color-primary, #4F46E5);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  font-size: var(--text-micro, 11px);
+}
+
+.referral-card strong {
+  font-size: var(--text-3xl, 30px);
+  font-weight: 800;
+  color: var(--color-ink, #101828);
+  letter-spacing: 0.1em;
+  padding: 8px 18px;
+  background: #EEF2FF;
+  border: 1px dashed #A5B4FC;
+  border-radius: 8px;
+}
+
+.referral-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.referral-guide {
+  margin: 0;
+  color: var(--color-ink, #101828);
+  font-size: var(--text-sm, 14px);
+  font-weight: 500;
+}
+
+.referral-pending {
+  color: #D97706 !important;
+  background: #FEF3C7 !important;
+  border-color: #FDE68A !important;
+}
+
+.copy-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #1E293B;
+  color: #FFFFFF;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: fadeIn 150ms ease;
+}
+
+/* ==========================================================================
+   GIAI ĐOẠN 4: Reviews + Notifications nâng cấp + Help Center
+   ========================================================================== */
+.notification-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: #F1F5F9;
+  border-radius: var(--radius-lg, 10px);
+  border: 1px solid #E2E8F0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 16px;
+}
+
+.notification-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.notification-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md, 8px);
+  color: #475569;
+  font-size: var(--text-xs, 12px);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.notification-tabs button:hover {
+  color: #0F172A;
+}
+
+.notification-tabs button.is-active {
+  background: #FFFFFF;
+  color: #0F172A;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.notification-pref-toggles {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: var(--color-surface, #FFFFFF);
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 12px;
+  margin-top: 24px;
+}
+
+.pref-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.pref-toggle-row:last-child {
+  border-bottom: none;
+}
+
+.pref-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pref-toggle-info strong {
+  font-size: var(--text-xs, 12px);
+  color: var(--color-ink, #101828);
+  font-weight: 600;
+}
+
+.pref-toggle-info span {
+  font-size: var(--text-micro, 11px);
+  color: var(--color-muted, #667085);
+}
+
+/* Custom switch without external library */
+.switch-label {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 44px;
+  cursor: pointer;
+}
+
+.switch-label input[type="checkbox"] {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.switch-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #CBD5E1;
+  border-radius: 24px;
+  transition: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.switch-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #FFFFFF;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.switch-label input[type="checkbox"]:checked + .switch-slider {
+  background-color: var(--color-primary, #4F46E5);
+}
+
+.switch-label input[type="checkbox"]:checked + .switch-slider::before {
+  transform: translateX(20px);
+}
+
+.switch-label input[type="checkbox"]:focus-visible + .switch-slider {
+  outline: 2px solid var(--color-primary, #4F46E5);
+  outline-offset: 2px;
+}
+
+/* Review prompt styles */
+.review-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 460px;
+  width: 100%;
+}
+
+.review-stars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.review-star-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #D1D5DB;
+  transition: transform 120ms ease, color 120ms ease;
+  display: grid;
+  place-items: center;
+}
+
+.review-star-btn:hover {
+  transform: scale(1.15);
+}
+
+.review-star-btn.is-active,
+.review-star-btn.is-hovered {
+  color: #F59E0B;
+}
+
+.review-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-tag-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border, #E4E7EC);
+  background: #F8FAFC;
+  color: var(--color-ink, #101828);
+  font-size: var(--text-xs, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.review-tag-chip:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+.review-tag-chip.is-selected {
+  background: #EEF2FF;
+  color: var(--color-primary, #4F46E5);
+  border-color: #C7D2FE;
+  font-weight: 600;
+}
+
+.review-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 8px;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-ink, #101828);
+  background: #FBFCFD;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.review-textarea:focus {
+  outline: none;
+  border-color: var(--color-primary, #4F46E5);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.12);
+}
+
+/* Help Center FAQ accordion */
+.faq-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.faq-search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.faq-search-box input {
+  width: 100%;
+  height: 42px;
+  padding: 0 16px 0 40px;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-radius: 10px;
+  font-size: var(--text-sm, 14px);
+  color: var(--color-ink, #101828);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+  box-sizing: border-box;
+}
+
+.faq-search-box input:focus {
+  outline: none;
+  border-color: var(--color-primary, #4F46E5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.faq-search-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--color-muted, #667085);
+  pointer-events: none;
+}
+
+.faq-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.faq-item {
+  border: 1px solid var(--color-border, #E4E7EC);
+  border-left: 3.5px solid var(--color-primary, #4F46E5);
+  border-radius: 10px;
+  background: var(--color-surface, #FFFFFF);
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.faq-item.is-open {
+  box-shadow: 0 2px 8px rgba(16, 24, 40, 0.06);
+}
+
+.faq-question-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+}
+
+.faq-question-btn strong {
+  font-size: var(--text-sm, 14px);
+  color: var(--color-ink, #101828);
+  font-weight: 600;
+}
+
+.faq-question-btn svg {
+  color: var(--color-muted, #667085);
+  flex: 0 0 auto;
+  transition: transform 200ms ease;
+}
+
+.faq-item.is-open .faq-question-btn svg {
+  transform: rotate(180deg);
+  color: var(--color-primary, #4F46E5);
+}
+
+.faq-answer {
+  padding: 0 16px 14px 16px;
+  color: var(--color-muted, #667085);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.6;
+  transition: all 200ms ease;
+}
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CalendarDays, CarFront, ChevronDown, LifeBuoy, Loader2, MessageSquareText, RefreshCw, Send, ShieldCheck, Sparkles, Stethoscope, Utensils, X } from "lucide-react";
+import { ArrowRight, CalendarDays, CarFront, ChevronDown, LifeBuoy, Loader2, MessageSquareText, RefreshCw, Search, Send, ShieldCheck, Sparkles, Stethoscope, Utensils, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -26,8 +26,20 @@ export default function SupportPage() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [faqSearch, setFaqSearch] = useState("");
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const linkedPreview = useLinkedResource(linkedResource?.type, linkedResource?.id);
   const selectedPreview = useLinkedResource(selected?.resource_type, selected?.resource_id);
+
+  const normalizedFaqSearch = faqSearch.trim().toLowerCase();
+  const filteredFaqs = HELP_CENTER_FAQS.filter((item) => {
+    if (!normalizedFaqSearch) return true;
+    return (
+      item.question.toLowerCase().includes(normalizedFaqSearch) ||
+      item.answer.toLowerCase().includes(normalizedFaqSearch) ||
+      item.category.toLowerCase().includes(normalizedFaqSearch)
+    );
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -136,16 +148,51 @@ export default function SupportPage() {
 
         <div className="support-grid">
           <div className={styles.primaryColumn}>
-            <section className={`support-faq settings-card ${styles.card} ${styles.faqCard}`} aria-labelledby="faq-title">
+            <section className={`support-faq settings-card ${styles.card} ${styles.faqCard} faq-section`} aria-labelledby="faq-title">
               <div className="settings-card-title">
                 <span className={styles.cardIcon}><LifeBuoy size={18} /></span>
-                <div><h2 id="faq-title">Câu hỏi thường gặp</h2><p>Thông tin ngắn gọn trước khi gửi yêu cầu.</p></div>
+                <div><h2 id="faq-title">Trung tâm trợ giúp &amp; Câu hỏi thường gặp</h2><p>Giải đáp nhanh các vấn đề thường gặp hoặc tìm kiếm câu hỏi bên dưới.</p></div>
               </div>
-              <div className={styles.faqList}>
-                <details><summary>Tại sao giá hoặc tình trạng có thể thay đổi?</summary><p>Giá, menu, khung giờ và tài xế luôn được kiểm tra lại từ thông tin mới nhất trước bước xác nhận cuối.</p></details>
-                <details><summary>Đặt lại có tự động thanh toán không?</summary><p>Không. Đặt lại chỉ chuẩn bị một luồng mới; bạn vẫn xem lại và xác nhận ở các bước cần thiết.</p></details>
-                <details><summary>Làm sao theo dõi phản hồi?</summary><p>Mở một yêu cầu ở danh sách bên cạnh để xem timeline và gửi thêm thông tin.</p></details>
+              <div className="faq-search-box">
+                <Search size={16} className="faq-search-icon" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={faqSearch}
+                  onChange={(event) => setFaqSearch(event.target.value)}
+                  placeholder="Tìm câu hỏi..."
+                  aria-label="Tìm câu hỏi trợ giúp"
+                />
               </div>
+              {filteredFaqs.length === 0 ? (
+                <div className="empty-state" role="status">
+                  <p>Không tìm thấy câu trả lời — Tạo yêu cầu hỗ trợ</p>
+                </div>
+              ) : (
+                <div className="faq-accordion" role="region" aria-label="Danh sách câu hỏi thường gặp">
+                  {filteredFaqs.map((faq, index) => {
+                    const isOpen = openFaqIndex === index;
+                    return (
+                      <div key={faq.question} className={`faq-item ${isOpen ? "is-open" : ""}`}>
+                        <button
+                          type="button"
+                          className="faq-question-btn"
+                          aria-expanded={isOpen}
+                          aria-controls={`faq-answer-${index}`}
+                          onClick={() => setOpenFaqIndex((current) => (current === index ? null : index))}
+                        >
+                          <strong>{faq.question}</strong>
+                          <ChevronDown size={16} aria-hidden="true" />
+                        </button>
+                        {isOpen ? (
+                          <div id={`faq-answer-${index}`} className="faq-answer">
+                            <p>{faq.answer}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <section className={`settings-card ${styles.card} ${styles.formCard}`} aria-labelledby="new-ticket-title">
@@ -276,3 +323,14 @@ function uniqueTickets(items: SupportTicket[]): SupportTicket[] {
     return true;
   });
 }
+
+const HELP_CENTER_FAQS: Array<{ category: string; question: string; answer: string }> = [
+  { category: "Chuyến xe", question: "Làm thế nào để hủy chuyến?", answer: "Vào Lịch sử → mở chi tiết chuyến xe → chọn Hủy chuyến và xác nhận. Nếu chuyến đã có tài xế nhận, phí hủy có thể áp dụng theo chính sách hiển thị trên màn hình." },
+  { category: "Chuyến xe", question: "Tại sao không tìm được tài xế?", answer: "Thường do giờ cao điểm hoặc khu vực ít tài xế. Bạn thử đặt lại sau vài phút, đổi điểm đón gần đường lớn hơn hoặc chọn loại xe khác." },
+  { category: "Đồ ăn", question: "Đơn bị hủy, tiền của tôi đâu?", answer: "Tiền sẽ được hoàn về phương thức thanh toán gốc trong 3–7 ngày làm việc. Bạn có thể theo dõi trạng thái hoàn tiền trong Lịch sử giao dịch." },
+  { category: "Đồ ăn", question: "Làm sao thay đổi địa chỉ giao?", answer: "Nếu quán chưa xác nhận, bạn mở chi tiết đơn và chọn đổi địa chỉ. Sau khi quán đã nhận đơn, hãy liên hệ hỗ trợ để được giúp đổi địa điểm giao." },
+  { category: "Khám bệnh", question: "Làm thế nào để đổi lịch khám?", answer: "Vào Lịch sử → mở lịch khám → chọn Đổi lịch, sau đó chọn khung giờ mới còn trống và xác nhận. Bạn nên đổi trước giờ khám ít nhất 2 tiếng." },
+  { category: "Khám bệnh", question: "Có thể hủy trong bao lâu?", answer: "Bạn có thể hủy miễn phí trước giờ khám ít nhất 4 tiếng. Hủy sát giờ có thể bị tính phí theo chính sách của cơ sở y tế." },
+  { category: "Thanh toán", question: "Tôi bị tính tiền 2 lần?", answer: "Một giao dịch giữ tiền tạm thời có thể hiển thị như 2 lần trừ. Số tiền giữ sẽ tự hoàn sau 1–3 ngày. Nếu sau thời gian này vẫn bị trừ 2 lần, hãy tạo yêu cầu hỗ trợ kèm ảnh sao kê." },
+  { category: "Thanh toán", question: "Hoàn tiền mất bao lâu?", answer: "Hoàn tiền về ví X-One thường trong 24 giờ, về thẻ ngân hàng từ 3–7 ngày làm việc tùy ngân hàng phát hành thẻ của bạn." },
+];

@@ -1370,6 +1370,84 @@ export async function revokeProviderMcpKey(id: string): Promise<boolean> {
   return res.data?.revoked ?? true;
 }
 
+// Rewards
+export interface RewardsSummary {
+  points: number;
+  tier: "bronze" | "silver" | "gold" | "diamond";
+  tier_label: string;
+  next_tier_label: string;
+  next_tier_spend_remaining: number;
+  points_expiring_soon: number;
+  expiry_date: string | null;
+}
+
+export interface RewardVoucherItem {
+  id: string;
+  code: string;
+  title: string;
+  discount_value: number;
+  discount_type: "fixed" | "percent";
+  min_order_value: number;
+  service: string;
+  expires_at: string;
+  status: "active" | "used" | "expired";
+}
+
+export interface RewardsLedgerItem {
+  id: string;
+  type: "earn" | "burn";
+  points: number;
+  description: string;
+  created_at: string;
+}
+
+export interface ReferralData {
+  referral_code: string;
+  referral_url: string;
+  total_referrals: number;
+  total_points_earned: number;
+  referrals: Array<{ name: string; joined_at: string; status: "pending" | "rewarded" }>;
+}
+
+export function getRewardsSummary(): Promise<RewardsSummary> {
+  return request("/api/v1/rewards/summary", { method: "GET" });
+}
+
+export function getRewardsVouchers(status?: "active" | "used" | "expired"): Promise<{ items: RewardVoucherItem[] }> {
+  const q = status ? `?status=${status}` : "";
+  return request(`/api/v1/rewards/vouchers${q}`, { method: "GET" });
+}
+
+export function getRewardsLedger(page = 1): Promise<{ items: RewardsLedgerItem[]; total: number; has_more: boolean }> {
+  return request(`/api/v1/rewards/ledger?page=${page}&page_size=20`, { method: "GET" });
+}
+
+export function getReferralInfo(): Promise<ReferralData> {
+  return request("/api/v1/rewards/referral", { method: "GET" });
+}
+
+// Reviews - submitFeedback đã có, thêm:
+export function updateFeedback(id: string, patch: { rating?: number; comment?: string }): Promise<FeedbackItem> {
+  return request(`/api/v1/feedback/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }, { idempotencyKey: createIdempotencyKey("feedback-update") });
+}
+
+// Notification preferences
+export interface NotificationPreferences {
+  booking_updates: boolean;
+  promotions: boolean;
+  system: boolean;
+  email_enabled: boolean;
+}
+
+export function getNotificationPreferences(): Promise<NotificationPreferences> {
+  return request("/api/v1/notifications/preferences", { method: "GET" });
+}
+
+export function updateNotificationPreferences(prefs: { booking_updates?: boolean; promotions?: boolean; system?: boolean; email_enabled?: boolean }): Promise<NotificationPreferences> {
+  return request("/api/v1/notifications/preferences", { method: "PATCH", body: JSON.stringify(prefs) });
+}
+
+
 
 
 
