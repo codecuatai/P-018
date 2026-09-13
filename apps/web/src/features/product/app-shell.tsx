@@ -7,6 +7,7 @@ import {
   CarFront,
   ChevronLeft,
   ChevronRight,
+  Gift,
   History,
   LifeBuoy,
   Loader2,
@@ -39,6 +40,7 @@ const navigation = [
   { href: "/app", label: "Trợ lý AI", description: "Chat với X-One AI", icon: Bot },
   { href: "/app/services", label: "Dịch vụ", description: "Đồ ăn, chuyến xe, nhà hàng, lịch khám", icon: Store },
   { href: "/app/history", label: "Lịch sử", description: "Chuyến xe, đơn hàng và lịch khám đã dùng", icon: History },
+  { href: "/app/rewards", label: "Ưu đãi", description: "Điểm thưởng, voucher và mời bạn", icon: Gift },
   { href: "/app/favorites", label: "Đã lưu", description: "Địa điểm và dịch vụ hay dùng", icon: BookmarkCheck },
 ];
 
