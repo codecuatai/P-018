@@ -6,7 +6,7 @@
 
 - **Client mỏng, bảo mật**: Gọi trực tiếp tới API Gateway thông qua biến `NEXT_PUBLIC_API_URL`. Toàn bộ Access Token chỉ được lưu trữ trong bộ nhớ RAM của trình duyệt; Refresh Token được quản lý tự động thông qua cookie `HttpOnly`. Tuyệt đối không lưu trữ thông tin nhạy cảm trong `localStorage`.
 - **Server Components & Client Islands**: Tối đa hóa việc kết xuất phía server (RSC) cho các layout và trang tĩnh; chỉ sử dụng Client Components ("client islands") cho các tương tác người dùng như khung chat, điều hướng, biểu mẫu và hiệu ứng chuyển động.
-- **Hệ thống Design System nhất quán**: Sử dụng bộ token màu sắc, phông chữ **Be Vietnam Pro** và **IBM Plex Mono**, chuẩn khoảng cách 4px và bo góc mềm mại.
+- **Hệ thống Design System nhất quán**: Sử dụng bộ token màu sắc, phông chữ **Inter** và **JetBrains Mono** (`next/font/google`), chuẩn khoảng cách 4px và bo góc mềm mại, tối ưu cho giao diện tiếng Việt hiện đại và gọn gàng.
 - **Trợ năng & Responsive**: Tương thích hoàn hảo từ màn hình di động nhỏ nhất (320px) đến màn hình desktop lớn (1440px), hỗ trợ đầy đủ phím Tab điều hướng và chế độ giảm chuyển động `prefers-reduced-motion`.
 
 ## 2. Cấu Trúc Thư Mục (`src/`)

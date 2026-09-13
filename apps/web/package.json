@@ -17,8 +17,6 @@
     "test:e2e:live:headed": "playwright test --config=playwright.live.config.ts --headed"
   },
   "dependencies": {
-    "@fontsource/be-vietnam-pro": "^5.1.1",
-    "@fontsource/ibm-plex-mono": "^5.1.1",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.14",
     "class-variance-authority": "^0.7.1",
