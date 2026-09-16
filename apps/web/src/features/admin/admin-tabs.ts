@@ -22,7 +22,7 @@ import type { TabDefinition } from "./admin.types";
 export const CONSOLIDATED_TABS: TabDefinition[] = [
   {
     id: "overview",
-    label: "Tổng quan & Sức khỏe",
+    label: "Tổng quan & Hạ tầng",
     subtitle: "Chỉ số tổng hợp, sức khỏe microservices và trạng thái dataset",
     icon: Gauge,
     subtabs: [
@@ -87,8 +87,41 @@ export const CONSOLIDATED_TABS: TabDefinition[] = [
 
 export function getConsolidatedTabs(userRole?: string): TabDefinition[] {
   if (userRole === "manager") {
-    // Manager: hide AI Engine and collapse System Logs to the bottom, deprioritised
-    return CONSOLIDATED_TABS.filter((tab) => tab.id !== "ai-integrations" && tab.id !== "system-logs");
+    // Manager Console: only operational duties (shift overview, transactions, support queue)
+    // Technical modules (microservice health, datasets, feature flags, users, AI keys, system logs)
+    // are restricted to Admin IT.
+    return [
+      {
+        id: "overview",
+        label: "Tổng quan ca trực",
+        subtitle: "Chỉ số tổng hợp và tình hình vận hành ca trực theo thời gian thực",
+        icon: Gauge,
+        subtabs: [
+          { id: "summary", label: "Tổng quan vận hành", icon: LayoutDashboard, hashName: "overview" },
+        ],
+      },
+      {
+        id: "transactions",
+        label: "Giao dịch & Vận hành",
+        subtitle: "Đơn hàng domain, dòng tiền thanh toán và đối soát workflow",
+        icon: Activity,
+        subtabs: [
+          { id: "domain-trans", label: "Giao dịch domain", icon: ShoppingBag, hashName: "transactions" },
+          { id: "payments-list", label: "Thanh toán & hoàn tiền", icon: CreditCard, hashName: "payments" },
+          { id: "workflow-reconciliation", label: "Workflow reconciliation", icon: Workflow, hashName: "workflows" },
+        ],
+      },
+      {
+        id: "support",
+        label: "Hỗ trợ & Đánh giá",
+        subtitle: "Xử lý hàng đợi support tickets và theo dõi đánh giá dịch vụ",
+        icon: LifeBuoy,
+        subtabs: [
+          { id: "support-queue", label: "Hàng đợi hỗ trợ", icon: LifeBuoy, hashName: "support" },
+          { id: "feedback-ratings", label: "Đánh giá & Phản hồi", icon: Star, hashName: "feedback" },
+        ],
+      },
+    ];
   }
   return CONSOLIDATED_TABS;
 }

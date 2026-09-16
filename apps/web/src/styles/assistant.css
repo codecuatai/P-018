@@ -43,52 +43,112 @@
 .chat-feed::-webkit-scrollbar-thumb { background: #C5D4DC; border-radius: 999px; }
 .chat-feed::-webkit-scrollbar-thumb:hover { background: #96B0BF; }
 
-/* ─── Empty state (first visit: one open question + 3 suggestions) ─── */
-.chat-empty { width: 100%; max-width: var(--xone-chat-max); margin: auto; padding: 24px 12px; text-align: center; box-sizing: border-box; }
-.chat-empty-title { margin: 0 0 8px; color: var(--color-ink); font-size: var(--text-2xl); font-weight: 700; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
-.chat-empty-sub { margin: 0 auto 20px; max-width: 460px; color: var(--color-muted); font-size: var(--text-sm); line-height: var(--leading-normal); }
-.chat-empty-suggestions { display: flex; flex-direction: column; gap: 10px; max-width: 420px; margin: 0 auto; }
-.chat-empty-suggestion { display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 10px 18px; color: var(--color-ink); background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-card); font-family: inherit; font-size: var(--text-sm); font-weight: 500; cursor: pointer; transition: border-color 150ms ease, color 150ms ease; }
-.chat-empty-suggestion:hover { color: var(--color-primary-strong); border-color: var(--color-primary); }
-.chat-empty-suggestion:disabled { opacity: 0.5; cursor: wait; }
-
-/* ─── Welcome state (Beginner-Friendly Hub) ──────────────── */
-.welcome-state { width: 100%; max-width: var(--xone-chat-max); margin: 4px auto 14px; text-align: center; box-sizing: border-box; }
-.welcome-hero-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; margin-bottom: 10px; background: var(--color-primary-light); border: 1px solid #C7D2FE; border-radius: 999px; color: var(--color-primary-strong); font-family: var(--font-sans); font-size: var(--text-micro); font-weight: 700; letter-spacing: var(--tracking-wider); }
-.welcome-sparkle { display: grid; place-items: center; color: var(--color-primary); }
-.welcome-headline { margin: 0 0 6px; color: var(--color-navy); font-size: var(--text-hero); font-weight: 700; letter-spacing: var(--tracking-tight); line-height: var(--leading-tight); }
-.welcome-headline-gradient { color: var(--color-primary-strong); }
-.welcome-sub { max-width: 540px; margin: 0 auto 16px; color: var(--color-muted); font-size: var(--text-base); line-height: var(--leading-normal); }
-
-/* ─── Welcome service cards (horizontal scroll row) ──────── */
-.welcome-services-grid { display: flex; gap: 12px; text-align: left; overflow-x: auto; padding: 2px 2px 10px; margin-inline: -2px; scroll-snap-type: x mandatory; scrollbar-width: thin; }
-.welcome-services-grid::-webkit-scrollbar { height: 6px; }
-.welcome-services-grid::-webkit-scrollbar-thumb { background: #C5D4DC; border-radius: 999px; }
-.welcome-service-card { display: flex; align-items: flex-start; gap: 12px; flex: 0 0 min(260px, 78vw); padding: 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); text-align: left; transition: border-color 160ms ease, box-shadow 160ms ease; cursor: pointer; box-shadow: var(--shadow-card); font-family: inherit; scroll-snap-align: start; }
-.welcome-service-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow-glow); transform: translateY(-2px); }
-.welcome-service-card:active { transform: translateY(0); }
-.welcome-card-icon-wrap { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 9px; flex: 0 0 auto; border: 1px solid transparent; }
-.welcome-card-body { min-width: 0; flex: 1; display: grid; gap: 3px; }
-.welcome-card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.welcome-card-title-row strong { color: var(--color-navy); font-size: var(--text-base); font-weight: 700; letter-spacing: var(--tracking-tight); }
-.welcome-card-arrow { color: var(--color-muted-soft); font-size: var(--text-base); transition: color 150ms ease, transform 150ms ease; }
-.welcome-service-card:hover .welcome-card-arrow { color: var(--color-primary); transform: translate(1px, -1px); }
-.welcome-card-desc { margin: 0; color: var(--color-muted); font-size: var(--text-xs); line-height: var(--leading-snug); }
-.welcome-card-prompt-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; margin-top: 2px; background: #F4F7FA; border: 1px solid #E2E8EE; border-radius: 6px; color: var(--color-ink); font-size: var(--text-xs); line-height: var(--leading-snug); }
-.welcome-card-prompt-pill span { color: var(--color-muted-soft); font-weight: 600; }
-
-/* Service Card Accents */
-.welcome-card-ride .welcome-card-icon-wrap { color: var(--accent-ride); background: #F0F9FF; border-color: #BAE6FD; }
-.welcome-card-ride:hover { border-color: var(--accent-ride); box-shadow: 0 6px 20px rgb(2 132 199 / 16%); }
-
-.welcome-card-food .welcome-card-icon-wrap { color: var(--accent-food); background: #FFF7ED; border-color: #FED7AA; }
-.welcome-card-food:hover { border-color: var(--accent-food); box-shadow: 0 6px 20px rgb(234 88 12 / 16%); }
-
-.welcome-card-restaurant .welcome-card-icon-wrap { color: var(--accent-restaurant); background: #FFF1F2; border-color: #FECDD3; }
-.welcome-card-restaurant:hover { border-color: var(--accent-restaurant); box-shadow: 0 6px 20px rgb(225 29 72 / 16%); }
-
-.welcome-card-healthcare .welcome-card-icon-wrap { color: var(--accent-healthcare); background: #ECFDF5; border-color: #A7F3D0; }
-.welcome-card-healthcare:hover { border-color: var(--accent-healthcare); box-shadow: 0 6px 20px rgb(5 150 105 / 16%); }
+/* ─── Empty state (Concierge AI Hub: Greeting + Proactive banner + 2x2 cards) ─── */
+.chat-empty {
+  width: 100%;
+  max-width: var(--xone-chat-max, 760px);
+  margin: auto;
+  padding: 24px 12px;
+  text-align: center;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.chat-empty-title {
+  margin: 0 0 8px;
+  color: var(--color-ink, #0F172A);
+  font-size: var(--text-2xl, 1.5rem);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight, -0.02em);
+  line-height: var(--leading-tight, 1.25);
+}
+.chat-empty-sub {
+  margin: 0 auto 20px;
+  max-width: 480px;
+  color: var(--color-muted, #64748B);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+}
+.chat-empty-suggestions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+@media (max-width: 640px) {
+  .chat-empty-suggestions {
+    grid-template-columns: 1fr;
+  }
+}
+.chat-empty-suggestion {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--color-ink, #0F172A);
+  background: #FFFFFF;
+  border: 1px solid var(--color-border, #E2E8F0);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.chat-empty-suggestion:hover {
+  border-color: var(--color-primary, #4F46E5);
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.12);
+  transform: translateY(-1px);
+}
+.chat-empty-suggestion:active {
+  transform: translateY(0);
+}
+.chat-empty-suggestion:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.chat-empty-suggestion-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  background: #F8FAFC;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.chat-empty-suggestion-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.chat-empty-suggestion-copy strong {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-ink, #0F172A);
+}
+.chat-empty-suggestion-copy small {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-muted, #64748B);
+  line-height: 1.35;
+}
+.chat-empty-suggestion-ride:hover .chat-empty-suggestion-icon {
+  background: #EFF6FF;
+}
+.chat-empty-suggestion-food:hover .chat-empty-suggestion-icon {
+  background: #FFF7ED;
+}
+.chat-empty-suggestion-restaurant:hover .chat-empty-suggestion-icon {
+  background: #FFF1F2;
+}
+.chat-empty-suggestion-healthcare:hover .chat-empty-suggestion-icon {
+  background: #ECFDF5;
+}
 
 /* ─── Message bubbles ────────────────────────────────────── */
 .chat-message { display: flex; align-items: flex-start; gap: 12px; width: 100%; max-width: 100%; margin: 0 0 20px; box-sizing: border-box; }
@@ -526,7 +586,7 @@
 
 /* ─── Reduced motion ─────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  .welcome-service-card,
+  .chat-empty-suggestion,
   .send-button,
   .service-shortcut-card,
   .collapsible-card-content,

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, Plus, PlusCircle, RefreshCw } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, PlusCircle, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -421,17 +421,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
   
   return (
-    <section className="assistant-page" aria-labelledby="assistant-title">
-      <header className="assistant-header">
-        <div className="assistant-heading">
-          <span className="eyebrow">TRỢ LÝ X-ONE</span>
-          <h1 id="assistant-title">Xin chào<span className="visually-hidden"> · Trợ lý X-One</span></h1>
-          <p>Nói điều bạn cần bằng cách tự nhiên. Mình sẽ cùng bạn xử lý từng bước.</p>
-        </div>
-        <button className="icon-button" type="button" onClick={newConversation} aria-label="Bắt đầu cuộc trò chuyện mới" title="Cuộc trò chuyện mới">
-          <Plus size={18} />
-        </button>
-      </header>
+    <section className="assistant-page" aria-label="Trợ lý X-One">
+      <h1 className="visually-hidden" id="assistant-title">Trợ lý X-One</h1>
       
       <div
         className={`assistant-layout${railCollapsed ? " is-rail-collapsed" : ""}${activeItems.length ? " has-active-work" : ""}`}
@@ -442,11 +433,11 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             {conversationLoadError && !loadingHistory ? <div className="error-panel" role="alert"><p>{conversationLoadError}</p><button className="button button-secondary" type="button" onClick={() => setConversationLoadNonce((value) => value + 1)}>Thử lại</button></div> : null}
             {!loadingHistory && !conversationLoadError && messages.length === 0 ? (
               <div className="chat-empty">
-                <h2 className="chat-empty-title">Hôm nay mình giúp gì cho bạn?</h2>
-                <p className="chat-empty-sub">Cứ nói như nhắn cho người quen — X-One lo phần còn lại.</p>
+                <h2 className="chat-empty-title">{emptyGreeting(user?.email)}</h2>
+                <p className="chat-empty-sub">Một lời nhắn — xe, món, bàn, lịch khám X-One tự nối lại với nhau.</p>
                 {(() => {
                   const top = activeItems[0];
-                  const labels: Record<string, string> = { ride: "Chuyến xe", food: "Đơn đồ ăn", restaurant: "Đặt bàn", healthcare: "Lịch khám" };
+                  const labels: Record<string, string> = { ride_booking: "Chuyến xe", food_order: "Đơn đồ ăn", restaurant_reservation: "Đặt bàn", healthcare_appointment: "Lịch khám" };
                   const label = top ? (labels[top.type] ?? "Dịch vụ") : "Lên kế hoạch";
                   const prompt = top
                     ? `Kiểm tra trạng thái ${label.toLowerCase()} của tôi`
@@ -461,23 +452,27 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                     >
                       <div className="proactive-ai-banner-top">
                         <span className="proactive-ai-banner-badge">✦ Gợi ý</span>
-                        <span className="proactive-ai-banner-cta">Thực hiện ngay →</span>
+                        <span className="proactive-ai-banner-cta">Xem ngay</span>
                       </div>
                       <p className="proactive-ai-banner-title">
-                        {top ? `${label} của bạn đang hoạt động` : "Kế hoạch thông minh cho ngày hôm nay"}
+                        {top ? `${label} của bạn đang chạy — muốn kiểm tra tới đâu rồi?` : "Kế hoạch thông minh cho ngày hôm nay"}
                       </p>
                       <p className="proactive-ai-banner-desc">
                         {top
-                          ? `X-One phát hiện bạn có ${label.toLowerCase()} đang diễn ra — nhấn để kiểm tra trạng thái ngay.`
+                          ? `X-One thấy có ${label.toLowerCase()} đang diễn ra — nhấn để xem trạng thái ngay.`
                           : "Kết hợp đặt xe và chọn nhà hàng trong 1 lần yêu cầu — nhấn để thử ngay."}
                       </p>
                     </button>
                   );
                 })()}
                 <div className="chat-empty-suggestions" role="group" aria-label="Gợi ý để bắt đầu">
-                  {["Đặt xe đi sân bay sáng mai", "Tìm quán phở gần đây", "Đặt lịch khám da liễu cuối tuần"].map((suggestion) => (
-                    <button key={suggestion} className="chat-empty-suggestion" type="button" onClick={() => void send(suggestion)} disabled={sending}>
-                      {suggestion}
+                  {EMPTY_SUGGESTIONS.map((suggestion) => (
+                    <button key={suggestion.prompt} className={`chat-empty-suggestion chat-empty-suggestion-${suggestion.accent}`} type="button" onClick={() => void send(suggestion.prompt)} disabled={sending}>
+                      <span className="chat-empty-suggestion-icon" aria-hidden="true">{suggestion.icon}</span>
+                      <span className="chat-empty-suggestion-copy">
+                        <strong>{suggestion.title}</strong>
+                        <small>{suggestion.prompt}</small>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -668,6 +663,20 @@ async function fetchAddress(position: GeolocationPosition): Promise<string> {
 function toChatMessages(record: ConversationRecord, consumedActionIds: Set<string> = new Set()): ChatMessage[] { return record.messages.filter(isUserVisibleConversationMessage).map((message, index) => ({ id: `${record.conversationId}-${index}`, role: message.role, text: message.content, timestamp: message.createdAt, ...(message.role === "assistant" && message.data ? { response: { ...message.data, actions: message.data.actions.filter((action) => !consumedActionIds.has(action.id)) } } : {}), requestStatus: "sent" })); }
 function makeId(prefix: string): string { return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function formatTime(value: string): string { const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date); }
+
+function emptyGreeting(email?: string): string {
+  if (!email) return "Hôm nay mình giúp gì cho bạn?";
+  const prefix = email.split("@")[0] ?? "";
+  const name = prefix.replace(/[0-9._-]+$/g, "").trim();
+  return name ? `Chào ${name}, hôm nay mình giúp gì cho bạn?` : "Hôm nay mình giúp gì cho bạn?";
+}
+
+const EMPTY_SUGGESTIONS: Array<{ icon: string; accent: string; title: string; prompt: string }> = [
+  { icon: "🚗", accent: "ride", title: "Xe đưa đón", prompt: "Đặt xe 4 chỗ từ vị trí hiện tại đi sân bay Nội Bài" },
+  { icon: "🍲", accent: "food", title: "Giao món", prompt: "Tìm quán phở bò sốt vang ngon gần đây, giao tận nơi" },
+  { icon: "🍽️", accent: "restaurant", title: "Đặt bàn", prompt: "Đặt bàn ăn tối 4 người không gian ấm cúng lúc 19:00" },
+  { icon: "🩺", accent: "healthcare", title: "Lịch khám", prompt: "Đặt hẹn khám bác sĩ chuyên khoa da liễu cuối tuần" },
+];
 
 type EntryContext = { service: "food" | "ride" | "restaurant" | "healthcare"; label: string; prompt: string };
 

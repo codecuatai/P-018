@@ -68,7 +68,7 @@ interface ActiveRide {
   destination: string;
   fare: number;
   currency: string;
-  status: "DRIVER_ASSIGNED" | "DRIVER_TO_PICKUP" | "DRIVER_ARRIVED" | "IN_PROGRESS" | "ARRIVED_DESTINATION" | "COMPLETED";
+  status: "DRIVER_ASSIGNED" | "DRIVER_TO_PICKUP" | "DRIVER_ARRIVED" | "IN_PROGRESS" | "ARRIVED_DESTINATION" | "COMPLETED" | "CANCELLED";
   passengers: number;
   time: string;
 }
@@ -78,7 +78,19 @@ interface FoodOrder {
   customerName: string;
   items: { name: string; quantity: number; price: number }[];
   total: number;
-  status: "RECEIVED" | "PREPARING" | "READY_FOR_PICKUP" | "COMPLETED";
+  status:
+    | "RESTAURANT_CONFIRMING"
+    | "RESTAURANT_ACCEPTED"
+    | "PREPARING"
+    | "READY_FOR_PICKUP"
+    | "DRIVER_ASSIGNED"
+    | "PICKED_UP"
+    | "DELIVERING"
+    | "DELIVERED"
+    | "CANCELLED"
+    | "RESTAURANT_REJECTED"
+    | "RECEIVED"
+    | "COMPLETED";
   orderTime: string;
   note?: string;
 }
@@ -88,8 +100,74 @@ interface HealthcareBooking {
   patientName: string;
   specialty: string;
   timeSlot: string;
-  status: "CONFIRMED" | "IN_CONSULTATION" | "COMPLETED";
+  status: "DRAFT" | "CONFIRMED" | "IN_CONSULTATION" | "COMPLETED" | "CANCELLED";
   type: "online" | "clinic";
+}
+
+function formatRideStatus(status: string): string {
+  switch (status) {
+    case "DRIVER_ASSIGNED":
+      return "Đã điều phối tài xế";
+    case "DRIVER_TO_PICKUP":
+      return "Đang đến điểm đón";
+    case "DRIVER_ARRIVED":
+      return "Đã tới điểm đón";
+    case "IN_PROGRESS":
+      return "Đang di chuyển";
+    case "ARRIVED_DESTINATION":
+      return "Đã tới điểm trả";
+    case "COMPLETED":
+      return "Hoàn tất";
+    case "CANCELLED":
+      return "Đã hủy";
+    default:
+      return status;
+  }
+}
+
+function formatOrderStatus(status: string): string {
+  switch (status) {
+    case "RESTAURANT_CONFIRMING":
+    case "RECEIVED":
+      return "Chờ nhận đơn";
+    case "RESTAURANT_ACCEPTED":
+      return "Đã nhận đơn";
+    case "PREPARING":
+      return "Đang chế biến";
+    case "READY_FOR_PICKUP":
+      return "Sẵn sàng lấy";
+    case "DRIVER_ASSIGNED":
+      return "Đã có tài xế";
+    case "PICKED_UP":
+    case "DELIVERING":
+      return "Đang giao hàng";
+    case "DELIVERED":
+    case "COMPLETED":
+      return "Đã giao thành công";
+    case "RESTAURANT_REJECTED":
+      return "Từ chối nhận";
+    case "CANCELLED":
+      return "Đã hủy";
+    default:
+      return status;
+  }
+}
+
+function formatAppointmentStatus(status: string): string {
+  switch (status) {
+    case "DRAFT":
+      return "Chờ xác nhận";
+    case "CONFIRMED":
+      return "Đã xác nhận";
+    case "IN_CONSULTATION":
+      return "Đang khám";
+    case "COMPLETED":
+      return "Hoàn tất";
+    case "CANCELLED":
+      return "Đã hủy hẹn";
+    default:
+      return status;
+  }
 }
 
 function mapRawRide(raw: any): ActiveRide {
@@ -120,7 +198,7 @@ function mapRawOrder(raw: any): FoodOrder {
     customerName: raw.user_id ? `Khách hàng #${String(raw.user_id).slice(-4)}` : "Khách hàng X-One",
     items,
     total: Number(raw.total || raw.total_amount || 65000),
-    status: (raw.status as FoodOrder["status"]) || "RECEIVED",
+    status: (raw.status as FoodOrder["status"]) || "RESTAURANT_CONFIRMING",
     orderTime: raw.created_at ? new Date(raw.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "Mới đặt",
     note: raw.note || undefined,
   };
@@ -130,9 +208,9 @@ function mapRawAppointment(raw: any): HealthcareBooking {
   const slot = typeof raw.slot === "object" && raw.slot !== null ? raw.slot : {};
   return {
     id: String(raw.id || raw.appointment_id || "apt_01"),
-    patientName: raw.patient_name || (raw.patient_id ? `Bệnh nhân #${raw.patient_id}` : "Người bệnh X-One"),
-    specialty: raw.department || raw.doctor_name || "Khám Chuyên Khoa",
-    timeSlot: slot.start_at ? new Date(slot.start_at).toLocaleString("vi-VN") : "Hôm nay",
+    patientName: raw.patient_name || (raw.actor_id ? `Bệnh nhân #${String(raw.actor_id).slice(-4)}` : raw.patient_id ? `Bệnh nhân #${raw.patient_id}` : "Bệnh nhân X-One"),
+    specialty: raw.department || raw.doctor_name || (raw.doctor_id ? `Bác sĩ #${raw.doctor_id}` : "Khoa Khám Bệnh"),
+    timeSlot: slot.start_at ? new Date(slot.start_at).toLocaleString("vi-VN") : raw.created_at ? new Date(raw.created_at).toLocaleString("vi-VN") : "Hôm nay",
     status: (raw.status as HealthcareBooking["status"]) || "CONFIRMED",
     type: raw.type || "clinic",
   };
@@ -216,11 +294,11 @@ export function ProviderPortal() {
   };
 
   const getPartnerTypeLabel = () => {
-    if (isMaster) return "Cổng Giả Lập Hệ Thống (Master 4 Dịch Vụ)";
-    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "Cổng Đối Tác: Nhà hàng & Ẩm thực";
-    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "Cổng Đối Tác: Vận chuyển & Tài xế";
-    if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return "Cổng Đối Tác: Cơ sở Y tế & Khám bệnh";
-    return "Cổng Đối Tác Dịch Vụ Chuyên Ngành";
+    if (isMaster) return "X-One Partner Portal — Cổng Đối Tác Đa Dịch Vụ";
+    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "X-One Partner Portal — Nhà hàng & Ẩm thực";
+    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "X-One Partner Portal — Vận chuyển & Tài xế";
+    if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return "X-One Partner Portal — Y tế & Khám bệnh";
+    return "X-One Partner Portal — Cổng Đối Tác Dịch Vụ";
   };
 
   const [activeTab, setActiveTab] = useState<"ride" | "food" | "health" | "services" | "mcp">("ride");
@@ -347,17 +425,19 @@ export function ProviderPortal() {
     }
   };
 
-  const handleSeedSample = async (domain: string) => {
+  const handleSeedSample = async (domain: string, fallbackLabel: string = "dữ liệu mẫu") => {
     setSeedingDomain(domain);
     try {
-      await seedProviderSampleOperation(domain);
-      notify(`Đã tạo cuốc xe thực tế vào database thành công!`);
+      const created = await seedProviderSampleOperation(domain);
+      notify(`Đã tạo ${fallbackLabel} và kết nối trực tiếp thành công!`, "success");
       await reloadOperations();
-    } catch {
-      notify(`Chưa thể tạo bản ghi thử nghiệm (Dịch vụ downstream bận).`, "error");
+      return created;
+    } catch (err: any) {
+      notify(`Không thể tạo ${fallbackLabel}: ${err?.message || "Dịch vụ backend bận."}`, "error");
     } finally {
       setSeedingDomain(null);
     }
+    return null;
   };
 
   // ---- MCP Keys & External AI Partner handlers ----
@@ -573,10 +653,24 @@ export function ProviderPortal() {
       });
       setProfile(updated);
       notify("Đã cập nhật thông tin đơn vị và thiết lập kết nối thành công!");
-    } catch {
-      notify("Lưu thông tin thành công (Cục bộ).", "success");
+    } catch (err: any) {
+      notify(`Không thể lưu hồ sơ: ${err?.message || "Lỗi kết nối backend."}`, "error");
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  // Persist open/closed status directly to the backend — never local-only.
+  const handleToggleOpenStatus = async () => {
+    const nextOpen = !profileForm.isOpen;
+    setProfileForm((prev) => ({ ...prev, isOpen: nextOpen }));
+    try {
+      const updated = await updateProviderProfile({ is_open: nextOpen });
+      setProfile(updated);
+      notify(nextOpen ? "Đã mở nhận đơn trên hệ thống X-One." : "Đã chuyển bếp sang trạng thái tạm dừng nhận đơn.");
+    } catch (err: any) {
+      setProfileForm((prev) => ({ ...prev, isOpen: !nextOpen }));
+      notify(`Không thể đổi trạng thái: ${err?.message || "Lỗi kết nối backend."}`, "error");
     }
   };
 
@@ -596,25 +690,8 @@ export function ProviderPortal() {
       setShowAddItemModal(false);
       setNewItem({ name: "", domain: "food", price: 50000, category: "Món ăn", description: "" });
       notify(`Đã gắn dịch vụ "${created.name}" vào hệ thống X-One thành công!`);
-    } catch {
-      // Local fallback
-      const mockCreated: ProviderServiceItem = {
-        id: `item_${Date.now()}`,
-        providerId: user?.id || "p_user",
-        domain: newItem.domain,
-        name: newItem.name.trim(),
-        price: Number(newItem.price),
-        currency: "VND",
-        category: newItem.category.trim(),
-        description: newItem.description.trim(),
-        isAvailable: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setServiceItems((prev) => [mockCreated, ...prev]);
-      setShowAddItemModal(false);
-      setNewItem({ name: "", domain: "food", price: 50000, category: "Món ăn", description: "" });
-      notify(`Đã gắn dịch vụ "${mockCreated.name}" vào hệ thống X-One!`);
+    } catch (err: any) {
+      notify(`Không thể tạo dịch vụ: ${err?.message || "Lỗi kết nối backend."}`, "error");
     } finally {
       setSubmittingItem(false);
     }
@@ -627,11 +704,8 @@ export function ProviderPortal() {
         prev.map((it) => (it.id === itemId ? { ...it, isAvailable: !currentStatus } : it))
       );
       notify(`Đã cập nhật trạng thái mở bán dịch vụ.`);
-    } catch {
-      setServiceItems((prev) =>
-        prev.map((it) => (it.id === itemId ? { ...it, isAvailable: !currentStatus } : it))
-      );
-      notify(`Đã cập nhật trạng thái mở bán.`);
+    } catch (err: any) {
+      notify(`Không thể đổi trạng thái món: ${err?.message || "Lỗi kết nối backend."}`, "error");
     }
   };
 
@@ -641,17 +715,18 @@ export function ProviderPortal() {
       await deleteProviderItem(itemId);
       setServiceItems((prev) => prev.filter((it) => it.id !== itemId));
       notify("Đã gỡ dịch vụ khỏi danh mục thành công.");
-    } catch {
-      setServiceItems((prev) => prev.filter((it) => it.id !== itemId));
-      notify("Đã gỡ dịch vụ khỏi danh mục.");
+    } catch (err: any) {
+      notify(`Không thể gỡ dịch vụ: ${err?.message || "Lỗi kết nối backend."}`, "error");
     }
   };
 
   const advanceRideStatus = async () => {
     if (!activeRide) return;
     setLoadingAction(true);
-    let nextStatus: ActiveRide["status"] = "COMPLETED";
-    if (activeRide.status === "DRIVER_TO_PICKUP") nextStatus = "DRIVER_ARRIVED";
+    // Align with ride-service lifecycle: DRIVER_ASSIGNED -> DRIVER_TO_PICKUP -> DRIVER_ARRIVED -> IN_PROGRESS -> ARRIVED_DESTINATION -> COMPLETED
+    let nextStatus: ActiveRide["status"] = "DRIVER_TO_PICKUP";
+    if (activeRide.status === "DRIVER_ASSIGNED") nextStatus = "DRIVER_TO_PICKUP";
+    else if (activeRide.status === "DRIVER_TO_PICKUP") nextStatus = "DRIVER_ARRIVED";
     else if (activeRide.status === "DRIVER_ARRIVED") nextStatus = "IN_PROGRESS";
     else if (activeRide.status === "IN_PROGRESS") nextStatus = "ARRIVED_DESTINATION";
     else if (activeRide.status === "ARRIVED_DESTINATION") nextStatus = "COMPLETED";
@@ -660,10 +735,9 @@ export function ProviderPortal() {
       await updateProviderOperationRideStatus(activeRide.id, nextStatus);
       setActiveRide((prev) => (prev ? { ...prev, status: nextStatus } : null));
       setAllRides((prev) => prev.map((r) => (r.id === activeRide.id ? { ...r, status: nextStatus } : r)));
-      notify(`Đã cập nhật trạng thái chuyến xe: ${nextStatus}`);
-    } catch {
-      setActiveRide((prev) => (prev ? { ...prev, status: nextStatus } : null));
-      notify(`Đã cập nhật trạng thái chuyến xe: ${nextStatus}`);
+      notify(`Đã cập nhật chuyến xe sang: ${formatRideStatus(nextStatus)}`);
+    } catch (err: any) {
+      notify(`Không thể cập nhật chuyến xe: ${err?.message || "Trạng thái không hợp lệ với backend."}`, "error");
     } finally {
       setLoadingAction(false);
     }
@@ -673,10 +747,9 @@ export function ProviderPortal() {
     try {
       await updateProviderOperationOrderStatus(orderId, nextStatus);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
-      notify(`Đơn hàng #${orderId} đã chuyển sang: ${nextStatus}`);
-    } catch {
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o)));
-      notify(`Đơn hàng #${orderId} đã chuyển sang: ${nextStatus}`);
+      notify(`Đơn hàng #${orderId} đã chuyển sang: ${formatOrderStatus(nextStatus)}`);
+    } catch (err: any) {
+      notify(`Không thể chuyển đơn #${orderId}: ${err?.message || "Trạng thái không hợp lệ với backend."}`, "error");
     }
   };
 
@@ -684,10 +757,9 @@ export function ProviderPortal() {
     try {
       await updateProviderOperationAppointmentStatus(aptId, nextStatus);
       setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: nextStatus } : a)));
-      notify(`Lịch khám #${aptId} đã chuyển sang: ${nextStatus}`);
-    } catch {
-      setAppointments((prev) => prev.map((a) => (a.id === aptId ? { ...a, status: nextStatus } : a)));
-      notify(`Lịch khám #${aptId} đã chuyển sang: ${nextStatus}`);
+      notify(`Lịch khám #${aptId} đã chuyển sang: ${formatAppointmentStatus(nextStatus)}`);
+    } catch (err: any) {
+      notify(`Không thể cập nhật lịch #${aptId}: ${err?.message || "Trạng thái không hợp lệ với backend."}`, "error");
     }
   };
 
@@ -807,7 +879,7 @@ export function ProviderPortal() {
           <div className="provider-sidebar-inner" style={{ padding: "16px 12px" }}>
             <div className="provider-nav-group">
               <span className="provider-nav-group-title">
-                {isMaster ? "Hệ thống 4 Dịch vụ Giả lập" : "Phân hệ nghiệp vụ đối tác"}
+                {isMaster ? "Quản lý 4 phân hệ dịch vụ" : "Phân hệ nghiệp vụ đối tác"}
               </span>
               <div className="provider-nav-group-items" role="tablist" aria-label="Phân hệ đối tác">
                 {isAllowedTab("ride") && (
@@ -967,8 +1039,7 @@ export function ProviderPortal() {
                   className="button button-primary provider-cta-btn"
                   onClick={() => {
                     if (cta.tab === "food") {
-                      setProfileForm((prev) => ({ ...prev, isOpen: !prev.isOpen }));
-                      notify(profileForm.isOpen ? "Đã chuyển bếp sang bận." : "Đã mở nhận đơn.");
+                      void handleToggleOpenStatus();
                     } else {
                       setActiveTab(cta.tab);
                     }
@@ -1009,69 +1080,6 @@ export function ProviderPortal() {
                 <span>{actionNotice.text}</span>
               </div>
             )}
-
-            {/* Provider tab bar */}
-            <div className="provider-tab-bar" role="tablist" aria-label="Phân hệ vận hành">
-              {isAllowedTab("ride") && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === "ride"}
-                  className={`provider-tab${activeTab === "ride" ? " is-active" : ""}`}
-                  onClick={() => setActiveTab("ride")}
-                >
-                  <Car size={14} aria-hidden="true" />
-                  <span>{tabLabel("ride")}</span>
-                  {allRides.length > 0 && <span className="provider-tab-badge">{allRides.length}</span>}
-                </button>
-              )}
-              {isAllowedTab("food") && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === "food"}
-                  className={`provider-tab${activeTab === "food" ? " is-active" : ""}`}
-                  onClick={() => setActiveTab("food")}
-                >
-                  <UtensilsCrossed size={14} aria-hidden="true" />
-                  <span>{tabLabel("food")}</span>
-                  {orders.length > 0 && <span className="provider-tab-badge">{orders.length}</span>}
-                </button>
-              )}
-              {isAllowedTab("health") && (
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === "health"}
-                  className={`provider-tab${activeTab === "health" ? " is-active" : ""}`}
-                  onClick={() => setActiveTab("health")}
-                >
-                  <HeartPulse size={14} aria-hidden="true" />
-                  <span>{tabLabel("health")}</span>
-                  {appointments.length > 0 && <span className="provider-tab-badge">{appointments.length}</span>}
-                </button>
-              )}
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "services"}
-                className={`provider-tab${activeTab === "services" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("services")}
-              >
-                <Settings2 size={14} aria-hidden="true" />
-                <span>Dịch vụ của tôi</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeTab === "mcp"}
-                className={`provider-tab${activeTab === "mcp" ? " is-active" : ""}`}
-                onClick={() => setActiveTab("mcp")}
-              >
-                <Plug2 size={14} aria-hidden="true" />
-                <span>Kết nối</span>
-              </button>
-            </div>
 
             {/* TAB VIEWPORT */}
             <div className="provider-tab-viewport">
@@ -1177,7 +1185,7 @@ export function ProviderPortal() {
                         </span>
                         <button
                           type="button"
-                          onClick={() => setProfileForm((prev) => ({ ...prev, isOpen: !prev.isOpen }))}
+                          onClick={() => void handleToggleOpenStatus()}
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -1728,7 +1736,7 @@ export function ProviderPortal() {
                             className="admin-role-badge"
                             style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                           >
-                            PostgreSQL Live Data
+                            Kết nối trực tiếp
                           </span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1954,19 +1962,31 @@ export function ProviderPortal() {
                         className="admin-role-badge"
                         style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                       >
-                        PostgreSQL Live Data
+                        Kết nối trực tiếp
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      disabled={loadingOperations}
-                      onClick={() => void reloadOperations()}
-                      className="button button-secondary"
-                      style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                    >
-                      <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
-                      <span>Làm mới</span>
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        disabled={seedingDomain === "food" || loadingOperations}
+                        onClick={() => void handleSeedSample("food", "đơn món")}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {seedingDomain === "food" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
+                        <span>Tạo đơn món mẫu</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                        <span>Làm mới</span>
+                      </button>
+                    </div>
                   </div>
 
                   {orders.length === 0 ? (
@@ -1991,18 +2011,30 @@ export function ProviderPortal() {
                         Hiện chưa có đơn đặt món nào trong hệ thống
                       </h3>
                       <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
-                        Dữ liệu đơn hàng được đồng bộ trực tiếp từ microservice <code>food-service</code> và PostgreSQL. Đơn phát sinh từ ứng dụng hoặc giao dịch mới sẽ tự động hiển thị tại đây.
+                        Dữ liệu đơn hàng được đồng bộ trực tiếp từ microservice <code>food-service</code> và PostgreSQL. Bạn có thể tạo đơn hàng thử nghiệm hoặc làm mới danh sách.
                       </p>
-                      <button
-                        type="button"
-                        disabled={loadingOperations}
-                        onClick={() => void reloadOperations()}
-                        className="button button-secondary"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
-                      >
-                        {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-                        <span>Làm mới danh sách</span>
-                      </button>
+                      <div style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          disabled={seedingDomain === "food" || loadingOperations}
+                          onClick={() => void handleSeedSample("food", "đơn món")}
+                          className="button button-primary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
+                        >
+                          {seedingDomain === "food" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
+                          <span>{seedingDomain === "food" ? "Đang kết nối hệ thống…" : "Tạo đơn món mẫu"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loadingOperations}
+                          onClick={() => void reloadOperations()}
+                          className="button button-secondary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
+                        >
+                          {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                          <span>Làm mới danh sách</span>
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(360px, 100%), 1fr))", gap: "16px" }}>
@@ -2024,28 +2056,28 @@ export function ProviderPortal() {
                                 className="admin-role-badge"
                                 style={{
                                   background:
-                                    order.status === "READY_FOR_PICKUP"
+                                    order.status === "READY_FOR_PICKUP" || order.status === "DELIVERED" || order.status === "COMPLETED"
                                       ? "#ECFDF5"
-                                      : order.status === "PREPARING"
+                                      : order.status === "PREPARING" || order.status === "RESTAURANT_ACCEPTED"
                                       ? "#FFFBEB"
                                       : "#EEF2FF",
                                   color:
-                                    order.status === "READY_FOR_PICKUP"
+                                    order.status === "READY_FOR_PICKUP" || order.status === "DELIVERED" || order.status === "COMPLETED"
                                       ? "#065F46"
-                                      : order.status === "PREPARING"
+                                      : order.status === "PREPARING" || order.status === "RESTAURANT_ACCEPTED"
                                       ? "#EA580C"
                                       : "#4338CA",
                                   border: `1px solid ${
-                                    order.status === "READY_FOR_PICKUP"
+                                    order.status === "READY_FOR_PICKUP" || order.status === "DELIVERED" || order.status === "COMPLETED"
                                       ? "#A7F3D0"
-                                      : order.status === "PREPARING"
+                                      : order.status === "PREPARING" || order.status === "RESTAURANT_ACCEPTED"
                                       ? "#FDE68A"
                                       : "#C7D2FE"
                                   }`,
                                   fontWeight: 700,
                                 }}
                               >
-                                {order.status}
+                                {formatOrderStatus(order.status)}
                               </span>
                             </div>
 
@@ -2096,7 +2128,17 @@ export function ProviderPortal() {
                             </div>
 
                             <div>
-                              {order.status === "RECEIVED" && (
+                              {(order.status === "RESTAURANT_CONFIRMING" || order.status === "RECEIVED") && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceOrderStatus(order.id, "RESTAURANT_ACCEPTED")}
+                                  className="button button-primary"
+                                  style={{ height: "32px", padding: "0 14px", fontSize: "var(--text-xs)" }}
+                                >
+                                  Nhận đơn ngay
+                                </button>
+                              )}
+                              {order.status === "RESTAURANT_ACCEPTED" && (
                                 <button
                                   type="button"
                                   onClick={() => advanceOrderStatus(order.id, "PREPARING")}
@@ -2127,6 +2169,16 @@ export function ProviderPortal() {
                                   Đang chờ tài xế lấy món
                                 </span>
                               )}
+                              {order.status === "DELIVERING" && (
+                                <span style={{ fontSize: "var(--text-xs)", color: "#4F46E5", fontWeight: 600 }}>
+                                  Tài xế đang giao cho khách
+                                </span>
+                              )}
+                              {(order.status === "DELIVERED" || order.status === "COMPLETED") && (
+                                <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600 }}>
+                                  Đã giao thành công
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2148,19 +2200,31 @@ export function ProviderPortal() {
                         className="admin-role-badge"
                         style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0", fontSize: "var(--text-micro)" }}
                       >
-                        PostgreSQL Live Data
+                        Kết nối trực tiếp
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      disabled={loadingOperations}
-                      onClick={() => void reloadOperations()}
-                      className="button button-secondary"
-                      style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                    >
-                      <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
-                      <span>Làm mới</span>
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        disabled={seedingDomain === "healthcare" || loadingOperations}
+                        onClick={() => void handleSeedSample("healthcare", "lịch khám")}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {seedingDomain === "healthcare" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
+                        <span>Tạo lịch khám mẫu</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                        <span>Làm mới</span>
+                      </button>
+                    </div>
                   </div>
 
                   {appointments.length === 0 ? (
@@ -2185,18 +2249,30 @@ export function ProviderPortal() {
                         Chưa có lịch hẹn khám bệnh nào trong hệ thống
                       </h3>
                       <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
-                        Lịch hẹn được truy vấn trực tiếp từ microservice <code>healthcare-service</code> và PostgreSQL. Khi bệnh nhân đăng ký tư vấn trực tuyến hoặc khám chuyên khoa, danh sách sẽ cập nhật tại đây.
+                        Lịch hẹn được truy vấn trực tiếp từ microservice <code>healthcare-service</code> và PostgreSQL. Bạn có thể tạo lịch khám thử nghiệm hoặc làm mới danh sách.
                       </p>
-                      <button
-                        type="button"
-                        disabled={loadingOperations}
-                        onClick={() => void reloadOperations()}
-                        className="button button-secondary"
-                        style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
-                      >
-                        {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
-                        <span>Làm mới danh sách</span>
-                      </button>
+                      <div style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          disabled={seedingDomain === "healthcare" || loadingOperations}
+                          onClick={() => void handleSeedSample("healthcare", "lịch khám")}
+                          className="button button-primary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
+                        >
+                          {seedingDomain === "healthcare" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
+                          <span>{seedingDomain === "healthcare" ? "Đang kết nối hệ thống…" : "Tạo lịch khám mẫu"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loadingOperations}
+                          onClick={() => void reloadOperations()}
+                          className="button button-secondary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
+                        >
+                          {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                          <span>Làm mới danh sách</span>
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -2276,8 +2352,19 @@ export function ProviderPortal() {
                                 fontWeight: 700,
                               }}
                             >
-                              {apt.status}
+                              {formatAppointmentStatus(apt.status)}
                             </span>
+
+                            {apt.status === "DRAFT" && (
+                              <button
+                                type="button"
+                                onClick={() => advanceAppointmentStatus(apt.id, "CONFIRMED")}
+                                className="button button-primary"
+                                style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                              >
+                                Xác nhận lịch hẹn
+                              </button>
+                            )}
 
                             {apt.status === "CONFIRMED" && (
                               <button

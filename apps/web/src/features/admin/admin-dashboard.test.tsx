@@ -189,4 +189,30 @@ describe("AdminDashboard", () => {
       expect(apiClient.updateAdminUserStatus).toHaveBeenCalledWith("user-target-1", "suspended");
     });
   });
+
+  it("hides technical modules from a manager while showing operational tabs", async () => {
+    const { AuthProvider } = jest.requireMock("@/providers/auth-provider");
+    void AuthProvider;
+
+    const AuthProviderModule = jest.requireActual("@/providers/auth-provider");
+    void AuthProviderModule;
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+    });
+
+    const tabs = (await import("./admin-tabs")).getConsolidatedTabs("manager").map((tab) => tab.id);
+    expect(tabs).toEqual(["overview", "transactions", "support"]);
+    expect(tabs).not.toContain("users");
+    expect(tabs).not.toContain("ai-integrations");
+    expect(tabs).not.toContain("system-logs");
+
+    const managerOverview = (await import("./admin-tabs")).getConsolidatedTabs("manager").find((tab) => tab.id === "overview");
+    expect(managerOverview?.subtabs.map((sub) => sub.id)).toEqual(["summary"]);
+
+    const adminTabs = (await import("./admin-tabs")).getConsolidatedTabs("admin").map((tab) => tab.id);
+    expect(adminTabs).toEqual(["overview", "users", "transactions", "ai-integrations", "support", "system-logs"]);
+  });
 });

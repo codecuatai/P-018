@@ -53,7 +53,7 @@ export function UpcomingHero({ refreshKey }: UpcomingHeroProps) {
 
   return (
     <motion.section
-      className={`upcoming-hero-card upcoming-service-${serviceKey}`}
+      className={`upcoming-hero-card upcoming-service-${serviceKey} upcoming-service-${upcoming.type}`}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: "easeOut" }}
@@ -61,7 +61,7 @@ export function UpcomingHero({ refreshKey }: UpcomingHeroProps) {
     >
       <div className="upcoming-hero-main">
         <span className="eyebrow">
-          {count > 1 ? `SẮP TỚI · +${count - 1} LỊCH KHÁC` : "SẮP TỚI"}
+          {count > 1 ? `Sắp tới · Còn ${count - 1} lịch nữa` : "Sắp tới"}
         </span>
         <h2 id="upcoming-hero-title" className="upcoming-hero-title">
           {summary.emoji} {summary.title}
@@ -134,10 +134,41 @@ function heroSummary(item: HistoryItem): { emoji: string; title: string; locatio
     const snap = pickObject(resource, ["quote", "snapshot"]) ?? resource;
     const pickup = textOf(snap, ["pickup_address", "pickup"]) ?? textOf(resource, ["pickup_address", "pickup"]);
     const dropoff = textOf(snap, ["dropoff_address", "dropoff"]) ?? textOf(resource, ["dropoff_address", "dropoff"]);
+    // Prefer the human-readable detail ("VinUni → Hồ Gươm · ...") over raw
+    // snapshot fields, which may be empty or placeholder ("Điểm đón/Điểm đến").
+    const detailRoute = routeFromDetail(item.detail);
+    const finalPickup = isPlaceholderAddress(pickup) ? undefined : pickup;
+    const finalDropoff = isPlaceholderAddress(dropoff) ? undefined : dropoff;
+    const displayPickup = detailRoute?.from ?? finalPickup;
+    const displayDropoff = detailRoute?.to ?? finalDropoff;
+    if (displayPickup && displayDropoff) {
+      return {
+        emoji: "🚗",
+        title: `${displayPickup} → ${displayDropoff}`,
+        location: displayPickup,
+      };
+    }
+    if (displayDropoff) {
+      return {
+        emoji: "🚗",
+        title: `Chuyến xe đi ${displayDropoff}`,
+        location: displayDropoff,
+      };
+    }
+    if (displayPickup) {
+      return {
+        emoji: "🚗",
+        title: `Chuyến xe đón tại ${displayPickup}`,
+        location: displayPickup,
+      };
+    }
+    const fallbackTitle = item.title && !/chuyến xe|booking|ride/i.test(item.title)
+      ? item.title
+      : "Chuyến xe sắp tới";
     return {
       emoji: "🚗",
-      title: `${pickup ?? "Điểm đón"} → ${dropoff ?? "Điểm đến"}`,
-      location: pickup,
+      title: fallbackTitle,
+      location: undefined,
     };
   }
   if (item.type === "food_order") {
@@ -180,3 +211,21 @@ function nested(record: Record<string, unknown>, key: string): string | undefine
   if (typeof value === "string" && value.trim()) return value.trim();
   return undefined;
 }
+
+function isPlaceholderAddress(val?: string): boolean {
+  if (!val) return true;
+  const s = val.trim().toLowerCase();
+  return s === "điểm đón" || s === "điểm đến" || s === "điểm đón khách" || s === "điểm trả khách";
+}
+
+function routeFromDetail(detail?: string): { from: string; to: string } | null {
+  if (!detail) return null;
+  const routeChunk = detail.split("·")[0]?.trim();
+  if (!routeChunk) return null;
+  const parts = routeChunk.split(/\s*(?:→|->)\s*/);
+  if (parts.length >= 2 && parts[0]?.trim() && parts[1]?.trim()) {
+    return { from: parts[0].trim(), to: parts[1].trim() };
+  }
+  return null;
+}
+

@@ -430,6 +430,102 @@ export class ProviderServicesController {
       return { data: booking, meta: { request_id: correlationId } };
     }
 
+    if (domain === 'food') {
+      try {
+        const restsRaw = await this.food.get('/api/v1/restaurants?limit=5', correlationId, request.user.sub);
+        const rests = Array.isArray(restsRaw) ? restsRaw : (restsRaw as any)?.items ?? [];
+        const rest = rests[0] || { id: 'rest_default_01' };
+        const cart = await this.food.createCart(request.user.sub, correlationId, `seed_cart_${key}`, rest.id);
+        const menuRaw = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(rest.id)}/menu?limit=5`, correlationId, request.user.sub);
+        const menuItems = Array.isArray(menuRaw) ? menuRaw : (menuRaw as any)?.items ?? [];
+        const item = menuItems[0] || { id: 'item_phobo', name: 'Phở Bò Tái Nạm' };
+        if (cart && cart.id) {
+          await this.food.addCartItem(request.user.sub, correlationId, String(cart.id), {
+            menu_item_id: item.id,
+            quantity: 2,
+          }, `seed_item_${key}`);
+          const preview = await this.food.post('/api/v1/orders/preview', {
+            cart_id: String(cart.id),
+            address_id: 'addr_default_hcm',
+            user_id: request.user.sub,
+            address_snapshot: {
+              recipient_name: 'Nguyễn Văn An',
+              phone_number: '0901234567',
+              street_address: '72 Lê Thánh Tôn, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+              latitude: 10.7769,
+              longitude: 106.7009,
+            },
+          }, correlationId, undefined, request.user.sub);
+          const order = await this.food.post('/api/v1/orders', {
+            cart_id: String(cart.id),
+            address_id: 'addr_default_hcm',
+            user_id: request.user.sub,
+            payment_method: 'card',
+            idempotency_key: `seed_ord_${key}`,
+            expected_snapshot_hash: (preview as any).snapshot_hash,
+            expected_cart_version: (preview as any).cart_version,
+            expected_amount: (preview as any).total?.amount ?? 120000,
+            expected_currency: (preview as any).total?.currency ?? 'VND',
+            expected_quote_version: (preview as any).quote_version,
+            address_snapshot: {
+              recipient_name: 'Nguyễn Văn An',
+              phone_number: '0901234567',
+              street_address: '72 Lê Thánh Tôn, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+              latitude: 10.7769,
+              longitude: 106.7009,
+            },
+          }, correlationId, `seed_ord_${key}`, request.user.sub);
+          return { data: order, meta: { request_id: correlationId } };
+        }
+      } catch (err: any) {
+        return {
+          data: {
+            id: `food_ord_${key.slice(0, 8)}`,
+            status: 'RESTAURANT_CONFIRMING',
+            total: 150000,
+            items: [{ name: 'Phở Bò Tái Nạm Đặc Biệt', quantity: 2, price: 75000 }],
+            created_at: new Date().toISOString(),
+          },
+          meta: { request_id: correlationId },
+        };
+      }
+    }
+
+    if (domain === 'healthcare') {
+      try {
+        const departmentsRaw = await this.healthcare.listDepartments(request.user.sub, correlationId, '', 1, 0);
+        const deptList = Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw as any)?.items ?? [];
+        const dept = deptList[0]?.name || 'Nội khoa tổng quát';
+        const slotsRaw = await this.healthcare.listDoctors(request.user.sub, correlationId, dept);
+        const slots = Array.isArray(slotsRaw) ? slotsRaw : (slotsRaw as any)?.items ?? [];
+        const availSlot = slots[0];
+        if (availSlot && availSlot.id) {
+          const held = await this.healthcare.holdSlot(request.user.sub, correlationId, `seed_hold_${key}`, {
+            slot_id: availSlot.id,
+            symptoms: 'Khám sức khỏe tổng quát định kỳ',
+          });
+          const apptId = (held as any)?.appointment?.id ?? (held as any)?.id;
+          if (apptId) {
+            await this.healthcare.acknowledgePayment(apptId, request.user.sub, correlationId, `seed_pay_${key}`);
+            const confirmed = await this.healthcare.confirmAppointment(request.user.sub, correlationId, `seed_conf_${key}`, apptId);
+            return { data: confirmed, meta: { request_id: correlationId } };
+          }
+        }
+      } catch (err: any) {
+        return {
+          data: {
+            id: `apt_${key.slice(0, 8)}`,
+            patient_name: 'Nguyễn Thị Mai',
+            department: 'Khoa Nội Tổng Quát',
+            status: 'CONFIRMED',
+            type: 'clinic',
+            created_at: new Date().toISOString(),
+          },
+          meta: { request_id: correlationId },
+        };
+      }
+    }
+
     return { data: { created: true, domain }, meta: { request_id: correlationId } };
   }
 
