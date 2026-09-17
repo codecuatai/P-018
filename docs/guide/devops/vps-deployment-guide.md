@@ -51,6 +51,27 @@ Không sử dụng mật khẩu để đăng nhập VPS. Hãy dùng SSH Key:
     ssh -i ~/.ssh/gcp-vps-key username@vps-static-ip
     ```
 
+### 2.3. Cấu hình Tường lửa UFW (Firewall) bảo vệ VPS
+Mặc định hệ điều hành cần chặn toàn bộ các kết nối ngoại vi trái phép, chỉ mở đúng 3 cổng thiết yếu: SSH (22), HTTP (80), HTTPS (443). Toàn bộ cổng cơ sở dữ liệu (5432) và backend (3000, 5173, 8001-8104) được cô lập bên trong localhost:
+
+```bash
+# Cài đặt UFW nếu chưa có
+sudo apt install ufw -y
+
+# Thiết lập chính sách mặc định: Chặn toàn bộ incoming, cho phép outgoing
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+
+# Chỉ mở cổng SSH và Web tiêu chuẩn
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw allow 80/tcp comment 'HTTP'
+sudo ufw allow 443/tcp comment 'HTTPS'
+
+# Kích hoạt tường lửa
+sudo ufw --force enable
+sudo ufw status verbose
+```
+
 ---
 
 ## 3. Cài Đặt Docker & Docker Compose trên VPS
@@ -91,43 +112,31 @@ sudo mkdir -p /opt/xone/postgres_data
 sudo chown -R $USER:$USER /opt/xone
 ```
 
-### 4.2. Khởi tạo file `.env` trên VPS
-Tạo file `/opt/xone/.env` chứa các biến môi trường cấu hình mật khẩu thực tế (Production/Staging):
+### 4.2. Khởi tạo file `.env` an toàn trên VPS
+Tạo file `/opt/xone/.env` từ file template mẫu `.env.production.example`. Đảm bảo **tất cả** mật khẩu và secret token đều được sinh ngẫu nhiên bằng lệnh mã hóa:
+
 ```bash
+# Tạo các secret token ngẫu nhiên độ dài 64 ký tự hex:
+openssl rand -hex 32
+
+# Sao chép template sang file .env thực tế
+cp /opt/xone/.env.production.example /opt/xone/.env
+
+# Phân quyền chỉ cho phép tài khoản sở hữu đọc và ghi file .env:
+chmod 600 /opt/xone/.env
+
+# Chỉnh sửa file .env với thông tin và domain thực tế:
 nano /opt/xone/.env
 ```
-Nhập cấu hình mẫu (chỉnh sửa mật khẩu an toàn):
-```env
-POSTGRES_USER=xone_admin
-POSTGRES_PASSWORD=SuperSecurePassword123
 
-CORE_DB_NAME=xone_core
-CORE_DB_USER=core_service
-CORE_DB_PASSWORD=CorePassword123
-
-AGENT_DB_NAME=xone_agent
-AGENT_DB_USER=agent_service
-AGENT_DB_PASSWORD=AgentPassword123
-
-RIDE_DB_NAME=xone_ride
-RIDE_DB_USER=ride_service
-RIDE_DB_PASSWORD=RidePassword123
-
-RESTAURANT_DB_NAME=xone_restaurant
-RESTAURANT_DB_USER=restaurant_service
-RESTAURANT_DB_PASSWORD=RestaurantPassword123
-
-HEALTHCARE_DB_NAME=xone_healthcare
-HEALTHCARE_DB_USER=healthcare_service
-HEALTHCARE_DB_PASSWORD=HealthcarePassword123
-
-FOOD_DB_NAME=xone_food
-FOOD_DB_USER=food_service
-FOOD_DB_PASSWORD=FoodPassword123
-
-# Cấu hình API key và các dịch vụ khác
-GEMINI_API_KEY=AIzaSy...
-```
+> [!WARNING]
+> Tuyệt đối không dùng mật khẩu mặc định (như `SuperSecurePassword123` hay `replace-with-local-password`).
+> Bắt buộc cấu hình:
+> - `APP_ENV=production`
+> - `DEMO_AUTH_ENABLED=false`
+> - `AUTH_DEV_RESET_TOKEN_CAPTURE=false`
+> - `LOCAL_DETERMINISTIC_LOCATION_FALLBACK=false`
+> - `GATEWAY_CORS_ORIGINS` trỏ chính xác về domain của bạn (ví dụ: `https://yourdomain.com`).
 
 ### 4.3. Chạy Database Engine
 Khi deploy lần đầu, container Postgres sẽ tự động đọc file khởi tạo database có cấu trúc tương tự script [01-create-databases.sh](file:///d:/VIN/Projects/P-018/infra/postgres/init/01-create-databases.sh) để phân tách các role và database.
@@ -355,24 +364,64 @@ sudo apt install nginx certbot python3-certbot-nginx -y
 ```
 
 ### 7.2. Cấu hình Server Block (Virtual Host) của Nginx
-Tạo một cấu hình Nginx mới dành cho dự án X-One:
+Tạo cấu hình Nginx phân luồng cho cả Web Frontend (cổng 5173) và API Gateway (cổng 3000):
+
 ```bash
 sudo nano /etc/nginx/sites-available/xone
 ```
-Dán cấu hình mẫu sau vào (thay đổi `staging018.yourdomain.com` thành tên miền (domain) thực tế trỏ về IP VPS của bạn):
+
+Dán cấu hình mẫu chuẩn bảo mật sau vào (thay `yourdomain.com` bằng domain thực tế):
+
 ```nginx
+# Upstream definitions
+upstream web_frontend {
+    server 127.0.0.1:5173;
+    keepalive 32;
+}
+
+upstream api_gateway {
+    server 127.0.0.1:3000;
+    keepalive 32;
+}
+
 server {
     listen 80;
-    server_name staging018.yourdomain.com; # Thay thế bằng domain của bạn
+    server_name yourdomain.com www.yourdomain.com api.yourdomain.com;
 
-    # Tăng giới hạn dung lượng tải file lên (ví dụ: upload ảnh/avatar)
     client_max_body_size 20M;
 
-    location / {
-        # Chuyển tiếp request đến API Gateway chạy cổng 3000
-        proxy_pass http://127.0.0.1:3000;
+    # Security Headers bảo vệ ứng dụng
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-        # Cấu hình header chuẩn cho proxy chuyển tiếp thông tin IP gốc
+    # Chuyển tiếp các request API sang API Gateway
+    location /api/ {
+        proxy_pass http://api_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Health check gateway
+    location /health/ {
+        proxy_pass http://api_gateway;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Chuyển tiếp toàn bộ giao diện người dùng sang Next.js Web
+    location / {
+        proxy_pass http://web_frontend;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -384,6 +433,7 @@ server {
     }
 }
 ```
+
 Kích hoạt cấu hình và khởi động lại Nginx:
 ```bash
 # Liên kết file cấu hình để Nginx kích hoạt nó
@@ -399,13 +449,30 @@ sudo systemctl restart nginx
 ### 7.3. Đăng ký chứng chỉ SSL (HTTPS) tự động qua Certbot
 Chạy lệnh dưới đây để Certbot tự động kết nối với Let's Encrypt, xác thực tên miền của bạn và tự động ghi đè cấu hình SSL HTTPS vào file cấu hình Nginx:
 ```bash
-sudo certbot --nginx -d staging018.yourdomain.com
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com -d api.yourdomain.com
 ```
 > [!NOTE]
-> Quá trình này yêu cầu tên miền `staging018.yourdomain.com` của bạn phải được trỏ (DNS A Record) về đúng địa chỉ IP công cộng của VPS trước đó.
+> Quá trình này yêu cầu tất cả các tên miền trên phải được trỏ (DNS A Record) về đúng địa chỉ IP công cộng của VPS trước đó.
 
 ### 7.4. Tự động gia hạn chứng chỉ SSL (Auto-renewal)
 Chứng chỉ Let's Encrypt có thời hạn 90 ngày. Certbot đã tự động thiết lập một tác vụ chạy nền (cronjob) để tự động gia hạn khi chứng chỉ còn dưới 30 ngày. Bạn có thể kiểm tra thử quá trình gia hạn bằng lệnh:
 ```bash
 sudo certbot renew --dry-run
 ```
+
+---
+
+## 8. Bảo Mật Tài Khoản Quản Trị Sau Triển Khai (Post-Deploy Security)
+
+Sau lần deploy đầu tiên lên máy chủ Production, hãy thực hiện đổi mật khẩu hoặc tạo tài khoản quản trị mới ngay lập tức:
+
+### 8.1. Tạo tài khoản Admin chính thức với mật khẩu mạnh
+Chạy script tạo tài khoản quản trị từ dòng lệnh VPS:
+```bash
+cd /opt/xone
+sh scripts/admin/create-local-admin.sh "admin@yourcompany.com" "YourComplexPassword123!@#" "System Administrator" .env
+```
+
+### 8.2. Vô hiệu hóa hoặc đổi mật khẩu tài khoản seed mặc định
+Nếu hệ thống đã khởi tạo tài khoản mặc định `admin@xone.local`, hãy đăng nhập vào giao diện hoặc dùng script trên để cập nhật mật khẩu mới, ngăn chặn nguy cơ truy cập bằng mật khẩu mặc định.
+

@@ -12,6 +12,7 @@ import { getGatewaySecurityConfig } from './config/environment';
 async function bootstrap(): Promise<void> {
   const securityConfig = getGatewaySecurityConfig(process.env);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
+  app.set('trust proxy', 1);
   configureGatewayHttpSecurity(app, securityConfig);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new HttpExceptionFilter());

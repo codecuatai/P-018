@@ -14,12 +14,7 @@ VALUES
   ('a0000000-0000-4000-8000-000000000002', 'manager@xone.local', 'manager@xone.local', 'X-One Operations Manager', '0901000002', 'manager', 'active', now(), now()),
   ('a0000000-0000-4000-8000-000000000003', 'provider@xone.local', 'provider@xone.local', 'X-One Service Partner', '0901000003', 'provider', 'active', now(), now()),
   ('a0000000-0000-4000-8000-000000000004', 'user@xone.local', 'user@xone.local', 'X-One Standard User', '0901000004', 'user', 'active', now(), now())
-ON CONFLICT (email_normalized) DO UPDATE
-SET
-  role = EXCLUDED.role,
-  status = 'active',
-  full_name = EXCLUDED.full_name,
-  updated_at = now();
+ON CONFLICT (email_normalized) DO NOTHING;
 
 INSERT INTO user_credentials (user_id, password_hash, password_changed_at, created_at, updated_at)
 VALUES
@@ -27,20 +22,13 @@ VALUES
   ('a0000000-0000-4000-8000-000000000002', '$argon2id$v=19$m=19456,t=2,p=1$MMjzpxgSfRFp7v2WcKX1Sw$BfBOJsYyIQiz/Jh+a3H2p/lvdtsuQISTaIN5DOTzPzM', now(), now(), now()),
   ('a0000000-0000-4000-8000-000000000003', '$argon2id$v=19$m=19456,t=2,p=1$MMjzpxgSfRFp7v2WcKX1Sw$BfBOJsYyIQiz/Jh+a3H2p/lvdtsuQISTaIN5DOTzPzM', now(), now(), now()),
   ('a0000000-0000-4000-8000-000000000004', '$argon2id$v=19$m=19456,t=2,p=1$MMjzpxgSfRFp7v2WcKX1Sw$BfBOJsYyIQiz/Jh+a3H2p/lvdtsuQISTaIN5DOTzPzM', now(), now(), now())
-ON CONFLICT (user_id) DO UPDATE
-SET
-  password_hash = EXCLUDED.password_hash,
-  password_changed_at = now(),
-  updated_at = now();
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Ensure provider profile for provider@xone.local
 INSERT INTO provider_profiles (user_id, provider_type, tenant_id, status, created_at, updated_at)
 VALUES
   ('a0000000-0000-4000-8000-000000000003', 'ride_driver', 'partner-xone-01', 'active', now(), now())
-ON CONFLICT (user_id) DO UPDATE
-SET
-  status = 'active',
-  updated_at = now();
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Align any existing test-registered accounts
 UPDATE users SET role = 'manager' WHERE email_normalized = 'manager.test@x-one.local';

@@ -46,7 +46,7 @@ services:
         reservations:
           memory: 256M
     restart: unless-stopped
-    ports: [ "${POSTGRES_PORT}:5432" ]
+    ports: [ "127.0.0.1:${POSTGRES_PORT}:5432" ]
     networks: [ xone_internal ]
     <<: *default-logging
 
@@ -144,7 +144,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-    ports: [ "${API_GATEWAY_PORT}:3000" ]
+    ports: [ "127.0.0.1:${API_GATEWAY_PORT}:3000" ]
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
@@ -164,7 +164,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       HOSTNAME: 0.0.0.0
-    ports: [ "${WEB_PORT}:3000" ]
+    ports: [ "127.0.0.1:${WEB_PORT}:3000" ]
     depends_on:
       api-gateway:
         condition: service_healthy
