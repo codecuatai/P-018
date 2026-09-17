@@ -126,32 +126,10 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/017_core_four_roles_rbac.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/018_core_seed_four_roles.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/003_food_atomicity.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/004_food_authoritative_operations.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/007_food_cart_write_idempotency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/008_food_catalog_search.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/002_agent_run_metadata.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
-    Write-Host 'Core, Agent and Food migrations applied.'
-
-    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -DatabaseKey 'RESTAURANT_DATABASE_URL' -EnvFile $envFile
-    Write-Host 'Restaurant Service migrations applied.'
-
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003_patient_user_links.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003a_healthcare_legacy_catalog_bridge.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Write-Host 'Healthcare Service migrations applied.'
-
-    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260814_0005_route_geometry.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
-    Write-Host 'Ride Service migrations applied.'
+    Write-Host 'Core and Agent migrations applied successfully.' -ForegroundColor Green
+    Write-Host 'Note: Domain services (Food, Restaurant, Healthcare, Ride) migrations are managed in P-018-Service.' -ForegroundColor Yellow
 } finally {
     Pop-Location
 }

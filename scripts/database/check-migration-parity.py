@@ -7,8 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATION_PATTERN = re.compile(
-    r"((?:apps/agent-service|apps/api-gateway|services/food-service|"
-    r"services/healthcare-service)/migrations/[^'\"\s]+\.sql)"
+    r"((?:apps/agent-service|apps/api-gateway)/migrations/[^'\"\s]+\.sql)"
 )
 
 

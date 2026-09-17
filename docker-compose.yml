@@ -145,6 +145,8 @@ services:
         reservations:
           memory: 256M
     ports: [ "127.0.0.1:${API_GATEWAY_PORT}:3000" ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
@@ -216,134 +218,16 @@ services:
         reservations:
           memory: 256M
     depends_on: { postgres: { condition: service_healthy } }
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
 
-  ride-service:
-    build: ./services/ride-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${RIDE_SERVICE_PORT:?RIDE_SERVICE_PORT is required}
-      TRACKING_TIME_SCALE: ${RIDE_TRACKING_TIME_SCALE:-1}
-      DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  restaurant-service:
-    build: ./services/restaurant-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
-      DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  healthcare-service:
-    build: ./services/healthcare-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${HEALTHCARE_SERVICE_PORT:?HEALTHCARE_SERVICE_PORT is required}
-      DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-      HEALTHCARE_FACILITY_NAME: ${HEALTHCARE_FACILITY_NAME:?HEALTHCARE_FACILITY_NAME is required}
-      HEALTHCARE_FACILITY_ADDRESS: ${HEALTHCARE_FACILITY_ADDRESS:?HEALTHCARE_FACILITY_ADDRESS is required}
-      # Used only by the explicit development seed command; the running
-      # service never creates a patient or link at startup.
-      DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:?DEMO_AUTH_ENABLED is required}
-      DEMO_AUTH_USER_ID: ${DEMO_AUTH_USER_ID:-}
-      HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  food-service:
-    build: ./services/food-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${FOOD_SERVICE_PORT:?FOOD_SERVICE_PORT is required}
-      DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-      PERSISTENCE: ${FOOD_PERSISTENCE:?FOOD_PERSISTENCE is required}
-      RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
-      DELIVERY_BASE_FEE: ${DELIVERY_BASE_FEE:?DELIVERY_BASE_FEE is required}
-      DELIVERY_PER_KM_FEE: ${DELIVERY_PER_KM_FEE:?DELIVERY_PER_KM_FEE is required}
-      DELIVERY_MINIMUM_FEE: ${DELIVERY_MINIMUM_FEE:?DELIVERY_MINIMUM_FEE is required}
-      DELIVERY_MAX_DISTANCE_KM: ${DELIVERY_MAX_DISTANCE_KM:?DELIVERY_MAX_DISTANCE_KM is required}
-      DELIVERY_LONG_DISTANCE_THRESHOLD_KM: ${DELIVERY_LONG_DISTANCE_THRESHOLD_KM:?DELIVERY_LONG_DISTANCE_THRESHOLD_KM is required}
-      DELIVERY_LONG_DISTANCE_SURCHARGE: ${DELIVERY_LONG_DISTANCE_SURCHARGE:?DELIVERY_LONG_DISTANCE_SURCHARGE is required}
-      DELIVERY_ETA_MINUTES: ${DELIVERY_ETA_MINUTES:?DELIVERY_ETA_MINUTES is required}
-      FOOD_RESTAURANT_CONFIRM_DELAY_MS: ${FOOD_RESTAURANT_CONFIRM_DELAY_MS:?FOOD_RESTAURANT_CONFIRM_DELAY_MS is required}
-      FOOD_PREPARING_DELAY_MS: ${FOOD_PREPARING_DELAY_MS:?FOOD_PREPARING_DELAY_MS is required}
-      FOOD_READY_FOR_PICKUP_DELAY_MS: ${FOOD_READY_FOR_PICKUP_DELAY_MS:?FOOD_READY_FOR_PICKUP_DELAY_MS is required}
-      FOOD_DRIVER_ASSIGN_DELAY_MS: ${FOOD_DRIVER_ASSIGN_DELAY_MS:?FOOD_DRIVER_ASSIGN_DELAY_MS is required}
-      FOOD_PICKUP_DELAY_MS: ${FOOD_PICKUP_DELAY_MS:?FOOD_PICKUP_DELAY_MS is required}
-      FOOD_DELIVERY_DELAY_MS: ${FOOD_DELIVERY_DELAY_MS:?FOOD_DELIVERY_DELAY_MS is required}
-      FOOD_WORKFLOW_POLL_INTERVAL_MS: ${FOOD_WORKFLOW_POLL_INTERVAL_MS:?FOOD_WORKFLOW_POLL_INTERVAL_MS is required}
-      FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 25s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 300M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
+  # NOTE: Domain Microservices (Food, Restaurant, Healthcare, Ride)
+  # have been separated into standalone repository: P-018-Service (ports 8101-8104).
+  # Run `docker compose up -d` in P-018-Service to start the 4 services,
+  # or point *_SERVICE_URL in .env to their remote/local endpoints.
 
 volumes:
   postgres_data:

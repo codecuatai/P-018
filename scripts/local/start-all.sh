@@ -52,10 +52,6 @@ required_services=(
     api-gateway
     web
     agent-service
-    ride-service
-    restaurant-service
-    healthcare-service
-    food-service
 )
 
 get_health() {
@@ -140,4 +136,4 @@ echo ""
 echo "X-One started successfully."
 echo "  Web:     ${web_url}"
 echo "  Gateway: ${gateway_url}"
-echo "  Internal services: Compose DNS only (agent-service, ride-service, restaurant-service, healthcare-service, food-service)"
+echo "  Internal services: Compose DNS only (agent-service)"

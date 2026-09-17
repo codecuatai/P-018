@@ -10,13 +10,5 @@ function Invoke-CatalogImport {
     if ($LASTEXITCODE -ne 0) { throw "$Domain catalog import failed." }
 }
 
-Invoke-CatalogImport -Domain 'food'
-Invoke-CatalogImport -Domain 'restaurant'
-Invoke-CatalogImport -Domain 'healthcare'
-docker compose --env-file $envFile exec -T healthcare-service python -m seeds.seed_demo_patient
-if ($LASTEXITCODE -ne 0) { throw 'Healthcare demo patient seed failed.' }
-docker compose --env-file $envFile exec -T restaurant-service python -m seeds.seed
-if ($LASTEXITCODE -ne 0) { throw 'Restaurant booking-resource seed failed.' }
-docker compose --env-file $envFile exec -T ride-service python -m seeds.seed_demo_drivers
-if ($LASTEXITCODE -ne 0) { throw 'Ride driver seed failed.' }
-Write-Host 'Food, Restaurant, Healthcare, and Ride development data applied.'
+Write-Host 'Domain services seed data (Food, Restaurant, Healthcare, Ride) is managed in P-018-Service.' -ForegroundColor Yellow
+Write-Host 'Please run .\scripts\database\seed.ps1 inside P-018-Service repository.' -ForegroundColor Cyan

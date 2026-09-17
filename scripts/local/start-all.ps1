@@ -126,7 +126,7 @@ try {
     $composeUpArguments = @("compose", "--env-file", $script:ComposeEnvFile, "up", "--build", "-d") + $composeForwardedArguments
     Invoke-CheckedCommand -FilePath "docker" -Arguments $composeUpArguments -FailureMessage "Docker Compose could not start the backend services."
 
-    $requiredServices = @("postgres", "api-gateway", "web", "agent-service", "ride-service", "restaurant-service", "healthcare-service", "food-service")
+    $requiredServices = @("postgres", "api-gateway", "web", "agent-service")
     Write-Host "[4/7] Waiting for PostgreSQL and application containers to become healthy..." -ForegroundColor Yellow
     Wait-ComposeHealthy -Services $requiredServices -Seconds $TimeoutSeconds
 
@@ -163,7 +163,7 @@ try {
     Write-Host "  ALL REQUIRED SERVICES ARE HEALTHY AND WEB IS READY       " -ForegroundColor Green
     Write-Host "  Web:     $webUrl                              " -ForegroundColor Green
     Write-Host "  Gateway: $gatewayUrl                              " -ForegroundColor Cyan
-    Write-Host "  Agent/domain services: internal Compose DNS only         " -ForegroundColor DarkGray
+    Write-Host "  Internal services: Compose DNS only (agent-service)      " -ForegroundColor DarkGray
     Write-Host "============================================================" -ForegroundColor Cyan
 } catch {
     Write-Error "X-One startup failed: $($_.Exception.Message)"
