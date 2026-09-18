@@ -37,7 +37,7 @@ jobs:
       code_changed: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.code_changed == 'true' }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           fetch-depth: 20
 
@@ -122,8 +122,8 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Create Python environment
@@ -132,10 +132,17 @@ jobs:
         run: .ci-venv/bin/python -m pip install -e "apps/agent-service[dev]"
       - name: Lint service
         run: .ci-venv/bin/python -m ruff check "apps/agent-service/src" "apps/agent-service/tests"
-      - name: Apply Agent migration
+      - name: Apply Agent migrations
         env:
           AGENT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent
-        run: .ci-venv/bin/python -c "import psycopg; conn = psycopg.connect('postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent', autocommit=True); conn.execute(open('apps/agent-service/migrations/001_agent_workflow_states.sql').read()); conn.close()"
+        run: |
+          .ci-venv/bin/python -c "
+          import psycopg
+          conn = psycopg.connect('postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent', autocommit=True)
+          conn.execute(open('apps/agent-service/migrations/001_agent_workflow_states.sql').read())
+          conn.execute(open('apps/agent-service/migrations/002_agent_run_metadata.sql').read())
+          conn.close()
+          "
       - name: Test service
         working-directory: apps/agent-service
         env:
@@ -148,12 +155,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
           dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           package-manager-cache: false
@@ -186,12 +195,14 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
           dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           package-manager-cache: false
@@ -208,12 +219,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
       - uses: pnpm/action-setup@v4
         with:
           version: 9.15.0
           dest: ~/setup-pnpm-${{ github.run_id }}-${{ github.job }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           package-manager-cache: false
@@ -229,8 +242,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Validate environment configuration

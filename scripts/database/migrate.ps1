@@ -97,6 +97,10 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/016_core_token_usage.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/017_core_four_roles_rbac.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/018_core_seed_four_roles.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/019_core_provider_offerings.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/020_core_audit_and_feature_flags.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/021_core_mcp_provider.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/022_core_customer_extensions.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/002_agent_run_metadata.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
