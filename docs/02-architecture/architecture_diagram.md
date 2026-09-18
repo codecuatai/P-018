@@ -1,6 +1,6 @@
 # Tài Liệu Kiến Trúc Bàn Giao Gate G2 (Architecture Deliverable)
 
-Tài liệu này là góc nhìn kiến trúc phục vụ đánh giá nghiệm thu cho X-One. Tài liệu thể hiện cấu trúc MVP cục bộ đang hoạt động trong mã nguồn trước, sau đó mô tả định hướng tiến hóa tiếp theo có căn cứ kỹ thuật. Trạng thái triển khai và chi tiết xác minh lịch sử được lưu trữ chuẩn tắc tại [Trạng thái hiện tại](architecture/current-state.md).
+Tài liệu này là góc nhìn kiến trúc phục vụ đánh giá nghiệm thu cho X-One. Tài liệu thể hiện cấu trúc MVP cục bộ đang hoạt động trong mã nguồn trước, sau đó mô tả định hướng tiến hóa tiếp theo có căn cứ kỹ thuật. Trạng thái triển khai và chi tiết xác minh lịch sử được lưu trữ chuẩn tắc tại [Trạng thái hiện tại](current-state.md).
 
 ## 1. MVP Hiện Tại
 
@@ -44,7 +44,7 @@ Client Web và Mobile chỉ gọi duy nhất vào API Gateway công khai. Tuyế
 | **Healthcare** | Lịch trống chuyên khoa/bác sĩ, giữ chỗ khám, xác nhận thanh toán, vòng đời lịch hẹn | REST nội bộ (chỉ Gateway gọi) | `xone_healthcare` / SQLAlchemy |
 | **PostgreSQL** | Một phiên bản DB cục bộ với sự phân tách logic triệt để | Kết nối cơ sở dữ liệu riêng biệt | Nghiêm cấm query chéo database, khóa ngoại chéo, chung ORM model hay import chéo domain |
 
-Tập danh mục tool chuẩn tắc là V2, trong khi các luồng tương thích Food/Restaurant/Healthcare đang dùng các request Agent định dạng V1 có giới hạn thông qua Gateway. Bề mặt tương thích đó không phải là bằng chứng cho việc đã tương đương 100% V2; xem thêm [hợp đồng công cụ (tool contracts)](api/tool-contracts.md) và [danh mục API (API inventory)](api/api-inventory.md).
+Tập danh mục tool chuẩn tắc là V2, trong khi các luồng tương thích Food/Restaurant/Healthcare đang dùng các request Agent định dạng V1 có giới hạn thông qua Gateway. Bề mặt tương thích đó không phải là bằng chứng cho việc đã tương đương 100% V2; xem thêm [hợp đồng công cụ (tool contracts)](../03-api/tool-contracts.md) và [danh mục API (API inventory)](../03-api/api-inventory.md).
 
 ### Luồng điều khiển (Control Flow)
 
@@ -148,4 +148,4 @@ Các giải pháp như Message Queue, Event Sourcing, Service Mesh, Kubernetes, 
 - Đầu ra của Agent luôn được validate chặt chẽ, coi là untrusted và không thể tự chốt giao dịch.
 - Các bước tài chính/quyết định cuối cùng yêu cầu xác nhận 2 bước rõ ràng và có Idempotency-Key.
 - Khẳng định MVP dựa trên mã nguồn thực tế; các hạng mục tương lai được dán nhãn rõ ràng là tiến hóa có lộ trình.
-- Kết quả đánh giá Gate G2 thực tế được ghi nhận chi tiết tại [root eval](../eval/README.md), không suy diễn từ mock unit test.
+- Kết quả đánh giá Gate G2 thực tế được ghi nhận chi tiết tại [root eval](../../eval/README.md), không suy diễn từ mock unit test.

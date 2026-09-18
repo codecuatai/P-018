@@ -24,14 +24,14 @@ Tài liệu này quy định các chuẩn mực kỹ thuật và quy trình đó
 1. Cập nhật hợp đồng OpenAPI hoặc schema công cụ trong `packages/contracts/`.
 2. Tạo hoặc cập nhật Typed Client tương ứng trong `apps/api-gateway/src/modules/`.
 3. Bổ sung các bài kiểm thử tương thích (contract tests) và unit tests.
-4. Cập nhật tài liệu tại `docs/api/api-inventory.md` và `docs/api/tool-contracts.md`.
+4. Cập nhật tài liệu tại `docs/03-api/api-inventory.md` và `docs/03-api/tool-contracts.md`.
 
 ### Khi Thay Đổi Cơ Sở Dữ Liệu
 1. Tạo migration mới có tính bổ sung (additive):
    - Đánh số thứ tự tăng dần tiếp theo cho migration SQL thuần.
    - Hoặc tạo revision mới từ `head` nếu dùng Alembic.
 2. Tuyệt đối không chỉnh sửa các migration cũ đã từng được áp dụng.
-3. Cập nhật tài liệu kiến trúc dữ liệu tại `docs/architecture/data-architecture.md`.
+3. Cập nhật tài liệu kiến trúc dữ liệu tại `docs/02-architecture/data-architecture.md`.
 4. Viết các bài kiểm thử xác minh tính idempotent và khả năng rollback nếu có.
 
 ## 4. Cổng Kiểm Tra Chất Lượng Cục Bộ (Quality Gates)

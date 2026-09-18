@@ -64,4 +64,4 @@ P-018/
 3. **Quy tắc với Generated Clients**:
    - Thư mục `packages/generated-ts-clients/` được sinh tự động từ các file OpenAPI. **Tuyệt đối không sửa tay** các file này; mọi thay đổi phải bắt đầu từ việc cập nhật file hợp đồng OpenAPI rồi chạy script build lại client.
 4. **Quy trình thêm một dịch vụ mới**:
-   - Thực hiện theo [Checklist tích hợp dịch vụ mới](../development/new-service-checklist.md): Tạo thư mục trong `services/`, cấu hình Dockerfile, viết migration, cập nhật Gateway client và bổ sung tài liệu trong cùng một lượt commit.
+   - Thực hiện theo [Checklist tích hợp dịch vụ mới](../05-development/new-service-checklist.md): Tạo thư mục trong `services/`, cấu hình Dockerfile, viết migration, cập nhật Gateway client và bổ sung tài liệu trong cùng một lượt commit.

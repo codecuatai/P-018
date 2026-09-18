@@ -104,7 +104,7 @@ flowchart LR
    ./scripts/local/start-all.sh --seed-demo
    ```
 
-Chi tiết hướng dẫn cài đặt từng phân hệ và xử lý sự cố có tại [Hướng dẫn phát triển Local](docs/development/local-development.md).
+Chi tiết hướng dẫn cài đặt từng phân hệ và xử lý sự cố có tại [Hướng dẫn phát triển Local](docs/05-development/local-development.md).
 
 ---
 

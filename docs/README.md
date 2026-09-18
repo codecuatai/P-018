@@ -63,7 +63,7 @@ flowchart TD
 - [06_API_Design.md](01-charter-prd/06_API_Design.md) — Định hướng thiết kế giao tiếp dịch vụ ban đầu.
 - [07_Evaluation.md](01-charter-prd/07_Evaluation.md) — Tiêu chí đánh giá chất lượng phản hồi của Agent.
 - [08_Service_API_Integration_Guide.md](01-charter-prd/08_Service_API_Integration_Guide.md) — Hướng dẫn tích hợp API các dịch vụ miền.
-- [Project Build Phase.docx.pdf](01-charter-prd/Project%20Build%20Phase.docx.pdf) — Tài liệu hướng dẫn giai đoạn triển khai dự án.
+- [Project_Build_Phase.docx.pdf](01-charter-prd/Project_Build_Phase.docx.pdf) — Tài liệu hướng dẫn giai đoạn triển khai dự án.
 
 ---
 
