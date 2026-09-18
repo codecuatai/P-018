@@ -24,7 +24,7 @@ Kho lưu trữ này hiện triển khai theo phiên bản **Gate G2 MVP**: chứ
 | **Chế độ LLM** | Mặc định cấu hình sử dụng Google Gemini; khi không có API key hoặc kết nối mạng lỗi, hệ thống tự động chuyển đổi an toàn (fallback) sang bộ lập kế hoạch tất định (Deterministic Planner) chạy offline. |
 
 > [!NOTE]
-> Khung ứng dụng di động Expo hiện là bộ khung giao diện mẫu (Skeleton). Triển khai cloud tập trung, cổng thanh toán ngân hàng thực tế, và bản đồ định tuyến production thuộc lộ trình phát triển tiếp theo. Xem chi tiết trạng thái kiểm thử tại [Báo cáo hiện trạng kiến trúc](docs/architecture/current-state.md).
+> Khung ứng dụng di động Expo hiện là bộ khung giao diện mẫu (Skeleton). Triển khai cloud tập trung, cổng thanh toán ngân hàng thực tế, và bản đồ định tuyến production thuộc lộ trình phát triển tiếp theo. Xem chi tiết trạng thái kiểm thử tại [Báo cáo hiện trạng kiến trúc](docs/02-architecture/current-state.md).
 
 ---
 
@@ -48,7 +48,7 @@ flowchart LR
 
 - **Nguyên tắc cốt lõi**: Web và Mobile **chỉ gọi duy nhất API Gateway công khai**. 
 - AI Agent **không được phép truy cập trực tiếp CSDL** hay gọi thẳng tới các Domain Service, và **không bao giờ tự ý thực hiện hành động tài chính/giao dịch** mà chưa có sự đồng ý của người dùng.
-- Chi tiết sơ đồ luồng dữ liệu, luồng điều khiển và bảo mật có trong [Tài liệu kiến trúc Gate G2](docs/architecture_diagram.md).
+- Chi tiết sơ đồ luồng dữ liệu, luồng điều khiển và bảo mật có trong [Tài liệu kiến trúc Gate G2](docs/02-architecture/architecture_diagram.md).
 
 ---
 
@@ -122,7 +122,7 @@ File [.env.example](.env.example) là nguồn cấu hình mẫu duy nhất cho D
 | **Giao diện Web** | `NEXT_PUBLIC_API_URL` và các URL tài nguyên tĩnh public |
 
 > [!WARNING]
-> Tuyệt đối không đưa mật khẩu, token nội bộ hoặc URL private vào các biến tiền tố `NEXT_PUBLIC_*`. Xem chi tiết tại [Tài liệu biến môi trường](docs/development/environment-variables.md).
+> Tuyệt đối không đưa mật khẩu, token nội bộ hoặc URL private vào các biến tiền tố `NEXT_PUBLIC_*`. Xem chi tiết tại [Tài liệu biến môi trường](docs/05-development/environment-variables.md).
 
 ---
 
@@ -150,18 +150,19 @@ docker compose --env-file .env.example config --quiet
 python scripts/database/check-migration-parity.py
 ```
 
-- Chạy kiểm thử tự động theo hướng dẫn tại [Chiến lược kiểm thử (Testing Strategy)](docs/development/testing-strategy.md).
+- Chạy kiểm thử tự động theo hướng dẫn tại [Chiến lược kiểm thử (Testing Strategy)](docs/05-development/testing-strategy.md).
 - Bộ dữ liệu đánh giá 150 kịch bản và kết quả audit Gate G2 nằm trong thư mục [eval/](eval/README.md).
 
 ---
 
 ## 8. Sơ Đồ Tài Liệu Hệ Thống
 
-- [Mục lục tài liệu toàn diện](docs/README.md)
-- [Bản nộp kiến trúc Gate G2](docs/architecture_diagram.md)
-- [Báo cáo hiện trạng thực tế](docs/architecture/current-state.md)
-- [Tổng quan hệ thống](docs/architecture/system-overview.md)
-- [Ranh giới dịch vụ & CSDL](docs/architecture/service-boundaries.md)
-- [Kiến trúc Runtime & Docker](docs/architecture/runtime-architecture.md)
-- [Kiến trúc CSDL & Dữ liệu](docs/architecture/data-architecture.md)
-- [Danh mục API thực tế](docs/api/api-inventory.md)
+- [Mục lục tài liệu toàn diện (Documentation Portal)](docs/README.md)
+- [Slide thuyết trình & Demo nghiệm thu](docs/00-presentation/README.md)
+- [Bản nộp kiến trúc Gate G2](docs/02-architecture/architecture_diagram.md)
+- [Báo cáo hiện trạng thực tế](docs/02-architecture/current-state.md)
+- [Tổng quan hệ thống](docs/02-architecture/system-overview.md)
+- [Ranh giới dịch vụ & CSDL](docs/02-architecture/service-boundaries.md)
+- [Kiến trúc Runtime & Docker](docs/02-architecture/runtime-architecture.md)
+- [Kiến trúc CSDL & Dữ liệu](docs/02-architecture/data-architecture.md)
+- [Danh mục API thực tế](docs/03-api/api-inventory.md)
