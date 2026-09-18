@@ -3,7 +3,7 @@ title: "DevOps và Triển khai"
 weight: 7
 ---
 
-> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../architecture/current-state.md). Do not execute destructive Docker, database, or publishing commands here without explicit approval.
+> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../02-architecture/current-state.md). Do not execute destructive Docker, database, or publishing commands here without explicit approval.
 
 ## 7.1 Docker — Container hóa ứng dụng
 

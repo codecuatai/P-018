@@ -6,7 +6,7 @@ Tài liệu này tổng kết các mốc nghiệm thu và trạng thái thực t
 
 - Thiết lập Docker/setup và hồ sơ tài liệu chuẩn tắc đã được chuẩn hóa và tăng cường: thiết lập mặc định lập kế hoạch tất định offline cho Agent, cấu hình Gemini tùy chọn, chuẩn hóa ngữ nghĩa cổng host/container của Gateway, bổ sung ánh xạ Geoapify tùy chọn và cổng dịch vụ Python có thể cấu hình linh hoạt.
 - Bản giao nộp kiến trúc chi tiết nằm trong `docs/`; toàn bộ giao thức đánh giá, bộ chạy và kết quả được lưu trữ tại thư mục gốc `eval/`.
-- Kiểm tra tĩnh, render Compose, tính tương đồng migration, Docker build, healthcheck trực tiếp, migration/seed và đánh giá Gateway đều đã chạy thành công. Kết quả Gate G2 thực tế là **PASS_WITH_FINDING (6/7)**; ca E02 trả về phản hồi trung thực `healthcare_no_availability` trong khi assertion kỳ vọng `healthcare_options`. Bằng chứng Gemini đi kèm chẩn đoán an toàn ghi nhận `model_mode=gemini`, khóa đã cấu hình, lệnh gọi model thành công và không cần fallback. Xem thêm [Báo cáo đánh giá chuẩn tắc](../eval/results/gate-g2-mvp-eval.md).
+- Kiểm tra tĩnh, render Compose, tính tương đồng migration, Docker build, healthcheck trực tiếp, migration/seed và đánh giá Gateway đều đã chạy thành công. Kết quả Gate G2 thực tế là **PASS_WITH_FINDING (6/7)**; ca E02 trả về phản hồi trung thực `healthcare_no_availability` trong khi assertion kỳ vọng `healthcare_options`. Bằng chứng Gemini đi kèm chẩn đoán an toàn ghi nhận `model_mode=gemini`, khóa đã cấu hình, lệnh gọi model thành công và không cần fallback. Xem thêm [Báo cáo đánh giá chuẩn tắc](../../eval/results/gate-g2-mvp-eval.md).
 
 ## Ảnh Chụp Hoàn Thành Sản Phẩm Cục Bộ - 2026-08-13
 
@@ -16,7 +16,7 @@ Tài liệu này tổng kết các mốc nghiệm thu và trạng thái thực t
 - Runtime cục bộ trực tiếp: Toàn bộ 7 kiểm tra sức khỏe ứng dụng đều đạt; công cụ seed bổ sung và reset dry-run đã được thực thi mà không xóa danh mục hay volume của PostgreSQL.
 - Gemini smoke: **BLOCKED** khi không có khóa được cấu hình; tuyệt đối không có khóa nào bị đọc hay in ra ngoài.
 
-Ma trận triển khai chuẩn tắc có dẫn chứng đầy đủ được lưu giữ tại [Trạng thái kiến trúc hiện tại](architecture/current-state.md).
+Ma trận triển khai chuẩn tắc có dẫn chứng đầy đủ được lưu giữ tại [Trạng thái kiến trúc hiện tại](../02-architecture/current-state.md).
 
 ## Ảnh Chụp Rà Soát Sửa Lỗi Lịch Sử — 2026-08-12
 
@@ -26,4 +26,4 @@ Ma trận triển khai chuẩn tắc có dẫn chứng đầy đủ được lư
 - Thực thi trình duyệt lúc đó: **BLOCKED_BY_ENVIRONMENT** do thiếu tệp thực thi Chromium trong môi trường cũ; đã được giải quyết và nghiệm thu hoàn tất vào ngày 2026-08-13.
 - Gemini smoke: **BLOCKED** do chưa cấu hình khóa trong môi trường.
 
-Chi tiết bằng chứng và các giới hạn hiện tại được duy trì trong [Trạng thái kiến trúc hiện tại](architecture/current-state.md) và [Chiến lược kiểm thử](development/testing-strategy.md).
+Chi tiết bằng chứng và các giới hạn hiện tại được duy trì trong [Trạng thái kiến trúc hiện tại](../02-architecture/current-state.md) và [Chiến lược kiểm thử](../05-development/testing-strategy.md).

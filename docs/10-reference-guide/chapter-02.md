@@ -3,7 +3,7 @@ title: "Khởi tạo dự án từ Template"
 weight: 2
 ---
 
-> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../architecture/current-state.md). Do not execute repository-reinitializing or publishing commands here without explicit approval.
+> **Legacy reference only:** this course chapter is not the X-One runbook. Follow root/scoped `AGENTS.md` and [current state](../02-architecture/current-state.md). Do not execute repository-reinitializing or publishing commands here without explicit approval.
 
 ## Clone template — Bắt đầu từ nền tảng đúng
 

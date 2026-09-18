@@ -83,7 +83,7 @@ Hệ thống áp dụng các tiêu chuẩn DevOps khắt khe để đảm bảo 
 
 ### 5. Phương Án Phát Triển Cực Nhẹ: Hybrid Local Process
 
-Dự án cung cấp kịch bản chạy trực tiếp trên máy host qua [scripts/local/local-dev.ps1](file:///d:/VIN/Projects/P-018/scripts/local/local-dev.ps1):
+Dự án cung cấp kịch bản chạy trực tiếp trên máy host qua [scripts/local/local-dev.ps1](../../scripts/local/local-dev.ps1):
 - Chỉ bật duy nhất container **PostgreSQL** trong Docker (`docker compose up -d postgres`).
 - Chạy Web, Gateway và 5 microservices trực tiếp bằng Python/Node của máy tính.
 - Phương pháp này giúp **tiết kiệm hơn 80% RAM và CPU**, hỗ trợ Hot-Reload code tức thì mà không cần rebuild container.

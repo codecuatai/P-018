@@ -28,11 +28,11 @@ Tài liệu này đối chiếu mô hình và API hiện có trong bốn domain 
 
 Nguồn đối chiếu chính:
 
-- [Ride schemas](../../services/ride-service/src/api/schemas.py), [Ride domain](../../services/ride-service/src/domain/ride.py) và [Ride application service](../../services/ride-service/src/application/ride_service.py)
-- [Restaurant schemas](../../services/restaurant-service/src/models/schemas.py), [Restaurant application service](../../services/restaurant-service/src/application/restaurant_service.py) và [Restaurant repository](../../services/restaurant-service/src/repositories/restaurant_repository.py)
-- [Food schemas](../../services/food-service/src/models/schemas.py), [Food policies](../../services/food-service/src/domain/policies.py) và [Food quotes](../../services/food-service/src/domain/quotes.py)
-- [Healthcare models](../../services/healthcare-service/src/models/medical.py) và [Healthcare routes](../../services/healthcare-service/src/api/routes.py)
-- [Service boundaries](../architecture/service-boundaries.md), [workflows](../architecture/workflows.md) và [API inventory](../api/api-inventory.md)
+- Ride schemas (`services/ride-service/src/api/schemas.py`), Ride domain (`domain/ride.py`) và Ride application service (`application/ride_service.py`)
+- Restaurant schemas (`services/restaurant-service/src/models/schemas.py`), Restaurant application service (`application/restaurant_service.py`) và Restaurant repository (`repositories/restaurant_repository.py`)
+- Food schemas (`services/food-service/src/models/schemas.py`), Food policies (`domain/policies.py`) và Food quotes (`domain/quotes.py`)
+- Healthcare models (`services/healthcare-service/src/models/medical.py`) và Healthcare routes (`api/routes.py`)
+- [Service boundaries](../02-architecture/service-boundaries.md), [workflows](../02-architecture/workflows.md) và [API inventory](../03-api/api-inventory.md)
 
 ## 3. Cách ưu tiên
 

@@ -19,7 +19,7 @@ weight: 1
 - **Tips:** Sử dụng template README.md đã có sẵn
 
 #### 3. Architecture Diagram
-- **Location:** `/docs/architecture_diagram.md`
+- **Location:** `/docs/02-architecture/architecture-diagram.md`
 - **Yêu cầu:** System diagram + Component descriptions
 - **Tips:** Dùng Mermaid syntax (render trên GitHub)
 
@@ -34,20 +34,20 @@ weight: 1
 #### 6. Video Demo
 - **Location:** Upload lên YouTube/Google Drive
 - **Yêu cầu:** Tối đa 5 phút, demo feature chính
-- **Tips:** Follow pitch structure trong `presentation/README.md`
+- **Tips:** Follow pitch structure trong `docs/00-presentation/README.md`
 
 #### 7. Pitch Deck
-- **Location:** `/presentation/pitch_deck.pptx`
+- **Location:** `/docs/00-presentation/pitch-deck.pptx`
 - **Yêu cầu:** 10 slides theo structure chuẩn
-- **Tips:** Follow template trong `presentation/README.md`
+- **Tips:** Follow template trong `docs/00-presentation/README.md`
 
 #### 8. Weekly Journal
-- **Location:** `/JOURNAL.md`
+- **Location:** `/docs/09-worklogs/weekly-journal.md`
 - **Yêu cầu:** Ghi lại mỗi tuần: mục tiêu, hoàn thành, khó khăn, bài học
 - **Tips:** Template đã có sẵn, chỉ cần điền
 
 #### 9. Worklog
-- **Location:** `/WORKLOG.md`
+- **Location:** `/docs/09-worklogs/daily-worklog.md`
 - **Yêu cầu:** Ghi lại hàng ngày: ai làm gì, kết quả gì
 - **Tips:** Template đã có sẵn, cập nhật mỗi ngày
 

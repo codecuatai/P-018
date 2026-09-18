@@ -63,8 +63,8 @@ Các quyết định trong mục audit này **thay thế** pseudo-code/ước l�
 
 Implementation hiện có:
 
-- Migration owner-local: [`20260816_0006_passenger_capacity.py`](../../services/ride-service/migrations/versions/20260816_0006_passenger_capacity.py).
-- Ride domain/API/repository: [`ride.py`](../../services/ride-service/src/domain/ride.py), [`schemas.py`](../../services/ride-service/src/api/schemas.py), [`sqlalchemy_repository.py`](../../services/ride-service/src/infrastructure/sqlalchemy_repository.py).
+- Migration owner-local: `services/ride-service/migrations/versions/20260816_0006_passenger_capacity.py` (repo `P-018-Service`).
+- Ride domain/API/repository: `services/ride-service/src/domain/ride.py`, `schemas.py`, `sqlalchemy_repository.py`.
 - Contract: [`ride-service.v1.yaml`](../../packages/contracts/openapi/ride-service.v1.yaml) và [`ride-tool-request.schema.json`](../../packages/contracts/tools/ride-tool-request.schema.json).
 - Gateway/Agent propagation: [`service.clients.ts`](../../apps/api-gateway/src/clients/service.clients.ts), [`ride-conversation.service.ts`](../../apps/api-gateway/src/modules/conversation/ride-conversation.service.ts), [`assistant_graph.py`](../../apps/agent-service/src/agents/assistant_graph.py).
 

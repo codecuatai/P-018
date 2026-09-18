@@ -45,7 +45,7 @@
 ### Đã hoàn thành
 - Fix Gemini hook logging; log_antigravity.py có SQLite fallback (67a8198, 4a8ede1)
 - Thêm React web frontend và cập nhật modern UI demo NaviGo, cải thiện demo UI flows (a929f30, ff3d2d3, c575735, a5d0c8c)
-- Bổ sung tài liệu Project Build Phase, docs/ui_wireframe_flow.md, architecture diagram và link UIdemo (83df9f7, f75012c, 4a92dad)
+- Bổ sung tài liệu Project Build Phase, docs/04-ui-design/ui-wireframe-flow.md, architecture diagram và link demo (83df9f7, f75012c, 4a92dad)
 - Refactor codebase và sửa pytest conftest tương thích langchain.debug (887fa1b, bfa2ca0)
 - Đồng bộ feature/demoUI và merge các PR #13–#24 vào develop
 

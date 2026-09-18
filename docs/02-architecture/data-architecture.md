@@ -83,10 +83,10 @@ flowchart TB
 ### 3. Quy Trình Nạp Dữ Liệu Mẫu (Catalog Importer & Seeding)
 
 1. **Catalog Importer tĩnh (DataOps)**:
-   - Toàn bộ dữ liệu nhà hàng, thực đơn và danh mục bác sĩ tại Hà Nội được lưu trữ dưới dạng file CSV phiên bản hóa trong thư mục [data/](file:///d:/VIN/Projects/P-018/data/).
+   - Toàn bộ dữ liệu nhà hàng, thực đơn và danh mục bác sĩ tại Hà Nội được lưu trữ dưới dạng file CSV phiên bản hóa trong thư mục `data/` (tại repo `P-018-Service`).
    - Khi chạy script hoặc khởi động staging, container `catalog-importer` sẽ nạp tự động dữ liệu vào PostgreSQL một cách tất định và lũy tiến (Idempotent Upsert).
 2. **Kịch bản Demo Seeding (`-SeedDemo`)**:
    - Tự động tạo 36 tài xế Ride với biển số xe và thông tin đầy đủ.
    - Tạo 32 bàn ăn mẫu `DEMO-XONE-*` tại các nhà hàng để tránh hết chỗ khi demo.
    - Tạo các khung giờ khám bệnh khả dụng trong tương lai và liên kết bệnh nhân mẫu.
-   - Kịch bản dọn dẹp [scripts/database/demo-reset.ps1](file:///d:/VIN/Projects/P-018/scripts/database/demo-reset.ps1) chỉ xóa các đơn hàng phát sinh trong phiên demo, bảo toàn nguyên vẹn danh mục gốc.
+   - Kịch bản dọn dẹp [scripts/database/demo-reset.ps1](../../scripts/database/demo-reset.ps1) chỉ xóa các đơn hàng phát sinh trong phiên demo, bảo toàn nguyên vẹn danh mục gốc.

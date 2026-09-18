@@ -11,7 +11,7 @@ Thư mục này là vị trí lưu trữ bằng chứng chuẩn tắc cho đợt
 
 ## Điều Kiện Tiên Quyết & Chạy Lại An Toàn
 
-1. Khởi động stack bằng [Hướng dẫn phát triển cục bộ](../docs/development/local-development.md). Mẫu cấu hình mặc định chạy bộ lập kế hoạch tất định; hợp lệ cho 7 kịch bản sản phẩm/an toàn nhưng không phải là bằng chứng LLM thực tế.
+1. Khởi động stack bằng [Hướng dẫn phát triển cục bộ](../docs/05-development/local-development.md). Mẫu cấu hình mặc định chạy bộ lập kế hoạch tất định; hợp lệ cho 7 kịch bản sản phẩm/an toàn nhưng không phải là bằng chứng LLM thực tế.
 2. Thiết lập thông tin tài khoản demo cục bộ vào biến môi trường của tiến trình. Không đưa thông tin tài khoản vào nhật ký lệnh, báo cáo hoặc artifact kết quả.
 3. Chạy bộ kiểm thử qua ranh giới công khai:
 

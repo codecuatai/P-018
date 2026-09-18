@@ -66,7 +66,7 @@ Gateway hỗ trợ 2 hình thức xác thực thông qua header `Authorization: 
 2. **MCP API Key**: Khóa chuyên dụng dành cho server/máy khách bên ngoài với định dạng:
    - **Prefix**: `xone_mcp_...` (độ dài 64 ký tự).
    - **Bảo mật**: Khóa được băm một chiều bằng thuật toán **SHA-256** và lưu tại bảng `mcp_api_keys`.
-   - **Cấp phát**: Tạo tại [Cổng Đối Tác X-One](/app/provider) -> Tab **"Kết nối MCP (AI Partner)"**.
+   - **Cấp phát**: Tạo tại **Cổng Đối Tác X-One** (đường dẫn `/app/provider`) -> Tab **"Kết nối MCP (AI Partner)"**.
 
 ---
 

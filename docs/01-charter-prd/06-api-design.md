@@ -38,7 +38,7 @@ Provider Adapter chịu trách nhiệm:
 - Không tự quyết định policy giao dịch. Confirmation Token, Idempotency Key, RBAC, audit log và retry policy vẫn do Backend kiểm soát.
 - Cho phép cấu hình provider bằng biến môi trường, ví dụ `RIDE_PROVIDER=uber_guest_sandbox`, `MEDICAL_PROVIDER=ms_bookings`, `RESTAURANT_PROVIDER=opentable_sandbox`.
 
-Chi tiết lựa chọn sandbox/provider cho từng domain được mô tả trong [08_External_Provider_Strategy.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/08_External_Provider_Strategy.md).
+Chi tiết lựa chọn sandbox/provider cho từng domain được mô tả trong [08-service-api-integration-guide.md](08-service-api-integration-guide.md).
 
 ---
 

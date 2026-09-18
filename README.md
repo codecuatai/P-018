@@ -48,7 +48,7 @@ flowchart LR
 
 - **Nguyên tắc cốt lõi**: Web và Mobile **chỉ gọi duy nhất API Gateway công khai**. 
 - AI Agent **không được phép truy cập trực tiếp CSDL** hay gọi thẳng tới các Domain Service, và **không bao giờ tự ý thực hiện hành động tài chính/giao dịch** mà chưa có sự đồng ý của người dùng.
-- Chi tiết sơ đồ luồng dữ liệu, luồng điều khiển và bảo mật có trong [Tài liệu kiến trúc Gate G2](docs/02-architecture/architecture_diagram.md).
+- Chi tiết sơ đồ luồng dữ liệu, luồng điều khiển và bảo mật có trong [Tài liệu kiến trúc Gate G2](docs/02-architecture/architecture-diagram.md).
 
 ---
 
@@ -159,7 +159,7 @@ python scripts/database/check-migration-parity.py
 
 - [Mục lục tài liệu toàn diện (Documentation Portal)](docs/README.md)
 - [Slide thuyết trình & Demo nghiệm thu](docs/00-presentation/README.md)
-- [Bản nộp kiến trúc Gate G2](docs/02-architecture/architecture_diagram.md)
+- [Bản nộp kiến trúc Gate G2](docs/02-architecture/architecture-diagram.md)
 - [Báo cáo hiện trạng thực tế](docs/02-architecture/current-state.md)
 - [Tổng quan hệ thống](docs/02-architecture/system-overview.md)
 - [Ranh giới dịch vụ & CSDL](docs/02-architecture/service-boundaries.md)

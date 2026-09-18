@@ -2,13 +2,13 @@
 
 ## Purpose and precedence
 
-These rules apply repository-wide. Task instructions may narrow scope or explicitly change a repository rule, but never silently weaken security, privacy, data-integrity, destructive-operation, architecture-boundary, or status-honesty invariants. Any intentional exception must name the affected invariant and update its canonical documentation. The nearest scoped `AGENTS.md` may add constraints but cannot weaken root invariants. `AGENTS.md` guides coding agents, while [CONTRIBUTING.md](CONTRIBUTING.md) guides human contributors. `.agents/` contains tool-specific workflows such as AI logging only.
+These rules apply repository-wide. Task instructions may narrow scope or explicitly change a repository rule, but never silently weaken security, privacy, data-integrity, destructive-operation, architecture-boundary, or status-honesty invariants. Any intentional exception must name the affected invariant and update its canonical documentation. The nearest scoped instructions may add constraints but cannot weaken root invariants. This file guides coding agents, while [contributing.md](contributing.md) guides human contributors.
 
-Authority order is: platform/system instructions, explicit task instructions, root `AGENTS.md`, nearest scoped `AGENTS.md`, accepted ADRs, canonical architecture documentation, current-state documentation, component READMEs, then legacy/tutorial/boilerplate material.
+Authority order is: platform/system instructions, explicit task instructions, root guidelines, accepted ADRs, canonical architecture documentation, current-state documentation, component READMEs, then legacy/tutorial/boilerplate material.
 
 ## Required reading
 
-Read `README.md`, `docs/README.md`, `docs/architecture/system-overview.md`, `docs/architecture/service-boundaries.md`, `docs/architecture/data-architecture.md`, and `docs/api/api-conventions.md` before backend work. For a new service, also read `docs/development/new-service-checklist.md`; for a human workflow, use `CONTRIBUTING.md`.
+Read `README.md`, `docs/README.md`, `docs/02-architecture/system-overview.md`, `docs/02-architecture/service-boundaries.md`, `docs/02-architecture/data-architecture.md`, and `docs/03-api/api-conventions.md` before backend work. For a new service, also read `docs/05-development/new-service-checklist.md`; for a human workflow, use `contributing.md`.
 
 Before changing a file, run `git status --short` and read this file plus the nearest applicable scoped `AGENTS.md`. Inspect the filesystem rather than relying on generated repository summaries; `repomix-output.xml`, when present, is only an index.
 

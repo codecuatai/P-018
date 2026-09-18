@@ -1,6 +1,6 @@
 # Legacy/reference: AI Concierge project documents
 
-> These documents are retained as historical planning and course material. They are not the X-One architecture source of truth and may describe the earlier FastAPI monolith, Redis, or other capabilities that are not approved for the current backend-first foundation. Consult `../architecture/current-state.md`, the ADRs, and the API/architecture documentation for current decisions and implementation status.
+> These documents are retained as historical planning and course material. They are not the X-One architecture source of truth and may describe the earlier FastAPI monolith, Redis, or other capabilities that are not approved for the current backend-first foundation. Consult `../02-architecture/current-state.md`, the ADRs, and the API/architecture documentation for current decisions and implementation status.
 
 # AI Concierge - Intelligent Multi-Service Ride & Service Booking Agent
 
@@ -47,17 +47,20 @@
 
 ## 4. Documentation Structure (Cấu Trúc Thư Mục Tài Liệu)
 
-Bộ tài liệu dự án trong thư mục `docs/AI_Concierge_Project_Docs/` được chuẩn hóa chi tiết bao gồm 9 tệp chuyên sâu:
+Bộ tài liệu dự án trong thư mục `docs/01-charter-prd/` được chuẩn hóa theo chuẩn doanh nghiệp bao gồm các tệp chuyên sâu:
 
-1. [01_Project_Charter.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/01_Project_Charter.md): Tầm nhìn dự án, mục tiêu, nguyên tắc thiết kế, phạm vi (In-Scope / Out-of-Scope) và phân chia vai trò thành viên.
-2. [02_PRD.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/02_PRD.md): Yêu cầu sản phẩm chi tiết, User Personas, 8 User Stories & Acceptance Criteria, 15 Yêu cầu chức năng (FR), Yêu cầu phi chức năng (NFR) và chính sách an toàn.
-3. [03_System_Architecture.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/03_System_Architecture.md): Kiến trúc hệ thống, LangGraph State Schema (22 biến), sơ đồ luồng 22 Graph Nodes, giới hạn hoạt động của Agent, phân định trách nhiệm LLM vs Backend và sơ đồ cơ sở dữ liệu.
-4. [04_Backlog.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/04_Backlog.md): Danh sách 6 Epics phát triển sản phẩm với các công việc chi tiết.
-5. [05_Timeline.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/05_Timeline.md): Lộ trình triển khai 6 tuần (Sprints), danh sách Milestone từng tuần và các quy tắc quản lý tiến độ.
-6. [06_API_Design.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/06_API_Design.md): Danh sách Tool Specifications đầy đủ cho 5 domain (Ride, Medical, Restaurant, Payment, Memory), chuẩn Pydantic schema, công thức hash idempotency và định dạng Confirmation Token.
-7. [07_Evaluation.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/07_Evaluation.md): Bộ test suite 150 kịch bản kiểm thử, các chỉ số đánh giá định lượng (Success Metrics), danh sách test bắt buộc và kịch bản Demo chính.
-8. [08_External_Provider_Strategy.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/08_External_Provider_Strategy.md): Chiến lược dùng API/sandbox bên thứ ba thay cho mock provider lớn, bao gồm Uber Guest Rides Sandbox, Zocdoc, Microsoft Bookings, OpenTable/Yelp và DoorDash Drive.
-9. [09_Service_API_Integration_Guide.md](file:///d:/VIN/Projects/P-018/docs/AI_Concierge_Project_Docs/09_Service_API_Integration_Guide.md): Mô tả từng nhóm dịch vụ như food marketplace, POS/order và delivery/logistics; cách hoạt động, interface adapter, luồng tích hợp và khuyến nghị provider cho dev/release.
+1. [01-project-charter.md](01-project-charter.md): Tầm nhìn dự án, mục tiêu, nguyên tắc thiết kế, phạm vi (In-Scope / Out-of-Scope) và phân chia vai trò thành viên.
+2. [02-product-requirements-document.md](02-product-requirements-document.md): Yêu cầu sản phẩm chi tiết, User Personas, 8 User Stories & Acceptance Criteria, 15 Yêu cầu chức năng (FR), Yêu cầu phi chức năng (NFR) và chính sách an toàn.
+3. [03-system-architecture.md](03-system-architecture.md): Kiến trúc hệ thống, LangGraph State Schema (22 biến), sơ đồ luồng 22 Graph Nodes, giới hạn hoạt động của Agent, phân định trách nhiệm LLM vs Backend và sơ đồ cơ sở dữ liệu.
+4. [04-product-backlog.md](04-product-backlog.md): Danh sách 6 Epics phát triển sản phẩm với các công việc chi tiết.
+5. [05-project-timeline.md](05-project-timeline.md): Lộ trình triển khai 6 tuần (Sprints), danh sách Milestone từng tuần và các quy tắc quản lý tiến độ.
+6. [06-api-design.md](06-api-design.md): Danh sách Tool Specifications đầy đủ cho 5 domain (Ride, Medical, Restaurant, Payment, Memory), chuẩn Pydantic schema, công thức hash idempotency và định dạng Confirmation Token.
+7. [07-evaluation-framework.md](07-evaluation-framework.md): Bộ test suite 150 kịch bản kiểm thử, các chỉ số đánh giá định lượng (Success Metrics), danh sách test bắt buộc và kịch bản Demo chính.
+8. [08-service-api-integration-guide.md](08-service-api-integration-guide.md): Mô tả từng nhóm dịch vụ như food marketplace, POS/order và delivery/logistics; cách hoạt động, interface adapter, luồng tích hợp và khuyến nghị provider cho dev/release.
+
+**Tài liệu bổ trợ định dạng văn phòng:**
+- [prd-ai-concierge-superapp.docx](prd-ai-concierge-superapp.docx): Bản Word PRD đầy đủ của dự án AI Concierge Đa Dịch Vụ 6 Tuần.
+- [project-build-phase-guide.pdf](project-build-phase-guide.pdf): Tài liệu hướng dẫn giai đoạn xây dựng dự án (Project Build Phase).
 
 ---
 

@@ -2,8 +2,9 @@
 
 ## Các Tệp Tài Liệu
 
-- `pitch_deck.pptx`: Slide thuyết trình cho ngày Demo Day.
-- `video_demo.mp4`: Video demo sản phẩm thực tế (tối đa 5 phút).
+- `pitch-deck.pptx`: Slide thuyết trình chính thức cho hội đồng thẩm định và Demo Day.
+- `demo-links.md`: Tổng hợp đường dẫn video demo MVP Gate G2 và bản web demo trực tuyến.
+- `gate-g2-presentation.md`: Báo cáo tổng quan và hồ sơ nghiệm thu kỹ thuật mốc Gate G2.
 
 ## Cấu Trúc Slide Thuyết Trình (10 Slide Chuẩn)
 

@@ -41,7 +41,7 @@
 ### Đã hoàn thành
 - Khắc phục Gemini hook logging; bổ sung cơ chế fallback lưu trữ SQLite cho `log_antigravity.py` (`67a8198`, `4a8ede1`).
 - Bổ sung ứng dụng React web frontend, cập nhật giao diện hiện đại NaviGo và cải thiện luồng tương tác demo (`a929f30`, `ff3d2d3`, `c575735`, `a5d0c8c`).
-- Hoàn thiện tài liệu Project Build Phase, sơ đồ luồng [docs/ui_wireframe_flow.md](docs/ui_wireframe_flow.md), sơ đồ kiến trúc [docs/architecture_diagram.md](docs/architecture_diagram.md) (`83df9f7`, `f75012c`, `4a92dad`).
+- Hoàn thiện tài liệu Project Build Phase, sơ đồ luồng [docs/04-ui-design/ui-wireframe-flow.md](../04-ui-design/ui-wireframe-flow.md), sơ đồ kiến trúc [docs/02-architecture/architecture-diagram.md](../02-architecture/architecture-diagram.md) (`83df9f7`, `f75012c`, `4a92dad`).
 - Tinh chỉnh codebase và cập nhật cấu hình pytest conftest tương thích với `langchain.debug` (`887fa1b`, `bfa2ca0`).
 - Hoàn tất đồng bộ nhánh `feature/demoUI` và merge các PR #13–#24 vào `develop`.
 
@@ -65,7 +65,7 @@
 - [x] Hoàn tất tích hợp 4 domain dịch vụ tại môi trường local
 
 ### Đã hoàn thành
-- Tái cấu trúc Backend-First: tách FastAPI Agent, xây dựng bộ khung NestJS API Gateway cùng các domain service skeleton, thiết lập Docker Compose/PostgreSQL và bộ quy tắc [AGENTS.md](AGENTS.md) (`83aa797`, `a32a7ff`).
+- Tái cấu trúc Backend-First: tách FastAPI Agent, xây dựng bộ khung NestJS API Gateway cùng các domain service skeleton, thiết lập Docker Compose/PostgreSQL và bộ quy tắc [ai-agent-instructions.md](../05-development/ai-agent-instructions.md) (`83aa797`, `a32a7ff`).
 - Phát triển module đặt lịch khám bệnh (Medical/Healthcare) kèm WebSocket, chuyển backend sang chế độ sandbox an toàn (`dcfa4fc`, `187f800`, `b5903e4`).
 - Loại bỏ hoàn toàn mock data, kết nối các endpoint backend thật, đồng bộ giao diện Dark Theme; hoàn thiện workflow đặt bàn nhà hàng (`3f0a7b7`, `de0d40b`, `e35843c`).
 - Xây dựng Ride Service, tích hợp Gateway client cho Ride và nâng cấp Food Service (`1318b65`, `78e2101`, `b2d61ea`).

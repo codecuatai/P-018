@@ -25,7 +25,7 @@ flowchart TD
 
   Role -->|Kỹ sư AI / Agent| AI1[02-architecture: Agent Architecture]
   AI1 --> AI2[03-api: Tool Contracts & Registry v2]
-  AI2 --> AI3[05-development: AGENTS.md Quy chuẩn an toàn]
+  AI2 --> AI3[05-development: AI Agent Instructions]
   AI3 --> AI4[07-plans: Safe Tracing & 10-Point Remediation]
 
   Role -->|Frontend / UI-UX| U1[04-ui-design: Product UI Architecture]
@@ -45,32 +45,32 @@ flowchart TD
 ### 📁 [00-presentation](00-presentation/README.md) — Thuyết Trình, Demo & Bàn Giao
 *Dành cho thuyết trình sản phẩm, demo trực quan và hồ sơ nghiệm thu.*
 - [README.md](00-presentation/README.md) — Cấu trúc 10 slide chuẩn Demo Day & danh mục kiểm tra video demo.
-- [pitch_deck.pptx](00-presentation/pitch_deck.pptx) — Slide thuyết trình chính thức của dự án X-One.
-- [gate2.md](00-presentation/gate2.md) — Hồ sơ tổng hợp bàn giao nghiệm thu mốc Gate G2 MVP.
-- [MVPdemoLink.txt](00-presentation/MVPdemoLink.txt) — Đường dẫn video demo nghiệm thu thực tế sản phẩm.
-- [UIdemolink.txt](00-presentation/UIdemolink.txt) — Đường dẫn phiên bản web demo trực tuyến trên Vercel.
+- [pitch-deck.pptx](00-presentation/pitch-deck.pptx) — Slide thuyết trình chính thức của dự án X-One.
+- [gate-g2-presentation.md](00-presentation/gate-g2-presentation.md) — Hồ sơ tổng hợp bàn giao nghiệm thu mốc Gate G2 MVP.
+- [demo-links.md](00-presentation/demo-links.md) — Tổng hợp đường dẫn video demo MVP Gate G2 và bản web demo trực tuyến.
 
 ---
 
 ### 📁 [01-charter-prd](01-charter-prd/README.md) — Đề Cương Dự Án & Đặc Tả Sản Phẩm (PRD)
 *Khởi nguồn của dự án: mục tiêu, yêu cầu chức năng, backlog và timeline 6 tuần.*
-- [01_Project_Charter.md](01-charter-prd/01_Project_Charter.md) — Điều lệ dự án: Tầm nhìn, phạm vi, các bên liên quan và rủi ro.
-- [02_PRD.md](01-charter-prd/02_PRD.md) — Bản đặc tả yêu cầu sản phẩm chi tiết (Product Requirement Document).
-- [PRD_AI_Agent_Da_Dich_Vu_6_Tuan.docx](01-charter-prd/PRD_AI_Agent_Da_Dich_Vu_6_Tuan.docx) — Tệp Word PRD gốc của khóa đào tạo 6 tuần.
-- [03_System_Architecture.md](01-charter-prd/03_System_Architecture.md) — Thiết kế kiến trúc mức cao ban đầu.
-- [04_Backlog.md](01-charter-prd/04_Backlog.md) — Danh sách tính năng và backlog các user stories.
-- [05_Timeline.md](01-charter-prd/05_Timeline.md) — Kế hoạch tiến độ thực hiện theo từng tuần.
-- [06_API_Design.md](01-charter-prd/06_API_Design.md) — Định hướng thiết kế giao tiếp dịch vụ ban đầu.
-- [07_Evaluation.md](01-charter-prd/07_Evaluation.md) — Tiêu chí đánh giá chất lượng phản hồi của Agent.
-- [08_Service_API_Integration_Guide.md](01-charter-prd/08_Service_API_Integration_Guide.md) — Hướng dẫn tích hợp API các dịch vụ miền.
-- [Project_Build_Phase.docx.pdf](01-charter-prd/Project_Build_Phase.docx.pdf) — Tài liệu hướng dẫn giai đoạn triển khai dự án.
+- [README.md](01-charter-prd/README.md) — Tổng quan mục lục các tài liệu yêu cầu sản phẩm và điều lệ dự án.
+- [01-project-charter.md](01-charter-prd/01-project-charter.md) — Điều lệ dự án: Tầm nhìn, phạm vi, các bên liên quan và rủi ro.
+- [02-product-requirements-document.md](01-charter-prd/02-product-requirements-document.md) — Bản đặc tả yêu cầu sản phẩm chi tiết (Product Requirement Document).
+- [03-system-architecture.md](01-charter-prd/03-system-architecture.md) — Thiết kế kiến trúc mức cao ban đầu.
+- [04-product-backlog.md](01-charter-prd/04-product-backlog.md) — Danh sách tính năng và backlog các user stories.
+- [05-project-timeline.md](01-charter-prd/05-project-timeline.md) — Kế hoạch tiến độ thực hiện theo từng tuần.
+- [06-api-design.md](01-charter-prd/06-api-design.md) — Định hướng thiết kế giao tiếp dịch vụ ban đầu.
+- [07-evaluation-framework.md](01-charter-prd/07-evaluation-framework.md) — Tiêu chí đánh giá chất lượng phản hồi của Agent.
+- [08-service-api-integration-guide.md](01-charter-prd/08-service-api-integration-guide.md) — Hướng dẫn tích hợp API các dịch vụ miền.
+- [prd-ai-concierge-superapp.docx](01-charter-prd/prd-ai-concierge-superapp.docx) — Tệp Word PRD gốc của khóa đào tạo 6 tuần.
+- [project-build-phase-guide.pdf](01-charter-prd/project-build-phase-guide.pdf) — Tài liệu hướng dẫn giai đoạn triển khai dự án.
 
 ---
 
-### 📁 [02-architecture](02-architecture/system-overview.md) — Kiến Trúc Hệ Thống Cốt Lõi
+### 📁 [02-architecture](02-architecture/README.md) — Kiến Trúc Hệ Thống Cốt Lõi
 *Trọng tâm kỹ thuật: mô hình đa tầng, phân quyền, dữ liệu và luồng điều phối an toàn.*
-- [architecture_diagram.md](02-architecture/architecture_diagram.md) — **Sơ đồ kiến trúc Gate G2**: Mô hình MVP hiện tại, luồng dữ liệu, luồng điều khiển và checklist thẩm định.
-- [ARCHITECTURE.md](02-architecture/ARCHITECTURE.md) — Điểm truy cập kiến trúc chính của toàn hệ thống.
+- [README.md](02-architecture/README.md) — Cổng truy cập kiến trúc chính và danh mục tài liệu chuyên sâu.
+- [architecture-diagram.md](02-architecture/architecture-diagram.md) — **Sơ đồ kiến trúc Gate G2**: Mô hình MVP hiện tại, luồng dữ liệu, luồng điều khiển và checklist thẩm định.
 - [system-overview.md](02-architecture/system-overview.md) — Tổng quan hệ thống đa tầng: Client, Gateway, Agent, Microservices, CSDL.
 - [current-state.md](02-architecture/current-state.md) — Báo cáo trạng thái triển khai thực tế kèm bằng chứng kiểm thử trên codebase.
 - [service-boundaries.md](02-architecture/service-boundaries.md) — Quy chuẩn phân định ranh giới và trách nhiệm độc lập của từng dịch vụ.
@@ -86,8 +86,9 @@ flowchart TD
 
 ---
 
-### 📁 [03-api](03-api/api-inventory.md) — Đặc Tả API & Hợp Đồng Dịch Vụ
+### 📁 [03-api](03-api/README.md) — Đặc Tả API & Hợp Đồng Dịch Vụ
 *Tất cả thông tin về giao diện lập trình ứng dụng REST và hợp đồng gọi Tool của Agent.*
+- [README.md](03-api/README.md) — Cổng tra cứu đặc tả API, nguyên tắc thiết kế REST và hợp đồng dịch vụ.
 - [api-conventions.md](03-api/api-conventions.md) — Quy ước thiết kế REST: Cấu trúc lỗi chuẩn, header Idempotency-Key và phân trang.
 - [api-inventory.md](03-api/api-inventory.md) — Danh mục toàn bộ các endpoint đang hoạt động của Gateway và 4 Domain Services.
 - [tool-contracts.md](03-api/tool-contracts.md) — Cấu trúc JSON Schema các công cụ mà AI Agent được phép yêu cầu Gateway thực thi.
@@ -99,24 +100,27 @@ flowchart TD
 
 ### 📁 [04-ui-design](04-ui-design/README.md) — Thiết Kế Giao Diện & Trải Nghiệm (UI/UX)
 *Hệ thống thiết kế, chuyển động, sơ đồ luồng người dùng và kiến trúc Next.js App Router.*
+- [README.md](04-ui-design/README.md) — Tổng quan tài liệu thiết kế giao diện, Design System và lộ trình tối ưu UI/UX.
 - [product-ui-architecture.md](04-ui-design/product-ui-architecture.md) — Kiến trúc Next.js App Router, quản lý trạng thái, layout 4 roles và error boundaries.
 - [design-system.md](04-ui-design/design-system.md) — Hệ thống thiết kế chuẩn: Typography (Be Vietnam Pro), bảng màu, khoảng cách 4px, components.
 - [motion-system.md](04-ui-design/motion-system.md) — Hệ thống chuyển động: Thời lượng, easing curves, hiệu ứng chuyển cảnh và micro-interactions.
-- [ui_wireframe_flow.md](04-ui-design/ui_wireframe_flow.md) — Sơ đồ luồng giao diện người dùng qua các màn hình và trạng thái.
+- [ui-wireframe-flow.md](04-ui-design/ui-wireframe-flow.md) — Sơ đồ luồng giao diện người dùng qua các màn hình và trạng thái.
 - [visual-qa-checklist.md](04-ui-design/visual-qa-checklist.md) — Bảng kiểm định chất lượng hiển thị responsive trên các thiết bị.
-- [UI-REDESIGN-PLAN.md](04-ui-design/UI-REDESIGN-PLAN.md) — Kế hoạch nâng cấp giao diện toàn diện theo ý tưởng "Một dòng sông, bốn bến đỗ".
+- [ui-redesign-plan.md](04-ui-design/ui-redesign-plan.md) — Kế hoạch nâng cấp giao diện toàn diện theo ý tưởng "Một dòng sông, bốn bến đỗ".
 - [customer-ui-redesign-plan.md](04-ui-design/customer-ui-redesign-plan.md) — Kế hoạch tối ưu hóa trải nghiệm tương tác của khách hàng.
 
 ---
 
-### 📁 [05-development](05-development/local-development.md) — Hướng Dẫn Phát Triển & Vận Hành
+### 📁 [05-development](05-development/README.md) — Hướng Dẫn Phát Triển & Vận Hành
 *Dành cho kỹ sư phát triển: hướng dẫn chạy local, cấu hình, migration và quy chuẩn code.*
+- [README.md](05-development/README.md) — Cổng tài liệu phát triển, checklist kỹ thuật và lệnh thao tác cục bộ.
 - [local-development.md](05-development/local-development.md) — Hướng dẫn cài đặt và khởi chạy hệ thống (Docker hoặc Hybrid trên host).
 - [environment-variables.md](05-development/environment-variables.md) — Danh mục và ý nghĩa của toàn bộ 135 biến môi trường trong `.env.example`.
 - [database-and-migrations.md](05-development/database-and-migrations.md) — Quản lý nâng cấp CSDL với Alembic và SQL migrations độc lập.
 - [contributing.md](05-development/contributing.md) — Quy chuẩn đóng góp mã nguồn, quy trình git branch và tiêu chuẩn kiểm thử.
-- [AGENTS.md](05-development/AGENTS.md) — Quy tắc bắt buộc dành cho AI Coding Agents khi chỉnh sửa mã nguồn.
+- [ai-agent-instructions.md](05-development/ai-agent-instructions.md) — Quy tắc bắt buộc dành cho AI Coding Agents khi chỉnh sửa mã nguồn.
 - [new-service-checklist.md](05-development/new-service-checklist.md) — Checklist từng bước khi tạo mới một microservice trong hệ sinh thái.
+- [testing-strategy.md](05-development/testing-strategy.md) — Chiến lược kiểm thử toàn diện: Unit test, Integration test, E2E và Agent eval.
 - [testing-strategy.md](05-development/testing-strategy.md) — Chiến lược kiểm thử toàn diện: Unit test, Integration test, E2E và Agent eval.
 
 ---
@@ -155,9 +159,9 @@ flowchart TD
 *Báo cáo kết quả audit codebase, thẩm định tài chính và kiểm thử bộ nhớ Agent.*
 - [README.md](08-reports/README.md) — Mục lục các báo cáo thẩm định.
 - [project-status.md](08-reports/project-status.md) — Báo cáo tiến độ tổng thể và kết quả audit tính năng.
-- [update-codebase-reassessment-2026-08-25.md](08-reports/update-codebase-reassessment-2026-08-25.md) — Tái đánh giá toàn diện codebase.
-- [2026-08-25-service-cash-flow-review.md](08-reports/2026-08-25-service-cash-flow-review.md) — Thẩm định luồng tiền và giao dịch thanh toán.
-- [memory-runtime-implementation-2026-08-25.md](08-reports/memory-runtime-implementation-2026-08-25.md) — Báo cáo triển khai Memory Runtime.
+- [codebase-reassessment-report.md](08-reports/codebase-reassessment-report.md) — Tái đánh giá toàn diện codebase.
+- [service-cash-flow-audit.md](08-reports/service-cash-flow-audit.md) — Thẩm định luồng tiền và giao dịch thanh toán.
+- [memory-runtime-implementation.md](08-reports/memory-runtime-implementation.md) — Báo cáo triển khai Memory Runtime.
 - [memory-implementation-p0-p1.md](08-reports/memory-implementation-p0-p1.md) — Đánh giá triển khai Memory Phase P0 - P1.
 - [memory-implementation-p2-p5.md](08-reports/memory-implementation-p2-p5.md) — Đánh giá triển khai Memory Phase P2 - P5.
 
@@ -166,8 +170,8 @@ flowchart TD
 ### 📁 [09-worklogs](09-worklogs/README.md) — Nhật Ký Triển Khai (Journals & Worklogs)
 *Lịch sử chi tiết quá trình phát triển thực tế của toàn đội ngũ.*
 - [README.md](09-worklogs/README.md) — Giới thiệu mục đích theo dõi nhật ký.
-- [JOURNAL.md](09-worklogs/JOURNAL.md) — **Nhật ký tuần**: Mục tiêu, thành quả, khó khăn, giải pháp và bài học kinh nghiệm.
-- [WORKLOG.md](09-worklogs/WORKLOG.md) — **Nhật ký ngày**: Ghi nhận chi tiết từng commit, task và kiểm thử theo ngày.
+- [weekly-journal.md](09-worklogs/weekly-journal.md) — **Nhật ký tuần**: Mục tiêu, thành quả, khó khăn, giải pháp và bài học kinh nghiệm.
+- [daily-worklog.md](09-worklogs/daily-worklog.md) — **Nhật ký ngày**: Ghi nhận chi tiết từng commit, task và kiểm thử theo ngày.
 
 ---
 
