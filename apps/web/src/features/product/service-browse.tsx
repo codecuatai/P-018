@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Bike, Check, ChevronLeft, ChevronRight, HeartPulse, Info, Loader2, MapPinned, Plus, Search, ShieldCheck, ShoppingBag, Utensils } from "lucide-react";
+import { ArrowLeft, ArrowRight, Award, Bike, Calendar, Car, Check, ChevronLeft, ChevronRight, Clock, Compass, HeartPulse, Info, Loader2, MapPin, MapPinned, MessageSquare, Phone, Plus, QrCode, Search, ShieldCheck, ShoppingBag, Sparkles, Star, Users, Utensils, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +49,7 @@ import { XOneMap } from "./xone-map";
 import { formatAddress, formatDateTime, formatMoney as presentMoney, serviceLabel, statusLabel } from "@/lib/presentation";
 import { FavoriteToggle } from "./favorite-toggle";
 import { ServiceDetailDialog } from "@/components/ServiceDetailDialog";
+import { DigitalPassCard } from "@/components/DigitalPassCard";
 
 type JsonRecord = Record<string, unknown>;
 type Point = { latitude: number; longitude: number };
@@ -173,16 +174,16 @@ function FoodBrowse() {
     finally { setDetailLoading(false); }
   }
 
-  async function addItem(item: JsonRecord, selectedOptions: Array<{ group_id: string; option_id: string }> = [], note?: string): Promise<void> {
+  async function addItem(item: JsonRecord, selectedOptions: Array<{ group_id: string; option_id: string }> = [], note?: string, quantity = 1): Promise<void> {
     if (!selectedId || cartLoading) return;
     setCartLoading(true); setError("");
     try {
       const current = cart ?? await createFoodCart(selectedId);
-      const next = await addFoodCartItem(String(current.id), { menu_item_id: idOf(item), quantity: 1, ...(selectedOptions.length ? { selected_options: selectedOptions } : {}), ...(note?.trim() ? { note: note.trim() } : {}) });
+      const next = await addFoodCartItem(String(current.id), { menu_item_id: idOf(item), quantity: Math.max(1, quantity), ...(selectedOptions.length ? { selected_options: selectedOptions } : {}), ...(note?.trim() ? { note: note.trim() } : {}) });
       setCart(next);
       setConfirmation(undefined); setChecked(false);
       setCustomizingItem(undefined);
-      setNotice(`${display(item.name ?? item.title ?? "Món ăn")} đã được thêm vào giỏ.`);
+      setNotice(`${display(item.name ?? item.title ?? "Món ăn")} (x${Math.max(1, quantity)}) đã được thêm vào giỏ.`);
     } catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -257,18 +258,285 @@ function FoodBrowse() {
   const visibleItems = items;
   const visibleMenuItems = menuItems;
 
-  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note) => void addItem(customizingItem, options, note)} /> : null}{menuTotal > 0 ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? setCustomizingItem(item) : void addItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> {listFrom(item.options ?? item.option_groups ?? item.modifier_groups).length ? "Tùy chỉnh" : "Thêm"}</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.max(1, menuPage - 1))} disabled={menuPage === 1 || menuLoading}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount} · {menuTotal} món</span><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.min(menuPageCount, menuPage + 1))} disabled={menuPage === menuPageCount || menuLoading}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note, quantity) => void addItem(customizingItem, options, note, quantity)} /> : null}{menuTotal > 0 ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => setCustomizingItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> Tùy chỉnh & Thêm</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.max(1, menuPage - 1))} disabled={menuPage === 1 || menuLoading}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount} · {menuTotal} món</span><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.min(menuPageCount, menuPage + 1))} disabled={menuPage === menuPageCount || menuLoading}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
 
   return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Phân trang danh sách nhà hàng"><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.max(1, page - 1), true)} disabled={page === 1 || paging}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {page} / {pageCount} · {totalItems} nhà hàng</span><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.min(pageCount, page + 1), true)} disabled={page === pageCount || paging}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
 
-function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string) => void }) {
-  const groups = listFrom(item.options ?? item.option_groups ?? item.modifier_groups);
-  const [selected, setSelected] = useState<Record<string, string>>({});
+function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string, quantity: number) => void }) {
+  const backendGroups = listFrom(item.options ?? item.option_groups ?? item.modifier_groups);
+  const basePrice = moneyAmount(item.price ?? item.base_price) || 35000;
+
+  const defaultGroups = useMemo(() => [
+    {
+      id: "size",
+      name: "Chọn kích cỡ (Size)",
+      required: true,
+      options: [
+        { id: "size_m", name: "Size Vừa (M) · Tiêu chuẩn", price: 0 },
+        { id: "size_l", name: "Size Lớn (L) · Thêm 30%", price: 10000 },
+      ],
+    },
+    {
+      id: "toppings",
+      name: "Topping & Món ăn kèm (Tùy chọn)",
+      required: false,
+      multiple: true,
+      options: [
+        { id: "top_egg", name: "Trứng ốp la / Trân châu hoàng kim", price: 8000 },
+        { id: "top_cheese", name: "Phô mai tươi / Chả lụa thêm", price: 12000 },
+        { id: "top_soup", name: "Canh súp rong biển / Thạch thảo mộc", price: 6000 },
+        { id: "top_sauce", name: "Sốt đặc biệt X-One Chef", price: 5000 },
+      ],
+    },
+    {
+      id: "flavor",
+      name: "Khẩu vị & Độ ngọt / cay",
+      required: false,
+      options: [
+        { id: "fl_100", name: "100% (Tiêu chuẩn quán)", price: 0 },
+        { id: "fl_70", name: "70% (Ít cay / Ít ngọt)", price: 0 },
+        { id: "fl_50", name: "50% (Vừa phải)", price: 0 },
+        { id: "fl_0", name: "0% (Không cay / Không đường)", price: 0 },
+      ],
+    },
+  ], []);
+
+  const groups = backendGroups.length ? backendGroups : defaultGroups;
+  const [selectedSingle, setSelectedSingle] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const g of groups) {
+      const gId = idOf(g);
+      const gRec = g as Record<string, unknown>;
+      const isMulti = gRec.multiple === true || (Array.isArray(g.options) && Number(gRec.max_select ?? 0) > 1);
+      if (!isMulti) {
+        const opts = listFrom(g.options);
+        if (opts.length > 0) initial[gId] = idOf(opts[0]);
+      }
+    }
+    return initial;
+  });
+
+  const [selectedMulti, setSelectedMulti] = useState<Record<string, Set<string>>>({});
+  const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
-  const missing = groups.some((group) => group.required === true && !selected[idOf(group)]);
-  function submit(): void { if (missing) return; onAdd(Object.entries(selected).filter(([, optionId]) => Boolean(optionId)).map(([group_id, option_id]) => ({ group_id, option_id })), note); }
-  return <div className="food-customizer" aria-label={`Tùy chỉnh ${display(item.name ?? item.title ?? "món ăn")}`}><div className="food-customizer-heading"><div><span className="eyebrow">TÙY CHỈNH MÓN</span><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3></div><button className="text-button" type="button" onClick={onCancel}>Hủy</button></div>{groups.map((group) => { const groupId = idOf(group); const options = listFrom(group.options); return <label className="food-option-group" key={groupId}><span>{display(group.name ?? group.label ?? "Tùy chọn")}{group.required === true ? " · bắt buộc" : " · tùy chọn"}</span><select value={selected[groupId] ?? ""} onChange={(event) => setSelected((current) => ({ ...current, [groupId]: event.target.value }))} required={group.required === true}><option value="">{group.required === true ? "Chọn một phương án" : "Không chọn"}</option>{options.map((option) => <option key={idOf(option)} value={idOf(option)}>{display(option.name ?? option.label ?? option.id)}{numberOf(option.price) ? ` · +${formatMoney(option.price)}` : ""}</option>)}</select></label>; })}<label className="food-option-note"><span>Ghi chú cho bếp (không bắt buộc)</span><textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={2} placeholder="Ví dụ: ít hành, để riêng nước dùng" /></label><button className="button button-primary" type="button" onClick={submit} disabled={loading || missing}><ShoppingBag size={15} />{loading ? "Đang thêm…" : "Thêm vào giỏ"}</button></div>;
+
+  const quickNotes = ["Không hành", "Ít cay", "Để riêng sốt/nước dùng", "Nhiều rau thơm", "Giao thật nóng"];
+
+  function toggleQuickNote(qn: string) {
+    if (note.includes(qn)) {
+      setNote((current) => current.replace(qn, "").replace(/,\s*,/g, ",").replace(/^,\s*|,\s*$/g, "").trim());
+    } else {
+      setNote((current) => (current.trim() ? `${current.trim()}, ${qn}` : qn));
+    }
+  }
+
+  const liveAddonPrice = useMemo(() => {
+    let sum = 0;
+    for (const g of groups) {
+      const gId = idOf(g);
+      const opts = listFrom(g.options);
+      const singleChoice = selectedSingle[gId];
+      if (singleChoice) {
+        const match = opts.find((o) => idOf(o) === singleChoice);
+        if (match) sum += numberOf(match.price);
+      }
+      const multiChoices = selectedMulti[gId];
+      if (multiChoices) {
+        for (const mId of multiChoices) {
+          const match = opts.find((o) => idOf(o) === mId);
+          if (match) sum += numberOf(match.price);
+        }
+      }
+    }
+    return sum;
+  }, [groups, selectedSingle, selectedMulti]);
+
+  const liveTotal = (basePrice + liveAddonPrice) * quantity;
+
+  const missing = groups.some((group) => {
+    if (group.required !== true) return false;
+    const gId = idOf(group);
+    return !selectedSingle[gId];
+  });
+
+  function submit(): void {
+    if (missing) return;
+    const resultOptions: Array<{ group_id: string; option_id: string }> = [];
+    for (const [gId, oId] of Object.entries(selectedSingle)) {
+      if (oId) resultOptions.push({ group_id: gId, option_id: oId });
+    }
+    for (const [gId, oSet] of Object.entries(selectedMulti)) {
+      for (const oId of oSet) {
+        resultOptions.push({ group_id: gId, option_id: oId });
+      }
+    }
+    onAdd(resultOptions, note, quantity);
+  }
+
+  return (
+    <div className="food-customizer food-customizer-dialog" style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #EA580C", padding: "18px", boxShadow: "0 14px 34px -4px rgba(234, 88, 12, 0.12)", margin: "14px 0" }} aria-label={`Tùy chỉnh ${display(item.name ?? item.title ?? "món ăn")}`}>
+      <div className="food-customizer-header">
+        <div className="food-customizer-item-info">
+          <span className="eyebrow" style={{ color: "#EA580C" }}>TÙY CHỈNH THEO KHẨU VỊ</span>
+          <h3>{display(item.name ?? item.title ?? "Món ăn")}</h3>
+          <p>{display(item.description ?? "Tùy chọn kích cỡ, thêm topping và ghi chú đầu bếp")}</p>
+          <div className="food-customizer-base-price">
+            Giá gốc: {formatMoney(basePrice)}
+          </div>
+        </div>
+        <button className="text-button" type="button" onClick={onCancel} style={{ color: "#64748B", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+          <X size={18} /> Đóng
+        </button>
+      </div>
+
+      {groups.map((group) => {
+        const groupId = idOf(group);
+        const options = listFrom(group.options);
+        const groupRec = group as Record<string, unknown>;
+        const isMulti = groupRec.multiple === true || (Array.isArray(group.options) && Number(groupRec.max_select ?? 0) > 1);
+
+        return (
+          <div className="food-customizer-section" key={groupId}>
+            <div className="food-customizer-section-title">
+              <span>{display(group.name ?? groupRec.label ?? "Tùy chọn")}</span>
+              <small style={{ color: group.required ? "#EA580C" : "#64748B", fontWeight: 600 }}>
+                {group.required ? "Bắt buộc chọn 1" : isMulti ? "Chọn nhiều" : "Tùy chọn"}
+              </small>
+            </div>
+
+            {isMulti ? (
+              <div className="food-topping-list">
+                {options.map((option) => {
+                  const optId = idOf(option);
+                  const isChecked = selectedMulti[groupId]?.has(optId) ?? false;
+                  return (
+                    <label
+                      key={optId}
+                      className={`food-topping-card ${isChecked ? "is-checked" : ""}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setSelectedMulti((prev) => {
+                          const currentSet = new Set(prev[groupId] || []);
+                          if (currentSet.has(optId)) {
+                            currentSet.delete(optId);
+                          } else {
+                            currentSet.add(optId);
+                          }
+                          return { ...prev, [groupId]: currentSet };
+                        });
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          readOnly
+                          style={{ accentColor: "#EA580C" }}
+                        />
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: "#1E293B" }}>
+                          {display(option.name ?? option.label ?? optId)}
+                        </span>
+                      </div>
+                      {numberOf(option.price) ? (
+                        <span style={{ fontSize: "11px", fontWeight: 700, color: "#EA580C" }}>
+                          +{formatMoney(option.price)}
+                        </span>
+                      ) : null}
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="food-customizer-chips">
+                {options.map((option) => {
+                  const optId = idOf(option);
+                  const isSelected = selectedSingle[groupId] === optId;
+                  return (
+                    <button
+                      key={optId}
+                      type="button"
+                      className={`food-chip-radio ${isSelected ? "is-selected" : ""}`}
+                      onClick={() => setSelectedSingle((prev) => ({ ...prev, [groupId]: optId }))}
+                    >
+                      <span>{display(option.name ?? option.label ?? optId)}</span>
+                      {numberOf(option.price) ? (
+                        <span className="food-chip-addon-price">+{formatMoney(option.price)}</span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="food-customizer-section">
+        <div className="food-customizer-section-title">
+          <span>Ghi chú cho đầu bếp</span>
+          <small style={{ color: "#64748B" }}>Tối đa 500 ký tự</small>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }}>
+          {quickNotes.map((qn) => {
+            const active = note.includes(qn);
+            return (
+              <button
+                key={qn}
+                type="button"
+                className={`food-chip-radio ${active ? "is-selected" : ""}`}
+                style={{ padding: "4px 10px", fontSize: "11px" }}
+                onClick={() => toggleQuickNote(qn)}
+              >
+                {qn}
+              </button>
+            );
+          })}
+        </div>
+        <textarea
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          maxLength={500}
+          rows={2}
+          placeholder="Ví dụ: ít đường, nước chấm để riêng, thêm ớt tươi..."
+          style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "12px", fontFamily: "inherit" }}
+        />
+      </div>
+
+      <div className="food-customizer-footer">
+        <div className="food-stepper">
+          <button
+            type="button"
+            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+            disabled={quantity <= 1 || loading}
+            aria-label="Giảm số lượng"
+          >
+            −
+          </button>
+          <span>{quantity}</span>
+          <button
+            type="button"
+            onClick={() => setQuantity((q) => q + 1)}
+            disabled={loading}
+            aria-label="Tăng số lượng"
+          >
+            +
+          </button>
+        </div>
+
+        <button
+          className="button button-primary"
+          type="button"
+          onClick={submit}
+          disabled={loading || missing}
+          style={{ flex: 1, justifyContent: "center", background: "#EA580C", borderColor: "#EA580C" }}
+        >
+          {loading ? <Loader2 className="spinner" size={16} /> : <ShoppingBag size={16} />}
+          <span>{loading ? "Đang thêm…" : `Thêm vào giỏ · ${formatMoney(liveTotal)}`}</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function FoodCart({ cart, addresses, addressId, setAddressId, onAddressAdded, voucher, setVoucher, loading, onVoucher, onRemoveVoucher, onQuantity, onRemove, onPreview, confirmation, checked, setChecked, onExecute, orderResult, cancelConfirmation, cancelChecked, setCancelChecked, onPrepareCancel, onExecuteCancel }: { cart?: JsonRecord; addresses: SavedAddress[]; addressId: string; setAddressId: (value: string) => void; onAddressAdded: (address: SavedAddress) => void; voucher: string; setVoucher: (value: string) => void; loading: boolean; onVoucher: () => void; onRemoveVoucher: () => void; onQuantity: (item: JsonRecord, quantity: number) => void; onRemove: (item: JsonRecord) => void; onPreview: () => void; confirmation?: JsonRecord; checked: boolean; setChecked: (value: boolean) => void; onExecute: () => void; orderResult?: JsonRecord; cancelConfirmation?: JsonRecord; cancelChecked: boolean; setCancelChecked: (value: boolean) => void; onPrepareCancel: () => void; onExecuteCancel: () => void }) {
@@ -353,6 +621,10 @@ function RestaurantBrowse() {
   const [error, setError] = useState("");
   const [partySize, setPartySize] = useState(2);
   const [startAt, setStartAt] = useState(defaultDateTimeLocal());
+  const [selectedDateOffset, setSelectedDateOffset] = useState(0);
+  const [selectedTime, setSelectedTime] = useState("18:30");
+  const [seatingArea, setSeatingArea] = useState("Bàn trong nhà (Tiêu chuẩn)");
+  const [partyPurpose, setPartyPurpose] = useState("Họp mặt bạn bè");
   const [availability, setAvailability] = useState<JsonRecord>();
   const [hold, setHold] = useState<JsonRecord>();
   const [confirmation, setConfirmation] = useState<JsonRecord>();
@@ -364,6 +636,31 @@ function RestaurantBrowse() {
   const [totalItems, setTotalItems] = useState(0);
   const [paging, setPaging] = useState(false);
   const searchRequestRef = useRef(0);
+
+  function applySlot(dateOffset: number, timeStr: string) {
+    setSelectedDateOffset(dateOffset);
+    setSelectedTime(timeStr);
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + dateOffset);
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    targetDate.setHours(hours, minutes, 0, 0);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const localIso = `${targetDate.getFullYear()}-${pad(targetDate.getMonth() + 1)}-${pad(targetDate.getDate())}T${pad(targetDate.getHours())}:${pad(targetDate.getMinutes())}`;
+    setStartAt(localIso);
+    setAvailability(undefined);
+    setHold(undefined);
+    setConfirmation(undefined);
+  }
+
+  const lunchSlots = ["11:00", "11:30", "12:00", "12:30", "13:00", "13:30"];
+  const dinnerSlots = ["17:30", "18:00", "18:30", "19:00", "19:30", "20:00", "20:30"];
+  const seatingAreas = [
+    "Bàn trong nhà (Tiêu chuẩn)",
+    "Cạnh cửa sổ ngắm phố",
+    "Ban công ngoài trời (Thoáng mát)",
+    "Phòng VIP riêng tư (Tiệc & Đối tác)",
+  ];
+  const partyPurposes = ["Họp mặt bạn bè", "Sinh nhật", "Tiếp khách đối tác", "Gia đình sum họp", "Hẹn hò lãng mạn"];
 
   const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
     const requestId = ++searchRequestRef.current;
@@ -503,21 +800,128 @@ function RestaurantBrowse() {
               </div>
               <MapPinned size={19} />
             </div>
-            <label className="transaction-field" style={{ textAlign: "left" }}>
-              Ngày và giờ
-              <input type="datetime-local" value={startAt} onChange={(event) => { setStartAt(event.target.value); setAvailability(undefined); setHold(undefined); setConfirmation(undefined); }} />
-            </label>
-            <label className="transaction-field" style={{ textAlign: "left" }}>
-              Số người
-              <input type="number" min={1} max={20} value={partySize} onChange={(event) => { setPartySize(Number(event.target.value)); setAvailability(undefined); setHold(undefined); }} />
-            </label>
+
+            <div style={{ margin: "12px 0 8px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                1. Chọn ngày dùng bữa
+              </span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                {["Hôm nay", "Ngày mai", "Ngày kia"].map((dLabel, idx) => (
+                  <button
+                    key={dLabel}
+                    type="button"
+                    className={`food-chip-radio ${selectedDateOffset === idx ? "is-selected" : ""}`}
+                    onClick={() => applySlot(idx, selectedTime)}
+                  >
+                    <Calendar size={13} /> {dLabel}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ margin: "10px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                  2. Khung giờ trưa (Lunch)
+                </span>
+                <small style={{ fontSize: "11px", color: "#059669", fontWeight: 600 }}>Ưu đãi giảm 10%</small>
+              </div>
+              <div className="meal-slot-grid">
+                {lunchSlots.map((timeStr) => {
+                  const active = selectedTime === timeStr;
+                  return (
+                    <button
+                      key={timeStr}
+                      type="button"
+                      className={`meal-slot-chip ${active ? "is-active" : ""}`}
+                      onClick={() => applySlot(selectedDateOffset, timeStr)}
+                    >
+                      <Clock size={12} style={{ display: "inline", marginRight: "3px" }} />
+                      {timeStr}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px", marginTop: "12px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase" }}>
+                  Khung giờ tối (Dinner cao điểm)
+                </span>
+                <small style={{ fontSize: "11px", color: "#E11D48", fontWeight: 600 }}>Nên đặt sớm</small>
+              </div>
+              <div className="meal-slot-grid">
+                {dinnerSlots.map((timeStr) => {
+                  const active = selectedTime === timeStr;
+                  return (
+                    <button
+                      key={timeStr}
+                      type="button"
+                      className={`meal-slot-chip ${active ? "is-active" : ""}`}
+                      onClick={() => applySlot(selectedDateOffset, timeStr)}
+                    >
+                      <Clock size={12} style={{ display: "inline", marginRight: "3px" }} />
+                      {timeStr}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ margin: "12px 0 8px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                3. Khu vực bàn mong muốn
+              </span>
+              <div className="seating-area-grid">
+                {seatingAreas.map((area) => (
+                  <button
+                    key={area}
+                    type="button"
+                    className={`seating-chip ${seatingArea === area ? "is-active" : ""}`}
+                    onClick={() => setSeatingArea(area)}
+                  >
+                    {area}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ margin: "10px 0 14px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#64748B", textTransform: "uppercase", display: "block", marginBottom: "6px" }}>
+                4. Mục đích bữa tiệc (để nhà hàng chuẩn bị tốt nhất)
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {partyPurposes.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`food-chip-radio ${partyPurpose === p ? "is-selected" : ""}`}
+                    style={{ padding: "5px 10px", fontSize: "11px" }}
+                    onClick={() => setPartyPurpose(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", margin: "10px 0" }}>
+              <label className="transaction-field" style={{ textAlign: "left", margin: 0 }}>
+                Thời gian chi tiết
+                <input type="datetime-local" value={startAt} onChange={(event) => { setStartAt(event.target.value); setAvailability(undefined); setHold(undefined); setConfirmation(undefined); }} />
+              </label>
+              <label className="transaction-field" style={{ textAlign: "left", margin: 0 }}>
+                Số lượng khách
+                <input type="number" min={1} max={20} value={partySize} onChange={(event) => { setPartySize(Number(event.target.value)); setAvailability(undefined); setHold(undefined); }} />
+              </label>
+            </div>
+
             <button className="button button-primary button-wide" type="button" onClick={() => void check()} disabled={actionLoading}>
               {actionLoading ? <Loader2 className="spinner" size={16} /> : <Search size={16} />} Kiểm tra bàn trống
             </button>
             {availability ? (
               <div className={`availability-card ${availability.available ? "is-available" : "is-unavailable"}`} style={{ textAlign: "left" }}>
                 <strong style={{ textAlign: "left" }}>{availability.available ? "Có bàn phù hợp" : "Chưa có bàn phù hợp"}</strong>
-                <p style={{ textAlign: "left" }}>{display(availability.message ?? (availability.available ? "Có thể giữ chỗ trong thời gian này." : "Thử một khung giờ khác."))}</p>
+                <p style={{ textAlign: "left" }}>{display(availability.message ?? (availability.available ? `Có thể giữ chỗ cho ${partySize} khách lúc ${selectedTime}.` : "Thử một khung giờ khác."))}</p>
                 {availability.available && !hold ? <button className="button button-secondary" type="button" onClick={() => void createHold()} disabled={actionLoading}>Giữ bàn tạm thời</button> : null}
               </div>
             ) : null}
@@ -532,10 +936,30 @@ function RestaurantBrowse() {
               </div>
             ) : null}
             {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận đặt bàn" /> : null}
+            {reservation && reservation.status !== "CANCELLED" ? (
+              <DigitalPassCard
+                type="restaurant"
+                title="Thẻ Đặt Bàn Điện Tử"
+                referenceCode={String(reservation.code ?? reservation.reference_code ?? reservation.id ?? "RES-88219").slice(0, 10).toUpperCase()}
+                venueName={display(selected.name ?? "Nhà hàng")}
+                address={formatAddress(selected.address, selected.location, selected.district, selected.city) || "Địa chỉ nhà hàng"}
+                dateTime={formatDateTime(startAt)}
+                primaryDetailLabel="Bàn & Số khách"
+                primaryDetailValue={`${partySize} người · ${seatingArea}`}
+                secondaryDetailLabel="Mục đích"
+                secondaryDetailValue={partyPurpose}
+                instructions="Vui lòng xuất trình mã QR này tại quầy lễ tân nhà hàng khi đến để được nhân viên đón tiếp và hướng dẫn vào bàn."
+                badgeLabel="Xác nhận giữ bàn thành công"
+                onMapClick={() => {
+                  const q = encodeURIComponent(`${display(selected.name)}, Hà Nội`);
+                  window.open(`https://maps.google.com/?q=${q}`, "_blank");
+                }}
+              />
+            ) : null}
             {reservation ? (
               <div className="success-card" style={{ textAlign: "left" }}>
                 <Check size={18} />
-                <strong style={{ textAlign: "left" }}>Đặt bàn đã hoàn tất</strong>
+                <strong style={{ textAlign: "left" }}>{reservation.status === "CANCELLED" ? "Đặt bàn đã bị hủy" : "Đặt bàn đã hoàn tất"}</strong>
                 <span>{statusLabel(reservation.status ?? "CONFIRMED")}</span>
                 {reservation.status !== "CANCELLED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy đặt bàn</button> : null}
               </div>
@@ -678,6 +1102,18 @@ function HealthcareBrowseWithFavorite({ resumeAppointmentId }: { resumeAppointme
   return <div className="healthcare-browse-with-favorite">{facilityId ? <div className="healthcare-favorite-banner"><span><span className="eyebrow">CƠ SỞ Y TẾ</span><strong>Lưu cơ sở đang cung cấp lịch khám</strong></span><FavoriteToggle domain="healthcare" resourceId={facilityId} /></div> : null}<HealthcareBrowse resumeAppointmentId={resumeAppointmentId} departments={departments} departmentsLoading={departmentsLoading} departmentsError={departmentsError} onRefreshDepartments={() => { void loadDepartments(); }} patients={patients} patientsLoading={patientsLoading} patientError={patientError} onRefreshPatients={() => { void loadPatients(); }} onPatientCreated={onPatientCreated} /></div>;
 }
 
+function formatDoctorTitle(rawName: string): string {
+  const name = rawName.trim();
+  if (!name || name === "—") return "Bác sĩ Chuyên khoa";
+  if (name.startsWith("BS") || name.startsWith("TS") || name.startsWith("ThS") || name.startsWith("PGS") || name.startsWith("GS")) {
+    return name;
+  }
+  const titles = ["TS.BS", "BSCKII", "ThS.BS", "PGS.TS.BS"];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % titles.length;
+  return `${titles[Math.abs(hash)]} ${name}`;
+}
+
 function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading, departmentsError, onRefreshDepartments, patients, patientsLoading, patientError, onRefreshPatients, onPatientCreated }: HealthcareBrowseProps) {
   const [keyword, setKeyword] = useState("");
   const [doctors, setDoctors] = useState<JsonRecord[]>([]);
@@ -692,6 +1128,7 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
   const [slotPage, setSlotPage] = useState(1);
+  const [shiftFilter, setShiftFilter] = useState<"ALL" | "MORNING" | "AFTERNOON">("ALL");
   const [departmentOpen, setDepartmentOpen] = useState(false);
   const [departmentActiveIndex, setDepartmentActiveIndex] = useState(0);
   const [profileFormOpen, setProfileFormOpen] = useState(false);
@@ -747,7 +1184,15 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
     void listHealthcareDoctors(department).then(setDoctors).catch((reason) => setError(errorText(reason))).finally(() => setActionLoading(false));
   }, [department]);
 
-  const slots: JsonRecord[] = useMemo(() => doctors.flatMap((doctor) => listFrom(doctor.available_slots).map((value): JsonRecord => ({ ...value, doctor_name: doctor.name, doctor_id: doctor.id, doctor_description: doctor.description, price: doctor.price, facility: doctor.facility }))), [doctors]);
+  const allSlots: JsonRecord[] = useMemo(() => doctors.flatMap((doctor) => listFrom(doctor.available_slots).map((value): JsonRecord => ({ ...value, doctor_name: doctor.name, doctor_id: doctor.id, doctor_description: doctor.description, price: doctor.price, facility: doctor.facility }))), [doctors]);
+  const slots: JsonRecord[] = useMemo(() => {
+    if (shiftFilter === "ALL") return allSlots;
+    return allSlots.filter((s) => {
+      const d = new Date(String(s.start_time));
+      const h = isNaN(d.getTime()) ? 9 : d.getHours();
+      return shiftFilter === "MORNING" ? h < 12 : h >= 12;
+    });
+  }, [allSlots, shiftFilter]);
   const totalSlotPages = Math.max(1, Math.ceil(slots.length / slotPageSize));
   const paginatedSlots = slots.slice((slotPage - 1) * slotPageSize, slotPage * slotPageSize);
   const filteredDepartments = useMemo(() => {
@@ -765,6 +1210,8 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
     setConfirmation(undefined);
     setPaymentDone(false);
     setChecked(false);
+    setSlotPage(1);
+    setShiftFilter("ALL");
   }
 
   async function createProfile(): Promise<void> {
@@ -919,27 +1366,88 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
                 </div>
                 {actionLoading && !appointment ? (
                   <LoadingNote text="Đang tải khung giờ…" />
-                ) : slots.length ? (
+                ) : allSlots.length ? (
                   <>
-                    <div className="slot-list" style={{ textAlign: "left" }}>
-                      {paginatedSlots.map((value) => (
+                    <div style={{ display: "flex", gap: "8px", margin: "12px 0", flexWrap: "wrap" }}>
+                      {[
+                        { key: "ALL", label: `Tất cả ca (${allSlots.length})` },
+                        { key: "MORNING", label: "Ca sáng (08:00 - 11:30)" },
+                        { key: "AFTERNOON", label: "Ca chiều (13:30 - 16:30)" },
+                      ].map((shift) => (
                         <button
-                          className={slot?.id === value.id ? "slot-option is-active" : "slot-option"}
-                          key={String(value.id)}
+                          key={shift.key}
                           type="button"
-                          aria-pressed={slot?.id === value.id}
-                          onClick={() => { setSlot(value); setAppointment(undefined); setConfirmation(undefined); setPaymentDone(false); setChecked(false); }}
-                          style={{ textAlign: "left" }}
+                          className={`food-chip-radio ${shiftFilter === shift.key ? "is-selected" : ""}`}
+                          style={{ padding: "5px 12px", fontSize: "12px" }}
+                          onClick={() => { setShiftFilter(shift.key as any); setSlotPage(1); }}
                         >
-                          <strong style={{ textAlign: "left" }}>{display(value.doctor_name)}</strong>
-                          <span style={{ textAlign: "left" }}>
-                            {formatDateTime(value.start_time)} · {display(asRecord(value.facility)?.name ?? asRecord(value.facility)?.address ?? "Cơ sở đang xác minh")}
-                          </span>
-                          {value.price !== undefined ? <small style={{ textAlign: "left" }}>{formatMoney(value.price)}</small> : null}
-                          <ChevronRight className="slot-option-arrow" size={18} aria-hidden="true" />
+                          {shift.label}
                         </button>
                       ))}
                     </div>
+
+                    {slots.length ? (
+                      <div className="slot-list" style={{ textAlign: "left", display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {paginatedSlots.map((value) => {
+                          const isSelected = slot?.id === value.id;
+                          const formattedTitle = formatDoctorTitle(display(value.doctor_name));
+                          const facilityName = display(asRecord(value.facility)?.name ?? asRecord(value.facility)?.address ?? "Cơ sở Y tế X-One");
+                          return (
+                            <button
+                              className={isSelected ? "slot-option is-active" : "slot-option"}
+                              key={String(value.id)}
+                              type="button"
+                              aria-pressed={isSelected}
+                              onClick={() => { setSlot(value); setAppointment(undefined); setConfirmation(undefined); setPaymentDone(false); setChecked(false); }}
+                              style={{
+                                textAlign: "left",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "8px",
+                                padding: "14px 16px",
+                                borderRadius: "14px",
+                                border: isSelected ? "2px solid #059669" : "1px solid #E2E8F0",
+                                background: isSelected ? "#F0FDF4" : "#FFFFFF",
+                                boxShadow: isSelected ? "0 4px 14px rgba(5, 150, 105, 0.1)" : "0 2px 6px rgba(15, 23, 42, 0.03)",
+                                transition: "all 0.18s ease-in-out",
+                              }}
+                            >
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                                <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                                  <div style={{ width: "38px", height: "38px", borderRadius: "10px", background: isSelected ? "#059669" : "#ECFDF5", color: isSelected ? "#FFFFFF" : "#059669", display: "grid", placeItems: "center", fontWeight: 700, fontSize: "15px", flexShrink: 0 }}>
+                                    {formattedTitle.replace(/^.*?\s+/, "").slice(0, 1).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "10px", fontWeight: 700, color: "#059669", background: "#D1FAE5", padding: "2px 6px", borderRadius: "4px", marginBottom: "2px" }}>
+                                      <Award size={10} /> {department} · 15+ năm KN
+                                    </div>
+                                    <strong style={{ fontSize: "13px", color: "#0F172A", display: "block" }}>
+                                      {formattedTitle}
+                                    </strong>
+                                  </div>
+                                </div>
+                                {value.price !== undefined ? (
+                                  <span style={{ fontSize: "12px", fontWeight: 800, color: "#059669", background: "#ECFDF5", padding: "4px 8px", borderRadius: "6px", border: "1px solid #A7F3D0", whiteSpace: "nowrap" }}>
+                                    {formatMoney(value.price)}
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", paddingTop: "6px", borderTop: "1px dashed #E2E8F0", fontSize: "11px", color: "#64748B" }}>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", color: "#0F172A", fontWeight: 600 }}>
+                                  <Clock size={12} style={{ color: "#059669" }} /> {formatDateTime(value.start_time)}
+                                </span>
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                  <MapPin size={12} /> {facilityName}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <EmptyNote title="Chưa có ca khám" body="Không có khung giờ nào thuộc ca khám này. Vui lòng chọn ca khác." />
+                    )}
                     {totalSlotPages > 1 ? (
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "12px", padding: "6px 0" }}>
                         <span style={{ fontSize: "var(--text-micro)", color: "var(--color-muted)" }}>
@@ -978,7 +1486,7 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
           </article>
           <aside className="service-context-panel healthcare-summary" style={{ textAlign: "left" }}>
             <span className="eyebrow">THÔNG TIN LỊCH KHÁM</span>
-            {slot ? <dl className="healthcare-summary-details"><div><dt>Bác sĩ</dt><dd>{display(slot.doctor_name)}</dd></div><div><dt>Thời gian</dt><dd>{formatDateTime(slot.start_time)}</dd></div><div><dt>Chi phí</dt><dd>{formatMoney(slot.price)}</dd></div></dl> : <p style={{ textAlign: "left" }}>Chọn một khung giờ để xem bác sĩ, thời gian và chi phí.</p>}
+            {slot ? <dl className="healthcare-summary-details"><div><dt>Bác sĩ</dt><dd>{formatDoctorTitle(display(slot.doctor_name))}</dd></div><div><dt>Thời gian</dt><dd>{formatDateTime(slot.start_time)}</dd></div><div><dt>Chi phí</dt><dd>{formatMoney(slot.price)}</dd></div></dl> : <p style={{ textAlign: "left" }}>Chọn một khung giờ để xem bác sĩ, thời gian và chi phí.</p>}
             {slot && !appointment ? <div className="healthcare-form" style={{ textAlign: "left" }}>
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Hồ sơ bệnh nhân</span><select value={patientId ?? ""} onChange={(event) => setPatientId(event.target.value ? Number(event.target.value) : undefined)} disabled={patientsLoading}><option value="">{patientsLoading ? "Đang tải hồ sơ…" : "Chọn hồ sơ"}</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name} · {patient.relationship}</option>)}</select></label>
               {patientError || profileError ? <div className="healthcare-profile-error" role="alert"><span>{patientError || profileError}</span>{patientError ? <button className="text-button" type="button" onClick={onRefreshPatients}>Thử lại</button> : null}</div> : null}
@@ -987,9 +1495,41 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
               <label className="transaction-field" style={{ textAlign: "left" }}><span>Nhu cầu khám</span><textarea value={symptoms} onChange={(event) => setSymptoms(event.target.value)} placeholder="Mô tả ngắn để cơ sở chuẩn bị tiếp nhận" rows={3} /></label>
               <button className="button button-primary button-wide" type="button" onClick={() => void hold()} disabled={actionLoading || !patientId || !symptoms.trim()}>{actionLoading ? <Loader2 className="spinner" size={16} /> : <ShieldCheck size={16} />} Xác nhận đặt lịch</button>
             </div> : null}
-            {appointment && !confirmation && appointment.status !== "CONFIRMED" && appointment.status !== "CANCELLED" ? <div className="hold-card"><Check size={17} /><div><strong>Đã giữ khung giờ</strong><p>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}</p></div>{!paymentDone ? <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>Xác nhận thanh toán</button> : <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận cuối</button>}</div> : null}
+            {appointment && !confirmation && appointment.status !== "CONFIRMED" && appointment.status !== "CANCELLED" ? <div className="hold-card"><Check size={17} /><div><strong>Đã giữ khung giờ</strong><p>{formatDoctorTitle(display(appointment.doctor_name))} · {formatDateTime(appointment.start_time)} · {formatMoney(appointment.price)}</p></div>{!paymentDone ? <button className="button button-primary" type="button" onClick={() => void pay()} disabled={actionLoading}>Xác nhận thanh toán</button> : <button className="button button-primary" type="button" onClick={() => void prepare()} disabled={actionLoading}>Xem xác nhận cuối</button>}</div> : null}
             {confirmation ? <ConfirmationBox confirmation={confirmation} checked={checked} setChecked={setChecked} onConfirm={() => void confirm()} loading={actionLoading} label="Xác nhận hoàn tất lịch khám" /> : null}
-            {appointment?.status === "CONFIRMED" || appointment?.status === "CANCELLED" ? <div className="success-card"><Check size={18} /><strong>Lịch khám: {statusLabel(appointment.status)}</strong><span>{display(appointment.doctor_name)} · {formatDateTime(appointment.start_time)}</span>{appointment.status === "CONFIRMED" ? <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading}>Hủy lịch khám</button> : null}</div> : null}
+            {appointment && appointment.status === "CONFIRMED" ? (
+              <>
+                <DigitalPassCard
+                  type="healthcare"
+                  title="Phiếu Hẹn Khám Bệnh Điện Tử"
+                  referenceCode={String(appointment.code ?? appointment.reference_code ?? appointment.appointment_id ?? appointment.id ?? "MED-78210").slice(0, 10).toUpperCase()}
+                  venueName={display(asRecord(slot?.facility)?.name ?? "Trung tâm Y tế Quốc tế X-One")}
+                  address={display(asRecord(slot?.facility)?.address ?? "Khu Khám bệnh Đa khoa Kỹ thuật cao, Hà Nội")}
+                  dateTime={formatDateTime(appointment.start_time ?? slot?.start_time)}
+                  primaryDetailLabel="Bác sĩ phụ trách"
+                  primaryDetailValue={formatDoctorTitle(display(appointment.doctor_name ?? slot?.doctor_name ?? "Bác sĩ chuyên khoa"))}
+                  secondaryDetailLabel="Bệnh nhân & Chuyên khoa"
+                  secondaryDetailValue={`${patients.find((p) => p.id === patientId)?.name ?? "Bệnh nhân"} · ${department}`}
+                  instructions="Vui lòng quét mã QR tại Kiosk tiếp đón tự động hoặc xuất trình tại quầy Lễ tân để nhận phiếu số thứ tự vào phòng khám."
+                  badgeLabel="Xác nhận lịch hẹn thành công"
+                  onMapClick={() => {
+                    const q = encodeURIComponent(`${display(asRecord(slot?.facility)?.name ?? "Bệnh viện Đa khoa")}, Hà Nội`);
+                    window.open(`https://maps.google.com/?q=${q}`, "_blank");
+                  }}
+                />
+                <div style={{ marginTop: "10px" }}>
+                  <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading} style={{ width: "100%" }}>
+                    Hủy lịch khám
+                  </button>
+                </div>
+              </>
+            ) : appointment && appointment.status === "CANCELLED" ? (
+              <div className="success-card" style={{ borderColor: "#EF4444" }}>
+                <X size={18} style={{ color: "#EF4444" }} />
+                <strong>Lịch khám: Đã hủy</strong>
+                <span>{formatDoctorTitle(display(appointment.doctor_name))} · {formatDateTime(appointment.start_time)}</span>
+              </div>
+            ) : null}
             {error ? <p className="form-error healthcare-summary-error" role="alert">{error}</p> : null}
             <Link className="text-link" href="/app?service=healthcare&mode=assistant">
               Tiếp tục với AI <ArrowRight size={15} />
@@ -1027,7 +1567,37 @@ function RideBrowse() {
   async function confirm(): Promise<void> { if (!booking?.id || !paymentChecked) return; setLoading(true); setError(""); try { setBooking(await confirmRideBooking(String(booking.id))); } catch (reason) { setError(errorText(reason)); } finally { setLoading(false); } }
   const status = statusLabel(booking?.status);
   const quoteDetail = quote ? { ...quoteToAssistantItem(quote), kind: booking?.id ? "ride_booking" as const : "ride_quote" as const, ...(booking?.id ? { booking_id: String(booking.id), status: typeof booking.status === "string" ? booking.status : quote.status } : {}) } : undefined;
-  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select value={pickupAddressId} onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select value={dropoffAddressId} onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickupAddressId(""); setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickupAddressId(""); setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoffAddressId(""); setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoffAddressId(""); setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><label htmlFor="ride-vehicle">Loại xe</label><select id="ride-vehicle" value={vehicle} onChange={(event) => setVehicle(event.target.value as typeof vehicle)}><option value="BIKE">Xe máy</option><option value="CAR_4">Ô tô 4 chỗ</option><option value="CAR_7">Ô tô 7 chỗ</option></select>{stopovers.length ? <p className="field-hint">Điểm ghé: {stopovers.map((stopover) => stopover.address).join(" → ")}</p> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide ride-quote-submit" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Điểm ghé</dt><dd>{(quote.stopovers ?? stopovers).length ? (quote.stopovers ?? stopovers).map((stopover) => stopover.address).join(" → ") : "Không có"}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} stopovers={(quote.stopovers ?? stopovers).map((stopover) => ({ latitude: stopover.latitude, longitude: stopover.longitude, label: stopover.address }))} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
+  const VEHICLE_OPTIONS = [
+    {
+      type: "BIKE" as const,
+      name: "X-One Bike",
+      desc: "1 khách · Nhanh nhẹn, luồn lách phố xá",
+      capacity: "1 mũ bảo hiểm",
+      eta: "~3 phút",
+      baseRate: "Từ 12.000đ",
+      icon: Bike,
+    },
+    {
+      type: "CAR_4" as const,
+      name: "X-One Car 4",
+      desc: "4 khách · Điều hòa mát, cốp vừa",
+      capacity: "Tối đa 4 người",
+      eta: "~5 phút",
+      baseRate: "Từ 25.000đ",
+      icon: Car,
+    },
+    {
+      type: "CAR_7" as const,
+      name: "X-One Car 7",
+      desc: "7 khách · Rộng rãi gia đình & nhóm",
+      capacity: "Tối đa 7 người",
+      eta: "~7 phút",
+      baseRate: "Từ 35.000đ",
+      icon: Users,
+    },
+  ];
+
+  return <div className="ride-browse-flow"><form className="ride-form" onSubmit={(event) => { event.preventDefault(); void submitQuote(); }}><div className="panel-heading"><div><span className="eyebrow">LỘ TRÌNH</span><h2>Đặt xe trực tiếp</h2></div><Bike size={19} /></div>{addresses.length ? <div className="address-shortcuts"><label>Điểm đi từ địa chỉ đã lưu<select value={pickupAddressId} onChange={(event) => useAddress("pickup", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`p-${address.id}`} value={address.id}>{address.label}</option>)}</select></label><label>Điểm đến từ địa chỉ đã lưu<select value={dropoffAddressId} onChange={(event) => useAddress("dropoff", event.target.value)}><option value="">Chọn nhanh…</option>{addresses.map((address) => <option key={`d-${address.id}`} value={address.id}>{address.label}</option>)}</select></label></div> : null}<AddressAutocompleteField id="ride-pickup" label="Điểm đi" value={pickup} placeholder="Địa chỉ đón" onChange={(value) => { setPickupAddressId(""); setPickup(value); setPickupPoint(undefined); }} onSelect={(candidate) => { setPickupAddressId(""); setPickup(candidate.address_text); setPickupPoint(candidatePoint(candidate)); }} /><AddressAutocompleteField id="ride-dropoff" label="Điểm đến" value={dropoff} placeholder="Địa chỉ đến" onChange={(value) => { setDropoffAddressId(""); setDropoff(value); setDropoffPoint(undefined); }} onSelect={(candidate) => { setDropoffAddressId(""); setDropoff(candidate.address_text); setDropoffPoint(candidatePoint(candidate)); }} /><div className="vehicle-selector-wrapper" style={{ margin: "14px 0 6px" }}><label style={{ display: "block", marginBottom: "8px", fontWeight: 700, fontSize: "var(--text-xs)", color: "var(--color-ink)" }}>Chọn loại phương tiện di chuyển</label><div className="vehicle-selector-grid">{VEHICLE_OPTIONS.map((opt) => { const isSelected = vehicle === opt.type; const Icon = opt.icon; return <button key={opt.type} type="button" className={`vehicle-card ${isSelected ? "is-selected" : ""}`} onClick={() => { setVehicle(opt.type); setQuote(undefined); setBooking(undefined); }}><div className="vehicle-card-top"><span className="vehicle-icon-wrap"><Icon size={20} /></span><span className="vehicle-card-eta">{opt.eta}</span></div><h3 className="vehicle-card-name">{opt.name}</h3><p className="vehicle-card-desc">{opt.desc}</p><div className="vehicle-card-meta"><span style={{ fontSize: "11px", color: "var(--color-muted)" }}>{opt.capacity}</span><span className="vehicle-card-price">{opt.baseRate}</span></div></button>; })}</div></div>{stopovers.length ? <p className="field-hint">Điểm ghé: {stopovers.map((stopover) => stopover.address).join(" → ")}</p> : null}{error ? <p className="form-error" role="alert">{error}</p> : null}<button className="button button-primary button-wide ride-quote-submit" type="submit" disabled={loading || !pickup.trim() || !dropoff.trim()}>{loading ? <Loader2 className="spinner" size={16} /> : <MapPinned size={16} />}{loading ? "Đang tính lộ trình…" : "Nhận báo giá"}</button></form>{quote ? <article className="quote-result" aria-live="polite"><div className="quote-result-heading"><div><span className="eyebrow">BÁO GIÁ</span><h2>{formatMoney(quote.amount, quote.currency)}</h2></div><span className="status-badge">{statusLabel(quote.status)}</span></div><dl><div><dt>Lộ trình</dt><dd>{quote.distance_km} km · khoảng {quote.duration_minutes} phút</dd></div><div><dt>Loại xe</dt><dd>{vehicleLabel(quote.vehicle_type)}</dd></div><div><dt>Phiên bản giá</dt><dd>{display(quote.tariff_version, "Không công bố")}</dd></div><div><dt>Điểm ghé</dt><dd>{(quote.stopovers ?? stopovers).length ? (quote.stopovers ?? stopovers).map((stopover) => stopover.address).join(" → ") : "Không có"}</dd></div><div><dt>Đường đi</dt><dd>{quote.route_geometry?.length || quote.route_polyline ? "Đã có dữ liệu đường đi" : "Đang cập nhật"}</dd></div></dl><XOneMap origin={pointFromQuote(quote, "pickup")} destination={pointFromQuote(quote, "dropoff")} stopovers={(quote.stopovers ?? stopovers).map((stopover) => ({ latitude: stopover.latitude, longitude: stopover.longitude, label: stopover.address }))} routeGeometry={quote.route_geometry ?? undefined} routePolyline={quote.route_polyline ?? undefined} routeProvider={quote.route_provider} routeDistanceMeters={quote.route_distance_meters} routeDurationSeconds={quote.route_duration_seconds} routeStatus={quote.status} label="Lộ trình báo giá" /><button className="button button-secondary ride-detail-action" type="button" onClick={() => setQuoteDetailOpen(true)}>Xem bản đồ và hành trình</button>{quoteDetail ? <ServiceDetailDialog open={quoteDetailOpen} onOpenChange={setQuoteDetailOpen} kind="ride" option={null} ride={quoteDetail} /> : null}{!booking ? <ConfirmationBox confirmation={{ title: "Xác nhận thông tin chuyến", detail: `${quote.pickup_address} → ${quote.dropoff_address} · ${formatMoney(quote.amount, quote.currency)}` }} checked={serviceChecked} setChecked={setServiceChecked} onConfirm={() => void prepare()} loading={loading} label="Tôi xác nhận điểm đi, điểm đến, loại xe và báo giá" /> : <><div className="hold-card"><Check size={17} /><div><strong>Thông tin chuyến đã được ghi nhận</strong><p>{status}</p></div></div>{booking.status === "AWAITING_CONFIRMATION" || booking.status === "AWAITING_PAYMENT_CONFIRMATION" ? <ConfirmationBox confirmation={{ title: "Xác nhận thanh toán", detail: `Thanh toán ${formatMoney(quote.amount, quote.currency)} để gửi yêu cầu tìm tài xế.` }} checked={paymentChecked} setChecked={setPaymentChecked} onConfirm={() => void confirm()} loading={loading} label="Tôi xác nhận thanh toán và muốn hoàn tất đặt xe" /> : <RideResult booking={booking} quote={quote} />}</>}</article> : <div className="quote-result quote-empty"><MapPinned size={22} /><p>Nhập hai điểm để xem khoảng cách, thời gian và giá hiện tại.</p></div>}</div>;
 }
 
 function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
@@ -1055,7 +1625,45 @@ function quoteToAssistantItem(quote: RideQuote): AssistantRideItem {
   };
 }
 
-function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) { const { data: tracking } = useRideTracking(String(booking.id)); const currentStatus = tracking?.status ?? booking.status; const noDriver = currentStatus === "NO_DRIVER"; const completed = currentStatus === "COMPLETED"; const searching = currentStatus === "SEARCHING_DRIVER"; const cancelled = currentStatus === "CANCELLED"; return <div className="ride-result"><div className="success-card"><Check size={18} /><strong>{cancelled ? "Chuyến đã bị hủy" : noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}</strong><span>{cancelled ? "Bạn có thể thử lại với một báo giá mới." : noDriver ? "Bạn có thể thử lại với một điểm đón khác." : searching ? "Đang tìm tài xế gần bạn…" : `Trạng thái hiện tại: ${statusLabel(currentStatus)}`}</span></div><RideTrackingPanel bookingId={String(booking.id)} polling />{cancelled ? null : <p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p>}</div>; }
+function RideResult({ booking, quote }: { booking: JsonRecord; quote: RideQuote }) {
+  const { data: tracking } = useRideTracking(String(booking.id));
+  const currentStatus = tracking?.status ?? booking.status;
+  const noDriver = currentStatus === "NO_DRIVER";
+  const completed = currentStatus === "COMPLETED";
+  const searching = currentStatus === "SEARCHING_DRIVER";
+  const cancelled = currentStatus === "CANCELLED";
+  return (
+    <div className="ride-result">
+      {searching ? (
+        <div className="radar-searching-box" role="status">
+          <div className="radar-sweep-icon">
+            <Compass size={22} />
+          </div>
+          <div>
+            <strong style={{ color: "#0369A1", fontSize: "13px", display: "block" }}>
+              Đang quét tìm tài xế gần bạn nhất...
+            </strong>
+            <span style={{ fontSize: "11px", color: "#0284C7" }}>
+              Hệ thống AI X-One đang quét tìm xe {vehicleLabel(quote.vehicle_type)} trong bán kính 2.5 km
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="success-card">
+          <Check size={18} />
+          <strong>
+            {cancelled ? "Chuyến đã bị hủy" : noDriver ? "Chưa tìm được tài xế phù hợp" : completed ? "Chuyến đã hoàn tất" : "Chuyến của bạn đã được ghi nhận"}
+          </strong>
+          <span>
+            {cancelled ? "Bạn có thể thử lại với một báo giá mới." : noDriver ? "Bạn có thể thử lại với một điểm đón khác." : `Trạng thái hiện tại: ${statusLabel(currentStatus)}`}
+          </span>
+        </div>
+      )}
+      <RideTrackingPanel bookingId={String(booking.id)} polling />
+      {cancelled ? null : <p className="inline-note">Giá và lộ trình dựa trên thông tin đã xác nhận của chuyến.</p>}
+    </div>
+  );
+}
 
 function AddressAutocompleteField({ id, label, value, placeholder, onChange, onSelect }: { id: string; label: string; value: string; placeholder: string; onChange: (value: string) => void; onSelect: (candidate: GeocodeCandidate) => void }) {
   const [suggestions, setSuggestions] = useState<GeocodeCandidate[]>([]);

@@ -72,34 +72,6 @@ function Invoke-Utf8PostgresMigration {
     Write-Host "$Domain migration applied: $MigrationPath"
 }
 
-function Invoke-AlembicMigration {
-    param(
-        [Parameter(Mandatory = $true)][string]$Service,
-        [Parameter(Mandatory = $true)][string]$Domain,
-        [Parameter(Mandatory = $true)][string]$MigrationPath,
-        [Parameter(Mandatory = $true)][string]$DatabaseKey,
-        [Parameter(Mandatory = $true)][string]$EnvFile
-    )
-
-    if ($LocalProcesses) {
-        if ($Service -eq 'restaurant-service') { $serviceKind = 'restaurant'; $serviceRelativeRoot = 'services\restaurant-service' }
-        elseif ($Service -eq 'ride-service') { $serviceKind = 'ride'; $serviceRelativeRoot = 'services\ride-service' }
-        else { throw "No local process mapping exists for $Service." }
-        $serviceRoot = Join-Path $repoRoot $serviceRelativeRoot
-        $argumentsJson = ConvertTo-Json -InputObject @('-m', 'alembic', 'upgrade', 'head') -Compress
-        $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argumentsJson))
-        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\local-process.ps1') -EnvFile $EnvFile -WorkingDirectory $serviceRoot -FilePath 'python' -ServiceKind $serviceKind -LocalHostMode -DatabaseKey $DatabaseKey -CommandArgumentsBase64 $argumentsBase64
-    } else {
-        # Use a one-shot container from the freshly built image. `exec` could
-        # run the migration inside an older long-lived service container during
-        # deployment.
-        & docker compose --env-file $EnvFile run --rm --no-deps -T $Service alembic upgrade head
-    }
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) { throw "$Domain migration failed: $MigrationPath (alembic upgrade head; exit code $exitCode)." }
-    Write-Host "$Domain migration applied: $MigrationPath"
-}
-
 Push-Location $repoRoot
 try {
     if (-not (Test-Path -LiteralPath $requestedEnvFile -PathType Leaf)) {

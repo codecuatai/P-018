@@ -4251,3 +4251,697 @@
     justify-content: center;
   }
 }
+
+/* ==========================================================================
+   COMMERCIAL BENCHMARKS: DIGITAL PASS, FOOD CUSTOMIZER, VEHICLE HUD
+   ========================================================================== */
+
+/* 1. Digital Pass Card (PasGo & BookingCare QR Passes) */
+.digital-pass-card {
+  position: relative;
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.08), 0 4px 6px -2px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+  margin: 16px 0;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.digital-pass-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px -4px rgba(15, 23, 42, 0.12);
+}
+
+.digital-pass-restaurant {
+  border-top: 5px solid #E11D48;
+}
+
+.digital-pass-healthcare {
+  border-top: 5px solid #059669;
+}
+
+.digital-pass-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 18px 20px 14px;
+  border-bottom: 1px dashed #E2E8F0;
+  gap: 12px;
+}
+
+.digital-pass-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.digital-pass-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #F8FAFC;
+  color: #0F172A;
+  border: 1px solid #E2E8F0;
+}
+
+.digital-pass-restaurant .digital-pass-icon-badge {
+  background: #FFF1F2;
+  color: #E11D48;
+  border-color: #FECDD3;
+}
+
+.digital-pass-healthcare .digital-pass-icon-badge {
+  background: #ECFDF5;
+  color: #059669;
+  border-color: #A7F3D0;
+}
+
+.digital-pass-eyebrow {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #64748B;
+  text-transform: uppercase;
+}
+
+.digital-pass-title {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: #0F172A;
+  margin: 2px 0 0;
+}
+
+.digital-pass-status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+  white-space: nowrap;
+}
+
+.digital-pass-body {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  padding: 20px;
+  gap: 20px;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .digital-pass-body {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}
+
+.digital-pass-qr-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.digital-pass-qr-box {
+  width: 120px;
+  height: 120px;
+  padding: 8px;
+  background: #FFFFFF;
+  border-radius: 12px;
+  border: 1px solid #CBD5E1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.digital-pass-qr-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.digital-pass-qr-hint {
+  font-size: 10px;
+  color: #64748B;
+  font-weight: 500;
+}
+
+.digital-pass-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.digital-pass-code-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.digital-pass-code-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748B;
+  letter-spacing: 0.05em;
+}
+
+.digital-pass-code-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #F8FAFC;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  width: fit-content;
+}
+
+.digital-pass-code-badge strong {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-base);
+  letter-spacing: 0.08em;
+  color: #0F172A;
+}
+
+.digital-pass-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  color: #4F46E5;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 140ms ease;
+}
+
+.digital-pass-copy-btn:hover {
+  background: #EEF2FF;
+}
+
+.digital-pass-facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin: 0;
+}
+
+.digital-pass-facts dt {
+  font-size: 11px;
+  color: #64748B;
+  font-weight: 500;
+  margin: 0;
+}
+
+.digital-pass-facts dd {
+  font-size: var(--text-xs);
+  color: #0F172A;
+  margin: 2px 0 0;
+}
+
+.digital-pass-address-row {
+  grid-column: span 2;
+}
+
+.digital-pass-address-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: #334155;
+}
+
+.digital-pass-footer {
+  background: #F8FAFC;
+  padding: 14px 20px;
+  border-top: 1px solid #E2E8F0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.digital-pass-notice {
+  font-size: 11px;
+  color: #64748B;
+  margin: 0;
+  max-width: 380px;
+}
+
+.digital-pass-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 2. ShopeeFood Customizer Modal & Selection Chips */
+.food-customizer-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+}
+
+.food-customizer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+.food-customizer-item-info h3 {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: #0F172A;
+  margin: 0 0 4px;
+}
+
+.food-customizer-item-info p {
+  font-size: var(--text-xs);
+  color: #64748B;
+  margin: 0 0 6px;
+}
+
+.food-customizer-base-price {
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: #EA580C;
+}
+
+.food-customizer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.food-customizer-section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.food-customizer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.food-chip-radio {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #F8FAFC;
+  border: 1.5px solid #E2E8F0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 140ms ease;
+  user-select: none;
+}
+
+.food-chip-radio:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+.food-chip-radio.is-selected {
+  background: #FFF7ED;
+  border-color: #EA580C;
+  color: #C2410C;
+  font-weight: 700;
+}
+
+.food-chip-addon-price {
+  font-size: 11px;
+  color: #64748B;
+}
+
+.food-chip-radio.is-selected .food-chip-addon-price {
+  color: #EA580C;
+}
+
+.food-topping-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.food-topping-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.food-topping-card:hover {
+  border-color: #CBD5E1;
+  background: #F8FAFC;
+}
+
+.food-topping-card.is-checked {
+  background: #FFF7ED;
+  border-color: #FDBA74;
+}
+
+.food-customizer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid #E2E8F0;
+  margin-top: 8px;
+  gap: 14px;
+}
+
+.food-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: #F1F5F9;
+  border-radius: 10px;
+  padding: 2px;
+  border: 1px solid #E2E8F0;
+}
+
+.food-stepper button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: #FFFFFF;
+  border: none;
+  border-radius: 8px;
+  font-size: var(--text-base);
+  font-weight: 700;
+  color: #0F172A;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.food-stepper button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.food-stepper span {
+  min-width: 36px;
+  text-align: center;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: #0F172A;
+}
+
+/* 3. Grab Vehicle Comparison Cards & Vietnamese License Plate */
+.vehicle-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+@media (max-width: 600px) {
+  .vehicle-selector-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vehicle-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border-radius: 14px;
+  background: #FFFFFF;
+  border: 2px solid #E2E8F0;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+.vehicle-card:hover {
+  border-color: #94A3B8;
+  transform: translateY(-2px);
+}
+
+.vehicle-card.is-selected {
+  border-color: #0284C7;
+  background: #F0F9FF;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.15);
+}
+
+.vehicle-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.vehicle-icon-wrap {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #F1F5F9;
+  display: grid;
+  place-items: center;
+  color: #0284C7;
+}
+
+.vehicle-card.is-selected .vehicle-icon-wrap {
+  background: #E0F2FE;
+  color: #0369A1;
+}
+
+.vehicle-card-name {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: #0F172A;
+  margin: 0;
+}
+
+.vehicle-card-desc {
+  font-size: 11px;
+  color: #64748B;
+  margin: 2px 0 8px;
+}
+
+.vehicle-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed #CBD5E1;
+}
+
+.vehicle-card-eta {
+  font-size: 11px;
+  font-weight: 600;
+  color: #059669;
+}
+
+.vehicle-card-price {
+  font-size: var(--text-sm);
+  font-weight: 800;
+  color: #0F172A;
+}
+
+/* Vietnamese License Plate HUD Badge */
+.vn-license-plate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  background: #FFFFFF;
+  border: 2px solid #0F172A;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px #CBD5E1, 0 2px 5px rgba(0, 0, 0, 0.12);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #0F172A;
+  position: relative;
+  text-transform: uppercase;
+}
+
+.vn-license-plate::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 1px;
+}
+
+/* Driver Quick Action buttons (Call / Chat) */
+.driver-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.driver-action-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.driver-action-pill:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.driver-action-call {
+  background: #ECFDF5;
+  border-color: #A7F3D0;
+  color: #065F46;
+}
+
+.driver-action-call:hover {
+  background: #D1FAE5;
+}
+
+/* Radar pulse animation for driver searching */
+.radar-searching-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%);
+  border: 1.5px solid #BAE6FD;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.radar-sweep-icon {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0284C7;
+  color: #FFFFFF;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.radar-sweep-icon::before,
+.radar-sweep-icon::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(2, 132, 199, 0.4);
+  animation: radarPulse 2s ease-out infinite;
+}
+
+.radar-sweep-icon::after {
+  inset: -14px;
+  animation-delay: 0.6s;
+}
+
+@keyframes radarPulse {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* 4. PasGo Meal-Period Time Slots */
+.meal-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  margin: 10px 0 16px;
+}
+
+.meal-slot-chip {
+  padding: 8px 6px;
+  border-radius: 8px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: #334155;
+  text-align: center;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.meal-slot-chip:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+}
+
+.meal-slot-chip.is-active {
+  background: #FFF1F2;
+  border-color: #E11D48;
+  color: #BE123C;
+  font-weight: 700;
+}
+
+.seating-area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 8px 0 14px;
+}
+
+.seating-chip {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  text-align: center;
+  transition: all 120ms ease;
+}
+
+.seating-chip.is-active {
+  background: #FEF2F2;
+  border-color: #F87171;
+  color: #991B1B;
+  font-weight: 700;
+}
+

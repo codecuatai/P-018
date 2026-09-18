@@ -12,9 +12,9 @@ export PGOPTIONS="-c lock_timeout=10000 -c statement_timeout=120000"
 
 echo "Terminating lingering client connections before DDL migrations..."
 docker compose --env-file "$env_file" exec -T postgres psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "
-SELECT pg_terminate_backend(pid) 
-FROM pg_stat_activity 
-WHERE datname IN ('xone_core', 'xone_food', 'xone_agent', 'xone_healthcare') 
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname IN ('xone_core', 'xone_agent')
   AND pid <> pg_backend_pid();
 " > /dev/null 2>&1 || true
 

@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   Building2,
+  Calendar,
   Car,
   Check,
   CheckCircle2,
@@ -15,6 +16,7 @@ import {
   LogOut,
   MapPin,
   Navigation,
+  Phone,
   Plug2,
   Plus,
   Power,
@@ -24,12 +26,15 @@ import {
   Store,
   Trash2,
   UserRound,
+  Users,
   UtensilsCrossed,
+  Volume2,
+  VolumeX,
   Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import {
@@ -41,6 +46,7 @@ import {
   getProviderMcpKeys,
   getProviderOperationsAppointments,
   getProviderOperationsOrders,
+  getProviderOperationsReservations,
   getProviderOperationsRides,
   getProviderProfile,
   revokeProviderMcpKey,
@@ -49,6 +55,7 @@ import {
   toggleProviderItemStatus,
   updateProviderOperationAppointmentStatus,
   updateProviderOperationOrderStatus,
+  updateProviderOperationReservationStatus,
   updateProviderOperationRideStatus,
   updateProviderProfile,
   updateRideStatus,
@@ -59,6 +66,7 @@ import {
   type ProviderServiceItem,
   type WebhookTestResult,
 } from "@/lib/api-client";
+import { audioChime } from "@/lib/audio-chime";
 import { useAuth } from "@/providers/auth-provider";
 
 interface ActiveRide {
@@ -102,6 +110,17 @@ interface HealthcareBooking {
   timeSlot: string;
   status: "DRAFT" | "CONFIRMED" | "IN_CONSULTATION" | "COMPLETED" | "CANCELLED";
   type: "online" | "clinic";
+}
+
+interface RestaurantReservation {
+  id: string;
+  guestName: string;
+  guestPhone: string;
+  partySize: number;
+  reservationTime: string;
+  status: "CONFIRMED" | "SEATED" | "COMPLETED" | "CANCELLED";
+  seatingArea?: string;
+  specialRequests?: string;
 }
 
 function formatRideStatus(status: string): string {
@@ -170,6 +189,21 @@ function formatAppointmentStatus(status: string): string {
   }
 }
 
+function formatReservationStatus(status: string): string {
+  switch (status) {
+    case "CONFIRMED":
+      return "Đã xác nhận bàn";
+    case "SEATED":
+      return "Đang dùng bữa";
+    case "COMPLETED":
+      return "Bữa tiệc hoàn tất";
+    case "CANCELLED":
+      return "Đã hủy bàn";
+    default:
+      return status;
+  }
+}
+
 function mapRawRide(raw: any): ActiveRide {
   const quote = raw.quote_snapshot || {};
   return {
@@ -213,6 +247,19 @@ function mapRawAppointment(raw: any): HealthcareBooking {
     timeSlot: slot.start_at ? new Date(slot.start_at).toLocaleString("vi-VN") : raw.created_at ? new Date(raw.created_at).toLocaleString("vi-VN") : "Hôm nay",
     status: (raw.status as HealthcareBooking["status"]) || "CONFIRMED",
     type: raw.type || "clinic",
+  };
+}
+
+function mapRawReservation(raw: any): RestaurantReservation {
+  return {
+    id: String(raw.id || raw.reservation_id || "res_01"),
+    guestName: raw.guest_name || (raw.actor_id ? `Khách hàng #${String(raw.actor_id).slice(-4)}` : "Khách đặt bàn X-One"),
+    guestPhone: raw.guest_phone || raw.phone || "090***9999",
+    partySize: Number(raw.party_size || raw.partySize || 2),
+    reservationTime: raw.reservation_time ? new Date(raw.reservation_time).toLocaleString("vi-VN") : "Hôm nay",
+    status: (raw.status as RestaurantReservation["status"]) || "CONFIRMED",
+    seatingArea: raw.seating_area || raw.seatingArea || "Bàn tiêu chuẩn trong nhà",
+    specialRequests: raw.special_requests || raw.specialRequests || undefined,
   };
 }
 
@@ -284,10 +331,10 @@ export function ProviderPortal() {
   const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01";
   const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "restaurant_merchant");
 
-  const isAllowedTab = (tab: "ride" | "food" | "health" | "services" | "mcp") => {
+  const isAllowedTab = (tab: "ride" | "food" | "restaurant" | "health" | "services" | "mcp") => {
     if (tab === "services" || tab === "mcp") return true;
     if (isMaster) return true;
-    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food";
+    if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food" || tab === "restaurant";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride";
     if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return tab === "health";
     return false;
@@ -301,11 +348,14 @@ export function ProviderPortal() {
     return "X-One Partner Portal — Cổng Đối Tác Dịch Vụ";
   };
 
-  const [activeTab, setActiveTab] = useState<"ride" | "food" | "health" | "services" | "mcp">("ride");
+  const [activeTab, setActiveTab] = useState<"ride" | "food" | "restaurant" | "health" | "services" | "mcp">("ride");
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [allRides, setAllRides] = useState<ActiveRide[]>([]);
   const [orders, setOrders] = useState<FoodOrder[]>([]);
   const [appointments, setAppointments] = useState<HealthcareBooking[]>([]);
+  const [reservations, setReservations] = useState<RestaurantReservation[]>([]);
+  const [soundEnabled, setSoundEnabled] = useState(() => (typeof window !== "undefined" ? audioChime.isEnabled() : true));
+  const prevCountsRef = useRef<{ rides: number; orders: number; reservations: number; appts: number } | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [loadingOperations, setLoadingOperations] = useState(false);
   const [seedingDomain, setSeedingDomain] = useState<string | null>(null);
@@ -399,31 +449,82 @@ export function ProviderPortal() {
     }
   };
 
-  const reloadOperations = async () => {
-    setLoadingOperations(true);
+  const reloadOperations = async (silent: boolean = false) => {
+    if (!silent) setLoadingOperations(true);
     try {
-      const [ridesRes, ordersRes, apptsRes] = await Promise.allSettled([
+      const [ridesRes, ordersRes, apptsRes, resRes] = await Promise.allSettled([
         getProviderOperationsRides(),
         getProviderOperationsOrders(),
         getProviderOperationsAppointments(),
+        getProviderOperationsReservations(),
       ]);
+
+      let newRidesCount = 0;
+      let newOrdersCount = 0;
+      let newApptsCount = 0;
+      let newReservationsCount = 0;
+
       if (ridesRes.status === "fulfilled") {
         const mapped = ridesRes.value.map(mapRawRide);
         setAllRides(mapped);
         setActiveRide((prev) => (prev ? mapped.find((r) => r.id === prev.id) || mapped[0] || null : mapped[0] || null));
+        newRidesCount = mapped.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length;
       }
       if (ordersRes.status === "fulfilled") {
-        setOrders(ordersRes.value.map(mapRawOrder));
+        const mapped = ordersRes.value.map(mapRawOrder);
+        setOrders(mapped);
+        newOrdersCount = mapped.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length;
       }
       if (apptsRes.status === "fulfilled") {
-        setAppointments(apptsRes.value.map(mapRawAppointment));
+        const mapped = apptsRes.value.map(mapRawAppointment);
+        setAppointments(mapped);
+        newApptsCount = mapped.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length;
       }
+      if (resRes.status === "fulfilled") {
+        const mapped = resRes.value.map(mapRawReservation);
+        setReservations(mapped);
+        newReservationsCount = mapped.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length;
+      }
+
+      // Check for incoming new tasks and play chime
+      if (prevCountsRef.current !== null) {
+        const prev = prevCountsRef.current;
+        const hasNewIncoming =
+          newOrdersCount > prev.orders ||
+          newRidesCount > prev.rides ||
+          newReservationsCount > prev.reservations ||
+          newApptsCount > prev.appts;
+
+        if (hasNewIncoming) {
+          audioChime.playNewOrderChime();
+          notify("Có đơn hàng / đặt chỗ mới vừa tới!", "success");
+        }
+      }
+      prevCountsRef.current = {
+        rides: newRidesCount,
+        orders: newOrdersCount,
+        reservations: newReservationsCount,
+        appts: newApptsCount,
+      };
     } catch {
       // keep current state
     } finally {
-      setLoadingOperations(false);
+      if (!silent) setLoadingOperations(false);
     }
   };
+
+  // 3-Second Real-Time Auto-Polling with visibility awareness
+  useEffect(() => {
+    if (user?.role !== "provider") return;
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return; // Pause polling when tab is not active to save client resources
+      }
+      void reloadOperations(true);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   const handleSeedSample = async (domain: string, fallbackLabel: string = "dữ liệu mẫu") => {
     setSeedingDomain(domain);
@@ -763,6 +864,16 @@ export function ProviderPortal() {
     }
   };
 
+  const advanceReservationStatus = async (reservationId: string, nextStatus: RestaurantReservation["status"]) => {
+    try {
+      await updateProviderOperationReservationStatus(reservationId, nextStatus);
+      setReservations((prev) => prev.map((r) => (r.id === reservationId ? { ...r, status: nextStatus } : r)));
+      notify(`Bàn #${reservationId} đã chuyển sang: ${formatReservationStatus(nextStatus)}`);
+    } catch (err: any) {
+      notify(`Không thể cập nhật bàn #${reservationId}: ${err?.message || "Trạng thái không hợp lệ với backend."}`, "error");
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -776,7 +887,11 @@ export function ProviderPortal() {
   // Derived "Hôm nay" numbers
   const todayRevenue = earnings?.net_payout ?? 0;
   const todayNewOrders = orders.filter((o) => o.status === "RECEIVED").length + allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length;
-  const todayNeedsAction = orders.filter((o) => o.status !== "COMPLETED").length + allRides.filter((r) => r.status !== "COMPLETED").length + appointments.filter((a) => a.status !== "COMPLETED").length;
+  const todayNeedsAction =
+    orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length +
+    allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length +
+    appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length +
+    reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length;
 
   const domainCta = (): { label: string; tab: typeof activeTab } => {
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return { label: "Nhận cuốc", tab: "ride" };
@@ -785,9 +900,10 @@ export function ProviderPortal() {
   };
   const cta = domainCta();
 
-  const tabLabel = (tab: "ride" | "food" | "health"): string => {
+  const tabLabel = (tab: "ride" | "food" | "restaurant" | "health"): string => {
     if (tab === "ride") return "Cuốc xe";
     if (tab === "food") return "Món ăn";
+    if (tab === "restaurant") return "Đặt bàn";
     return "Lịch khám";
   };
 
@@ -833,6 +949,21 @@ export function ProviderPortal() {
               {profileForm.isOpen ? "Đang mở cửa nhận đơn" : "Tạm nghỉ nhận khách"}
             </span>
           </div>
+
+          <button
+            type="button"
+            className="button button-secondary button-sm"
+            onClick={() => {
+              const nextState = audioChime.toggle();
+              setSoundEnabled(nextState);
+              notify(nextState ? "Đã bật chuông báo đơn hàng mới" : "Đã tắt chuông báo", "success");
+            }}
+            title={soundEnabled ? "Đang bật chuông báo đơn mới — Nhấp để tắt" : "Đang tắt chuông báo — Nhấp để bật"}
+            style={{ display: "inline-flex", alignItems: "center", gap: "6px", height: "30px", padding: "0 10px", borderRadius: "7px" }}
+          >
+            {soundEnabled ? <Volume2 size={14} className="text-emerald-600" /> : <VolumeX size={14} className="text-slate-400" />}
+            <span style={{ fontSize: "var(--text-xs)" }}>{soundEnabled ? "Chuông: Bật" : "Chuông: Tắt"}</span>
+          </button>
 
           <Link
             href="/app"
@@ -912,8 +1043,26 @@ export function ProviderPortal() {
                       <UtensilsCrossed size={16} />
                     </span>
                     <span className="provider-nav-btn-label">{tabLabel("food")}</span>
-                    {orders.filter((o) => o.status !== "COMPLETED").length > 0 && (
-                      <span className="provider-nav-count">{orders.filter((o) => o.status !== "COMPLETED").length}</span>
+                    {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length > 0 && (
+                      <span className="provider-nav-count">{orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length}</span>
+                    )}
+                  </button>
+                )}
+
+                {isAllowedTab("restaurant") && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "restaurant"}
+                    className={`provider-nav-btn${activeTab === "restaurant" ? " is-active" : ""}`}
+                    onClick={() => setActiveTab("restaurant")}
+                  >
+                    <span className="provider-nav-btn-icon">
+                      <Calendar size={16} />
+                    </span>
+                    <span className="provider-nav-btn-label">{tabLabel("restaurant")}</span>
+                    {reservations.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length > 0 && (
+                      <span className="provider-nav-count">{reservations.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length}</span>
                     )}
                   </button>
                 )}
@@ -930,8 +1079,8 @@ export function ProviderPortal() {
                       <HeartPulse size={16} />
                     </span>
                     <span className="provider-nav-btn-label">{tabLabel("health")}</span>
-                    {appointments.filter((a) => a.status !== "COMPLETED").length > 0 && (
-                      <span className="provider-nav-count">{appointments.filter((a) => a.status !== "COMPLETED").length}</span>
+                    {appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length > 0 && (
+                      <span className="provider-nav-count">{appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length}</span>
                     )}
                   </button>
                 )}
@@ -2397,6 +2546,201 @@ export function ProviderPortal() {
                             {apt.status === "COMPLETED" && (
                               <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
                                 <CheckCircle2 size={14} /> Đã hoàn thành
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: RESTAURANT RESERVATIONS (PASGO / TABLECHECK BENCHMARK) */}
+              {activeTab === "restaurant" && isAllowedTab("restaurant") && (
+                <div>
+                  <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                        Danh sách khách đặt bàn ({reservations.length} lượt đặt)
+                      </h2>
+                      <span
+                        className="admin-role-badge"
+                        style={{ background: "#FEF3C7", color: "#B45309", border: "1px solid #FDE68A", fontSize: "var(--text-micro)" }}
+                      >
+                        PasGo Sync Live
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        disabled={seedingDomain === "restaurant" || loadingOperations}
+                        onClick={() => void handleSeedSample("restaurant", "lượt đặt bàn")}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {seedingDomain === "restaurant" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
+                        <span>Tạo bàn mẫu</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                        <span>Làm mới</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {reservations.length === 0 ? (
+                    <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
+                      <div
+                        style={{
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "14px",
+                          background: "#FEF3C7",
+                          color: "#D97706",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          marginBottom: "16px",
+                          border: "1px solid #FDE68A",
+                        }}
+                      >
+                        <Calendar size={24} />
+                      </div>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                        Chưa có lượt đặt bàn nào trong hệ thống
+                      </h3>
+                      <p style={{ fontSize: "var(--text-xs)", color: "#64748B", maxWidth: "420px", margin: "0 auto 18px auto" }}>
+                        Hệ thống đối tác tự động đồng bộ khi khách hàng đặt bàn trên cổng dịch vụ X-One Restaurant hoặc kênh PasGo.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={seedingDomain === "restaurant"}
+                        onClick={() => void handleSeedSample("restaurant", "lượt đặt bàn")}
+                        className="button button-primary"
+                        style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {seedingDomain === "restaurant" ? <LoaderCircle className="spin" size={14} /> : <Plus size={14} />}
+                        <span>Tạo lượt đặt bàn mẫu để thử nghiệm</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {reservations.map((res) => (
+                        <div
+                          key={res.id}
+                          className="admin-table-card"
+                          style={{
+                            padding: "16px 20px",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            flexWrap: "wrap",
+                            gap: "14px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                            <div
+                              style={{
+                                width: "42px",
+                                height: "42px",
+                                borderRadius: "10px",
+                                backgroundColor: "#FEF3C7",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#D97706",
+                                border: "1px solid #FDE68A",
+                              }}
+                            >
+                              <Users size={20} />
+                            </div>
+                            <div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <strong style={{ fontSize: "var(--text-base)", color: "#0F172A" }}>
+                                  {res.guestName}
+                                </strong>
+                                <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
+                                  ({res.partySize} khách)
+                                </span>
+                              </div>
+                              <span style={{ fontSize: "var(--text-xs)", color: "#64748B", display: "block" }}>
+                                Giờ hẹn: <strong style={{ color: "#334155" }}>{res.reservationTime}</strong> · Khu vực: {res.seatingArea}
+                              </span>
+                              {res.specialRequests ? (
+                                <span style={{ fontSize: "var(--text-micro)", color: "#B45309", background: "#FFFBEB", padding: "2px 6px", borderRadius: "4px", display: "inline-block", marginTop: "4px" }}>
+                                  Ghi chú: {res.specialRequests}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                            <span
+                              className="admin-role-badge"
+                              style={{
+                                backgroundColor:
+                                  res.status === "COMPLETED"
+                                    ? "#ECFDF5"
+                                    : res.status === "SEATED"
+                                    ? "#EFF6FF"
+                                    : "#FEF3C7",
+                                color:
+                                  res.status === "COMPLETED"
+                                    ? "#065F46"
+                                    : res.status === "SEATED"
+                                    ? "#1D4ED8"
+                                    : "#B45309",
+                                border: `1px solid ${
+                                  res.status === "COMPLETED"
+                                    ? "#A7F3D0"
+                                    : res.status === "SEATED"
+                                    ? "#BFDBFE"
+                                    : "#FDE68A"
+                                }`,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {formatReservationStatus(res.status)}
+                            </span>
+
+                            {res.status === "CONFIRMED" && (
+                              <button
+                                type="button"
+                                onClick={() => advanceReservationStatus(res.id, "SEATED")}
+                                className="button button-primary"
+                                style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                              >
+                                Khách đã đến (Xếp bàn)
+                              </button>
+                            )}
+
+                            {res.status === "SEATED" && (
+                              <button
+                                type="button"
+                                onClick={() => advanceReservationStatus(res.id, "COMPLETED")}
+                                className="button button-primary"
+                                style={{
+                                  height: "32px",
+                                  padding: "0 12px",
+                                  fontSize: "var(--text-xs)",
+                                  backgroundColor: "#059669",
+                                  borderColor: "#059669",
+                                }}
+                              >
+                                Hoàn tất bữa ăn
+                              </button>
+                            )}
+
+                            {res.status === "COMPLETED" && (
+                              <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                                <CheckCircle2 size={14} /> Bàn đã trả
                               </span>
                             )}
                           </div>

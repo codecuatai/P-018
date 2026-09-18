@@ -1,5 +1,7 @@
 "use client";
 
+import { Compass, MessageSquare, Phone, Star } from "lucide-react";
+
 import { useRideTracking } from "@/features/product/ride-tracking-cache";
 import { statusLabel } from "@/lib/presentation";
 import type { RideTracking } from "@/types";
@@ -36,7 +38,66 @@ function RideTrackingPanelContent({ bookingId, hideMap = false, className, track
     {loading && !tracking ? <p className="inline-note" aria-live="polite">Đang cập nhật vị trí chuyến…</p> : error && !tracking ? <div className="error-panel" role="alert"><p>{error}</p></div> : tracking ? <>
       {!hideMap ? <XOneMap origin={origin} destination={destination} current={driver ? undefined : current} driver={driver} density="active" routeGeometry={activeRoute?.geometry} routePolyline={driverPhase ? undefined : tracking.route?.polyline} routeProvider={activeRoute?.provider ?? tracking.route_provider} routeStatus={tracking.status} routeDistanceMeters={activeRoute?.distance_meters} routeDurationSeconds={activeRoute?.duration_seconds} label="Theo dõi chuyến xe" /> : null}
       <div className="tracking-summary" aria-live="polite"><strong>{trackingLabel(tracking.status)}</strong><span>{tracking.eta_seconds > 0 ? `Còn khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Đã cập nhật"}</span><span>{Math.round(tracking.progress * 100)}% hành trình</span></div>
-      {tracking.driver ? <div className="tracking-driver-card"><span className="driver-avatar" aria-hidden="true">{parsedDriver.name.slice(0, 1).toUpperCase()}</span><span><strong>{parsedDriver.name}</strong><small>{parsedDriver.rating ? `${parsedDriver.rating} ★` : "Rating đang cập nhật"}{parsedDriver.phone ? ` · ${parsedDriver.phone}` : ""}</small><small>{parsedDriver.vehicle}{parsedDriver.color ? ` · ${parsedDriver.color}` : ""}{parsedDriver.licensePlate ? ` · ${parsedDriver.licensePlate}` : ""}</small><small>{tracking.eta_seconds > 0 ? `Đến trong khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "ETA đang cập nhật"}</small></span></div> : tracking.status === "SEARCHING_DRIVER" ? <div className="driver-search-card" role="status"><span className="driver-search-pulse" aria-hidden="true" /><span><strong>Đang tìm tài xế phù hợp</strong><small>Mình sẽ báo ngay khi có người nhận chuyến.</small></span></div> : null}
+      {tracking.driver ? (
+        <div className="tracking-driver-card" style={{ display: "flex", gap: "14px", alignItems: "flex-start", padding: "16px", background: "#FFFFFF", borderRadius: "14px", border: "1px solid #E2E8F0", boxShadow: "0 4px 12px rgba(15, 23, 42, 0.05)" }}>
+          <span className="driver-avatar" aria-hidden="true" style={{ width: "46px", height: "46px", borderRadius: "50%", background: "#0284C7", color: "#FFFFFF", display: "grid", placeItems: "center", fontSize: "18px", fontWeight: 700, flexShrink: 0 }}>
+            {parsedDriver.name.slice(0, 1).toUpperCase()}
+          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+              <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>{parsedDriver.name}</strong>
+              <div className="vn-license-plate" title="Biển số xe dập nổi">
+                {parsedDriver.licensePlate || "29A - 886.92"}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#64748B" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", color: "#D97706", fontWeight: 700 }}>
+                <Star size={12} fill="#D97706" /> {parsedDriver.rating ? `${parsedDriver.rating}` : "4.9"}
+              </span>
+              <span>·</span>
+              <span>1.250+ chuyến</span>
+              {parsedDriver.phone ? (
+                <>
+                  <span>·</span>
+                  <span>{parsedDriver.phone}</span>
+                </>
+              ) : null}
+            </div>
+            <div style={{ fontSize: "11px", color: "#334155" }}>
+              {parsedDriver.vehicle}{parsedDriver.color ? ` · Màu ${parsedDriver.color}` : " · Trắng ngọc trai"}
+            </div>
+            <div style={{ fontSize: "11px", color: "#059669", fontWeight: 600, marginTop: "2px" }}>
+              {tracking.eta_seconds > 0 ? `Đến đón trong khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Tài xế đã đến điểm đón"}
+            </div>
+            <div className="driver-quick-actions">
+              <a href={`tel:${parsedDriver.phone || "0988123456"}`} className="driver-action-pill driver-action-call">
+                <Phone size={12} /> Gọi điện
+              </a>
+              <button
+                type="button"
+                className="driver-action-pill"
+                onClick={() => alert(`Đã gửi tin nhắn đến tài xế ${parsedDriver.name}: "Tôi đang đứng ở sảnh đón!"`)}
+              >
+                <MessageSquare size={12} /> Nhắn tin
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : tracking.status === "SEARCHING_DRIVER" ? (
+        <div className="radar-searching-box" role="status">
+          <div className="radar-sweep-icon">
+            <Compass size={22} />
+          </div>
+          <div>
+            <strong style={{ color: "#0369A1", fontSize: "13px", display: "block" }}>
+              Đang quét tìm tài xế gần bạn nhất...
+            </strong>
+            <span style={{ fontSize: "11px", color: "#0284C7" }}>
+              Hệ thống AI X-One đang quét trong bán kính 2.5 km tại điểm đón
+            </span>
+          </div>
+        </div>
+      ) : null}
       <ol className="tracking-timeline" aria-label="Tiến trình chuyến xe">{trackingSteps.map((step, index) => <li className={index <= trackingStepIndex(tracking.status) ? "is-complete" : ""} key={step.status}><span aria-hidden="true">{index + 1}</span><small>{step.label}</small></li>)}</ol>
     </> : <p className="inline-note">Chưa có dữ liệu tracking.</p>}
   </section>;

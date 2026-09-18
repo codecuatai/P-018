@@ -8,6 +8,13 @@ BEGIN;
 -- All accounts use standard test password: Password123!
 -- Argon2id hash: $argon2id$v=19$m=19456,t=2,p=1$MMjzpxgSfRFp7v2WcKX1Sw$BfBOJsYyIQiz/Jh+a3H2p/lvdtsuQISTaIN5DOTzPzM
 
+-- Clean up any prior conflicting accounts with the standard emails
+DELETE FROM user_sessions WHERE user_id IN (SELECT id FROM users WHERE email_normalized IN ('admin@xone.local', 'manager@xone.local', 'provider@xone.local', 'user@xone.local'));
+DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE email_normalized IN ('admin@xone.local', 'manager@xone.local', 'provider@xone.local', 'user@xone.local'));
+DELETE FROM provider_profiles WHERE user_id IN (SELECT id FROM users WHERE email_normalized IN ('admin@xone.local', 'manager@xone.local', 'provider@xone.local', 'user@xone.local'));
+DELETE FROM user_credentials WHERE user_id IN (SELECT id FROM users WHERE email_normalized IN ('admin@xone.local', 'manager@xone.local', 'provider@xone.local', 'user@xone.local'));
+DELETE FROM users WHERE email_normalized IN ('admin@xone.local', 'manager@xone.local', 'provider@xone.local', 'user@xone.local');
+
 INSERT INTO users (id, email, email_normalized, full_name, phone, role, status, created_at, updated_at)
 VALUES
   ('a0000000-0000-4000-8000-000000000001', 'admin@xone.local', 'admin@xone.local', 'X-One System Admin', '0901000001', 'admin', 'active', now(), now()),
