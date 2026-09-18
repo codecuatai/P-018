@@ -1,1 +1,0 @@
-"""Ride service package."""

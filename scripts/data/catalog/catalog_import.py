@@ -788,34 +788,27 @@ async def ensure_healthcare_runtime_slots(connection: Any, dataset_version: str 
     if not doctor_rows:
         return
 
-    local_tomorrow = (datetime.now(timezone(timedelta(hours=7))) + timedelta(days=1)).replace(
-        hour=8,
-        minute=0,
-        second=0,
-        microsecond=0,
-    )
-    base_start = local_tomorrow.astimezone(UTC).replace(tzinfo=None)
-    next_day_start = base_start + timedelta(days=1)
-    for doctor_row in doctor_rows:
-        doctor_id = doctor_row["id"]
-        has_tomorrow_slot = await connection.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM time_slots WHERE doctor_id=$1 AND start_time>=$2 AND start_time<$3)",
-            doctor_id,
-            base_start,
-            next_day_start,
+    local_now = datetime.now(timezone(timedelta(hours=7)))
+    for day_offset in range(0, 8):
+        local_day = (local_now + timedelta(days=day_offset)).replace(
+            hour=8,
+            minute=0,
+            second=0,
+            microsecond=0,
         )
-        if has_tomorrow_slot:
-            continue
-        for offset in range(4):
-            start_time = base_start + timedelta(hours=offset)
-            await connection.execute(
-                "INSERT INTO time_slots (doctor_id,start_time,end_time,status) "
-                "SELECT $1,$2,$3,'AVAILABLE' "
-                "WHERE NOT EXISTS (SELECT 1 FROM time_slots WHERE doctor_id=$1 AND start_time=$2)",
-                doctor_id,
-                start_time,
-                start_time + timedelta(minutes=30),
-            )
+        base_start = local_day.astimezone(UTC).replace(tzinfo=None)
+        for doctor_row in doctor_rows:
+            doctor_id = doctor_row["id"]
+            for offset in range(4):
+                start_time = base_start + timedelta(hours=offset)
+                await connection.execute(
+                    "INSERT INTO time_slots (doctor_id,start_time,end_time,status) "
+                    "SELECT $1,$2,$3,'AVAILABLE' "
+                    "WHERE NOT EXISTS (SELECT 1 FROM time_slots WHERE doctor_id=$1 AND start_time=$2)",
+                    doctor_id,
+                    start_time,
+                    start_time + timedelta(minutes=30),
+                )
 
 
 async def deactivate_version(domain: str, version: str, database_url: str) -> None:

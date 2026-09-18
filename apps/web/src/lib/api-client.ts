@@ -1279,6 +1279,15 @@ export async function getProviderOperationsAppointments(): Promise<any[]> {
   }
 }
 
+export async function getProviderOperationsReservations(): Promise<any[]> {
+  try {
+    const res = await request<{ items: any[]; count: number }>("/api/v1/provider/services/operations/reservations", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function updateProviderOperationRideStatus(bookingId: string, status: string): Promise<any> {
   return request(`/api/v1/provider/services/operations/rides/${encodeURIComponent(bookingId)}/status`, {
     method: "PATCH",
@@ -1295,6 +1304,13 @@ export async function updateProviderOperationOrderStatus(orderId: string, status
 
 export async function updateProviderOperationAppointmentStatus(appointmentId: string, status: string): Promise<any> {
   return request(`/api/v1/provider/services/operations/appointments/${encodeURIComponent(appointmentId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateProviderOperationReservationStatus(reservationId: string, status: string): Promise<any> {
+  return request(`/api/v1/provider/services/operations/reservations/${encodeURIComponent(reservationId)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });

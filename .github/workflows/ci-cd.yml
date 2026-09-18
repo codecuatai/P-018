@@ -31,10 +31,6 @@ jobs:
     outputs:
       full: ${{ steps.scope.outputs.full }}
       agent: ${{ steps.filter.outputs.agent }}
-      ride: ${{ steps.filter.outputs.ride }}
-      restaurant: ${{ steps.filter.outputs.restaurant }}
-      healthcare: ${{ steps.filter.outputs.healthcare }}
-      food: ${{ steps.filter.outputs.food }}
       gateway: ${{ steps.filter.outputs.gateway }}
       web: ${{ steps.filter.outputs.web }}
       compose: ${{ steps.filter.outputs.compose }}
@@ -73,26 +69,6 @@ jobs:
               - 'ruff.toml'
               - 'packages/**'
               - 'apps/agent-service/**'
-            ride:
-              - '.github/workflows/ci-cd.yml'
-              - 'ruff.toml'
-              - 'packages/**'
-              - 'services/ride-service/**'
-            restaurant:
-              - '.github/workflows/ci-cd.yml'
-              - 'ruff.toml'
-              - 'packages/**'
-              - 'services/restaurant-service/**'
-            healthcare:
-              - '.github/workflows/ci-cd.yml'
-              - 'ruff.toml'
-              - 'packages/**'
-              - 'services/healthcare-service/**'
-            food:
-              - '.github/workflows/ci-cd.yml'
-              - 'ruff.toml'
-              - 'packages/**'
-              - 'services/food-service/**'
             gateway:
               - '.github/workflows/ci-cd.yml'
               - 'package.json'
@@ -115,10 +91,8 @@ jobs:
               - 'scripts/database/migrate.ps1'
               - 'apps/api-gateway/migrations/**'
               - 'apps/agent-service/migrations/**'
-              - 'services/**/migrations/**'
             code_changed:
               - 'apps/**'
-              - 'services/**'
               - 'packages/**'
               - 'docker-compose.yml'
               - '.env.example'
@@ -168,86 +142,6 @@ jobs:
           AGENT_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_agent
         run: ../../.ci-venv/bin/python -m pytest tests -q
 
-  ride-service:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.ride == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Create Python environment
-        run: python -m venv .ci-venv
-      - name: Install dependencies
-        run: .ci-venv/bin/python -m pip install -e "services/ride-service[dev]"
-      - name: Lint service
-        run: .ci-venv/bin/python -m ruff check "services/ride-service/src" "services/ride-service/tests"
-      - name: Test service
-        working-directory: services/ride-service
-        run: ../../.ci-venv/bin/python -m pytest tests -q
-
-  restaurant-service:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.restaurant == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Create Python environment
-        run: python -m venv .ci-venv
-      - name: Install dependencies
-        run: .ci-venv/bin/python -m pip install -e "services/restaurant-service[dev]"
-      - name: Lint service
-        run: .ci-venv/bin/python -m ruff check "services/restaurant-service/src" "services/restaurant-service/tests"
-      - name: Test service
-        working-directory: services/restaurant-service
-        run: ../../.ci-venv/bin/python -m pytest tests -q
-
-  healthcare-service:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.healthcare == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Create Python environment
-        run: python -m venv .ci-venv
-      - name: Install dependencies
-        run: .ci-venv/bin/python -m pip install -e "services/healthcare-service[dev]"
-      - name: Lint service
-        run: .ci-venv/bin/python -m ruff check "services/healthcare-service/src" "services/healthcare-service/tests"
-      - name: Test service
-        working-directory: services/healthcare-service
-        run: ../../.ci-venv/bin/python -m pytest tests -q
-
-  food-service:
-    needs: detect-changes
-    if: ${{ needs.detect-changes.outputs.food == 'true' || needs.detect-changes.outputs.full == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Create Python environment
-        run: python -m venv .ci-venv
-      - name: Install dependencies
-        run: .ci-venv/bin/python -m pip install -e "services/food-service[dev]"
-      - name: Lint service
-        run: .ci-venv/bin/python -m ruff check "services/food-service/src" "services/food-service/tests"
-      - name: Test service
-        working-directory: services/food-service
-        run: ../../.ci-venv/bin/python -m pytest tests -q --ignore=tests/test_postgres_integration.py
-
   gateway:
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.gateway == 'true' || needs.detect-changes.outputs.full == 'true' }}
@@ -267,44 +161,6 @@ jobs:
         run: pnpm install --filter @x-one/api-gateway... --frozen-lockfile
       - name: Lint, test, and build gateway
         run: pnpm --dir apps/api-gateway run lint && pnpm --dir apps/api-gateway test -- --runInBand --testPathIgnorePatterns=core.postgres.integration.spec.ts && pnpm --dir apps/api-gateway build
-
-  food-postgres-integration:
-    needs: detect-changes
-    if: >-
-      (github.event_name == 'push' ||
-       github.event_name == 'schedule' ||
-       github.event_name == 'workflow_dispatch') &&
-      (needs.detect-changes.outputs.food == 'true' ||
-       needs.detect-changes.outputs.full == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: xone_food
-        ports: ['5432/tcp']
-        options: >-
-          --health-cmd "pg_isready -U postgres -d xone_food"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Create Python environment
-        run: python -m venv .ci-venv
-      - name: Install Food service dependencies
-        run: .ci-venv/bin/python -m pip install -e "services/food-service[dev]"
-      - name: Run Food PostgreSQL integration
-        working-directory: services/food-service
-        env:
-          FOOD_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:${{ job.services.postgres.ports[5432] }}/xone_food
-        run: ../../.ci-venv/bin/python -m pytest tests/test_postgres_integration.py -q
 
   gateway-postgres-integration:
     needs: detect-changes
@@ -389,12 +245,7 @@ jobs:
     needs:
       - detect-changes
       - agent-service
-      - ride-service
-      - restaurant-service
-      - healthcare-service
-      - food-service
       - gateway
-      - food-postgres-integration
       - gateway-postgres-integration
       - web
       - compose
@@ -472,12 +323,7 @@ jobs:
     needs:
       - detect-changes
       - agent-service
-      - ride-service
-      - restaurant-service
-      - healthcare-service
-      - food-service
       - gateway
-      - food-postgres-integration
       - gateway-postgres-integration
       - web
       - compose

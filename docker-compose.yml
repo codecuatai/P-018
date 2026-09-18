@@ -17,18 +17,6 @@ services:
       AGENT_DB_NAME: ${AGENT_DB_NAME:?AGENT_DB_NAME is required}
       AGENT_DB_USER: ${AGENT_DB_USER:?AGENT_DB_USER is required}
       AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:?AGENT_DB_PASSWORD is required}
-      RIDE_DB_NAME: ${RIDE_DB_NAME:?RIDE_DB_NAME is required}
-      RIDE_DB_USER: ${RIDE_DB_USER:?RIDE_DB_USER is required}
-      RIDE_DB_PASSWORD: ${RIDE_DB_PASSWORD:?RIDE_DB_PASSWORD is required}
-      RESTAURANT_DB_NAME: ${RESTAURANT_DB_NAME:?RESTAURANT_DB_NAME is required}
-      RESTAURANT_DB_USER: ${RESTAURANT_DB_USER:?RESTAURANT_DB_USER is required}
-      RESTAURANT_DB_PASSWORD: ${RESTAURANT_DB_PASSWORD:?RESTAURANT_DB_PASSWORD is required}
-      HEALTHCARE_DB_NAME: ${HEALTHCARE_DB_NAME:?HEALTHCARE_DB_NAME is required}
-      HEALTHCARE_DB_USER: ${HEALTHCARE_DB_USER:?HEALTHCARE_DB_USER is required}
-      HEALTHCARE_DB_PASSWORD: ${HEALTHCARE_DB_PASSWORD:?HEALTHCARE_DB_PASSWORD is required}
-      FOOD_DB_NAME: ${FOOD_DB_NAME:?FOOD_DB_NAME is required}
-      FOOD_DB_USER: ${FOOD_DB_USER:?FOOD_DB_USER is required}
-      FOOD_DB_PASSWORD: ${FOOD_DB_PASSWORD:?FOOD_DB_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -47,21 +35,6 @@ services:
           memory: 256M
     restart: unless-stopped
     ports: [ "127.0.0.1:${POSTGRES_PORT}:5432" ]
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  catalog-importer:
-    profiles: [ dataops ]
-    build:
-      context: .
-      dockerfile: scripts/data/catalog/Dockerfile
-    environment:
-      FOOD_DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
-      RESTAURANT_DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
-      HEALTHCARE_DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
-    volumes:
-      - ./data:/workspace/data:ro
-      - ./artifacts/dataops:/workspace/artifacts/dataops
     networks: [ xone_internal ]
     <<: *default-logging
 
@@ -126,8 +99,6 @@ services:
       CONFIRMATION_RECOVERY_POLL_INTERVAL_MS: ${CONFIRMATION_RECOVERY_POLL_INTERVAL_MS:?CONFIRMATION_RECOVERY_POLL_INTERVAL_MS is required}
       GATEWAY_WORKFLOW_WORKER_ENABLED: ${GATEWAY_WORKFLOW_WORKER_ENABLED:?GATEWAY_WORKFLOW_WORKER_ENABLED is required}
       GATEWAY_WORKFLOW_POLL_INTERVAL_MS: ${GATEWAY_WORKFLOW_POLL_INTERVAL_MS:?GATEWAY_WORKFLOW_POLL_INTERVAL_MS is required}
-      RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
-      RESTAURANT_FORCE_RESULT: ${RESTAURANT_FORCE_RESULT:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
@@ -145,6 +116,12 @@ services:
         reservations:
           memory: 256M
     ports: [ "127.0.0.1:${API_GATEWAY_PORT}:3000" ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "ride-service:host-gateway"
+      - "restaurant-service:host-gateway"
+      - "healthcare-service:host-gateway"
+      - "food-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
@@ -216,134 +193,20 @@ services:
         reservations:
           memory: 256M
     depends_on: { postgres: { condition: service_healthy } }
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "ride-service:host-gateway"
+      - "restaurant-service:host-gateway"
+      - "healthcare-service:host-gateway"
+      - "food-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
 
-  ride-service:
-    build: ./services/ride-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${RIDE_SERVICE_PORT:?RIDE_SERVICE_PORT is required}
-      TRACKING_TIME_SCALE: ${RIDE_TRACKING_TIME_SCALE:-1}
-      DATABASE_URL: ${RIDE_DATABASE_URL:?RIDE_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  restaurant-service:
-    build: ./services/restaurant-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${RESTAURANT_SERVICE_PORT:?RESTAURANT_SERVICE_PORT is required}
-      DATABASE_URL: ${RESTAURANT_DATABASE_URL:?RESTAURANT_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  healthcare-service:
-    build: ./services/healthcare-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${HEALTHCARE_SERVICE_PORT:?HEALTHCARE_SERVICE_PORT is required}
-      DATABASE_URL: ${HEALTHCARE_DATABASE_URL:?HEALTHCARE_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-      HEALTHCARE_FACILITY_NAME: ${HEALTHCARE_FACILITY_NAME:?HEALTHCARE_FACILITY_NAME is required}
-      HEALTHCARE_FACILITY_ADDRESS: ${HEALTHCARE_FACILITY_ADDRESS:?HEALTHCARE_FACILITY_ADDRESS is required}
-      # Used only by the explicit development seed command; the running
-      # service never creates a patient or link at startup.
-      DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:?DEMO_AUTH_ENABLED is required}
-      DEMO_AUTH_USER_ID: ${DEMO_AUTH_USER_ID:-}
-      HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.4'
-          memory: 256M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
-
-  food-service:
-    build: ./services/food-service
-    environment:
-      APP_ENV: ${APP_ENV:?APP_ENV is required}
-      SERVICE_PORT: ${FOOD_SERVICE_PORT:?FOOD_SERVICE_PORT is required}
-      DATABASE_URL: ${FOOD_DATABASE_URL:?FOOD_DATABASE_URL is required}
-      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
-      PERSISTENCE: ${FOOD_PERSISTENCE:?FOOD_PERSISTENCE is required}
-      RESTAURANT_REJECTION_RATE: ${RESTAURANT_REJECTION_RATE:?RESTAURANT_REJECTION_RATE is required}
-      DELIVERY_BASE_FEE: ${DELIVERY_BASE_FEE:?DELIVERY_BASE_FEE is required}
-      DELIVERY_PER_KM_FEE: ${DELIVERY_PER_KM_FEE:?DELIVERY_PER_KM_FEE is required}
-      DELIVERY_MINIMUM_FEE: ${DELIVERY_MINIMUM_FEE:?DELIVERY_MINIMUM_FEE is required}
-      DELIVERY_MAX_DISTANCE_KM: ${DELIVERY_MAX_DISTANCE_KM:?DELIVERY_MAX_DISTANCE_KM is required}
-      DELIVERY_LONG_DISTANCE_THRESHOLD_KM: ${DELIVERY_LONG_DISTANCE_THRESHOLD_KM:?DELIVERY_LONG_DISTANCE_THRESHOLD_KM is required}
-      DELIVERY_LONG_DISTANCE_SURCHARGE: ${DELIVERY_LONG_DISTANCE_SURCHARGE:?DELIVERY_LONG_DISTANCE_SURCHARGE is required}
-      DELIVERY_ETA_MINUTES: ${DELIVERY_ETA_MINUTES:?DELIVERY_ETA_MINUTES is required}
-      FOOD_RESTAURANT_CONFIRM_DELAY_MS: ${FOOD_RESTAURANT_CONFIRM_DELAY_MS:?FOOD_RESTAURANT_CONFIRM_DELAY_MS is required}
-      FOOD_PREPARING_DELAY_MS: ${FOOD_PREPARING_DELAY_MS:?FOOD_PREPARING_DELAY_MS is required}
-      FOOD_READY_FOR_PICKUP_DELAY_MS: ${FOOD_READY_FOR_PICKUP_DELAY_MS:?FOOD_READY_FOR_PICKUP_DELAY_MS is required}
-      FOOD_DRIVER_ASSIGN_DELAY_MS: ${FOOD_DRIVER_ASSIGN_DELAY_MS:?FOOD_DRIVER_ASSIGN_DELAY_MS is required}
-      FOOD_PICKUP_DELAY_MS: ${FOOD_PICKUP_DELAY_MS:?FOOD_PICKUP_DELAY_MS is required}
-      FOOD_DELIVERY_DELAY_MS: ${FOOD_DELIVERY_DELAY_MS:?FOOD_DELIVERY_DELAY_MS is required}
-      FOOD_WORKFLOW_POLL_INTERVAL_MS: ${FOOD_WORKFLOW_POLL_INTERVAL_MS:?FOOD_WORKFLOW_POLL_INTERVAL_MS is required}
-      FOOD_WORKFLOW_WORKER_ENABLED: ${FOOD_WORKFLOW_WORKER_ENABLED:?FOOD_WORKFLOW_WORKER_ENABLED is required}
-    healthcheck:
-      test: [ "CMD", "python", "-c", "import os, urllib.request; urllib.request.urlopen('http://localhost:' + os.environ['SERVICE_PORT'] + '/health/live')" ]
-      interval: 30s
-      timeout: 5s
-      start_period: 25s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 300M
-        reservations:
-          memory: 128M
-    depends_on: { postgres: { condition: service_healthy } }
-    restart: unless-stopped
-    networks: [ xone_internal ]
-    <<: *default-logging
+  # NOTE: Domain Microservices (Food, Restaurant, Healthcare, Ride)
+  # have been separated into standalone repository: P-018-Service (ports 8101-8104).
+  # Run `docker compose up -d` in P-018-Service to start the 4 services,
+  # or point *_SERVICE_URL in .env to their remote/local endpoints.
 
 volumes:
   postgres_data:

@@ -315,6 +315,19 @@ export class ProviderServicesController {
     }
   }
 
+  @Get('operations/reservations')
+  async getOperationalReservations(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_provider_reservations';
+    try {
+      const raw = await this.restaurant.opsTransactions(correlationId, 50, 0);
+      const items = extractOpsItems(raw);
+      return { data: { items, count: items.length }, meta: { request_id: correlationId } };
+    } catch {
+      return { data: { items: [], count: 0 }, meta: { request_id: correlationId } };
+    }
+  }
+
   @Patch('operations/rides/:bookingId/status')
   async updateOperationalRideStatus(
     @Param('bookingId') bookingId: string,
@@ -374,6 +387,25 @@ export class ProviderServicesController {
       updated = await this.healthcare.cancelAppointment(request.user.sub, correlationId, key, id);
     } else {
       updated = await this.healthcare.confirmAppointment(request.user.sub, correlationId, key, id);
+    }
+    return { data: updated, meta: { request_id: correlationId } };
+  }
+
+  @Patch('operations/reservations/:reservationId/status')
+  async updateOperationalReservationStatus(
+    @Param('reservationId') reservationId: string,
+    @Body() body: { status: string },
+    @Headers('Idempotency-Key') idempotencyKey: string | undefined,
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_provider_reservation_status';
+    const key = idempotencyKey?.trim() || randomUUID();
+    let updated: object;
+    if (body.status === 'CANCELLED') {
+      updated = await this.restaurant.cancelReservation(request.user.sub, correlationId, key, reservationId);
+    } else {
+      updated = await this.restaurant.updateReservation(request.user.sub, correlationId, key, reservationId, { status: body.status });
     }
     return { data: updated, meta: { request_id: correlationId } };
   }
@@ -519,6 +551,46 @@ export class ProviderServicesController {
             department: 'Khoa Nội Tổng Quát',
             status: 'CONFIRMED',
             type: 'clinic',
+            created_at: new Date().toISOString(),
+          },
+          meta: { request_id: correlationId },
+        };
+      }
+    }
+
+    if (domain === 'restaurant') {
+      try {
+        const catalogRaw = await this.restaurant.searchCatalog({ limit: 3 }, correlationId);
+        const catalogItems = Array.isArray(catalogRaw) ? catalogRaw : (catalogRaw as any)?.items ?? [];
+        const rest = catalogItems[0] || { id: 'rest_marukame_01', name: 'Marukame Udon' };
+        const hold = await this.restaurant.createHold(request.user.sub, correlationId, `seed_rhold_${key}`, {
+          restaurant_id: rest.id,
+          party_size: 4,
+          reservation_time: new Date(Date.now() + 7200_000).toISOString(),
+          special_requests: 'Bàn cạnh cửa sổ hoặc ban công, tiệc gia đình',
+        });
+        const holdId = (hold as any)?.hold_id || (hold as any)?.id;
+        if (holdId) {
+          const res = await this.restaurant.createReservation(request.user.sub, correlationId, `seed_res_${key}`, {
+            hold_id: holdId,
+            restaurant_id: rest.id,
+            guest_name: 'Trần Văn Hoàng',
+            guest_phone: '0912345678',
+            party_size: 4,
+            reservation_time: new Date(Date.now() + 7200_000).toISOString(),
+          });
+          return { data: res, meta: { request_id: correlationId } };
+        }
+      } catch (err: any) {
+        return {
+          data: {
+            id: `res_${key.slice(0, 8)}`,
+            guest_name: 'Trần Văn Hoàng',
+            restaurant_name: 'Haidilao Hotpot Landmark 81',
+            party_size: 4,
+            reservation_time: new Date(Date.now() + 7200_000).toISOString(),
+            status: 'CONFIRMED',
+            seating_area: 'Bàn view sông ban công',
             created_at: new Date().toISOString(),
           },
           meta: { request_id: correlationId },

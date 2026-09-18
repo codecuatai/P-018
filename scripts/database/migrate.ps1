@@ -72,34 +72,6 @@ function Invoke-Utf8PostgresMigration {
     Write-Host "$Domain migration applied: $MigrationPath"
 }
 
-function Invoke-AlembicMigration {
-    param(
-        [Parameter(Mandatory = $true)][string]$Service,
-        [Parameter(Mandatory = $true)][string]$Domain,
-        [Parameter(Mandatory = $true)][string]$MigrationPath,
-        [Parameter(Mandatory = $true)][string]$DatabaseKey,
-        [Parameter(Mandatory = $true)][string]$EnvFile
-    )
-
-    if ($LocalProcesses) {
-        if ($Service -eq 'restaurant-service') { $serviceKind = 'restaurant'; $serviceRelativeRoot = 'services\restaurant-service' }
-        elseif ($Service -eq 'ride-service') { $serviceKind = 'ride'; $serviceRelativeRoot = 'services\ride-service' }
-        else { throw "No local process mapping exists for $Service." }
-        $serviceRoot = Join-Path $repoRoot $serviceRelativeRoot
-        $argumentsJson = ConvertTo-Json -InputObject @('-m', 'alembic', 'upgrade', 'head') -Compress
-        $argumentsBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argumentsJson))
-        & powershell.exe -ExecutionPolicy Bypass -File (Join-Path $repoRoot 'scripts\local-process.ps1') -EnvFile $EnvFile -WorkingDirectory $serviceRoot -FilePath 'python' -ServiceKind $serviceKind -LocalHostMode -DatabaseKey $DatabaseKey -CommandArgumentsBase64 $argumentsBase64
-    } else {
-        # Use a one-shot container from the freshly built image. `exec` could
-        # run the migration inside an older long-lived service container during
-        # deployment.
-        & docker compose --env-file $EnvFile run --rm --no-deps -T $Service alembic upgrade head
-    }
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -ne 0) { throw "$Domain migration failed: $MigrationPath (alembic upgrade head; exit code $exitCode)." }
-    Write-Host "$Domain migration applied: $MigrationPath"
-}
-
 Push-Location $repoRoot
 try {
     if (-not (Test-Path -LiteralPath $requestedEnvFile -PathType Leaf)) {
@@ -126,32 +98,10 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/017_core_four_roles_rbac.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/018_core_seed_four_roles.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/001_food_vertical_slice.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/002_food_workflow_concurrency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/003_food_atomicity.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/004_food_authoritative_operations.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/005_food_idempotency_eligibility.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/006_food_catalog_provenance.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/007_food_cart_write_idempotency.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Food' -MigrationPath 'services/food-service/migrations/008_food_catalog_search.sql' -DatabaseUser 'food_user' -Database 'xone_food' -EnvFile $envFile
-
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/002_agent_run_metadata.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
-    Write-Host 'Core, Agent and Food migrations applied.'
-
-    Invoke-AlembicMigration -Service 'restaurant-service' -Domain 'Restaurant Service' -MigrationPath 'services/restaurant-service/migrations/versions/0003_restaurant_legacy_idempotency_backfill.py' -DatabaseKey 'RESTAURANT_DATABASE_URL' -EnvFile $envFile
-    Write-Host 'Restaurant Service migrations applied.'
-
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/001_healthcare_booking.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/002_healthcare_slot_reuse.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003_patient_user_links.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/003a_healthcare_legacy_catalog_bridge.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/004_healthcare_catalog_provenance.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Invoke-Utf8PostgresMigration -Domain 'Healthcare Service' -MigrationPath 'services/healthcare-service/migrations/005_healthcare_catalog_nullable_price.sql' -DatabaseUser 'healthcare_user' -Database 'xone_healthcare' -EnvFile $envFile
-    Write-Host 'Healthcare Service migrations applied.'
-
-    Invoke-AlembicMigration -Service 'ride-service' -Domain 'Ride Service' -MigrationPath 'services/ride-service/migrations/versions/20260814_0005_route_geometry.py' -DatabaseKey 'RIDE_DATABASE_URL' -EnvFile $envFile
-    Write-Host 'Ride Service migrations applied.'
+    Write-Host 'Core and Agent migrations applied successfully.' -ForegroundColor Green
+    Write-Host 'Note: Domain services (Food, Restaurant, Healthcare, Ride) migrations are managed in P-018-Service.' -ForegroundColor Yellow
 } finally {
     Pop-Location
 }
