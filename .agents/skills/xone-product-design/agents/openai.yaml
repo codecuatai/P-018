@@ -1,4 +1,0 @@
-interface:
-  display_name: "X-One Product Design"
-  short_description: "Design consistent, accessible X-One product interfaces."
-  default_prompt: "Design or review an X-One frontend surface using the canonical design and motion systems."

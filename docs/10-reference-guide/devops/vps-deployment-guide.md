@@ -113,14 +113,14 @@ sudo chown -R $USER:$USER /opt/xone
 ```
 
 ### 4.2. Khởi tạo file `.env` an toàn trên VPS
-Tạo file `/opt/xone/.env` từ file template mẫu `.env.production.example`. Đảm bảo **tất cả** mật khẩu và secret token đều được sinh ngẫu nhiên bằng lệnh mã hóa:
+Tạo file `/opt/xone/.env` từ file template mẫu `.env.example`. Đảm bảo **tất cả** mật khẩu và secret token đều được sinh ngẫu nhiên bằng lệnh mã hóa:
 
 ```bash
 # Tạo các secret token ngẫu nhiên độ dài 64 ký tự hex:
 openssl rand -hex 32
 
 # Sao chép template sang file .env thực tế
-cp /opt/xone/.env.production.example /opt/xone/.env
+cp /opt/xone/.env.example /opt/xone/.env
 
 # Phân quyền chỉ cho phép tài khoản sở hữu đọc và ghi file .env:
 chmod 600 /opt/xone/.env
