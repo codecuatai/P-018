@@ -44,13 +44,17 @@ describe('OperationsController (provider control plane)', () => {
     expect(result.data.overdue).toBe(1);
   });
 
-  it('allows only admin to review provider documents', async () => {
+  it('allows admin and manager to review provider documents, but rejects unauthorized roles', async () => {
     const document = await repository.createDocument({
       id: 'doc-1', providerId: provider.sub, documentType: 'license', status: 'PENDING', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     });
-    await expect(controller.reviewDocument(document.id, { status: 'APPROVED' }, request(manager))).rejects.toThrow(ForbiddenException);
-    const reviewed = await controller.reviewDocument(document.id, { status: 'APPROVED', review_note: 'Verified' }, request(admin)) as any;
-    expect(reviewed.data.status).toBe('APPROVED');
-    expect(reviewed.data.reviewNote).toBe('Verified');
+    await expect(controller.reviewDocument(document.id, { status: 'APPROVED' }, request(provider))).rejects.toThrow(ForbiddenException);
+    const managerReview = await controller.reviewDocument(document.id, { status: 'APPROVED', review_note: 'Verified by Manager' }, request(manager)) as any;
+    expect(managerReview.data.status).toBe('APPROVED');
+    expect(managerReview.data.reviewNote).toBe('Verified by Manager');
+
+    const adminReview = await controller.reviewDocument(document.id, { status: 'APPROVED', review_note: 'Verified by Admin' }, request(admin)) as any;
+    expect(adminReview.data.status).toBe('APPROVED');
+    expect(adminReview.data.reviewNote).toBe('Verified by Admin');
   });
 });

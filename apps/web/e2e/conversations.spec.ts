@@ -5,13 +5,13 @@ import { installAuthenticatedFixture } from "./support/mock-gateway";
 test("conversation new → send → rename → archive → unarchive → reload → delete", async ({ context, page }) => {
   const gateway = await installAuthenticatedFixture(context, { email: "conversation@example.test" });
   await page.goto("/app");
-  await expect(page.getByRole("heading", { name: "Bạn cần hỗ trợ gì hôm nay?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Trợ lý X-One" })).toBeVisible();
 
   await page.getByLabel("Nhập yêu cầu").fill("Tìm một lựa chọn deterministic");
   await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
   await expect(page.getByText("Mình đã ghi nhận yêu cầu trong chế độ deterministic E2E.")).toBeVisible();
 
-  await page.goto("/app/history");
+  await page.goto("/app/history/conversations");
   await expect(page.getByRole("heading", { name: "Cuộc trò chuyện E2E" })).toBeVisible();
   const conversation = page.locator("article.history-row").first();
   await conversation.getByRole("button", { name: /Đổi tên/ }).click();
@@ -20,7 +20,7 @@ test("conversation new → send → rename → archive → unarchive → reload 
   await expect(page.getByRole("heading", { name: "Cuộc trò chuyện đã đổi tên" })).toBeVisible();
 
   await conversation.getByRole("button", { name: /Lưu trữ/ }).click();
-  await expect(page.getByRole("heading", { name: "Đã lưu trữ" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Bỏ lưu trữ/ })).toBeVisible();
   await page.getByRole("button", { name: /Bỏ lưu trữ/ }).click();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Cuộc trò chuyện đã đổi tên" })).toBeVisible();

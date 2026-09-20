@@ -581,10 +581,32 @@ export function ProviderPortal() {
   const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01" || user?.tenant_id === "partner-xone-01";
   const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "unknown");
 
-  type ProviderTab = "ride" | "food" | "restaurant" | "health" | "delivery" | "services" | "channels" | "mcp";
+  type ProviderTab =
+    | "ride"
+    | "delivery"
+    | "food"
+    | "restaurant"
+    | "health"
+    | "services"
+    | "profile"
+    | "earnings"
+    | "webhooks"
+    | "staff"
+    | "channels"
+    | "mcp";
 
   const isAllowedTab = (tab: ProviderTab) => {
-    if (tab === "services" || tab === "channels" || tab === "mcp") return true;
+    if (
+      tab === "services" ||
+      tab === "profile" ||
+      tab === "earnings" ||
+      tab === "webhooks" ||
+      tab === "staff" ||
+      tab === "channels" ||
+      tab === "mcp"
+    ) {
+      return true;
+    }
     if (isMaster) return true;
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food" || tab === "restaurant";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride" || tab === "delivery";
@@ -602,7 +624,17 @@ export function ProviderPortal() {
     return "X-One Partner Portal — Cổng Đối Tác Dịch Vụ";
   };
 
-  const [activeTab, setActiveTab] = useState<ProviderTab>("channels");
+  const getDefaultTab = (pType?: string, master?: boolean): ProviderTab => {
+    if (master) return "ride";
+    if (pType === "restaurant_merchant" || pType === "food") return "food";
+    if (pType === "ride_driver" || pType === "ride") return "ride";
+    if (pType === "delivery_courier" || pType === "delivery") return "delivery";
+    if (pType === "healthcare_doctor" || pType === "healthcare") return "health";
+    return "services";
+  };
+
+  const [activeTab, setActiveTab] = useState<ProviderTab>(() => getDefaultTab(rawProviderType, isMaster));
+  const initializedTabRef = useRef(false);
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [allRides, setAllRides] = useState<ActiveRide[]>([]);
   const [orders, setOrders] = useState<FoodOrder[]>([]);
@@ -1018,18 +1050,13 @@ export function ProviderPortal() {
     setShowAddItemModal(true);
   };
 
-  // Switch active tab if current tab is not allowed for this provider
+  // Initialize or switch active tab based on allowed domain
   useEffect(() => {
-    if (!isAllowedTab(activeTab)) {
-      if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") {
-        setActiveTab("food");
-      } else if (rawProviderType === "ride_driver" || rawProviderType === "ride") {
-        setActiveTab("ride");
-      } else if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") {
-        setActiveTab("health");
-      } else {
-        setActiveTab("services");
-      }
+    if (!initializedTabRef.current && (rawProviderType || isMaster)) {
+      initializedTabRef.current = true;
+      setActiveTab(getDefaultTab(rawProviderType, isMaster));
+    } else if (!isAllowedTab(activeTab)) {
+      setActiveTab(getDefaultTab(rawProviderType, isMaster));
     }
   }, [rawProviderType, isMaster, activeTab]);
 
@@ -1460,11 +1487,11 @@ export function ProviderPortal() {
   const cta = domainCta();
 
   const tabLabel = (tab: "ride" | "food" | "restaurant" | "health" | "delivery"): string => {
-    if (tab === "ride") return "Chuyến xe · Cuốc xe";
-    if (tab === "food") return "Đơn món · Món ăn";
-    if (tab === "restaurant") return "Đặt bàn";
-    if (tab === "health") return "Lịch khám";
-    return "Giao hàng";
+    if (tab === "ride") return "Chuyến xe · Cuốc xe Ride Partner";
+    if (tab === "food") return "Đơn món · Món ăn Food Merchant";
+    if (tab === "restaurant") return "Đặt bàn · Nhà hàng Reservation";
+    if (tab === "health") return "Lịch khám · Y tế Healthcare Doctor";
+    return "Giao hàng · Chuyển phát Delivery Courier";
   };
 
   return (
@@ -1713,6 +1740,9 @@ export function ProviderPortal() {
                 )}
 
                 <div className="provider-nav-divider" />
+                <span className="provider-nav-group-title provider-nav-group-title-sub">
+                  Quản lý kinh doanh
+                </span>
 
                 <button
                   type="button"
@@ -1725,14 +1755,70 @@ export function ProviderPortal() {
                     <Layers size={16} />
                   </span>
                   <span className="provider-nav-btn-label">
-                    Gắn & Quản lý Dịch vụ · Món và dịch vụ của tôi
+                    Gắn & Quản lý Dịch vụ
+                  </span>
+                  <span className="provider-nav-count">{serviceItems.length}</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "profile"}
+                  className={`provider-nav-btn${activeTab === "profile" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("profile")}
+                >
+                  <span className="provider-nav-btn-icon">
+                    <Building2 size={16} />
+                  </span>
+                  <span className="provider-nav-btn-label">
+                    Hồ sơ Cơ sở
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      width: "8px",
+                      height: "8px",
+                      borderRadius: "50%",
+                      background: profileForm.isOpen ? "#10B981" : "#94A3B8",
+                    }}
+                    title={profileForm.isOpen ? "Đang mở cửa" : "Tạm đóng"}
+                  />
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "earnings"}
+                  className={`provider-nav-btn${activeTab === "earnings" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("earnings")}
+                >
+                  <span className="provider-nav-btn-icon">
+                    <Wallet size={16} />
+                  </span>
+                  <span className="provider-nav-btn-label">
+                    Doanh thu & Đối soát
                   </span>
                 </button>
 
                 <div className="provider-nav-divider" />
                 <span className="provider-nav-group-title provider-nav-group-title-sub">
-                  Kênh Microservices & AI
+                  Kỹ thuật & Hệ thống
                 </span>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "webhooks"}
+                  className={`provider-nav-btn${activeTab === "webhooks" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("webhooks")}
+                >
+                  <span className="provider-nav-btn-icon">
+                    <Code size={16} />
+                  </span>
+                  <span className="provider-nav-btn-label">
+                    Tích hợp Webhook
+                  </span>
+                </button>
 
                 <button
                   type="button"
@@ -1745,7 +1831,7 @@ export function ProviderPortal() {
                     <Radio size={16} />
                   </span>
                   <span className="provider-nav-btn-label">
-                    Trung tâm kết nối
+                    Kênh Microservices
                   </span>
                   <span
                     style={{
@@ -1765,6 +1851,26 @@ export function ProviderPortal() {
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={activeTab === "staff"}
+                  className={`provider-nav-btn${activeTab === "staff" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("staff")}
+                >
+                  <span className="provider-nav-btn-icon">
+                    <UserRound size={16} />
+                  </span>
+                  <span className="provider-nav-btn-label">
+                    Phân công & Giấy tờ
+                  </span>
+                  {providerAssignments.filter((a) => a.status === "OFFERED" || a.status === "ACCEPTED").length > 0 && (
+                    <span className="provider-nav-count">
+                      {providerAssignments.filter((a) => a.status === "OFFERED" || a.status === "ACCEPTED").length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={activeTab === "mcp"}
                   className={`provider-nav-btn${activeTab === "mcp" ? " is-active" : ""}`}
                   onClick={() => setActiveTab("mcp")}
@@ -1774,6 +1880,19 @@ export function ProviderPortal() {
                   </span>
                   <span className="provider-nav-btn-label">
                     Cổng kết nối MCP
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: "10px",
+                      background: "#F5F3FF",
+                      color: "#7C3AED",
+                    }}
+                  >
+                    AI
                   </span>
                 </button>
               </div>
@@ -1973,18 +2092,154 @@ export function ProviderPortal() {
               </div>
             </div>
 
+            {/* Quick Segmented Horizontal Tab Bar */}
+            <div className="provider-tab-bar" aria-label="Điều hướng nhanh" style={{ marginBottom: "16px" }}>
+              {isAllowedTab("ride") && (
+                <button
+                  type="button"
+                  aria-pressed={activeTab === "ride"}
+                  className={`provider-tab${activeTab === "ride" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("ride")}
+                >
+                  <Car size={14} />
+                  <span>Chuyến xe (Ride Partner)</span>
+                  {allRides.filter((r) => r.status !== "COMPLETED").length > 0 && (
+                    <span className="provider-tab-badge">{allRides.filter((r) => r.status !== "COMPLETED").length}</span>
+                  )}
+                </button>
+              )}
+              {isAllowedTab("delivery") && (
+                <button
+                  type="button"
+                  aria-pressed={activeTab === "delivery"}
+                  className={`provider-tab${activeTab === "delivery" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("delivery")}
+                >
+                  <Package size={14} />
+                  <span>Giao hàng (Delivery Courier)</span>
+                  {deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length > 0 && (
+                    <span className="provider-tab-badge">{deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length}</span>
+                  )}
+                </button>
+              )}
+              {isAllowedTab("food") && (
+                <button
+                  type="button"
+                  aria-pressed={activeTab === "food"}
+                  className={`provider-tab${activeTab === "food" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("food")}
+                >
+                  <UtensilsCrossed size={14} />
+                  <span>Đơn món (Food Merchant)</span>
+                  {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length > 0 && (
+                    <span className="provider-tab-badge">{orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length}</span>
+                  )}
+                </button>
+              )}
+              {isAllowedTab("restaurant") && (
+                <button
+                  type="button"
+                  aria-pressed={activeTab === "restaurant"}
+                  className={`provider-tab${activeTab === "restaurant" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("restaurant")}
+                >
+                  <Calendar size={14} />
+                  <span>Đặt bàn (Restaurant)</span>
+                </button>
+              )}
+              {isAllowedTab("health") && (
+                <button
+                  type="button"
+                  aria-pressed={activeTab === "health"}
+                  className={`provider-tab${activeTab === "health" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("health")}
+                >
+                  <HeartPulse size={14} />
+                  <span>Lịch khám (Healthcare)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                aria-pressed={activeTab === "services"}
+                className={`provider-tab${activeTab === "services" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("services")}
+              >
+                <Layers size={14} />
+                <span>Dịch vụ ({serviceItems.length})</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "profile"}
+                className={`provider-tab${activeTab === "profile" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("profile")}
+              >
+                <Building2 size={14} />
+                <span>Hồ sơ Cơ sở</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "earnings"}
+                className={`provider-tab${activeTab === "earnings" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("earnings")}
+              >
+                <Wallet size={14} />
+                <span>Doanh thu</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "webhooks"}
+                className={`provider-tab${activeTab === "webhooks" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("webhooks")}
+              >
+                <Code size={14} />
+                <span>Webhook</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "channels"}
+                className={`provider-tab${activeTab === "channels" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("channels")}
+              >
+                <Radio size={14} />
+                <span>Microservices</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "staff"}
+                className={`provider-tab${activeTab === "staff" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("staff")}
+              >
+                <UserRound size={14} />
+                <span>Phân công & Giấy tờ</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeTab === "mcp"}
+                className={`provider-tab${activeTab === "mcp" ? " is-active" : ""}`}
+                onClick={() => setActiveTab("mcp")}
+              >
+                <Plug2 size={14} />
+                <span>Cổng MCP (AI)</span>
+              </button>
+            </div>
+
             {/* TAB VIEWPORT */}
             <div className="provider-tab-viewport">
-              {/* DEDICATED TAB: TRUNG TÂM KẾT NỐI & MỞ RỘNG MICROSERVICES */}
-              {activeTab === "channels" && (
+              {/* DEDICATED TAB: PHÂN CÔNG TRỰC CA & HỒ SƠ PHÁP LÝ */}
+              {activeTab === "staff" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" }}>
-                      <div>
-                        <h2 style={{ margin: 0, fontSize: "var(--text-lg)", color: "#0F172A" }}>Điều phối & hồ sơ Provider</h2>
-                        <p style={{ margin: "6px 0 0", color: "#64748B", fontSize: "var(--text-sm)" }}>
-                          Quản lý trạng thái sẵn sàng, phân công vận hành và giấy tờ xác minh trên cùng một màn hình.
-                        </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#F1F5F9", color: "#475569", display: "grid", placeItems: "center" }}>
+                          <UserRound size={18} />
+                        </div>
+                        <div>
+                          <h2 style={{ margin: 0, fontSize: "var(--text-lg)", color: "#0F172A", fontWeight: 700 }}>Phân công Trực ca & Hồ sơ Pháp lý</h2>
+                          <p style={{ margin: "4px 0 0", color: "#64748B", fontSize: "var(--text-xs)" }}>
+                            Quản lý trạng thái sẵn sàng, phân công nhiệm vụ và gửi hồ sơ giấy tờ xác minh đối tác
+                          </p>
+                        </div>
                       </div>
                       {availability && (
                         <button
@@ -2059,6 +2314,12 @@ export function ProviderPortal() {
                       )}
                     </form>
                   </div>
+                </div>
+              )}
+
+              {/* DEDICATED TAB: TRUNG TÂM KẾT NỐI & MỞ RỘNG MICROSERVICES */}
+              {activeTab === "channels" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
                   {/* Hero / Overview Banner */}
                   <div className="admin-table-card" style={{ padding: "24px" }}>
@@ -2270,56 +2531,64 @@ export function ProviderPortal() {
                                   <span style={{ fontSize: "11px", color: "#64748B" }}>
                                     {allRides.length} chuyến xe hôm nay
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="button button-sm button-secondary"
-                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
-                                    onClick={() => setActiveTab("ride")}
-                                  >
-                                    Điều phối cuốc
-                                  </button>
+                                  {isAllowedTab("ride") && (
+                                    <button
+                                      type="button"
+                                      className="button button-sm button-secondary"
+                                      style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                      onClick={() => setActiveTab("ride")}
+                                    >
+                                      Điều phối cuốc
+                                    </button>
+                                  )}
                                 </>
                               ) : channel.id === "food" ? (
                                 <>
                                   <span style={{ fontSize: "11px", color: "#64748B" }}>
                                     {orders.length} đơn món hôm nay
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="button button-sm button-secondary"
-                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
-                                    onClick={() => setActiveTab("food")}
-                                  >
-                                    Bếp nhận đơn
-                                  </button>
+                                  {isAllowedTab("food") && (
+                                    <button
+                                      type="button"
+                                      className="button button-sm button-secondary"
+                                      style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                      onClick={() => setActiveTab("food")}
+                                    >
+                                      Bếp nhận đơn
+                                    </button>
+                                  )}
                                 </>
                               ) : channel.id === "restaurant" ? (
                                 <>
                                   <span style={{ fontSize: "11px", color: "#64748B" }}>
                                     {reservations.length} bàn đặt hôm nay
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="button button-sm button-secondary"
-                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
-                                    onClick={() => setActiveTab("restaurant")}
-                                  >
-                                    Xếp bàn
-                                  </button>
+                                  {isAllowedTab("restaurant") && (
+                                    <button
+                                      type="button"
+                                      className="button button-sm button-secondary"
+                                      style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                      onClick={() => setActiveTab("restaurant")}
+                                    >
+                                      Xếp bàn
+                                    </button>
+                                  )}
                                 </>
                               ) : channel.id === "healthcare" ? (
                                 <>
                                   <span style={{ fontSize: "11px", color: "#64748B" }}>
                                     {appointments.length} ca khám hôm nay
                                   </span>
-                                  <button
-                                    type="button"
-                                    className="button button-sm button-secondary"
-                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
-                                    onClick={() => setActiveTab("health")}
-                                  >
-                                    Lịch khám
-                                  </button>
+                                  {isAllowedTab("health") && (
+                                    <button
+                                      type="button"
+                                      className="button button-sm button-secondary"
+                                      style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                      onClick={() => setActiveTab("health")}
+                                    >
+                                      Lịch khám
+                                    </button>
+                                  )}
                                 </>
                               ) : (
                                 <>
@@ -2428,12 +2697,9 @@ export function ProviderPortal() {
                 </div>
               )}
 
-            {/* TAB VIEWPORT */}
-            <div className="provider-tab-viewport">
-              {/* TAB 4: SERVICE INTEGRATION / SETUP */}
-              {activeTab === "services" && (
+              {/* DEDICATED TAB: DOANH THU & QUYẾT TOÁN ĐỐI TÁC */}
+              {activeTab === "earnings" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-                  {/* Earnings & Settlement Summary Card */}
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -2507,9 +2773,20 @@ export function ProviderPortal() {
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Business Profile Configuration Card */}
+                    <div style={{ marginTop: "16px", padding: "14px", background: "#F1F5F9", borderRadius: "8px", fontSize: "var(--text-xs)", color: "#475569", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
+                      <div>
+                        <strong>Tài khoản thanh toán liên kết:</strong> {profile?.businessName || "Doanh nghiệp đối tác"} · Vietcombank ****8899
+                      </div>
+                      <span style={{ color: "#059669", fontWeight: 600 }}>Tự động quyết toán 00:00 Thứ 2 hàng tuần</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DEDICATED TAB: HỒ SƠ CƠ SỞ & THIẾT LẬP KẾT NỐI */}
+              {activeTab === "profile" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -2610,72 +2887,6 @@ export function ProviderPortal() {
                         <span style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "4px", display: "block" }}>
                           X-One sẽ gửi webhook HTTP POST kèm chữ ký bảo mật HMAC-SHA256 khi có cuốc xe hoặc đơn món mới.
                         </span>
-
-                        {/* Webhook Sandbox & Test Console */}
-                        <div style={{ marginTop: "12px", padding: "14px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <Code size={15} style={{ color: "#4F46E5" }} />
-                              <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
-                            </div>
-                            <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>HMAC-SHA256 Signed · Timeout 5s</span>
-                          </div>
-
-                          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
-                            <select
-                              value={webhookEvent}
-                              onChange={(e) => setWebhookEvent(e.target.value)}
-                              style={{ height: "34px", padding: "0 10px", border: "1px solid #CBD5E1", borderRadius: "6px", fontSize: "var(--text-xs)", background: "#FFFFFF" }}
-                            >
-                              <option value="ride.booking.confirmed">ride.booking.confirmed (Cuốc xe đã xác nhận)</option>
-                              <option value="food.order.received">food.order.received (Đơn món quán ăn mới)</option>
-                              <option value="healthcare.appointment.booked">healthcare.appointment.booked (Lịch hẹn khám mới)</option>
-                            </select>
-
-                            <button
-                              type="button"
-                              disabled={testingWebhook}
-                              onClick={() => void handleTestWebhook()}
-                              className="button button-secondary"
-                              style={{ height: "34px", padding: "0 14px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
-                            >
-                              {testingWebhook ? <LoaderCircle className="spin" size={13} /> : <Send size={13} />}
-                              <span>{testingWebhook ? "Đang phát webhook…" : "Gửi thử nghiệm Live"}</span>
-                            </button>
-                          </div>
-
-                          {webhookTestResult && (
-                            <div style={{ marginTop: "12px", padding: "12px", borderRadius: "6px", background: webhookTestResult.success ? "#ECFDF5" : "#FEF2F2", border: `1px solid ${webhookTestResult.success ? "#A7F3D0" : "#FECACA"}` }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                  {webhookTestResult.success ? <CheckCircle2 size={15} color="#059669" /> : <AlertTriangle size={15} color="#DC2626" />}
-                                  <strong style={{ fontSize: "var(--text-xs)", color: webhookTestResult.success ? "#065F46" : "#991B1B" }}>
-                                    {webhookTestResult.success ? `Giao tiếp thành công (HTTP ${webhookTestResult.status_code})` : `Giao tiếp thất bại (HTTP ${webhookTestResult.status_code || "Error"})`}
-                                  </strong>
-                                </div>
-                                <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Độ trễ: <strong>{webhookTestResult.latency_ms}ms</strong></span>
-                              </div>
-
-                              {webhookTestResult.error_message && (
-                                <div style={{ fontSize: "var(--text-xs)", color: "#DC2626", marginBottom: "6px" }}>
-                                  Chi tiết lỗi: {webhookTestResult.error_message}
-                                </div>
-                              )}
-
-                              <details style={{ marginTop: "6px" }}>
-                                <summary style={{ fontSize: "var(--text-micro)", color: "#475569", cursor: "pointer", fontWeight: 600 }}>Xem Chi tiết Giao tiếp & Chữ ký HMAC</summary>
-                                <pre style={{ margin: "6px 0 0", padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "4px", fontSize: "var(--text-micro)", overflowX: "auto" }}>
-                                  {JSON.stringify({
-                                    target_url: webhookTestResult.target_url,
-                                    event_sent: webhookTestResult.event_sent,
-                                    signature_sent: webhookTestResult.signature_sent,
-                                    response_body: webhookTestResult.response_body,
-                                  }, null, 2)}
-                                </pre>
-                              </details>
-                            </div>
-                          )}
-                        </div>
                       </div>
 
                       <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", marginTop: "4px" }}>
@@ -2691,13 +2902,136 @@ export function ProviderPortal() {
                       </div>
                     </form>
                   </div>
+                </div>
+              )}
 
-                  {/* Attached Service Offerings Table */}
+              {/* DEDICATED TAB: TÍCH HỢP WEBHOOK & LIVE SANDBOX */}
+              {activeTab === "webhooks" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                  <div className="admin-table-card" style={{ padding: "20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#EEF2FF", color: "#4F46E5", display: "grid", placeItems: "center" }}>
+                          <Code size={18} />
+                        </div>
+                        <div>
+                          <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                            Tích hợp Webhook & Live Sandbox
+                          </h2>
+                          <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
+                            Nhận thông báo tự động thời gian thực đến hệ thống máy chủ nội bộ hoặc phần mềm POS của đối tác
+                          </span>
+                        </div>
+                      </div>
+                      <span className="admin-role-badge" style={{ background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }}>
+                        HMAC-SHA256 Signed
+                      </span>
+                    </div>
+
+                    <form onSubmit={handleSaveProfile} style={{ marginBottom: "20px" }}>
+                      <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                        Endpoint Webhook URL của đối tác
+                      </label>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <input
+                          type="url"
+                          value={profileForm.webhookUrl}
+                          onChange={(e) => setProfileForm({ ...profileForm, webhookUrl: e.target.value })}
+                          placeholder="https://api.doitac.vn/webhooks/xone-events"
+                          style={{ flex: 1, minWidth: "260px", height: "38px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-sm)" }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={savingProfile}
+                          className="button button-primary"
+                          style={{ height: "38px", padding: "0 16px", fontSize: "var(--text-sm)", fontWeight: 600 }}
+                        >
+                          {savingProfile ? <LoaderCircle className="spin" size={14} /> : <Check size={14} />}
+                          <span>{savingProfile ? "Đang lưu…" : "Lưu cấu hình Webhook"}</span>
+                        </button>
+                      </div>
+                      <span style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "6px", display: "block" }}>
+                        Mỗi yêu cầu webhook đều kèm header <code>X-One-Signature</code> và <code>X-One-Event-Id</code> để xác minh tính toàn vẹn dữ liệu.
+                      </span>
+                    </form>
+
+                    {/* Webhook Sandbox & Test Console */}
+                    <div style={{ padding: "16px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <Zap size={16} style={{ color: "#4F46E5" }} />
+                          <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>Webhook Live Sandbox (Thử nghiệm thời gian thực)</strong>
+                        </div>
+                        <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Timeout 5.0s · Trực tiếp từ Gateway</span>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+                        <select
+                          value={webhookEvent}
+                          onChange={(e) => setWebhookEvent(e.target.value)}
+                          style={{ height: "36px", padding: "0 12px", border: "1px solid #CBD5E1", borderRadius: "8px", fontSize: "var(--text-xs)", background: "#FFFFFF" }}
+                        >
+                          <option value="ride.booking.confirmed">ride.booking.confirmed (Cuốc xe đã xác nhận)</option>
+                          <option value="food.order.received">food.order.received (Đơn món quán ăn mới)</option>
+                          <option value="healthcare.appointment.booked">healthcare.appointment.booked (Lịch hẹn khám mới)</option>
+                        </select>
+
+                        <button
+                          type="button"
+                          disabled={testingWebhook}
+                          onClick={() => void handleTestWebhook()}
+                          className="button button-secondary"
+                          style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        >
+                          {testingWebhook ? <LoaderCircle className="spin" size={13} /> : <Send size={13} />}
+                          <span>{testingWebhook ? "Đang phát webhook…" : "Gửi thử nghiệm Live"}</span>
+                        </button>
+                      </div>
+
+                      {webhookTestResult && (
+                        <div style={{ marginTop: "14px", padding: "14px", borderRadius: "8px", background: webhookTestResult.success ? "#ECFDF5" : "#FEF2F2", border: `1px solid ${webhookTestResult.success ? "#A7F3D0" : "#FECACA"}` }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              {webhookTestResult.success ? <CheckCircle2 size={16} color="#059669" /> : <AlertTriangle size={16} color="#DC2626" />}
+                              <strong style={{ fontSize: "var(--text-xs)", color: webhookTestResult.success ? "#065F46" : "#991B1B" }}>
+                                {webhookTestResult.success ? `Giao tiếp thành công (HTTP ${webhookTestResult.status_code})` : `Giao tiếp thất bại (HTTP ${webhookTestResult.status_code || "Error"})`}
+                              </strong>
+                            </div>
+                            <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Độ trễ: <strong>{webhookTestResult.latency_ms}ms</strong></span>
+                          </div>
+
+                          {webhookTestResult.error_message && (
+                            <div style={{ fontSize: "var(--text-xs)", color: "#DC2626", marginBottom: "6px" }}>
+                              Chi tiết lỗi: {webhookTestResult.error_message}
+                            </div>
+                          )}
+
+                          <details style={{ marginTop: "6px" }}>
+                            <summary style={{ fontSize: "var(--text-micro)", color: "#475569", cursor: "pointer", fontWeight: 600 }}>Xem Chi tiết Giao tiếp & Chữ ký HMAC</summary>
+                            <pre style={{ margin: "6px 0 0", padding: "8px", background: "#0F172A", color: "#F8FAFC", borderRadius: "4px", fontSize: "var(--text-micro)", overflowX: "auto" }}>
+                              {JSON.stringify({
+                                target_url: webhookTestResult.target_url,
+                                event_sent: webhookTestResult.event_sent,
+                                signature_sent: webhookTestResult.signature_sent,
+                                response_body: webhookTestResult.response_body,
+                              }, null, 2)}
+                            </pre>
+                          </details>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* DEDICATED TAB: GẮN & QUẢN LÝ DỊCH VỤ / SẢN PHẨM */}
+              {activeTab === "services" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
                   <div className="admin-table-card" style={{ padding: "20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
                       <div>
                         <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
-                          Danh mục Dịch vụ & Món ăn ({serviceItems.length})
+                          Danh sách Dịch vụ / Sản phẩm đã gắn vào X-One ({serviceItems.length})
                         </h2>
                         <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
                           Bật / tắt nhanh trạng thái mở bán thời gian thực kiểu merchant thực tế
@@ -2711,7 +3045,7 @@ export function ProviderPortal() {
                         style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", gap: "6px" }}
                       >
                         <Plus size={15} />
-                        <span>Gắn Dịch Vụ / Món Mới</span>
+                        <span>Gắn Dịch Vụ / Món Ăn Mới</span>
                       </button>
                     </div>
 
@@ -5098,7 +5432,6 @@ export function ProviderPortal() {
                 </div>
               </div>
             )}
-          </div>
           </div>
         </main>
       </div>

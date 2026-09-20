@@ -10,11 +10,17 @@ const DEFAULT_SUBTABS: Record<MainTabId, SubTabId> = {
   "ai-integrations": "api-keys",
   support: "support-queue",
   "system-logs": "logs-view",
+  "domain-orders": "domain-trans",
+  dispatch: "dispatch",
+  payments: "payments-list",
+  "incident-recovery": "workflow-reconciliation",
+  feedback: "feedback-ratings",
+  "provider-verification": "provider-documents",
 };
 
 export function useAdminNavigation(userRole?: string) {
   const tabs = getConsolidatedTabs(userRole);
-  const defaultMain: MainTabId = userRole === "manager" ? "support" : "overview";
+  const defaultMain: MainTabId = "overview";
   const [activeMainTab, setActiveMainTab] = useState<MainTabId>(defaultMain);
   const [activeSubTab, setActiveSubTab] = useState<Record<MainTabId, SubTabId>>(DEFAULT_SUBTABS);
 
@@ -44,15 +50,25 @@ export function useAdminNavigation(userRole?: string) {
   }, [tabs]);
 
   const switchMainTab = (mainTabId: MainTabId, targetSubTabId?: SubTabId) => {
-    const tab = tabs.find((item) => item.id === mainTabId);
+    let tab = tabs.find((item) => item.id === mainTabId);
+    let effectiveMain = mainTabId;
+
+    if (!tab && targetSubTabId) {
+      const found = tabs.find((t) => t.subtabs.some((s) => s.id === targetSubTabId));
+      if (found) {
+        tab = found;
+        effectiveMain = found.id;
+      }
+    }
+
     if (!tab) return;
 
-    setActiveMainTab(mainTabId);
-    if (targetSubTabId) setActiveSubTab((previous) => ({ ...previous, [mainTabId]: targetSubTabId }));
+    setActiveMainTab(effectiveMain);
+    if (targetSubTabId) setActiveSubTab((previous) => ({ ...previous, [effectiveMain]: targetSubTabId }));
 
-    const sub = targetSubTabId || activeSubTab[mainTabId] || tab.subtabs[0]?.id;
+    const sub = targetSubTabId || activeSubTab[effectiveMain] || tab.subtabs[0]?.id;
     const subDefinition = tab.subtabs.find((item) => item.id === sub);
-    updateHash(subDefinition?.hashName || mainTabId);
+    updateHash(subDefinition?.hashName || effectiveMain);
   };
 
   const switchSubTab = (subTabId: SubTabId) => {

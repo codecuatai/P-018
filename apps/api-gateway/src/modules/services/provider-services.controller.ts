@@ -838,7 +838,7 @@ export class ProviderServicesController {
       for (const ride of rides) {
         if (ride.status === 'COMPLETED') {
           completedRidesCount++;
-          totalRidesFare += Number(ride.fare_amount ?? ride.fare ?? 90000);
+          totalRidesFare += Number(ride.fare_amount ?? ride.fare ?? 0);
         }
       }
     } catch {
@@ -853,7 +853,7 @@ export class ProviderServicesController {
       for (const order of orders) {
         if (order.status === 'READY_FOR_PICKUP' || order.status === 'COMPLETED' || order.status === 'DELIVERED') {
           completedOrdersCount++;
-          totalOrdersAmount += Number(order.total_amount ?? order.total ?? 65000);
+          totalOrdersAmount += Number(order.total_amount ?? order.total ?? 0);
         }
       }
     } catch {

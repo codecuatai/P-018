@@ -19,13 +19,16 @@ test.describe("Provider Multi-Tenancy Isolation & Webhook Integration E2E", () =
     await expect(page.getByRole("button", { name: /Lịch khám|Healthcare/i }).first()).toBeVisible();
     await expect(page.locator(".admin-banner-subtitle")).toContainText("Master 4 Dịch Vụ");
 
-    // Open Gắn & Quản lý Dịch vụ subtab (accessible across desktop & mobile viewports)
+    // Open Hồ sơ Cơ sở tab (dedicated profile management)
+    const profileTab = page.getByRole("tab", { name: /Hồ sơ Cơ sở/i });
+    await expect(profileTab).toBeVisible({ timeout: 10_000 });
+    await profileTab.click();
+    await expect(page.getByRole("heading", { name: /Hồ sơ Cơ sở & Thiết lập Kết nối/i })).toBeVisible({ timeout: 10_000 });
+
+    // Open Gắn & Quản lý Dịch vụ subtab (dedicated service catalog management)
     const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
     await expect(servicesTab).toBeVisible({ timeout: 10_000 });
     await servicesTab.click();
-
-    // Verify profile section and items table load
-    await expect(page.getByRole("heading", { name: /Hồ sơ Cơ sở & Thiết lập Kết nối/i })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText(/Danh sách Dịch vụ \/ Sản phẩm đã gắn vào X-One/i)).toBeVisible();
   });
 
@@ -60,16 +63,15 @@ test.describe("Provider Multi-Tenancy Isolation & Webhook Integration E2E", () =
 
     // Verify Scoped isolation: Food merchant only sees Food and Services tabs; Ride & Healthcare are hidden
     await expect(page.locator(".admin-banner-subtitle")).toContainText("Nhà hàng & Ẩm thực");
-    await expect(page.getByRole("button", { name: /Đơn món|Food Merchant/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Đơn món|Food Merchant/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Chuyến xe|Ride Partner/i })).not.toBeVisible();
     await expect(page.getByRole("button", { name: /Lịch khám|Healthcare/i })).not.toBeVisible();
 
-    // Navigate to Gắn & Quản lý Dịch vụ subtab
-    const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
-    await expect(servicesTab).toBeVisible({ timeout: 10_000 });
-    await servicesTab.click();
+    // Step 2: Configure custom Webhook URL in dedicated Hồ sơ Cơ sở tab
+    const profileTab = page.getByRole("tab", { name: /Hồ sơ Cơ sở/i });
+    await expect(profileTab).toBeVisible({ timeout: 10_000 });
+    await profileTab.click();
 
-    // Step 2: Configure custom Webhook URL
     const webhookInput = page.getByPlaceholder(/https:\/\/api\.doitac\.vn\/webhooks/i);
     await expect(webhookInput).toBeVisible({ timeout: 10_000 });
     await webhookInput.fill("https://api.comnieusaigon.com/v1/webhook");
@@ -78,7 +80,11 @@ test.describe("Provider Multi-Tenancy Isolation & Webhook Integration E2E", () =
     await page.getByRole("button", { name: /Lưu cập nhật hồ sơ/i }).click();
     await expect(page.getByText(/Đã cập nhật thông tin đơn vị|Đã lưu/i)).toBeVisible({ timeout: 10_000 });
 
-    // Step 3: Add custom service item
+    // Step 3: Add custom service item in dedicated Gắn & Quản lý Dịch vụ tab
+    const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
+    await expect(servicesTab).toBeVisible({ timeout: 10_000 });
+    await servicesTab.click();
+
     await page.getByRole("button", { name: /Gắn Dịch Vụ \/ Món Ăn Mới/i }).click();
     await expect(page.getByRole("heading", { name: /Gắn Dịch Vụ \/ Món Ăn Mới/i })).toBeVisible();
 

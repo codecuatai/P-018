@@ -266,7 +266,7 @@ function FoodBrowse() {
 
 function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string, quantity: number) => void }) {
   const backendGroups = listFrom(item.options ?? item.option_groups ?? item.modifier_groups);
-  const basePrice = moneyAmount(item.price ?? item.base_price) || 35000;
+  const basePrice = moneyAmount(item.price ?? item.base_price) || 0;
 
   const defaultGroups = useMemo(() => [
     {
@@ -1755,7 +1755,7 @@ function PreviewSummary({ preview }: { preview?: JsonRecord }) {
   if (preview.restaurant_name) {
     return <dl className="preview-summary">
       <div><dt>Nhà hàng</dt><dd>{display(preview.restaurant_name)}</dd></div>
-      <div><dt>Thời lượng</dt><dd>{numberOf(preview.duration_minutes) || 120} phút</dd></div>
+      <div><dt>Thời lượng</dt><dd>{numberOf(preview.duration_minutes) ? `${numberOf(preview.duration_minutes)} phút` : "Theo đặt chỗ"}</dd></div>
       <div><dt>Yêu cầu đặc biệt</dt><dd>{display(preview.special_requests, "Không có")}</dd></div>
       <div><dt>Hết hạn xác nhận</dt><dd>{formatDateTime(preview.confirmation_expires_at)}</dd></div>
       {preview.hold_expires_at ? <div><dt>Hết hạn giữ bàn</dt><dd>{formatDateTime(preview.hold_expires_at)}</dd></div> : null}

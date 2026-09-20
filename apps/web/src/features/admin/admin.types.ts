@@ -8,7 +8,13 @@ export type MainTabId =
   | "transactions"
   | "ai-integrations"
   | "support"
-  | "system-logs";
+  | "system-logs"
+  | "domain-orders"
+  | "dispatch"
+  | "payments"
+  | "incident-recovery"
+  | "feedback"
+  | "provider-verification";
 
 export type SubTabId =
   | "summary"
@@ -25,7 +31,9 @@ export type SubTabId =
   | "feedback-ratings"
   | "logs-view"
   | "feature-flags"
-  | "audit-trail";
+  | "audit-trail"
+  | "dispatch"
+  | "provider-documents";
 
 export interface TabDefinition {
   id: MainTabId;

@@ -68,13 +68,14 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
 
     await openAdminMenuIfMobile(page);
 
-    // Verify the three operational tabs are present
+    // Verify operational tabs are present for manager
     await expect(page.getByRole("button", { name: /Tổng quan ca trực/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Giao dịch & Vận hành/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Hỗ trợ & Đánh giá/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Đơn hàng domain/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Điều phối & Phân công/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Thanh toán & Hoàn tiền/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Người dùng & Phân quyền/i })).not.toBeVisible();
 
-    // Verify 2 sensitive tabs are hidden for manager
+    // Verify sensitive IT tabs are hidden for manager
     await expect(page.getByRole("button", { name: /AI Engine & API Keys/i })).not.toBeVisible();
     await expect(page.getByRole("button", { name: /System Logs & Audit/i })).not.toBeVisible();
 

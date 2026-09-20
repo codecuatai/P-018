@@ -16,6 +16,7 @@ type MockUser = {
   email: string;
   full_name: string;
   phone: string;
+  avatar_url?: string;
   onboarding_completed_at?: string;
   role: "user" | "customer" | "manager" | "provider" | "admin";
   status: "active";
@@ -45,6 +46,11 @@ export class MockGateway {
   private readonly resources = new Map<string, JsonRecord>();
   private readonly providerProfiles = new Map<string, JsonRecord>();
   private readonly providerItems = new Map<string, JsonRecord[]>();
+  private readonly notifications = new Map<string, JsonRecord[]>();
+  private readonly notificationPreferences = new Map<string, JsonRecord>();
+  private readonly favorites = new Map<string, JsonRecord[]>();
+  private readonly patients = new Map<string, JsonRecord[]>();
+  private readonly sessions = new Map<string, JsonRecord[]>();
   private refreshUserSub: string | null;
   private sequence = 0;
   private waitingRefreshes = 0;
@@ -57,6 +63,9 @@ export class MockGateway {
     this.users.set(this.user.sub, this.user);
     this.refreshUserSub = options.autoLogin ? this.user.sub : null;
     this.addresses.set(this.user.sub, []);
+    this.seedNotifications();
+    this.seedFavorites();
+    this.seedPatients();
     if (options.autoLogin) {
       this.seedRefreshToken(this.user.sub);
       if (options.synchronizeRefresh) {
@@ -80,6 +89,67 @@ export class MockGateway {
     (conversation.messages as JsonRecord[]).push({ role: "assistant", content: "Mình đã sẵn sàng.", createdAt: isoNow() });
     this.conversations.set(this.conversationKey(this.user.sub, String(conversation.conversationId)), conversation);
     return conversation;
+  }
+
+  seedNotifications(unreadCount = 2): JsonRecord[] {
+    const notifs: JsonRecord[] = [
+      {
+        id: "notif-1",
+        actor_id: this.user.sub,
+        event_key: "booking.driver_arrived",
+        type: "RIDE_UPDATE",
+        title: "Tài xế đã đến điểm đón",
+        body: "Tài xế Nguyễn Văn A đang chờ bạn tại 12 Nguyễn Huệ.",
+        resource_type: "ride_booking",
+        resource_id: "ride-booking-1",
+        status: unreadCount >= 1 ? "UNREAD" : "READ",
+        created_at: isoNow(),
+      },
+      {
+        id: "notif-2",
+        actor_id: this.user.sub,
+        event_key: "promo.gold_voucher",
+        type: "PROMOTION",
+        title: "Nhận voucher giảm 20K",
+        body: "Ưu đãi độc quyền dành cho thành viên Hạng Vàng.",
+        resource_type: "promotion",
+        resource_id: "promo-1",
+        status: unreadCount >= 2 ? "UNREAD" : "READ",
+        created_at: isoNow(),
+      },
+      {
+        id: "notif-3",
+        actor_id: this.user.sub,
+        event_key: "system.security_alert",
+        type: "SECURITY",
+        title: "Đăng nhập từ thiết bị mới",
+        body: "Tài khoản vừa đăng nhập từ trình duyệt Chrome.",
+        resource_type: "system",
+        resource_id: "sys-1",
+        status: "READ",
+        created_at: isoNow(),
+        read_at: isoNow(),
+      },
+    ];
+    this.notifications.set(this.user.sub, notifs);
+    return notifs;
+  }
+
+  seedFavorites(): JsonRecord[] {
+    const favs: JsonRecord[] = [
+      { id: "fav-1", actor_id: this.user.sub, domain: "food", resource_id: "food-restaurant-1", created_at: isoNow() },
+      { id: "fav-2", actor_id: this.user.sub, domain: "restaurant", resource_id: "restaurant-1", created_at: isoNow() },
+    ];
+    this.favorites.set(this.user.sub, favs);
+    return favs;
+  }
+
+  seedPatients(): JsonRecord[] {
+    const pts: JsonRecord[] = [
+      { id: 7, name: "Người bệnh E2E", phone: "0900000000", relationship: "self", is_default: true },
+    ];
+    this.patients.set(this.user.sub, pts);
+    return pts;
   }
 
   initialRefreshToken(): string | undefined {
@@ -213,6 +283,14 @@ export class MockGateway {
         if (actor.role !== "admin") return this.fail(route, 403, "FORBIDDEN", "Only admin can change role");
         return this.ok(route, { updated: true });
       }
+      if (path === "/api/v1/admin/operations/recovery/compensate" && method === "POST") {
+        return this.ok(route, {
+          success: true,
+          voucher_code: "COMP-MOCK88",
+          amount: 50000,
+          message: "Đã phát hành mã ưu đãi COMP-MOCK88 trị giá 50.000 VND đền bù sự cố workflow.",
+        });
+      }
       if (path === "/api/v1/admin/system-health") {
         return this.ok(route, { items: [{ service: "gateway-core", status: "healthy", latency_ms: 5, checked_at: isoNow() }] });
       }
@@ -227,6 +305,53 @@ export class MockGateway {
       if (typeof body.timezone === "string") actor.timezone = body.timezone as "Asia/Ho_Chi_Minh";
       if (body.onboarding_completed === true) actor.onboarding_completed_at = isoNow();
       return this.ok(route, actor);
+    }
+    if (path === "/api/v1/users/avatar" && method === "POST") {
+      actor.avatar_url = "https://xone.local/avatars/avatar-e2e.png";
+      return this.ok(route, { avatar_url: actor.avatar_url });
+    }
+    if (path === "/api/v1/auth/change-password" && method === "POST") {
+      const body = await this.body(request);
+      if (!body.current_password || !body.new_password) {
+        return this.fail(route, 400, "INVALID_PASSWORD", "Vui lòng nhập đầy đủ mật khẩu");
+      }
+      return this.ok(route, { password_changed: true, reauthentication_required: false });
+    }
+    if (path === "/api/v1/auth/sessions" && method === "GET") {
+      const list = this.sessions.get(actor.sub) ?? [
+        {
+          id: "sess-1",
+          user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+          ip_address: "127.0.0.1",
+          created_at: isoNow(),
+          last_active_at: isoNow(),
+          is_current: true,
+        },
+      ];
+      return this.ok(route, { items: list });
+    }
+    const sessionMatch = path.match(/^\/api\/v1\/auth\/sessions\/([^/]+)$/);
+    if (sessionMatch && method === "DELETE") {
+      return this.ok(route, { revoked: true });
+    }
+    if (path === "/api/v1/auth/logout-all" && method === "POST") {
+      return this.ok(route, { logged_out: true });
+    }
+    if (path === "/api/v1/auth/2fa/setup" && method === "GET") {
+      return this.ok(route, {
+        qr_code_url: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><rect width='180' height='180' fill='%23eee'/><text x='30' y='95' font-size='14'>QR CODE FIXTURE</text></svg>",
+        secret: "JBSWY3DPEHPK3PXP",
+        backup_codes: ["123456", "234567", "345678", "456789"],
+      });
+    }
+    if (path === "/api/v1/auth/2fa/verify" && method === "POST") {
+      return this.ok(route, {
+        enabled: true,
+        backup_codes: ["123456", "234567", "345678", "456789"],
+      });
+    }
+    if (path === "/api/v1/auth/2fa/disable" && method === "POST") {
+      return this.ok(route, { disabled: true });
     }
 
     if (path === "/api/v1/addresses" && method === "GET") return this.ok(route, { items: this.addresses.get(actor.sub) ?? [] });
@@ -359,7 +484,48 @@ export class MockGateway {
     if (path === "/api/v1/confirmations/restaurant-reservation" && method === "POST") return this.ok(route, { id: "restaurant-confirm-1", title: "Xác nhận đặt bàn", detail: "Nhà hàng X-One · 2 người" });
 
     if (path === "/api/v1/services/healthcare" && method === "GET") return this.ok(route, { items: [{ id: "neurology", name: "Nội thần kinh" }], source: "healthcare-fixture", partial: false });
-    if (path === "/api/v1/healthcare/patients" && method === "GET") return this.ok(route, { items: [{ id: 7, name: "Người bệnh E2E", phone: "0900000000", relationship: "self", is_default: true }] });
+    if (path === "/api/v1/healthcare/patients" && method === "GET") {
+      return this.ok(route, { items: this.patients.get(actor.sub) ?? [] });
+    }
+    if (path === "/api/v1/healthcare/patients" && method === "POST") {
+      const body = await this.body(request);
+      const patient = {
+        id: ++this.sequence,
+        name: String(body.name ?? "Người bệnh mới"),
+        phone: String(body.phone ?? "0900000000"),
+        relationship: String(body.relationship ?? "dependent"),
+        is_default: false,
+      };
+      const current = this.patients.get(actor.sub) ?? [];
+      current.push(patient);
+      this.patients.set(actor.sub, current);
+      return this.ok(route, patient);
+    }
+    const patientDefaultMatch = path.match(/^\/api\/v1\/healthcare\/patients\/([^/]+)\/default$/);
+    if (patientDefaultMatch && method === "POST") {
+      const id = Number(patientDefaultMatch[1]);
+      const current = this.patients.get(actor.sub) ?? [];
+      const target = current.find((p) => p.id === id);
+      if (target) {
+        current.forEach((p) => { p.is_default = (p.id === id); });
+      }
+      return this.ok(route, target ?? { id, is_default: true });
+    }
+    const patientMatch = path.match(/^\/api\/v1\/healthcare\/patients\/([^/]+)$/);
+    if (patientMatch && ["PATCH", "DELETE"].includes(method)) {
+      const id = Number(patientMatch[1]);
+      const current = this.patients.get(actor.sub) ?? [];
+      if (method === "DELETE") {
+        this.patients.set(actor.sub, current.filter((p) => p.id !== id));
+        return this.ok(route, { deleted: true, id, replacement_default_id: null });
+      }
+      if (method === "PATCH") {
+        const body = await this.body(request);
+        const target = current.find((p) => p.id === id);
+        if (target) Object.assign(target, body);
+        return this.ok(route, target ?? { id, ...body });
+      }
+    }
     if (path.startsWith("/api/v1/service-actions/healthcare/doctors") && method === "GET") return this.ok(route, [{ id: 9, name: "Bác sĩ E2E", description: "Chuyên khoa fixture", price: 300000, facility: { name: "Cơ sở X-One", address: "30 Trần Hưng Đạo" }, available_slots: [{ id: 91, start_time: new Date(Date.now() + 86_400_000).toISOString() }] }]);
     if (path === "/api/v1/service-actions/healthcare/hold" && method === "POST") return this.ok(route, { appointment_id: 91, doctor_name: "Bác sĩ E2E", start_time: new Date(Date.now() + 86_400_000).toISOString(), price: 300000, status: "HELD" });
     if (path.match(/^\/api\/v1\/service-actions\/healthcare\/\d+\/payment$/) && method === "POST") return this.ok(route, { acknowledged: true, status: "SUCCEEDED" });
@@ -378,6 +544,162 @@ export class MockGateway {
     if (path.includes("/confirmations/") && path.endsWith("/execute-cancellation") && method === "POST") return this.ok(route, { order: { id: "food-order-1", status: "CANCELLED" }, payment: { status: "REFUNDED" } });
     if (path.includes("/service-actions/restaurant/") && path.endsWith("/cancel") && method === "POST") return this.ok(route, { id: "reservation-1", status: "CANCELLED" });
     if (path.includes("/service-actions/healthcare/") && path.endsWith("/cancel") && method === "POST") return this.ok(route, { appointment_id: 91, status: "CANCELLED" });
+
+    if (path === "/api/v1/notifications/unread-count" && method === "GET") {
+      const notifs = this.notifications.get(actor.sub) ?? [];
+      const unread = notifs.filter((n) => n.status === "UNREAD").length;
+      return this.ok(route, { unread_count: unread, partial: false, unavailable: [] });
+    }
+    if (path === "/api/v1/notifications/read-all" && method === "POST") {
+      const notifs = this.notifications.get(actor.sub) ?? [];
+      for (const n of notifs) {
+        n.status = "READ";
+        n.read_at = isoNow();
+      }
+      return this.ok(route, { updated: notifs.length });
+    }
+    const notifReadMatch = path.match(/^\/api\/v1\/notifications\/([^/]+)\/read$/);
+    if (notifReadMatch && method === "POST") {
+      const id = decodeURIComponent(notifReadMatch[1]);
+      const notifs = this.notifications.get(actor.sub) ?? [];
+      const item = notifs.find((n) => n.id === id);
+      if (item) {
+        item.status = "READ";
+        item.read_at = isoNow();
+      }
+      return this.ok(route, item ?? { id, status: "READ" });
+    }
+    if (path === "/api/v1/notifications" && method === "GET") {
+      const url = new URL(request.url());
+      const statusFilter = url.searchParams.get("status");
+      let notifs = this.notifications.get(actor.sub) ?? [];
+      if (statusFilter === "UNREAD") notifs = notifs.filter((n) => n.status === "UNREAD");
+      else if (statusFilter === "READ") notifs = notifs.filter((n) => n.status === "READ");
+      const unread = (this.notifications.get(actor.sub) ?? []).filter((n) => n.status === "UNREAD").length;
+      return this.ok(route, {
+        items: notifs,
+        unread_count: unread,
+        total: notifs.length,
+        page: 1,
+        page_size: 20,
+        has_more: false,
+        partial: false,
+        unavailable: [],
+      });
+    }
+    if (path === "/api/v1/notifications/preferences") {
+      const current = this.notificationPreferences.get(actor.sub) ?? {
+        booking_updates: true,
+        promotions: true,
+        system: true,
+        email_enabled: false,
+      };
+      if (method === "GET") return this.ok(route, current);
+      if (method === "PATCH") {
+        const body = await this.body(request);
+        const updated = { ...current, ...body };
+        this.notificationPreferences.set(actor.sub, updated);
+        return this.ok(route, updated);
+      }
+    }
+
+    if (path === "/api/v1/favorites" && method === "GET") {
+      return this.ok(route, { items: this.favorites.get(actor.sub) ?? [] });
+    }
+    if (path === "/api/v1/favorites" && method === "POST") {
+      const body = await this.body(request);
+      const item = {
+        id: this.nextId("fav"),
+        actor_id: actor.sub,
+        domain: body.domain ?? "food",
+        resource_id: body.resource_id ?? "food-restaurant-1",
+        created_at: isoNow(),
+      };
+      const current = this.favorites.get(actor.sub) ?? [];
+      current.push(item);
+      this.favorites.set(actor.sub, current);
+      return this.ok(route, item);
+    }
+    const favMatch = path.match(/^\/api\/v1\/favorites\/([^/]+)$/);
+    if (favMatch && method === "DELETE") {
+      const id = decodeURIComponent(favMatch[1]);
+      const current = this.favorites.get(actor.sub) ?? [];
+      this.favorites.set(actor.sub, current.filter((f) => f.id !== id));
+      return this.ok(route, { deleted: true });
+    }
+
+    if (path === "/api/v1/rewards/summary" && method === "GET") {
+      return this.ok(route, {
+        points: 2450,
+        tier: "gold",
+        tier_label: "Hạng Vàng",
+        next_tier_label: "Hạng Kim Cương",
+        next_tier_spend_remaining: 1500000,
+        points_expiring_soon: 120,
+        expiry_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+      });
+    }
+    if (path.startsWith("/api/v1/rewards/vouchers") && method === "GET") {
+      return this.ok(route, {
+        items: [
+          {
+            id: "vouch-1",
+            code: "GOLD10",
+            title: "Giảm 10% đơn ẩm thực",
+            discount_type: "percent",
+            discount_value: 10,
+            min_order_amount: 100000,
+            expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+            status: "active",
+            service: "food",
+          },
+          {
+            id: "vouch-2",
+            code: "RIDE20K",
+            title: "Giảm 20.000 đ chuyến xe",
+            discount_type: "fixed",
+            discount_value: 20000,
+            min_order_amount: 50000,
+            expires_at: new Date(Date.now() + 7 * 86400000).toISOString(),
+            status: "active",
+            service: "ride",
+          },
+        ],
+      });
+    }
+    if (path.startsWith("/api/v1/rewards/ledger") && method === "GET") {
+      return this.ok(route, {
+        items: [
+          {
+            id: "ledg-1",
+            points: 150,
+            type: "EARN",
+            description: "Hoàn tất chuyến xe #ride-booking-1",
+            created_at: isoNow(),
+          },
+          {
+            id: "ledg-2",
+            points: -50,
+            type: "REDEEM",
+            description: "Đổi voucher RIDE20K",
+            created_at: isoNow(),
+          },
+        ],
+        total: 2,
+        has_more: false,
+      });
+    }
+    if (path === "/api/v1/rewards/referral" && method === "GET") {
+      return this.ok(route, {
+        referral_code: "XONE2026",
+        referral_url: "https://xone.local/join?ref=XONE2026",
+        total_referrals: 3,
+        total_points_earned: 300,
+        referrals: [
+          { name: "Nguyễn Văn Tuấn", joined_at: isoNow(), status: "rewarded" },
+        ],
+      });
+    }
 
     if (path === "/api/v1/provider/services/profile") {
       if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
@@ -420,6 +742,7 @@ export class MockGateway {
                 currency: "VND",
                 category: "Cơm",
                 is_available: true,
+                isAvailable: true,
                 created_at: isoNow(),
               },
             ]
@@ -459,7 +782,9 @@ export class MockGateway {
       const item = current.find((i) => i.id === id);
       if (item) {
         const body = await this.body(request);
-        item.is_available = body.is_available ?? !item.is_available;
+        const newAvail = body.is_available ?? !item.is_available;
+        item.is_available = newAvail;
+        (item as JsonRecord).isAvailable = newAvail;
       }
       return this.ok(route, item ?? { updated: true });
     }

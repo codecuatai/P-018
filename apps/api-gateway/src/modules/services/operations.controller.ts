@@ -67,7 +67,9 @@ export class OperationsController {
 
   @Patch('provider-documents/:id')
   async reviewDocument(@Param('id') id: string, @Body() body: ReviewDocumentDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    if (request.user.role !== 'admin') throw new ForbiddenException({ code: 'ADMIN_ACCESS_REQUIRED', detail: 'Chỉ Admin mới được duyệt hồ sơ provider.', retryable: false });
+    if (request.user.role !== 'admin' && request.user.role !== 'manager') {
+      throw new ForbiddenException({ code: 'ADMIN_ACCESS_REQUIRED', detail: 'Chỉ Admin hoặc Manager mới được duyệt hồ sơ provider.', retryable: false });
+    }
     const updated = await this.store.updateDocument(id, { status: body.status, reviewNote: body.review_note });
     if (!updated) throw new BadRequestException({ code: 'DOCUMENT_NOT_FOUND', detail: 'Tài liệu provider không tồn tại.', retryable: false });
     return { data: updated, meta: { request_id: request.correlationId, actor_id: request.user.sub } };

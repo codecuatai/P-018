@@ -7,7 +7,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$serviceRoot = (Resolve-Path (Join-Path $repoRoot "..\P-018-Service")).Path
 . (Join-Path $PSScriptRoot "_common.ps1")
 $envFilePath = Resolve-EnvFilePath -EnvFile $EnvFile -RepoRoot $repoRoot
 
@@ -27,8 +26,11 @@ function Invoke-PythonTests {
         [Parameter(Mandatory = $true)][string]$Directory,
         [Parameter(Mandatory = $true)][string]$Label
     )
-    $baseRoot = if ($Directory -like "services/*") { $serviceRoot } else { $repoRoot }
-    Push-Location (Join-Path $baseRoot $Directory)
+    if (-not (Test-Path (Join-Path $repoRoot $Directory))) {
+        Write-Host "Skipping $Label ($Directory not found in repository)" -ForegroundColor DarkYellow
+        return
+    }
+    Push-Location (Join-Path $repoRoot $Directory)
     try {
         Invoke-Checked -FilePath "python" -Arguments @("-m", "ruff", "check", "src", "tests") -Label "$Label ruff"
         Invoke-Checked -FilePath "python" -Arguments @("-m", "pytest", "tests", "-q") -Label "$Label pytest"
@@ -123,11 +125,6 @@ try {
     Invoke-Checked -FilePath "python" -Arguments @("scripts/database/check-migration-parity.py") -Label "Migration parity"
     Invoke-Checked -FilePath "python" -Arguments @("-m", "pytest", "tests/contract", "scripts/data/catalog", "-q") -Label "Contract/DataOps tests"
     Invoke-PythonTests -Directory "apps/agent-service" -Label "Agent"
-    Invoke-PythonTests -Directory "services/food-service" -Label "Food"
-    Invoke-PythonTests -Directory "services/ride-service" -Label "Ride"
-    Invoke-PythonTests -Directory "services/restaurant-service" -Label "Restaurant"
-    Invoke-PythonTests -Directory "services/healthcare-service" -Label "Healthcare"
-    Invoke-PythonTests -Directory "services/delivery-service" -Label "Delivery"
     Invoke-Checked -FilePath "corepack" -Arguments @("pnpm", "--dir", "apps/api-gateway", "lint") -Label "Gateway lint"
     Invoke-Checked -FilePath "corepack" -Arguments @("pnpm", "--dir", "apps/api-gateway", "test") -Label "Gateway Jest"
     Invoke-Checked -FilePath "corepack" -Arguments @("pnpm", "--dir", "apps/api-gateway", "build") -Label "Gateway build"

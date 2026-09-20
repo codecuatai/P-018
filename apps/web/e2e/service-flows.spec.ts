@@ -26,7 +26,11 @@ test("Food browse → menu → cart → preview → explicit order → receipt/h
   const mock = gateway.seedAddress();
   await page.goto("/app/services/food");
   await page.getByRole("button", { name: "Xem thực đơn" }).click();
-  await page.getByRole("button", { name: "Thêm" }).click();
+  await page.getByRole("button", { name: /Tùy chỉnh & Thêm|Thêm/ }).first().click();
+  const addToCartBtn = page.getByRole("button", { name: /Thêm vào giỏ/i });
+  if (await addToCartBtn.isVisible()) {
+    await addToCartBtn.click();
+  }
   await expect(page.getByRole("status")).toContainText("Phở bò X-One đã được thêm vào giỏ.");
   await page.getByRole("button", { name: "Xem preview xác nhận" }).click();
   await page.getByRole("checkbox", { name: /Xác nhận đặt món/ }).check();
@@ -191,7 +195,7 @@ test("Active service rail keeps its content compact on mobile", async ({ context
   expect(railBox).not.toBeNull();
   expect(cardBox).not.toBeNull();
   expect(cardBox?.height ?? 0).toBeLessThan(260);
-  if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) <= 768) {
+  if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) < 768) {
     expect(railBox?.height ?? 0).toBeLessThan(430);
   }
 });

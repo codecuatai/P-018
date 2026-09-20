@@ -73,20 +73,17 @@ import type {
 } from "@/types";
 
 import { ApiKeysSection } from "./sections/api-keys-section";
+import { DispatchSection } from "./sections/dispatch-section";
 import { FeedbackSection } from "./sections/feedback-section";
+import { ProviderVerificationSection } from "./sections/provider-verification-section";
 import { SystemLogsSection } from "./sections/system-logs-section";
 import { TokenUsageSection } from "./sections/token-usage-section";
 import { UserServicesSection } from "./sections/user-services-section";
 import {
-  createOperationsAssignment,
   getAdminFeatureFlags,
   updateAdminFeatureFlag,
   getAdminAuditLogs,
-  getOperationsAssignments,
-  getOperationsProviderDocuments,
   issueAdminCompensation,
-  reviewOperationsProviderDocument,
-  updateOperationsAssignment,
 } from "@/lib/api-client";
 import { CONSOLIDATED_TABS } from "./admin-tabs";
 import type { Loadable, MainTabId, SubTabId, TabDefinition } from "./admin.types";
@@ -371,6 +368,7 @@ export function AdminDashboard() {
                   userRole={user?.role}
                   tabs={tabs}
                   onLogout={handleLogout}
+                  openTicketCount={summary.data?.counts?.open_support_tickets}
                 />
               </SheetContent>
             </Sheet>
@@ -469,7 +467,7 @@ export function AdminDashboard() {
                 </>
               )}
 
-              {/* TAB 2: USERS & SERVICES */}
+              {/* TAB 2: USERS & SERVICES (Admin) */}
               {activeMainTab === "users" && (
                 <>
                   {currentSubTabId === "user-list" && (
@@ -487,10 +485,13 @@ export function AdminDashboard() {
                   {currentSubTabId === "user-services" && (
                     <UserServicesSubtab users={users} onRetry={() => void load()} />
                   )}
+                  {currentSubTabId === "provider-documents" && (
+                    <ProviderVerificationSection />
+                  )}
                 </>
               )}
 
-              {/* TAB 3: TRANSACTIONS & OPERATIONS */}
+              {/* TAB 3: TRANSACTIONS & OPERATIONS (Admin) */}
               {activeMainTab === "transactions" && (
                 <>
                   {currentSubTabId === "domain-trans" && (
@@ -498,6 +499,9 @@ export function AdminDashboard() {
                   )}
                   {currentSubTabId === "payments-list" && (
                     <PaymentsSubtab payments={payments} onRetry={() => void load()} />
+                  )}
+                  {currentSubTabId === "dispatch" && (
+                    <DispatchSection />
                   )}
                   {currentSubTabId === "workflow-reconciliation" && (
                     <WorkflowsSubtab
@@ -509,7 +513,28 @@ export function AdminDashboard() {
                 </>
               )}
 
-              {/* TAB 4: AI & INTEGRATIONS */}
+              {/* MANAGER FLAT TABS */}
+              {activeMainTab === "domain-orders" && (
+                <TransactionsSubtab transactions={transactions} onRetry={refreshTransactions} />
+              )}
+
+              {activeMainTab === "dispatch" && (
+                <DispatchSection />
+              )}
+
+              {activeMainTab === "payments" && (
+                <PaymentsSubtab payments={payments} onRetry={() => void load()} />
+              )}
+
+              {activeMainTab === "incident-recovery" && (
+                <WorkflowsSubtab
+                  workflows={workflows}
+                  onRetry={refreshWorkflows}
+                  onOpenCompensation={handleOpenCompensation}
+                />
+              )}
+
+              {/* TAB 4: AI & INTEGRATIONS (Admin) */}
               {activeMainTab === "ai-integrations" && (
                 <>
                   {currentSubTabId === "api-keys" && <ApiKeysSection />}
@@ -517,7 +542,7 @@ export function AdminDashboard() {
                 </>
               )}
 
-              {/* TAB 5: SUPPORT & FEEDBACK */}
+              {/* TAB 5: SUPPORT (Admin & Manager) */}
               {activeMainTab === "support" && (
                 <>
                   {currentSubTabId === "support-queue" && (
@@ -534,7 +559,17 @@ export function AdminDashboard() {
                 </>
               )}
 
-              {/* TAB 6: SYSTEM LOGS & AUDIT */}
+              {/* MANAGER FLAT TAB: FEEDBACK */}
+              {activeMainTab === "feedback" && (
+                <FeedbackSection />
+              )}
+
+              {/* MANAGER FLAT TAB: PROVIDER VERIFICATION */}
+              {activeMainTab === "provider-verification" && (
+                <ProviderVerificationSection />
+              )}
+
+              {/* TAB 6: SYSTEM LOGS & AUDIT (Admin) */}
               {activeMainTab === "system-logs" && (
                 <>
                   {currentSubTabId === "logs-view" && <SystemLogsSection />}
@@ -1020,9 +1055,6 @@ function OverviewSummarySubtab({
             />
           </div>
 
-          {userRole === "manager" && <OperationsQueue />}
-          {userRole === "admin" && <ProviderDocumentReview />}
-
           <div className="admin-two-column">
             {/* Domain Summary Card */}
             <div className="admin-card">
@@ -1142,143 +1174,6 @@ function OverviewSummarySubtab({
       ) : (
         <EmptyPanel label="Chưa có dữ liệu tổng quan." />
       )}
-    </section>
-  );
-}
-
-function ProviderDocumentReview() {
-  const [documents, setDocuments] = useState<Array<{ id: string; providerId: string; documentType: string; status: string; expiresAt?: string; reviewNote?: string }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const reload = async () => {
-    setLoading(true);
-    try {
-      setDocuments(await getOperationsProviderDocuments());
-      setMessage(null);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể tải hồ sơ provider.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void reload();
-  }, []);
-
-  const review = async (id: string, status: "APPROVED" | "REJECTED") => {
-    try {
-      const updated = await reviewOperationsProviderDocument(id, { status });
-      setDocuments((prev) => prev.map((document) => document.id === id ? { ...document, ...updated } : document));
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể cập nhật hồ sơ.");
-    }
-  };
-
-  return (
-    <div className="admin-card" style={{ marginBottom: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
-        <CardTitle title="Duyệt hồ sơ Provider" note="Admin kiểm soát tài liệu và trạng thái xác minh" noBorder />
-        <button type="button" className="button button-secondary" onClick={() => void reload()} disabled={loading} style={{ height: "30px", padding: "0 10px", fontSize: "var(--text-xs)" }}><RefreshCw size={12} /> Làm mới</button>
-      </div>
-      {message && <p style={{ color: "#B91C1C", fontSize: "var(--text-xs)" }}>{message}</p>}
-      {!loading && documents.length === 0 && <p style={{ color: "#64748B", fontSize: "var(--text-xs)" }}>Chưa có hồ sơ chờ duyệt.</p>}
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-        {documents.slice(0, 8).map((document) => (
-          <div key={document.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "9px 10px", border: "1px solid #E2E8F0", borderRadius: "8px" }}>
-            <div>
-              <strong style={{ fontSize: "var(--text-xs)", color: "#0F172A" }}>{document.documentType}</strong>
-              <span style={{ display: "block", color: "#64748B", fontSize: "11px" }}>Provider {document.providerId} · {document.status}</span>
-            </div>
-            {document.status === "PENDING" && <div style={{ display: "flex", gap: "6px" }}><button type="button" className="button button-sm button-primary" onClick={() => void review(document.id, "APPROVED")}>Duyệt</button><button type="button" className="button button-sm button-secondary" onClick={() => void review(document.id, "REJECTED")}>Từ chối</button></div>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function OperationsQueue() {
-  const [items, setItems] = useState<Array<{
-    id: string;
-    providerId: string;
-    domain: string;
-    resourceId: string;
-    status: string;
-    dueAt?: string;
-  }>>([]);
-  const [overdue, setOverdue] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-  const [form, setForm] = useState({ providerId: "", domain: "ride", resourceId: "", dueAt: "" });
-
-  const reload = async () => {
-    setLoading(true);
-    try {
-      const result = await getOperationsAssignments();
-      setItems(result.items);
-      setOverdue(result.overdue);
-      setMessage(null);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể tải hàng đợi điều phối.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { void reload(); }, []);
-
-  const assign = async () => {
-    if (!form.providerId.trim() || !form.resourceId.trim()) {
-      setMessage("Cần nhập provider ID và resource ID trước khi phân công.");
-      return;
-    }
-    try {
-      await createOperationsAssignment({ provider_id: form.providerId.trim(), domain: form.domain, resource_id: form.resourceId.trim(), ...(form.dueAt ? { due_at: new Date(form.dueAt).toISOString() } : {}) });
-      setForm((current) => ({ ...current, resourceId: "", dueAt: "" }));
-      await reload();
-      setMessage("Đã tạo assignment và đưa vào hàng đợi provider.");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể tạo assignment.");
-    }
-  };
-
-  const transition = async (id: string, status: "CANCELLED" | "IN_PROGRESS") => {
-    try {
-      await updateOperationsAssignment(id, { status });
-      await reload();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Không thể cập nhật assignment.");
-    }
-  };
-
-  return (
-    <section className="admin-card" aria-labelledby="operations-queue-title" style={{ marginTop: "16px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-        <div>
-          <h3 id="operations-queue-title" style={{ margin: 0, fontSize: "var(--text-sm)", color: "#0F172A" }}>Hàng đợi điều phối provider</h3>
-          <p style={{ margin: "4px 0 0", color: "#64748B", fontSize: "var(--text-xs)" }}>{overdue} assignment quá SLA · {items.length} assignment hiện tại</p>
-        </div>
-        <button className="button button-secondary" type="button" onClick={() => void reload()} disabled={loading} style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-xs)" }}><RefreshCw size={13} className={loading ? "spin" : undefined} /> Làm mới</button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px", marginTop: "12px" }}>
-        <input aria-label="Provider ID điều phối" placeholder="Provider ID" value={form.providerId} onChange={(event) => setForm((current) => ({ ...current, providerId: event.target.value }))} />
-        <select aria-label="Domain điều phối" value={form.domain} onChange={(event) => setForm((current) => ({ ...current, domain: event.target.value }))}><option value="ride">Ride</option><option value="food">Food</option><option value="restaurant">Restaurant</option><option value="healthcare">Healthcare</option><option value="delivery">Delivery</option></select>
-        <input aria-label="Resource ID điều phối" placeholder="Resource ID" value={form.resourceId} onChange={(event) => setForm((current) => ({ ...current, resourceId: event.target.value }))} />
-        <input aria-label="Hạn SLA điều phối" type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} />
-        <button className="button button-primary" type="button" onClick={() => void assign()} style={{ height: "34px" }}>Phân công</button>
-      </div>
-      {message && <p style={{ color: "#B45309", fontSize: "var(--text-xs)", margin: "8px 0 0" }}>{message}</p>}
-      <div style={{ display: "grid", gap: "6px", marginTop: "12px" }}>
-        {items.slice(0, 8).map((item) => (
-          <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", padding: "8px 10px", border: "1px solid #E2E8F0", borderRadius: "8px", fontSize: "var(--text-xs)" }}>
-            <span><strong>{item.domain}</strong> · {item.resourceId} · {item.providerId}</span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}><span>{item.status}</span>{item.status === "OFFERED" && <button className="button button-secondary" type="button" onClick={() => void transition(item.id, "IN_PROGRESS")} style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}>Bắt đầu</button>}{!['COMPLETED', 'CANCELLED', 'REJECTED'].includes(item.status) && <button className="button button-secondary" type="button" onClick={() => void transition(item.id, "CANCELLED")} style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}>Hủy</button>}</span>
-          </div>
-        ))}
-        {!loading && items.length === 0 && <span style={{ color: "#64748B", fontSize: "var(--text-xs)" }}>Chưa có assignment nào.</span>}
-      </div>
     </section>
   );
 }

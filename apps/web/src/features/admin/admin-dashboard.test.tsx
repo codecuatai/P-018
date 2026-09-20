@@ -7,6 +7,7 @@ jest.mock("@/lib/api-client");
 describe("AdminDashboard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    window.location.hash = "";
 
     (apiClient.getAdminSummary as jest.Mock).mockResolvedValue({
       counts: { total_users: 10, payments: 5, refunds: 1, open_support_tickets: 2, failed_workflows: 0, partial_success_workflows: 0 },
@@ -42,6 +43,8 @@ describe("AdminDashboard", () => {
     (apiClient.getAdminLogs as jest.Mock).mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 });
     (apiClient.getAdminUserFeedback as jest.Mock).mockResolvedValue({ items: [], total: 0 });
     (apiClient.getAdminUserServices as jest.Mock).mockResolvedValue({ user_id: "u1", ride_count: 0, food_count: 0, restaurant_count: 0, healthcare_count: 0, feedback_count: 0 });
+    (apiClient.getOperationsAssignments as jest.Mock).mockResolvedValue({ items: [], count: 0, overdue: 0 });
+    (apiClient.getOperationsProviderDocuments as jest.Mock).mockResolvedValue([]);
   });
 
   it("renders overview metrics and system health indicators", async () => {
@@ -203,14 +206,26 @@ describe("AdminDashboard", () => {
       expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
     });
 
-    const tabs = (await import("./admin-tabs")).getConsolidatedTabs("manager").map((tab) => tab.id);
-    expect(tabs).toEqual(["overview", "transactions", "support"]);
+    const managerTabs = (await import("./admin-tabs")).getConsolidatedTabs("manager");
+    const tabs = managerTabs.map((tab) => tab.id);
+    expect(tabs).toEqual([
+      "overview",
+      "domain-orders",
+      "dispatch",
+      "payments",
+      "incident-recovery",
+      "support",
+      "feedback",
+      "provider-verification",
+    ]);
     expect(tabs).not.toContain("users");
     expect(tabs).not.toContain("ai-integrations");
     expect(tabs).not.toContain("system-logs");
 
-    const managerOverview = (await import("./admin-tabs")).getConsolidatedTabs("manager").find((tab) => tab.id === "overview");
-    expect(managerOverview?.subtabs.map((sub) => sub.id)).toEqual(["summary"]);
+    // Every flat manager tab has exactly 1 subtab so the horizontal subtab control is cleanly hidden
+    for (const tab of managerTabs) {
+      expect(tab.subtabs.length).toBe(1);
+    }
 
     const adminTabs = (await import("./admin-tabs")).getConsolidatedTabs("admin").map((tab) => tab.id);
     expect(adminTabs).toEqual(["overview", "users", "transactions", "ai-integrations", "support", "system-logs"]);
@@ -259,5 +274,122 @@ describe("AdminDashboard", () => {
       expect(screen.getByText(/Phát Hành Bồi Thường Thành Công!/i)).toBeInTheDocument();
       expect(screen.getByText("COMP-ABC123")).toBeInTheDocument();
     });
+  });
+
+  it("renders dispatch operations section when dispatch subtab is selected", async () => {
+    (apiClient.getOperationsAssignments as jest.Mock).mockResolvedValue({
+      items: [
+        {
+          id: "asg-101",
+          provider_id: "prov-rider-9",
+          domain: "ride",
+          resource_id: "ride-order-888",
+          status: "ASSIGNED",
+          due_at: new Date(Date.now() + 3600000).toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ],
+      count: 1,
+      overdue: 0,
+    });
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+    });
+
+    // Navigate to transactions tab
+    const transTab = screen.getByRole("button", { name: /Giao dịch & Vận hành/i });
+    fireEvent.click(transTab);
+
+    // Switch to dispatch subtab
+    const dispatchSubtab = screen.getByRole("tab", { name: /Điều phối & Phân công/i });
+    fireEvent.click(dispatchSubtab);
+
+    await waitFor(() => {
+      expect(screen.getByText("Tổng phân công")).toBeInTheDocument();
+      expect(screen.getByText("prov-rider-9")).toBeInTheDocument();
+      expect(screen.getByText("ride-order-888")).toBeInTheDocument();
+    });
+  });
+
+  it("renders provider verification section when provider-documents subtab is selected", async () => {
+    (apiClient.getOperationsProviderDocuments as jest.Mock).mockResolvedValue([
+      {
+        id: "doc-505",
+        provider_id: "prov-food-12",
+        document_type: "Giấy phép Vệ sinh ATTP",
+        document_url: "https://storage.example.com/docs/vsattp-505.pdf",
+        status: "PENDING",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+    });
+
+    // Navigate to users tab
+    const usersTab = screen.getByRole("button", { name: /Người dùng & Phân quyền/i });
+    fireEvent.click(usersTab);
+
+    // Switch to provider-documents subtab
+    const docSubtab = screen.getByRole("tab", { name: /Hồ sơ đối tác/i });
+    fireEvent.click(docSubtab);
+
+    await waitFor(() => {
+      expect(screen.getByText("Chờ thẩm định")).toBeInTheDocument();
+      expect(screen.getByText("prov-food-12")).toBeInTheDocument();
+      expect(screen.getByText("Giấy phép Vệ sinh ATTP")).toBeInTheDocument();
+    });
+  });
+
+  it("resolves legacy and cross-tab shortcuts to flat 1-click tabs for manager", async () => {
+    const { renderHook, act } = await import("@testing-library/react");
+    const { useAdminNavigation } = await import("./hooks/use-admin-navigation");
+
+    const { result } = renderHook(() => useAdminNavigation("manager"));
+
+    expect(result.current.activeMainTab).toBe("overview");
+
+    // 1-Click direct flat tab switch to dispatch
+    act(() => {
+      result.current.switchMainTab("dispatch");
+    });
+    expect(result.current.activeMainTab).toBe("dispatch");
+    expect(window.location.hash).toBe("#dispatch");
+
+    // Direct switch to provider verification
+    act(() => {
+      result.current.switchMainTab("provider-verification");
+    });
+    expect(result.current.activeMainTab).toBe("provider-verification");
+    expect(window.location.hash).toBe("#provider-verification");
+
+    // Cross-tab fallback resolution: legacy "transactions" + "payments-list" resolves to flat "payments"
+    act(() => {
+      result.current.switchMainTab("transactions" as any, "payments-list");
+    });
+    expect(result.current.activeMainTab).toBe("payments");
+    expect(window.location.hash).toBe("#payments");
+
+    // Legacy "transactions" + "dispatch" resolves to flat "dispatch"
+    act(() => {
+      result.current.switchMainTab("transactions" as any, "dispatch");
+    });
+    expect(result.current.activeMainTab).toBe("dispatch");
+    expect(window.location.hash).toBe("#dispatch");
+
+    // Legacy "users" + "provider-documents" resolves to flat "provider-verification"
+    act(() => {
+      result.current.switchMainTab("users" as any, "provider-documents");
+    });
+    expect(result.current.activeMainTab).toBe("provider-verification");
+    expect(window.location.hash).toBe("#provider-verification");
   });
 });
