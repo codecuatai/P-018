@@ -46,33 +46,37 @@ function RideTrackingPanelContent({ bookingId, hideMap = false, className, track
           <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px" }}>
               <strong style={{ fontSize: "var(--text-sm)", color: "#0F172A" }}>{parsedDriver.name}</strong>
-              <div className="vn-license-plate" title="Biển số xe dập nổi">
-                {parsedDriver.licensePlate || "29A - 886.92"}
-              </div>
+              {parsedDriver.licensePlate ? (
+                <div className="vn-license-plate" title="Biển số xe dập nổi">
+                  {parsedDriver.licensePlate}
+                </div>
+              ) : null}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "#64748B" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", color: "#D97706", fontWeight: 700 }}>
-                <Star size={12} fill="#D97706" /> {parsedDriver.rating ? `${parsedDriver.rating}` : "4.9"}
-              </span>
-              <span>·</span>
-              <span>1.250+ chuyến</span>
+              {parsedDriver.rating ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "2px", color: "#D97706", fontWeight: 700 }}>
+                  <Star size={12} fill="#D97706" /> {parsedDriver.rating}
+                </span>
+              ) : null}
               {parsedDriver.phone ? (
                 <>
-                  <span>·</span>
+                  {parsedDriver.rating ? <span>·</span> : null}
                   <span>{parsedDriver.phone}</span>
                 </>
               ) : null}
             </div>
             <div style={{ fontSize: "11px", color: "#334155" }}>
-              {parsedDriver.vehicle}{parsedDriver.color ? ` · Màu ${parsedDriver.color}` : " · Trắng ngọc trai"}
+              {parsedDriver.vehicle}{parsedDriver.color ? ` · Màu ${parsedDriver.color}` : ""}
             </div>
             <div style={{ fontSize: "11px", color: "#059669", fontWeight: 600, marginTop: "2px" }}>
               {tracking.eta_seconds > 0 ? `Đến đón trong khoảng ${Math.ceil(tracking.eta_seconds / 60)} phút` : "Tài xế đã đến điểm đón"}
             </div>
             <div className="driver-quick-actions">
-              <a href={`tel:${parsedDriver.phone || "0988123456"}`} className="driver-action-pill driver-action-call">
-                <Phone size={12} /> Gọi điện
-              </a>
+              {parsedDriver.phone ? (
+                <a href={`tel:${parsedDriver.phone}`} className="driver-action-pill driver-action-call">
+                  <Phone size={12} /> Gọi điện
+                </a>
+              ) : null}
               <button
                 type="button"
                 className="driver-action-pill"

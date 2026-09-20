@@ -274,7 +274,7 @@ export default function NotificationsPage() {
         <>
           <div className="activity-list">
             {filteredItems.map((item) => (
-              <NotificationRow key={item.id} item={item} onRead={() => void read(item.id)} />
+              <NotificationRow key={item.id} item={item} />
             ))}
           </div>
           <nav className="history-pagination" aria-label="Phân trang thông báo">
@@ -387,7 +387,7 @@ export default function NotificationsPage() {
   );
 }
 
-function NotificationRow({ item, onRead }: { item: NotificationItem; onRead: () => void }) {
+function NotificationRow({ item }: { item: NotificationItem; onRead?: () => void }) {
   const href =
     item.resource_type &&
     item.resource_id &&
@@ -415,17 +415,13 @@ function NotificationRow({ item, onRead }: { item: NotificationItem; onRead: () 
   return (
     <article className={`activity-row ${item.status === "UNREAD" ? "notification-unread" : ""}`}>
       {href ? (
-        <Link href={href} onClick={item.status === "UNREAD" ? onRead : undefined}>
+        <Link href={href}>
           {content}
         </Link>
       ) : (
-        <button
-          className="activity-row-button"
-          type="button"
-          onClick={item.status === "UNREAD" ? onRead : undefined}
-        >
+        <div className="activity-row-button">
           {content}
-        </button>
+        </div>
       )}
     </article>
   );

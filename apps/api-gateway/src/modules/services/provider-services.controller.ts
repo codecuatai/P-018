@@ -622,159 +622,103 @@ export class ProviderServicesController {
     }
 
     if (domain === 'food') {
-      try {
-        const restsRaw = await this.food.get('/api/v1/restaurants?limit=5', correlationId, request.user.sub);
-        const rests = Array.isArray(restsRaw) ? restsRaw : (restsRaw as any)?.items ?? [];
-        const rest = rests[0] || { id: 'rest_default_01' };
-        const cart = await this.food.createCart(request.user.sub, correlationId, `seed_cart_${key}`, rest.id);
-        const menuRaw = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(rest.id)}/menu?limit=5`, correlationId, request.user.sub);
-        const menuItems = Array.isArray(menuRaw) ? menuRaw : (menuRaw as any)?.items ?? [];
-        const item = menuItems[0] || { id: 'item_phobo', name: 'Phở Bò Tái Nạm' };
-        if (cart && cart.id) {
-          await this.food.addCartItem(request.user.sub, correlationId, String(cart.id), {
-            menu_item_id: item.id,
-            quantity: 2,
-          }, `seed_item_${key}`);
-          const preview = await this.food.post('/api/v1/orders/preview', {
-            cart_id: String(cart.id),
-            address_id: 'addr_default_hcm',
-            user_id: request.user.sub,
-            address_snapshot: {
-              recipient_name: 'Nguyễn Văn An',
-              phone_number: '0901234567',
-              street_address: '72 Lê Thánh Tôn, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
-              latitude: 10.7769,
-              longitude: 106.7009,
-            },
-          }, correlationId, undefined, request.user.sub);
-          const order = await this.food.post('/api/v1/orders', {
-            cart_id: String(cart.id),
-            address_id: 'addr_default_hcm',
-            user_id: request.user.sub,
-            payment_method: 'card',
-            idempotency_key: `seed_ord_${key}`,
-            expected_snapshot_hash: (preview as any).snapshot_hash,
-            expected_cart_version: (preview as any).cart_version,
-            expected_amount: (preview as any).total?.amount ?? 120000,
-            expected_currency: (preview as any).total?.currency ?? 'VND',
-            expected_quote_version: (preview as any).quote_version,
-            address_snapshot: {
-              recipient_name: 'Nguyễn Văn An',
-              phone_number: '0901234567',
-              street_address: '72 Lê Thánh Tôn, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
-              latitude: 10.7769,
-              longitude: 106.7009,
-            },
-          }, correlationId, `seed_ord_${key}`, request.user.sub);
-          return { data: order, meta: { request_id: correlationId } };
-        }
-      } catch (err: any) {
-        return {
-          data: {
-            id: `food_ord_${key.slice(0, 8)}`,
-            status: 'RESTAURANT_CONFIRMING',
-            total: 150000,
-            items: [{ name: 'Phở Bò Tái Nạm Đặc Biệt', quantity: 2, price: 75000 }],
-            created_at: new Date().toISOString(),
-          },
-          meta: { request_id: correlationId },
-        };
+      const restsRaw = await this.food.get('/api/v1/restaurants?limit=5', correlationId, request.user.sub);
+      const rests = Array.isArray(restsRaw) ? restsRaw : (restsRaw as any)?.items ?? [];
+      if (!rests.length) {
+        throw new BadRequestException({ code: 'NO_RESTAURANTS', detail: 'Không có nhà hàng nào để tạo đơn mẫu.', retryable: false });
       }
+      const rest = rests[0];
+      const cart = await this.food.createCart(request.user.sub, correlationId, `seed_cart_${key}`, rest.id);
+      const menuRaw = await this.food.get(`/api/v1/restaurants/${encodeURIComponent(rest.id)}/menu?limit=5`, correlationId, request.user.sub);
+      const menuItems = Array.isArray(menuRaw) ? menuRaw : (menuRaw as any)?.items ?? [];
+      if (!menuItems.length) {
+        throw new BadRequestException({ code: 'NO_MENU_ITEMS', detail: 'Nhà hàng chưa có món để thêm vào giỏ.', retryable: false });
+      }
+      const item = menuItems[0];
+      if (!cart?.id) {
+        throw new BadRequestException({ code: 'CART_CREATE_FAILED', detail: 'Không thể tạo giỏ hàng.', retryable: false });
+      }
+      await this.food.addCartItem(request.user.sub, correlationId, String(cart.id), {
+        menu_item_id: item.id,
+        quantity: 2,
+      }, `seed_item_${key}`);
+      const preview = await this.food.post('/api/v1/orders/preview', {
+        cart_id: String(cart.id),
+        user_id: request.user.sub,
+      }, correlationId, undefined, request.user.sub);
+      const order = await this.food.post('/api/v1/orders', {
+        cart_id: String(cart.id),
+        user_id: request.user.sub,
+        payment_method: 'card',
+        idempotency_key: `seed_ord_${key}`,
+        expected_snapshot_hash: (preview as any).snapshot_hash,
+        expected_cart_version: (preview as any).cart_version,
+        expected_amount: (preview as any).total?.amount,
+        expected_currency: (preview as any).total?.currency ?? 'VND',
+        expected_quote_version: (preview as any).quote_version,
+      }, correlationId, `seed_ord_${key}`, request.user.sub);
+      return { data: order, meta: { request_id: correlationId } };
     }
 
     if (domain === 'healthcare') {
-      try {
-        const departmentsRaw = await this.healthcare.listDepartments(request.user.sub, correlationId, '', 1, 0);
-        const deptList = Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw as any)?.items ?? [];
-        const dept = deptList[0]?.name || 'Nội khoa tổng quát';
-        const slotsRaw = await this.healthcare.listDoctors(request.user.sub, correlationId, dept);
-        const slots = Array.isArray(slotsRaw) ? slotsRaw : (slotsRaw as any)?.items ?? [];
-        const availSlot = slots[0];
-        if (availSlot && availSlot.id) {
-          const held = await this.healthcare.holdSlot(request.user.sub, correlationId, `seed_hold_${key}`, {
-            slot_id: availSlot.id,
-            symptoms: 'Khám sức khỏe tổng quát định kỳ',
-          });
-          const apptId = (held as any)?.appointment?.id ?? (held as any)?.id;
-          if (apptId) {
-            await this.healthcare.acknowledgePayment(apptId, request.user.sub, correlationId, `seed_pay_${key}`);
-            const confirmed = await this.healthcare.confirmAppointment(request.user.sub, correlationId, `seed_conf_${key}`, apptId);
-            return { data: confirmed, meta: { request_id: correlationId } };
-          }
-        }
-      } catch (err: any) {
-        return {
-          data: {
-            id: `apt_${key.slice(0, 8)}`,
-            patient_name: 'Nguyễn Thị Mai',
-            department: 'Khoa Nội Tổng Quát',
-            status: 'CONFIRMED',
-            type: 'clinic',
-            created_at: new Date().toISOString(),
-          },
-          meta: { request_id: correlationId },
-        };
+      const departmentsRaw = await this.healthcare.listDepartments(request.user.sub, correlationId, '', 1, 0);
+      const deptList = Array.isArray(departmentsRaw) ? departmentsRaw : (departmentsRaw as any)?.items ?? [];
+      if (!deptList.length) {
+        throw new BadRequestException({ code: 'NO_DEPARTMENTS', detail: 'Không có khoa nào để đặt lịch mẫu.', retryable: false });
       }
+      const dept = deptList[0]?.name;
+      const slotsRaw = await this.healthcare.listDoctors(request.user.sub, correlationId, dept);
+      const slots = Array.isArray(slotsRaw) ? slotsRaw : (slotsRaw as any)?.items ?? [];
+      const availSlot = slots[0];
+      if (!availSlot?.id) {
+        throw new BadRequestException({ code: 'NO_SLOTS', detail: 'Không có lịch khám khả dụng.', retryable: false });
+      }
+      const held = await this.healthcare.holdSlot(request.user.sub, correlationId, `seed_hold_${key}`, {
+        slot_id: availSlot.id,
+        symptoms: 'Khám sức khỏe tổng quát định kỳ',
+      });
+      const apptId = (held as any)?.appointment?.id ?? (held as any)?.id;
+      if (!apptId) {
+        throw new BadRequestException({ code: 'HOLD_FAILED', detail: 'Không thể giữ lịch khám.', retryable: false });
+      }
+      await this.healthcare.acknowledgePayment(apptId, request.user.sub, correlationId, `seed_pay_${key}`);
+      const confirmed = await this.healthcare.confirmAppointment(request.user.sub, correlationId, `seed_conf_${key}`, apptId);
+      return { data: confirmed, meta: { request_id: correlationId } };
     }
 
     if (domain === 'restaurant') {
-      try {
-        const catalogRaw = await this.restaurant.searchCatalog({ limit: 3 }, correlationId);
-        const catalogItems = Array.isArray(catalogRaw) ? catalogRaw : (catalogRaw as any)?.items ?? [];
-        const rest = catalogItems[0] || { id: 'rest_marukame_01', name: 'Marukame Udon' };
-        const hold = await this.restaurant.createHold(request.user.sub, correlationId, `seed_rhold_${key}`, {
-          restaurant_id: rest.id,
-          party_size: 4,
-          reservation_time: new Date(Date.now() + 7200_000).toISOString(),
-          special_requests: 'Bàn cạnh cửa sổ hoặc ban công, tiệc gia đình',
-        });
-        const holdId = (hold as any)?.hold_id || (hold as any)?.id;
-        if (holdId) {
-          const res = await this.restaurant.createReservation(request.user.sub, correlationId, `seed_res_${key}`, {
-            hold_id: holdId,
-            restaurant_id: rest.id,
-            guest_name: 'Trần Văn Hoàng',
-            guest_phone: '0912345678',
-            party_size: 4,
-            reservation_time: new Date(Date.now() + 7200_000).toISOString(),
-          });
-          return { data: res, meta: { request_id: correlationId } };
-        }
-      } catch (err: any) {
-        return {
-          data: {
-            id: `res_${key.slice(0, 8)}`,
-            guest_name: 'Trần Văn Hoàng',
-            restaurant_name: 'Haidilao Hotpot Landmark 81',
-            party_size: 4,
-            reservation_time: new Date(Date.now() + 7200_000).toISOString(),
-            status: 'CONFIRMED',
-            seating_area: 'Bàn view sông ban công',
-            created_at: new Date().toISOString(),
-          },
-          meta: { request_id: correlationId },
-        };
+      const catalogRaw = await this.restaurant.searchCatalog({ limit: 3 }, correlationId);
+      const catalogItems = Array.isArray(catalogRaw) ? catalogRaw : (catalogRaw as any)?.items ?? [];
+      if (!catalogItems.length) {
+        throw new BadRequestException({ code: 'NO_RESTAURANTS', detail: 'Không có nhà hàng nào trong danh mục.', retryable: false });
       }
+      const rest = catalogItems[0];
+      const hold = await this.restaurant.createHold(request.user.sub, correlationId, `seed_rhold_${key}`, {
+        restaurant_id: rest.id,
+        party_size: 4,
+        reservation_time: new Date(Date.now() + 7200_000).toISOString(),
+        special_requests: 'Bàn cạnh cửa sổ hoặc ban công, tiệc gia đình',
+      });
+      const holdId = (hold as any)?.hold_id || (hold as any)?.id;
+      if (!holdId) {
+        throw new BadRequestException({ code: 'HOLD_FAILED', detail: 'Không thể giữ bàn.', retryable: false });
+      }
+      const providerName = request.user.full_name ?? request.user.email.split('@')[0];
+      const providerPhone = request.user.phone ?? undefined;
+      const res = await this.restaurant.createReservation(request.user.sub, correlationId, `seed_res_${key}`, {
+        hold_id: holdId,
+        restaurant_id: rest.id,
+        guest_name: providerName,
+        guest_phone: providerPhone,
+        party_size: 4,
+        reservation_time: new Date(Date.now() + 7200_000).toISOString(),
+      });
+      return { data: res, meta: { request_id: correlationId } };
     }
 
     if (domain === 'delivery') {
-      try {
-        const seeded = await this.delivery.seedSample('Bưu kiện test từ Provider Portal', correlationId);
-        return { data: seeded, meta: { request_id: correlationId } };
-      } catch (err: any) {
-        return {
-          data: {
-            id: `del_ord_${key.slice(0, 8)}`,
-            status: 'PICKING_UP',
-            pickup_address: 'Kho vận hành Trung tâm X-One, 18 Hoàng Đạo Thúy',
-            dropoff_address: 'Cửa hàng Đối tác Merchant, 98 Nguyễn Huệ',
-            receiver_name: 'Đại diện Merchant X-One',
-            amount: 45000,
-            created_at: new Date().toISOString(),
-          },
-          meta: { request_id: correlationId },
-        };
-      }
+      const seeded = await this.delivery.seedSample('Bưu kiện test từ Provider Portal', correlationId);
+      return { data: seeded, meta: { request_id: correlationId } };
     }
 
     return { data: { created: true, domain }, meta: { request_id: correlationId } };

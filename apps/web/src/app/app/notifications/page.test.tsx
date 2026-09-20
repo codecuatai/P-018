@@ -21,12 +21,13 @@ describe("NotificationsPage", () => {
     markNotificationRead.mockResolvedValue({ id: "notification-1", status: "READ" });
   });
 
-  it("issues exactly one mark-read mutation for one unread item click", async () => {
+  it("preserves red notification status when clicked and does not auto-mark read", async () => {
     render(<NotificationsPage />);
-    await screen.findByText("Cập nhật");
-    fireEvent.click(screen.getByRole("button", { name: /Cập nhật/ }));
-    await waitFor(() => expect(markNotificationRead).toHaveBeenCalledTimes(1));
-    expect(markNotificationRead).toHaveBeenCalledWith("notification-1");
-    expect(await screen.findByText("Đã đọc")).toBeInTheDocument();
+    const item = await screen.findByText("Cập nhật");
+    fireEvent.click(item);
+    expect(markNotificationRead).not.toHaveBeenCalled();
+    expect(screen.getByText("Chưa đọc")).toBeInTheDocument();
+    const article = item.closest("article");
+    expect(article).toHaveClass("notification-unread");
   });
 });

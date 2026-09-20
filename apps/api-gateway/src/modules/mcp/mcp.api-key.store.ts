@@ -29,34 +29,7 @@ export class InMemoryMcpApiKeyRepository implements McpApiKeyRepository {
   private readonly userLookup: (userId: string) => Promise<AuthUser | undefined>;
 
   constructor(userLookup?: (userId: string) => Promise<AuthUser | undefined>) {
-    this.userLookup = userLookup ?? (async (userId: string) => {
-      if (userId === 'a0000000-0000-4000-8000-000000000003') {
-        return {
-          id: userId,
-          sub: userId,
-          email: 'provider@xone.local',
-          role: 'provider',
-          provider_type: 'ride_driver',
-          tenant_id: 'partner-xone-01',
-          full_name: 'X-One Service Partner',
-          authentication_kind: 'real',
-        };
-      }
-      return undefined;
-    });
-
-    // Seed demo key for testing
-    const demoHash = createHash('sha256').update('xone_mcp_demo_secret_key_provider_001').digest('hex');
-    this.keys.set('b0000000-0000-4000-8000-000000000001', {
-      id: 'b0000000-0000-4000-8000-000000000001',
-      userId: 'a0000000-0000-4000-8000-000000000003',
-      keyHash: demoHash,
-      keyPrefix: 'xone_mcp_demo...001',
-      label: 'Seed Master Provider MCP Key',
-      status: 'active',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
+    this.userLookup = userLookup ?? (async () => undefined);
   }
 
   async createKey(userId: string, label = 'Claude Desktop MCP Key'): Promise<{ record: McpApiKeyRecord; rawKey: string }> {

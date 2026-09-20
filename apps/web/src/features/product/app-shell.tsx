@@ -357,9 +357,14 @@ function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean; href?: string }>>([]);
   const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
+  const openRef = useRef(false);
+  openRef.current = open;
 
   const refreshCount = useCallback(async (signal?: AbortSignal) => {
     if (status !== "authenticated") { setCount(0); return; }
+    // Do not overwrite count from polling while popover is open —
+    // the popover uses the freshly-fetched listNotifications unread_count.
+    if (openRef.current) return;
     try {
       const result = await getUnreadNotificationCount(signal);
       setCount(result.unread_count);
@@ -408,30 +413,34 @@ function NotificationBell() {
           ? `/app/history/${item.resource_type}/${encodeURIComponent(item.resource_id)}`
           : undefined,
       })));
-      setCount(Math.max(0, unreadCount));
+      // Keep the higher count — never silently zero-out the badge while popover is open
+      setCount((prev) => Math.max(prev, Math.max(0, unreadCount)));
     }).catch(() => undefined).finally(() => {
       if (active) setLoading(false);
     });
     return () => { active = false; };
   }, [open, status]);
 
+  // Compute unread count from local item state when popover is open (keeps badge stable)
+  const displayCount = open ? Math.max(count, items.filter((i) => !i.read).length) : count;
+
   return (
     <div className="notification-bell-wrap" ref={ref}>
       <button
         className="notification-bell-btn"
         type="button"
-        aria-label={`Thông báo${count > 0 ? `, ${count} chưa đọc` : ""}`}
+        aria-label={`Thông báo${displayCount > 0 ? `, ${displayCount} chưa đọc` : ""}`}
         onClick={() => setOpen((value) => !value)}
       >
         <Bell size={18} />
-        {count > 0 && <span className="notification-badge-pill" aria-hidden="true">{count > 99 ? "99+" : count}</span>}
+        {displayCount > 0 && <span className="notification-badge-pill" aria-hidden="true">{displayCount > 99 ? "99+" : displayCount}</span>}
       </button>
       {open && (
         <div className="notification-popover" role="dialog" aria-label="Thông báo">
           <div className="notification-popover-header">
             <span>Thông báo</span>
             {items.some((i) => !i.read) && (
-              <span className="notif-unread-count">{items.filter((i) => !i.read).length} chưa đọc</span>
+              <span className="notif-unread-count" aria-label={`Thông báo, ${items.filter((i) => !i.read).length} chưa đọc`}>{items.filter((i) => !i.read).length} chưa đọc</span>
             )}
             <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}>
               <X size={14} />
@@ -454,7 +463,7 @@ function NotificationBell() {
                   </>
                 );
                 return item.href ? (
-                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`} onClick={() => setOpen(false)}>
+                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`}>
                     {inner}
                   </Link>
                 ) : (
