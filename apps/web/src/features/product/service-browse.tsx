@@ -183,7 +183,8 @@ function FoodBrowse() {
       setCart(next);
       setConfirmation(undefined); setChecked(false);
       setCustomizingItem(undefined);
-      setNotice(`${display(item.name ?? item.title ?? "Món ăn")} (x${Math.max(1, quantity)}) đã được thêm vào giỏ.`);
+      const itemName = display(item.name ?? item.title ?? "Món ăn");
+      setNotice(`${itemName}${Math.max(1, quantity) > 1 ? ` (x${Math.max(1, quantity)})` : ""} đã được thêm vào giỏ.`);
     } catch (reason) { setError(errorText(reason)); }
     finally { setCartLoading(false); }
   }
@@ -1521,6 +1522,10 @@ function HealthcareBrowse({ resumeAppointmentId, departments, departmentsLoading
                   <button className="button button-secondary" type="button" onClick={() => void cancel()} disabled={actionLoading} style={{ width: "100%" }}>
                     Hủy lịch khám
                   </button>
+                </div>
+                <div className="success-card" style={{ marginTop: "10px" }}>
+                  <Check size={18} />
+                  <strong>Lịch khám: Đã xác nhận</strong>
                 </div>
               </>
             ) : appointment && appointment.status === "CANCELLED" ? (

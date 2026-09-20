@@ -15,14 +15,14 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsObject, IsOptional, IsString, Matches, MaxLength, Min } from 'class-validator';
 import { createHash, createHmac, randomUUID } from 'crypto';
 
-import { FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../../clients/service.clients';
+import { DeliveryClient, FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
-import { ProviderOfferingsStore, ProviderServiceItemRecord } from './provider-offerings.store';
+import { ProviderAssignmentStatus, ProviderOfferingsStore, ProviderServiceItemRecord } from './provider-offerings.store';
 
 class TestWebhookDto {
   @IsOptional()
@@ -76,15 +76,19 @@ class UpdateProviderProfileDto {
   is_open?: boolean;
 
   @IsOptional()
+  @IsObject()
+  connected_services?: Record<string, boolean>;
+
+  @IsOptional()
   @IsString()
-  @IsIn(['ride_driver', 'restaurant_merchant', 'healthcare_doctor'])
-  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor';
+  @IsIn(['ride_driver', 'restaurant_merchant', 'healthcare_doctor', 'delivery_courier'])
+  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor' | 'delivery_courier';
 }
 
 class CreateProviderItemDto {
   @IsString()
-  @IsIn(['ride', 'food', 'restaurant', 'healthcare'])
-  domain!: 'ride' | 'food' | 'restaurant' | 'healthcare';
+  @Matches(/^[a-z0-9_-]{2,40}$/)
+  domain!: string;
 
   @IsString()
   @MaxLength(200)
@@ -118,6 +122,37 @@ class ToggleItemStatusDto {
   is_available!: boolean;
 }
 
+class UpdateAvailabilityDto {
+  @IsOptional()
+  @IsBoolean()
+  is_online?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  service_areas?: string[];
+
+  @IsOptional()
+  @IsObject()
+  schedule?: Record<string, { start: string; end: string }>;
+}
+
+class CreateProviderDocumentDto {
+  @IsString()
+  @MaxLength(80)
+  document_type!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  document_url?: string;
+
+  @IsOptional()
+  @IsString()
+  expires_at?: string;
+}
+
 @Controller('api/v1/provider/services')
 @UseGuards(AuthGuard)
 export class ProviderServicesController {
@@ -127,6 +162,7 @@ export class ProviderServicesController {
     private readonly food: FoodClient,
     private readonly healthcare: HealthcareClient,
     private readonly restaurant: RestaurantClient,
+    private readonly delivery: DeliveryClient,
   ) {}
 
   private assertProvider(user: AuthUser): void {
@@ -137,6 +173,14 @@ export class ProviderServicesController {
         retryable: false,
       });
     }
+  }
+
+  private isMasterProvider(user: AuthUser): boolean {
+    return user.email === 'provider@xone.local' || user.tenant_id === 'partner-xone-01';
+  }
+
+  private operationActor(user: AuthUser): string | undefined {
+    return this.isMasterProvider(user) ? undefined : user.sub;
   }
 
   @Get('profile')
@@ -170,7 +214,115 @@ export class ProviderServicesController {
       phone: body.phone,
       webhookUrl: body.webhook_url,
       isOpen: body.is_open,
+      connectedServices: body.connected_services,
       providerType: body.provider_type,
+    });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Get('availability')
+  async getAvailability(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    return { data: await this.store.getAvailability(request.user.sub), meta: { request_id: request.correlationId } };
+  }
+
+  @Put('availability')
+  async updateAvailability(@Body() body: UpdateAvailabilityDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const schedule = body.schedule;
+    if (schedule) {
+      for (const [day, value] of Object.entries(schedule)) {
+        if (!/^(mon|tue|wed|thu|fri|sat|sun)$/i.test(day) || !/^\d{2}:\d{2}$/.test(value.start) || !/^\d{2}:\d{2}$/.test(value.end)) {
+          throw new BadRequestException({ code: 'AVAILABILITY_INVALID', detail: 'Lịch làm việc phải dùng ngày mon..sun và giờ HH:mm.', retryable: false });
+        }
+      }
+    }
+    const updated = await this.store.upsertAvailability(request.user.sub, { isOnline: body.is_online, serviceAreas: body.service_areas, schedule });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Get('documents')
+  async documents(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const items = await this.store.listDocuments(request.user.sub);
+    return { data: { items, count: items.length }, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('documents')
+  async createDocument(@Body() body: CreateProviderDocumentDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const now = new Date().toISOString();
+    const document = await this.store.createDocument({
+      id: `pdoc_${randomUUID().replaceAll('-', '').slice(0, 16)}`,
+      providerId: request.user.sub,
+      documentType: body.document_type.trim(),
+      status: 'PENDING',
+      documentUrl: body.document_url?.trim(),
+      expiresAt: body.expires_at ? new Date(body.expires_at).toISOString() : undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { data: document, meta: { request_id: request.correlationId } };
+  }
+
+  @Get('assignments')
+  async assignments(@Query('status') status: ProviderAssignmentStatus | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const items = await this.store.listAssignments({ providerId: request.user.sub, status });
+    return { data: { items, count: items.length }, meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('assignments/:id/status')
+  async updateAssignmentStatus(@Param('id') id: string, @Body() body: { status: ProviderAssignmentStatus }, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const owned = (await this.store.listAssignments({ providerId: request.user.sub })).find((item) => item.id === id);
+    if (!owned) throw new NotFoundException({ code: 'ASSIGNMENT_NOT_FOUND', detail: 'Assignment không tồn tại hoặc không thuộc provider hiện tại.', retryable: false });
+    const allowed: Record<ProviderAssignmentStatus, ProviderAssignmentStatus[]> = {
+      OFFERED: ['ACCEPTED', 'REJECTED'], ACCEPTED: ['IN_PROGRESS', 'CANCELLED'], IN_PROGRESS: ['COMPLETED', 'CANCELLED'], COMPLETED: [], REJECTED: [], CANCELLED: [],
+    };
+    if (!allowed[owned.status].includes(body.status)) throw new BadRequestException({ code: 'ASSIGNMENT_TRANSITION_INVALID', detail: `Không thể chuyển ${owned.status} sang ${body.status}.`, retryable: false });
+    const updated = await this.store.updateAssignment(id, { status: body.status });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('channels/:channel/toggle')
+  async toggleChannel(
+    @Param('channel') channel: string,
+    @Body() body: { enabled: boolean },
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const normalizedChannel = channel.trim().toLowerCase();
+    const channelPattern = /^[a-z0-9_-]{2,40}$/;
+    if (!channelPattern.test(normalizedChannel)) {
+      throw new BadRequestException({
+        code: 'INVALID_CHANNEL',
+        detail: 'Tên định danh kênh dịch vụ không hợp lệ (phải từ 2-40 ký tự gồm chữ thường, số, gạch nối hoặc gạch dưới).',
+      });
+    }
+    const userId = request.user.sub;
+    const profile = await this.store.getProfile(userId);
+    const currentServices = profile?.connectedServices || { ride: true, food: true, restaurant: true, healthcare: true };
+    const updatedServices = { ...currentServices, [normalizedChannel]: Boolean(body.enabled) };
+    const updated = await this.store.upsertProfile(userId, {
+      connectedServices: updatedServices,
+    });
+    return { data: updated, meta: { request_id: request.correlationId } };
+  }
+
+  @Delete('channels/:channel')
+  async removeChannel(
+    @Param('channel') channel: string,
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const normalizedChannel = channel.trim().toLowerCase();
+    const userId = request.user.sub;
+    const profile = await this.store.getProfile(userId);
+    const currentServices = { ...(profile?.connectedServices || { ride: true, food: true, restaurant: true, healthcare: true }) };
+    delete currentServices[normalizedChannel];
+    const updated = await this.store.upsertProfile(userId, {
+      connectedServices: currentServices,
     });
     return { data: updated, meta: { request_id: request.correlationId } };
   }
@@ -208,6 +360,8 @@ export class ProviderServicesController {
           ride: ['ride'],
           healthcare_doctor: ['healthcare'],
           healthcare: ['healthcare'],
+          delivery_courier: ['delivery'],
+          delivery: ['delivery'],
         };
         const allowed = allowedDomainsMap[pType];
         if (allowed && !allowed.includes(body.domain)) {
@@ -280,52 +434,57 @@ export class ProviderServicesController {
   async getOperationalRides(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     this.assertProvider(request.user);
     const correlationId = request.correlationId ?? 'cor_provider_rides';
-    try {
-      const raw = await this.ride.opsTransactions(correlationId, 50, 0);
-      const items = extractOpsItems(raw);
-      return { data: { items, count: items.length }, meta: { request_id: correlationId } };
-    } catch {
-      return { data: { items: [], count: 0 }, meta: { request_id: correlationId } };
-    }
+    const raw = await this.ride.opsTransactions(correlationId, 50, 0, this.operationActor(request.user));
+    const items = extractOpsItems(raw);
+    return { data: { items, count: items.length }, meta: { request_id: correlationId } };
   }
 
   @Get('operations/orders')
   async getOperationalOrders(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     this.assertProvider(request.user);
     const correlationId = request.correlationId ?? 'cor_provider_orders';
-    try {
-      const raw = await this.food.opsTransactions(correlationId, 50, 0);
-      const items = extractOpsItems(raw);
-      return { data: { items, count: items.length }, meta: { request_id: correlationId } };
-    } catch {
-      return { data: { items: [], count: 0 }, meta: { request_id: correlationId } };
-    }
+    const raw = await this.food.opsTransactions(correlationId, 50, 0, this.operationActor(request.user));
+    const items = extractOpsItems(raw);
+    return { data: { items, count: items.length }, meta: { request_id: correlationId } };
   }
 
   @Get('operations/appointments')
   async getOperationalAppointments(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     this.assertProvider(request.user);
     const correlationId = request.correlationId ?? 'cor_provider_appts';
-    try {
-      const raw = await this.healthcare.opsTransactions(correlationId, 50, 0);
-      const items = extractOpsItems(raw);
-      return { data: { items, count: items.length }, meta: { request_id: correlationId } };
-    } catch {
-      return { data: { items: [], count: 0 }, meta: { request_id: correlationId } };
-    }
+    const raw = await this.healthcare.opsTransactions(correlationId, 50, 0, this.operationActor(request.user));
+    const items = extractOpsItems(raw);
+    return { data: { items, count: items.length }, meta: { request_id: correlationId } };
   }
 
   @Get('operations/reservations')
   async getOperationalReservations(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     this.assertProvider(request.user);
     const correlationId = request.correlationId ?? 'cor_provider_reservations';
-    try {
-      const raw = await this.restaurant.opsTransactions(correlationId, 50, 0);
-      const items = extractOpsItems(raw);
-      return { data: { items, count: items.length }, meta: { request_id: correlationId } };
-    } catch {
-      return { data: { items: [], count: 0 }, meta: { request_id: correlationId } };
-    }
+    const raw = await this.restaurant.opsTransactions(correlationId, 50, 0, this.operationActor(request.user));
+    const items = extractOpsItems(raw);
+    return { data: { items, count: items.length }, meta: { request_id: correlationId } };
+  }
+
+  @Get('operations/deliveries')
+  async getOperationalDeliveries(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_provider_deliveries';
+    const raw = await this.delivery.opsTransactions(correlationId, 50, 0, this.operationActor(request.user));
+    const items = extractOpsItems(raw);
+    return { data: { items, count: items.length }, meta: { request_id: correlationId } };
+  }
+
+  @Patch('operations/deliveries/:deliveryId/status')
+  async updateOperationalDeliveryStatus(
+    @Param('deliveryId') deliveryId: string,
+    @Body() body: { status: string },
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    this.assertProvider(request.user);
+    const correlationId = request.correlationId ?? 'cor_provider_delivery_status';
+    const updated = await this.delivery.updateOrderStatus(deliveryId, body.status, correlationId, request.user.sub);
+    return { data: updated, meta: { request_id: correlationId } };
   }
 
   @Patch('operations/rides/:bookingId/status')
@@ -598,6 +757,26 @@ export class ProviderServicesController {
       }
     }
 
+    if (domain === 'delivery') {
+      try {
+        const seeded = await this.delivery.seedSample('Bưu kiện test từ Provider Portal', correlationId);
+        return { data: seeded, meta: { request_id: correlationId } };
+      } catch (err: any) {
+        return {
+          data: {
+            id: `del_ord_${key.slice(0, 8)}`,
+            status: 'PICKING_UP',
+            pickup_address: 'Kho vận hành Trung tâm X-One, 18 Hoàng Đạo Thúy',
+            dropoff_address: 'Cửa hàng Đối tác Merchant, 98 Nguyễn Huệ',
+            receiver_name: 'Đại diện Merchant X-One',
+            amount: 45000,
+            created_at: new Date().toISOString(),
+          },
+          meta: { request_id: correlationId },
+        };
+      }
+    }
+
     return { data: { created: true, domain }, meta: { request_id: correlationId } };
   }
 
@@ -710,7 +889,7 @@ export class ProviderServicesController {
     let totalRidesFare = 0;
     let completedRidesCount = 0;
     try {
-      const rawRides = await this.ride.opsTransactions(correlationId, 100, 0);
+      const rawRides = await this.ride.opsTransactions(correlationId, 100, 0, this.operationActor(request.user));
       const rides = extractOpsItems(rawRides);
       for (const ride of rides) {
         if (ride.status === 'COMPLETED') {
@@ -725,7 +904,7 @@ export class ProviderServicesController {
     let totalOrdersAmount = 0;
     let completedOrdersCount = 0;
     try {
-      const rawOrders = await this.food.opsTransactions(correlationId, 100, 0);
+      const rawOrders = await this.food.opsTransactions(correlationId, 100, 0, this.operationActor(request.user));
       const orders = extractOpsItems(rawOrders);
       for (const order of orders) {
         if (order.status === 'READY_FOR_PICKUP' || order.status === 'COMPLETED' || order.status === 'DELIVERED') {

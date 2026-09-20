@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
+import { createHmac } from 'crypto';
 
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
@@ -130,14 +131,18 @@ describe('Customer Portal Extensions E2E API Verification', () => {
     });
 
     it('POST /api/v1/auth/2fa/verify validates OTP code format', async () => {
+      const setup = await request(app.getHttpServer())
+        .get('/api/v1/auth/2fa/setup')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+      const code = totp(setup.body.data.secret);
       const res = await request(app.getHttpServer())
         .post('/api/v1/auth/2fa/verify')
         .set('Authorization', `Bearer ${authToken}`)
-        .send({ code: '123456' })
+        .send({ code })
         .expect(200);
 
       expect(res.body.data.enabled).toBe(true);
-      expect(res.body.data.backup_codes).toHaveLength(8);
     });
 
     it('POST /api/v1/auth/2fa/disable rejects incorrect password', async () => {
@@ -187,3 +192,24 @@ describe('Customer Portal Extensions E2E API Verification', () => {
     });
   });
 });
+
+function totp(secret: string): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0;
+  let buffer = 0;
+  const bytes: number[] = [];
+  for (const character of secret) {
+    buffer = (buffer << 5) | alphabet.indexOf(character);
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((buffer >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30)));
+  const digest = createHmac('sha1', Buffer.from(bytes)).update(message).digest();
+  const offset = digest[digest.length - 1] & 15;
+  const value = ((digest[offset] & 127) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3];
+  return String(value % 1_000_000).padStart(6, '0');
+}

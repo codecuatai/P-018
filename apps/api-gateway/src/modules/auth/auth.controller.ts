@@ -32,7 +32,7 @@ class RegisterDto {
   @IsString()
   @IsOptional()
   @MaxLength(50)
-  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor';
+  provider_type?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor' | 'delivery_courier';
 
   @IsString()
   @IsOptional()
@@ -66,6 +66,11 @@ class LoginDto {
 
   @IsString()
   password!: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  two_factor_code?: string;
 }
 
 class ChangePasswordDto {
@@ -100,7 +105,7 @@ class ResetPasswordDto {
 class TwoFactorVerifyDto {
   @IsString()
   @MinLength(6, { message: 'Mã xác thực không hợp lệ.' })
-  @MaxLength(8, { message: 'Mã xác thực không hợp lệ.' })
+  @MaxLength(64, { message: 'Mã xác thực không hợp lệ.' })
   code!: string;
 }
 
@@ -153,7 +158,7 @@ export class AuthController {
     if (demo) {
       return { data: { access_token: demo.token, token_type: 'bearer', expires_in: 3_600, user: demo.user }, meta: { request_id: request.correlationId } };
     }
-    const issued = await this.auth.login({ email: body.email, password: body.password }, requestMetadata(request), request.correlationId ?? 'cor_unknown');
+    const issued = await this.auth.login({ email: body.email, password: body.password, twoFactorCode: body.two_factor_code }, requestMetadata(request), request.correlationId ?? 'cor_unknown');
     setRefreshCookie(response, issued.refreshToken, this.auth.settings, this.config.getOrThrow<string>('APP_ENV'));
     return authResponse(issued, request.correlationId);
   }
@@ -249,35 +254,23 @@ export class AuthController {
   @Get('2fa/setup')
   @UseGuards(AuthGuard)
   async setup2FA(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    const { randomBytes } = await import('crypto');
-    const secret = randomBytes(20).toString('base64').replace(/[^A-Z2-7]/gi, 'A').slice(0, 32).toUpperCase();
-    const issuer = encodeURIComponent('X-One Platform');
-    const account = encodeURIComponent(request.user.email);
-    const qrCodeUrl = `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`;
-    const backupCodes = Array.from({ length: 8 }, () => randomBytes(4).toString('hex'));
-    return { data: { qr_code_url: qrCodeUrl, secret, backup_codes: backupCodes }, meta: { request_id: request.correlationId } };
+    const setup = await this.auth.setupTwoFactor(request.user);
+    return { data: { qr_code_url: setup.qrCodeUrl, secret: setup.secret, backup_codes: setup.backupCodes }, meta: { request_id: request.correlationId } };
   }
 
   @Post('2fa/verify')
   @UseGuards(AuthGuard)
   @HttpCode(200)
   async verify2FA(@Body() body: TwoFactorVerifyDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    if (!/^\d{6,8}$/.test(body.code)) {
-      throw new BadRequestException({ code: '2FA_CODE_INVALID', detail: 'Mã xác thực không hợp lệ.', retryable: true });
-    }
-    const { randomBytes } = await import('crypto');
-    const backupCodes = Array.from({ length: 8 }, () => randomBytes(4).toString('hex'));
-    return { data: { enabled: true, backup_codes: backupCodes }, meta: { request_id: request.correlationId } };
+    await this.auth.verifyTwoFactor(request.user, body.code);
+    return { data: { enabled: true }, meta: { request_id: request.correlationId } };
   }
 
   @Post('2fa/disable')
   @UseGuards(AuthGuard)
   @HttpCode(200)
   async disable2FA(@Body() body: TwoFactorDisableDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
-    const account = await this.auth.verifyPasswordForUser(request.user, body.password);
-    if (!account) {
-      throw new UnauthorizedException({ code: 'PASSWORD_INCORRECT', detail: 'Mật khẩu không chính xác.', retryable: false });
-    }
+    await this.auth.disableTwoFactor(request.user, body.password);
     return { data: { disabled: true }, meta: { request_id: request.correlationId } };
   }
 

@@ -43,6 +43,13 @@ export type ResetConsumption =
   | { state: 'CONSUMED'; account: AuthAccount }
   | { state: 'INVALID' };
 
+export interface TwoFactorRecord {
+  actorId: string;
+  secret: string;
+  enabled: boolean;
+  backupCodes: string[];
+}
+
 export interface AuthRepository {
   createUser(account: AuthAccount): Promise<AuthAccount>;
   createUserWithSession(account: AuthAccount, session: AuthSession, providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount>;
@@ -63,6 +70,11 @@ export interface AuthRepository {
   updatePasswordAndRevokeSessions(userId: string, passwordHash: string, now: string, reason: string): Promise<AuthAccount | undefined>;
   createPasswordResetToken(value: { id: string; userId: string; tokenHash: string; expiresAt: string; createdAt: string }): Promise<void>;
   consumePasswordResetToken(tokenHash: string, passwordHash: string, now: string): Promise<ResetConsumption>;
+  getTwoFactor(actorId: string): Promise<TwoFactorRecord | undefined>;
+  saveTwoFactorSetup(actorId: string, secret: string, backupCodes: string[]): Promise<void>;
+  enableTwoFactor(actorId: string): Promise<void>;
+  disableTwoFactor(actorId: string): Promise<void>;
+  consumeTwoFactorBackupCode(actorId: string, codeHash: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -80,6 +92,7 @@ export class InMemoryAuthRepository implements AuthRepository {
   private readonly sessionsById = new Map<string, AuthSession>();
   private readonly sessionsByRefreshHash = new Map<string, string>();
   private readonly resetTokens = new Map<string, { id: string; userId: string; tokenHash: string; expiresAt: string; createdAt: string; usedAt?: string }>();
+  private readonly twoFactor = new Map<string, TwoFactorRecord>();
 
   constructor(private readonly refreshReuseGraceMs = REFRESH_REUSE_GRACE_MS) {}
 
@@ -91,9 +104,13 @@ export class InMemoryAuthRepository implements AuthRepository {
   }
 
   async createUserWithSession(account: AuthAccount, session: AuthSession, _providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount> {
+    if (account.role === 'provider') {
+      account.providerType = _providerMeta?.providerType || account.providerType || 'ride_driver';
+      account.tenantId = account.tenantId || `partner-${account.id.slice(0, 8)}`;
+    }
     const created = await this.createUser(account);
     await this.createSession(session);
-    return created;
+    return clone(this.usersById.get(created.id) ?? created);
   }
 
   async getUserByEmailNormalized(emailNormalized: string): Promise<AuthAccount | undefined> {
@@ -280,6 +297,33 @@ export class InMemoryAuthRepository implements AuthRepository {
     return { state: 'CONSUMED', account };
   }
 
+  async getTwoFactor(actorId: string): Promise<TwoFactorRecord | undefined> {
+    const record = this.twoFactor.get(actorId);
+    return record ? clone(record) : undefined;
+  }
+
+  async saveTwoFactorSetup(actorId: string, secret: string, backupCodes: string[]): Promise<void> {
+    this.twoFactor.set(actorId, { actorId, secret, enabled: false, backupCodes: [...backupCodes] });
+  }
+
+  async enableTwoFactor(actorId: string): Promise<void> {
+    const record = this.twoFactor.get(actorId);
+    if (record) record.enabled = true;
+  }
+
+  async disableTwoFactor(actorId: string): Promise<void> {
+    this.twoFactor.delete(actorId);
+  }
+
+  async consumeTwoFactorBackupCode(actorId: string, codeHash: string): Promise<boolean> {
+    const record = this.twoFactor.get(actorId);
+    if (!record) return false;
+    const index = record.backupCodes.indexOf(codeHash);
+    if (index < 0) return false;
+    record.backupCodes.splice(index, 1);
+    return true;
+  }
+
   async close(): Promise<void> {}
 
   private async revokeAllInFamily(userId: string, familyId: string, reason: string, now: string): Promise<void> {
@@ -314,6 +358,10 @@ export class PostgresAuthRepository implements AuthRepository {
   }
 
   async createUserWithSession(account: AuthAccount, session: AuthSession, providerMeta?: { providerType?: string; businessName?: string; address?: string }): Promise<AuthAccount> {
+    if (account.role === 'provider') {
+      account.providerType = providerMeta?.providerType || account.providerType || 'ride_driver';
+      account.tenantId = account.tenantId || `partner-${account.id.slice(0, 8)}`;
+    }
     return this.transaction(async (client) => {
       const inserted = await client.query(
         `INSERT INTO users (id,email,email_normalized,full_name,phone,role,status,created_at,updated_at)
@@ -334,8 +382,8 @@ export class PostgresAuthRepository implements AuthRepository {
         [session.id, session.userId, session.refreshTokenHash, session.familyId, session.expiresAt, session.createdAt, session.lastUsedAt, session.userAgent ?? null, session.ipHash ?? null],
       );
       if (account.role === 'provider') {
-        const providerType = providerMeta?.providerType || 'ride_driver';
-        const tenantId = `partner-${account.id.slice(0, 8)}`;
+        const providerType = account.providerType || 'ride_driver';
+        const tenantId = account.tenantId || `partner-${account.id.slice(0, 8)}`;
         await client.query(
           `INSERT INTO provider_profiles (user_id, provider_type, tenant_id, status, business_name, phone, address, created_at, updated_at)
            VALUES ($1, $2, $3, 'active', $4, $5, $6, now(), now())
@@ -554,6 +602,39 @@ export class PostgresAuthRepository implements AuthRepository {
     });
   }
 
+  async getTwoFactor(actorId: string): Promise<TwoFactorRecord | undefined> {
+    const result = await this.pool.query('SELECT actor_id,secret,enabled,backup_codes FROM user_two_factor WHERE actor_id=$1', [actorId]);
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    return { actorId: String(row.actor_id), secret: String(row.secret), enabled: row.enabled === true, backupCodes: Array.isArray(row.backup_codes) ? row.backup_codes.map(String) : [] };
+  }
+
+  async saveTwoFactorSetup(actorId: string, secret: string, backupCodes: string[]): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO user_two_factor (actor_id,secret,enabled,backup_codes,created_at,updated_at)
+       VALUES ($1,$2,false,$3,now(),now())
+       ON CONFLICT (actor_id) DO UPDATE SET secret=$2,enabled=false,backup_codes=$3,updated_at=now()`,
+      [actorId, secret, backupCodes],
+    );
+  }
+
+  async enableTwoFactor(actorId: string): Promise<void> {
+    await this.pool.query('UPDATE user_two_factor SET enabled=true,updated_at=now() WHERE actor_id=$1', [actorId]);
+  }
+
+  async disableTwoFactor(actorId: string): Promise<void> {
+    await this.pool.query('DELETE FROM user_two_factor WHERE actor_id=$1', [actorId]);
+  }
+
+  async consumeTwoFactorBackupCode(actorId: string, codeHash: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE user_two_factor SET backup_codes=array_remove(backup_codes,$2),updated_at=now()
+       WHERE actor_id=$1 AND $2 = ANY(backup_codes) RETURNING actor_id`,
+      [actorId, codeHash],
+    );
+    return result.rowCount === 1;
+  }
+
   async close(): Promise<void> {
     await this.pool.end();
   }
@@ -568,8 +649,9 @@ export class PostgresAuthRepository implements AuthRepository {
       ? 'reset.id AS reset_id,reset.used_at,reset.expires_at AS reset_expires_at'
       : 'NULL::uuid AS reset_id,NULL::timestamptz AS used_at,NULL::timestamptz AS reset_expires_at';
     return `SELECT u.id,u.email,u.email_normalized,u.full_name,u.phone,u.avatar_url,u.language,u.timezone,u.onboarding_completed_at,u.role,u.status,u.created_at,u.updated_at,c.password_hash,c.password_changed_at,
+      p.provider_type,p.tenant_id,
       ${sessionFields}, ${resetFields}
-      FROM users u JOIN user_credentials c ON c.user_id=u.id ${sessionJoin} ${resetJoin} WHERE ${where}`;
+      FROM users u JOIN user_credentials c ON c.user_id=u.id LEFT JOIN provider_profiles p ON p.user_id=u.id ${sessionJoin} ${resetJoin} WHERE ${where}`;
   }
 
   private accountFromRow(row: Record<string, unknown>): AuthAccount {
@@ -589,6 +671,8 @@ export class PostgresAuthRepository implements AuthRepository {
       passwordChangedAt: new Date(String(row.password_changed_at)).toISOString(),
       createdAt: new Date(String(row.created_at)).toISOString(),
       updatedAt: new Date(String(row.updated_at)).toISOString(),
+      providerType: row.provider_type ? String(row.provider_type) : undefined,
+      tenantId: row.tenant_id ? String(row.tenant_id) : undefined,
     };
   }
 
@@ -666,6 +750,11 @@ export class AuthStore implements OnModuleDestroy {
   updatePasswordAndRevokeSessions(userId: string, hash: string, now: string, reason: string): Promise<AuthAccount | undefined> { return this.repository.updatePasswordAndRevokeSessions(userId, hash, now, reason); }
   createPasswordResetToken(value: { id: string; userId: string; tokenHash: string; expiresAt: string; createdAt: string }): Promise<void> { return this.repository.createPasswordResetToken(value); }
   consumePasswordResetToken(hash: string, passwordHash: string, now: string): Promise<ResetConsumption> { return this.repository.consumePasswordResetToken(hash, passwordHash, now); }
+  getTwoFactor(actorId: string): Promise<TwoFactorRecord | undefined> { return this.repository.getTwoFactor(actorId); }
+  saveTwoFactorSetup(actorId: string, secret: string, backupCodes: string[]): Promise<void> { return this.repository.saveTwoFactorSetup(actorId, secret, backupCodes); }
+  enableTwoFactor(actorId: string): Promise<void> { return this.repository.enableTwoFactor(actorId); }
+  disableTwoFactor(actorId: string): Promise<void> { return this.repository.disableTwoFactor(actorId); }
+  consumeTwoFactorBackupCode(actorId: string, codeHash: string): Promise<boolean> { return this.repository.consumeTwoFactorBackupCode(actorId, codeHash); }
   onModuleDestroy(): Promise<void> { return this.repository.close(); }
 }
 

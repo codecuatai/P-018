@@ -175,7 +175,7 @@ export async function loginWithGoogle(code: string, redirectUri?: string, should
 
 export interface RegisterOptions {
   role?: "customer" | "provider";
-  providerType?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor";
+  providerType?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor" | "delivery_courier";
   businessName?: string;
   phone?: string;
   address?: string;
@@ -519,6 +519,13 @@ export function getSupportTicket(id: string): Promise<SupportTicket> {
 
 export function addSupportMessage(id: string, message: string): Promise<SupportTicket> {
   return request(`/api/v1/support/tickets/${encodeURIComponent(id)}/messages`, { method: "POST", body: JSON.stringify({ message }) }, { idempotencyKey: createIdempotencyKey("support-message") });
+}
+
+export function requestConversationHandoff(conversationId: string, reason?: string): Promise<{ status: "REQUESTED"; ticket_id: string; conversation_id: string }> {
+  return request(`/api/v1/conversations/${encodeURIComponent(conversationId)}/handoff`, {
+    method: "POST",
+    body: JSON.stringify(reason ? { reason } : {}),
+  }, { idempotencyKey: createIdempotencyKey("conversation-handoff") });
 }
 
 export function prepareFoodReorder(orderId: string): Promise<Record<string, unknown>> {
@@ -1175,14 +1182,80 @@ export interface ProviderProfile {
   phone?: string;
   webhookUrl?: string;
   isOpen: boolean;
+  connectedServices?: Record<string, boolean>;
+  isOnline?: boolean;
+  serviceAreas?: string[];
+  availabilitySchedule?: Record<string, { start: string; end: string }>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProviderAvailability {
+  providerId: string;
+  isOnline: boolean;
+  serviceAreas: string[];
+  schedule: Record<string, { start: string; end: string }>;
+  updatedAt: string;
+}
+
+export interface ProviderDocument {
+  id: string;
+  providerId: string;
+  documentType: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
+  documentUrl?: string;
+  expiresAt?: string;
+  reviewNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderAssignment {
+  id: string;
+  providerId: string;
+  domain: string;
+  resourceId: string;
+  status: "OFFERED" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "REJECTED" | "CANCELLED";
+  assignedBy: string;
+  dueAt?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperationsAssignment extends ProviderAssignment {}
+
+export async function getOperationsAssignments(filters?: { providerId?: string; domain?: string; status?: ProviderAssignment["status"] }): Promise<{ items: OperationsAssignment[]; count: number; overdue: number }> {
+  const params = new URLSearchParams();
+  if (filters?.providerId) params.set("provider_id", filters.providerId);
+  if (filters?.domain) params.set("domain", filters.domain);
+  if (filters?.status) params.set("status", filters.status);
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<{ items: OperationsAssignment[]; count: number; overdue: number }>(`/api/v1/operations/assignments${suffix}`, { method: "GET" });
+}
+
+export async function createOperationsAssignment(value: { provider_id: string; domain: string; resource_id: string; due_at?: string; metadata?: Record<string, unknown> }): Promise<OperationsAssignment> {
+  return request<OperationsAssignment>("/api/v1/operations/assignments", { method: "POST", body: JSON.stringify(value) }, { idempotencyKey: createIdempotencyKey("provider-assignment") });
+}
+
+export async function updateOperationsAssignment(id: string, value: { provider_id?: string; status?: ProviderAssignment["status"]; due_at?: string; metadata?: Record<string, unknown> }): Promise<OperationsAssignment> {
+  return request<OperationsAssignment>(`/api/v1/operations/assignments/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) });
+}
+
+export async function getOperationsProviderDocuments(providerId?: string): Promise<ProviderDocument[]> {
+  const suffix = providerId ? `?provider_id=${encodeURIComponent(providerId)}` : "";
+  const res = await request<{ items: ProviderDocument[] }>(`/api/v1/operations/provider-documents${suffix}`, { method: "GET" });
+  return res.items ?? [];
+}
+
+export async function reviewOperationsProviderDocument(id: string, value: { status: "APPROVED" | "REJECTED" | "EXPIRED"; review_note?: string }): Promise<ProviderDocument> {
+  return request<ProviderDocument>(`/api/v1/operations/provider-documents/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(value) });
 }
 
 export interface ProviderServiceItem {
   id: string;
   providerId: string;
-  domain: "ride" | "food" | "restaurant" | "healthcare";
+  domain: "ride" | "food" | "restaurant" | "healthcare" | string;
   name: string;
   description?: string;
   price: number;
@@ -1206,11 +1279,27 @@ export async function updateProviderProfile(patch: {
   phone?: string;
   webhook_url?: string;
   is_open?: boolean;
-  provider_type?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor";
+  connected_services?: Record<string, boolean>;
+  provider_type?: "ride_driver" | "restaurant_merchant" | "healthcare_doctor" | string;
 }): Promise<ProviderProfile> {
   const res = await request<ProviderProfile>("/api/v1/provider/services/profile", {
     method: "PUT",
     body: JSON.stringify(patch),
+  });
+  return res;
+}
+
+export async function toggleProviderChannel(channel: string, enabled: boolean): Promise<ProviderProfile> {
+  const res = await request<ProviderProfile>(`/api/v1/provider/services/channels/${encodeURIComponent(channel)}/toggle`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+  return res;
+}
+
+export async function deleteProviderChannel(channel: string): Promise<ProviderProfile> {
+  const res = await request<ProviderProfile>(`/api/v1/provider/services/channels/${encodeURIComponent(channel)}`, {
+    method: "DELETE",
   });
   return res;
 }
@@ -1221,8 +1310,39 @@ export async function getProviderItems(domain?: string): Promise<ProviderService
   return res.items ?? [];
 }
 
+export async function getProviderAvailability(): Promise<ProviderAvailability> {
+  return request<ProviderAvailability>("/api/v1/provider/services/availability", { method: "GET" });
+}
+
+export async function updateProviderAvailability(patch: {
+  is_online?: boolean;
+  service_areas?: string[];
+  schedule?: Record<string, { start: string; end: string }>;
+}): Promise<ProviderAvailability> {
+  return request<ProviderAvailability>("/api/v1/provider/services/availability", { method: "PUT", body: JSON.stringify(patch) });
+}
+
+export async function getProviderDocuments(): Promise<ProviderDocument[]> {
+  const res = await request<{ items: ProviderDocument[] }>("/api/v1/provider/services/documents", { method: "GET" });
+  return res.items ?? [];
+}
+
+export async function submitProviderDocument(value: { document_type: string; document_url?: string; expires_at?: string }): Promise<ProviderDocument> {
+  return request<ProviderDocument>("/api/v1/provider/services/documents", { method: "POST", body: JSON.stringify(value) });
+}
+
+export async function getProviderAssignments(status?: ProviderAssignment["status"]): Promise<ProviderAssignment[]> {
+  const suffix = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await request<{ items: ProviderAssignment[] }>(`/api/v1/provider/services/assignments${suffix}`, { method: "GET" });
+  return res.items ?? [];
+}
+
+export async function updateProviderAssignmentStatus(id: string, status: ProviderAssignment["status"]): Promise<ProviderAssignment> {
+  return request<ProviderAssignment>(`/api/v1/provider/services/assignments/${encodeURIComponent(id)}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
+}
+
 export async function createProviderItem(item: {
-  domain: "ride" | "food" | "restaurant" | "healthcare";
+  domain: "ride" | "food" | "restaurant" | "healthcare" | string;
   name: string;
   price: number;
   description?: string;
@@ -1288,6 +1408,15 @@ export async function getProviderOperationsReservations(): Promise<any[]> {
   }
 }
 
+export async function getProviderOperationsDeliveries(): Promise<any[]> {
+  try {
+    const res = await request<{ items: any[]; count: number }>("/api/v1/provider/services/operations/deliveries", { method: "GET" });
+    return res.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function updateProviderOperationRideStatus(bookingId: string, status: string): Promise<any> {
   return request(`/api/v1/provider/services/operations/rides/${encodeURIComponent(bookingId)}/status`, {
     method: "PATCH",
@@ -1297,6 +1426,13 @@ export async function updateProviderOperationRideStatus(bookingId: string, statu
 
 export async function updateProviderOperationOrderStatus(orderId: string, status: string): Promise<any> {
   return request(`/api/v1/provider/services/operations/orders/${encodeURIComponent(orderId)}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function updateProviderOperationDeliveryStatus(deliveryId: string, status: string): Promise<any> {
+  return request(`/api/v1/provider/services/operations/deliveries/${encodeURIComponent(deliveryId)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });

@@ -380,8 +380,18 @@ export interface AdminFeedbackSummary {
 
 export interface AdminDatasetStatus extends AdminDomainStatus {}
 
+export interface AdminSummaryCounts {
+  total_users?: number;
+  payments?: number;
+  refunds?: number;
+  open_support_tickets?: number;
+  failed_workflows?: number;
+  partial_success_workflows?: number;
+  [key: string]: unknown;
+}
+
 export interface AdminSummary {
-  counts: Record<string, unknown>;
+  counts: AdminSummaryCounts;
   domains: AdminDomainStatus[];
   payments: { total: number };
   refunds: { total: number };

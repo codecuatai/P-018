@@ -101,6 +101,7 @@ try {
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/020_core_audit_and_feature_flags.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/021_core_mcp_provider.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/022_core_customer_extensions.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
+    Invoke-Utf8PostgresMigration -Domain 'Core' -MigrationPath 'apps/api-gateway/migrations/023_core_provider_connected_services.sql' -DatabaseUser 'core_user' -Database 'xone_core' -EnvFile $envFile
 
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/001_agent_workflow_states.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile
     Invoke-Utf8PostgresMigration -Domain 'Agent Service' -MigrationPath 'apps/agent-service/migrations/002_agent_run_metadata.sql' -DatabaseUser 'agent_user' -Database 'xone_agent' -EnvFile $envFile

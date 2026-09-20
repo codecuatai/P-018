@@ -1,11 +1,13 @@
 import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsArray, IsEnum, IsInt, IsISO8601, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsInt, IsISO8601, IsNumber, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import { FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
+import { DeliveryClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthGuard } from '../auth/auth.guard';
 import { AuthUser } from '../auth/auth.types';
+import { Roles } from '../auth/roles.decorator';
+import { RolesGuard } from '../auth/roles.guard';
 
 enum FoodOrderStatus {
   PAYMENT_PENDING = 'PAYMENT_PENDING',
@@ -140,6 +142,94 @@ class HealthcareHoldDto {
   symptoms!: string;
 }
 
+class DeliveryQuoteDto {
+  @IsString()
+  @MinLength(3)
+  pickup_address!: string;
+
+  @IsString()
+  @MinLength(3)
+  dropoff_address!: string;
+
+  @IsOptional()
+  @IsString()
+  package_type?: string;
+
+  @IsOptional()
+  @IsNumber()
+  weight_kg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  distance_km?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  is_fragile?: boolean;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+class CreateDeliveryOrderDto {
+  @IsOptional()
+  @IsString()
+  quote_id?: string;
+
+  @IsString()
+  @MinLength(3)
+  pickup_address!: string;
+
+  @IsString()
+  @MinLength(3)
+  dropoff_address!: string;
+
+  @IsOptional()
+  @IsString()
+  sender_name?: string;
+
+  @IsOptional()
+  @IsString()
+  sender_phone?: string;
+
+  @IsString()
+  @MinLength(2)
+  receiver_name!: string;
+
+  @IsString()
+  @MinLength(6)
+  receiver_phone!: string;
+
+  @IsOptional()
+  @IsString()
+  package_type?: string;
+
+  @IsOptional()
+  @IsString()
+  package_description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  weight_kg?: number;
+
+  @IsOptional()
+  @IsNumber()
+  distance_km?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  is_fragile?: boolean;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  payment_method?: string;
+}
+
 function correlation(request: CorrelatedRequest): string { return request.correlationId ?? 'cor_unknown'; }
 function requiredIdempotency(value: string | undefined): string {
   const normalized = value?.trim();
@@ -151,9 +241,15 @@ function requiredIdempotency(value: string | undefined): string {
 }
 
 @Controller('api/v1/service-actions')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, RolesGuard)
+@Roles('user', 'customer')
 export class ServiceActionsController {
-  constructor(private readonly food: FoodClient, private readonly restaurant: RestaurantClient, private readonly healthcare: HealthcareClient) {}
+  constructor(
+    private readonly food: FoodClient,
+    private readonly restaurant: RestaurantClient,
+    private readonly healthcare: HealthcareClient,
+    private readonly delivery: DeliveryClient,
+  ) {}
 
 
   @Patch('food/orders/:orderId/status')
@@ -270,5 +366,36 @@ export class ServiceActionsController {
     const id = Number(appointmentId);
     if (!Number.isInteger(id) || id < 1) throw new BadRequestException({ code: 'APPOINTMENT_ID_INVALID', detail: 'Appointment id không hợp lệ.', retryable: false });
     return { data: await this.healthcare.cancelAppointment(request.user.sub, correlation(request), requiredIdempotency(key), id), meta: { request_id: request.correlationId } };
+  }
+
+  @Post('delivery/quote')
+  async quoteDelivery(@Body() body: DeliveryQuoteDto, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const data = await this.delivery.quote(body as any, correlation(request), request.user.sub);
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('delivery/orders')
+  async createDeliveryOrder(@Body() body: CreateDeliveryOrderDto, @Headers('Idempotency-Key') key: string | undefined, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const idempotency = requiredIdempotency(key);
+    const data = await this.delivery.createOrder(body as any, correlation(request), request.user.sub, idempotency);
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Get('delivery/orders/:orderId')
+  async getDeliveryOrder(@Param('orderId') orderId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const data = await this.delivery.getOrder(orderId, correlation(request), request.user.sub);
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Patch('delivery/orders/:orderId/status')
+  async updateDeliveryStatus(@Param('orderId') orderId: string, @Body() body: { status: string }, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const data = await this.delivery.updateOrderStatus(orderId, body.status, correlation(request), request.user.sub);
+    return { data, meta: { request_id: request.correlationId } };
+  }
+
+  @Post('delivery/orders/:orderId/cancel')
+  async cancelDeliveryOrder(@Param('orderId') orderId: string, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
+    const data = await this.delivery.cancelOrder(orderId, correlation(request), request.user.sub);
+    return { data, meta: { request_id: request.correlationId } };
   }
 }

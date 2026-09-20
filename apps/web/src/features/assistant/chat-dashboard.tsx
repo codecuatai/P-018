@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
-import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, requestConversationHandoff, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { actionActivity, buildActivityFromResponse } from "@/lib/progress-filter";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
@@ -40,6 +40,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
   const [currentLocation, setCurrentLocation] = useState<DeviceCurrentLocation>();
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [handoffRequested, setHandoffRequested] = useState(false);
 
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
@@ -416,6 +418,19 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
+
+  async function requestHumanHandoff(): Promise<void> {
+    if (!conversationId || handoffLoading || handoffRequested) return;
+    setHandoffLoading(true);
+    try {
+      await requestConversationHandoff(conversationId);
+      setHandoffRequested(true);
+    } catch (error) {
+      setLocateError(errorText(error));
+    } finally {
+      setHandoffLoading(false);
+    }
+  }
   
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
@@ -538,7 +553,20 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
             {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
-            <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
+              {conversationId ? (
+                <button
+                  type="button"
+                  className="button button-secondary button-sm"
+                  onClick={() => void requestHumanHandoff()}
+                  disabled={handoffLoading || handoffRequested}
+                  aria-label="Yêu cầu người hỗ trợ"
+                >
+                  {handoffRequested ? "Đã chuyển cho người hỗ trợ" : handoffLoading ? "Đang chuyển…" : "Gặp người hỗ trợ"}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
 

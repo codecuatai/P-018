@@ -423,7 +423,7 @@ export class RideClient extends InternalServiceClient {
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
-  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0, actorId?: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId, actorId); }
 
   async createQuote(
     actorId: string,
@@ -566,7 +566,7 @@ export class RestaurantClient extends InternalServiceClient {
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
-  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0, actorId?: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId, actorId); }
 
   async searchCatalog(filters: { location?: string; cuisineType?: string; budgetRange?: string; limit?: number }, correlationId: string): Promise<JsonObject> {
     const query = new URLSearchParams();
@@ -705,7 +705,7 @@ export class HealthcareClient extends InternalServiceClient {
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
-  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0, actorId?: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId, actorId); }
 
   async listDepartmentsCatalog(correlationId: string): Promise<JsonObject[]> {
     return this.legacyRequest<JsonObject[]>('/api/v1/departments', { method: 'GET' }, correlationId);
@@ -859,7 +859,7 @@ export class FoodClient extends InternalServiceClient {
 
   async opsSummary(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/summary', { method: 'GET' }, correlationId); }
   async opsDatasetStatus(correlationId: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>('/api/v1/internal/ops/dataset-status', { method: 'GET' }, correlationId); }
-  async opsTransactions(correlationId: string, limit = 20, offset = 0): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId); }
+  async opsTransactions(correlationId: string, limit = 20, offset = 0, actorId?: string): Promise<JsonObject> { return this.legacyRequest<JsonObject>(`/api/v1/internal/ops/transactions?limit=${limit}&offset=${offset}`, { method: 'GET' }, correlationId, actorId); }
 
   get(path: string, correlationId: string, actorId?: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>(path, { method: 'GET' }, correlationId, actorId);
@@ -945,6 +945,87 @@ export class FoodClient extends InternalServiceClient {
 
   async getOrderTracking(actorId: string, correlationId: string, orderId: string): Promise<JsonObject> {
     return this.get(`/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, correlationId, actorId);
+  }
+}
+
+@Injectable()
+export class DeliveryClient extends InternalServiceClient {
+  constructor(config: ConfigService) {
+    super(config, 'DELIVERY_SERVICE_URL');
+  }
+
+  async live(correlationId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
+  }
+
+  async ready(correlationId?: string): Promise<{ ok: boolean; status: number; body: JsonObject }> {
+    return this.probeReady('/health/ready', correlationId);
+  }
+
+  async quote(payload: JsonObject, correlationId?: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/deliveries/quote',
+      { method: 'POST', body: JSON.stringify(payload) },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async createOrder(payload: JsonObject, correlationId?: string, actorId?: string, idempotencyKey?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/deliveries/orders',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+      },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async getOrder(orderId: string, correlationId?: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      `/api/v1/deliveries/orders/${encodeURIComponent(orderId)}`,
+      { method: 'GET' },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async updateOrderStatus(orderId: string, status: string, correlationId?: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      `/api/v1/deliveries/orders/${encodeURIComponent(orderId)}/status`,
+      { method: 'PATCH', body: JSON.stringify({ status }) },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async cancelOrder(orderId: string, correlationId?: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      `/api/v1/deliveries/orders/${encodeURIComponent(orderId)}/cancel`,
+      { method: 'POST' },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async opsTransactions(correlationId?: string, limit = 50, offset = 0, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      `/api/v1/deliveries/operations/orders?limit=${limit}&offset=${offset}`,
+      { method: 'GET' },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async seedSample(label?: string, correlationId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/deliveries/operations/seed-sample',
+      { method: 'POST', body: JSON.stringify({ label }) },
+      correlationId,
+    );
   }
 }
 

@@ -1359,6 +1359,104 @@ async def test_deterministic_composer_describes_available_options() -> None:
     assert "lựa chọn" in message
 
 
+def test_multiturn_ride_vehicle_clarification_responses() -> None:
+    """Ensure answering vehicle type after route input does not reset to welcome greeting."""
+    state = {
+        "tasks": [
+            {
+                "domain": "ride",
+                "phase": "NEEDS_INFO",
+                "goal": "Tìm chuyến xe",
+                "extracted_slots": {
+                    "pickup_address": "51 tam khương",
+                    "dropoff_address": "nhà hát lớn",
+                },
+                "missing_information": ["vehicle_type"],
+            }
+        ]
+    }
+    for vehicle_reply in ["ô tô", "oto", "4 chỗ", "7 chỗ", "bốn chỗ", "xe 4 chỗ", "xe máy", "taxi", "car"]:
+        plan = deterministic_plan(vehicle_reply, state)
+        assert len(plan.tasks) == 1, f"Failed for {vehicle_reply}"
+        assert plan.tasks[0].domain == "ride"
+        assert not plan.tasks[0].needs_clarification, f"Expected slots complete for {vehicle_reply}"
+        assert plan.tasks[0].extracted_slots["pickup_address"] == "51 tam khương"
+        assert plan.tasks[0].extracted_slots["dropoff_address"] == "nhà hát lớn"
+        assert plan.tasks[0].extracted_slots.get("vehicle_type") is not None
+
+
+def test_multiturn_ride_step_by_step_addresses_and_vehicle() -> None:
+    """Ensure full 4-turn stepwise slot filling works smoothly."""
+    # Turn 1: "đặt xe"
+    p1 = deterministic_plan("đặt xe")
+    assert len(p1.tasks) == 1
+    assert "pickup_address" in p1.tasks[0].missing_information
+
+    # Turn 2: "51 tam khương" (pickup only)
+    s2 = {"tasks": [p1.tasks[0].model_dump()]}
+    p2 = deterministic_plan("51 tam khương", s2)
+    assert len(p2.tasks) == 1
+    assert p2.tasks[0].extracted_slots["pickup_address"] == "51 tam khương"
+    assert "dropoff_address" in p2.tasks[0].missing_information
+
+    # Turn 3: "nhà hát lớn" (dropoff only)
+    s3 = {"tasks": [p2.tasks[0].model_dump()]}
+    p3 = deterministic_plan("nhà hát lớn", s3)
+    assert len(p3.tasks) == 1
+    assert p3.tasks[0].extracted_slots["pickup_address"] == "51 tam khương"
+    assert p3.tasks[0].extracted_slots["dropoff_address"] == "nhà hát lớn"
+    assert "vehicle_type" in p3.tasks[0].missing_information
+
+    # Turn 4: "ô tô" (vehicle only)
+    s4 = {"tasks": [p3.tasks[0].model_dump()]}
+    p4 = deterministic_plan("ô tô", s4)
+    assert len(p4.tasks) == 1
+    assert not p4.tasks[0].needs_clarification
+    assert p4.tasks[0].extracted_slots["vehicle_type"] == "CAR_4"
+
+
+def test_route_extraction_without_tu() -> None:
+    """Ensure route extraction succeeds when preposition 'từ' is omitted."""
+    p = deterministic_plan("51 tam khương đến nhà hát lớn")
+    assert len(p.tasks) == 1
+    assert p.tasks[0].domain == "ride"
+    assert p.tasks[0].extracted_slots["pickup_address"] == "51 tam khương"
+    assert p.tasks[0].extracted_slots["dropoff_address"] == "nhà hát lớn"
+
+
+def test_multiturn_restaurant_and_healthcare_short_replies() -> None:
+    """Ensure short number/time answers are bound to pending restaurant and healthcare tasks."""
+    state_rest = {
+        "tasks": [
+            {
+                "domain": "restaurant",
+                "phase": "NEEDS_INFO",
+                "goal": "Đặt bàn",
+                "extracted_slots": {"location": "Haidilao"},
+                "missing_information": ["party_size", "start_at"],
+            }
+        ]
+    }
+    p_party = deterministic_plan("4", state_rest)
+    assert len(p_party.tasks) == 1
+    assert p_party.tasks[0].extracted_slots["party_size"] == 4
+
+    state_health = {
+        "tasks": [
+            {
+                "domain": "healthcare",
+                "phase": "NEEDS_INFO",
+                "goal": "Khám tai mũi họng",
+                "extracted_slots": {"department": "tai mui hong"},
+                "missing_information": ["appointment_date", "start_at"],
+            }
+        ]
+    }
+    p_time = deterministic_plan("chiều mai", state_health)
+    assert len(p_time.tasks) == 1
+    assert p_time.tasks[0].extracted_slots.get("appointment_date") is not None
+
+
 def test_model_prompt_contains_only_planner_safe_state() -> None:
     prompt = _model_prompt(
         {

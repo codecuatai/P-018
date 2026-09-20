@@ -3,7 +3,7 @@ import { IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min, MinLe
 import { createHash } from 'crypto';
 import { Type } from 'class-transformer';
 
-import { FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
+import { DeliveryClient, FoodClient, HealthcareClient, JsonObject, RestaurantClient, RideClient } from '../../clients/service.clients';
 import { CorrelatedRequest } from '../../common/correlation-id.middleware';
 import { AuthModule } from '../auth/auth.module';
 import { PersonalModule } from '../personal/personal.module';
@@ -391,6 +391,7 @@ function parseCoordinate(value: string | undefined, minimum: number, maximum: nu
 }
 
 import { ProviderServicesController } from './provider-services.controller';
+import { OperationsController } from './operations.controller';
 import { ProviderOfferingsStore } from './provider-offerings.store';
 
 @Module({
@@ -401,6 +402,7 @@ import { ProviderOfferingsStore } from './provider-offerings.store';
     ServiceActionsController,
     RideActionsController,
     ProviderServicesController,
+    OperationsController,
   ],
   providers: [
     ServiceHubService,
@@ -408,8 +410,9 @@ import { ProviderOfferingsStore } from './provider-offerings.store';
     RideClient,
     RestaurantClient,
     HealthcareClient,
+    DeliveryClient,
     ProviderOfferingsStore,
   ],
-  exports: [ServiceHubService, ProviderOfferingsStore],
+  exports: [ServiceHubService, ProviderOfferingsStore, DeliveryClient],
 })
 export class ServicesModule {}

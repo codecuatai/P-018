@@ -2,7 +2,7 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
-import { FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../src/clients/service.clients';
+import { DeliveryClient, FoodClient, HealthcareClient, RestaurantClient, RideClient } from '../src/clients/service.clients';
 import { AuthGuard } from '../src/modules/auth/auth.guard';
 import { AuthService } from '../src/modules/auth/auth.service';
 import { ProviderServicesController } from '../src/modules/services/provider-services.controller';
@@ -99,6 +99,14 @@ describe('ProviderServicesController (Multi-Tenant Isolation)', () => {
           provide: RestaurantClient,
           useValue: {
             opsTransactions: jest.fn().mockResolvedValue({ items: [] }),
+          },
+        },
+        {
+          provide: DeliveryClient,
+          useValue: {
+            opsTransactions: jest.fn().mockResolvedValue({ items: [{ id: 'del_1', status: 'DELIVERING' }] }),
+            updateOrderStatus: jest.fn().mockResolvedValue({ id: 'del_1', status: 'DELIVERED' }),
+            seedSample: jest.fn().mockResolvedValue({ success: true, count: 2 }),
           },
         },
       ],
@@ -248,6 +256,22 @@ describe('ProviderServicesController (Multi-Tenant Isolation)', () => {
       const res = (await controller.seedOperationalSample({ domain: 'ride' }, createReq(providerUserA))) as any;
       expect(res.data.id).toBe('bk_1');
       expect(res.data.status).toBe('DRIVER_ASSIGNED');
+    });
+
+    it('retrieves operational deliveries from delivery-service', async () => {
+      const res = (await controller.getOperationalDeliveries(createReq(providerUserA))) as any;
+      expect(res.data.items).toHaveLength(1);
+      expect(res.data.items[0].id).toBe('del_1');
+    });
+
+    it('updates operational delivery status', async () => {
+      const res = (await controller.updateOperationalDeliveryStatus('del_1', { status: 'DELIVERED' }, createReq(providerUserA))) as any;
+      expect(res.data.status).toBe('DELIVERED');
+    });
+
+    it('seeds a sample operational delivery', async () => {
+      const res = (await controller.seedOperationalSample({ domain: 'delivery' }, createReq(providerUserA))) as any;
+      expect(res.data.success).toBe(true);
     });
   });
 });

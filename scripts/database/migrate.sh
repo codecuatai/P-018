@@ -41,6 +41,7 @@ docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/020_core_audit_and_feature_flags.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/021_core_mcp_provider.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/022_core_customer_extensions.sql
+docker compose --env-file "$env_file" exec -T postgres psql -U core_user -d xone_core -v ON_ERROR_STOP=1 < apps/api-gateway/migrations/023_core_provider_connected_services.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/001_agent_workflow_states.sql
 docker compose --env-file "$env_file" exec -T postgres psql -U agent_user -d xone_agent -v ON_ERROR_STOP=1 < apps/agent-service/migrations/002_agent_run_metadata.sql
 echo 'Core and Agent migrations applied successfully.'

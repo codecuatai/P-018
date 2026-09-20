@@ -28,7 +28,7 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     await openAdminMenuIfMobile(page);
 
     // Verify all 6 consolidated primary tabs are visible for admin
-    await expect(page.getByRole("button", { name: /Tổng quan & Sức khỏe/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Tổng quan & Hạ tầng/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Người dùng & Phân quyền/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Giao dịch & Vận hành/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /AI Engine & API Keys/i }).first()).toBeVisible();
@@ -37,8 +37,10 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
 
     // Open Người dùng & Phân quyền tab and verify user list
     await page.getByRole("button", { name: /Người dùng & Phân quyền/i }).first().click();
-    await expect(page.getByText("admin@xone.local").first()).toBeVisible();
-    await expect(page.getByText("manager@xone.local").first()).toBeVisible();
+    const closeMobileMenu = page.getByRole("button", { name: "Đóng điều hướng" });
+    if (await closeMobileMenu.isVisible()) await closeMobileMenu.click();
+    await expect(page.getByText("admin@xone.local").last()).toBeVisible();
+    await expect(page.getByText("manager@xone.local").last()).toBeVisible();
 
     // Verify role select dropdown can open role change confirmation modal
     const roleSelect = page.getByLabel("Thay đổi vai trò cho manager@xone.local");
@@ -54,7 +56,7 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     await expect(page.getByText(/Khu vực dành riêng cho Đối tác dịch vụ/i)).toBeVisible();
   });
 
-  test("2. Manager: operational access to /admin with 4 tabs, sensitive tabs hidden, denied /app/provider", async ({ context, page }) => {
+  test("2. Manager: operational access to /admin with 3 tabs, sensitive tabs hidden, denied /app/provider", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
       email: "manager@xone.local",
       role: "manager",
@@ -66,11 +68,11 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
 
     await openAdminMenuIfMobile(page);
 
-    // Verify 4 operational tabs are present
-    await expect(page.getByRole("button", { name: /Tổng quan & Sức khỏe/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Người dùng & Phân quyền/i }).first()).toBeVisible();
+    // Verify the three operational tabs are present
+    await expect(page.getByRole("button", { name: /Tổng quan ca trực/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Giao dịch & Vận hành/i }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Hỗ trợ & Đánh giá/i }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Người dùng & Phân quyền/i })).not.toBeVisible();
 
     // Verify 2 sensitive tabs are hidden for manager
     await expect(page.getByRole("button", { name: /AI Engine & API Keys/i })).not.toBeVisible();
@@ -90,15 +92,16 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
     });
 
     await page.goto("/app/provider");
-    await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Bảng điều khiển tác vụ dịch vụ đối tác/i)).toBeVisible();
+    await expect(page.getByText(/X-One Partner Portal/i).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/Trạng thái Microservices/i)).toBeVisible();
 
     // Verify domain tabs (sidebar and subtabs)
-    await expect(page.getByRole("button", { name: /Tài xế di chuyển|Ride Partner/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Quán ăn & Nhà hàng|Food Merchant/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Khám bệnh|Healthcare/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Cuốc xe/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Món ăn/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Lịch khám/i }).first()).toBeVisible();
 
     // Verify task workflow progression buttons
+    await page.getByRole("tab", { name: /Cuốc xe/i }).first().click();
     const progressBtn = page.getByRole("button", { name: /Bắt đầu chuyến đi|Đã đến điểm đón|Đã tới đích|Hoàn thành chuyến/i });
     await expect(progressBtn).toBeVisible();
     await progressBtn.click();

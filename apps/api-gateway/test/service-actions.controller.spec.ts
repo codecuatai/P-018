@@ -8,7 +8,7 @@ describe('ServiceActionsController write boundary', () => {
 
   it('rejects Food write keys that the domain contract cannot accept', async () => {
     const food = { createCart: jest.fn() };
-    const controller = new ServiceActionsController(food as never, {} as never, {} as never);
+    const controller = new ServiceActionsController(food as never, {} as never, {} as never, {} as never);
 
     await expect(controller.createCart({ restaurant_id: 'restaurant-1' }, 'short', request as never))
       .rejects.toMatchObject({ response: { code: 'IDEMPOTENCY_KEY_INVALID' } });
@@ -17,7 +17,7 @@ describe('ServiceActionsController write boundary', () => {
 
   it('normalizes and propagates an accepted Food write key', async () => {
     const food = { createCart: jest.fn().mockResolvedValue({ id: 'cart-1' }) };
-    const controller = new ServiceActionsController(food as never, {} as never, {} as never);
+    const controller = new ServiceActionsController(food as never, {} as never, {} as never, {} as never);
 
     await controller.createCart({ restaurant_id: 'restaurant-1' }, '  cart-key-0001  ', request as never);
 
@@ -26,7 +26,7 @@ describe('ServiceActionsController write boundary', () => {
 
   it('keeps Restaurant reservation updates idempotent and rejects an empty patch', async () => {
     const restaurant = { updateReservation: jest.fn().mockResolvedValue({ id: 'reservation-1', status: 'MODIFIED' }) };
-    const controller = new ServiceActionsController({} as never, restaurant as never, {} as never);
+    const controller = new ServiceActionsController({} as never, restaurant as never, {} as never, {} as never);
 
     await expect(controller.updateRestaurant('reservation-1', {}, 'short', request as never))
       .rejects.toMatchObject({ response: { code: 'RESTAURANT_UPDATE_EMPTY' } });

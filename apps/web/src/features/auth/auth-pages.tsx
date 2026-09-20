@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, Check, Eye, EyeOff, HeartPulse, Info, LoaderCircle, LockKeyhole, Mail, Phone, ShieldCheck, Store, User, UtensilsCrossed } from "lucide-react";
+import { Car, Check, Eye, EyeOff, HeartPulse, Info, LoaderCircle, LockKeyhole, Mail, Package, Phone, ShieldCheck, Store, User, UtensilsCrossed } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -166,7 +166,7 @@ export function LoginForm({ onSuccess, onSwitch }: AuthFormProps) {
 export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
   const { register } = useAuth();
   const [accountType, setAccountType] = useState<"user" | "provider">("user");
-  const [providerType, setProviderType] = useState<"ride_driver" | "restaurant_merchant" | "healthcare_doctor">("ride_driver");
+  const [providerType, setProviderType] = useState<"ride_driver" | "restaurant_merchant" | "healthcare_doctor" | "delivery_courier">("ride_driver");
   const [businessName, setBusinessName] = useState("");
   const [phone, setPhone] = useState("");
   const [fullName, setFullName] = useState("");
@@ -265,7 +265,7 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
               <div className="provider-step-header">
                 <span className="provider-step-title">
                   <span className="provider-step-badge">1</span>
-                  Lĩnh vực hợp tác
+                  Lĩnh vực đối tác hoạt động
                 </span>
                 <p className="provider-step-desc">Chọn mô hình kinh doanh bạn muốn cung cấp trên X-One</p>
               </div>
@@ -312,6 +312,21 @@ export function RegisterForm({ onSuccess, onSwitch }: AuthFormProps) {
                   <span className="tone-body">
                     <span className="tone-title">Y tế</span>
                     <span className="tone-sub">Bác sĩ / Phòng khám</span>
+                  </span>
+                  <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProviderType("delivery_courier")}
+                  aria-pressed={providerType === "delivery_courier"}
+                  data-active={providerType === "delivery_courier"}
+                  data-tone="delivery"
+                  className="provider-type-option"
+                >
+                  <span className="tone-icon"><Package size={15} aria-hidden="true" /></span>
+                  <span className="tone-body">
+                    <span className="tone-title">Giao hàng</span>
+                    <span className="tone-sub">Đơn vị / Courier</span>
                   </span>
                   <span className="tone-check" aria-hidden="true"><Check size={11} strokeWidth={3} /></span>
                 </button>

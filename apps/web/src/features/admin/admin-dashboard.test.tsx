@@ -215,4 +215,49 @@ describe("AdminDashboard", () => {
     const adminTabs = (await import("./admin-tabs")).getConsolidatedTabs("admin").map((tab) => tab.id);
     expect(adminTabs).toEqual(["overview", "users", "transactions", "ai-integrations", "support", "system-logs"]);
   });
+
+  it("supports incident compensation modal workflow", async () => {
+    (apiClient.issueAdminCompensation as jest.Mock).mockResolvedValue({
+      id: "COMP-ABC123",
+      voucher_code: "COMP-ABC123",
+      amount: 50000,
+      message: "Đã phát hành bồi thường thành công",
+    });
+
+    render(<AdminDashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+    });
+
+    // Navigate to Workflows tab
+    const transTab = screen.getByRole("button", { name: /Giao dịch & Vận hành/i });
+    fireEvent.click(transTab);
+
+    // Switch to Workflow subtab
+    const workflowSubtab = screen.getByRole("tab", { name: /Workflow reconciliation/i });
+    fireEvent.click(workflowSubtab);
+
+    // Click on "Bồi thường sự cố (Voucher)" button
+    const compBtn = await screen.findByRole("button", { name: /Bồi thường sự cố \(Voucher\)/i });
+    fireEvent.click(compBtn);
+
+    // Check modal appears
+    expect(await screen.findByText("Cấp Bồi Thường Vận Hành Ca Trực")).toBeInTheDocument();
+
+    // Click submit
+    const submitBtn = screen.getByRole("button", { name: /Xác nhận phát hành/i });
+    fireEvent.submit(submitBtn.closest("form")!);
+
+    // Check API was called and success message displayed
+    await waitFor(() => {
+      expect(apiClient.issueAdminCompensation).toHaveBeenCalledWith(
+        "wf_manual_recovery",
+        50000,
+        expect.stringContaining("Bồi thường sự cố"),
+      );
+      expect(screen.getByText(/Phát Hành Bồi Thường Thành Công!/i)).toBeInTheDocument();
+      expect(screen.getByText("COMP-ABC123")).toBeInTheDocument();
+    });
+  });
 });

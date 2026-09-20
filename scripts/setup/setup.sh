@@ -9,7 +9,7 @@ python3 -m venv .venv
 # shellcheck disable=SC1091
 . .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e 'apps/agent-service[dev]' -e 'services/food-service[dev]'
+python -m pip install -e 'apps/agent-service[dev]'
 
 if [ ! -f .env ]; then
   cp .env.example .env

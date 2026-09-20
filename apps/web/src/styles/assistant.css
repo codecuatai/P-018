@@ -359,6 +359,10 @@
 .active-work-list::-webkit-scrollbar { width: 4px; }
 .active-work-list::-webkit-scrollbar-thumb { background: #C5D4DC; border-radius: 999px; }
 
+@media (max-width: 480px) {
+  .assistant-layout.has-active-work:not(.is-rail-collapsed) .context-rail { max-height: min(429px, 85dvh); }
+}
+
 /* ─── Proactive AI Banner ────────────────────────────────── */
 .proactive-ai-banner {
   display: flex;

@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Bot,
   Car,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -13,6 +14,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock3,
+  Copy,
   CreditCard,
   Database,
   ExternalLink,
@@ -50,12 +52,13 @@ import {
   UtensilsCrossed,
   Workflow,
   X,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
-import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useOptionalAuth } from "@/providers/auth-provider";
 import type {
   AdminHealthCheck,
@@ -75,10 +78,15 @@ import { SystemLogsSection } from "./sections/system-logs-section";
 import { TokenUsageSection } from "./sections/token-usage-section";
 import { UserServicesSection } from "./sections/user-services-section";
 import {
+  createOperationsAssignment,
   getAdminFeatureFlags,
   updateAdminFeatureFlag,
   getAdminAuditLogs,
+  getOperationsAssignments,
+  getOperationsProviderDocuments,
   issueAdminCompensation,
+  reviewOperationsProviderDocument,
+  updateOperationsAssignment,
 } from "@/lib/api-client";
 import { CONSOLIDATED_TABS } from "./admin-tabs";
 import type { Loadable, MainTabId, SubTabId, TabDefinition } from "./admin.types";
@@ -122,6 +130,29 @@ export function AdminDashboard() {
     updateTicket,
   } = useAdminData();
   const [autoPollHealth, setAutoPollHealth] = useState(false);
+
+  // Incident Compensation Modal State
+  const [compensationModalOpen, setCompensationModalOpen] = useState(false);
+  const [compensationInitialData, setCompensationInitialData] = useState<{
+    workflowId: string;
+    reason: string;
+    amount: number;
+    ticketId?: string;
+  }>({
+    workflowId: "",
+    reason: "",
+    amount: 50000,
+  });
+
+  const handleOpenCompensation = (
+    workflowId = "wf_manual_recovery",
+    reason = "Bồi thường sự cố ca trực",
+    amount = 50000,
+    ticketId?: string,
+  ) => {
+    setCompensationInitialData({ workflowId, reason, amount, ticketId });
+    setCompensationModalOpen(true);
+  };
 
   // Saved Sidebar Width & Collapsed State
   useEffect(() => {
@@ -290,6 +321,7 @@ export function AdminDashboard() {
             userRole={user?.role}
             tabs={tabs}
             onLogout={handleLogout}
+            openTicketCount={summary.data?.counts?.open_support_tickets}
           />
           {!sidebarCollapsed && (
             <div
@@ -413,6 +445,9 @@ export function AdminDashboard() {
                       autoPollHealth={autoPollHealth}
                       setAutoPollHealth={setAutoPollHealth}
                       onRefreshHealth={() => void refreshHealth()}
+                      userRole={user?.role}
+                      userEmail={user?.email}
+                      onOpenCompensation={handleOpenCompensation}
                     />
                   )}
                   {currentSubTabId === "health" && (
@@ -465,7 +500,11 @@ export function AdminDashboard() {
                     <PaymentsSubtab payments={payments} onRetry={() => void load()} />
                   )}
                   {currentSubTabId === "workflow-reconciliation" && (
-                    <WorkflowsSubtab workflows={workflows} onRetry={refreshWorkflows} />
+                    <WorkflowsSubtab
+                      workflows={workflows}
+                      onRetry={refreshWorkflows}
+                      onOpenCompensation={handleOpenCompensation}
+                    />
                   )}
                 </>
               )}
@@ -482,7 +521,14 @@ export function AdminDashboard() {
               {activeMainTab === "support" && (
                 <>
                   {currentSubTabId === "support-queue" && (
-                    <SupportSubtab support={support} onUpdateTicket={updateTicket} onAddMessage={addTicketMessage} onRetry={() => void load()} />
+                    <SupportSubtab
+                      support={support}
+                      onUpdateTicket={updateTicket}
+                      onAddMessage={addTicketMessage}
+                      onRetry={() => void load()}
+                      onOpenCompensation={handleOpenCompensation}
+                      userRole={user?.role}
+                    />
                   )}
                   {currentSubTabId === "feedback-ratings" && <FeedbackSection />}
                 </>
@@ -499,6 +545,22 @@ export function AdminDashboard() {
           </div>
         </main>
       </div>
+
+      {/* Incident Compensation Modal */}
+      {compensationModalOpen && (
+        <IncidentCompensationModal
+          open={compensationModalOpen}
+          onClose={() => setCompensationModalOpen(false)}
+          initialWorkflowId={compensationInitialData.workflowId}
+          initialReason={compensationInitialData.reason}
+          initialAmount={compensationInitialData.amount}
+          managerEmail={user?.email}
+          onSuccess={() => {
+            void load();
+            refreshWorkflows();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -516,6 +578,7 @@ function AdminSidebarContent({
   userRole,
   tabs,
   onLogout,
+  openTicketCount,
 }: {
   activeMainTab: MainTabId;
   onSelectTab: (main: MainTabId) => void;
@@ -525,6 +588,7 @@ function AdminSidebarContent({
   userRole?: string;
   tabs?: TabDefinition[];
   onLogout: () => Promise<void>;
+  openTicketCount?: number;
 }) {
   const availableTabs = tabs || CONSOLIDATED_TABS;
   const filteredTabs = useMemo(() => {
@@ -567,23 +631,48 @@ function AdminSidebarContent({
         {filteredTabs.map((tab) => {
           const Icon = tab.icon;
           const isMainActive = activeMainTab === tab.id;
+          const navButton = (
+            <button
+              type="button"
+              className={`admin-nav-btn ${isMainActive ? "is-active" : ""}`}
+              onClick={() => onSelectTab(tab.id)}
+              aria-current={isMainActive ? "page" : undefined}
+            >
+              <span className="admin-nav-btn-icon">
+                <Icon size={16} />
+              </span>
+              <span className="admin-nav-btn-label">
+                {tab.label}
+              </span>
+              {tab.id === "support" && openTicketCount != null && openTicketCount > 0 && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: "18px",
+                    height: "18px",
+                    padding: "0 5px",
+                    borderRadius: "999px",
+                    background: "#EF4444",
+                    color: "#FFFFFF",
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    marginLeft: "auto",
+                  }}
+                  aria-label={`${openTicketCount} ticket đang mở`}
+                >
+                  {openTicketCount > 99 ? "99+" : openTicketCount}
+                </span>
+              )}
+              {isMainActive && <span className="admin-nav-active-pill" />}
+            </button>
+          );
 
           return (
             <div className="admin-nav-group" key={tab.id}>
-              <button
-                type="button"
-                className={`admin-nav-btn ${isMainActive ? "is-active" : ""}`}
-                onClick={() => onSelectTab(tab.id)}
-                aria-current={isMainActive ? "page" : undefined}
-              >
-                <span className="admin-nav-btn-icon">
-                  <Icon size={16} />
-                </span>
-                <span className="admin-nav-btn-label">
-                  {tab.label}
-                </span>
-                {isMainActive && <span className="admin-nav-active-pill" />}
-              </button>
+              {navButton}
             </div>
           );
         })}
@@ -695,6 +784,9 @@ function OverviewSummarySubtab({
   autoPollHealth,
   setAutoPollHealth,
   onRefreshHealth,
+  userRole,
+  userEmail,
+  onOpenCompensation,
 }: {
   summary: Loadable<AdminSummary>;
   onRetry: () => void;
@@ -702,7 +794,45 @@ function OverviewSummarySubtab({
   autoPollHealth: boolean;
   setAutoPollHealth: (val: boolean) => void;
   onRefreshHealth: () => void;
+  userRole?: string;
+  userEmail?: string;
+  onOpenCompensation?: (workflowId?: string, reason?: string, amount?: number) => void;
 }) {
+  const [handoverNote, setHandoverNote] = useState("");
+  const [handoverSaved, setHandoverSaved] = useState(false);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+
+  function handleSaveHandover() {
+    if (!handoverNote.trim()) return;
+    setHandoverLoading(true);
+    // Persist to sessionStorage so it survives tab navigation within the session
+    try {
+      const ts = new Date().toLocaleString("vi-VN");
+      const existing = JSON.parse(sessionStorage.getItem("xone_shift_handover") ?? "[]") as string[];
+      existing.push(`[${ts}] ${userEmail ?? "Manager"}: ${handoverNote.trim()}`);
+      sessionStorage.setItem("xone_shift_handover", JSON.stringify(existing));
+    } catch {
+      /* best effort */
+    }
+    setTimeout(() => {
+      setHandoverLoading(false);
+      setHandoverSaved(true);
+      setHandoverNote("");
+      setTimeout(() => setHandoverSaved(false), 3000);
+    }, 400);
+  }
+
+  // Load stored handover notes from sessionStorage
+  const [storedNotes, setStoredNotes] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem("xone_shift_handover") ?? "[]") as string[];
+      setStoredNotes(saved);
+    } catch {
+      setStoredNotes([]);
+    }
+  }, [handoverSaved]);
+
   return (
     <section className="admin-section" id="overview" aria-labelledby="overview-title">
       <SectionHeading icon={<Gauge size={17} />} title="Tổng quan" id="overview-title" />
@@ -712,6 +842,136 @@ function OverviewSummarySubtab({
         <LoadingPanel />
       ) : summary.data ? (
         <>
+          {/* Shift Command Hero for Operations Manager */}
+          {userRole === "manager" && (
+            <div
+              className="admin-shift-hero"
+              style={{
+                background: "linear-gradient(135deg, #1E1B4B 0%, #312E81 50%, #1E293B 100%)",
+                borderRadius: "14px",
+                padding: "18px 22px",
+                color: "#FFFFFF",
+                marginBottom: "16px",
+                boxShadow: "0 10px 25px -5px rgba(30, 27, 75, 0.25), 0 8px 10px -6px rgba(30, 27, 75, 0.2)",
+                border: "1px solid rgba(199, 210, 254, 0.2)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "14px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div
+                    style={{
+                      width: "44px",
+                      height: "44px",
+                      borderRadius: "12px",
+                      background: "rgba(99, 102, 241, 0.3)",
+                      border: "1px solid rgba(165, 180, 252, 0.4)",
+                      display: "grid",
+                      placeItems: "center",
+                      color: "#A5B4FC",
+                    }}
+                  >
+                    <ShieldCheck size={24} />
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <h2 style={{ margin: 0, fontSize: "var(--text-lg)", fontWeight: 700, color: "#FFFFFF", letterSpacing: "-0.01em" }}>
+                        Bảng Điều Hành Ca Trực Vận Hành
+                      </h2>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          background: "rgba(16, 185, 129, 0.2)",
+                          color: "#6EE7B7",
+                          border: "1px solid rgba(110, 231, 183, 0.4)",
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          fontSize: "var(--text-micro)",
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#10B981" }} />
+                        CA TRỰC HOẠT ĐỘNG
+                      </span>
+                    </div>
+                    <p style={{ margin: "4px 0 0", fontSize: "var(--text-xs)", color: "#C7D2FE" }}>
+                      Trưởng ca: <strong>{userEmail || "Operations Manager"}</strong> · Giám sát 5 phân hệ dịch vụ (Ride, Delivery, Food, Restaurant, Healthcare).
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Action Shortcuts for Manager */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCompensation?.("wf_manual_recovery", "Bồi thường sự cố điều phối ca trực", 50000)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "#F59E0B",
+                      color: "#78350F",
+                      border: "none",
+                      fontWeight: 700,
+                      fontSize: "var(--text-xs)",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Zap size={14} />
+                    <span>Bồi thường sự cố (Voucher)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab("support", "support-queue")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "rgba(255, 255, 255, 0.12)",
+                      color: "#FFFFFF",
+                      border: "1px solid rgba(255, 255, 255, 0.2)",
+                      fontWeight: 600,
+                      fontSize: "var(--text-xs)",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <LifeBuoy size={14} />
+                    <span>Xử lý ticket ({summary.data?.counts?.open_support_tickets ?? 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab("transactions", "workflow-reconciliation")}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "rgba(255, 255, 255, 0.12)",
+                      color: "#FFFFFF",
+                      border: "1px solid rgba(255, 255, 255, 0.2)",
+                      fontWeight: 600,
+                      fontSize: "var(--text-xs)",
+                      padding: "8px 14px",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Workflow size={14} />
+                    <span>Đối soát lỗi ({summary.data?.counts?.failed_workflows ?? 0})</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Responsive KPI Grid */}
           <div className="admin-metric-grid">
             <MetricCard
@@ -760,6 +1020,9 @@ function OverviewSummarySubtab({
             />
           </div>
 
+          {userRole === "manager" && <OperationsQueue />}
+          {userRole === "admin" && <ProviderDocumentReview />}
+
           <div className="admin-two-column">
             {/* Domain Summary Card */}
             <div className="admin-card">
@@ -797,10 +1060,225 @@ function OverviewSummarySubtab({
               <HealthList items={summary.data.health?.items ?? []} compact />
             </div>
           </div>
+
+          {/* Shift Handover Notes — Manager only */}
+          {userRole === "manager" && (
+            <div
+              className="admin-card"
+              style={{ marginTop: "16px" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid var(--color-border)", paddingBottom: "10px", marginBottom: "12px" }}>
+                <span style={{ display: "grid", placeItems: "center", width: "30px", height: "30px", borderRadius: "8px", background: "#EEF2FF", color: "#4F46E5" }}>
+                  <ScrollText size={16} />
+                </span>
+                <div>
+                  <strong style={{ display: "block", fontSize: "var(--text-sm)", color: "#1E293B" }}>Ghi chú Bàn giao Ca</strong>
+                  <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Nhật ký ca trực — lưu trong phiên hiện tại, chuyển cho ca sau</span>
+                </div>
+              </div>
+
+              {storedNotes.length > 0 && (
+                <div style={{ marginBottom: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {storedNotes.map((note, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: "7px 10px",
+                        borderRadius: "6px",
+                        background: "#F8FAFC",
+                        border: "1px solid #E2E8F0",
+                        fontSize: "var(--text-xs)",
+                        color: "#334155",
+                        fontFamily: "var(--font-mono)",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {note}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <textarea
+                  rows={3}
+                  value={handoverNote}
+                  onChange={(e) => setHandoverNote(e.target.value)}
+                  placeholder="Ghi chú sự cố, công việc còn dở, cảnh báo cần bàn giao cho ca sau…"
+                  aria-label="Ghi chú bàn giao ca"
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #CBD5E1",
+                    fontSize: "var(--text-xs)",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                    color: "#0F172A",
+                  }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "flex-end" }}>
+                  {handoverSaved && (
+                    <span style={{ fontSize: "var(--text-xs)", color: "#16A34A", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                      <Check size={13} /> Đã lưu ghi chú bàn giao!
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={handleSaveHandover}
+                    disabled={handoverLoading || !handoverNote.trim()}
+                    style={{ height: "34px", padding: "0 14px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                  >
+                    {handoverLoading ? <LoaderCircle className="spin" size={13} /> : <ScrollText size={13} />}
+                    <span>Lưu ghi chú bàn giao</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <EmptyPanel label="Chưa có dữ liệu tổng quan." />
       )}
+    </section>
+  );
+}
+
+function ProviderDocumentReview() {
+  const [documents, setDocuments] = useState<Array<{ id: string; providerId: string; documentType: string; status: string; expiresAt?: string; reviewNote?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      setDocuments(await getOperationsProviderDocuments());
+      setMessage(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tải hồ sơ provider.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const review = async (id: string, status: "APPROVED" | "REJECTED") => {
+    try {
+      const updated = await reviewOperationsProviderDocument(id, { status });
+      setDocuments((prev) => prev.map((document) => document.id === id ? { ...document, ...updated } : document));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể cập nhật hồ sơ.");
+    }
+  };
+
+  return (
+    <div className="admin-card" style={{ marginBottom: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
+        <CardTitle title="Duyệt hồ sơ Provider" note="Admin kiểm soát tài liệu và trạng thái xác minh" noBorder />
+        <button type="button" className="button button-secondary" onClick={() => void reload()} disabled={loading} style={{ height: "30px", padding: "0 10px", fontSize: "var(--text-xs)" }}><RefreshCw size={12} /> Làm mới</button>
+      </div>
+      {message && <p style={{ color: "#B91C1C", fontSize: "var(--text-xs)" }}>{message}</p>}
+      {!loading && documents.length === 0 && <p style={{ color: "#64748B", fontSize: "var(--text-xs)" }}>Chưa có hồ sơ chờ duyệt.</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {documents.slice(0, 8).map((document) => (
+          <div key={document.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "9px 10px", border: "1px solid #E2E8F0", borderRadius: "8px" }}>
+            <div>
+              <strong style={{ fontSize: "var(--text-xs)", color: "#0F172A" }}>{document.documentType}</strong>
+              <span style={{ display: "block", color: "#64748B", fontSize: "11px" }}>Provider {document.providerId} · {document.status}</span>
+            </div>
+            {document.status === "PENDING" && <div style={{ display: "flex", gap: "6px" }}><button type="button" className="button button-sm button-primary" onClick={() => void review(document.id, "APPROVED")}>Duyệt</button><button type="button" className="button button-sm button-secondary" onClick={() => void review(document.id, "REJECTED")}>Từ chối</button></div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OperationsQueue() {
+  const [items, setItems] = useState<Array<{
+    id: string;
+    providerId: string;
+    domain: string;
+    resourceId: string;
+    status: string;
+    dueAt?: string;
+  }>>([]);
+  const [overdue, setOverdue] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [form, setForm] = useState({ providerId: "", domain: "ride", resourceId: "", dueAt: "" });
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      const result = await getOperationsAssignments();
+      setItems(result.items);
+      setOverdue(result.overdue);
+      setMessage(null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tải hàng đợi điều phối.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void reload(); }, []);
+
+  const assign = async () => {
+    if (!form.providerId.trim() || !form.resourceId.trim()) {
+      setMessage("Cần nhập provider ID và resource ID trước khi phân công.");
+      return;
+    }
+    try {
+      await createOperationsAssignment({ provider_id: form.providerId.trim(), domain: form.domain, resource_id: form.resourceId.trim(), ...(form.dueAt ? { due_at: new Date(form.dueAt).toISOString() } : {}) });
+      setForm((current) => ({ ...current, resourceId: "", dueAt: "" }));
+      await reload();
+      setMessage("Đã tạo assignment và đưa vào hàng đợi provider.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể tạo assignment.");
+    }
+  };
+
+  const transition = async (id: string, status: "CANCELLED" | "IN_PROGRESS") => {
+    try {
+      await updateOperationsAssignment(id, { status });
+      await reload();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Không thể cập nhật assignment.");
+    }
+  };
+
+  return (
+    <section className="admin-card" aria-labelledby="operations-queue-title" style={{ marginTop: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <div>
+          <h3 id="operations-queue-title" style={{ margin: 0, fontSize: "var(--text-sm)", color: "#0F172A" }}>Hàng đợi điều phối provider</h3>
+          <p style={{ margin: "4px 0 0", color: "#64748B", fontSize: "var(--text-xs)" }}>{overdue} assignment quá SLA · {items.length} assignment hiện tại</p>
+        </div>
+        <button className="button button-secondary" type="button" onClick={() => void reload()} disabled={loading} style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-xs)" }}><RefreshCw size={13} className={loading ? "spin" : undefined} /> Làm mới</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "8px", marginTop: "12px" }}>
+        <input aria-label="Provider ID điều phối" placeholder="Provider ID" value={form.providerId} onChange={(event) => setForm((current) => ({ ...current, providerId: event.target.value }))} />
+        <select aria-label="Domain điều phối" value={form.domain} onChange={(event) => setForm((current) => ({ ...current, domain: event.target.value }))}><option value="ride">Ride</option><option value="food">Food</option><option value="restaurant">Restaurant</option><option value="healthcare">Healthcare</option><option value="delivery">Delivery</option></select>
+        <input aria-label="Resource ID điều phối" placeholder="Resource ID" value={form.resourceId} onChange={(event) => setForm((current) => ({ ...current, resourceId: event.target.value }))} />
+        <input aria-label="Hạn SLA điều phối" type="datetime-local" value={form.dueAt} onChange={(event) => setForm((current) => ({ ...current, dueAt: event.target.value }))} />
+        <button className="button button-primary" type="button" onClick={() => void assign()} style={{ height: "34px" }}>Phân công</button>
+      </div>
+      {message && <p style={{ color: "#B45309", fontSize: "var(--text-xs)", margin: "8px 0 0" }}>{message}</p>}
+      <div style={{ display: "grid", gap: "6px", marginTop: "12px" }}>
+        {items.slice(0, 8).map((item) => (
+          <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", padding: "8px 10px", border: "1px solid #E2E8F0", borderRadius: "8px", fontSize: "var(--text-xs)" }}>
+            <span><strong>{item.domain}</strong> · {item.resourceId} · {item.providerId}</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}><span>{item.status}</span>{item.status === "OFFERED" && <button className="button button-secondary" type="button" onClick={() => void transition(item.id, "IN_PROGRESS")} style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}>Bắt đầu</button>}{!['COMPLETED', 'CANCELLED', 'REJECTED'].includes(item.status) && <button className="button button-secondary" type="button" onClick={() => void transition(item.id, "CANCELLED")} style={{ height: "26px", padding: "0 8px", fontSize: "11px" }}>Hủy</button>}</span>
+          </div>
+        ))}
+        {!loading && items.length === 0 && <span style={{ color: "#64748B", fontSize: "var(--text-xs)" }}>Chưa có assignment nào.</span>}
+      </div>
     </section>
   );
 }
@@ -1550,6 +2028,7 @@ function TransactionsSubtab({
             <option value="all">Tất cả domain</option>
             <option value="food">Ẩm thực (Food)</option>
             <option value="ride">Di chuyển (Ride)</option>
+            <option value="delivery">Giao hàng (Delivery)</option>
             <option value="restaurant">Đặt bàn (Restaurant)</option>
             <option value="healthcare">Y tế (Healthcare)</option>
           </select>
@@ -1685,7 +2164,15 @@ function PaymentsSubtab({ payments, onRetry }: { payments: Loadable<AdminPayment
   );
 }
 
-function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: AdminWorkflowRecord[]; total: number }>; onRetry: () => void }) {
+function WorkflowsSubtab({
+  workflows,
+  onRetry,
+  onOpenCompensation,
+}: {
+  workflows: Loadable<{ items: AdminWorkflowRecord[]; total: number }>;
+  onRetry: () => void;
+  onOpenCompensation?: (workflowId?: string, reason?: string, amount?: number) => void;
+}) {
   const [search, setSearch] = useState("");
   const [compensatingId, setCompensatingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -1722,16 +2209,28 @@ function WorkflowsSubtab({ workflows, onRetry }: { workflows: Loadable<{ items: 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", flexWrap: "wrap", gap: "8px" }}>
         <SectionHeading icon={<Workflow size={17} />} title="Workflow reconciliation" id="workflows-title" />
         <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            className="button button-secondary"
-            type="button"
-            disabled={Boolean(compensatingId)}
-            onClick={() => void handleCompensate("wf_manual_recovery")}
-            style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)", display: "inline-flex", alignItems: "center", gap: "5px" }}
-          >
-            {compensatingId === "wf_manual_recovery" ? <LoaderCircle className="spin" size={13} /> : <ShieldAlert size={13} />}
-            <span>Bù trừ sự cố (1-Click)</span>
-          </button>
+          {onOpenCompensation ? (
+            <button
+              className="button button-primary"
+              type="button"
+              onClick={() => onOpenCompensation("wf_manual_recovery", "Bồi thường sự cố đối soát workflow", 50000)}
+              style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-sm)", display: "inline-flex", alignItems: "center", gap: "5px", background: "#F59E0B", borderColor: "#D97706", color: "#78350F" }}
+            >
+              <Zap size={14} />
+              <span>Bồi thường sự cố (Voucher)</span>
+            </button>
+          ) : (
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={Boolean(compensatingId)}
+              onClick={() => void handleCompensate("wf_manual_recovery")}
+              style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-sm)", display: "inline-flex", alignItems: "center", gap: "5px" }}
+            >
+              {compensatingId === "wf_manual_recovery" ? <LoaderCircle className="spin" size={13} /> : <ShieldAlert size={13} />}
+              <span>Bù trừ sự cố (1-Click)</span>
+            </button>
+          )}
           <button
             className="button button-secondary"
             type="button"
@@ -2069,11 +2568,15 @@ function SupportSubtab({
   onUpdateTicket,
   onAddMessage,
   onRetry,
+  onOpenCompensation,
+  userRole,
 }: {
   support: Loadable<{ items: SupportTicket[]; total: number }>;
   onUpdateTicket: (id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) => Promise<void>;
   onAddMessage: (id: string, message: string) => Promise<SupportTicket>;
   onRetry: () => void;
+  onOpenCompensation?: (workflowId?: string, reason?: string, amount?: number, ticketId?: string) => void;
+  userRole?: string;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -2231,12 +2734,33 @@ function SupportSubtab({
                         <span className={`${styles.priorityTag} ${styles[`priority${ticket.priority}`]}`}>
                           {priorityLabel(ticket.priority)}
                         </span>
+                        {slaTier(ticket.created_at) !== "ok" && (
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "3px",
+                              padding: "1px 6px",
+                              borderRadius: "999px",
+                              fontSize: "var(--text-micro)",
+                              fontWeight: 700,
+                              background: slaTier(ticket.created_at) === "breach" ? "#FEF2F2" : "#FFFBEB",
+                              color: slaTier(ticket.created_at) === "breach" ? "#991B1B" : "#92400E",
+                              border: `1px solid ${slaTier(ticket.created_at) === "breach" ? "#FECACA" : "#FDE68A"}`,
+                            }}
+                            title={slaTier(ticket.created_at) === "breach" ? "SLA đã vượt 24h — cần xử lý ngay" : "SLA cảnh báo — đã quá 4h"}
+                          >
+                            {slaTier(ticket.created_at) === "breach" ? "⚠ Vi phạm SLA" : "⏱ Cảnh báo SLA"}
+                          </span>
+                        )}
                       </div>
                       <h4 className={styles.queueCardSubject}>{ticket.subject}</h4>
                       <p className={styles.queueCardSnippet}>{ticket.description}</p>
                       <div className={styles.queueCardFooter}>
                         <span><UserRound size={12} /> {ticket.actor_id}</span>
-                        <time dateTime={ticket.updated_at}><Clock3 size={12} /> {formatDate(ticket.updated_at)}</time>
+                        <time dateTime={ticket.created_at} title={`Tạo: ${formatDate(ticket.created_at)}`}>
+                          <Clock3 size={12} /> {formatAge(ticket.created_at)}
+                        </time>
                       </div>
                     </button>
                   );
@@ -2251,6 +2775,7 @@ function SupportSubtab({
                     ticket={selectedTicket}
                     onUpdate={onUpdateTicket}
                     onAddMessage={onAddMessage}
+                    onOpenCompensation={onOpenCompensation}
                   />
                 ) : (
                   <div className={styles.emptyDetail}>
@@ -2347,6 +2872,7 @@ const SERVICE_FRIENDLY_NAMES: Record<string, { name: string; tag: string }> = {
   "agent-service": { name: "agent-service", tag: "AI Orchestrator" },
   "food-service": { name: "food-service", tag: "Ẩm thực & Thực đơn" },
   "ride-service": { name: "ride-service", tag: "Gọi xe & Tài xế" },
+  "delivery-service": { name: "delivery-service", tag: "Giao hàng & Bưu tá" },
   "restaurant-service": { name: "restaurant-service", tag: "Nhà hàng & Đặt bàn" },
   "healthcare-service": { name: "healthcare-service", tag: "Y tế & Đặt khám" },
 };
@@ -2517,21 +3043,51 @@ function DataTable({ caption, headers, rows }: { caption: string; headers: strin
 const QUICK_REPLIES = [
   "Cảm ơn bạn đã liên hệ với X-One.",
   "X-One đã ghi nhận và đang kiểm tra giúp bạn.",
-  "Bạn có thể phản hồi thêm thông tin tại đây nếu cần.",
+  "X-One chân thành xin lỗi vì sự bất tiện này. Khoản bồi thường sự cố đã được gửi vào ví của bạn.",
+  "Tài xế/đối tác đã được thông báo để hỗ trợ bạn ngay lập tức.",
+  "Sự cố đã được giải quyết thành công. Chúc bạn có trải nghiệm tốt!",
 ] as const;
 
 function SupportRow({
   ticket,
   onUpdate,
   onAddMessage,
+  onOpenCompensation,
+  userRole,
 }: {
   ticket: SupportTicket;
   onUpdate: (id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) => Promise<void>;
   onAddMessage: (id: string, message: string) => Promise<SupportTicket>;
+  onOpenCompensation?: (workflowId?: string, reason?: string, amount?: number, ticketId?: string) => void;
+  userRole?: string;
 }) {
   const [message, setMessage] = useState("");
   const [messagePending, setMessagePending] = useState(false);
   const [messageError, setMessageError] = useState("");
+  const [escalating, setEscalating] = useState(false);
+  const [escalateSuccess, setEscalateSuccess] = useState(false);
+
+  async function handleEscalate(): Promise<void> {
+    setEscalating(true);
+    const escalationMsg =
+      `[ESCALATION — Báo cáo kỹ thuật từ Manager]\n` +
+      `Ticket ID: ${ticket.id}\n` +
+      `Tiêu đề: ${ticket.subject}\n` +
+      `Người dùng: ${ticket.actor_id}\n` +
+      `Ưu tiên: ${ticket.priority}\n` +
+      `SLA: ${formatAge(ticket.created_at)} (${slaTier(ticket.created_at) === "breach" ? "VI PHẠM SLA" : slaTier(ticket.created_at) === "warning" ? "CẢNH BÁO SLA" : "Bình thường"})\n` +
+      `Nội dung: ${ticket.description}\n` +
+      `Yêu cầu Admin kỹ thuật can thiệp ngay.`;
+    try {
+      await onAddMessage(ticket.id, escalationMsg);
+      setEscalateSuccess(true);
+      setTimeout(() => setEscalateSuccess(false), 4000);
+    } catch {
+      // best effort
+    } finally {
+      setEscalating(false);
+    }
+  }
 
   async function submitMessage(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -2556,6 +3112,24 @@ function SupportRow({
           <span className={styles.ticketId}>{ticket.id}</span>
           <span className={`${styles.statusTag} ${styles[`status${ticket.status}`]}`}>{supportStatusLabel(ticket.status)}</span>
           <span className={`${styles.priorityTag} ${styles[`priority${ticket.priority}`]}`}>{priorityLabel(ticket.priority)}</span>
+          {slaTier(ticket.created_at) !== "ok" && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "3px",
+                padding: "2px 7px",
+                borderRadius: "999px",
+                fontSize: "var(--text-micro)",
+                fontWeight: 700,
+                background: slaTier(ticket.created_at) === "breach" ? "#FEF2F2" : "#FFFBEB",
+                color: slaTier(ticket.created_at) === "breach" ? "#991B1B" : "#92400E",
+                border: `1px solid ${slaTier(ticket.created_at) === "breach" ? "#FECACA" : "#FDE68A"}`,
+              }}
+            >
+              {slaTier(ticket.created_at) === "breach" ? "⚠ Vi phạm SLA" : "⏱ Cảnh báo SLA"}
+            </span>
+          )}
         </div>
         <h3 className={styles.detailSubject}>{ticket.subject}</h3>
         <div className={styles.ticketFooter}>
@@ -2571,7 +3145,65 @@ function SupportRow({
 
       {/* Điều phối */}
       <div className={styles.detailControls}>
-        <div className={styles.controlsHeading}><Sliders size={15} /><span>Điều phối ticket</span></div>
+        <div className={styles.controlsHeading} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "6px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <Sliders size={15} />
+            <span>Điều phối ticket</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {escalateSuccess ? (
+              <span style={{ fontSize: "var(--text-micro)", color: "#16A34A", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                <Check size={13} /> Đã chuyển cấp Admin!
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={escalating || ticket.status === "CLOSED"}
+                onClick={() => void handleEscalate()}
+                style={{
+                  height: "28px",
+                  padding: "0 9px",
+                  fontSize: "var(--text-micro)",
+                  fontWeight: 600,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  background: "#FEF2F2",
+                  borderColor: "#FECACA",
+                  color: "#991B1B",
+                }}
+                title="Báo cáo ticket này lên kênh kỹ thuật / Admin để xử lý khẩn cấp"
+              >
+                {escalating ? <LoaderCircle className="spin" size={12} /> : <AlertTriangle size={12} />}
+                <span>Báo cáo kỹ thuật</span>
+              </button>
+            )}
+            {onOpenCompensation && (
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={() => onOpenCompensation(ticket.id, `Bồi thường sự cố cho ticket #${ticket.id}: ${ticket.subject}`, 50000, ticket.id)}
+                style={{
+                  height: "28px",
+                  padding: "0 10px",
+                  fontSize: "var(--text-micro)",
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  background: "#FFFBEB",
+                  borderColor: "#FDE68A",
+                  color: "#B45309",
+                }}
+                title="Phát hành voucher bồi thường sự cố cho khách hàng này"
+              >
+                <Zap size={13} />
+                <span>Cấp bồi thường Voucher</span>
+              </button>
+            )}
+          </div>
+        </div>
         <div className={styles.controlsRow}>
           <label>
             <span>Trạng thái</span>
@@ -2760,9 +3392,33 @@ function formatDate(value: unknown): string {
   return Number.isNaN(parsed.valueOf()) ? "—" : parsed.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
 }
 
+/** Returns hours elapsed since a ticket/workflow was created. */
+function ticketAgeHours(createdAt: string | undefined): number {
+  if (!createdAt) return 0;
+  const ms = Date.now() - new Date(createdAt).valueOf();
+  return Math.max(0, ms / 3_600_000);
+}
+
+/** Returns SLA tier based on age. */
+function slaTier(createdAt: string | undefined): "ok" | "warning" | "breach" {
+  const h = ticketAgeHours(createdAt);
+  if (h >= 24) return "breach";
+  if (h >= 4) return "warning";
+  return "ok";
+}
+
+/** Format age as human-readable Vietnamese string. */
+function formatAge(createdAt: string | undefined): string {
+  const h = ticketAgeHours(createdAt);
+  if (h < 1) return `${Math.round(h * 60)} phút trước`;
+  if (h < 24) return `${Math.floor(h)} giờ trước`;
+  return `${Math.floor(h / 24)} ngày trước`;
+}
+
 const DOMAIN_DATASET_DEFAULTS: Record<string, { title: string; datasetName: string; source: string }> = {
   food: { title: "Ẩm thực", datasetName: "Thực đơn món ăn & Quán ăn", source: "PostgreSQL" },
   ride: { title: "Di chuyển", datasetName: "Đội ngũ Tài xế & Phương tiện", source: "PostgreSQL / Geo" },
+  delivery: { title: "Giao hàng", datasetName: "Bưu kiện & Đội ngũ Giao vận", source: "PostgreSQL" },
   restaurant: { title: "Nhà hàng", datasetName: "Danh mục Nhà hàng & Bàn", source: "PostgreSQL" },
   healthcare: { title: "Y tế", datasetName: "Cơ sở Y tế & Bác sĩ", source: "PostgreSQL" },
 };
@@ -2775,6 +3431,9 @@ function formatDomainCounts(domain: string, value: unknown): string {
   const keyLabels: Record<string, string> = {
     orders: "đơn hàng",
     bookings: "chuyến xe",
+    deliveries: "đơn giao hàng",
+    couriers: "bưu tá",
+    packages: "kiện hàng",
     restaurants: "nhà hàng",
     reservations: "lượt đặt bàn",
     appointments: "lịch khám",
@@ -2832,4 +3491,340 @@ function datasetDetail(domain: string, value: Record<string, unknown>): string {
 
 function initials(email: string): string {
   return email.trim().slice(0, 2).toUpperCase() || "XO";
+}
+
+// ---------------------------------------------------------------------------
+// Incident Compensation Modal for Manager / Admin
+// ---------------------------------------------------------------------------
+
+function IncidentCompensationModal({
+  open,
+  onClose,
+  initialWorkflowId = "",
+  initialReason = "",
+  initialAmount = 50000,
+  managerEmail,
+  onSuccess,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialWorkflowId?: string;
+  initialReason?: string;
+  initialAmount?: number;
+  managerEmail?: string;
+  onSuccess?: (res: { id?: string; workflow_id?: string; amount?: number; voucher_code?: string; message?: string }) => void;
+}) {
+  const [workflowId, setWorkflowId] = useState(initialWorkflowId);
+  const [amount, setAmount] = useState(initialAmount);
+  const [reason, setReason] = useState(initialReason || "Bồi thường sự cố ca trực: Chậm chuyến / Hủy đơn ngoài ý muốn");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ voucher_code?: string; amount?: number; message?: string; id?: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    setWorkflowId(initialWorkflowId);
+    setAmount(initialAmount);
+    setReason(initialReason || "Bồi thường sự cố ca trực: Chậm chuyến / Hủy đơn ngoài ý muốn");
+    setResult(null);
+    setError(null);
+  }, [initialWorkflowId, initialReason, initialAmount, open]);
+
+  const presetAmounts = [20000, 50000, 100000, 200000];
+
+  const presetReasons = [
+    "Tài xế/Bưu tá hủy chuyến phút chót",
+    "Giao hàng hoặc chế biến trễ trên 45 phút",
+    "Nhà hàng hết món không báo trước",
+    "Sự cố phân mảnh workflow kỹ thuật",
+    "Đổi lịch khám y tế đột xuất ngoài ý muốn",
+  ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!workflowId.trim()) {
+      setError("Vui lòng nhập Mã Workflow hoặc Mã Đơn hàng.");
+      return;
+    }
+    if (amount <= 0) {
+      setError("Số tiền bồi thường phải lớn hơn 0 VND.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await issueAdminCompensation(workflowId.trim(), amount, reason.trim());
+      setResult(res);
+      onSuccess?.(res);
+    } catch (err: any) {
+      setError(err?.message || "Không thể phát hành bồi thường. Vui lòng kiểm tra lại kết nối hoặc quyền truy cập.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    const code = result?.voucher_code || result?.id;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    } catch {
+      // clipboard fallback
+    }
+  };
+
+  if (!open) return null;
+
+  const voucherCodeDisplay = result?.voucher_code || result?.id || "COMP-ISSUED";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="compensation-modal-title"
+      style={{
+        position: "fixed",
+        inset: 0,
+        backgroundColor: "rgba(15, 23, 42, 0.65)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1100,
+        padding: "16px",
+      }}
+    >
+      <div
+        style={{
+          backgroundColor: "#FFFFFF",
+          borderRadius: "16px",
+          padding: "24px",
+          maxWidth: "520px",
+          width: "100%",
+          boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+          border: "1px solid #E2E8F0",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", borderBottom: "1px solid #F1F5F9", paddingBottom: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ width: "36px", height: "36px", borderRadius: "10px", background: "#FEF3C7", color: "#D97706", display: "grid", placeItems: "center" }}>
+              <Zap size={20} />
+            </div>
+            <div>
+              <h3 id="compensation-modal-title" style={{ margin: 0, fontSize: "var(--text-base)", fontWeight: 700, color: "#0F172A" }}>
+                Cấp Bồi Thường Vận Hành Ca Trực
+              </h3>
+              <p style={{ margin: "2px 0 0", fontSize: "var(--text-xs)", color: "#64748B" }}>
+                Phát hành voucher bù trừ sự cố dịch vụ qua Saga Core
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng"
+            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94A3B8", padding: "4px" }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {result ? (
+          /* Success Screen */
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "12px", padding: "18px", textAlign: "center" }}>
+              <div style={{ width: "48px", height: "48px", borderRadius: "50%", background: "#D1FAE5", color: "#059669", display: "grid", placeItems: "center", margin: "0 auto 10px" }}>
+                <CheckCircle2 size={28} />
+              </div>
+              <h4 style={{ margin: "0 0 6px", fontSize: "var(--text-base)", fontWeight: 700, color: "#065F46" }}>
+                Phát Hành Bồi Thường Thành Công!
+              </h4>
+              <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "#047857", lineHeight: 1.5 }}>
+                {result.message || `Đã phát hành bồi thường ${amount.toLocaleString("vi-VN")} VND cho ${workflowId}.`}
+              </p>
+
+              <div style={{ marginTop: "14px", padding: "12px", background: "#FFFFFF", borderRadius: "8px", border: "1px dashed #059669", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <span style={{ fontSize: "var(--text-micro)", color: "#64748B", display: "block", textAlign: "left", fontWeight: 600 }}>MÃ VOUCHER BỒI THƯỜNG</span>
+                  <strong style={{ fontSize: "var(--text-lg)", fontFamily: "var(--font-mono)", color: "#0F172A", letterSpacing: "0.05em" }}>
+                    {voucherCodeDisplay}
+                  </strong>
+                </div>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={() => void handleCopyCode()}
+                  style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-xs)", display: "flex", alignItems: "center", gap: "5px" }}
+                >
+                  {copied ? <Check size={14} color="#059669" /> : <Copy size={14} />}
+                  <span>{copied ? "Đã chép!" : "Sao chép"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "var(--text-xs)", color: "#64748B", background: "#F8FAFC", padding: "10px 14px", borderRadius: "8px" }}>
+              Giao dịch đã được lưu vào hệ thống kiểm toán (Audit Trail) dưới quyền ca trực của <strong>{managerEmail || "Operations Manager"}</strong>.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "6px" }}>
+              <button
+                type="button"
+                className="button button-primary"
+                onClick={onClose}
+                style={{ height: "36px", padding: "0 18px", fontSize: "var(--text-sm)" }}
+              >
+                Hoàn tất
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Form Input */
+          <form onSubmit={(e) => void handleSubmit(e)} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {error && (
+              <div style={{ padding: "8px 12px", borderRadius: "8px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontSize: "var(--text-xs)", display: "flex", alignItems: "center", gap: "6px" }}>
+                <AlertTriangle size={14} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                Mã Workflow hoặc Mã Đơn hàng <span style={{ color: "#DC2626" }}>*</span>
+              </label>
+              <input
+                type="text"
+                value={workflowId}
+                onChange={(e) => setWorkflowId(e.target.value)}
+                placeholder="Ví dụ: wf_del_901, ord_food_123, ticket-01..."
+                required
+                style={{
+                  width: "100%",
+                  height: "38px",
+                  padding: "0 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "var(--text-sm)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                Mức bồi thường (VND) <span style={{ color: "#DC2626" }}>*</span>
+              </label>
+              <div style={{ display: "flex", gap: "6px", marginBottom: "8px", flexWrap: "wrap" }}>
+                {presetAmounts.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setAmount(p)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      fontSize: "var(--text-xs)",
+                      fontWeight: 600,
+                      border: amount === p ? "1.5px solid #4F46E5" : "1px solid #E2E8F0",
+                      background: amount === p ? "#EEF2FF" : "#F8FAFC",
+                      color: amount === p ? "#4338CA" : "#475569",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {p.toLocaleString("vi-VN")} đ
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                min={1000}
+                step={5000}
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                required
+                style={{
+                  width: "100%",
+                  height: "38px",
+                  padding: "0 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "var(--text-sm)",
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "var(--text-xs)", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                Lý do bồi thường sự cố
+              </label>
+              <select
+                onChange={(e) => {
+                  if (e.target.value) setReason(e.target.value);
+                }}
+                style={{
+                  width: "100%",
+                  height: "36px",
+                  padding: "0 10px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "var(--text-xs)",
+                  background: "#F8FAFC",
+                  marginBottom: "6px",
+                }}
+              >
+                <option value="">-- Chọn lý do mẫu nhanh --</option>
+                {presetReasons.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <textarea
+                rows={2}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Ghi chú chi tiết nguyên nhân bồi thường..."
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #CBD5E1",
+                  fontSize: "var(--text-xs)",
+                  resize: "vertical",
+                }}
+              />
+            </div>
+
+            <div style={{ fontSize: "var(--text-micro)", color: "#64748B", background: "#F1F5F9", padding: "8px 12px", borderRadius: "6px" }}>
+              Hành động này phát hành trực tiếp Voucher và ghi nhận nhật ký kiểm toán ca trực.
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}>
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={onClose}
+                disabled={submitting}
+                style={{ height: "36px", padding: "0 14px", fontSize: "var(--text-xs)" }}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                className="button button-primary"
+                disabled={submitting || !workflowId.trim() || amount <= 0}
+                style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-xs)", display: "flex", alignItems: "center", gap: "6px", background: "#F59E0B", borderColor: "#D97706", color: "#78350F" }}
+              >
+                {submitting ? <LoaderCircle className="spin" size={14} /> : <Zap size={14} />}
+                <span>{submitting ? "Đang phát hành…" : "Xác nhận phát hành"}</span>
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
 }

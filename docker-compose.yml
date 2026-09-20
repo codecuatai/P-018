@@ -77,6 +77,7 @@ services:
       HEALTHCARE_SERVICE_URL: ${HEALTHCARE_SERVICE_URL:?HEALTHCARE_SERVICE_URL is required}
       HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
       FOOD_SERVICE_URL: ${FOOD_SERVICE_URL:?FOOD_SERVICE_URL is required}
+      DELIVERY_SERVICE_URL: ${DELIVERY_SERVICE_URL:-http://delivery-service:8106}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       APP_ENV: ${APP_ENV:?APP_ENV is required}
@@ -122,6 +123,7 @@ services:
       - "restaurant-service:host-gateway"
       - "healthcare-service:host-gateway"
       - "food-service:host-gateway"
+      - "delivery-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
@@ -199,6 +201,7 @@ services:
       - "restaurant-service:host-gateway"
       - "healthcare-service:host-gateway"
       - "food-service:host-gateway"
+      - "delivery-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging

@@ -6,11 +6,12 @@ import { AuthGuard, DemoAuthGuard } from './auth.guard';
 import { AuthStore } from './auth.repository';
 import { AuthService } from './auth.service';
 import { PasswordResetDelivery } from './password-reset.delivery';
+import { RolesGuard } from './roles.guard';
 
 @Module({
   imports: [CoreModule],
   controllers: [AuthController],
-  providers: [AuthStore, AuthService, AuthGuard, DemoAuthGuard, PasswordResetDelivery],
-  exports: [AuthGuard, DemoAuthGuard, AuthService],
+  providers: [AuthStore, AuthService, AuthGuard, DemoAuthGuard, PasswordResetDelivery, RolesGuard],
+  exports: [AuthGuard, DemoAuthGuard, AuthService, RolesGuard],
 })
 export class AuthModule {}

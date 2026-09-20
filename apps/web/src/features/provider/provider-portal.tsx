@@ -7,6 +7,7 @@ import {
   Car,
   Check,
   CheckCircle2,
+  ChevronDown,
   Code,
   Copy,
   HeartPulse,
@@ -16,15 +17,20 @@ import {
   LogOut,
   MapPin,
   Navigation,
+  Package,
   Phone,
   Plug2,
   Plus,
   Power,
+  Radio,
   RefreshCw,
   Send,
   Settings2,
+  ShoppingBag,
+  Sparkles,
   Store,
   Trash2,
+  Truck,
   UserRound,
   Users,
   UtensilsCrossed,
@@ -32,6 +38,7 @@ import {
   VolumeX,
   Wallet,
   X,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -40,27 +47,40 @@ import { XOneMark } from "@/components/XOneMark";
 import {
   createProviderItem,
   createProviderMcpKey,
+  deleteProviderChannel,
   deleteProviderItem,
   getProviderEarningsSummary,
+  getProviderAssignments,
+  getProviderAvailability,
+  getProviderDocuments,
   getProviderItems,
   getProviderMcpKeys,
   getProviderOperationsAppointments,
+  getProviderOperationsDeliveries,
   getProviderOperationsOrders,
   getProviderOperationsReservations,
   getProviderOperationsRides,
   getProviderProfile,
   revokeProviderMcpKey,
   seedProviderSampleOperation,
+  submitProviderDocument,
   testProviderWebhook,
+  toggleProviderChannel,
   toggleProviderItemStatus,
   updateProviderOperationAppointmentStatus,
+  updateProviderOperationDeliveryStatus,
   updateProviderOperationOrderStatus,
   updateProviderOperationReservationStatus,
   updateProviderOperationRideStatus,
+  updateProviderAssignmentStatus,
+  updateProviderAvailability,
   updateProviderProfile,
   updateRideStatus,
   type CreatedMcpKeyResult,
   type ProviderEarningsSummary,
+  type ProviderAssignment,
+  type ProviderAvailability,
+  type ProviderDocument,
   type ProviderMcpKeyItem,
   type ProviderProfile,
   type ProviderServiceItem,
@@ -263,6 +283,84 @@ function mapRawReservation(raw: any): RestaurantReservation {
   };
 }
 
+interface DeliveryOrder {
+  id: string;
+  orderId?: string;
+  trackingCode: string;
+  senderName: string;
+  senderPhone?: string;
+  pickup: string;
+  destination: string;
+  receiverName: string;
+  receiverPhone: string;
+  packageType: string;
+  packageDesc?: string;
+  weightKg?: number;
+  amount: number;
+  currency: string;
+  status: "CREATED" | "COURIER_ASSIGNED" | "PICKING_UP" | "DELIVERING" | "DELIVERED" | "CANCELLED";
+  courier?: {
+    name: string;
+    phone: string;
+    vehiclePlate: string;
+    vehicleModel: string;
+  };
+  time: string;
+}
+
+function formatDeliveryStatus(status: string): string {
+  switch (status) {
+    case "CREATED":
+      return "Chờ nhận đơn";
+    case "COURIER_ASSIGNED":
+      return "Đã gán tài xế";
+    case "PICKING_UP":
+      return "Đang lấy hàng";
+    case "DELIVERING":
+      return "Đang giao hàng";
+    case "DELIVERED":
+      return "Đã giao thành công";
+    case "CANCELLED":
+      return "Đã hủy đơn";
+    default:
+      return status;
+  }
+}
+
+function mapRawDelivery(raw: any): DeliveryOrder {
+  const courier = raw.courier_snapshot || raw.courier || (raw.courier_name ? {
+    name: raw.courier_name,
+    phone: raw.courier_phone || "0912***",
+    vehiclePlate: raw.courier_vehicle_plate || "29A-***.**",
+    vehicleModel: raw.courier_vehicle_model || "Xe máy",
+  } : undefined);
+
+  return {
+    id: String(raw.id || raw.order_id || "del_ord_01"),
+    orderId: String(raw.order_id || raw.id || "del_ord_01"),
+    trackingCode: String(raw.tracking_code || raw.trackingCode || `XONE-DEL-${String(raw.id || "1001").slice(-4)}`),
+    senderName: String(raw.sender_name || raw.senderName || "Người gửi X-One"),
+    senderPhone: raw.sender_phone || raw.senderPhone || undefined,
+    pickup: String(raw.pickup_address || raw.pickup || "Điểm gửi hàng"),
+    destination: String(raw.dropoff_address || raw.destination || raw.dropoff || "Điểm giao nhận"),
+    receiverName: String(raw.receiver_name || raw.receiverName || "Người nhận"),
+    receiverPhone: String(raw.receiver_phone || raw.receiverPhone || "090***"),
+    packageType: String(raw.package_type || raw.packageType || "Bưu kiện tiêu chuẩn"),
+    packageDesc: raw.package_description || raw.packageDesc || undefined,
+    weightKg: raw.weight_kg ? Number(raw.weight_kg) : undefined,
+    amount: Number(raw.amount || raw.total_amount || 0),
+    currency: String(raw.currency || "VND"),
+    status: (raw.status as DeliveryOrder["status"]) || "COURIER_ASSIGNED",
+    courier: courier ? {
+      name: courier.name || "Tài xế giao hàng",
+      phone: courier.phone || "0912***",
+      vehiclePlate: courier.vehiclePlate || courier.vehicle_plate || "29A-***.**",
+      vehicleModel: courier.vehicleModel || courier.vehicle_model || "Xe máy",
+    } : undefined,
+    time: raw.created_at ? new Date(raw.created_at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "Vừa xong",
+  };
+}
+
 const DEFAULT_OFFERINGS: ProviderServiceItem[] = [
   {
     id: "item_init_01",
@@ -316,6 +414,19 @@ const DEFAULT_OFFERINGS: ProviderServiceItem[] = [
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   },
+  {
+    id: "item_init_05",
+    providerId: "init",
+    domain: "delivery",
+    name: "Giao Hàng Siêu Tốc (Nội thành)",
+    description: "Giao nhận bưu kiện trong 30 phút, bảo hiểm và tracking thời gian thực",
+    price: 25000,
+    currency: "VND",
+    category: "Chuyển phát",
+    isAvailable: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  },
 ];
 
 function sanitizeDisplayText(val?: string | null, fallback = ""): string {
@@ -324,18 +435,160 @@ function sanitizeDisplayText(val?: string | null, fallback = ""): string {
   return cleaned.length > 0 ? cleaned : fallback;
 }
 
+export interface ServiceChannelDef {
+  id: string;
+  name: string;
+  port: string;
+  domain: string;
+  description: string;
+  icon: "car" | "food" | "restaurant" | "health" | "package" | "shopping" | "sparkles" | "truck" | string;
+  color: string;
+  bgColor: string;
+  isBuiltIn?: boolean;
+}
+
+export const DEFAULT_CHANNELS: ServiceChannelDef[] = [
+  {
+    id: "ride",
+    name: "Vận Chuyển & Xe",
+    port: "ride-service :8101",
+    domain: "ride",
+    description: "Nhận cuốc xe máy và ô tô 4-7 chỗ điều phối trực tiếp bởi AI Agent",
+    icon: "car",
+    color: "#4338CA",
+    bgColor: "#EEF2FF",
+    isBuiltIn: true,
+  },
+  {
+    id: "food",
+    name: "Ẩm Thực & Món Ăn",
+    port: "food-service :8104",
+    domain: "food",
+    description: "Nhận đơn món ăn từ khách hàng, đồng bộ hóa đơn với bếp",
+    icon: "food",
+    color: "#EA580C",
+    bgColor: "#FFFBEB",
+    isBuiltIn: true,
+  },
+  {
+    id: "restaurant",
+    name: "Đặt Bàn Nhà Hàng",
+    port: "restaurant-service :8102",
+    domain: "restaurant",
+    description: "Tiếp nhận và xếp chỗ khách đặt bàn ăn trước (chuẩn PasGo)",
+    icon: "restaurant",
+    color: "#DB2777",
+    bgColor: "#FDF2F8",
+    isBuiltIn: true,
+  },
+  {
+    id: "healthcare",
+    name: "Y Tế & Đặt Khám",
+    port: "healthcare-service :8103",
+    domain: "healthcare",
+    description: "Tiếp nhận lịch khám bác sĩ, chuyên khoa và slot bệnh nhân",
+    icon: "health",
+    color: "#059669",
+    bgColor: "#ECFDF5",
+    isBuiltIn: true,
+  },
+  {
+    id: "delivery",
+    name: "Giao Hàng & Bưu Kiện",
+    port: "delivery-service :8106",
+    domain: "delivery",
+    description: "Giao nhận bưu kiện, tài liệu, hàng hóa chặng cuối với tài xế giao hàng",
+    icon: "package",
+    color: "#2563EB",
+    bgColor: "#EFF6FF",
+    isBuiltIn: true,
+  },
+];
+
+export const PRESET_CHANNEL_TEMPLATES: ServiceChannelDef[] = [
+  {
+    id: "delivery",
+    name: "Giao Hàng Nhanh",
+    port: "delivery-service :8106",
+    domain: "delivery",
+    description: "Giao nhận bưu kiện, hàng hóa chặng cuối nội thành bằng xe máy",
+    icon: "package",
+    color: "#2563EB",
+    bgColor: "#EFF6FF",
+    isBuiltIn: false,
+  },
+  {
+    id: "grocery",
+    name: "Đi Chợ / Siêu Thị",
+    port: "grocery-service :8106",
+    domain: "grocery",
+    description: "Mua hộ thực phẩm tươi sống, rau củ và hàng tiêu dùng siêu thị",
+    icon: "shopping",
+    color: "#059669",
+    bgColor: "#ECFDF5",
+    isBuiltIn: false,
+  },
+  {
+    id: "cleaning",
+    name: "Dọn Dẹp & Giặt Ủi",
+    port: "cleaning-service :8107",
+    domain: "cleaning",
+    description: "Dịch vụ vệ sinh nhà cửa, lau dọn văn phòng và giặt là theo giờ",
+    icon: "sparkles",
+    color: "#7C3AED",
+    bgColor: "#F5F3FF",
+    isBuiltIn: false,
+  },
+  {
+    id: "truck",
+    name: "Xe Tải Chở Hàng",
+    port: "truck-service :8108",
+    domain: "truck",
+    description: "Chuyển nhà, chở hàng cồng kềnh với đội xe bán tải và xe tải 1-5 tấn",
+    icon: "truck",
+    color: "#D97706",
+    bgColor: "#FFFBEB",
+    isBuiltIn: false,
+  },
+];
+
+function renderChannelIcon(icon: string, size = 20) {
+  switch (icon) {
+    case "car":
+      return <Car size={size} />;
+    case "food":
+      return <UtensilsCrossed size={size} />;
+    case "restaurant":
+      return <Calendar size={size} />;
+    case "health":
+      return <HeartPulse size={size} />;
+    case "package":
+      return <Package size={size} />;
+    case "shopping":
+      return <ShoppingBag size={size} />;
+    case "truck":
+      return <Truck size={size} />;
+    case "sparkles":
+    default:
+      return <Sparkles size={size} />;
+  }
+}
+
 export function ProviderPortal() {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
 
-  const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01";
-  const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "restaurant_merchant");
+  const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01" || user?.tenant_id === "partner-xone-01";
+  const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "unknown");
 
-  const isAllowedTab = (tab: "ride" | "food" | "restaurant" | "health" | "services" | "mcp") => {
-    if (tab === "services" || tab === "mcp") return true;
+  type ProviderTab = "ride" | "food" | "restaurant" | "health" | "delivery" | "services" | "channels" | "mcp";
+
+  const isAllowedTab = (tab: ProviderTab) => {
+    if (tab === "services" || tab === "channels" || tab === "mcp") return true;
     if (isMaster) return true;
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food" || tab === "restaurant";
-    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride";
+    if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride" || tab === "delivery";
+    if (rawProviderType === "delivery_courier" || rawProviderType === "delivery") return tab === "delivery";
     if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return tab === "health";
     return false;
   };
@@ -344,18 +597,20 @@ export function ProviderPortal() {
     if (isMaster) return "X-One Partner Portal — Cổng Đối Tác Đa Dịch Vụ";
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "X-One Partner Portal — Nhà hàng & Ẩm thực";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "X-One Partner Portal — Vận chuyển & Tài xế";
+    if (rawProviderType === "delivery_courier" || rawProviderType === "delivery") return "X-One Partner Portal — Giao hàng & Chuyển phát";
     if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return "X-One Partner Portal — Y tế & Khám bệnh";
     return "X-One Partner Portal — Cổng Đối Tác Dịch Vụ";
   };
 
-  const [activeTab, setActiveTab] = useState<"ride" | "food" | "restaurant" | "health" | "services" | "mcp">("ride");
+  const [activeTab, setActiveTab] = useState<ProviderTab>("channels");
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [allRides, setAllRides] = useState<ActiveRide[]>([]);
   const [orders, setOrders] = useState<FoodOrder[]>([]);
   const [appointments, setAppointments] = useState<HealthcareBooking[]>([]);
   const [reservations, setReservations] = useState<RestaurantReservation[]>([]);
+  const [deliveries, setDeliveries] = useState<DeliveryOrder[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(() => (typeof window !== "undefined" ? audioChime.isEnabled() : true));
-  const prevCountsRef = useRef<{ rides: number; orders: number; reservations: number; appts: number } | null>(null);
+  const prevCountsRef = useRef<{ rides: number; orders: number; reservations: number; appts: number; deliveries: number } | null>(null);
   const [loadingAction, setLoadingAction] = useState(false);
   const [loadingOperations, setLoadingOperations] = useState(false);
   const [seedingDomain, setSeedingDomain] = useState<string | null>(null);
@@ -387,6 +642,12 @@ export function ProviderPortal() {
     isOpen: true,
   });
   const [savingProfile, setSavingProfile] = useState(false);
+  const [availability, setAvailability] = useState<ProviderAvailability | null>(null);
+  const [providerDocuments, setProviderDocuments] = useState<ProviderDocument[]>([]);
+  const [providerAssignments, setProviderAssignments] = useState<ProviderAssignment[]>([]);
+  const [loadingProviderControl, setLoadingProviderControl] = useState(false);
+  const [savingAvailability, setSavingAvailability] = useState(false);
+  const [documentForm, setDocumentForm] = useState({ documentType: "business_license", documentUrl: "", expiresAt: "" });
 
   const [serviceItems, setServiceItems] = useState<ProviderServiceItem[]>(() =>
     user?.email === "provider@xone.local" ? DEFAULT_OFFERINGS : []
@@ -401,6 +662,71 @@ export function ProviderPortal() {
     description: "",
   });
   const [submittingItem, setSubmittingItem] = useState(false);
+
+  // Real-world Service Channels & Store Controls
+  const [connectedServices, setConnectedServices] = useState<Record<string, boolean>>({
+    ride: true,
+    food: true,
+    restaurant: true,
+    healthcare: true,
+  });
+  const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [catalogFilter, setCatalogFilter] = useState<"all" | "food" | "ride" | "restaurant" | "healthcare">("all");
+
+  // Dynamic Service Channels Registry & Extensibility
+  const [customChannels, setCustomChannels] = useState<ServiceChannelDef[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("xone_provider_custom_channels");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showAddChannelModal, setShowAddChannelModal] = useState(false);
+  const [submittingNewChannel, setSubmittingNewChannel] = useState(false);
+  const [newChannelForm, setNewChannelForm] = useState({
+    id: "",
+    name: "",
+    port: "",
+    domain: "",
+    description: "",
+    icon: "package",
+    color: "#2563EB",
+    bgColor: "#EFF6FF",
+  });
+
+  // Dynamically derive all registered microservice channels (Built-in + Custom + Dynamic backend keys)
+  const allChannels: ServiceChannelDef[] = (() => {
+    const combined: ServiceChannelDef[] = [...DEFAULT_CHANNELS];
+    for (const cc of customChannels) {
+      if (!combined.some((c) => c.id === cc.id)) {
+        combined.push(cc);
+      }
+    }
+    for (const key of Object.keys(connectedServices)) {
+      if (!combined.some((c) => c.id === key)) {
+        combined.push({
+          id: key,
+          name: `Dịch vụ ${key.charAt(0).toUpperCase() + key.slice(1)}`,
+          port: `${key}-service :auto`,
+          domain: key,
+          description: `Microservice ${key} được kết nối động qua API Gateway`,
+          icon: "sparkles",
+          color: "#0891B2",
+          bgColor: "#ECFEFF",
+          isBuiltIn: false,
+        });
+      }
+    }
+    return combined;
+  })();
+
+  const filteredServiceItems = serviceItems.filter((item) => {
+    if (catalogFilter === "all") return true;
+    return item.domain === catalogFilter;
+  });
 
   // Earnings & Settlement State
   const [earnings, setEarnings] = useState<ProviderEarningsSummary | null>(null);
@@ -452,17 +778,19 @@ export function ProviderPortal() {
   const reloadOperations = async (silent: boolean = false) => {
     if (!silent) setLoadingOperations(true);
     try {
-      const [ridesRes, ordersRes, apptsRes, resRes] = await Promise.allSettled([
+      const [ridesRes, ordersRes, apptsRes, resRes, delivRes] = await Promise.allSettled([
         getProviderOperationsRides(),
         getProviderOperationsOrders(),
         getProviderOperationsAppointments(),
         getProviderOperationsReservations(),
+        getProviderOperationsDeliveries(),
       ]);
 
       let newRidesCount = 0;
       let newOrdersCount = 0;
       let newApptsCount = 0;
       let newReservationsCount = 0;
+      let newDeliveriesCount = 0;
 
       if (ridesRes.status === "fulfilled") {
         const mapped = ridesRes.value.map(mapRawRide);
@@ -485,6 +813,11 @@ export function ProviderPortal() {
         setReservations(mapped);
         newReservationsCount = mapped.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length;
       }
+      if (delivRes.status === "fulfilled") {
+        const mapped = delivRes.value.map(mapRawDelivery);
+        setDeliveries(mapped);
+        newDeliveriesCount = mapped.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length;
+      }
 
       // Check for incoming new tasks and play chime
       if (prevCountsRef.current !== null) {
@@ -493,7 +826,8 @@ export function ProviderPortal() {
           newOrdersCount > prev.orders ||
           newRidesCount > prev.rides ||
           newReservationsCount > prev.reservations ||
-          newApptsCount > prev.appts;
+          newApptsCount > prev.appts ||
+          newDeliveriesCount > prev.deliveries;
 
         if (hasNewIncoming) {
           audioChime.playNewOrderChime();
@@ -505,6 +839,7 @@ export function ProviderPortal() {
         orders: newOrdersCount,
         reservations: newReservationsCount,
         appts: newApptsCount,
+        deliveries: newDeliveriesCount,
       };
     } catch {
       // keep current state
@@ -703,9 +1038,12 @@ export function ProviderPortal() {
     async function loadProviderData() {
       try {
         setLoadingItems(true);
-        const [profData, itemsData] = await Promise.allSettled([
+        const [profData, itemsData, availabilityData, documentsData, assignmentsData] = await Promise.allSettled([
           getProviderProfile(),
           getProviderItems(),
+          getProviderAvailability(),
+          getProviderDocuments(),
+          getProviderAssignments(),
         ]);
         if (profData.status === "fulfilled" && profData.value) {
           const rawBiz = profData.value.businessName;
@@ -718,6 +1056,9 @@ export function ProviderPortal() {
             webhookUrl: profData.value.webhookUrl || "",
             isOpen: profData.value.isOpen !== false,
           });
+          if (profData.value.connectedServices) {
+            setConnectedServices((prev) => ({ ...prev, ...profData.value.connectedServices }));
+          }
         }
         if (itemsData.status === "fulfilled") {
           if (itemsData.value.length > 0) {
@@ -728,6 +1069,9 @@ export function ProviderPortal() {
             setServiceItems([]);
           }
         }
+        if (availabilityData.status === "fulfilled") setAvailability(availabilityData.value);
+        if (documentsData.status === "fulfilled") setProviderDocuments(documentsData.value);
+        if (assignmentsData.status === "fulfilled") setProviderAssignments(assignmentsData.value);
         await reloadOperations();
         await reloadEarnings();
       } catch {
@@ -740,6 +1084,58 @@ export function ProviderPortal() {
       void loadProviderData();
     }
   }, [user]);
+
+  const handleSaveAvailability = async (override?: Partial<ProviderAvailability>) => {
+    if (!availability) return;
+    const nextAvailability = { ...availability, ...override };
+    setSavingAvailability(true);
+    try {
+      const updated = await updateProviderAvailability({
+        is_online: nextAvailability.isOnline,
+        service_areas: nextAvailability.serviceAreas,
+        schedule: nextAvailability.schedule,
+      });
+      setAvailability(updated);
+      notify(updated.isOnline ? "Đã bật trạng thái sẵn sàng nhận phân công." : "Đã tạm dừng nhận phân công mới.");
+    } catch (err: any) {
+      notify(`Không thể cập nhật khả dụng: ${err?.message || "Lỗi kết nối backend."}`, "error");
+    } finally {
+      setSavingAvailability(false);
+    }
+  };
+
+  const handleSubmitProviderDocument = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!documentForm.documentType.trim()) return;
+    setLoadingProviderControl(true);
+    try {
+      const created = await submitProviderDocument({
+        document_type: documentForm.documentType.trim(),
+        document_url: documentForm.documentUrl.trim() || undefined,
+        expires_at: documentForm.expiresAt || undefined,
+      });
+      setProviderDocuments((prev) => [created, ...prev]);
+      setDocumentForm({ documentType: "business_license", documentUrl: "", expiresAt: "" });
+      notify("Đã gửi hồ sơ xác minh cho Admin duyệt.");
+    } catch (err: any) {
+      notify(`Không thể gửi hồ sơ: ${err?.message || "Lỗi kết nối backend."}`, "error");
+    } finally {
+      setLoadingProviderControl(false);
+    }
+  };
+
+  const handleProviderAssignmentStatus = async (assignment: ProviderAssignment, status: ProviderAssignment["status"]) => {
+    setLoadingProviderControl(true);
+    try {
+      const updated = await updateProviderAssignmentStatus(assignment.id, status);
+      setProviderAssignments((prev) => prev.map((item) => item.id === updated.id ? updated : item));
+      notify(status === "ACCEPTED" ? "Đã nhận phân công." : "Đã cập nhật trạng thái phân công.");
+    } catch (err: any) {
+      notify(`Không thể cập nhật phân công: ${err?.message || "Lỗi kết nối backend."}`, "error");
+    } finally {
+      setLoadingProviderControl(false);
+    }
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -772,6 +1168,154 @@ export function ProviderPortal() {
     } catch (err: any) {
       setProfileForm((prev) => ({ ...prev, isOpen: !nextOpen }));
       notify(`Không thể đổi trạng thái: ${err?.message || "Lỗi kết nối backend."}`, "error");
+    }
+  };
+
+  // Real-world Multi-Service Channel Connect / Disconnect Handler
+  const handleToggleChannel = async (channel: string, targetEnabled: boolean) => {
+    const targetChannelDef = allChannels.find((c) => c.id === channel);
+    const channelDisplayName = targetChannelDef ? targetChannelDef.name : `Kênh ${channel}`;
+    setTogglingChannel(channel);
+    const prev = connectedServices[channel] !== false;
+    setConnectedServices((curr) => ({ ...curr, [channel]: targetEnabled }));
+    try {
+      await toggleProviderChannel(channel, targetEnabled);
+      notify(
+        targetEnabled
+          ? `🟢 Đã kích hoạt kết nối kênh ${channelDisplayName}. Hệ sinh thái X-One sẵn sàng nhận yêu cầu!`
+          : `🔴 Đã ngắt kết nối kênh ${channelDisplayName}. Đã tạm dừng nhận đơn mới cho kênh này.`,
+        "success"
+      );
+    } catch (err: any) {
+      setConnectedServices((curr) => ({ ...curr, [channel]: prev }));
+      notify(`Không thể đổi trạng thái kênh: ${err?.message || "Lỗi giao tiếp backend."}`, "error");
+    } finally {
+      setTogglingChannel(null);
+    }
+  };
+
+  const handleToggleAllChannels = async (targetEnabled: boolean) => {
+    const channelIds = allChannels.map((c) => c.id);
+    const prev = { ...connectedServices };
+    const next: Record<string, boolean> = { ...connectedServices };
+    for (const id of channelIds) {
+      next[id] = targetEnabled;
+    }
+    setConnectedServices(next);
+    try {
+      await Promise.all(channelIds.map((id) => toggleProviderChannel(id, targetEnabled)));
+      notify(
+        targetEnabled
+          ? `🟢 Đã kích hoạt đồng loạt toàn bộ ${channelIds.length} kênh dịch vụ microservices!`
+          : `🔴 Đã ngắt kết nối đồng loạt toàn bộ ${channelIds.length} kênh dịch vụ.`,
+        "success"
+      );
+    } catch (err: any) {
+      setConnectedServices(prev);
+      notify(`Lỗi khi đổi trạng thái hàng loạt: ${err?.message || "Lỗi backend."}`, "error");
+    }
+  };
+
+  const handleCreateNewChannel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const id = newChannelForm.id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!id || id.length < 2) {
+      notify("Mã định danh kênh (ID) không hợp lệ (ít nhất 2 ký tự a-z, 0-9, gạch ngang).", "error");
+      return;
+    }
+    if (allChannels.some((c) => c.id === id)) {
+      notify(`Kênh với mã "${id}" đã tồn tại trên hệ thống.`, "error");
+      return;
+    }
+    setSubmittingNewChannel(true);
+    const newChannel: ServiceChannelDef = {
+      id,
+      name: newChannelForm.name.trim() || `Dịch vụ ${id}`,
+      port: newChannelForm.port.trim() || `${id}-service :81xx`,
+      domain: newChannelForm.domain.trim() || id,
+      description: newChannelForm.description.trim() || `Kênh microservice ${id} tích hợp vào hệ thống X-One`,
+      icon: newChannelForm.icon,
+      color: newChannelForm.color || "#2563EB",
+      bgColor: newChannelForm.bgColor || "#EFF6FF",
+      isBuiltIn: false,
+    };
+    try {
+      const updated = [...customChannels.filter((c) => c.id !== id), newChannel];
+      setCustomChannels(updated);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("xone_provider_custom_channels", JSON.stringify(updated));
+        } catch {
+          // ignore
+        }
+      }
+      setConnectedServices((curr) => ({ ...curr, [id]: true }));
+      await toggleProviderChannel(id, true);
+      notify(`🟢 Đã thêm và kích hoạt thành công kênh microservice mới: "${newChannel.name}"!`, "success");
+      setShowAddChannelModal(false);
+      setNewChannelForm({
+        id: "",
+        name: "",
+        port: "",
+        domain: "",
+        description: "",
+        icon: "package",
+        color: "#2563EB",
+        bgColor: "#EFF6FF",
+      });
+    } catch (err: any) {
+      notify(`Lỗi khi kích hoạt kênh mới: ${err?.message || "Lỗi backend"}`, "error");
+    } finally {
+      setSubmittingNewChannel(false);
+    }
+  };
+
+  const handleDeleteCustomChannel = async (channelId: string) => {
+    const target = allChannels.find((c) => c.id === channelId);
+    const targetName = target ? target.name : channelId;
+    if (typeof window !== "undefined" && !window.confirm(`Bạn có chắc chắn muốn xóa kênh dịch vụ "${targetName}" (${channelId}) khỏi hệ sinh thái?`)) {
+      return;
+    }
+    const updated = customChannels.filter((c) => c.id !== channelId);
+    setCustomChannels(updated);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("xone_provider_custom_channels", JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+    }
+    setConnectedServices((curr) => {
+      const copy = { ...curr };
+      delete copy[channelId];
+      return copy;
+    });
+    try {
+      await deleteProviderChannel(channelId);
+      notify(`🗑️ Đã xóa kênh dịch vụ "${targetName}" khỏi hệ sinh thái X-One.`, "success");
+    } catch (err: any) {
+      notify(`Lỗi khi gỡ kênh trên backend: ${err?.message || "Lỗi backend"}`, "error");
+    }
+  };
+
+  // Real-world Master Store Operational Status Selector (Online / Busy / Offline)
+  const handleSetStoreStatus = async (status: "online" | "busy" | "offline") => {
+    setShowStatusMenu(false);
+    const isOpen = status === "online";
+    setProfileForm((prev) => ({ ...prev, isOpen }));
+    try {
+      const updated = await updateProviderProfile({ is_open: isOpen });
+      setProfile(updated);
+      if (status === "online") {
+        notify("🟢 Cửa hàng đang MỞ CỬA! Toàn bộ dịch vụ sẵn sàng tiếp nhận khách hàng.", "success");
+      } else if (status === "busy") {
+        notify("🟡 Cửa hàng chuyển sang chế độ TẠM NGHỈ / QUÁ TẢI. Tạm dừng tiếp nhận đơn mới.", "success");
+      } else {
+        notify("🔴 Cửa hàng đã ĐÓNG CỬA. Tạm ngắt nhận khách trên toàn bộ hệ thống.", "success");
+      }
+    } catch (err: any) {
+      setProfileForm((prev) => ({ ...prev, isOpen: !isOpen }));
+      notify(`Không thể đổi trạng thái: ${err?.message || "Lỗi backend."}`, "error");
     }
   };
 
@@ -874,6 +1418,16 @@ export function ProviderPortal() {
     }
   };
 
+  const advanceDeliveryStatus = async (deliveryId: string, nextStatus: DeliveryOrder["status"]) => {
+    try {
+      await updateProviderOperationDeliveryStatus(deliveryId, nextStatus);
+      setDeliveries((prev) => prev.map((d) => (d.id === deliveryId ? { ...d, status: nextStatus } : d)));
+      notify(`Đơn giao hàng #${deliveryId} đã chuyển sang: ${formatDeliveryStatus(nextStatus)}`);
+    } catch (err: any) {
+      notify(`Không thể chuyển đơn giao #${deliveryId}: ${err?.message || "Trạng thái không hợp lệ với backend."}`, "error");
+    }
+  };
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -886,25 +1440,31 @@ export function ProviderPortal() {
 
   // Derived "Hôm nay" numbers
   const todayRevenue = earnings?.net_payout ?? 0;
-  const todayNewOrders = orders.filter((o) => o.status === "RECEIVED").length + allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length;
+  const todayNewOrders =
+    orders.filter((o) => o.status === "RECEIVED").length +
+    allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length +
+    deliveries.filter((d) => d.status === "CREATED" || d.status === "COURIER_ASSIGNED").length;
   const todayNeedsAction =
     orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length +
     allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length +
     appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length +
-    reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length;
+    reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length +
+    deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length;
 
   const domainCta = (): { label: string; tab: typeof activeTab } => {
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return { label: "Nhận cuốc", tab: "ride" };
+    if (rawProviderType === "delivery_courier" || rawProviderType === "delivery") return { label: "Nhận đơn giao", tab: "delivery" };
     if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return { label: "Mở lịch khám", tab: "health" };
     return { label: profileForm.isOpen ? "Bếp bận — tạm dừng" : "Mở nhận đơn", tab: "food" };
   };
   const cta = domainCta();
 
-  const tabLabel = (tab: "ride" | "food" | "restaurant" | "health"): string => {
-    if (tab === "ride") return "Cuốc xe";
-    if (tab === "food") return "Món ăn";
+  const tabLabel = (tab: "ride" | "food" | "restaurant" | "health" | "delivery"): string => {
+    if (tab === "ride") return "Chuyến xe · Cuốc xe";
+    if (tab === "food") return "Đơn món · Món ăn";
     if (tab === "restaurant") return "Đặt bàn";
-    return "Lịch khám";
+    if (tab === "health") return "Lịch khám";
+    return "Giao hàng";
   };
 
   return (
@@ -920,8 +1480,8 @@ export function ProviderPortal() {
             <XOneMark size={26} />
             <span>X-One</span>
           </Link>
-          <span
-            className="admin-badge-header"
+            <span
+            className="admin-badge-header admin-banner-subtitle"
             style={{
               background: isMaster ? "#EEF2FF" : "#ECFDF5",
               borderColor: isMaster ? "#C7D2FE" : "#A7F3D0",
@@ -934,20 +1494,69 @@ export function ProviderPortal() {
         </div>
 
         <div className="app-global-header-right">
-          <div className="admin-header-status-indicator" title="Hệ thống điều phối kết nối Gateway Core">
-            <span
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                background: profileForm.isOpen ? "#10B981" : "#F59E0B",
-                display: "inline-block",
-                boxShadow: profileForm.isOpen ? "0 0 6px rgba(16, 185, 129, 0.4)" : "none",
-              }}
-            />
-            <span className="admin-header-status-text">
-              {profileForm.isOpen ? "Đang mở cửa nhận đơn" : "Tạm nghỉ nhận khách"}
-            </span>
+          {/* Real-world Store Status Selector Menu */}
+          <div className="provider-status-picker">
+            <button
+              type="button"
+              className={`provider-status-button ${
+                profileForm.isOpen ? "provider-status-button--online" : "provider-status-button--busy"
+              }`}
+              onClick={() => setShowStatusMenu((v) => !v)}
+              title="Nhấp để đổi trạng thái hoạt động của đối tác"
+            >
+              <span
+                style={{
+                  width: "8px",
+                  height: "8px",
+                  borderRadius: "50%",
+                  background: profileForm.isOpen ? "#10B981" : "#F59E0B",
+                  display: "inline-block",
+                  boxShadow: profileForm.isOpen ? "0 0 6px rgba(16, 185, 129, 0.5)" : "none",
+                }}
+              />
+              <span>{profileForm.isOpen ? "Đang mở cửa nhận đơn" : "Tạm dừng nhận đơn"}</span>
+              <ChevronDown size={13} />
+            </button>
+
+            {showStatusMenu && (
+              <div className="provider-status-menu">
+                <button
+                  type="button"
+                  className={`provider-status-option ${profileForm.isOpen ? "is-selected" : ""}`}
+                  onClick={() => void handleSetStoreStatus("online")}
+                >
+                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#10B981", marginTop: "4px", flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ fontSize: "13px", color: "#0F172A", display: "block" }}>Mở cửa nhận đơn (Online)</strong>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>Sẵn sàng tiếp nhận cuốc xe, món ăn & lịch hẹn mới</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className={`provider-status-option ${!profileForm.isOpen ? "is-selected" : ""}`}
+                  onClick={() => void handleSetStoreStatus("busy")}
+                >
+                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#F59E0B", marginTop: "4px", flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ fontSize: "13px", color: "#0F172A", display: "block" }}>Tạm nghỉ / Bận (Busy)</strong>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>Tạm dừng nhận khách trong giờ cao điểm</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="provider-status-option"
+                  onClick={() => void handleSetStoreStatus("offline")}
+                >
+                  <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#EF4444", marginTop: "4px", flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ fontSize: "13px", color: "#0F172A", display: "block" }}>Đóng cửa (Offline)</strong>
+                    <span style={{ fontSize: "11px", color: "#64748B" }}>Ngắt tiếp nhận toàn bộ dịch vụ trên hệ thống</span>
+                  </div>
+                </button>
+              </div>
+            )}
           </div>
 
           <button
@@ -1010,7 +1619,7 @@ export function ProviderPortal() {
           <div className="provider-sidebar-inner" style={{ padding: "16px 12px" }}>
             <div className="provider-nav-group">
               <span className="provider-nav-group-title">
-                {isMaster ? "Quản lý 4 phân hệ dịch vụ" : "Phân hệ nghiệp vụ đối tác"}
+                {isMaster ? "Quản lý 5 phân hệ dịch vụ" : "Phân hệ nghiệp vụ đối tác"}
               </span>
               <div className="provider-nav-group-items" role="tablist" aria-label="Phân hệ đối tác">
                 {isAllowedTab("ride") && (
@@ -1027,6 +1636,24 @@ export function ProviderPortal() {
                     <span className="provider-nav-btn-label">{tabLabel("ride")}</span>
                     {allRides.filter((r) => r.status !== "COMPLETED").length > 0 && (
                       <span className="provider-nav-count">{allRides.filter((r) => r.status !== "COMPLETED").length}</span>
+                    )}
+                  </button>
+                )}
+
+                {isAllowedTab("delivery") && (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={activeTab === "delivery"}
+                    className={`provider-nav-btn${activeTab === "delivery" ? " is-active" : ""}`}
+                    onClick={() => setActiveTab("delivery")}
+                  >
+                    <span className="provider-nav-btn-icon">
+                      <Package size={16} />
+                    </span>
+                    <span className="provider-nav-btn-label">{tabLabel("delivery")}</span>
+                    {deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length > 0 && (
+                      <span className="provider-nav-count">{deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length}</span>
                     )}
                   </button>
                 )}
@@ -1098,14 +1725,42 @@ export function ProviderPortal() {
                     <Layers size={16} />
                   </span>
                   <span className="provider-nav-btn-label">
-                    Món và dịch vụ của tôi
+                    Gắn & Quản lý Dịch vụ · Món và dịch vụ của tôi
                   </span>
                 </button>
 
                 <div className="provider-nav-divider" />
                 <span className="provider-nav-group-title provider-nav-group-title-sub">
-                  Kết nối AI bên ngoài
+                  Kênh Microservices & AI
                 </span>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === "channels"}
+                  className={`provider-nav-btn${activeTab === "channels" ? " is-active" : ""}`}
+                  onClick={() => setActiveTab("channels")}
+                >
+                  <span className="provider-nav-btn-icon">
+                    <Radio size={16} />
+                  </span>
+                  <span className="provider-nav-btn-label">
+                    Trung tâm kết nối
+                  </span>
+                  <span
+                    style={{
+                      marginLeft: "auto",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      padding: "2px 6px",
+                      borderRadius: "10px",
+                      background: Object.values(connectedServices).some((v) => v !== false) ? "#ECFDF5" : "#FEF2F2",
+                      color: Object.values(connectedServices).some((v) => v !== false) ? "#047857" : "#B91C1C",
+                    }}
+                  >
+                    {Object.values(connectedServices).filter((v) => v !== false).length}/{allChannels.length}
+                  </span>
+                </button>
 
                 <button
                   type="button"
@@ -1118,7 +1773,7 @@ export function ProviderPortal() {
                     <Plug2 size={16} />
                   </span>
                   <span className="provider-nav-btn-label">
-                    Kết nối
+                    Cổng kết nối MCP
                   </span>
                 </button>
               </div>
@@ -1160,6 +1815,9 @@ export function ProviderPortal() {
         {/* Main Content Area */}
         <main className="app-content provider-main" id="provider-content">
           <div className="provider-page">
+            <h1 style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
+              Chào mừng đến Cổng Đối tác X-One
+            </h1>
             {/* Hôm nay strip */}
             <div className="provider-today-strip">
               <div className="provider-today-metrics">
@@ -1229,6 +1887,546 @@ export function ProviderPortal() {
                 <span>{actionNotice.text}</span>
               </div>
             )}
+
+            {/* Sleek Compact Connectivity Status Strip */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 16px",
+                background: "#FFFFFF",
+                borderRadius: "12px",
+                border: "1px solid #E2E8F0",
+                marginBottom: "16px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Radio size={16} color="#4F46E5" />
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
+                    Trạng thái Microservices:
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  {allChannels.map((ch) => {
+                    const isOnline = connectedServices[ch.id] !== false;
+                    return (
+                      <span
+                        key={ch.id}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          padding: "3px 8px",
+                          borderRadius: "20px",
+                          fontSize: "11px",
+                          fontWeight: 600,
+                          background: isOnline ? ch.bgColor || "#EEF2FF" : "#F1F5F9",
+                          color: isOnline ? ch.color || "#4338CA" : "#94A3B8",
+                          border: `1px solid ${isOnline ? "currentColor" : "#E2E8F0"}`,
+                          opacity: isOnline ? 1 : 0.65,
+                        }}
+                        title={`${ch.name} (${ch.port}) - ${isOnline ? "Đang kết nối" : "Đã ngắt"}`}
+                      >
+                        <span
+                          style={{
+                            width: "6px",
+                            height: "6px",
+                            borderRadius: "50%",
+                            background: isOnline ? "#10B981" : "#94A3B8",
+                          }}
+                        />
+                        {ch.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: "12px",
+                    background: Object.values(connectedServices).some((v) => v !== false) ? "#ECFDF5" : "#FEF2F2",
+                    color: Object.values(connectedServices).some((v) => v !== false) ? "#047857" : "#B91C1C",
+                  }}
+                >
+                  {Object.values(connectedServices).filter((v) => v !== false).length}/{allChannels.length} Trực tuyến
+                </span>
+                {activeTab !== "channels" && (
+                  <button
+                    type="button"
+                    className="button button-sm button-secondary"
+                    style={{ height: "28px", fontSize: "11px", padding: "0 10px", display: "flex", alignItems: "center", gap: "5px" }}
+                    onClick={() => setActiveTab("channels")}
+                  >
+                    <Radio size={12} />
+                    <span>Mở Trung tâm kết nối</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* TAB VIEWPORT */}
+            <div className="provider-tab-viewport">
+              {/* DEDICATED TAB: TRUNG TÂM KẾT NỐI & MỞ RỘNG MICROSERVICES */}
+              {activeTab === "channels" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  <div className="admin-table-card" style={{ padding: "20px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: "var(--text-lg)", color: "#0F172A" }}>Điều phối & hồ sơ Provider</h2>
+                        <p style={{ margin: "6px 0 0", color: "#64748B", fontSize: "var(--text-sm)" }}>
+                          Quản lý trạng thái sẵn sàng, phân công vận hành và giấy tờ xác minh trên cùng một màn hình.
+                        </p>
+                      </div>
+                      {availability && (
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          disabled={savingAvailability}
+                          onClick={() => {
+                            const nextOnline = !availability.isOnline;
+                            setAvailability((prev) => prev ? { ...prev, isOnline: nextOnline } : prev);
+                            void handleSaveAvailability({ isOnline: nextOnline });
+                          }}
+                        >
+                          <Power size={14} /> {availability.isOnline ? "Tạm dừng nhận phân công" : "Bật sẵn sàng nhận phân công"}
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "16px", marginTop: "18px" }}>
+                      <div style={{ border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
+                        <strong style={{ display: "block", color: "#0F172A", marginBottom: "8px" }}>Trạng thái hoạt động</strong>
+                        <span style={{ color: availability?.isOnline ? "#047857" : "#64748B", fontSize: "13px" }}>
+                          {availability?.isOnline ? "Đang sẵn sàng nhận việc mới" : "Đang tạm dừng nhận việc mới"}
+                        </span>
+                        <div style={{ marginTop: "12px" }}>
+                          <label style={{ fontSize: "12px", color: "#64748B" }} htmlFor="provider-service-areas">Khu vực phục vụ</label>
+                          <input
+                            id="provider-service-areas"
+                            className="input"
+                            value={availability?.serviceAreas.join(", ") || ""}
+                            onChange={(event) => setAvailability((prev) => prev ? { ...prev, serviceAreas: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) } : prev)}
+                            onBlur={() => void handleSaveAvailability()}
+                            placeholder="Quận 1, Quận 3"
+                            style={{ marginTop: "4px", width: "100%" }}
+                          />
+                        </div>
+                      </div>
+
+                      <div style={{ border: "1px solid #E2E8F0", borderRadius: "10px", padding: "14px" }}>
+                        <strong style={{ display: "block", color: "#0F172A", marginBottom: "8px" }}>Phân công của tôi</strong>
+                        {providerAssignments.length === 0 ? (
+                          <span style={{ color: "#64748B", fontSize: "13px" }}>Chưa có phân công mới.</span>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                            {providerAssignments.slice(0, 5).map((assignment) => (
+                              <div key={assignment.id} style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center", padding: "8px", background: "#F8FAFC", borderRadius: "8px" }}>
+                                <div>
+                                  <strong style={{ fontSize: "12px", color: "#0F172A" }}>{assignment.domain} · {assignment.resourceId}</strong>
+                                  <span style={{ display: "block", fontSize: "11px", color: "#64748B" }}>{assignment.status}{assignment.dueAt ? ` · hạn ${new Date(assignment.dueAt).toLocaleString("vi-VN")}` : ""}</span>
+                                </div>
+                                {assignment.status === "OFFERED" && (
+                                  <button type="button" className="button button-sm button-primary" disabled={loadingProviderControl} onClick={() => void handleProviderAssignmentStatus(assignment, "ACCEPTED")}>Nhận</button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <form onSubmit={(event) => void handleSubmitProviderDocument(event)} style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #F1F5F9" }}>
+                      <strong style={{ display: "block", color: "#0F172A", marginBottom: "10px" }}>Gửi giấy tờ xác minh</strong>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: "8px" }}>
+                        <input className="input" aria-label="Loại giấy tờ" value={documentForm.documentType} onChange={(event) => setDocumentForm((prev) => ({ ...prev, documentType: event.target.value }))} placeholder="business_license" />
+                        <input className="input" aria-label="URL giấy tờ" value={documentForm.documentUrl} onChange={(event) => setDocumentForm((prev) => ({ ...prev, documentUrl: event.target.value }))} placeholder="https://..." />
+                        <input className="input" aria-label="Ngày hết hạn" type="date" value={documentForm.expiresAt} onChange={(event) => setDocumentForm((prev) => ({ ...prev, expiresAt: event.target.value }))} />
+                        <button type="submit" className="button button-secondary" disabled={loadingProviderControl}>Gửi duyệt</button>
+                      </div>
+                      {providerDocuments.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" }}>
+                          {providerDocuments.slice(0, 4).map((document) => <span key={document.id} className="admin-role-badge" style={{ background: "#F8FAFC", color: "#475569" }}>{document.documentType}: {document.status}</span>)}
+                        </div>
+                      )}
+                    </form>
+                  </div>
+
+                  {/* Hero / Overview Banner */}
+                  <div className="admin-table-card" style={{ padding: "24px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: "14px" }}>
+                        <div
+                          style={{
+                            width: "48px",
+                            height: "48px",
+                            borderRadius: "12px",
+                            background: "#EEF2FF",
+                            color: "#4F46E5",
+                            display: "grid",
+                            placeItems: "center",
+                            border: "1px solid #C7D2FE",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Radio size={24} />
+                        </div>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                            <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                              Trung Tâm Kết Nối & Mở Rộng Microservices
+                            </h2>
+                            <span
+                              className="admin-role-badge"
+                              style={{ background: "#EEF2FF", color: "#4338CA", border: "1px solid #C7D2FE" }}
+                            >
+                              PostgreSQL JSONB Dynamic
+                            </span>
+                            <span
+                              className="admin-role-badge"
+                              style={{ background: "#ECFDF5", color: "#065F46", border: "1px solid #A7F3D0" }}
+                            >
+                              AI Agent Orchestration Ready
+                            </span>
+                          </div>
+                          <p style={{ fontSize: "var(--text-sm)", color: "#64748B", margin: "6px 0 0", maxWidth: "760px", lineHeight: 1.5 }}>
+                            Chủ động Bật hoặc Ngắt kết nối từng kênh dịch vụ độc lập với hệ sinh thái X-One. Khi đối tác tạm dừng một kênh, Trợ lý AI và hệ thống điều phối sẽ lập tức ngưng phân bổ yêu cầu mới cho kênh đó mà không làm gián đoạn các dịch vụ khác.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddChannelModal(true)}
+                          className="button button-primary"
+                          style={{ height: "36px", padding: "0 14px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                        >
+                          <Plus size={14} />
+                          <span>+ Thêm Kênh Dịch Vụ Mới</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleAllChannels(true)}
+                          className="button button-secondary"
+                          style={{ height: "36px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                        >
+                          <Power size={13} color="#059669" />
+                          <span>Bật tất cả</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleAllChannels(false)}
+                          className="button button-secondary"
+                          style={{ height: "36px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "5px" }}
+                        >
+                          <Power size={13} color="#DC2626" />
+                          <span>Ngắt tất cả</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Metrics Bar */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(min(170px, 100%), 1fr))",
+                        gap: "12px",
+                        marginTop: "20px",
+                        paddingTop: "16px",
+                        borderTop: "1px solid #F1F5F9",
+                      }}
+                    >
+                      <div style={{ padding: "10px 14px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
+                        <span style={{ fontSize: "11px", color: "#64748B", display: "block" }}>Tổng số kênh dịch vụ</span>
+                        <strong style={{ fontSize: "18px", color: "#0F172A" }}>{allChannels.length}</strong>
+                      </div>
+                      <div style={{ padding: "10px 14px", background: "#ECFDF5", borderRadius: "8px", border: "1px solid #A7F3D0" }}>
+                        <span style={{ fontSize: "11px", color: "#065F46", display: "block" }}>Kênh đang kết nối</span>
+                        <strong style={{ fontSize: "18px", color: "#047857" }}>
+                          {Object.values(connectedServices).filter((v) => v !== false).length}
+                        </strong>
+                      </div>
+                      <div style={{ padding: "10px 14px", background: "#FEF2F2", borderRadius: "8px", border: "1px solid #FECACA" }}>
+                        <span style={{ fontSize: "11px", color: "#991B1B", display: "block" }}>Kênh đã ngắt kết nối</span>
+                        <strong style={{ fontSize: "18px", color: "#DC2626" }}>
+                          {allChannels.length - Object.values(connectedServices).filter((v) => v !== false).length}
+                        </strong>
+                      </div>
+                      <div style={{ padding: "10px 14px", background: "#EFF6FF", borderRadius: "8px", border: "1px solid #BFDBFE" }}>
+                        <span style={{ fontSize: "11px", color: "#1E40AF", display: "block" }}>Kênh mở rộng tự tạo</span>
+                        <strong style={{ fontSize: "18px", color: "#2563EB" }}>
+                          {allChannels.filter((c) => !c.isBuiltIn).length}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Channel Grid Section */}
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                      <h3 style={{ fontSize: "15px", fontWeight: 700, margin: 0, color: "#0F172A", display: "flex", alignItems: "center", gap: "8px" }}>
+                        <Radio size={16} color="#4F46E5" />
+                        <span>Danh Sách Các Kênh Microservices ({allChannels.length})</span>
+                      </h3>
+                      <span style={{ fontSize: "12px", color: "#64748B" }}>
+                        Gạt công tắc bên phải mỗi thẻ để Bật / Ngắt kết nối tức thì
+                      </span>
+                    </div>
+
+                    <div className="provider-channels-grid">
+                      {allChannels.map((channel) => {
+                        const isConnected = connectedServices[channel.id] !== false;
+                        const isToggling = togglingChannel === channel.id;
+
+                        return (
+                          <div
+                            key={channel.id}
+                            className={`provider-channel-card ${isConnected ? "is-active" : "is-disconnected"}`}
+                            style={{
+                              transition: "all 0.2s ease",
+                              border: isConnected ? `1px solid ${channel.color}40` : "1px solid #E2E8F0",
+                            }}
+                          >
+                            <div className="provider-channel-card-top">
+                              <div className="provider-channel-identity">
+                                <div
+                                  className="provider-channel-icon-wrap"
+                                  style={{ background: channel.bgColor || "#F1F5F9", color: channel.color || "#4F46E5" }}
+                                >
+                                  {renderChannelIcon(channel.icon, 20)}
+                                </div>
+                                <div className="provider-channel-meta">
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                    <span className="provider-channel-title">{channel.name}</span>
+                                    {!channel.isBuiltIn && (
+                                      <span
+                                        style={{
+                                          fontSize: "9px",
+                                          padding: "1px 5px",
+                                          borderRadius: "4px",
+                                          background: "#EFF6FF",
+                                          color: "#2563EB",
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        Mở rộng
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="provider-channel-port">{channel.port}</span>
+                                </div>
+                              </div>
+
+                              <label
+                                className="xone-switch"
+                                title={isConnected ? `Gạt để ngắt kết nối kênh ${channel.name}` : `Gạt để kết nối lại kênh ${channel.name}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  disabled={isToggling}
+                                  checked={isConnected}
+                                  onChange={(e) => void handleToggleChannel(channel.id, e.target.checked)}
+                                />
+                                <span className="xone-switch-slider" />
+                              </label>
+                            </div>
+
+                            <p style={{ fontSize: "12px", color: "#64748B", margin: "8px 0 12px", lineHeight: 1.4, minHeight: "34px" }}>
+                              {channel.description}
+                            </p>
+
+                            <div className="provider-channel-stats">
+                              <span>Trạng thái kết nối:</span>
+                              <span
+                                className={`provider-channel-status-pill ${
+                                  isConnected ? "provider-channel-status-pill--active" : "provider-channel-status-pill--disconnected"
+                                }`}
+                              >
+                                <span
+                                  style={{
+                                    width: "6px",
+                                    height: "6px",
+                                    borderRadius: "50%",
+                                    background: isConnected ? "#10B981" : "#EF4444",
+                                  }}
+                                  className={isConnected ? "pulse-dot-active" : ""}
+                                />
+                                {isToggling ? "Đang cập nhật..." : isConnected ? "Đang kết nối" : "Đã ngắt kết nối"}
+                              </span>
+                            </div>
+
+                            <div className="provider-channel-footer">
+                              {channel.id === "ride" ? (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#64748B" }}>
+                                    {allRides.length} chuyến xe hôm nay
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button button-sm button-secondary"
+                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                    onClick={() => setActiveTab("ride")}
+                                  >
+                                    Điều phối cuốc
+                                  </button>
+                                </>
+                              ) : channel.id === "food" ? (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#64748B" }}>
+                                    {orders.length} đơn món hôm nay
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button button-sm button-secondary"
+                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                    onClick={() => setActiveTab("food")}
+                                  >
+                                    Bếp nhận đơn
+                                  </button>
+                                </>
+                              ) : channel.id === "restaurant" ? (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#64748B" }}>
+                                    {reservations.length} bàn đặt hôm nay
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button button-sm button-secondary"
+                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                    onClick={() => setActiveTab("restaurant")}
+                                  >
+                                    Xếp bàn
+                                  </button>
+                                </>
+                              ) : channel.id === "healthcare" ? (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#64748B" }}>
+                                    {appointments.length} ca khám hôm nay
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button button-sm button-secondary"
+                                    style={{ height: "28px", padding: "0 10px", fontSize: "11px" }}
+                                    onClick={() => setActiveTab("health")}
+                                  >
+                                    Lịch khám
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#64748B" }}>
+                                    Kênh mở rộng tự tạo
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="button button-sm"
+                                    style={{
+                                      height: "28px",
+                                      padding: "0 8px",
+                                      fontSize: "11px",
+                                      color: "#DC2626",
+                                      borderColor: "#FECACA",
+                                      background: "#FEF2F2",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                    onClick={() => void handleDeleteCustomChannel(channel.id)}
+                                    title={`Xóa kênh ${channel.name}`}
+                                  >
+                                    <Trash2 size={12} />
+                                    <span>Gỡ bỏ</span>
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Architecture & Extensibility Developer Guide */}
+                  <div className="admin-table-card" style={{ padding: "24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px" }}>
+                      <div
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "8px",
+                          background: "#F5F3FF",
+                          color: "#7C3AED",
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        <Zap size={18} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                          Kiến Trúc Mở Rộng Thêm Microservices Của Hệ Sinh Thái X-One
+                        </h3>
+                        <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
+                          Cách hệ thống hỗ trợ thêm N microservices mới mà không cần sửa cấu trúc cơ sở dữ liệu (Zero Migration)
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: "16px", marginBottom: "18px" }}>
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#4F46E5", color: "#fff", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: 700 }}>1</span>
+                          <strong style={{ fontSize: "13px", color: "#0F172A" }}>PostgreSQL JSONB Schema-less</strong>
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
+                          Trường <code>connected_services</code> trong bảng <code>provider_profiles</code> được lưu dưới dạng <code>JSONB</code>. Khi thêm kênh mới (ví dụ: <code>delivery</code>, <code>grocery</code>), hệ thống ghi trực tiếp key-value mà không cần chạy migration DDL.
+                        </p>
+                      </div>
+
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#059669", color: "#fff", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: 700 }}>2</span>
+                          <strong style={{ fontSize: "13px", color: "#0F172A" }}>API Gateway Dynamic Routing</strong>
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
+                          API Gateway tự động chấp nhận bất kỳ mã kênh hợp lệ nào qua endpoint <code>PATCH /api/v1/provider/services/channels/:channel/toggle</code> bằng bộ kiểm định regex <code>/^[a-z0-9_-]&#123;2,40&#125;$/</code>.
+                        </p>
+                      </div>
+
+                      <div style={{ padding: "14px", background: "#F8FAFC", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                          <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#D97706", color: "#fff", display: "grid", placeItems: "center", fontSize: "11px", fontWeight: 700 }}>3</span>
+                          <strong style={{ fontSize: "13px", color: "#0F172A" }}>AI Agent Tự Động Định Tuyến</strong>
+                        </div>
+                        <p style={{ fontSize: "12px", color: "#64748B", margin: 0, lineHeight: 1.5 }}>
+                          Bộ não AI Agent khi phân tích ý định người dùng (ví dụ: &quot;Giao hàng bưu phẩm gấp&quot;) sẽ tra cứu trạng thái kênh của Provider. Nếu kênh <code>delivery</code> mở, Agent lập tức sinh action điều phối tương ứng.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ background: "#0F172A", padding: "14px 18px", borderRadius: "8px", color: "#F8FAFC" }}>
+                      <span style={{ fontSize: "11px", color: "#94A3B8", display: "block", marginBottom: "6px" }}>
+                        Ví dụ lệnh cURL kích hoạt kết nối dịch vụ mới qua API Gateway:
+                      </span>
+                      <code style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "#38BDF8", display: "block", wordBreak: "break-all" }}>
+                        curl -X PATCH &quot;http://localhost:8000/api/v1/provider/services/channels/delivery/toggle&quot; \
+                        <br />&nbsp;&nbsp;-H &quot;Authorization: Bearer $ACCESS_TOKEN&quot; \
+                        <br />&nbsp;&nbsp;-H &quot;Content-Type: application/json&quot; \
+                        <br />&nbsp;&nbsp;-d &#39;&#123;&quot;enabled&quot;: true&#125;&#39;
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              )}
 
             {/* TAB VIEWPORT */}
             <div className="provider-tab-viewport">
@@ -1499,10 +2697,10 @@ export function ProviderPortal() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
                       <div>
                         <h2 style={{ fontSize: "var(--text-lg)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
-                          Danh sách Dịch vụ / Sản phẩm đã gắn vào X-One ({serviceItems.length})
+                          Danh mục Dịch vụ & Món ăn ({serviceItems.length})
                         </h2>
                         <span style={{ fontSize: "var(--text-xs)", color: "#64748B" }}>
-                          Các món ăn, phương tiện, chuyên khoa này sẵn sàng được tìm kiếm và đặt bởi người dùng X-One
+                          Bật / tắt nhanh trạng thái mở bán thời gian thực kiểu merchant thực tế
                         </span>
                       </div>
 
@@ -1513,24 +2711,65 @@ export function ProviderPortal() {
                         style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", gap: "6px" }}
                       >
                         <Plus size={15} />
-                        <span>Gắn Dịch Vụ / Món Ăn Mới</span>
+                        <span>Gắn Dịch Vụ / Món Mới</span>
                       </button>
                     </div>
 
-                    {serviceItems.length === 0 ? (
+                    {/* Category Filter Pills */}
+                    <div className="catalog-filter-bar">
+                      <button
+                        type="button"
+                        className={`catalog-filter-pill ${catalogFilter === "all" ? "is-active" : ""}`}
+                        onClick={() => setCatalogFilter("all")}
+                      >
+                        Tất cả ({serviceItems.length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`catalog-filter-pill ${catalogFilter === "ride" ? "is-active" : ""}`}
+                        onClick={() => setCatalogFilter("ride")}
+                      >
+                        🚗 Vận chuyển ({serviceItems.filter((i) => i.domain === "ride").length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`catalog-filter-pill ${catalogFilter === "food" ? "is-active" : ""}`}
+                        onClick={() => setCatalogFilter("food")}
+                      >
+                        🍜 Ẩm thực ({serviceItems.filter((i) => i.domain === "food").length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`catalog-filter-pill ${catalogFilter === "restaurant" ? "is-active" : ""}`}
+                        onClick={() => setCatalogFilter("restaurant")}
+                      >
+                        🍽️ Đặt bàn ({serviceItems.filter((i) => i.domain === "restaurant").length})
+                      </button>
+                      <button
+                        type="button"
+                        className={`catalog-filter-pill ${catalogFilter === "healthcare" ? "is-active" : ""}`}
+                        onClick={() => setCatalogFilter("healthcare")}
+                      >
+                        🩺 Y tế ({serviceItems.filter((i) => i.domain === "healthcare").length})
+                      </button>
+                    </div>
+
+                    {filteredServiceItems.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
                         <Layers size={36} style={{ margin: "0 auto 10px", color: "#94A3B8" }} />
                         <p style={{ margin: "0 0 10px", fontSize: "var(--text-base)", fontWeight: 600, color: "#0F172A" }}>
-                          Chưa có dịch vụ nào được gắn vào hệ thống.
+                          {serviceItems.length === 0 ? "Chưa có dịch vụ nào được gắn vào hệ thống." : "Không có món/dịch vụ nào trong phân loại này."}
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => openAddItemModal()}
-                          className="button button-primary"
-                          style={{ fontSize: "var(--text-xs)", padding: "6px 14px" }}
-                        >
-                          Bấm để gắn dịch vụ đầu tiên
-                        </button>
+                        {serviceItems.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openAddItemModal()}
+                            className="button button-primary"
+                            style={{ fontSize: "var(--text-xs)", padding: "6px 14px" }}
+                          >
+                            Bấm để gắn dịch vụ đầu tiên
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div style={{ overflowX: "auto" }}>
@@ -1539,13 +2778,13 @@ export function ProviderPortal() {
                             <tr style={{ borderBottom: "1px solid #E2E8F0", textAlign: "left", background: "#F8FAFC" }}>
                               <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Tên Dịch vụ / Món</th>
                               <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Phân loại</th>
-                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Đơn giá niêm yết</th>
-                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Trạng thái trên X-One</th>
-                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569", textAlign: "right" }}>Thao tác</th>
+                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Đơn giá</th>
+                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569" }}>Trạng thái mở bán</th>
+                              <th style={{ padding: "10px 14px", fontWeight: 700, color: "#475569", textAlign: "right" }}>Mở bán / Tắt</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {serviceItems.map((item) => (
+                            {filteredServiceItems.map((item) => (
                               <tr key={item.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
                                 <td style={{ padding: "12px 14px" }}>
                                   <strong style={{ color: "#0F172A", display: "block" }}>{item.name}</strong>
@@ -1562,24 +2801,30 @@ export function ProviderPortal() {
                                           ? "#FFFBEB"
                                           : item.domain === "ride"
                                           ? "#EEF2FF"
+                                          : item.domain === "restaurant"
+                                          ? "#FDF2F8"
                                           : "#ECFDF5",
                                       color:
                                         item.domain === "food"
                                           ? "#EA580C"
                                           : item.domain === "ride"
                                           ? "#4338CA"
+                                          : item.domain === "restaurant"
+                                          ? "#DB2777"
                                           : "#065F46",
                                       border: `1px solid ${
                                         item.domain === "food"
                                           ? "#FDE68A"
                                           : item.domain === "ride"
                                           ? "#C7D2FE"
+                                          : item.domain === "restaurant"
+                                          ? "#FBCFE8"
                                           : "#A7F3D0"
                                       }`,
                                       fontWeight: 600,
                                     }}
                                   >
-                                    {item.category || (item.domain === "food" ? "Món ăn" : item.domain === "ride" ? "Xe di chuyển" : "Y tế")}
+                                    {item.category || (item.domain === "food" ? "Món ăn" : item.domain === "ride" ? "Xe di chuyển" : item.domain === "restaurant" ? "Bàn ăn" : "Y tế")}
                                   </span>
                                 </td>
                                 <td style={{ padding: "12px 14px", fontWeight: 700, color: "#059669" }}>
@@ -1611,16 +2856,15 @@ export function ProviderPortal() {
                                   </span>
                                 </td>
                                 <td style={{ padding: "12px 14px", textAlign: "right" }}>
-                                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleToggleItem(item.id, item.isAvailable)}
-                                      className="admin-action-btn admin-action-btn-test"
-                                      style={{ height: "28px", padding: "0 8px", fontSize: "var(--text-micro)" }}
-                                      title="Bật / Tắt trạng thái"
-                                    >
-                                      {item.isAvailable ? "Tạm ẩn" : "Mở bán"}
-                                    </button>
+                                  <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: "10px" }}>
+                                    <label className="xone-switch" title={item.isAvailable ? "Gạt để tạm ẩn món/dịch vụ này" : "Gạt để mở bán lại"}>
+                                      <input
+                                        type="checkbox"
+                                        checked={item.isAvailable}
+                                        onChange={() => void handleToggleItem(item.id, item.isAvailable)}
+                                      />
+                                      <span className="xone-switch-slider" />
+                                    </label>
 
                                     <button
                                       type="button"
@@ -1827,6 +3071,30 @@ export function ProviderPortal() {
               {/* TAB 1: RIDE PARTNER */}
               {activeTab === "ride" && isAllowedTab("ride") && (
                 <div>
+                  {connectedServices.ride === false && (
+                    <div className="provider-disconnected-alert">
+                      <div className="provider-disconnected-alert-icon">
+                        <AlertTriangle size={20} />
+                      </div>
+                      <div className="provider-disconnected-alert-body">
+                        <h4>Kênh Dịch Vụ Vận Chuyển Đang Tạm Ngắt Kết Nối</h4>
+                        <p>
+                          Kênh này đang ở chế độ ngắt kết nối. Khách hàng và AI Agent sẽ không thể tìm thấy hoặc điều phối các chuyến xe mới từ bạn cho đến khi bạn kết nối lại.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-sm button-primary"
+                        disabled={togglingChannel === "ride"}
+                        onClick={() => void handleToggleChannel("ride", true)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Power size={14} style={{ marginRight: "6px" }} />
+                        Kết nối lại ngay
+                      </button>
+                    </div>
+                  )}
+
                   {!activeRide ? (
                     <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
                       <div
@@ -2099,9 +3367,351 @@ export function ProviderPortal() {
                 </div>
               )}
 
+              {/* TAB: DELIVERY OPERATIONS */}
+              {activeTab === "delivery" && isAllowedTab("delivery") && (
+                <div>
+                  {connectedServices.delivery === false && (
+                    <div className="provider-disconnected-alert">
+                      <div className="provider-disconnected-alert-icon">
+                        <AlertTriangle size={20} />
+                      </div>
+                      <div className="provider-disconnected-alert-body">
+                        <h4>Kênh Dịch Vụ Giao Hàng & Bưu Kiện Đang Tạm Ngắt Kết Nối</h4>
+                        <p>
+                          Dịch vụ giao hàng của bạn đang ở chế độ ngắt kết nối. Khách hàng và trợ lý AI sẽ không thể tạo đơn giao bưu kiện hoặc gọi shipper cho đến khi bạn kết nối lại.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-sm button-primary"
+                        disabled={togglingChannel === "delivery"}
+                        onClick={() => void handleToggleChannel("delivery", true)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Power size={14} style={{ marginRight: "6px" }} />
+                        Kết nối lại ngay
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                        Quản lý đơn giao hàng & bưu kiện ({deliveries.length} đơn)
+                      </h2>
+                      <span
+                        className="admin-role-badge"
+                        style={{ background: "#EFF6FF", color: "#1D4ED8", border: "1px solid #BFDBFE", fontSize: "var(--text-micro)" }}
+                      >
+                        delivery-service :8106
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button
+                        type="button"
+                        disabled={seedingDomain === "delivery" || loadingOperations}
+                        onClick={() => void handleSeedSample("delivery", "đơn giao hàng")}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        {seedingDomain === "delivery" ? <LoaderCircle className="spin" size={13} /> : <Plus size={13} />}
+                        <span>Tạo đơn giao hàng mẫu</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={loadingOperations}
+                        onClick={() => void reloadOperations()}
+                        className="button button-secondary"
+                        style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <RefreshCw className={loadingOperations ? "spin" : ""} size={13} />
+                        <span>Làm mới</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {deliveries.length === 0 ? (
+                    <div className="admin-table-card" style={{ padding: "40px 24px", textAlign: "center" }}>
+                      <div
+                        style={{
+                          width: "52px",
+                          height: "52px",
+                          borderRadius: "14px",
+                          background: "#EFF6FF",
+                          color: "#2563EB",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          marginBottom: "16px",
+                          border: "1px solid #BFDBFE",
+                        }}
+                      >
+                        <Package size={24} />
+                      </div>
+                      <h3 style={{ fontSize: "var(--text-lg)", fontWeight: 700, color: "#0F172A", margin: "0 0 6px 0" }}>
+                        Hiện chưa có đơn giao bưu kiện nào
+                      </h3>
+                      <p style={{ fontSize: "var(--text-sm)", color: "#64748B", maxWidth: "500px", margin: "0 auto 20px" }}>
+                        Dữ liệu giao hàng được đồng bộ trực tiếp từ microservice <code>delivery-service</code> (:8106) độc lập. Bạn có thể nhấn tạo đơn mẫu để kiểm tra quy trình điều phối shipper và giao hàng.
+                      </p>
+                      <div style={{ display: "inline-flex", gap: "10px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          disabled={seedingDomain === "delivery" || loadingOperations}
+                          onClick={() => void handleSeedSample("delivery", "đơn giao hàng")}
+                          className="button button-primary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 18px", fontSize: "var(--text-sm)", fontWeight: 600 }}
+                        >
+                          {seedingDomain === "delivery" ? <LoaderCircle className="spin" size={15} /> : <Plus size={15} />}
+                          <span>{seedingDomain === "delivery" ? "Đang kết nối hệ thống…" : "Tạo đơn giao hàng mẫu"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={loadingOperations}
+                          onClick={() => void reloadOperations()}
+                          className="button button-secondary"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "8px", height: "38px", padding: "0 16px", fontSize: "var(--text-sm)" }}
+                        >
+                          {loadingOperations ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                          <span>Làm mới danh sách</span>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(380px, 100%), 1fr))", gap: "16px" }}>
+                      {deliveries.map((delivery) => (
+                        <div
+                          key={delivery.id}
+                          className="admin-table-card"
+                          style={{ padding: "18px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}
+                        >
+                          <div>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                              <div>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <strong style={{ fontSize: "var(--text-base)", color: "#0F172A" }}>{delivery.trackingCode}</strong>
+                                  <span style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>#{delivery.id}</span>
+                                </div>
+                                <div style={{ fontSize: "var(--text-micro)", color: "#64748B", marginTop: "2px" }}>
+                                  Loại: <strong>{delivery.packageType}</strong> {delivery.weightKg ? `· ${delivery.weightKg} kg` : ""} · {delivery.time}
+                                </div>
+                              </div>
+                              <span
+                                className="admin-role-badge"
+                                style={{
+                                  background:
+                                    delivery.status === "DELIVERED"
+                                      ? "#ECFDF5"
+                                      : delivery.status === "DELIVERING" || delivery.status === "PICKING_UP"
+                                      ? "#EFF6FF"
+                                      : delivery.status === "COURIER_ASSIGNED"
+                                      ? "#FFFBEB"
+                                      : "#F1F5F9",
+                                  color:
+                                    delivery.status === "DELIVERED"
+                                      ? "#065F46"
+                                      : delivery.status === "DELIVERING" || delivery.status === "PICKING_UP"
+                                      ? "#1D4ED8"
+                                      : delivery.status === "COURIER_ASSIGNED"
+                                      ? "#EA580C"
+                                      : "#475569",
+                                  border: `1px solid ${
+                                    delivery.status === "DELIVERED"
+                                      ? "#A7F3D0"
+                                      : delivery.status === "DELIVERING" || delivery.status === "PICKING_UP"
+                                      ? "#BFDBFE"
+                                      : delivery.status === "COURIER_ASSIGNED"
+                                      ? "#FDE68A"
+                                      : "#E2E8F0"
+                                  }`,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {formatDeliveryStatus(delivery.status)}
+                              </span>
+                            </div>
+
+                            {/* Addresses */}
+                            <div
+                              style={{
+                                background: "#F8FAFC",
+                                border: "1px solid #E2E8F0",
+                                borderRadius: "8px",
+                                padding: "10px 12px",
+                                marginBottom: "12px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "8px",
+                                fontSize: "var(--text-xs)",
+                              }}
+                            >
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                                <span style={{ color: "#059669", fontWeight: 700, minWidth: "50px" }}>Lấy hàng:</span>
+                                <div>
+                                  <div style={{ color: "#1E293B", fontWeight: 550 }}>{delivery.pickup}</div>
+                                  <div style={{ color: "#64748B", fontSize: "var(--text-micro)" }}>{delivery.senderName} {delivery.senderPhone ? `(${delivery.senderPhone})` : ""}</div>
+                                </div>
+                              </div>
+                              <div style={{ height: "1px", background: "#E2E8F0", margin: "2px 0" }} />
+                              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                                <span style={{ color: "#2563EB", fontWeight: 700, minWidth: "50px" }}>Giao đến:</span>
+                                <div>
+                                  <div style={{ color: "#1E293B", fontWeight: 550 }}>{delivery.destination}</div>
+                                  <div style={{ color: "#64748B", fontSize: "var(--text-micro)" }}>{delivery.receiverName} ({delivery.receiverPhone})</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Courier Info */}
+                            {delivery.courier && (
+                              <div
+                                style={{
+                                  fontSize: "var(--text-xs)",
+                                  color: "#334155",
+                                  backgroundColor: "#F0FDF4",
+                                  border: "1px solid #BBF7D0",
+                                  padding: "8px 12px",
+                                  borderRadius: "8px",
+                                  marginBottom: "12px",
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <div>
+                                  <strong>Shipper:</strong> {delivery.courier.name} ({delivery.courier.phone})
+                                </div>
+                                <span style={{ fontSize: "var(--text-micro)", color: "#059669", fontWeight: 600 }}>
+                                  {delivery.courier.vehiclePlate} · {delivery.courier.vehicleModel}
+                                </span>
+                              </div>
+                            )}
+
+                            {delivery.packageDesc && (
+                              <div style={{ fontSize: "var(--text-xs)", color: "#64748B", marginBottom: "12px" }}>
+                                📦 Mô tả: {delivery.packageDesc}
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px", borderTop: "1px solid #F1F5F9", paddingTop: "12px" }}>
+                            <div>
+                              <div style={{ fontSize: "var(--text-micro)", color: "#64748B" }}>Cước phí vận chuyển</div>
+                              <div style={{ fontSize: "var(--text-base)", fontWeight: 700, color: "#2563EB" }}>
+                                {delivery.amount.toLocaleString("vi-VN")} {delivery.currency}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              {delivery.status === "CREATED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceDeliveryStatus(delivery.id, "COURIER_ASSIGNED")}
+                                  className="button button-primary"
+                                  style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                                >
+                                  Gán tài xế
+                                </button>
+                              )}
+                              {delivery.status === "COURIER_ASSIGNED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceDeliveryStatus(delivery.id, "PICKING_UP")}
+                                  className="button button-primary"
+                                  style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-xs)" }}
+                                >
+                                  Tài xế đi lấy hàng
+                                </button>
+                              )}
+                              {delivery.status === "PICKING_UP" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceDeliveryStatus(delivery.id, "DELIVERING")}
+                                  className="button button-primary"
+                                  style={{
+                                    height: "32px",
+                                    padding: "0 12px",
+                                    fontSize: "var(--text-xs)",
+                                    backgroundColor: "#2563EB",
+                                    borderColor: "#2563EB",
+                                  }}
+                                >
+                                  Đã lấy — Đi giao hàng
+                                </button>
+                              )}
+                              {delivery.status === "DELIVERING" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceDeliveryStatus(delivery.id, "DELIVERED")}
+                                  className="button button-primary"
+                                  style={{
+                                    height: "32px",
+                                    padding: "0 12px",
+                                    fontSize: "var(--text-xs)",
+                                    backgroundColor: "#059669",
+                                    borderColor: "#059669",
+                                  }}
+                                >
+                                  Đã giao thành công
+                                </button>
+                              )}
+                              {delivery.status === "DELIVERED" && (
+                                <span style={{ fontSize: "var(--text-xs)", color: "#059669", fontWeight: 600 }}>
+                                  ✓ Đã hoàn tất giao
+                                </span>
+                              )}
+                              {delivery.status === "CANCELLED" && (
+                                <span style={{ fontSize: "var(--text-xs)", color: "#DC2626", fontWeight: 600 }}>
+                                  Đã hủy đơn
+                                </span>
+                              )}
+                              {delivery.status !== "DELIVERED" && delivery.status !== "CANCELLED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => advanceDeliveryStatus(delivery.id, "CANCELLED")}
+                                  className="button button-secondary"
+                                  style={{ height: "32px", padding: "0 10px", fontSize: "var(--text-xs)", color: "#DC2626" }}
+                                  title="Hủy đơn giao này"
+                                >
+                                  Hủy
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* TAB 2: FOOD MERCHANT */}
               {activeTab === "food" && isAllowedTab("food") && (
                 <div>
+                  {connectedServices.food === false && (
+                    <div className="provider-disconnected-alert">
+                      <div className="provider-disconnected-alert-icon">
+                        <AlertTriangle size={20} />
+                      </div>
+                      <div className="provider-disconnected-alert-body">
+                        <h4>Kênh Dịch Vụ Ẩm Thực & Món Ăn Đang Tạm Ngắt Kết Nối</h4>
+                        <p>
+                          Cửa hàng ẩm thực của bạn đang ngắt kết nối với microservice món ăn. Khách hàng và trợ lý AI sẽ không thể đặt món hoặc chuyển đơn đến bếp cho đến khi bạn kết nối lại.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-sm button-primary"
+                        disabled={togglingChannel === "food"}
+                        onClick={() => void handleToggleChannel("food", true)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Power size={14} style={{ marginRight: "6px" }} />
+                        Kết nối lại ngay
+                      </button>
+                    </div>
+                  )}
+
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
@@ -2340,6 +3950,30 @@ export function ProviderPortal() {
               {/* TAB 3: HEALTHCARE DOCTOR */}
               {activeTab === "health" && isAllowedTab("health") && (
                 <div>
+                  {connectedServices.healthcare === false && (
+                    <div className="provider-disconnected-alert">
+                      <div className="provider-disconnected-alert-icon">
+                        <AlertTriangle size={20} />
+                      </div>
+                      <div className="provider-disconnected-alert-body">
+                        <h4>Kênh Đặt Khám & Bác Sĩ Đang Tạm Ngắt Kết Nối</h4>
+                        <p>
+                          Phòng khám / Lịch bác sĩ đang ngắt kết nối với hệ thống Y tế. Bệnh nhân và AI khám bệnh sẽ không thể đặt lịch hẹn khám mới cho đến khi bạn kết nối lại.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-sm button-primary"
+                        disabled={togglingChannel === "healthcare"}
+                        onClick={() => void handleToggleChannel("healthcare", true)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Power size={14} style={{ marginRight: "6px" }} />
+                        Kết nối lại ngay
+                      </button>
+                    </div>
+                  )}
+
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
@@ -2559,6 +4193,30 @@ export function ProviderPortal() {
               {/* TAB 4: RESTAURANT RESERVATIONS (PASGO / TABLECHECK BENCHMARK) */}
               {activeTab === "restaurant" && isAllowedTab("restaurant") && (
                 <div>
+                  {connectedServices.restaurant === false && (
+                    <div className="provider-disconnected-alert">
+                      <div className="provider-disconnected-alert-icon">
+                        <AlertTriangle size={20} />
+                      </div>
+                      <div className="provider-disconnected-alert-body">
+                        <h4>Kênh Đặt Bàn Nhà Hàng Đang Tạm Ngắt Kết Nối</h4>
+                        <p>
+                          Hệ thống bàn ăn của nhà hàng đang ngắt kết nối với microservice đặt bàn. Khách hàng và AI PasGo sẽ không thể đặt bàn mới cho đến khi bạn kết nối lại.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="button button-sm button-primary"
+                        disabled={togglingChannel === "restaurant"}
+                        onClick={() => void handleToggleChannel("restaurant", true)}
+                        style={{ whiteSpace: "nowrap" }}
+                      >
+                        <Power size={14} style={{ marginRight: "6px" }} />
+                        Kết nối lại ngay
+                      </button>
+                    </div>
+                  )}
+
                   <div style={{ marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                       <h2 style={{ fontSize: "var(--text-base)", fontWeight: 700, margin: 0, color: "#0F172A" }}>
@@ -3215,6 +4873,232 @@ export function ProviderPortal() {
                 </div>
               )}
             </div>
+
+            {/* Modal: + Thêm Kênh Microservice Mới */}
+            {showAddChannelModal && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(15, 23, 42, 0.6)",
+                  backdropFilter: "blur(4px)",
+                  display: "grid",
+                  placeItems: "center",
+                  zIndex: 9999,
+                  padding: "16px",
+                }}
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setShowAddChannelModal(false);
+                }}
+              >
+                <div
+                  className="admin-table-card"
+                  style={{
+                    maxWidth: "560px",
+                    width: "100%",
+                    maxHeight: "90vh",
+                    overflowY: "auto",
+                    padding: "24px",
+                    borderRadius: "16px",
+                    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div
+                        style={{
+                          width: "36px",
+                          height: "36px",
+                          borderRadius: "10px",
+                          background: "#EEF2FF",
+                          color: "#4F46E5",
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        <Plus size={20} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: "16px", fontWeight: 700, margin: 0, color: "#0F172A" }}>
+                          Đăng Ký Thêm Kênh Dịch Vụ Mới
+                        </h3>
+                        <span style={{ fontSize: "12px", color: "#64748B" }}>
+                          Tích hợp microservice độc lập vào cổng điều phối X-One
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddChannelModal(false)}
+                      className="button button-secondary"
+                      style={{ height: "30px", width: "30px", padding: 0, display: "grid", placeItems: "center" }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Preset Quick-Picks */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569", display: "block", marginBottom: "6px" }}>
+                      Chọn nhanh từ mẫu có sẵn (Templates):
+                    </span>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {PRESET_CHANNEL_TEMPLATES.map((tmpl) => (
+                        <button
+                          key={tmpl.id}
+                          type="button"
+                          onClick={() => {
+                            setNewChannelForm({
+                              id: tmpl.id,
+                              name: tmpl.name,
+                              port: tmpl.port,
+                              domain: tmpl.domain,
+                              description: tmpl.description,
+                              icon: tmpl.icon,
+                              color: tmpl.color,
+                              bgColor: tmpl.bgColor,
+                            });
+                          }}
+                          className="button button-secondary"
+                          style={{
+                            height: "28px",
+                            padding: "0 10px",
+                            fontSize: "11px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "5px",
+                            background: newChannelForm.id === tmpl.id ? tmpl.bgColor : "#F8FAFC",
+                            color: newChannelForm.id === tmpl.id ? tmpl.color : "#334155",
+                            borderColor: newChannelForm.id === tmpl.id ? tmpl.color : "#E2E8F0",
+                          }}
+                        >
+                          {renderChannelIcon(tmpl.icon, 13)}
+                          <span>{tmpl.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <form onSubmit={(e) => void handleCreateNewChannel(e)} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "4px" }}>
+                          Mã định danh (ID / Slug) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newChannelForm.id}
+                          onChange={(e) => setNewChannelForm({ ...newChannelForm, id: e.target.value })}
+                          placeholder="vd: delivery, grocery"
+                          className="input-field"
+                          style={{ width: "100%", height: "36px", fontSize: "13px" }}
+                        />
+                        <span style={{ fontSize: "10px", color: "#64748B" }}>Chữ thường, số, gạch ngang (2-40 ký tự)</span>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "4px" }}>
+                          Tên hiển thị dịch vụ *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newChannelForm.name}
+                          onChange={(e) => setNewChannelForm({ ...newChannelForm, name: e.target.value })}
+                          placeholder="vd: Giao Hàng Siêu Tốc"
+                          className="input-field"
+                          style={{ width: "100%", height: "36px", fontSize: "13px" }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+                      <div>
+                        <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "4px" }}>
+                          Tên &amp; Port Service *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newChannelForm.port}
+                          onChange={(e) => setNewChannelForm({ ...newChannelForm, port: e.target.value })}
+                          placeholder="vd: delivery-service :8105"
+                          className="input-field"
+                          style={{ width: "100%", height: "36px", fontSize: "13px" }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "4px" }}>
+                          Biểu tượng (Icon)
+                        </label>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          {(["package", "shopping", "sparkles", "truck", "car", "food"] as const).map((ic) => (
+                            <button
+                              key={ic}
+                              type="button"
+                              onClick={() => setNewChannelForm({ ...newChannelForm, icon: ic })}
+                              style={{
+                                width: "36px",
+                                height: "36px",
+                                borderRadius: "8px",
+                                border: `1px solid ${newChannelForm.icon === ic ? "#4F46E5" : "#E2E8F0"}`,
+                                background: newChannelForm.icon === ic ? "#EEF2FF" : "#F8FAFC",
+                                color: newChannelForm.icon === ic ? "#4F46E5" : "#64748B",
+                                display: "grid",
+                                placeItems: "center",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {renderChannelIcon(ic, 16)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: "12px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "4px" }}>
+                        Mô tả chức năng dịch vụ
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={newChannelForm.description}
+                        onChange={(e) => setNewChannelForm({ ...newChannelForm, description: e.target.value })}
+                        placeholder="Mô tả ngắn gọn dịch vụ tiếp nhận những loại đơn hoặc yêu cầu gì từ khách hàng..."
+                        className="input-field"
+                        style={{ width: "100%", padding: "8px", fontSize: "13px" }}
+                      />
+                    </div>
+
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "12px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddChannelModal(false)}
+                        className="button button-secondary"
+                        style={{ height: "36px", padding: "0 14px", fontSize: "13px" }}
+                      >
+                        Hủy
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submittingNewChannel || !newChannelForm.id.trim() || !newChannelForm.name.trim()}
+                        className="button button-primary"
+                        style={{ height: "36px", padding: "0 16px", fontSize: "13px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                      >
+                        <Plus size={14} />
+                        <span>{submittingNewChannel ? "Đang đăng ký..." : "Đăng Ký & Kích Hoạt Kênh Mới"}</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
           </div>
         </main>
       </div>

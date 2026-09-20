@@ -30,9 +30,14 @@ def _operation(text: str) -> Operation:
     padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
     if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
         return Operation.CANCEL
-    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")) or any(
-        f" {value} " in (" " + _ascii_fold(text) + " ")
-        for value in ("doi", "cap nhat")
+    has_vn_tone = bool(re.search(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", text, re.IGNORECASE))
+    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")) or (
+        not has_vn_tone
+        and not re.search(r"\bdoi\s+can\b", _ascii_fold(text))
+        and any(
+            f" {value} " in (" " + _ascii_fold(text) + " ")
+            for value in ("doi", "cap nhat")
+        )
     ):
         return Operation.UPDATE
     if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
@@ -100,8 +105,8 @@ def _slot_source(
         value.casefold() in folded or _ascii_fold(value).strip() in plain
     )
     normalized_explicit = (
-        field == "vehicle_type" and any(token in plain for token in ("xe may", "4 cho", "bon cho", "7 cho", "bay cho"))
-        or field in {"start_at", "appointment_date", "time_preference"} and bool(re.search(r"\b(?:\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)|hom nay|mai|ngay kia)\b", plain))
+        field == "vehicle_type" and any(token in plain for token in ("xe may", "4 cho", "bon cho", "7 cho", "bay cho", "o to", "oto", "xe o to", "xe oto", "xe hoi", "taxi", "car", "bike", "xe om"))
+        or field in {"start_at", "appointment_date", "time_preference"} and bool(re.search(r"\b(?:\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)|hom nay|mai|ngay kia|sang mai|chieu mai|toi mai|trua nay|sang nay|chieu nay|toi nay)\b", plain))
         or field == "address_reference" and any(token in plain for token in ("ve nha", "toi nha", "home"))
         or field == "delivery_preference" and any(token in plain for token in ("giao", "ship"))
         or field == "selection" and any(token in plain for token in ("chon", "lay"))

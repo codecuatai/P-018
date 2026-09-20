@@ -36,6 +36,8 @@ export interface AuthAccount {
   passwordChangedAt: string;
   createdAt: string;
   updatedAt: string;
+  providerType?: string;
+  tenantId?: string;
 }
 
 export interface AuthSession {

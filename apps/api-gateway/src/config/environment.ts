@@ -142,7 +142,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
     if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
   }
-  for (const name of ['LOCATION_PROVIDER_URL', 'GEOCODING_PROVIDER_URL', 'ROUTING_PROVIDER_URL']) {
+  for (const name of ['LOCATION_PROVIDER_URL', 'GEOCODING_PROVIDER_URL', 'ROUTING_PROVIDER_URL', 'DELIVERY_SERVICE_URL']) {
     if (config[name] !== undefined && String(config[name]).trim() !== '') {
       try {
         const url = new URL(String(config[name]).trim());
@@ -210,6 +210,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     AUTH_DEV_RESET_TOKEN_CAPTURE: authDevResetTokenCapture === 'true',
     LOCAL_DETERMINISTIC_LOCATION_FALLBACK: localDeterministicLocationFallback === 'true',
     GEOAPIFY_REAL_MODE: geoapifyRealMode === 'true',
+    DELIVERY_SERVICE_URL: config.DELIVERY_SERVICE_URL ? String(config.DELIVERY_SERVICE_URL).trim() : 'http://127.0.0.1:8106',
     ...(config.GEOAPIFY_SERVER_API_KEY !== undefined ? { GEOAPIFY_SERVER_API_KEY: normalizeConfiguredSecret(config.GEOAPIFY_SERVER_API_KEY) } : {}),
     ...(config.GOOGLE_CLIENT_ID !== undefined && String(config.GOOGLE_CLIENT_ID).trim() !== '' ? { GOOGLE_CLIENT_ID: normalizeConfiguredSecret(config.GOOGLE_CLIENT_ID) } : {}),
     ...(config.GOOGLE_CLIENT_SECRET !== undefined && String(config.GOOGLE_CLIENT_SECRET).trim() !== '' ? { GOOGLE_CLIENT_SECRET: normalizeConfiguredSecret(config.GOOGLE_CLIENT_SECRET) } : {}),

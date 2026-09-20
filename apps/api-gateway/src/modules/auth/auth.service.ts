@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'crypto';
 import { isEmail } from 'class-validator';
 
 import { CoreStore } from '../core/core.module';
@@ -62,7 +62,7 @@ export class AuthService {
       fullName: string;
       password: string;
       role?: 'customer' | 'provider';
-      providerType?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor';
+      providerType?: 'ride_driver' | 'restaurant_merchant' | 'healthcare_doctor' | 'delivery_courier';
       businessName?: string;
       phone?: string;
       address?: string;
@@ -106,13 +106,22 @@ export class AuthService {
     return issued;
   }
 
-  async login(input: { email: string; password: string }, metadata: AuthRequestMetadata, correlationId: string): Promise<IssuedAuthSession> {
+  async login(input: { email: string; password: string; twoFactorCode?: string }, metadata: AuthRequestMetadata, correlationId: string): Promise<IssuedAuthSession> {
     const emailNormalized = normalizeEmail(input.email);
     const account = await this.store.getUserByEmailNormalized(emailNormalized);
     const matches = account ? await safelyVerifyPassword(account.passwordHash, input.password) : false;
     if (!account || !matches || account.status !== 'active') {
       await this.audit('LOGIN_FAILURE', account?.id, correlationId, undefined, { reason: 'invalid_credentials' });
       throw invalidCredentials();
+    }
+    const twoFactor = await this.store.getTwoFactor(account.id);
+    if (twoFactor?.enabled) {
+      if (!input.twoFactorCode || !verifyTotp(twoFactor.secret, input.twoFactorCode)) {
+        const backupAccepted = input.twoFactorCode ? await this.store.consumeTwoFactorBackupCode(account.id, hashBackupCode(input.twoFactorCode)) : false;
+        if (!backupAccepted) {
+          throw new UnauthorizedException({ code: 'TWO_FACTOR_REQUIRED', detail: 'Vui lòng nhập mã xác thực hai bước.', retryable: false });
+        }
+      }
     }
     const issued = await this.createSessionFor(account, metadata);
     await this.audit('LOGIN_SUCCESS', account.id, correlationId, issued.session.familyId);
@@ -386,6 +395,29 @@ export class AuthService {
     return valid ? account : null;
   }
 
+  async setupTwoFactor(user: AuthUser): Promise<{ qrCodeUrl: string; secret: string; backupCodes: string[] }> {
+    const secret = encodeBase32(randomBytes(20));
+    const backupCodes = Array.from({ length: 8 }, () => randomBytes(5).toString('hex').toUpperCase());
+    await this.store.saveTwoFactorSetup(user.sub, secret, backupCodes.map(hashBackupCode));
+    const issuer = encodeURIComponent('X-One Platform');
+    const account = encodeURIComponent(user.email);
+    return { qrCodeUrl: `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`, secret, backupCodes };
+  }
+
+  async verifyTwoFactor(user: AuthUser, code: string): Promise<void> {
+    const record = await this.store.getTwoFactor(user.sub);
+    if (!record || !verifyTotp(record.secret, code)) {
+      throw new BadRequestException({ code: '2FA_CODE_INVALID', detail: 'Mã xác thực không hợp lệ.', retryable: true });
+    }
+    await this.store.enableTwoFactor(user.sub);
+  }
+
+  async disableTwoFactor(user: AuthUser, password: string): Promise<void> {
+    const account = await this.verifyPasswordForUser(user, password);
+    if (!account) throw new UnauthorizedException({ code: 'PASSWORD_INCORRECT', detail: 'Mật khẩu không chính xác.', retryable: false });
+    await this.store.disableTwoFactor(user.sub);
+  }
+
   toPublicUser(account: AuthAccount, sessionId?: string): AuthUser {
     return {
       id: account.id,
@@ -397,6 +429,8 @@ export class AuthService {
       ...(account.language ? { language: account.language } : {}),
       ...(account.timezone ? { timezone: account.timezone } : {}),
       ...(account.onboardingCompletedAt ? { onboarding_completed_at: account.onboardingCompletedAt } : {}),
+      ...(account.providerType ? { provider_type: account.providerType } : {}),
+      ...(account.tenantId ? { tenant_id: account.tenantId } : {}),
       role: account.role,
       status: account.status,
       ...(sessionId ? { session_id: sessionId } : {}),
@@ -477,6 +511,63 @@ function ipHash(ip: string, secret: string): string {
 
 function boundedUserAgent(value: string): string {
   return value.slice(0, 512);
+}
+
+const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function encodeBase32(value: Buffer): string {
+  let bits = 0;
+  let buffer = 0;
+  let output = '';
+  for (const byte of value) {
+    buffer = (buffer << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += BASE32_ALPHABET[(buffer >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+  if (bits > 0) output += BASE32_ALPHABET[(buffer << (5 - bits)) & 31];
+  return output;
+}
+
+function decodeBase32(value: string): Buffer {
+  let bits = 0;
+  let buffer = 0;
+  const bytes: number[] = [];
+  for (const character of value.toUpperCase().replace(/=+$/, '')) {
+    const index = BASE32_ALPHABET.indexOf(character);
+    if (index < 0) throw new Error('Invalid base32 secret');
+    buffer = (buffer << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((buffer >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function verifyTotp(secret: string, rawCode: string): boolean {
+  const code = rawCode.trim();
+  if (!/^\d{6}$/.test(code)) return false;
+  let key: Buffer;
+  try { key = decodeBase32(secret); } catch { return false; }
+  const counter = Math.floor(Date.now() / 1000 / 30);
+  for (const offset of [-1, 0, 1]) {
+    const message = Buffer.alloc(8);
+    message.writeBigUInt64BE(BigInt(counter + offset));
+    const digest = createHmac('sha1', key).update(message).digest();
+    const position = digest[digest.length - 1] & 15;
+    const binary = ((digest[position] & 127) << 24) | (digest[position + 1] << 16) | (digest[position + 2] << 8) | digest[position + 3];
+    const expected = String(binary % 1_000_000).padStart(6, '0');
+    if (timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return true;
+  }
+  return false;
+}
+
+function hashBackupCode(code: string): string {
+  return createHash('sha256').update(code.trim().toUpperCase()).digest('hex');
 }
 
 async function safelyVerifyPassword(hash: string, password: string): Promise<boolean> {

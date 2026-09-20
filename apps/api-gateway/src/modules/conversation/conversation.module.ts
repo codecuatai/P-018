@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Injectable, Module, NotFoundException, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Injectable, Module, NotFoundException, Param, Patch, Post, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { randomUUID } from 'crypto';
 
@@ -12,6 +12,8 @@ import { ConfirmationModule } from '../confirmation/confirmation.module';
 import { ConfirmationService } from '../confirmation/confirmation.service';
 import { ToolModule } from '../tools/tool.module';
 import { PersonalModule } from '../personal/personal.module';
+import { ProductOpsModule } from '../product-ops/product-ops.controller';
+import { ProductOpsService } from '../product-ops/product-ops.service';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { ConversationController as RideConversationController } from './conversation.controller';
@@ -22,6 +24,13 @@ class MessageDto {
   @MinLength(1)
   @MaxLength(5000)
   message!: string;
+}
+
+class HandoffDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
 }
 
 @Injectable()
@@ -63,7 +72,7 @@ class ConversationDto {
 @Controller('api/v1/conversations')
 @UseGuards(AuthGuard)
 export class FoodConversationController {
-  constructor(private readonly conversations: ConversationService, private readonly store: CoreStore) {}
+  constructor(private readonly conversations: ConversationService, private readonly store: CoreStore, private readonly productOps: ProductOpsService) {}
 
   @Get()
   async list(@Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
@@ -93,6 +102,32 @@ export class FoodConversationController {
     return { data: conversation, meta: { request_id: request.correlationId, actor_id: request.user.sub } };
   }
 
+  @Post(':conversationId/handoff')
+  async handoff(
+    @Param('conversationId') conversationId: string,
+    @Body() body: HandoffDto,
+    @Headers('Idempotency-Key') idempotencyKey: string | undefined,
+    @Req() request: CorrelatedRequest & { user: AuthUser },
+  ): Promise<object> {
+    const key = idempotencyKey?.trim();
+    if (!key || key.length < 8 || key.length > 128) {
+      throw new BadRequestException({ code: 'IDEMPOTENCY_KEY_REQUIRED', detail: 'Idempotency-Key là bắt buộc khi yêu cầu người hỗ trợ.', retryable: false });
+    }
+    const conversation = await this.store.getConversation(conversationId, request.user.sub);
+    if (!conversation) throw new NotFoundException({ code: 'CONVERSATION_NOT_FOUND', detail: 'Không tìm thấy cuộc trò chuyện.', retryable: false });
+    const ticket = await this.productOps.createSupportTicket(request.user.sub, request.correlationId ?? 'cor_handoff', key, {
+      subject: 'Yêu cầu hỗ trợ người thật',
+      description: body.reason?.trim() || 'Khách hàng yêu cầu chuyển cuộc trò chuyện cho nhân viên hỗ trợ.',
+      priority: 'HIGH',
+    });
+    await this.store.mergeConversationState(conversationId, request.user.sub, {
+      handoff_status: 'REQUESTED',
+      handoff_ticket_id: ticket.id,
+      handoff_requested_at: new Date().toISOString(),
+    });
+    return { data: { status: 'REQUESTED', ticket_id: ticket.id, conversation_id: conversationId }, meta: { request_id: request.correlationId } };
+  }
+
   @Patch(':conversationId')
   async update(@Param('conversationId') conversationId: string, @Body() body: Partial<ConversationDto> & { status?: 'ACTIVE' | 'ARCHIVED' }, @Req() request: CorrelatedRequest & { user: AuthUser }): Promise<object> {
     const updated = await this.store.updateConversation(conversationId, request.user.sub, { title: body.title, status: body.status });
@@ -119,7 +154,7 @@ function parsePaginationValue(value: unknown, fallback: number): number {
 }
 
 @Module({
-  imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule, PersonalModule],
+  imports: [AuthModule, CoreModule, ToolModule, ConfirmationModule, PersonalModule, ProductOpsModule],
   controllers: [FoodConversationController, RideConversationController, AssistantController],
   providers: [ConversationService, AgentClient, FoodClient, RideClient, RideConversationService, AssistantService, RestaurantClient, HealthcareClient],
   exports: [ConversationService, RideConversationService, AssistantService],

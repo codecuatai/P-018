@@ -528,18 +528,83 @@ def _location(text: str) -> str | None:
 
 
 def _looks_like_short_location_reply(text: str) -> bool:
-    """Conservatively recognize a standalone proper-name location reply.
+    """Conservatively recognize a standalone location reply.
 
     This is used only to continue one existing task. It avoids maintaining a
     list of campuses, hospitals, wards, or landmarks in the planner.
     """
     value = text.strip()
     words = value.split()
-    if not 1 <= len(words) <= 8 or len(value) > 100:
+    if not 1 <= len(words) <= 10 or len(value) > 100:
         return False
     if not _SHORT_LOCATION_PATTERN.fullmatch(value):
         return False
-    return any(character.isupper() for character in value)
+    plain = _plain(value).strip()
+    stop_words = {
+        "ok", "oke", "uh", "u", "duoc", "khong", "co", "vang", "da", "nhe", "nha", "thoi",
+        "xe", "oto", "o to", "xe may", "bike", "car", "taxi", "4 cho", "7 cho", "bon cho", "bay cho",
+        "pho", "bun", "com", "an", "uong", "mon",
+        "kham", "bac si", "khoa", "benh",
+        "nguoi", "khach", "ban", "mot", "hai", "ba", "bon", "nam", "sau", "bay",
+    }
+    if plain in stop_words:
+        return False
+    return (
+        any(character.isupper() for character in value)
+        or any(character.isdigit() for character in value)
+        or len(words) >= 2
+    )
+
+
+def _strip_vehicle_suffix(value: str) -> str:
+    result = value
+    for _ in range(3):
+        result = re.sub(
+            r"\s+(?:cho\s+)?(?:[1-9][0-9]?|một|mot|hai|ba|bốn|bon|năm|nam|sáu|sau|bảy|bay)\s*(?:người|nguoi|khách|khach|passengers?)\s*$",
+            "",
+            result,
+            flags=re.IGNORECASE,
+        )
+        result = re.sub(
+            r"\s+\b(?:bằng|bang|với|voi)\s+.*?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47]|ô\s*tô|o\s*to|taxi|xe\s*ôm|xe\s*om).*$",
+            "",
+            result,
+            flags=re.IGNORECASE,
+        )
+        result = re.sub(
+            r"\s+\b(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47]|ô\s*tô|o\s*to|taxi|xe\s*ôm|xe\s*om)\s*$",
+            "",
+            result,
+            flags=re.IGNORECASE,
+        )
+        result = re.sub(
+            r"\s+\b(?:loại|loai|chọn|chon)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47]|ô\s*tô|o\s*to|taxi|xe\s*ôm|xe\s*om)\b.*$",
+            "",
+            result,
+            flags=re.IGNORECASE,
+        )
+    return result.strip(" ,;.")
+
+
+def _clean_route_endpoint(value: str) -> str:
+    result = value.strip()
+    result = re.split(r"\b(?:rồi|sau đó|sau do|và|va|sau khi)\b", result, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    result = re.split(
+        r"\b(?:có\s+.*không|co\s+.*khong|tính\s+cước|tinh\s+cuoc|khoảng\s+bao\s+nhiêu|khoang\s+bao\s+nhieu|giá\s+.*|gia\s+.*)\b",
+        result,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    result = re.split(r"\b(?:lúc|luc|vào\s+lúc|vao\s+luc)\s+[0-9]+", result, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    result = re.split(r"\b(?:chọn\s+.*|loại\s+.*|loai\s+.*)\b", result, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+    result = re.sub(
+        r"\s+\b(?:cho\s+(?:mình|minh|tôi|toi)|giúp\s+(?:tôi|mình)|giup\s+(?:toi|minh)|ngay\s+bây\s+giờ|ngay\s+bay\s+gio|ngay|nhé|nhe|nha|ạ|a|luôn|luon)\b.*$",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    ).strip()
+    result = _strip_vehicle_suffix(result)
+    return result.strip(" ,;.")
 
 
 def _route(text: str) -> tuple[str | None, str | None]:
@@ -549,50 +614,117 @@ def _route(text: str) -> tuple[str | None, str | None]:
         flags=re.IGNORECASE,
     )
     if reference:
-        return reference.group(1).strip() or None, None
+        return _clean_route_endpoint(reference.group(1)) or None, None
 
-    match = re.search(r"(?:từ|tu|from)\s+(.+?)\s+(?:đến|den|tới|toi|to)\s+(.+?)(?:[,.!?]|$)", text, flags=re.IGNORECASE)
+    # Pattern 1: đón ... (trả khách tại / chở tới / đưa tới / đến / tới) ...
+    pickup_dropoff = re.search(
+        r"(?:đón(?:\s+tôi|\s+khách)?\s+(?:ở|tại|o|tai)\s+)(.+?)\s+(?:(?:và\s+)?(?:trả\s+khách\s+tại|trả\s+tại|tra\s+khach\s+tai|tra\s+tai|chở\s+(?:tới|đến)|cho\s+(?:toi|den)|đưa\s+(?:tới|đến)|dua\s+(?:toi|den)|đến|den|tới|toi))\s+(.+?)(?:[,.!?]|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if pickup_dropoff:
+        pickup = _clean_route_endpoint(pickup_dropoff.group(1))
+        dropoff = _clean_route_endpoint(pickup_dropoff.group(2))
+        if _plain(dropoff).strip() in {"do", "do luon", "toi do", "den do", "ra do", "qua do", "nha hang do"}:
+            dropoff = ""
+        return pickup or None, dropoff or None
+
+    # Pattern 2: từ ... (đến / tới / sang / qua / ra / về / ghé qua) ...
+    match = re.search(
+        r"(?:từ|tu|from)\s+(.+?)\s+(?:đến|den|tới|toi|to|sang|qua|ra|về|ve|ghé\s+qua|ghe\s+qua)\s+(.+?)(?:[,.!?]|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if match:
-        pickup = match.group(1).strip()
-        dropoff = match.group(2).strip()
-        dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", dropoff, maxsplit=1, flags=re.IGNORECASE)[0].strip()
-        dropoff = _strip_vehicle_suffix(dropoff)
+        pickup = _clean_route_endpoint(match.group(1))
+        dropoff = _clean_route_endpoint(match.group(2))
+        if _plain(dropoff).strip() in {"do", "do luon", "toi do", "den do", "ra do", "qua do", "nha hang do"}:
+            dropoff = ""
         return pickup or None, dropoff or None
 
     direct_destination = re.search(
-        r"\b(?:đặt|dat|gọi|goi|muốn|muon|cần|can)\s+xe\s+(?:giúp\s+(?:tôi|mình)\s+)?"
-        r"(?:đến|den|tới|toi|to)\s+(.+?)(?:[,.!?]|$)",
+        r"\b(?:đặt|dat|gọi|goi|muốn|muon|cần|can|book)\s+xe\s+(?:giúp\s+(?:tôi|mình)\s+)?"
+        r"(?:đến|den|tới|toi|to|sang|qua|ra|về|ve)\s+(.+?)(?:[,.!?]|$)",
         text,
         flags=re.IGNORECASE,
     )
     if direct_destination:
-        dropoff = re.split(r"\b(?:rồi|sau đó|và|sau khi)\b", direct_destination.group(1), maxsplit=1, flags=re.IGNORECASE)[0].strip()
-        dropoff = _strip_vehicle_suffix(dropoff)
+        dropoff = _clean_route_endpoint(direct_destination.group(1))
+        if _plain(dropoff).strip() in {"do", "do luon", "toi do", "den do", "ra do", "qua do", "nha hang do"}:
+            return None, None
         return None, dropoff or None
+
+    # If the utterance indicates a route change, intermediate stopover, cancellation,
+    # or calendar preference, do not greedily parse it with heuristic patterns without 'từ'.
+    if re.search(
+        r"\b(?:đổi|doi|thay|chuyển|chuyen|trước\s+khi|truoc\s+khi|sau\s+khi|sau\s+do|tạt\s+qua|tat\s+qua|ghé|ghe|dừng|dung|hủy|huy)\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return None, None
+
+    # Pattern 3: <pickup> (đến / tới / sang / qua / ra / về) <dropoff> (without 'từ')
+    stripped_text = re.sub(
+        r"^(?:đặt\s+xe|gọi\s+xe|book\s+xe|đi\s+xe|cho\s+tôi\s+xe|cho\s+mình\s+xe|muốn\s+đặt\s+xe|muốn\s+gọi\s+xe)\s+",
+        "",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    no_tu_match = re.search(
+        r"^(.+?)\s+(?:đến|den|tới|toi|to|sang|qua|ra|về|ve)\s+(.+?)(?:[,.!?]|$)",
+        stripped_text,
+        flags=re.IGNORECASE,
+    )
+    if no_tu_match:
+        p_cand = no_tu_match.group(1).strip()
+        if not re.match(r"^(?:đi|chở|đưa|chay|đón|tôi|mình|em|anh|chị|trước|sau|nếu|khi|lại|đổi|thay|chuyển|cho|giúp|tìm|xem|check|hủy)\b", p_cand, flags=re.IGNORECASE):
+            pickup = _clean_route_endpoint(p_cand)
+            dropoff = _clean_route_endpoint(no_tu_match.group(2))
+            dropoff_plain = _plain(dropoff).strip()
+            if dropoff_plain in {"do", "do luon", "toi do", "den do", "ra do", "qua do", "nha hang do", "noi", "quan", "cho do"}:
+                dropoff = ""
+            time_match = re.search(
+                r"\b(?:ngày\s+kia|ngay\s+kia|hôm\s+nay|hom\s+nay|ngày\s+mai|ngay\s+mai|sáng\s+mai|sang\s+mai|chiều\s+mai|chieu\s+mai|tối\s+mai|toi\s+mai)\b",
+                dropoff,
+                flags=re.IGNORECASE,
+            )
+            if pickup and dropoff and not time_match:
+                return pickup or None, dropoff or None
+
+    # Pattern 4: direct destination: (đi đến|đến|tới|sang|qua|ra|về) <dropoff>
+    endpoint_dest = re.search(
+        r"^(?:đi\s+|chở\s+|đưa\s+|chay\s+)?(?:đến|den|tới|toi|to|sang|qua|ra|về|ve)\s+(.+?)(?:[,.!?]|$)",
+        stripped_text,
+        flags=re.IGNORECASE,
+    )
+    if endpoint_dest:
+        dropoff = _clean_route_endpoint(endpoint_dest.group(1))
+        dropoff_plain = _plain(dropoff).strip()
+        time_match = re.search(
+            r"\b(?:ngày\s+kia|ngay\s+kia|hôm\s+nay|hom\s+nay|ngày\s+mai|ngay\s+mai|sáng\s+mai|sang\s+mai|chiều\s+mai|chieu\s+mai|tối\s+mai|toi\s+mai)\b",
+            dropoff,
+            flags=re.IGNORECASE,
+        )
+        if dropoff_plain not in {"do", "do luon", "toi do", "den do", "ra do", "qua do", "nha hang do", "noi", "quan", "cho do"} and not time_match:
+            if dropoff:
+                return None, dropoff or None
+
+    # Pattern 5: direct pickup: (đón ở|đón tại|ở|tại) <pickup>
+    endpoint_pickup = re.search(
+        r"^(?:đón(?:\s+(?:tôi|mình|khách))?\s+)?(?:ở|tại|o|tai)\s+(.+?)(?:[,.!?]|$)",
+        stripped_text,
+        flags=re.IGNORECASE,
+    )
+    if endpoint_pickup:
+        pickup = _clean_route_endpoint(endpoint_pickup.group(1))
+        if pickup and not re.search(r"\b(?:ngày\s+kia|ngay\s+kia|hôm\s+nay|hom\s+nay|ngày\s+mai|ngay\s+mai)\b", pickup, flags=re.IGNORECASE):
+            return pickup or None, None
 
     # A route that names a pickup but refers only to "there" intentionally
     # carries no destination. The
     # dependent domain must provide the destination; the planner must not
     # turn the reference "đó" into an invented address.
     return None, None
-
-
-def _strip_vehicle_suffix(value: str) -> str:
-    result = value
-    for _ in range(2):
-        result = re.sub(
-            r"\s+(?:cho\s+)?(?:[1-9][0-9]?|một|mot|hai|ba|bốn|bon|năm|nam|sáu|sau|bảy|bay)\s*(?:người|nguoi|khách|khach|passengers?)\s*$",
-            "",
-            result,
-            flags=re.IGNORECASE,
-        )
-        result = re.sub(
-            r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
-            "",
-            result,
-            flags=re.IGNORECASE,
-        )
-    return result.strip()
 
 
 def _clean_changed_route_value(value: str) -> str | None:
@@ -768,12 +900,14 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         stopover = _stopover_address(text)
         if stopover:
             slots["stopover_address"] = stopover
-        if "4 cho" in lowered or "bon cho" in lowered:
-            slots["vehicle_type"] = "CAR_4"
-        elif "7 cho" in lowered or "bay cho" in lowered:
+        if any(re.search(rf"\b{v}\b", lowered) for v in ("7 cho", "bay cho", "car 7", "car7", "xe 7", "7-cho")):
             slots["vehicle_type"] = "CAR_7"
-        elif "xe may" in lowered:
+        elif any(re.search(rf"\b{v}\b", lowered) for v in ("4 cho", "bon cho", "car 4", "car4", "xe 4", "4-cho", "o to 4", "oto 4")):
+            slots["vehicle_type"] = "CAR_4"
+        elif any(re.search(rf"\b{v}\b", lowered) for v in ("xe may", "bike", "xe om", "xe ôm", "motor", "motorbike")):
             slots["vehicle_type"] = "BIKE"
+        elif any(re.search(rf"\b{v}\b", lowered) for v in ("taxi", "o to", "oto", "xe hoi", "car")):
+            slots["vehicle_type"] = "CAR_4"
         passenger_match = re.search(r"\b([1-9][0-9]?)\s*(?:nguoi|khach|passengers?)\b", lowered)
         if passenger_match:
             slots["passenger_count"] = int(passenger_match.group(1))
@@ -809,19 +943,8 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["delivery_preference"] = "home"
         if "giao ve nha" in lowered or "giao toi nha" in lowered:
             slots["address_reference"] = "home"
-        dish_match = re.search(
-            r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon)\s+[^,.;!?]+", lowered
-        )
-        if dish_match:
-            dish_query = re.split(
-                r"\b(?:giao\s+(?:ve|toi)|ship|den\s+|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b",
-                dish_match.group(0),
-                maxsplit=1,
-            )[0].strip()
-            dish_query = re.sub(r"^(?:cho toi|cho minh|giup toi|giup minh)\s+", "", dish_query).strip()
-            if dish_query:
-                slots["dish_query"] = dish_query
-        elif _has_any(lowered, ("an trua", "bua trua")):
+
+        if _has_any(lowered, ("an trua", "bua trua")):
             slots["dish_query"] = "cơm, phở, bún"
             slots["category"] = "ăn trưa"
         elif _has_any(lowered, ("an sang", "bua sang")):
@@ -832,9 +955,54 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["category"] = "ăn tối"
         elif _has_any(lowered, ("goi y", "an gi", "mon ngon")):
             slots["dish_query"] = "phở, bún, cơm"
-        location = _location(text)
-        if location:
-            slots["location"] = location
+        else:
+            m_unit = re.search(
+                r"\b[1-9][0-9]?\s*(?:suất|suat|phần|phan|ly|cốc|coc|bát|bat|tô|to|hộp|hop|đĩa|dia)\s+([^,.;!?]+?)(?:\s*,\s*|\s+(?:giao|ship|mang|địa\s+chỉ|dia\s+chi|ghi\s+chú|ghi\s+chu|it\s+|khong\s+|tìm|tim|quá|qua|nhé|nhe)\b|$)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            m_action = re.search(
+                r"\b(?:tìm\s+quán\s+bán|tim\s+quan\s+ban|muốn\s+gọi|muon\s+goi|muốn\s+ăn|muon\s+an|thèm\s+ăn|them\s+an|gọi\s+giúp\s+tôi|goi\s+giup\s+toi|gọi\s+cho\s+tôi|goi\s+cho\s+toi|món|menu\s+nào\s+có|menu\s+nao\s+co)\s+([^,.;!?]+?)(?:\s*,\s*|\s+(?:ngon|giá\s+tốt|gia\s+tot|quá|qua|ghi\s+chú|ghi\s+chu|it\s+|khong\s+|giao|ship|mang|địa\s+chỉ|dia\s+chi|tìm|tim|ở|o|tại|tai|nhé|nhe)\b|$)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if m_unit:
+                slots["dish_query"] = m_unit.group(1).strip()
+            elif m_action:
+                slots["dish_query"] = m_action.group(1).strip()
+            else:
+                dish_match = re.search(
+                    r"(?:pho|bún|bun|com|burger|pizza|ga ran|ga chien|hamburger|do an|mon|tra sua|banh mi|mi cay|che|hu tieu|banh cuon|nem lui|tra dao|ca phe|matcha|sua chua)\s*[^,.;!?]*",
+                    lowered,
+                )
+                if dish_match:
+                    dish_query = re.split(
+                        r"\b(?:giao\s+(?:ve|toi|qua)|ship|den\s+|(?:va|roi)\s+(?:dat|goi)|dat\s+lich|goi\s+xe)\b",
+                        dish_match.group(0),
+                        maxsplit=1,
+                    )[0].strip()
+                    dish_query = re.sub(r"^(?:cho toi|cho minh|giup toi|giup minh)\s+", "", dish_query).strip()
+                    if dish_query:
+                        slots["dish_query"] = dish_query
+
+        food_loc_match = re.search(
+            r"\b(?:giao\s+(?:về|ve|tới|toi|qua|cho\s+tôi\s+ở|cho\s+toi\s+o|đến|den)|ship\s+(?:tới|toi|đến|den|về|ve|gấp\s+đến|gap\s+den)|mang\s+(?:tới|toi|đến|den|về|ve)|địa\s+chỉ|dia\s+chi)\s+([^,.!?;]+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if food_loc_match:
+            loc = food_loc_match.group(1).strip()
+            loc = re.sub(r"\s+\b(?:nhé|nhe|ạ|a|giúp\s+mình|giup\s+minh|giúp\s+tôi|giup\s+toi)\b.*$", "", loc, flags=re.IGNORECASE).strip()
+            loc_plain = _routing_plain(loc).strip()
+            if loc_plain in {"nha", "nha rieng"}:
+                slots["address_reference"] = "home"
+                slots["delivery_preference"] = "home"
+            else:
+                slots["location"] = loc
+        else:
+            location = _location(text)
+            if location:
+                slots["location"] = location
         if "fast food" in lowered or "do an nhanh" in lowered:
             slots["category"] = "fast food"
     if domain == "healthcare":
@@ -844,8 +1012,16 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         appointment_date = _healthcare_requested_date(text)
         if appointment_date:
             slots["appointment_date"] = appointment_date
-        for department in ("than kinh", "tieu hoa", "tim mach", "noi tiet", "da lieu", "nhi khoa"):
-            if department in lowered:
+        healthcare_depts = (
+            "tai mui hong", "co xuong khop", "rang ham mat", "noi tong quat",
+            "da khoa", "than kinh", "tieu hoa", "tim mach", "noi tiet",
+            "da lieu", "nhi khoa", "nhi", "mat", "phu san", "san phu khoa",
+            "ung buou", "ho hap", "nam hoc", "dinh duong", "chan thuong",
+            "huyet hoc", "y hoc co truyen", "phuc hoi chuc nang", "tam benh",
+            "tam than", "truyen nhiem",
+        )
+        for department in healthcare_depts:
+            if re.search(rf"\b{department}\b", lowered):
                 slots["department"] = department
                 break
         if "sang mai" in lowered:
@@ -1029,12 +1205,18 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "xem tong",
         "dat luon",
     )
-    healthcare_words = ("lich kham", "bac si", "kham", "khoa", "than kinh", "tam ly", "chon lich", "trieu chung")
+    healthcare_words = (
+        "lich kham", "bac si", "kham", "khoa", "than kinh", "tam ly", "chon lich", "trieu chung",
+        "sang mai", "chieu mai", "toi mai", "ngay mai", "ngay kia", "sang nay", "chieu nay", "toi nay", "mai",
+    )
     # A bare "N người" follow-up keeps the established Restaurant flow when
     # both Restaurant and Ride are active. Ride passenger edits remain
     # unambiguous when the message names the ride/vehicle or Ride is the only
     # active task.
-    restaurant_words = ("dat ban", "nha hang", "chon nha hang", "so nguoi", "nguoi", "khach")
+    restaurant_words = (
+        "dat ban", "nha hang", "chon nha hang", "so nguoi", "nguoi", "khach", "ban",
+        "hoan kiem", "cau giay", "tay ho", "ba dinh", "ha noi",
+    )
     ride_words = (
         "dat xe",
         "dat chuyen",
@@ -1044,6 +1226,19 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "xe may",
         "xe 4 cho",
         "xe 7 cho",
+        "4 cho",
+        "7 cho",
+        "bon cho",
+        "bay cho",
+        "o to",
+        "oto",
+        "xe o to",
+        "xe oto",
+        "xe hoi",
+        "taxi",
+        "bike",
+        "car",
+        "xe om",
         "doi phuong tien",
         "thay phuong tien",
         "loai xe",
@@ -1051,6 +1246,10 @@ def _follow_up_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         "ghe qua",
         "diem dung",
         "vi tri hien tai",
+        "chon o to",
+        "di o to",
+        "di xe may",
+        "di taxi",
     )
 
     matches: list[int] = []
@@ -1191,10 +1390,40 @@ def _current_location_plan(text: str, current_location: dict[str, Any] | None = 
 
 
 def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
-    identity = _has_any(lowered, ("ban la ai", "ban lam duoc gi", "ban co the lam gi", "x-one la gi"))
-    greeting = bool(re.fullmatch(r"\s*(?:xin chao|chao|chao ban|hello|hi|hey)[!.?\s]*", lowered))
-    wellbeing = _has_any(lowered, ("hom nay ban the nao", "ban khoe khong", "ban dang lam gi"))
-    thanks = bool(re.fullmatch(r"\s*(?:cam on|cam on ban|thank you|thanks)[!.?\s]*", lowered))
+    unsupported_patterns = (
+        r"\b(?:python|javascript|typescript|c\+\+|golang|java|coding|doan ma)\b",
+        r"\b(?:lap trinh|viet code)\b",
+        r"\b(?:giai phuong trinh|phuong trinh|bac hai|toan hoc)\b",
+        r"\b(?:bai van|phan tich tac pham|truyen kieu|nghi luan)\b",
+        r"\b(?:chinh tri|chinh tri quoc te)\b",
+        r"\b(?:sua may tinh|card man hinh|sap nguon|phan cung)\b",
+        r"\b(?:bai tho|tho tinh|lam tho|viet tho)\b",
+        r"\b(?:hack|be khoa|tai khoan facebook)\b",
+        r"\b(?:dich doan van|sang tieng phap|tieng anh sang|translate)\b",
+        r"\b(?:co phieu|chung khoan|thi truong chung khoan|crypto|gia vang)\b",
+        r"\b(?:may bay|chuyen bay|flight|khach san|hotel|tau hoa|train)\b",
+    )
+    if any(re.search(pat, lowered) for pat in unsupported_patterns):
+        return AssistantPlan(
+            interaction_mode="unsupported",
+            assistant_message=(
+                "Xin lỗi bạn, mình chỉ hỗ trợ đặt xe, đồ ăn, nhà hàng và lịch khám. "
+                "Bạn muốn mình hỗ trợ dịch vụ nào?"
+            ),
+        )
+
+    identity = _has_any(lowered, ("ban la ai", "ban lam duoc gi", "ban co the lam gi", "x-one la gi", "ai tao ra ban"))
+    greeting = bool(re.search(r"\b(?:xin chao|chao ban|chao|hello|hi|hey)\b", lowered))
+    wellbeing = _has_any(lowered, ("hom nay ban the nao", "ban khoe khong", "ban dang lam gi", "tam trang toi khong vui", "tro chuyen cung toi"))
+    thanks = bool(re.search(r"\b(?:cam on|cam on ban|thank you|thanks)\b", lowered))
+    farewell = bool(re.search(r"\b(?:tam biet|hen gap lai|goodbye|bye)\b", lowered))
+    humor = _has_any(lowered, ("chuyen cuoi", "ke chuyen cuoi", "ke chuyen vui"))
+    weather_query = _has_any(lowered, ("thoi tiet", "du bao thoi tiet")) and not _has_any(
+        lowered, ("dat xe", "goi xe", "dat ban", "dat mon", "ship", "giao")
+    )
+    wishes = _has_any(lowered, ("chuc ban", "ngay lam viec vui ve", "ngay moi vui ve"))
+    capability_chat = _has_any(lowered, ("co biet nau an khong", "biet lam gi"))
+
     if identity:
         return AssistantPlan(
             interaction_mode="chitchat",
@@ -1203,11 +1432,11 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
                 "và tìm lịch khám. Bạn cứ nói điều mình đang cần theo cách tự nhiên nhé."
             ),
         )
-    if greeting or wellbeing:
+    if greeting or wellbeing or wishes or humor or weather_query or capability_chat:
         return AssistantPlan(
             interaction_mode="chitchat",
             assistant_message=(
-                "Chào bạn! Mình đang rất ổn và sẵn sàng đồng hành cùng bạn. "
+                "Chào bạn! Mình đang rất sẵn sàng đồng hành cùng bạn. "
                 "Hôm nay bạn muốn tìm món ngon, gọi xe, đặt bàn hay xem lịch khám?"
             ),
         )
@@ -1216,20 +1445,10 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             interaction_mode="chitchat",
             assistant_message="Rất vui vì giúp được bạn. Khi cần thêm gì, cứ gọi mình nhé!",
         )
-
-    if _has_any(
-        lowered,
-        (
-            "python", "javascript", "typescript", "viet code", "lap trinh",
-            "toan hoc", "chinh tri", "lam bai tap", "sua may tinh",
-        ),
-    ):
+    if farewell:
         return AssistantPlan(
-            interaction_mode="unsupported",
-            assistant_message=(
-                "Xin lỗi bạn, mình chỉ hỗ trợ đặt xe, đồ ăn, nhà hàng và lịch khám. "
-                "Bạn muốn mình hỗ trợ dịch vụ nào?"
-            ),
+            interaction_mode="chitchat",
+            assistant_message="Tạm biệt bạn nhé! Hẹn gặp lại bạn bất cứ khi nào bạn cần.",
         )
 
     if _has_any(lowered, ("troi mua di dau", "nen di dau khi mua", "mua gio di dau")):
@@ -1400,10 +1619,29 @@ def deterministic_plan(
             "xac nhan",
             "xe 4 cho",
             "xe 7 cho",
+            "4 cho",
+            "7 cho",
+            "bon cho",
+            "bay cho",
+            "o to",
+            "oto",
+            "xe o to",
+            "xe oto",
+            "xe hoi",
+            "taxi",
+            "bike",
+            "car",
+            "xe om",
             "sang mai",
+            "chieu mai",
+            "toi mai",
             "toi nay",
+            "trua nay",
+            "sang nay",
+            "chieu nay",
             "ngay mai",
             "ngay kia",
+            "mai",
             "gio",
             "khoa",
             "tam ly",
@@ -1419,6 +1657,15 @@ def deterministic_plan(
             "do an nhanh",
             "goi y",
             "gan day",
+            "chon o to",
+            "di o to",
+            "di xe may",
+            "di taxi",
+            "dung roi",
+            "chuan roi",
+            "tiep tuc",
+            "khach",
+            "ban",
         ),
     )
     restaurant_reference_only = _has_any(
@@ -1432,51 +1679,125 @@ def deterministic_plan(
             "quan do",
         ),
     ) and not _has_any(lowered, ("dat ban", "giu ban", "dat cho", "con ban", "ban trong"))
-    explicit_restaurant = _has_any(
-        lowered,
-        ("dat ban", "nha hang", "an tai nha hang", "an toi tai", "con ban", "ban trong", "dat cho"),
-    ) and not restaurant_reference_only
-    explicit_food = _has_any(
-        lowered,
-        (
-            "giao ve",
-            "giao toi",
-            "ship",
-            "dat mon",
-            "pho",
-            "bun",
-            "com",
-            "do an",
-            "ga ran",
-            "ga chien",
-            "fast food",
-            "goi y",
-            "gan day",
-            "an trua",
-            "bua trua",
-            "an toi",
-            "bua toi",
-            "an sang",
-            "bua sang",
-            "mon an",
-            "mon ngon",
-            "an gi",
-            "thich an",
-        ),
-    ) and not (explicit_restaurant and "giao" not in lowered)
-    explicit_healthcare = _has_any(
-        lowered, ("dat lich kham", "lich kham", "bac si", "kham", "than kinh", "dau dau", "trieu chung")
+    dat_cho_table = bool(
+        re.search(r"\bdat\s+cho\b(?!\s+(?:minh|toi|em|anh|chi|chung\s+toi|nguoi|khach))", lowered)
     )
-    explicit_ride = (
-        _has_any(lowered, ("dat xe", "dat chuyen", "goi xe", "muon xe", "can xe", "di tu", "tu ")) and (
-            _route(text)[0] is not None or "xe" in lowered
+    has_restaurant_table = bool(
+        re.search(r"\bquan\b.*?\b(?:nguoi|khach|ban\s+cho|ban\s+trong|dat\s+ban|giu\s+ban)\b", lowered)
+    ) or bool(re.search(r"\b(?:nguoi|khach|dat\s+ban|giu\s+ban)\b.*?\bquan\b", lowered))
+    explicit_restaurant = (
+        _has_any(
+            lowered,
+            (
+                "dat ban", "giu ban", "nha hang", "an tai nha hang", "an toi tai",
+                "con ban", "ban trong", "quan nuong", "quan lau", "quan an", "quan nhau", "quan bbq",
+            ),
         )
-    ) or _stopover_address(text) is not None
+        or dat_cho_table
+        or has_restaurant_table
+    ) and not restaurant_reference_only
+
+    healthcare_department_keywords = (
+        "tai mui hong", "co xuong khop", "rang ham mat", "noi tong quat",
+        "da khoa", "than kinh", "tieu hoa", "tim mach", "noi tiet",
+        "da lieu", "nhi khoa", "san phu khoa", "phu san", "ung buou", "ho hap",
+        "dinh duong", "chan thuong", "huyet hoc", "y hoc co truyen", "phuc hoi chuc nang",
+        "tam benh", "tam than", "truyen nhiem",
+    )
+    has_dep_keyword = any(re.search(rf"\b{k}\b", lowered) for k in healthcare_department_keywords)
+    explicit_healthcare = (
+        _has_any(
+            lowered,
+            (
+                "dat lich kham", "lich kham", "bac si", "kham", "chuyen khoa", "kham benh",
+                "dang ky kham", "lich hen kham", "hen kham", "dau dau", "trieu chung", "benh vien",
+            ),
+        )
+        or has_dep_keyword
+    )
+
+    food_delivery_signals = (
+        "giao ve", "giao toi", "giao den", "giao qua", "giao cho", "giao giup",
+        "ship toi", "ship den", "ship ve", "ship qua", "ship gap", "ship cho", "ship",
+        "mang toi", "mang den", "mang ve", "mang qua",
+        "dat mon", "goi mon", "dat do an", "goi do an",
+        "suat", "phan", "menu", "tim quan ban", "quan ban",
+    )
+    has_delivery_signal = any(re.search(rf"\b{re.escape(k)}\b", lowered) for k in food_delivery_signals)
+
+    explicit_ride = (
+        (
+            _has_any(
+                lowered,
+                (
+                    "dat xe", "dat chuyen", "goi xe", "muon xe", "can xe", "di tu", "tu ",
+                    "don toi", "don o", "don tai", "cho mot cuoc", "book xe", "cuoc xe",
+                    "chuyen xe", "chuyen di", "tim xe", "mot cuoc", "xe 4 cho", "xe 7 cho",
+                    "xe may", "car 4", "car 7", "xe om", "chuyen xe may", "chuyen o to",
+                    "o to", "oto", "taxi", "car", "bike",
+                ),
+            )
+            and (_route(text)[0] is not None or _route(text)[1] is not None or "xe" in lowered or "cuoc" in lowered)
+        )
+        or (_route(text)[0] is not None and _route(text)[1] is not None and not has_delivery_signal)
+        or _stopover_address(text) is not None
+    )
+
+    food_dish_keywords = (
+        "com s uon", "com ga", "com rang", "com tam", "com nieu",
+        "pho bo", "pho ga", "pho tai", "pho chin", "pho cuon", "pho ha noi",
+        "bun cha", "bun dau", "bun bo", "bun rieu", "bun oc",
+        "ga ran", "ga chien", "tra sua", "banh mi", "pizza", "mi cay",
+        "che sau", "hu tieu", "banh cuon", "nem lui", "nem",
+        "tra dao", "ca phe", "cafe", "matcha", "sua chua", "burger", "hamburger",
+        "do an", "mon an", "an trua", "bua trua", "an toi", "bua toi",
+        "an sang", "bua sang", "mon ngon", "an gi", "thich an", "them an",
+        "lau", "nuong", "xoi", "chao", "hai san", "fast food", "do an nhanh",
+    )
+    has_street_pho = bool(re.search(r"\bpho\s+(?:co|hue|di\s*bo|phuong|xa)\b", lowered))
+    has_food_pho = bool(re.search(r"\bpho\s+(?:bo|ga|tai|chin|xao|nuoc|cuon|ha\s*noi|bat|to)\b", lowered)) or (
+        bool(re.search(r"\bpho\b", lowered)) and not has_street_pho
+    )
+    has_food_dish = any(
+        re.search(rf"\b{re.escape(k)}\b", lowered) for k in food_dish_keywords
+    ) or has_food_pho
+    if "com" in lowered and not any(k in lowered for k in ("com s", "com g", "com r", "com t", "com n", "suat com", "phan com", "dia com", "an com")):
+        if bool(re.search(r"\bvincom\b", lowered)) and not bool(re.search(r"\bcom\b(?!\s*center|\s*ba\s*trieu|\s*cau\s*giay)", lowered)):
+            has_food_dish = any(
+                re.search(rf"\b{re.escape(k)}\b", lowered) for k in food_dish_keywords
+            ) or has_food_pho
+
+    if has_delivery_signal and not _has_any(lowered, ("dat ban", "giu ban", "nha hang")):
+        explicit_restaurant = False
+
+    explicit_food = (has_food_dish or has_delivery_signal) and not (
+        explicit_restaurant and "giao" not in lowered and "ship" not in lowered and "mang" not in lowered
+    )
+    if explicit_ride and not has_delivery_signal and not any(
+        k in lowered for k in ("suat", "phan", "them an", "com ga", "bun cha", "dat mon", "goi mon")
+    ):
+        explicit_food = False
+
+    active_restaurant = next(
+        (
+            item for item in previous_tasks
+            if isinstance(item, dict)
+            and item.get("domain") == "restaurant"
+            and item.get("phase") not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+        ),
+        None,
+    )
+    if active_restaurant and not has_delivery_signal and _has_any(lowered, ("an lau", "lau", "nuong", "bbq", "hai san", "toi muon an")):
+        explicit_restaurant = True
+        explicit_food = False
 
     tasks: list[PlannedTask] = []
     if explicit_restaurant:
+        rest_slots = _semantic_slots(text, "restaurant")
+        if isinstance(active_restaurant, dict) and isinstance(active_restaurant.get("extracted_slots"), dict):
+            rest_slots = {**active_restaurant["extracted_slots"], **rest_slots}
         tasks.append(
-            _task("restaurant", text, "Tìm và đặt bàn tại nhà hàng phù hợp", _semantic_slots(text, "restaurant"))
+            _task("restaurant", text, "Tìm và đặt bàn tại nhà hàng phù hợp", rest_slots)
         )
     if explicit_food:
         tasks.append(_task("food", text, "Tìm món và chuẩn bị đơn giao tận nơi", _semantic_slots(text, "food")))
@@ -1486,10 +1807,9 @@ def deterministic_plan(
         )
     if explicit_ride:
         ride_slots = _semantic_slots(text, "ride")
-        # A stopover-only follow-up is a material edit to the active route. The
-        # offline fallback retains the existing semantic route so Core A can
+        # A follow-up or stopover edit retains the existing semantic route so Core A can
         # request a fresh quote instead of asking for the same endpoints again.
-        if ride_slots.get("stopover_address") and not ride_slots.get("pickup_address") and not ride_slots.get("dropoff_address"):
+        if not ride_slots.get("pickup_address") and not ride_slots.get("dropoff_address"):
             active_ride = next(
                 (
                     item for item in previous_tasks
@@ -1502,10 +1822,10 @@ def deterministic_plan(
             if isinstance(active_ride, dict) and isinstance(active_ride.get("extracted_slots"), dict):
                 ride_slots = {**active_ride["extracted_slots"], **ride_slots}
         dropoff = str(ride_slots.get("dropoff_address", ""))
-        placeholder_destination = _plain(dropoff).strip() in {"do", "toi do", "den do", "nha hang do"}
+        placeholder_destination = _plain(dropoff).strip() in {"do", "toi do", "den do", "ra do", "qua do", "nha hang do"}
         references_prior_destination = (not dropoff or placeholder_destination) and _has_any(
             lowered,
-            ("nha hang do", "toi do", "qua do", "dua toi toi do", "sau do", "roi dat xe", "sau do dat xe"),
+            ("nha hang do", "toi do", "qua do", "ra do", "den do", "dua toi toi do", "sau do", "roi dat xe", "sau do dat xe", "xong roi", "xong roi dat xe"),
         )
         dependencies = [
             index
@@ -1516,7 +1836,19 @@ def deterministic_plan(
 
     discarded_task_refs = _discard_targets(text, previous_tasks)
     concise_location_reply = _looks_like_short_location_reply(text)
-    if not tasks and not discarded_task_refs and previous_tasks and (follow_up or concise_location_reply):
+    active_previous_tasks = [
+        item for item in previous_tasks
+        if isinstance(item, dict)
+        and str(item.get("domain", "")) in SUPPORTED_DOMAINS
+        and str(item.get("phase", "")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
+    ]
+    has_active_slots = any(
+        bool(_semantic_slots(text, str(t.get("domain", ""))))
+        for t in active_previous_tasks
+    )
+    is_follow_up = follow_up or concise_location_reply or has_active_slots or (len(active_previous_tasks) == 1)
+
+    if not tasks and not discarded_task_refs and previous_tasks and is_follow_up:
         targets = _follow_up_targets(text, previous_tasks)
         if len(targets) > 1:
             question = "Bạn muốn tiếp tục với yêu cầu nào: món ăn, đặt bàn hay lịch khám?"
@@ -1542,6 +1874,25 @@ def deterministic_plan(
                     ):
                         slots.pop("start_at", None)
                     slots.update(explicit_slots)
+
+                    if domain == "ride":
+                        pickup, dropoff = _route(text)
+                        if pickup:
+                            slots["pickup_address"] = pickup
+                        if dropoff:
+                            slots["dropoff_address"] = dropoff
+                        is_vehicle_reply = any(
+                            re.search(rf"\b{v}\b", lowered)
+                            for v in ("o to", "oto", "4 cho", "7 cho", "bon cho", "bay cho", "xe may", "taxi", "bike", "car", "xe om")
+                        )
+                        if not is_vehicle_reply and not pickup and not dropoff:
+                            clean_endpoint = _clean_route_endpoint(text)
+                            if clean_endpoint and len(clean_endpoint.split()) <= 12:
+                                if not slots.get("pickup_address"):
+                                    slots["pickup_address"] = clean_endpoint
+                                elif not slots.get("dropoff_address"):
+                                    slots["dropoff_address"] = clean_endpoint
+
                     if (
                         domain == "restaurant"
                         and not slots.get("location")
@@ -1550,8 +1901,27 @@ def deterministic_plan(
                         slots["location"] = text
                     if domain == "restaurant":
                         party_size = _party_size(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4)))
-                        if party_size is not None and _has_any(lowered, ("nguoi", "khach", "ban")):
+                        if party_size is None and not slots.get("party_size"):
+                            num_match = re.fullmatch(r"([1-9][0-9]?)", text.strip())
+                            if num_match:
+                                party_size = int(num_match.group(1))
+                        if party_size is not None:
                             slots["party_size"] = party_size
+                        if not slots.get("start_at"):
+                            start_at = _time_slot(text)
+                            if start_at:
+                                slots["start_at"] = start_at
+
+                    if domain == "healthcare":
+                        if not slots.get("appointment_date"):
+                            req_date = _healthcare_requested_date(text)
+                            if req_date:
+                                slots["appointment_date"] = req_date
+                        if not slots.get("start_at") and _has_explicit_clock(text):
+                            start_at = _time_slot(text)
+                            if start_at:
+                                slots["start_at"] = start_at
+
                     tasks.append(
                         _task(
                             domain,
