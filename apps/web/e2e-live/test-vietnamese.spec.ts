@@ -39,8 +39,9 @@ test("Verify Vietnamese text rendering and form update in Provider Portal", asyn
   await page.reload();
   await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
 
-  await expect(page.locator(".admin-banner-title")).toContainText("Nhà Hàng Cơm Niêu Sài Gòn", { timeout: 10_000 });
-  const bannerHeading = await page.locator(".admin-banner-title").innerText();
+  const bannerHeadingLocator = page.getByText("Nhà Hàng Cơm Niêu Sài Gòn", { exact: true }).first();
+  await expect(bannerHeadingLocator).toBeVisible({ timeout: 10_000 });
+  const bannerHeading = await bannerHeadingLocator.innerText();
   console.log("Banner heading after reload:", bannerHeading);
   expect(bannerHeading).not.toContain("\uFFFD");
   expect(bannerHeading).not.toMatch(/\?[a-z]/i);

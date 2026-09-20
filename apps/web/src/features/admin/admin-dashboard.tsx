@@ -2217,7 +2217,7 @@ function WorkflowsSubtab({
               style={{ height: "32px", padding: "0 12px", fontSize: "var(--text-sm)", display: "inline-flex", alignItems: "center", gap: "5px", background: "#F59E0B", borderColor: "#D97706", color: "#78350F" }}
             >
               <Zap size={14} />
-              <span>Bồi thường sự cố (Voucher)</span>
+              <span>Bù trừ sự cố (Voucher)</span>
             </button>
           ) : (
             <button
@@ -3743,7 +3743,7 @@ function IncidentCompensationModal({
               <input
                 type="number"
                 min={1000}
-                step={5000}
+                step={1000}
                 value={amount}
                 onChange={(e) => setAmount(Number(e.target.value))}
                 required

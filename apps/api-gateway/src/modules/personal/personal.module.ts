@@ -394,8 +394,29 @@ export class LocationService {
       }
     }
     const distance = haversineKm(origin, destination);
+    if (!providerUrl) {
+      // Local/demo mode still needs to satisfy the same auditable route
+      // contract as a real provider so the ride quote flow can be exercised
+      // without making a network call. Keep the estimate deterministic and
+      // explicit about its provider instead of returning an incomplete route.
+      const distanceMeters = Math.max(1, Math.round(distance * 1000));
+      const durationSeconds = Math.max(60, Math.round(distance / 22 * 3600));
+      const routeGeometry = [origin, destination];
+      return {
+        provider: 'deterministic-straight-line',
+        status: 'RESOLVED',
+        distance_km: Number(distance.toFixed(2)),
+        duration_minutes: Math.max(1, Math.ceil(durationSeconds / 60)),
+        origin,
+        destination,
+        route_distance_meters: distanceMeters,
+        route_duration_seconds: durationSeconds,
+        route_geometry: routeGeometry,
+        route_snapshot_hash: stableHash({ origin, destination, distanceMeters, durationSeconds, routeGeometry, mode: 'straight-line' }),
+      };
+    }
     return {
-      provider: providerUrl ? 'configured-routing-provider-unavailable' : 'deterministic-straight-line',
+      provider: 'configured-routing-provider-unavailable',
       status: 'ESTIMATED',
       distance_km: Number(distance.toFixed(2)),
       duration_minutes: Math.max(1, Math.ceil(distance / 22 * 60)),

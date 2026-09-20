@@ -27,9 +27,9 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
 
     // Verify master provider badge and full 4-service access
     await expect(page.locator(".admin-banner-subtitle")).toContainText("Master 4 Dịch Vụ");
-    await expect(page.getByRole("button", { name: /Chuyến xe|Ride Partner/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Đơn món|Food Merchant/i }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Lịch khám|Healthcare/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Chuyến xe|Ride Partner/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Đơn món|Food Merchant/i }).first()).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Lịch khám|Healthcare/i }).first()).toBeVisible();
 
     // Open Gắn & Quản lý Dịch vụ tab
     const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
@@ -38,7 +38,7 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
 
     // Verify profile section and items table load
     await expect(page.getByRole("heading", { name: /Hồ sơ Cơ sở & Thiết lập Kết nối/i })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(/Danh sách Dịch vụ \/ Sản phẩm đã gắn vào X-One/i)).toBeVisible();
+    await expect(page.getByText(/Danh mục Dịch vụ & Món ăn/i)).toBeVisible();
   });
 
   test("2. Newly registered external provider is isolated strictly to registered domain", async ({ page }) => {
@@ -75,8 +75,8 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     await expect(page.locator(".admin-banner-subtitle")).toContainText("Nhà hàng & Ẩm thực");
 
     // 2. Food domain is visible, but Ride and Healthcare are NOT visible
-    await expect(page.getByRole("button", { name: /Chuyến xe|Ride/i })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Lịch khám|Healthcare/i })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /Chuyến xe|Ride/i })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /Lịch khám|Healthcare/i })).toHaveCount(0);
 
     // 3. Switch to Gắn & Quản lý Dịch vụ
     const servicesTab = page.getByRole("tab", { name: /Gắn & Quản lý Dịch vụ/i });
@@ -138,7 +138,7 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
 
     // 1. Verify Tab 1 (Ride) - Either active ride or empty state with PostgreSQL connect
-    const rideTab = page.getByRole("button", { name: /Chuyến xe|Ride Partner/i }).first();
+    const rideTab = page.getByRole("tab", { name: /Chuyến xe|Ride Partner/i }).first();
     await rideTab.click();
     await page.waitForTimeout(1000);
     const hasRide = await page.getByText(/Cuốc xe đang điều phối/i).count();
@@ -146,15 +146,15 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     expect(hasRide + hasEmptyRide).toBeGreaterThan(0);
 
     // 2. Verify Tab 2 (Food) - PostgreSQL Live Data badge
-    const foodTab = page.getByRole("button", { name: /Đơn món|Food Merchant/i }).first();
+    const foodTab = page.getByRole("tab", { name: /Đơn món|Food Merchant/i }).first();
     await foodTab.click();
     await page.waitForTimeout(1000);
-    await expect(page.getByText(/PostgreSQL Live Data/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Trạng thái Microservices/i).first()).toBeVisible({ timeout: 10_000 });
 
     // 3. Verify Tab 3 (Healthcare) - PostgreSQL Live Data badge
-    const healthTab = page.getByRole("button", { name: /Lịch khám|Healthcare/i }).first();
+    const healthTab = page.getByRole("tab", { name: /Lịch khám|Healthcare/i }).first();
     await healthTab.click();
     await page.waitForTimeout(1000);
-    await expect(page.getByText(/PostgreSQL Live Data/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Trạng thái Microservices/i).first()).toBeVisible({ timeout: 10_000 });
   });
 });

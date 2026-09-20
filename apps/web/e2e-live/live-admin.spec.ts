@@ -38,18 +38,22 @@ test.describe("live local admin", () => {
   });
 
   test("loads the operational dashboard and denies a normal user", async ({ page }) => {
-    const adminEmail = process.env.LIVE_E2E_ADMIN_EMAIL;
-    const adminPassword = process.env.LIVE_E2E_ADMIN_PASSWORD;
-    const normalEmail = process.env.LIVE_E2E_NORMAL_EMAIL;
-    const normalPassword = process.env.LIVE_E2E_NORMAL_PASSWORD;
-    if (!adminEmail || !adminPassword || !normalEmail || !normalPassword) throw new Error("LIVE_E2E_ADMIN_* and LIVE_E2E_NORMAL_* credentials are required.");
+    const adminEmail = process.env.LIVE_E2E_ADMIN_EMAIL ?? "admin@xone.local";
+    const adminPassword = process.env.LIVE_E2E_ADMIN_PASSWORD ?? "Password123!";
+    const normalEmail = process.env.LIVE_E2E_NORMAL_EMAIL ?? "user@xone.local";
+    const normalPassword = process.env.LIVE_E2E_NORMAL_PASSWORD ?? "Password123!";
 
     await login(page, adminEmail, adminPassword, "Local Admin");
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: /Trung tâm vận hành X-One/i })).toBeVisible({ timeout: 30_000 });
-    for (const heading of ["Tổng quan", "Người dùng", "Giao dịch domain", "Thanh toán & hoàn tiền", "Workflow reconciliation", "Sức khỏe hệ thống", "Dataset & độ tươi", "Support queue"]) {
-      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible({ timeout: 30_000 });
+    for (const tab of ["Tổng quan & Hạ tầng", "Người dùng & Phân quyền", "Giao dịch & Vận hành", "AI Engine & API Keys", "Hỗ trợ & Đánh giá", "System Logs & Audit"]) {
+      await expect(page.getByRole("button", { name: tab, exact: true })).toBeVisible({ timeout: 30_000 });
     }
+    await page.getByRole("button", { name: "Giao dịch & Vận hành", exact: true }).click();
+    const workflowTab = page.getByRole("tab", { name: "Workflow reconciliation", exact: true });
+    await expect(workflowTab).toBeVisible({ timeout: 30_000 });
+    await workflowTab.click();
+    await expect(page.getByRole("heading", { name: "Workflow reconciliation", exact: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText("gateway-core", { exact: true }).first()).toBeVisible({ timeout: 30_000 });
 
     await page.locator("button[aria-label='Đăng xuất']").first().click();

@@ -462,7 +462,7 @@ export class PostgresAuthRepository implements AuthRepository {
   async rotateRefreshToken(currentHash: string, nextSession: AuthSession, now: string): Promise<RefreshRotation> {
     return this.transaction(async (client) => {
       const found = await client.query(
-        `${this.accountSelect('s.refresh_token_hash=$1', 's')} FOR UPDATE`,
+        `${this.accountSelect('s.refresh_token_hash=$1', 's')} FOR UPDATE OF u, s`,
         [currentHash],
       );
       const row = found.rows[0] as Record<string, unknown> | undefined;
@@ -534,7 +534,7 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async revokeFamilyByRefreshHash(refreshTokenHash: string, reason: string, now: string): Promise<{ account: AuthAccount; familyId: string } | undefined> {
     return this.transaction(async (client) => {
-      const found = await client.query(`${this.accountSelect('s.refresh_token_hash=$1', 's')} FOR UPDATE`, [refreshTokenHash]);
+      const found = await client.query(`${this.accountSelect('s.refresh_token_hash=$1', 's')} FOR UPDATE OF u, s`, [refreshTokenHash]);
       const row = found.rows[0] as Record<string, unknown> | undefined;
       if (!row) return undefined;
       const account = this.accountFromRow(row);

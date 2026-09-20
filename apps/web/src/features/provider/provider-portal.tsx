@@ -594,7 +594,7 @@ export function ProviderPortal() {
   };
 
   const getPartnerTypeLabel = () => {
-    if (isMaster) return "X-One Partner Portal — Cổng Đối Tác Đa Dịch Vụ";
+    if (isMaster) return "X-One Partner Portal — Master 4 Dịch Vụ";
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "X-One Partner Portal — Nhà hàng & Ẩm thực";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "X-One Partner Portal — Vận chuyển & Tài xế";
     if (rawProviderType === "delivery_courier" || rawProviderType === "delivery") return "X-One Partner Portal — Giao hàng & Chuyển phát";

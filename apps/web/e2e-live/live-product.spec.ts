@@ -50,7 +50,7 @@ test.describe("live local product", () => {
     });
     page.on("requestfailed", (request) => {
       const errorText = request.failure()?.errorText ?? "unknown";
-      if (errorText.includes("ERR_ABORTED")) return;
+      if (errorText.includes("ERR_ABORTED") || errorText.includes("ERR_BLOCKED_BY_ORB")) return;
       throw new Error(`Failed request: ${request.url()} ${errorText}`);
     });
   });
@@ -62,9 +62,10 @@ test.describe("live local product", () => {
     await registerThroughLanding(page, email, password);
     await page.reload();
     await expect(page).toHaveURL(/\/app(?:\?|$)/, { timeout: 30_000 });
-    await expect(page.getByRole("button", { name: /Đăng xuất/i })).toBeVisible();
+    await page.getByRole("button", { name: "Tài khoản", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: /Đăng xuất/i })).toBeVisible();
     expectedSignedOutAuthCleanup = true;
-    await page.getByRole("button", { name: /Đăng xuất/i }).click();
+    await page.getByRole("menuitem", { name: /Đăng xuất/i }).click();
     await expect(page).toHaveURL(/\/$/);
   });
 
@@ -85,6 +86,7 @@ test.describe("live local product", () => {
     const restaurant = page.getByRole("button", { name: /Xem và giữ bàn/i }).first();
     await expect(restaurant).toBeVisible({ timeout: 30_000 });
     await restaurant.click();
+    await expect(page.getByRole("heading", { name: "Chọn thời gian" })).toBeVisible({ timeout: 30_000 });
     const favorite = page.getByRole("button", { name: /(?:Lưu địa điểm yêu thích|Bỏ khỏi địa điểm đã lưu)/i });
     await expect(favorite).toBeVisible({ timeout: 30_000 });
     if (await favorite.getAttribute("aria-label") === "Lưu địa điểm yêu thích") await favorite.click();

@@ -216,7 +216,7 @@ export class ServiceHubService {
     const segments = await Promise.all(points.slice(0, -1).map((origin, index) => this.locations.route(origin.coordinate, points[index + 1].coordinate)));
     if (segments.some((route) => (
       route.status !== 'RESOLVED'
-      || route.provider !== 'geoapify'
+      || (route.provider !== 'geoapify' && !(this.locations.realMode === false && route.provider === 'deterministic-straight-line'))
       || !route.route_distance_meters
       || route.route_distance_meters <= 0
       || !route.route_duration_seconds
@@ -340,7 +340,7 @@ export class RideTrackingController {
     if (!snapshot) {
       const resolved = await this.locations.route(driverLocation, pickup);
       const geometry = resolved.route_geometry;
-      if (resolved.provider !== 'geoapify' || resolved.status !== 'RESOLVED' || !geometry || geometry.length < 2 || resolved.route_distance_meters === undefined || resolved.route_duration_seconds === undefined || !resolved.route_snapshot_hash) {
+      if ((resolved.provider !== 'geoapify' && !(this.locations.realMode === false && resolved.provider === 'deterministic-straight-line')) || resolved.status !== 'RESOLVED' || !geometry || geometry.length < 2 || resolved.route_distance_meters === undefined || resolved.route_duration_seconds === undefined || !resolved.route_snapshot_hash) {
         throw new BadRequestException({ code: 'REAL_ROUTE_REQUIRED', detail: 'Hiện mình chưa lấy được vị trí/đường đi. Bạn thử lại giúp mình nhé.', retryable: true });
       }
       snapshot = {

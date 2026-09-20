@@ -467,7 +467,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                     >
                       <div className="proactive-ai-banner-top">
                         <span className="proactive-ai-banner-badge">✦ Gợi ý</span>
-                        <span className="proactive-ai-banner-cta">Xem ngay</span>
+                        <span className="proactive-ai-banner-cta">Thực hiện ngay</span>
                       </div>
                       <p className="proactive-ai-banner-title">
                         {top ? `${label} của bạn đang chạy — muốn kiểm tra tới đâu rồi?` : "Kế hoạch thông minh cho ngày hôm nay"}

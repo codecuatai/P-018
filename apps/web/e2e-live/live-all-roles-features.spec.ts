@@ -121,7 +121,11 @@ test.describe("Production Live Verification - All 4 Roles Features", () => {
     const compensateBtn = page.getByRole("button", { name: /Bù trừ sự cố/i });
     await expect(compensateBtn).toBeVisible({ timeout: 10_000 });
     await compensateBtn.click();
-    await expect(page.getByText(/Đã phát hành bồi thường/i)).toBeVisible({ timeout: 10_000 });
+    const compensationDialog = page.getByRole("dialog");
+    await expect(compensationDialog).toBeVisible({ timeout: 10_000 });
+    await compensationDialog.locator("input[type='text']").fill("wf_live_manager_recovery");
+    await compensationDialog.getByRole("button", { name: /Xác nhận phát hành/i }).click();
+    await expect(page.getByText(/Phát Hành Bồi Thường Thành Công/i)).toBeVisible({ timeout: 10_000 });
 
     // 4. RBAC: Manager must NOT see "System Logs & Audit" (admin-only per getConsolidatedTabs).
     // Audit Trail verification is covered by Role 4 (Admin) test below.
