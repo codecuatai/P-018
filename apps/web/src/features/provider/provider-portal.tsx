@@ -1018,7 +1018,7 @@ export function ProviderPortal() {
       <div className="app-body provider-body">
         {/* Left Sidebar Navigation */}
         <aside className="app-sidebar provider-sidebar">
-          <div className="provider-sidebar-inner" style={{ padding: "16px 12px" }}>
+          <div className="provider-sidebar-inner" style={{ padding: "16px 12px 32px 12px" }}>
             <div className="provider-nav-group">
               <span className="provider-nav-group-title">
                 {isDisconnected

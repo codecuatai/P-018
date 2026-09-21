@@ -2454,11 +2454,39 @@
 /* Provider Portal layout & responsive */
 .provider-body {
   grid-template-columns: 250px minmax(0, 1fr);
+  height: calc(100dvh - 54px);
+  max-height: calc(100dvh - 54px);
 }
 
 .provider-sidebar {
   width: 250px;
   border-right: 1px solid #E2E8F0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  padding: 0 !important;
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+.provider-sidebar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.provider-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.provider-sidebar::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 999px;
+}
+
+.provider-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }
 
 @media (max-width: 820px) {
@@ -2497,6 +2525,7 @@
     position: sticky;
     top: 52px;
     z-index: 30;
+    overflow-y: visible !important;
   }
   .provider-sidebar-inner { padding: 0 !important; }
   .provider-nav-group-title { display: none !important; }
@@ -2641,7 +2670,8 @@
 .provider-sidebar-inner {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 .provider-nav-group-title {
