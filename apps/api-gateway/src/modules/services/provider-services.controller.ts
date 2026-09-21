@@ -176,7 +176,7 @@ export class ProviderServicesController {
   }
 
   private isMasterProvider(user: AuthUser): boolean {
-    return user.email === 'provider@xone.local' || user.tenant_id === 'partner-xone-01';
+    return user.email === 'provider@xone.local' || user.email === 'provider1@xone.local' || user.tenant_id === 'partner-xone-01';
   }
 
   private operationActor(user: AuthUser): string | undefined {
@@ -348,7 +348,7 @@ export class ProviderServicesController {
 
     // Check domain permissions: Master provider (@xone.local) can manage all domains.
     // Scoped providers are restricted to their registered domain.
-    const isMaster = request.user.email === 'provider@xone.local' || request.user.tenant_id === 'partner-xone-01';
+    const isMaster = this.isMasterProvider(request.user);
     if (!isMaster) {
       const profile = await this.store.getProfile(userId);
       const pType = profile?.providerType || request.user.provider_type;
