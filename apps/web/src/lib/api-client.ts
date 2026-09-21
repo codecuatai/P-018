@@ -1009,6 +1009,74 @@ export async function synthesizeVoice(
   return audio.buffer;
 }
 
+export async function transcribeVoice(
+  audioBlob: Blob,
+  signal?: AbortSignal,
+  retried = false
+): Promise<{ text: string; provider: string }> {
+  const form = new FormData();
+  form.append('file', audioBlob, 'recording.webm');
+  
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 30_000);
+  const abortListener = () => controller.abort();
+  signal?.addEventListener('abort', abortListener, { once: true });
+  
+  const headers = new Headers();
+  headers.set('X-Correlation-Id', createRequestId('cor'));
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/v1/voice/transcribe`, {
+      method: 'POST',
+      headers,
+      body: form,
+      signal: controller.signal,
+      credentials: 'include',
+    });
+    
+    const body = await parseJson(response);
+    
+    if (!response.ok) {
+      const problem = problemFromResponse(body, response.status);
+      if (response.status === 401 && !retried) {
+        const refreshed = await refreshAccessToken();
+        if (refreshed) {
+          return transcribeVoice(audioBlob, signal, true);
+        }
+      }
+      if (response.status === 401) {
+        clearAuthSession();
+        unauthorizedHandler?.();
+      }
+      throw new ApiError(problem);
+    }
+    
+    if (!isRecord(body) || !('data' in body)) {
+      throw new ApiError({ code: "INVALID_RESPONSE", detail: "X-One nhận được dữ liệu không hợp lệ.", status: response.status, retryable: false });
+    }
+    
+    return body.data as { text: string; provider: string };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError({
+        code: 'REQUEST_TIMEOUT',
+        detail: 'Nhận dạng giọng nói hơi chậm. Bạn thử lại nhé.',
+        status: 408, retryable: true,
+      });
+    }
+    throw new ApiError({
+      code: 'SERVICE_UNAVAILABLE',
+      detail: 'Dịch vụ giọng nói đang gặp sự cố. Bạn thử lại sau.',
+      status: 0, retryable: true,
+    });
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortListener);
+  }
+}
+
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return friendlyErrorMessage(error.code, error.detail);
   return "Không thể hoàn tất yêu cầu. Bạn thử lại nhé.";

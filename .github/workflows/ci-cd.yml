@@ -314,6 +314,7 @@ jobs:
               docker compose --env-file .env config --quiet
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               echo "Applying database migrations..."
+              docker compose --env-file .env stop
               docker compose --env-file .env up -d postgres
               sh scripts/database/migrate.sh .env
               docker compose --env-file .env up -d --remove-orphans
@@ -392,6 +393,7 @@ jobs:
               docker compose --env-file .env config --quiet
               DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose --env-file .env build
               echo "Applying database migrations..."
+              docker compose --env-file .env stop
               docker compose --env-file .env up -d postgres
               sh scripts/database/migrate.sh .env
               docker compose --env-file .env up -d --remove-orphans
