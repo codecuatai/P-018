@@ -423,18 +423,11 @@ function NotificationBell() {
   // Compute unread count from local item state when popover is open (keeps badge stable)
   const displayCount = open ? Math.max(count, items.filter((i) => !i.read).length) : count;
 
-  // Mark all unread as read when closing the popover
+  // Close the popover without marking notifications as read
+  // Notifications are only marked read when the user clicks on individual items
   const closePopover = useCallback(() => {
-    const hasUnread = items.some((i) => !i.read);
     setOpen(false);
-    if (hasUnread) {
-      setItems((prev) => prev.map((i) => ({ ...i, read: true })));
-      setCount(0);
-      void markAllNotificationsRead().then(() => {
-        emitNotificationsChanged();
-      }).catch(() => undefined);
-    }
-  }, [items]);
+  }, []);
 
   const ref = useOutsideClick<HTMLDivElement>(open, closePopover);
 
