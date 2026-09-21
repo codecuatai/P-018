@@ -28,7 +28,7 @@ const TERMINAL_HISTORY_STATUSES: Record<HistoryType, ReadonlySet<string>> = {
   ride_booking: new Set(['COMPLETED', 'NO_DRIVER', 'FAILED', 'PAYMENT_FAILED', 'CANCELLED']),
   food_order: new Set(['DELIVERED', 'PAYMENT_FAILED', 'RESTAURANT_REJECTED', 'CANCELLED', 'REFUNDED']),
   restaurant_reservation: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED', 'NO_SHOW']),
-  healthcare_appointment: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED']),
+  healthcare_appointment: new Set(['COMPLETED', 'CANCELLED', 'EXPIRED', 'PENDING_REFUND', 'REFUNDED']),
 };
 
 const SCHEDULED_HISTORY_TYPES = new Set<HistoryType>(['restaurant_reservation', 'healthcare_appointment']);

@@ -21,6 +21,8 @@ describe('history active semantics', () => {
   it('applies the same conservative rule to healthcare appointments', () => {
     expect(isHistoryResourceActive('healthcare_appointment', { status: 'CONFIRMED', start_time: '2026-08-15T11:00:00+07:00' }, now)).toBe(false);
     expect(isHistoryResourceActive('healthcare_appointment', { status: 'CONFIRMED', slot: { start_time: '2026-08-15T13:00:00+07:00' } }, now)).toBe(true);
+    expect(isHistoryResourceActive('healthcare_appointment', { status: 'PENDING_REFUND', start_time: '2099-08-15T11:00:00+07:00' }, now)).toBe(false);
+    expect(isHistoryResourceActive('healthcare_appointment', { status: 'REFUNDED', start_time: '2099-08-15T11:00:00+07:00' }, now)).toBe(false);
   });
 });
 
