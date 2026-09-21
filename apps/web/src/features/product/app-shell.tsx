@@ -33,7 +33,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { getUnreadNotificationCount, listConversations, listNotifications } from "@/lib/api-client";
+import { getUnreadNotificationCount, listConversations, listNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/api-client";
 import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import { conversationTitle } from "@/lib/presentation";
 import type { ConversationRecord } from "@/types";
@@ -356,7 +356,6 @@ function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<{ id: string; title: string; body?: string; read: boolean; href?: string }>>([]);
-  const ref = useOutsideClick<HTMLDivElement>(open, () => setOpen(false));
   const openRef = useRef(false);
   openRef.current = open;
 
@@ -424,6 +423,21 @@ function NotificationBell() {
   // Compute unread count from local item state when popover is open (keeps badge stable)
   const displayCount = open ? Math.max(count, items.filter((i) => !i.read).length) : count;
 
+  // Mark all unread as read when closing the popover
+  const closePopover = useCallback(() => {
+    const hasUnread = items.some((i) => !i.read);
+    setOpen(false);
+    if (hasUnread) {
+      setItems((prev) => prev.map((i) => ({ ...i, read: true })));
+      setCount(0);
+      void markAllNotificationsRead().then(() => {
+        emitNotificationsChanged();
+      }).catch(() => undefined);
+    }
+  }, [items]);
+
+  const ref = useOutsideClick<HTMLDivElement>(open, closePopover);
+
   return (
     <div className="notification-bell-wrap" ref={ref}>
       <button
@@ -442,7 +456,7 @@ function NotificationBell() {
             {items.some((i) => !i.read) && (
               <span className="notif-unread-count" aria-label={`Thông báo, ${items.filter((i) => !i.read).length} chưa đọc`}>{items.filter((i) => !i.read).length} chưa đọc</span>
             )}
-            <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={() => setOpen(false)}>
+            <button className="icon-button notif-close-btn" type="button" aria-label="Đóng" onClick={closePopover}>
               <X size={14} />
             </button>
           </div>
@@ -463,7 +477,13 @@ function NotificationBell() {
                   </>
                 );
                 return item.href ? (
-                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`}>
+                  <Link key={item.id} href={item.href} className={`notif-item ${item.read ? "" : "notif-unread"}`} onClick={() => {
+                    if (!item.read) {
+                      setItems((prev) => prev.map((i) => i.id === item.id ? { ...i, read: true } : i));
+                      void markNotificationRead(item.id).then(() => emitNotificationsChanged()).catch(() => undefined);
+                    }
+                    closePopover();
+                  }}>
                     {inner}
                   </Link>
                 ) : (
@@ -475,7 +495,7 @@ function NotificationBell() {
             )}
           </div>
           <div className="notification-popover-footer">
-            <Link href="/app/notifications" onClick={() => setOpen(false)}>
+            <Link href="/app/notifications" onClick={closePopover}>
               Xem tất cả thông báo →
             </Link>
           </div>

@@ -55,7 +55,7 @@ import {
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -124,6 +124,8 @@ export function AdminDashboard() {
     refreshHealth,
     refreshTransactions,
     refreshWorkflows,
+    refreshSummary,
+    refreshSupport,
     updateTicket,
   } = useAdminData();
   const [autoPollHealth, setAutoPollHealth] = useState(false);
@@ -264,6 +266,27 @@ export function AdminDashboard() {
   const CurrentIcon = currentTabDef.icon;
   const currentSubTabId = activeSubTab[activeMainTab] || currentTabDef.subtabs[0].id;
 
+  // Wrap switchMainTab to refresh relevant counts when navigating to alert-bearing tabs
+  const handleSelectTab = useCallback((main: MainTabId, sub?: SubTabId) => {
+    switchMainTab(main, sub);
+    if (main === "support") {
+      void refreshSummary();
+      void refreshSupport();
+    } else if (main === "provider-verification" || main === "users") {
+      void refreshSummary();
+    } else if (main === "transactions" || main === "incident-recovery") {
+      void refreshWorkflows();
+      void refreshSummary();
+    }
+  }, [switchMainTab, refreshSummary, refreshSupport, refreshWorkflows]);
+
+  // Compute pending provider-documents count from support data for sidebar badge
+  const pendingDocsCount = useMemo(() => {
+    // We don't load provider docs in useAdminData; derive from summary if available
+    const val = summary.data?.counts?.pending_provider_documents;
+    return typeof val === "number" ? val : 0;
+  }, [summary.data]);
+
   return (
     <div className={`app-shell admin-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#admin-content">
@@ -311,7 +334,7 @@ export function AdminDashboard() {
         <aside className="app-sidebar admin-sidebar" style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}>
           <AdminSidebarContent
             activeMainTab={activeMainTab}
-            onSelectTab={switchMainTab}
+            onSelectTab={handleSelectTab}
             searchQuery={sidebarSearch}
             onSearchChange={setSidebarSearch}
             userEmail={user?.email ?? ""}
@@ -319,6 +342,7 @@ export function AdminDashboard() {
             tabs={tabs}
             onLogout={handleLogout}
             openTicketCount={summary.data?.counts?.open_support_tickets}
+            pendingDocsCount={pendingDocsCount}
           />
           {!sidebarCollapsed && (
             <div
@@ -361,7 +385,7 @@ export function AdminDashboard() {
               <SheetContent title={user?.role === "manager" ? "Trung tâm vận hành" : "Quản trị X-One"}>
                 <AdminSidebarContent
                   activeMainTab={activeMainTab}
-                  onSelectTab={switchMainTab}
+                  onSelectTab={handleSelectTab}
                   searchQuery={sidebarSearch}
                   onSearchChange={setSidebarSearch}
                   userEmail={user?.email ?? ""}
@@ -369,6 +393,7 @@ export function AdminDashboard() {
                   tabs={tabs}
                   onLogout={handleLogout}
                   openTicketCount={summary.data?.counts?.open_support_tickets}
+                  pendingDocsCount={pendingDocsCount}
                 />
               </SheetContent>
             </Sheet>
@@ -439,7 +464,7 @@ export function AdminDashboard() {
                     <OverviewSummarySubtab
                       summary={summary}
                       onRetry={() => void load()}
-                      onNavigateTab={(main, sub) => switchMainTab(main, sub)}
+                      onNavigateTab={(main, sub) => handleSelectTab(main, sub)}
                       autoPollHealth={autoPollHealth}
                       setAutoPollHealth={setAutoPollHealth}
                       onRefreshHealth={() => void refreshHealth()}
@@ -614,6 +639,7 @@ function AdminSidebarContent({
   tabs,
   onLogout,
   openTicketCount,
+  pendingDocsCount,
 }: {
   activeMainTab: MainTabId;
   onSelectTab: (main: MainTabId) => void;
@@ -624,6 +650,7 @@ function AdminSidebarContent({
   tabs?: TabDefinition[];
   onLogout: () => Promise<void>;
   openTicketCount?: number;
+  pendingDocsCount?: number;
 }) {
   const availableTabs = tabs || CONSOLIDATED_TABS;
   const filteredTabs = useMemo(() => {
@@ -699,6 +726,28 @@ function AdminSidebarContent({
                   aria-label={`${openTicketCount} ticket đang mở`}
                 >
                   {openTicketCount > 99 ? "99+" : openTicketCount}
+                </span>
+              )}
+              {tab.id === "provider-verification" && pendingDocsCount != null && pendingDocsCount > 0 && (
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    minWidth: "18px",
+                    height: "18px",
+                    padding: "0 5px",
+                    borderRadius: "999px",
+                    background: "#F59E0B",
+                    color: "#FFFFFF",
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    marginLeft: "auto",
+                  }}
+                  aria-label={`${pendingDocsCount} hồ sơ chờ duyệt`}
+                >
+                  {pendingDocsCount > 99 ? "99+" : pendingDocsCount}
                 </span>
               )}
               {isMainActive && <span className="admin-nav-active-pill" />}

@@ -385,6 +385,7 @@ export interface AdminSummaryCounts {
   payments?: number;
   refunds?: number;
   open_support_tickets?: number;
+  pending_provider_documents?: number;
   failed_workflows?: number;
   partial_success_workflows?: number;
   [key: string]: unknown;

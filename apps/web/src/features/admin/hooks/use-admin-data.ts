@@ -128,6 +128,24 @@ export function useAdminData() {
     }
   }, []);
 
+  const refreshSummary = useCallback(async () => {
+    try {
+      const result = await getAdminSummary();
+      setData((current) => ({ ...current, summary: { loading: false, data: result } }));
+    } catch (error) {
+      setData((current) => ({ ...current, summary: { loading: false, error: errorText(error) } }));
+    }
+  }, []);
+
+  const refreshSupport = useCallback(async () => {
+    try {
+      const result = await getAdminSupportTickets();
+      setData((current) => ({ ...current, support: { loading: false, data: result } }));
+    } catch (error) {
+      setData((current) => ({ ...current, support: { loading: false, error: errorText(error) } }));
+    }
+  }, []);
+
   const updateTicket = useCallback(async (id: string, patch: { status?: SupportTicketStatus; priority?: SupportPriority }) => {
     try {
       const updated = await updateAdminSupportTicket(id, patch);
@@ -140,6 +158,10 @@ export function useAdminData() {
             : current.support.data,
         },
       }));
+      // Refresh summary counts so sidebar badges reflect the new ticket status
+      void getAdminSummary().then((result) => {
+        setData((current) => ({ ...current, summary: { loading: false, data: result } }));
+      }).catch(() => undefined);
     } catch (error) {
       setData((current) => ({ ...current, support: { ...current.support, error: errorText(error) } }));
     }
@@ -212,7 +234,7 @@ export function useAdminData() {
     void load();
   }, [load]);
 
-  return { ...data, refreshing, lastCheckedAt, load, fetchUsers, updateUserStatus, updateUserRole, refreshHealth, refreshTransactions, refreshWorkflows, updateTicket, addTicketMessage };
+  return { ...data, refreshing, lastCheckedAt, load, fetchUsers, updateUserStatus, updateUserRole, refreshHealth, refreshTransactions, refreshWorkflows, refreshSummary, refreshSupport, updateTicket, addTicketMessage };
 }
 
 function loadable<T>(result: PromiseSettledResult<T>): Loadable<T> {
