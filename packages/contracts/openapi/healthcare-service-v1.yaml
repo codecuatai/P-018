@@ -178,6 +178,35 @@ paths:
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
         - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses: {'200': {description: Paged appointments}, '401': {description: Internal authentication is missing}}
+  /api/v1/pharmacy/medicines:
+    get:
+      summary: Search medicines across pharmacy providers (Long Châu, Pharmacity, Internal)
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {name: keyword, in: query, required: false, schema: {type: string, default: ''}}
+        - {name: category, in: query, required: false, schema: {type: string}}
+        - {name: prescription_required, in: query, required: false, schema: {type: boolean}}
+        - {name: provider, in: query, required: false, schema: {type: string, default: auto}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses: {'200': {description: Medicine catalog search results}, '401': {description: Internal authentication is missing}}
+  /api/v1/pharmacy/quotes:
+    post:
+      summary: Calculate pharmacy delivery quote
+      security: [{internalServiceToken: []}]
+      responses: {'201': {description: Pharmacy quote result}, '401': {description: Internal authentication is missing}}
+  /api/v1/pharmacy/orders:
+    post:
+      summary: Place pharmacy delivery order
+      security: [{internalServiceToken: []}]
+      responses: {'201': {description: Pharmacy order result}, '401': {description: Internal authentication is missing}}
+  /api/v1/pharmacy/orders/{order_id}/tracking:
+    get:
+      summary: Track pharmacy delivery order
+      security: [{internalServiceToken: []}]
+      parameters:
+        - {name: order_id, in: path, required: true, schema: {type: string}}
+        - {name: provider, in: query, required: false, schema: {type: string, default: auto}}
+      responses: {'200': {description: Pharmacy order tracking status}, '401': {description: Internal authentication is missing}}
 components:
   securitySchemes:
     internalServiceToken:

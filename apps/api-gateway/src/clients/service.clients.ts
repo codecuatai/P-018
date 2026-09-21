@@ -441,6 +441,19 @@ export class RideClient extends InternalServiceClient {
     );
   }
 
+  async compareQuotes(
+    actorId: string,
+    callContext: ServiceCallContext,
+    request: Record<string, unknown>,
+  ): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/v1/quotes:compare',
+      { method: 'POST', body: JSON.stringify(request) },
+      callContext.correlationId,
+      actorId,
+    );
+  }
+
   async getQuote(
     actorId: string,
     callContext: ServiceCallContext,
@@ -764,6 +777,50 @@ export class HealthcareClient extends InternalServiceClient {
     return this.legacyRequest<JsonObject>(`/api/v1/patients/${encodeURIComponent(String(patientId))}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey } }, correlationId, actorId);
   }
 
+  async listPharmacyProviders(correlationId: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>('/api/v1/pharmacy/providers', { method: 'GET' }, correlationId);
+  }
+
+  async searchMedicines(
+    filters: { keyword?: string; category?: string; prescription_required?: boolean; provider?: string; limit?: number },
+    correlationId: string,
+  ): Promise<JsonObject> {
+    const query = new URLSearchParams();
+    if (filters.keyword) query.set('keyword', filters.keyword);
+    if (filters.category) query.set('category', filters.category);
+    if (filters.prescription_required !== undefined) query.set('prescription_required', String(filters.prescription_required));
+    if (filters.provider) query.set('provider', filters.provider);
+    if (filters.limit !== undefined) query.set('limit', String(filters.limit));
+    return this.legacyRequest<JsonObject>(`/api/v1/pharmacy/medicines?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  async getPharmacyQuote(payload: JsonObject, correlationId: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/pharmacy/quotes',
+      { method: 'POST', body: JSON.stringify(payload) },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async createPharmacyOrder(payload: JsonObject, correlationId: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      '/api/v1/pharmacy/orders',
+      { method: 'POST', body: JSON.stringify(payload) },
+      correlationId,
+      actorId,
+    );
+  }
+
+  async trackPharmacyOrder(orderId: string, provider = 'auto', correlationId: string, actorId?: string): Promise<JsonObject> {
+    return this.legacyRequest<JsonObject>(
+      `/api/v1/pharmacy/orders/${encodeURIComponent(orderId)}/tracking?provider=${encodeURIComponent(provider)}`,
+      { method: 'GET' },
+      correlationId,
+      actorId,
+    );
+  }
+
   get defaultPatientId(): number {
     if (this.config.get<string>('APP_ENV') === 'production') {
       throw new ServiceUnavailableException({ code: 'PATIENT_LINK_REQUIRED', detail: 'A Healthcare patient link is required in production.' });
@@ -892,6 +949,18 @@ export class FoodClient extends InternalServiceClient {
     if (filters.district) query.set('district', filters.district);
     if (filters.category) query.set('category', filters.category);
     return this.legacyRequest<FoodCatalogResponse>(`/api/v1/restaurants?${query.toString()}`, { method: 'GET' }, correlationId);
+  }
+
+  async compareRestaurants(
+    filters: { keyword?: string; district?: string; category?: string; limit_per_provider?: number },
+    correlationId: string,
+  ): Promise<JsonObject> {
+    const query = new URLSearchParams();
+    if (filters.keyword) query.set('keyword', filters.keyword);
+    if (filters.district) query.set('district', filters.district);
+    if (filters.category) query.set('category', filters.category);
+    if (filters.limit_per_provider !== undefined) query.set('limit_per_provider', String(filters.limit_per_provider));
+    return this.legacyRequest<JsonObject>(`/api/v1/restaurants/compare?${query.toString()}`, { method: 'GET' }, correlationId);
   }
 
   listOrders(correlationId: string, actorId: string, limit = 50, timeoutMs?: number): Promise<JsonObject> {

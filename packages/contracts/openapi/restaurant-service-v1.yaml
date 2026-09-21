@@ -13,6 +13,7 @@ paths:
         - {name: location, in: query, required: false, schema: {type: string}}
         - {name: cuisine_type, in: query, required: false, schema: {type: string}}
         - {name: budget_range, in: query, required: false, schema: {type: string}}
+        - {name: provider, in: query, required: false, description: Restaurant reservation provider (auto, internal, pasgo), schema: {type: string, default: auto}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
         - {name: offset, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}}
       responses:

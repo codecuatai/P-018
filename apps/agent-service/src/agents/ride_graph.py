@@ -70,7 +70,14 @@ def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
     if promo:
         slots["promo_code"] = promo.group(1)
 
-    for field in ("pickup_address", "dropoff_address", "vehicle_type", "passenger_count", "promo_code"):
+    if "xanh sm" in folded or "xanhsm" in folded or "vinfast" in folded:
+        slots["provider"] = "xanhsm"
+    elif "grab" in folded:
+        slots["provider"] = "grab"
+    elif "be" in folded.split() or " be " in f" {folded} " or "xe be" in folded:
+        slots["provider"] = "be"
+
+    for field in ("pickup_address", "dropoff_address", "vehicle_type", "passenger_count", "promo_code", "provider"):
         if field not in slots and ride.get(field) not in (None, ""):
             slots[field] = str(ride[field])
     return slots
@@ -161,6 +168,8 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
             arguments["promo_code"] = slots["promo_code"]
         if slots.get("passenger_count"):
             arguments["passenger_count"] = int(slots["passenger_count"])
+        if slots.get("provider"):
+            arguments["provider"] = slots["provider"]
         return {
             "response": "Mình sẽ lấy báo giá chính thức cho chuyến đi này.",
             "intent": "request_ride_quote",

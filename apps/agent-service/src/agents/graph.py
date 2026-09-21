@@ -43,6 +43,8 @@ class SemanticSlots(BaseModel):
     district: str | None = None
     max_price: int | None = Field(default=None, ge=0, strict=True)
     voucher_code: str | None = None
+    provider: str | None = None
+    medication_name: str | None = None
 
 
 class StructuredDecision(BaseModel):
@@ -120,6 +122,8 @@ SEMANTIC_SLOTS = {
     "district",
     "max_price",
     "voucher_code",
+    "provider",
+    "medication_name",
 }
 
 VALID_INTENTS = {

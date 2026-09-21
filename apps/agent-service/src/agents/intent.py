@@ -25,6 +25,41 @@ def _restore_query_spelling(original: str, normalized_query: str) -> str:
 
 def classify(query: str) -> str:
     text = plain(query)
+    # Pharmacy & Medicine intent detection
+    if any(
+        value in text
+        for value in (
+            "mua thuoc",
+            "dat thuoc",
+            "nha thuoc",
+            "hieu thuoc",
+            "tiem thuoc",
+            "panadol",
+            "paracetamol",
+            "decolgen",
+            "berocca",
+            "gaviscon",
+            "augmentin",
+            "strepsils",
+            "khau trang",
+            "nuoc muoi",
+        )
+    ):
+        return "pharmacy_search"
+    # Multi-provider ride comparison
+    if any(
+        value in text
+        for value in (
+            "so sanh gia xe",
+            "so sanh xe",
+            "so sanh grab",
+            "so sanh be",
+            "so sanh xanh sm",
+            "so sanh cac hang xe",
+            "gia xe hang nao re",
+        )
+    ):
+        return "compare_rides"
     # Health intent detection
     if any(value in text for value in ("dau bung", "dau da day", "dau dau", "cam lanh", "dau lung")):
         return "healthcare"
@@ -192,5 +227,40 @@ def extract_slots(query: str) -> dict[str, object]:
     time_match = re.search(r"\b(\d{1,2}(?:\s*(?:h|:|gio|ruoi))(?:\s*\d{2})?(?:\s*(?:sang|trua|chieu|toi))?)\b", text)
     if time_match:
         slots["time"] = _restore_query_spelling(query, time_match.group(1).strip())
+
+    # Provider extraction across Ride, Food, Restaurant, Pharmacy
+    if "grabfood" in text or "grab food" in text:
+        slots["provider"] = "grabfood"
+    elif "shopeefood" in text or "shopee food" in text:
+        slots["provider"] = "shopeefood"
+    elif "pasgo" in text:
+        slots["provider"] = "pasgo"
+    elif "long chau" in text or "fpt long chau" in text or "longchau" in text:
+        slots["provider"] = "longchau"
+    elif "pharmacity" in text:
+        slots["provider"] = "pharmacity"
+    elif "xanh sm" in text or "xanhsm" in text or "vinfast" in text:
+        slots["provider"] = "xanhsm"
+    elif "grab" in text:
+        slots["provider"] = "grab"
+    elif "be" in text.split() or " be " in f" {text} " or "xe be" in text:
+        slots["provider"] = "be"
+
+    # Medication extraction
+    for med in (
+        "panadol extra",
+        "panadol",
+        "paracetamol",
+        "decolgen",
+        "berocca",
+        "gaviscon",
+        "augmentin",
+        "strepsils",
+        "khau trang",
+        "nuoc muoi",
+    ):
+        if med in text:
+            slots["medication_name"] = _restore_query_spelling(query, med)
+            break
 
     return slots

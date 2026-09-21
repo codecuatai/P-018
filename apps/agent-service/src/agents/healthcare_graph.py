@@ -73,6 +73,11 @@ def _healthcare_message(query: str, previous_intent: str | None) -> bool:
             "dat lich y te",
             "huy lich",
             "huy cuoc hen",
+            "thuoc",
+            "nha thuoc",
+            "hieu thuoc",
+            "long chau",
+            "pharmacity",
             *SYMPTOM_MARKERS,
         )
     )
@@ -94,6 +99,27 @@ def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dic
     appointment_match = re.search(r"(?:appointment|lich\s*hen|lich\s*kham)\s*(?:id\s*)?(?:la|:)?\s*(\d+)", folded)
     if appointment_match:
         slots["appointment_id"] = int(appointment_match.group(1))
+
+    if "long chau" in folded or "fpt long chau" in folded or "longchau" in folded:
+        slots["provider"] = "longchau"
+    elif "pharmacity" in folded:
+        slots["provider"] = "pharmacity"
+
+    for med in (
+        "panadol extra",
+        "panadol",
+        "paracetamol",
+        "decolgen",
+        "berocca",
+        "gaviscon",
+        "augmentin",
+        "strepsils",
+        "khau trang",
+        "nuoc muoi",
+    ):
+        if med in folded:
+            slots["medication_name"] = med
+            break
 
     if context.get("patient_id") is not None:
         try:

@@ -232,6 +232,7 @@ components:
         vehicle_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         passenger_count: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         promo_code: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        provider: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
     CoreASemanticConstraint:
       type: object
       additionalProperties: false
@@ -254,6 +255,7 @@ components:
         seating_type: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         selection: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         special_requests: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        provider: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
     CoreAHealthcareSemanticSlots:
       type: object
       additionalProperties: false
@@ -263,6 +265,9 @@ components:
         start_at: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         time_preference: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         selection: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        provider: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        medication_name: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        quantity: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
     CoreAFoodSemanticSlots:
       type: object
       additionalProperties: false
@@ -281,6 +286,7 @@ components:
         voucher_code: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         address_reference: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
         payment_method: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
+        provider: {oneOf: [{$ref: '#/components/schemas/CoreASemanticSlot'}, {type: 'null'}]}
     CoreAAuthorityRequirement:
       type: object
       additionalProperties: false

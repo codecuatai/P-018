@@ -110,6 +110,8 @@ def _slot_source(
         or field == "address_reference" and any(token in plain for token in ("ve nha", "toi nha", "home"))
         or field == "delivery_preference" and any(token in plain for token in ("giao", "ship"))
         or field == "selection" and any(token in plain for token in ("chon", "lay"))
+        or field == "provider" and any(token in plain for token in ("grab", "be", "xanh sm", "vinfast", "shopeefood", "grabfood", "pasgo", "long chau", "pharmacity"))
+        or field == "medication_name" and any(token in plain for token in ("panadol", "paracetamol", "decolgen", "berocca", "gaviscon", "augmentin", "strepsils"))
     )
     if literal or normalized_explicit:
         return SlotSource.USER_EXPLICIT

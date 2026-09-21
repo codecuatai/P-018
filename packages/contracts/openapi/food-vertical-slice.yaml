@@ -29,6 +29,20 @@ paths:
         '200': {description: Restaurant search results}
         '401': {$ref: '#/components/responses/Error401'}
         '422': {$ref: '#/components/responses/Error422'}
+  /restaurants/compare:
+    get:
+      tags: [catalog]
+      summary: Compare restaurants and delivery fees across providers (ShopeeFood, GrabFood, Internal)
+      parameters:
+        - {$ref: '#/components/parameters/InternalToken'}
+        - {name: keyword, in: query, required: false, schema: {type: string, default: ''}}
+        - {name: district, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: category, in: query, required: false, schema: {type: [string, 'null']}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 100, default: 12}}
+      responses:
+        '200': {description: Multi-provider restaurant comparison result}
+        '401': {$ref: '#/components/responses/Error401'}
+        '422': {$ref: '#/components/responses/Error422'}
   /restaurants/{restaurant_id}:
     get:
       tags: [catalog]

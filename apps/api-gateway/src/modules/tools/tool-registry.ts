@@ -130,7 +130,7 @@ const definitions: readonly ToolDefinition[] = [
 ];
 
 const argumentKeys: Record<string, readonly string[]> = {
-  'food.search': ['keyword', 'district', 'category', 'max_price', 'latitude', 'longitude'],
+  'food.search': ['keyword', 'district', 'category', 'max_price', 'latitude', 'longitude', 'provider'],
   'food.menu.get': ['restaurant_id'],
   'food.menu_item.get': ['menu_item_id'],
   'food.address.list': ['label'],
@@ -143,16 +143,16 @@ const argumentKeys: Record<string, readonly string[]> = {
   'food.order.confirm': ['cart_id', 'address_id', 'confirmation_id'],
   'food.order.cancel': ['order_id', 'confirmation_id'],
   'food.refund.execute': ['payment_id', 'confirmation_id'],
-  'ride.quote.create': ['pickup_address', 'dropoff_address', 'vehicle_type', 'passenger_count', 'promo_code', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'stopovers'],
+  'ride.quote.create': ['pickup_address', 'dropoff_address', 'vehicle_type', 'passenger_count', 'promo_code', 'pickup_latitude', 'pickup_longitude', 'dropoff_latitude', 'dropoff_longitude', 'stopovers', 'provider'],
   'ride.quote.get': ['quote_id'],
   'ride.booking.prepare': ['quote_id'],
   'ride.booking.get': ['booking_id'],
   'ride.booking.confirm': ['booking_id', 'confirmation_id'],
   'ride.booking.cancel.prepare': ['booking_id'],
   'ride.booking.cancel': ['booking_id', 'confirmation_id'],
-  'restaurant.search': ['location', 'cuisine_type', 'budget_range', 'limit', 'offset'],
+  'restaurant.search': ['location', 'cuisine_type', 'budget_range', 'limit', 'offset', 'provider'],
   'restaurant.get': ['restaurant_id'],
-  'restaurant.check_availability': ['restaurant_id', 'start_at', 'party_size', 'duration_minutes', 'seating_type'],
+  'restaurant.check_availability': ['restaurant_id', 'start_at', 'party_size', 'duration_minutes', 'seating_type', 'provider'],
   'restaurant.create_hold': ['restaurant_id', 'start_at', 'party_size', 'duration_minutes', 'seating_type'],
   'restaurant.create_reservation': ['restaurant_id', 'party_size', 'start_at', 'duration_minutes', 'special_requests', 'hold_id'],
   'restaurant.update_reservation': ['reservation_id', 'party_size', 'start_at', 'special_requests'],

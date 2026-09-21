@@ -50,6 +50,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QuoteListEnvelope"
+  /v1/quotes:compare:
+    post:
+      operationId: compareRideQuotes
+      parameters:
+        - $ref: "#/components/parameters/ActorId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "200":
+          description: Comparison of quotes across providers.
   /v1/quotes/{quote_id}:
     get:
       operationId: getRideQuote

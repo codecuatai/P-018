@@ -60,6 +60,7 @@ class RideSemanticSlots(StrictModel):
     vehicle_type: SemanticSlot | None = None
     passenger_count: SemanticSlot | None = None
     promo_code: SemanticSlot | None = None
+    provider: SemanticSlot | None = None
 
 
 class RestaurantSemanticSlots(StrictModel):
@@ -73,6 +74,7 @@ class RestaurantSemanticSlots(StrictModel):
     seating_type: SemanticSlot | None = None
     selection: SemanticSlot | None = None
     special_requests: SemanticSlot | None = None
+    provider: SemanticSlot | None = None
 
 
 class HealthcareSemanticSlots(StrictModel):
@@ -81,6 +83,9 @@ class HealthcareSemanticSlots(StrictModel):
     start_at: SemanticSlot | None = None
     time_preference: SemanticSlot | None = None
     selection: SemanticSlot | None = None
+    provider: SemanticSlot | None = None
+    medication_name: SemanticSlot | None = None
+    quantity: SemanticSlot | None = None
 
 
 class FoodSemanticSlots(StrictModel):
@@ -98,6 +103,7 @@ class FoodSemanticSlots(StrictModel):
     voucher_code: SemanticSlot | None = None
     address_reference: SemanticSlot | None = None
     payment_method: SemanticSlot | None = None
+    provider: SemanticSlot | None = None
 
 
 DomainSlots: TypeAlias = RideSemanticSlots | RestaurantSemanticSlots | HealthcareSemanticSlots | FoodSemanticSlots
