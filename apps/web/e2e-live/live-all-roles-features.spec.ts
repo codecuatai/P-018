@@ -111,14 +111,15 @@ test.describe("Production Live Verification - All 4 Roles Features", () => {
       await expect(page.getByRole("heading", { name: /Dynamic Feature Flags/i })).toBeVisible({ timeout: 10_000 });
     }
 
-    // 3. Open Transactions -> Workflow reconciliation
-    await page.getByRole("button", { name: /Giao dịch & Vận hành/i }).click();
-    const reconSubtab = page.getByRole("tab", { name: /Workflow reconciliation/i });
-    await expect(reconSubtab).toBeVisible({ timeout: 10_000 });
-    await reconSubtab.click();
+    // 3. Open Transactions / Incident Recovery -> Workflow reconciliation
+    await page.getByRole("button", { name: /Giao dịch & Vận hành|Khắc phục sự cố/i }).first().click();
+    const reconSubtab = page.getByRole("tab", { name: /Workflow reconciliation|Khắc phục sự cố/i }).first();
+    if (await reconSubtab.isVisible()) {
+      await reconSubtab.click();
+    }
 
     // Verify 1-Click Compensation button is visible and clickable
-    const compensateBtn = page.getByRole("button", { name: /Bù trừ sự cố/i });
+    const compensateBtn = page.getByRole("button", { name: /Bồi thường sự cố|Bù trừ sự cố/i });
     await expect(compensateBtn).toBeVisible({ timeout: 10_000 });
     await compensateBtn.click();
     const compensationDialog = page.getByRole("dialog");

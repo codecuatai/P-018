@@ -2826,7 +2826,8 @@
    ───────────────────────────────────────────────────────────── */
 
 /* iOS/App-like Toggle Switch */
-.xone-switch {
+.xone-switch,
+.xone-store-toggle {
   position: relative;
   display: inline-block;
   width: 44px;
@@ -2834,14 +2835,16 @@
   cursor: pointer;
 }
 
-.xone-switch input {
+.xone-switch input,
+.xone-store-toggle input {
   opacity: 0;
   width: 0;
   height: 0;
   position: absolute;
 }
 
-.xone-switch-slider {
+.xone-switch-slider,
+.xone-store-slider {
   position: absolute;
   top: 0;
   left: 0;
@@ -2852,7 +2855,8 @@
   border-radius: 34px;
 }
 
-.xone-switch-slider:before {
+.xone-switch-slider:before,
+.xone-store-slider:before {
   position: absolute;
   content: "";
   height: 18px;
@@ -2865,15 +2869,18 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.xone-switch input:checked + .xone-switch-slider {
+.xone-switch input:checked + .xone-switch-slider,
+.xone-store-toggle input:checked + .xone-store-slider {
   background-color: #10B981;
 }
 
-.xone-switch input:checked + .xone-switch-slider:before {
+.xone-switch input:checked + .xone-switch-slider:before,
+.xone-store-toggle input:checked + .xone-store-slider:before {
   transform: translateX(20px);
 }
 
-.xone-switch input:disabled + .xone-switch-slider {
+.xone-switch input:disabled + .xone-switch-slider,
+.xone-store-toggle input:disabled + .xone-store-slider {
   opacity: 0.5;
   cursor: not-allowed;
 }
