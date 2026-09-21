@@ -42,7 +42,7 @@ async function testMcp() {
     const loginRes = await fetch(`${GATEWAY_URL}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'provider@xone.local', password: 'Password123!' }),
+      body: JSON.stringify({ email: 'provider1@xone.local', password: 'Password123!' }),
     });
     const loginData = await loginRes.json();
     if (loginRes.status === 200 || loginRes.status === 201) {

@@ -4,7 +4,7 @@ test("Verify Vietnamese text rendering and form update in Provider Portal", asyn
   // 1. Log in as Provider
   await page.goto("/?auth=login");
   await expect(page.locator("#login-email")).toBeVisible({ timeout: 15_000 });
-  await page.locator("#login-email").fill("provider@xone.local");
+  await page.locator("#login-email").fill("provider1@xone.local");
   await page.locator("#login-password").fill("Password123!");
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 

@@ -578,8 +578,9 @@ export function ProviderPortal() {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
 
-  const isMaster = user?.email === "provider@xone.local" || profile?.tenantId === "partner-xone-01" || user?.tenant_id === "partner-xone-01";
-  const rawProviderType = profile?.providerType || user?.provider_type || (isMaster ? "all" : "unknown");
+  const isDisconnected = user?.email === "provider@xone.local" || profile?.status === "suspended" || profile?.tenantId === "partner-disconnected";
+  const isMaster = (user?.email === "provider1@xone.local" || profile?.tenantId === "partner-xone-01" || user?.tenant_id === "partner-xone-01") && !isDisconnected;
+  const rawProviderType = isDisconnected ? "disconnected" : (profile?.providerType || user?.provider_type || (isMaster ? "all" : "unknown"));
 
   type ProviderTab =
     | "ride"
@@ -596,6 +597,9 @@ export function ProviderPortal() {
     | "mcp";
 
   const isAllowedTab = (tab: ProviderTab) => {
+    if (isDisconnected) {
+      return tab === "profile" || tab === "services";
+    }
     if (
       tab === "services" ||
       tab === "profile" ||
@@ -607,6 +611,11 @@ export function ProviderPortal() {
     ) {
       return true;
     }
+    if (tab === "ride" && connectedServices.ride === false) return false;
+    if (tab === "delivery" && connectedServices.delivery === false) return false;
+    if (tab === "food" && connectedServices.food === false) return false;
+    if (tab === "restaurant" && connectedServices.restaurant === false) return false;
+    if (tab === "health" && connectedServices.healthcare === false) return false;
     if (isMaster) return true;
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return tab === "food" || tab === "restaurant";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return tab === "ride" || tab === "delivery";
@@ -616,6 +625,7 @@ export function ProviderPortal() {
   };
 
   const getPartnerTypeLabel = () => {
+    if (isDisconnected) return "X-One Partner Portal — Tài Khoản Đã Ngắt Kết Nối";
     if (isMaster) return "X-One Partner Portal — Master 4 Dịch Vụ";
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") return "X-One Partner Portal — Nhà hàng & Ẩm thực";
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return "X-One Partner Portal — Vận chuyển & Tài xế";
@@ -625,6 +635,7 @@ export function ProviderPortal() {
   };
 
   const getDefaultTab = (pType?: string, master?: boolean): ProviderTab => {
+    if (isDisconnected) return "profile";
     if (master) return "ride";
     if (pType === "restaurant_merchant" || pType === "food") return "food";
     if (pType === "ride_driver" || pType === "ride") return "ride";
@@ -682,7 +693,7 @@ export function ProviderPortal() {
   const [documentForm, setDocumentForm] = useState({ documentType: "business_license", documentUrl: "", expiresAt: "" });
 
   const [serviceItems, setServiceItems] = useState<ProviderServiceItem[]>(() =>
-    user?.email === "provider@xone.local" ? DEFAULT_OFFERINGS : []
+    user?.email === "provider1@xone.local" ? DEFAULT_OFFERINGS : []
   );
   const [loadingItems, setLoadingItems] = useState(false);
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -696,12 +707,11 @@ export function ProviderPortal() {
   const [submittingItem, setSubmittingItem] = useState(false);
 
   // Real-world Service Channels & Store Controls
-  const [connectedServices, setConnectedServices] = useState<Record<string, boolean>>({
-    ride: true,
-    food: true,
-    restaurant: true,
-    healthcare: true,
-  });
+  const [connectedServices, setConnectedServices] = useState<Record<string, boolean>>(() =>
+    isDisconnected
+      ? { ride: false, food: false, restaurant: false, healthcare: false, delivery: false }
+      : { ride: true, food: true, restaurant: true, healthcare: true, delivery: true }
+  );
   const [togglingChannel, setTogglingChannel] = useState<string | null>(null);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [catalogFilter, setCatalogFilter] = useState<"all" | "food" | "ride" | "restaurant" | "healthcare">("all");
@@ -808,6 +818,15 @@ export function ProviderPortal() {
   };
 
   const reloadOperations = async (silent: boolean = false) => {
+    if (isDisconnected) {
+      setAllRides([]);
+      setActiveRide(null);
+      setOrders([]);
+      setAppointments([]);
+      setReservations([]);
+      setDeliveries([]);
+      return;
+    }
     if (!silent) setLoadingOperations(true);
     try {
       const [ridesRes, ordersRes, apptsRes, resRes, delivRes] = await Promise.allSettled([
@@ -1077,20 +1096,20 @@ export function ProviderPortal() {
           const cleanBiz = sanitizeDisplayText(rawBiz, "");
           setProfile(profData.value);
           setProfileForm({
-            businessName: cleanBiz || user?.full_name || (isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : ""),
+            businessName: cleanBiz || user?.full_name || (isDisconnected ? "Tài Khoản Đã Ngắt Kết Nối" : isMaster ? "Đối Tác Dịch Vụ X-One (Chính)" : ""),
             phone: sanitizeDisplayText(profData.value.phone, user?.phone || ""),
             address: sanitizeDisplayText(profData.value.address, ""),
             webhookUrl: profData.value.webhookUrl || "",
-            isOpen: profData.value.isOpen !== false,
+            isOpen: profData.value.isOpen !== false && !isDisconnected,
           });
           if (profData.value.connectedServices) {
-            setConnectedServices((prev) => ({ ...prev, ...profData.value.connectedServices }));
+            setConnectedServices(profData.value.connectedServices);
           }
         }
         if (itemsData.status === "fulfilled") {
           if (itemsData.value.length > 0) {
             setServiceItems(itemsData.value);
-          } else if (user?.email === "provider@xone.local") {
+          } else if (user?.email === "provider1@xone.local") {
             setServiceItems(DEFAULT_OFFERINGS);
           } else {
             setServiceItems([]);
@@ -1466,19 +1485,22 @@ export function ProviderPortal() {
   };
 
   // Derived "Hôm nay" numbers
-  const todayRevenue = earnings?.net_payout ?? 0;
-  const todayNewOrders =
-    orders.filter((o) => o.status === "RECEIVED").length +
-    allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length +
-    deliveries.filter((d) => d.status === "CREATED" || d.status === "COURIER_ASSIGNED").length;
-  const todayNeedsAction =
-    orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length +
-    allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length +
-    appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length +
-    reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length +
-    deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length;
+  const todayRevenue = isDisconnected ? 0 : (earnings?.net_payout ?? 0);
+  const todayNewOrders = isDisconnected
+    ? 0
+    : orders.filter((o) => o.status === "RECEIVED").length +
+      allRides.filter((r) => r.status === "DRIVER_TO_PICKUP" || r.status === "DRIVER_ASSIGNED").length +
+      deliveries.filter((d) => d.status === "CREATED" || d.status === "COURIER_ASSIGNED").length;
+  const todayNeedsAction = isDisconnected
+    ? 0
+    : orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length +
+      allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length +
+      appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length +
+      reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length +
+      deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length;
 
   const domainCta = (): { label: string; tab: typeof activeTab } => {
+    if (isDisconnected) return { label: "Tài khoản đã ngắt kết nối", tab: "profile" };
     if (rawProviderType === "ride_driver" || rawProviderType === "ride") return { label: "Nhận cuốc", tab: "ride" };
     if (rawProviderType === "delivery_courier" || rawProviderType === "delivery") return { label: "Nhận đơn giao", tab: "delivery" };
     if (rawProviderType === "healthcare_doctor" || rawProviderType === "healthcare") return { label: "Mở lịch khám", tab: "health" };
@@ -1510,9 +1532,9 @@ export function ProviderPortal() {
             <span
             className="admin-badge-header admin-banner-subtitle"
             style={{
-              background: isMaster ? "#EEF2FF" : "#ECFDF5",
-              borderColor: isMaster ? "#C7D2FE" : "#A7F3D0",
-              color: isMaster ? "#4338CA" : "#065F46",
+              background: isDisconnected ? "#FEF2F2" : isMaster ? "#EEF2FF" : "#ECFDF5",
+              borderColor: isDisconnected ? "#FECACA" : isMaster ? "#C7D2FE" : "#A7F3D0",
+              color: isDisconnected ? "#DC2626" : isMaster ? "#4338CA" : "#065F46",
             }}
           >
             <Store size={13} />
@@ -1617,10 +1639,10 @@ export function ProviderPortal() {
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "#0F172A", lineHeight: 1.2 }}>
-                  {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email?.split("@")[0], isMaster ? "Nhà Hàng Cơm Niêu Sài Gòn" : "Đối tác")}
+                  {sanitizeDisplayText(profileForm.businessName || user?.full_name || user?.email?.split("@")[0], isDisconnected ? "Tài Khoản Đã Ngắt Kết Nối" : isMaster ? "Đối Tác Dịch Vụ X-One (Chính)" : "Đối tác")}
                 </span>
-                <span style={{ fontSize: "var(--text-micro)", color: isMaster ? "#4338CA" : "#059669", fontWeight: 600 }}>
-                  {isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
+                <span style={{ fontSize: "var(--text-micro)", color: isDisconnected ? "#DC2626" : isMaster ? "#4338CA" : "#059669", fontWeight: 600 }}>
+                  {isDisconnected ? "Đã ngắt kết nối" : isMaster ? "Đối tác Master Hệ thống" : "Đối tác dịch vụ xác thực"}
                 </span>
               </div>
             </div>
@@ -1646,7 +1668,7 @@ export function ProviderPortal() {
           <div className="provider-sidebar-inner" style={{ padding: "16px 12px" }}>
             <div className="provider-nav-group">
               <span className="provider-nav-group-title">
-                {isMaster ? "Quản lý 5 phân hệ dịch vụ" : "Phân hệ nghiệp vụ đối tác"}
+                {isDisconnected ? "Trạng thái tài khoản" : isMaster ? "Quản lý 5 phân hệ dịch vụ" : "Phân hệ nghiệp vụ đối tác"}
               </span>
               <div className="provider-nav-group-items" role="tablist" aria-label="Phân hệ đối tác">
                 {isAllowedTab("ride") && (
@@ -1924,7 +1946,9 @@ export function ProviderPortal() {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600, color: "#334155" }}>Trạng thái:</span>
-                  <span style={{ color: "#059669", fontWeight: 700 }}>Đã kích hoạt</span>
+                  <span style={{ color: isDisconnected ? "#DC2626" : "#059669", fontWeight: 700 }}>
+                    {isDisconnected ? "Đã ngắt kết nối" : "Đã kích hoạt"}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1937,6 +1961,48 @@ export function ProviderPortal() {
             <h1 style={{ position: "absolute", width: "1px", height: "1px", padding: 0, margin: "-1px", overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
               Chào mừng đến Cổng Đối tác X-One
             </h1>
+
+            {/* Disconnected Notice Banner */}
+            {isDisconnected && (
+              <div
+                style={{
+                  background: "#FEF2F2",
+                  border: "1px solid #FECACA",
+                  borderRadius: "12px",
+                  padding: "16px 20px",
+                  marginBottom: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  color: "#991B1B",
+                }}
+              >
+                <div
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    background: "#FEE2E2",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <AlertTriangle size={22} color="#DC2626" />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "15px", marginBottom: "4px" }}>
+                    Tài khoản đã ngắt kết nối dịch vụ
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#7F1D1D", lineHeight: 1.5 }}>
+                    Tài khoản đối tác <strong>{user?.email}</strong> đã bị ngắt kết nối toàn bộ khỏi 5 phân hệ (Ride, Delivery, Food, Restaurant, Healthcare).
+                    Mọi chức năng Master Provider đã được bàn giao cho tài khoản chính: <strong>provider1@xone.local</strong>.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Hôm nay strip */}
             <div className="provider-today-strip">
               <div className="provider-today-metrics">
@@ -3038,15 +3104,17 @@ export function ProviderPortal() {
                         </span>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => openAddItemModal()}
-                        className="button button-primary"
-                        style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", gap: "6px" }}
-                      >
-                        <Plus size={15} />
-                        <span>Gắn Dịch Vụ / Món Ăn Mới</span>
-                      </button>
+                      {!isDisconnected && (
+                        <button
+                          type="button"
+                          onClick={() => openAddItemModal()}
+                          className="button button-primary"
+                          style={{ height: "36px", padding: "0 16px", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", gap: "6px" }}
+                        >
+                          <Plus size={15} />
+                          <span>Gắn Dịch Vụ / Món Ăn Mới</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* Category Filter Pills */}
@@ -3092,9 +3160,13 @@ export function ProviderPortal() {
                       <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748B" }}>
                         <Layers size={36} style={{ margin: "0 auto 10px", color: "#94A3B8" }} />
                         <p style={{ margin: "0 0 10px", fontSize: "var(--text-base)", fontWeight: 600, color: "#0F172A" }}>
-                          {serviceItems.length === 0 ? "Chưa có dịch vụ nào được gắn vào hệ thống." : "Không có món/dịch vụ nào trong phân loại này."}
+                          {serviceItems.length === 0
+                            ? isDisconnected
+                              ? "Tài khoản đối tác đã ngắt kết nối — không có dịch vụ hoạt động."
+                              : "Chưa có dịch vụ nào được gắn vào hệ thống."
+                            : "Không có món/dịch vụ nào trong phân loại này."}
                         </p>
-                        {serviceItems.length === 0 && (
+                        {serviceItems.length === 0 && !isDisconnected && (
                           <button
                             type="button"
                             onClick={() => openAddItemModal()}

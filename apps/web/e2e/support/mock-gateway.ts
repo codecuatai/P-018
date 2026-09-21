@@ -274,7 +274,8 @@ export class MockGateway {
           items: [
             { id: "u-1", email: "admin@xone.local", full_name: "Admin User", role: "admin", status: "active", created_at: isoNow() },
             { id: "u-2", email: "manager@xone.local", full_name: "Manager User", role: "manager", status: "active", created_at: isoNow() },
-            { id: "u-3", email: "provider@xone.local", full_name: "Provider User", role: "provider", status: "active", created_at: isoNow() },
+            { id: "u-3", email: "provider@xone.local", full_name: "Tài Khoản Đã Ngắt Kết Nối", role: "provider", status: "suspended", created_at: isoNow() },
+            { id: "u-13", email: "provider1@xone.local", full_name: "Provider Master User", role: "provider", status: "active", created_at: isoNow() },
             { id: "u-4", email: "user@xone.local", full_name: "Standard User", role: "user", status: "active", created_at: isoNow() },
           ],
         });
@@ -704,16 +705,20 @@ export class MockGateway {
     if (path === "/api/v1/provider/services/profile") {
       if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
       if (method === "GET") {
-        const isMaster = actor.email === "provider@xone.local";
+        const isDisconnected = actor.email === "provider@xone.local";
+        const isMaster = actor.email === "provider1@xone.local";
         const profile = this.providerProfiles.get(actor.sub) ?? {
           provider_id: actor.sub,
-          provider_type: isMaster ? "all" : (actor.provider_type || "restaurant_merchant"),
-          business_name: actor.full_name || (isMaster ? "Đối tác Tổng hợp X-One" : "Đối tác X-One"),
+          provider_type: isDisconnected ? "disconnected" : isMaster ? "all" : (actor.provider_type || "restaurant_merchant"),
+          business_name: isDisconnected ? "Tài Khoản Đã Ngắt Kết Nối" : actor.full_name || (isMaster ? "Đối Tác Dịch Vụ X-One (Chính)" : "Đối tác X-One"),
           phone: actor.phone || "0900000000",
           address: "123 Đường Sáng Tạo, Quận 1",
-          is_open: true,
-          status: "active",
-          tenant_id: isMaster ? "partner-xone-01" : `partner-${actor.sub.slice(0, 8)}`,
+          is_open: !isDisconnected,
+          status: isDisconnected ? "suspended" : "active",
+          tenant_id: isDisconnected ? "partner-disconnected" : isMaster ? "partner-xone-01" : `partner-${actor.sub.slice(0, 8)}`,
+          connected_services: isDisconnected
+            ? { food: false, ride: false, restaurant: false, healthcare: false, delivery: false }
+            : { food: true, ride: true, restaurant: true, healthcare: true, delivery: true },
         };
         return this.ok(route, profile);
       }
@@ -729,7 +734,7 @@ export class MockGateway {
     if (path === "/api/v1/provider/services/items") {
       if (actor.role !== "provider") return this.fail(route, 403, "FORBIDDEN", "Forbidden");
       if (method === "GET") {
-        const isMaster = actor.email === "provider@xone.local";
+        const isMaster = actor.email === "provider1@xone.local";
         const defaultItems = isMaster
           ? [
               {

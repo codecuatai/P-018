@@ -53,8 +53,8 @@ describe('McpApiKeyRepository', () => {
 
 describe('McpToolRegistry and Domain Scoping (20 Tools across 4 Services)', () => {
   const masterUser: AuthUser = {
-    sub: 'a0000000-0000-4000-8000-000000000003',
-    email: 'provider@xone.local',
+    sub: 'a0000000-0000-4000-8000-000000000013',
+    email: 'provider1@xone.local',
     role: 'provider',
     tenant_id: 'partner-xone-01',
     provider_type: 'ride_driver',

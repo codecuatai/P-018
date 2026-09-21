@@ -176,7 +176,7 @@ export class ProviderServicesController {
   }
 
   private isMasterProvider(user: AuthUser): boolean {
-    return user.email === 'provider@xone.local' || user.email === 'provider1@xone.local' || user.tenant_id === 'partner-xone-01';
+    return (user.email === 'provider1@xone.local' || user.tenant_id === 'partner-xone-01') && user.email !== 'provider@xone.local';
   }
 
   private operationActor(user: AuthUser): string | undefined {

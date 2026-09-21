@@ -466,7 +466,7 @@ test.describe("Comprehensive Micro-Features E2E Suite", () => {
 
   test("11. Provider portal micro-features (/app/provider) - Item availability toggle & order progression", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
-      email: "provider@xone.local",
+      email: "provider1@xone.local",
       role: "provider",
       onboardingComplete: true,
     });

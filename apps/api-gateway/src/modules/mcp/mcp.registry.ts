@@ -373,7 +373,7 @@ export class McpToolRegistry {
   }
 
   assertDomain(user: AuthUser, domain: string): void {
-    const isMaster = user.email === 'provider@xone.local' || user.email === 'provider1@xone.local' || user.tenant_id === 'partner-xone-01';
+    const isMaster = (user.email === 'provider1@xone.local' || user.tenant_id === 'partner-xone-01') && user.email !== 'provider@xone.local';
     if (isMaster) return;
     const pType = user.provider_type;
     if (!pType) return;

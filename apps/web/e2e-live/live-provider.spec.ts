@@ -12,12 +12,12 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     });
   });
 
-  test("1. Master Provider (provider@xone.local) has access to all 4 domains on production", async ({ page }) => {
+  test("1. Master Provider (provider1@xone.local) has access to all 4 domains on production", async ({ page }) => {
     // Navigate to login
     await page.goto("/?auth=login");
     await expect(page.locator("#login-email")).toBeVisible({ timeout: 15_000 });
 
-    await page.locator("#login-email").fill("provider@xone.local");
+    await page.locator("#login-email").fill("provider1@xone.local");
     await page.locator("#login-password").fill("Password123!");
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 
@@ -130,7 +130,7 @@ test.describe("Production Live Provider & Isolation E2E Verification", () => {
     await page.goto("/?auth=login");
     await expect(page.locator("#login-email")).toBeVisible({ timeout: 15_000 });
 
-    await page.locator("#login-email").fill("provider@xone.local");
+    await page.locator("#login-email").fill("provider1@xone.local");
     await page.locator("#login-password").fill("Password123!");
     await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
 

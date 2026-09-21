@@ -87,7 +87,7 @@ test.describe("4-Role RBAC E2E Test Suite", () => {
 
   test("3. Provider: full access to /app/provider portal, denied /admin, redirected from /app", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
-      email: "provider@xone.local",
+      email: "provider1@xone.local",
       role: "provider",
       onboardingComplete: true,
     });

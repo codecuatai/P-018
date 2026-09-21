@@ -3,9 +3,9 @@ import { expect, test } from "@playwright/test";
 import { installAuthenticatedFixture } from "./support/mock-gateway";
 
 test.describe("Provider Multi-Tenancy Isolation & Webhook Integration E2E", () => {
-  test("1. Seeded provider@xone.local accesses /app/provider and views its own profile & items", async ({ context, page }) => {
+  test("1. Seeded primary master provider1@xone.local accesses /app/provider and views all 4 domains", async ({ context, page }) => {
     await installAuthenticatedFixture(context, {
-      email: "provider@xone.local",
+      email: "provider1@xone.local",
       role: "provider",
       onboardingComplete: true,
     });
@@ -30,6 +30,26 @@ test.describe("Provider Multi-Tenancy Isolation & Webhook Integration E2E", () =
     await expect(servicesTab).toBeVisible({ timeout: 10_000 });
     await servicesTab.click();
     await expect(page.getByText(/Danh sách Dịch vụ \/ Sản phẩm đã gắn vào X-One/i)).toBeVisible();
+  });
+
+  test("1b. Disconnected provider@xone.local has all microservice tabs stripped and shows disconnected notice", async ({ context, page }) => {
+    await installAuthenticatedFixture(context, {
+      email: "provider@xone.local",
+      role: "provider",
+      onboardingComplete: true,
+    });
+
+    await page.goto("/app/provider");
+    await expect(page.getByRole("heading", { name: /Chào mừng/i })).toBeVisible({ timeout: 15_000 });
+
+    // Disconnected notice should be visible
+    await expect(page.getByText(/Tài khoản đã ngắt kết nối dịch vụ/i)).toBeVisible();
+
+    // Verify none of the 5 operational domain tabs are available
+    await expect(page.getByRole("button", { name: /Chuyến xe · Cuốc xe Ride Partner/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Đơn món · Món ăn Food Merchant/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Đặt bàn · Nhà hàng Reservation/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Lịch khám · Y tế Healthcare Doctor/i })).toHaveCount(0);
   });
 
   test("2. Newly registered provider attaches custom Webhook API URL and manages isolated services", async ({ context, page }) => {
