@@ -933,9 +933,9 @@ export function ProviderPortal() {
 
   const todayNeedsAction = isDisconnected
     ? 0
-    : orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length +
-      allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED").length +
-      appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length +
+    : orders.filter((o) => o.status !== "COMPLETED" && o.status !== "DELIVERED" && o.status !== "CANCELLED" && o.status !== "RESTAURANT_REJECTED").length +
+      allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED" && (r.status as string) !== "NO_DRIVER" && (r.status as string) !== "FAILED").length +
+      appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED" && (a.status as string) !== "EXPIRED").length +
       reservations.filter((res) => res.status !== "COMPLETED" && res.status !== "CANCELLED").length +
       deliveries.filter((d) => d.status !== "DELIVERED" && d.status !== "CANCELLED").length +
       pharmacyOrders.filter((p) => p.status !== "COMPLETED" && p.status !== "CANCELLED").length;
@@ -1041,9 +1041,9 @@ export function ProviderPortal() {
                       <Car size={16} />
                     </span>
                     <span className="provider-nav-btn-label">{tabLabel("ride")}</span>
-                    {allRides.filter((r) => r.status !== "COMPLETED").length > 0 && (
+                    {allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED" && (r.status as string) !== "NO_DRIVER" && (r.status as string) !== "FAILED").length > 0 && (
                       <span className="provider-nav-count">
-                        {allRides.filter((r) => r.status !== "COMPLETED").length}
+                        {allRides.filter((r) => r.status !== "COMPLETED" && r.status !== "CANCELLED" && (r.status as string) !== "NO_DRIVER" && (r.status as string) !== "FAILED").length}
                       </span>
                     )}
                   </button>
@@ -1081,9 +1081,9 @@ export function ProviderPortal() {
                       <UtensilsCrossed size={16} />
                     </span>
                     <span className="provider-nav-btn-label">{tabLabel("food")}</span>
-                    {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length > 0 && (
+                    {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "DELIVERED" && o.status !== "CANCELLED" && o.status !== "RESTAURANT_REJECTED").length > 0 && (
                       <span className="provider-nav-count">
-                        {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "CANCELLED").length}
+                        {orders.filter((o) => o.status !== "COMPLETED" && o.status !== "DELIVERED" && o.status !== "CANCELLED" && o.status !== "RESTAURANT_REJECTED").length}
                       </span>
                     )}
                   </button>
@@ -1121,9 +1121,9 @@ export function ProviderPortal() {
                       <HeartPulse size={16} />
                     </span>
                     <span className="provider-nav-btn-label">{tabLabel("health")}</span>
-                    {appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length > 0 && (
+                    {appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED" && (a.status as string) !== "EXPIRED").length > 0 && (
                       <span className="provider-nav-count">
-                        {appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED").length}
+                        {appointments.filter((a) => a.status !== "COMPLETED" && a.status !== "CANCELLED" && (a.status as string) !== "EXPIRED").length}
                       </span>
                     )}
                   </button>
@@ -1145,7 +1145,18 @@ export function ProviderPortal() {
                     <Layers size={16} />
                   </span>
                   <span className="provider-nav-btn-label">Gắn & Quản lý Dịch vụ</span>
-                  <span className="provider-nav-count">{serviceItems.length}</span>
+                  <span
+                    className="provider-nav-count provider-nav-count--catalog"
+                    style={{
+                      background: "#F1F5F9",
+                      color: "#475569",
+                      border: "1px solid #E2E8F0",
+                      fontWeight: 600,
+                    }}
+                    title="Tổng số sản phẩm/dịch vụ trong catalog"
+                  >
+                    {serviceItems.length}
+                  </span>
                 </button>
 
                 <button
@@ -1429,7 +1440,7 @@ export function ProviderPortal() {
                 onAcceptOrder={async (order: FoodOrder) => handleAdvanceOrderStatus(order.id, "RESTAURANT_ACCEPTED")}
                 onPrepareOrder={async (order: FoodOrder) => handleAdvanceOrderStatus(order.id, "PREPARING")}
                 onReadyOrder={async (order: FoodOrder) => handleAdvanceOrderStatus(order.id, "READY_FOR_PICKUP")}
-                onDeliverOrder={async (order: FoodOrder) => handleAdvanceOrderStatus(order.id, "COMPLETED")}
+                onDeliverOrder={async (order: FoodOrder) => handleAdvanceOrderStatus(order.id, "DELIVERED")}
                 deliveries={deliveries}
                 onProgressDelivery={async (delivery: DeliveryOrder) => {
                   let nextStatus: DeliveryOrder["status"] = "COURIER_ASSIGNED";
