@@ -251,7 +251,12 @@ def test_demo_restaurant_then_ride_request_keeps_cuisine_area_time_and_dependenc
     assert "dropoff_address" not in ride.extracted_slots
 
 
-def test_restaurant_slots_ignore_calendar_digits_and_reference_destination() -> None:
+def test_restaurant_slots_ignore_calendar_digits_and_reference_destination(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        TemporalContext,
+        "now",
+        classmethod(lambda cls: datetime(2026, 8, 15, 14, 0, tzinfo=ZoneInfo("Asia/Ho_Chi_Minh"))),
+    )
     plan = deterministic_plan(
         "Tìm quán lẩu còn bàn gần Cầu Giấy ngày 28/09/2026 lúc 19h cho 2 người, "
         "đồng thời muốn xe 4 chỗ đến đó."

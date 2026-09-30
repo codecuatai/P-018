@@ -75,7 +75,7 @@ export function RevealScene({ children, className, id, role, replayOnReenter = f
       data-replay-on-reenter={replayOnReenter ? "true" : "false"}
       data-motion-active={replayOnReenter ? delayedActive : undefined}
       initial={reduceMotion ? false : { opacity: 0, y: 28, scale: 0.99 }}
-      animate={replayOnReenter && !reduceMotion ? (delayedActive ? visibleState : { opacity: 0, y: 28, scale: 0.99 }) : undefined}
+      animate={reduceMotion ? visibleState : replayOnReenter ? (delayedActive ? visibleState : { opacity: 0, y: 28, scale: 0.99 }) : undefined}
       whileInView={!replayOnReenter && !reduceMotion ? visibleState : undefined}
       viewport={!replayOnReenter ? oneShotViewport : undefined}
       transition={enterTransition}
@@ -107,7 +107,7 @@ export function RevealItem({ children, className, as = "div", delay = 0, variant
       data-replay-on-reenter={replayOnReenter ? "true" : "false"}
       data-motion-active={replayOnReenter ? delayedActive : undefined}
       initial={reduceMotion ? false : hiddenState}
-      animate={replayOnReenter && !reduceMotion ? (delayedActive ? visibleState : hiddenState) : undefined}
+      animate={reduceMotion ? visibleState : replayOnReenter ? (delayedActive ? visibleState : hiddenState) : undefined}
       whileInView={!replayOnReenter && !reduceMotion ? visibleState : undefined}
       viewport={!replayOnReenter ? { ...oneShotViewport, amount: 0.2 } : undefined}
       transition={{ ...enterTransition, delay }}

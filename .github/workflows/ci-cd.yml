@@ -129,7 +129,7 @@ jobs:
       - name: Create Python environment
         run: python -m venv .ci-venv
       - name: Install dependencies
-        run: .ci-venv/bin/python -m pip install -e "apps/agent-service[dev]"
+        run: .ci-venv/bin/python -m pip install -e "./apps/agent-service[dev]"
       - name: Lint service
         run: .ci-venv/bin/python -m ruff check "apps/agent-service/src" "apps/agent-service/tests"
       - name: Apply Agent migrations

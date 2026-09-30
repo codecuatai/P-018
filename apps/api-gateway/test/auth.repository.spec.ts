@@ -32,7 +32,9 @@ function account(): AuthAccount {
 function session(overrides: Partial<AuthSession> & Pick<AuthSession, 'id' | 'refreshTokenHash' | 'familyId'>): AuthSession {
   return {
     userId: 'usr-grace',
-    expiresAt: iso(30 * 24 * 60 * 60 * 1_000),
+    // Keep expiry relative to wall clock: the in-memory repository checks it
+    // against Date.now(), while the rotation scenarios use a fixed test time.
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
     createdAt: iso(0),
     lastUsedAt: iso(0),
     ...overrides,

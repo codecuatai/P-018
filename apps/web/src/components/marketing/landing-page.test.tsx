@@ -51,7 +51,7 @@ describe("landing visual contract", () => {
     expect(within(services).getByRole("button", { name: "Chọn dịch vụ Lịch khám" })).toBeInTheDocument();
   });
 
-  it("updates the selected service copy without autoplay", () => {
+  it("updates the selected service copy without autoplay", async () => {
     render(<LandingPage />);
     const services = screen.getByRole("region", { name: "Những việc bạn cần mỗi ngày, bắt đầu từ một chỗ." });
     const restaurant = within(services).getByRole("button", { name: "Chọn dịch vụ Nhà hàng" });
@@ -65,7 +65,7 @@ describe("landing visual contract", () => {
     fireEvent.click(restaurant);
 
     expect(restaurant).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("Tìm nhà hàng, chọn thời gian và giữ bàn trước khi xác nhận.")).toBeInTheDocument();
+    expect(await screen.findByText("Tìm nhà hàng, chọn thời gian và giữ bàn trước khi xác nhận.")).toBeInTheDocument();
   });
 
   it("uses the multi-service conversation framing and final editorial scene", () => {

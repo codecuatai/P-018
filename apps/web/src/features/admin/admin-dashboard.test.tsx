@@ -51,7 +51,7 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Quản trị hệ thống" })).toBeInTheDocument();
       expect(screen.getAllByText("api-gateway").length).toBeGreaterThan(0);
       expect(screen.getAllByText("food-service").length).toBeGreaterThan(0);
       expect(screen.getAllByText("ride-service").length).toBeGreaterThan(0);
@@ -203,7 +203,7 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Quản trị hệ thống" })).toBeInTheDocument();
     });
 
     const managerTabs = (await import("./admin-tabs")).getConsolidatedTabs("manager");
@@ -242,7 +242,7 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Quản trị hệ thống" })).toBeInTheDocument();
     });
 
     // Navigate to Workflows tab
@@ -297,7 +297,7 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Quản trị hệ thống" })).toBeInTheDocument();
     });
 
     // Navigate to transactions tab
@@ -331,7 +331,7 @@ describe("AdminDashboard", () => {
     render(<AdminDashboard />);
 
     await waitFor(() => {
-      expect(screen.getByText("Trung tâm vận hành X-One")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Quản trị hệ thống" })).toBeInTheDocument();
     });
 
     // Navigate to users tab

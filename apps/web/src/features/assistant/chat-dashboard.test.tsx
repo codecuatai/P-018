@@ -33,10 +33,10 @@ jest.mock("@/features/product/context-rail", () => ({
 }));
 
 describe("ChatDashboard voice controls", () => {
-  it("exposes the develop voice input while keeping unfinished add-ons disabled", () => {
+  it("exposes voice input without showing the removed add-ons control", () => {
     render(<ChatDashboard user={{ sub: "user-m6", email: "m6@example.test", role: "USER" }} />);
 
-    expect(screen.getByRole("button", { name: "Thêm tùy chọn" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Thêm tùy chọn" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nhập bằng giọng nói" })).toBeEnabled();
     expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
   });

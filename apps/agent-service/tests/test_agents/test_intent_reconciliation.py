@@ -41,28 +41,6 @@ def test_numeric_food_ordinal_resolves_against_the_full_authoritative_candidate_
     assert resolved["restaurant_id"] == "restaurant-2"
 
 
-def test_selected_food_action_does_not_turn_cart_language_into_a_dish_query() -> None:
-    slots = extract_slots("Them 1 mon da chon vao gio")
-    assert "dish_query" not in slots
-
-
-def test_numeric_food_ordinal_resolves_against_the_full_authoritative_candidate_list() -> None:
-    resolved = resolve_references(
-        {"selection_index": 2},
-        {
-            "menu_item_candidates": [
-                {"id": "item-1", "name": "Phở bò", "restaurant_id": "restaurant-1"},
-                {"id": "item-2", "name": "Bún bò", "restaurant_id": "restaurant-1"},
-                {"id": "item-3", "name": "Cơm tấm", "restaurant_id": "restaurant-2"},
-            ]
-        },
-    )
-
-    assert resolved["menu_item_id"] == "item-3"
-    assert resolved["menu_item_name"] == "Cơm tấm"
-    assert resolved["restaurant_id"] == "restaurant-2"
-
-
 class DisagreeingLLM:
     def __init__(self, intent: str, extracted_slots: dict[str, Any] | None = None) -> None:
         self.intent = intent
