@@ -187,7 +187,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={`app-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${isResizing ? " is-sidebar-resizing" : ""}`}>
+    <div className={`app-shell customer-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}${isResizing ? " is-sidebar-resizing" : ""}`}>
       <a className="skip-link" href="#app-content">Bỏ qua điều hướng</a>
       <header className="app-global-header">
         <div className="app-global-header-left">

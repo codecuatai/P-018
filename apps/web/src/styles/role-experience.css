@@ -1,0 +1,527 @@
+/* Role-focused visual pass: shared foundations with distinct work rhythms. */
+
+/* Customer: keep attention on the conversation and make the surrounding shell quieter. */
+.customer-shell {
+  --role-accent: #4f46e5;
+  --role-accent-soft: #eef2ff;
+  background: #f5f7fb;
+}
+
+.customer-shell .app-global-header {
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(16px);
+}
+
+.customer-shell .app-sidebar {
+  background: linear-gradient(180deg, #fff 0%, #fbfcff 100%);
+}
+
+.customer-shell .chat-feed {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgb(238 242 255 / 54%), transparent 44%),
+    #f7f8fc;
+}
+
+.customer-shell .chat-empty {
+  max-width: 820px;
+  padding: clamp(20px, 4vh, 48px) 12px;
+}
+
+.customer-shell .chat-empty-title {
+  font-size: clamp(1.65rem, 3vw, 2.25rem);
+  letter-spacing: -0.04em;
+}
+
+.customer-shell .proactive-ai-banner {
+  width: min(100%, 660px);
+  border: 1px solid #d8ddff;
+  border-radius: 18px;
+  box-shadow: 0 12px 28px -20px rgb(61 71 181 / 40%);
+}
+
+.customer-shell .chat-empty-suggestion {
+  min-height: 76px;
+  border-radius: 14px;
+}
+
+/* Provider: surface live workload first, then separate navigation and business controls. */
+.provider-shell {
+  --provider-accent: #0f766e;
+  --provider-accent-soft: #ecfdf8;
+  background: #f4f7f7 !important;
+}
+
+.provider-shell .app-global-header {
+  background: #fff;
+  border-bottom-color: #dce7e5;
+}
+
+.provider-shell .provider-sidebar {
+  background: #fbfdfc;
+  border-right-color: #dce7e5;
+}
+
+.provider-shell .provider-nav-group-title {
+  color: #70817f;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.provider-shell .provider-nav-btn {
+  min-height: 42px;
+  border-radius: 11px;
+  color: #475b58;
+}
+
+.provider-shell .provider-nav-btn:hover {
+  background: #f0f7f5;
+  color: #115e59;
+}
+
+.provider-shell .provider-nav-btn.is-active {
+  color: #115e59;
+  background: #eaf7f3;
+  border-color: #c5e9df;
+  box-shadow: inset 3px 0 0 #0f8a78;
+}
+
+.provider-shell .provider-nav-btn.is-active .provider-nav-btn-icon {
+  color: #0f766e;
+}
+
+.provider-shell .provider-today-strip {
+  align-items: stretch;
+  padding: 20px 22px;
+  border-color: #dce7e5;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px -20px rgb(19 78 74 / 35%);
+}
+
+.provider-shell .provider-today-metrics {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.provider-shell .provider-today-metric {
+  min-width: 95px;
+}
+
+.provider-shell .provider-today-label {
+  color: #72817f;
+  letter-spacing: 0.06em;
+}
+
+.provider-shell .provider-today-number {
+  color: #183b38;
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-shell .provider-today-number--revenue {
+  color: #0f766e;
+}
+
+.provider-shell .provider-cta-btn {
+  background: #0f766e !important;
+  border-color: #0f766e !important;
+  box-shadow: 0 5px 12px -6px rgb(15 118 110 / 65%);
+}
+
+.provider-shell .provider-cta-btn:hover {
+  background: #115e59 !important;
+}
+
+.provider-shell .provider-connectivity-panel {
+  border-color: #dce7e5 !important;
+  border-radius: 15px !important;
+  box-shadow: 0 5px 16px -16px rgb(19 78 74 / 36%) !important;
+}
+
+/* Admin and manager share the console structure, while the manager view has an operational teal accent. */
+.admin-shell {
+  background: #f4f6fa;
+}
+
+.admin-shell .app-global-header {
+  background: #fff;
+}
+
+.admin-shell .admin-sidebar {
+  background: #fff;
+}
+
+.admin-shell .admin-main-content {
+  padding-top: clamp(20px, 3vh, 32px);
+}
+
+.admin-shell .admin-page {
+  max-width: 1320px;
+  margin-inline: auto;
+}
+
+.admin-shell .admin-banner-card {
+  min-height: 84px;
+  padding: 18px 22px;
+  border-color: #e0e6ef;
+  border-radius: 18px;
+  background: linear-gradient(115deg, #fff 0%, #f8faff 100%);
+  box-shadow: 0 8px 28px -24px rgb(24 38 72 / 35%);
+}
+
+.admin-shell .admin-banner-title {
+  font-size: clamp(1.2rem, 1.7vw, 1.55rem);
+  letter-spacing: -0.035em;
+}
+
+.admin-shell .admin-subtab-bar {
+  margin-bottom: 18px;
+  padding: 5px;
+  border-color: #e1e6ef;
+  background: #edf1f7;
+  border-radius: 13px;
+}
+
+.admin-shell .admin-subtab-pill {
+  scroll-snap-align: start;
+}
+
+.admin-shell .admin-subtab-pill {
+  min-height: 36px;
+  padding-inline: 15px;
+  border-radius: 9px;
+}
+
+.admin-shell .admin-section-heading {
+  margin-bottom: 16px;
+}
+
+.admin-shell .admin-section-heading h2 {
+  letter-spacing: -0.025em;
+}
+
+.admin-shell .admin-metric-grid {
+  gap: 14px;
+}
+
+.admin-shell .admin-metric {
+  min-height: 122px;
+  padding: 16px 18px;
+  border-color: #e2e8f0;
+  border-radius: 15px;
+  box-shadow: 0 5px 18px -16px rgb(16 24 40 / 34%);
+}
+
+.admin-shell .admin-metric::before {
+  height: 3px;
+  background: linear-gradient(90deg, #5965e8, #8792ff);
+}
+
+.admin-shell .admin-metric strong {
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-shell .admin-card {
+  padding: 20px;
+  border-color: #e2e8f0;
+  border-radius: 15px;
+  box-shadow: 0 5px 18px -18px rgb(16 24 40 / 35%);
+}
+
+.admin-shell-manager .admin-badge-header,
+.admin-shell-manager .admin-nav-btn.is-active {
+  color: #0f766e;
+  background: #e9f7f4;
+  border-color: #bfe5dc;
+}
+
+.admin-shell-manager .admin-nav-btn.is-active .admin-nav-btn-icon {
+  color: #0f766e;
+}
+
+.admin-shell-manager .admin-banner-icon {
+  background: linear-gradient(135deg, #0f766e, #14a38b);
+  box-shadow: 0 5px 14px rgb(15 118 110 / 22%);
+}
+
+.admin-shell-manager .admin-subtab-pill.is-active {
+  color: #0f766e;
+}
+
+.admin-shell-manager .admin-metric::before {
+  background: linear-gradient(90deg, #0f766e, #50b9a4);
+}
+
+.admin-shell-manager .admin-shift-hero {
+  background: linear-gradient(120deg, #123e42 0%, #0f766e 58%, #145b65 100%) !important;
+  border-color: rgb(153 246 228 / 24%) !important;
+  box-shadow: 0 12px 28px -18px rgb(15 118 110 / 62%) !important;
+}
+
+.admin-shell-manager .admin-shift-hero h2 {
+  letter-spacing: -0.025em !important;
+}
+
+@media (max-width: 820px) {
+  .admin-shell .admin-banner-card {
+    align-items: flex-start;
+    padding: 16px;
+    border-radius: 15px;
+  }
+
+  .admin-shell .admin-metric {
+    min-height: 112px;
+    padding: 14px;
+  }
+}
+
+@media (max-width: 680px) {
+  .provider-shell .provider-today-strip {
+    gap: 16px;
+    padding: 16px;
+  }
+
+  .provider-shell .provider-today-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 10px;
+  }
+
+  .provider-shell .provider-today-metric {
+    min-width: 0;
+    padding: 2px 0 2px 10px;
+    border-left: 2px solid #d8ece7;
+  }
+
+  .provider-shell .provider-today-actions {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 42px;
+    gap: 8px !important;
+  }
+
+  .provider-shell .provider-today-actions > div {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+
+  .provider-shell .provider-today-actions .provider-cta-btn {
+    width: 100%;
+  }
+
+  .provider-shell .provider-today-actions > .button-secondary {
+    width: 42px;
+    padding: 0 !important;
+  }
+
+  .provider-shell .provider-nav-group-items {
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 12px;
+  }
+
+  .provider-shell .provider-nav-group-items::-webkit-scrollbar {
+    display: block;
+    height: 3px;
+  }
+
+  .provider-shell .provider-nav-group-items::-webkit-scrollbar-thumb {
+    background: #a9cbc3;
+    border-radius: 99px;
+  }
+
+  .provider-shell .provider-nav-btn {
+    scroll-snap-align: start;
+    gap: 7px;
+    padding-inline: 10px !important;
+    font-size: 0.78rem;
+  }
+
+  .provider-shell .provider-nav-btn-label {
+    max-width: 142px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .provider-shell .provider-connectivity-panel {
+    display: grid !important;
+    gap: 9px !important;
+    padding: 12px !important;
+  }
+
+  .provider-shell .provider-connectivity-main {
+    display: grid !important;
+    gap: 8px !important;
+    min-width: 0;
+  }
+
+  .provider-shell .provider-connectivity-heading {
+    flex-wrap: wrap;
+    gap: 5px !important;
+  }
+
+  .provider-shell .provider-connectivity-heading > span:first-of-type {
+    font-size: 0.78rem !important;
+  }
+
+  .provider-shell .provider-connectivity-list {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 1px 1px 5px;
+    scrollbar-width: thin;
+    scrollbar-color: #b7cfca transparent;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .provider-shell .provider-connectivity-chip {
+    flex: 0 0 auto;
+    min-height: 25px;
+  }
+
+  .provider-shell .provider-connectivity-list::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .provider-shell .provider-connectivity-list::-webkit-scrollbar-thumb {
+    background: #a9cbc3;
+    border-radius: 99px;
+  }
+
+  .provider-shell .provider-connectivity-actions {
+    width: 100%;
+  }
+
+  .provider-shell .provider-connectivity-actions > button {
+    flex: 1 1 0;
+    justify-content: center;
+    min-height: 32px;
+  }
+
+  .customer-shell .chat-feed {
+    padding-inline: 16px;
+  }
+
+  .customer-shell .chat-empty {
+    margin: 4px auto 12px;
+    padding: 8px;
+  }
+
+  .customer-shell .chat-empty-title {
+    margin-bottom: 6px;
+    font-size: clamp(1.4rem, 6.4vw, 1.65rem);
+    line-height: 1.25;
+  }
+
+  .customer-shell .chat-empty-sub {
+    margin-bottom: 11px;
+    font-size: 0.81rem;
+    line-height: 1.4;
+  }
+
+  .customer-shell .proactive-ai-banner {
+    gap: 6px;
+    margin: 8px auto 10px;
+    padding: 11px 13px;
+    border-radius: 15px;
+  }
+
+  .customer-shell .proactive-ai-banner-title {
+    font-size: 0.88rem;
+    line-height: 1.35;
+  }
+
+  .customer-shell .proactive-ai-banner-desc {
+    font-size: 0.81rem;
+    line-height: 1.4;
+  }
+
+  .customer-shell .chat-empty-suggestions {
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .customer-shell .chat-empty-suggestion {
+    min-height: 64px;
+    padding: 11px 12px;
+  }
+
+  .provider-shell .provider-connectivity-chip > span:last-child {
+    display: none;
+  }
+
+  .admin-shell .admin-subtab-bar {
+    display: flex;
+    width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+    scrollbar-color: #b8c2d3 transparent;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-shell .admin-subtab-pill {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
+  .admin-shell .admin-subtab-bar::-webkit-scrollbar {
+    display: block;
+    height: 4px;
+  }
+
+  .admin-shell .admin-subtab-bar::-webkit-scrollbar-thumb {
+    background: #b8c2d3;
+    border-radius: 99px;
+  }
+
+  .admin-shell .admin-banner-left {
+    align-items: flex-start;
+  }
+
+  .admin-shell .admin-banner-icon {
+    width: 38px;
+    height: 38px;
+  }
+
+  .admin-shell .admin-card {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .admin-shell .admin-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .admin-shell .admin-metric {
+    min-height: 112px;
+    padding: 12px;
+  }
+
+  .admin-shell .admin-metric-label {
+    font-size: 0.72rem;
+    line-height: 1.3;
+  }
+
+  .admin-shell .admin-metric strong {
+    font-size: 1.35rem;
+  }
+
+  .admin-shell-manager .admin-shift-hero {
+    padding: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .customer-shell .chat-empty-suggestion,
+  .provider-shell .provider-nav-btn,
+  .admin-shell .admin-metric {
+    transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background-color 160ms ease;
+  }
+
+  .customer-shell .chat-empty-suggestion:hover,
+  .admin-shell .admin-metric.is-clickable:hover {
+    transform: translateY(-2px);
+  }
+}

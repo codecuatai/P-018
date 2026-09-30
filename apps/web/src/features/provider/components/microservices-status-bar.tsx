@@ -27,6 +27,7 @@ export function MicroservicesStatusBar({
 
   return (
     <div
+      className="provider-connectivity-panel"
       style={{
         display: "flex",
         alignItems: "center",
@@ -41,11 +42,11 @@ export function MicroservicesStatusBar({
         gap: "10px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <div className="provider-connectivity-main" style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <div className="provider-connectivity-heading" style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <Radio size={16} color="#4F46E5" />
           <span style={{ fontSize: "13px", fontWeight: 700, color: "#0F172A" }}>
-            Trạng thái Microservices:
+            Kết nối dịch vụ:
           </span>
           <span
             style={{
@@ -61,11 +62,12 @@ export function MicroservicesStatusBar({
           </span>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+        <div className="provider-connectivity-list" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }} aria-label="Trạng thái kết nối từng dịch vụ">
           {channels.map((ch) => {
             const isOnline = connectedServices[ch.domain] !== false;
             return (
               <span
+                className="provider-connectivity-chip"
                 key={ch.id}
                 style={{
                   display: "inline-flex",
@@ -97,7 +99,7 @@ export function MicroservicesStatusBar({
       </div>
 
       {onSeedSample && (
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="provider-connectivity-actions" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {showFood && (
             <button
               type="button"

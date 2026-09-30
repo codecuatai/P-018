@@ -14,8 +14,8 @@
 }
 
 .dialogRegister {
-  width: min(760px, calc(100vw - 32px)) !important;
-  max-width: 760px !important;
+  width: min(840px, calc(100vw - 32px)) !important;
+  max-width: 840px !important;
   height: auto !important;
   max-height: min(760px, calc(100dvh - 28px)) !important;
   padding: 0 !important;

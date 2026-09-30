@@ -21,7 +21,8 @@
 
 /* Tablet 768-1199px: rail becomes a right drawer */
 @media (max-width: 1199px) {
-  .context-rail { display: none; }
+  .assistant-layout:not(.has-active-work) .context-rail,
+  .assistant-layout.is-rail-collapsed .context-rail { display: none; }
   .assistant-layout.has-active-work:not(.is-rail-collapsed) .context-rail { display: flex; position: fixed; top: 54px; right: 0; bottom: 0; width: min(360px, 92vw); z-index: 60; background: var(--color-surface); border-left: 1px solid var(--color-border); box-shadow: var(--shadow-soft); }
   .assistant-layout.has-active-work:not(.is-rail-collapsed) .rail-edge-toggle { display: grid; }
 }

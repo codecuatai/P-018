@@ -264,6 +264,7 @@ export function ProviderHeader({
           type="button"
           className="button button-secondary button-sm"
           onClick={onToggleSound}
+          aria-label={soundEnabled ? "Tắt chuông báo đơn mới" : "Bật chuông báo đơn mới"}
           title={
             soundEnabled
               ? "Đang bật chuông báo đơn mới — Nhấp để tắt"
@@ -296,6 +297,7 @@ export function ProviderHeader({
         <Link
           href="/app"
           className="role-switch-link role-badge-customer"
+          aria-label="Mở giao diện khách hàng"
           title="Xem giao diện người dùng / khách hàng"
           style={{
             display: "inline-flex",
@@ -360,6 +362,7 @@ export function ProviderHeader({
             type="button"
             onClick={() => void onLogout()}
             className="admin-action-btn admin-action-btn-revoke"
+            aria-label="Đăng xuất khỏi tài khoản"
             style={{
               height: "30px",
               padding: "0 10px",

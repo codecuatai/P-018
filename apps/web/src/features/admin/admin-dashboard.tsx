@@ -288,7 +288,7 @@ export function AdminDashboard() {
   }, [summary.data]);
 
   return (
-    <div className={`app-shell admin-shell${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
+    <div className={`app-shell admin-shell${user?.role === "manager" ? " admin-shell-manager" : " admin-shell-admin"}${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#admin-content">
         Bỏ qua điều hướng
       </a>
@@ -411,7 +411,7 @@ export function AdminDashboard() {
                 </div>
                 <div>
                   <h1 className="admin-banner-title">
-                    {user?.role === "manager" ? "Trung tâm vận hành X-One" : "Trung tâm vận hành X-One"}
+                    {user?.role === "manager" ? "Trung tâm vận hành" : "Quản trị hệ thống"}
                   </h1>
                   <p className="admin-banner-subtitle">{currentTabDef.subtitle}</p>
                 </div>
