@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, LifeBuoy, Loader2, LocateFixed, RefreshCw } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
 import { AgentProgressIndicator } from "@/components/AgentProgressIndicator";
-import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, requestConversationHandoff, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
+import { createConversation, createIdempotencyKey, errorText, getConversation, isAbortError, isRetryableError, reverseGeocodeAddress, runAssistantAction, sendAssistantMessage } from "@/lib/api-client";
 import { actionActivity, buildActivityFromResponse } from "@/lib/progress-filter";
 import { calculatePollingInterval } from "@/lib/active-history-cadence";
 import { fetchActiveHistoryShared, subscribeActiveHistoryShared } from "@/lib/active-history-poller";
@@ -40,8 +40,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const [isLocating, setIsLocating] = useState(false);
   const [locateError, setLocateError] = useState("");
   const [currentLocation, setCurrentLocation] = useState<DeviceCurrentLocation>();
-  const [handoffLoading, setHandoffLoading] = useState(false);
-  const [handoffRequested, setHandoffRequested] = useState(false);
 
   const actionKeys = useRef<Record<string, string>>({});
   const consumedActionIds = useRef<Set<string>>(new Set());
@@ -419,19 +417,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void send(); } }
 
-  async function requestHumanHandoff(): Promise<void> {
-    if (!conversationId || handoffLoading || handoffRequested) return;
-    setHandoffLoading(true);
-    try {
-      await requestConversationHandoff(conversationId);
-      setHandoffRequested(true);
-    } catch (error) {
-      setLocateError(errorText(error));
-    } finally {
-      setHandoffLoading(false);
-    }
-  }
-  
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
   
@@ -550,21 +535,8 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
             {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
-            <div className={`composer-footer${conversationId ? " has-support" : ""}`}>
+            <div className="composer-footer">
               <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
-              {conversationId ? (
-                <button
-                  type="button"
-                  className={`composer-support-button${handoffRequested ? " is-complete" : ""}`}
-                  onClick={() => void requestHumanHandoff()}
-                  disabled={handoffLoading || handoffRequested}
-                  aria-label="Yêu cầu người hỗ trợ"
-                  title="Chuyển cuộc trò chuyện cho đội ngũ hỗ trợ"
-                >
-                  <LifeBuoy size={15} aria-hidden="true" />
-                  <span>{handoffRequested ? "Đã gửi yêu cầu hỗ trợ" : handoffLoading ? "Đang kết nối…" : "Liên hệ hỗ trợ"}</span>
-                </button>
-              ) : null}
             </div>
           </div>
         </div>

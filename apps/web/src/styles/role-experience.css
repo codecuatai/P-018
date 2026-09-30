@@ -44,7 +44,7 @@
   border-radius: 14px;
 }
 
-/* Chat composer: keep the primary action prominent and support secondary. */
+/* Chat composer: keep the primary action prominent. */
 .customer-shell .composer-wrap {
   gap: 0;
   padding-top: 10px;
@@ -96,53 +96,11 @@
   box-sizing: border-box;
 }
 
-.customer-shell .composer-footer.has-support {
-  justify-content: space-between;
-}
-
 .customer-shell .composer-footer .composer-hint {
   margin: 0;
   color: #8692a7;
   font-size: 0.75rem;
   line-height: 1.3;
-}
-
-.customer-shell .composer-support-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 11px;
-  color: #46546c;
-  background: rgb(255 255 255 / 88%);
-  border: 1px solid #dce3ef;
-  border-radius: 10px;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 650;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
-}
-
-.customer-shell .composer-support-button:hover:not(:disabled) {
-  color: #4338ca;
-  background: #f5f4ff;
-  border-color: #c8c6ff;
-  box-shadow: 0 3px 10px -7px rgb(79 70 229 / 45%);
-}
-
-.customer-shell .composer-support-button:disabled {
-  color: #16805d;
-  background: #effaf5;
-  border-color: #cbe9d9;
-  cursor: default;
-}
-
-.customer-shell .composer-support-button:focus-visible {
-  outline: 3px solid var(--color-ring);
-  outline-offset: 2px;
 }
 
 /* Provider: surface live workload first, then separate navigation and business controls. */
@@ -583,21 +541,10 @@
     padding-inline: 2px;
   }
 
-  .customer-shell .composer-footer.has-support {
-    justify-content: space-between;
-  }
-
   .customer-shell .composer-footer .composer-hint {
     display: block !important;
     font-size: 0.66rem;
     white-space: nowrap;
-  }
-
-  .customer-shell .composer-support-button {
-    gap: 5px;
-    min-height: 30px;
-    padding-inline: 8px;
-    font-size: 0.72rem;
   }
 
   .provider-shell .provider-connectivity-chip > span:last-child {
