@@ -132,6 +132,28 @@ describe('Unified assistant orchestration', () => {
     return { conversationId, actionId };
   }
 
+  it('turns an explicit Food order request into a confirmation action without calling payment', async () => {
+    const store = new InMemoryCoreRepository();
+    const { conversationId } = await seedFoodPaymentAction(store, 'confirmation-food-text-confirm');
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const response = await service.chat(user, 'Đặt luôn.', conversationId, 'cor-food-text-confirm');
+
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(response.actions.map((action) => action.kind)).toEqual(['food_confirm']);
+    expect(response.message).toContain('mình chưa thực hiện thanh toán');
+    const conversation = await store.getConversation(conversationId, user.sub);
+    expect((conversation?.state as { actions: Array<{ kind: string }> }).actions.map((action) => action.kind)).toEqual(['food_confirm']);
+  });
+
   it('keeps restaurant to ride dependency authoritative and confirmation-gated', async () => {
     const store = new InMemoryCoreRepository();
     const agent = {
@@ -171,6 +193,9 @@ describe('Unified assistant orchestration', () => {
     const first = await service.chat(user, 'Tối nay tìm nhà hàng cho 2 người rồi gọi xe từ VinUni tới đó.', undefined, 'cor-1');
     expect(first.conversation_id).toMatch(/^conv_/);
     expect(first.items[0].kind).toBe('restaurant_options');
+    expect(first.message).toContain('Maison Hanoi');
+    expect(first.message).toContain('4.8/5');
+    expect(first.message).toContain('Bạn chọn nhà hàng phù hợp');
     expect(first.actions[0].kind).toBe('select_restaurant');
     expect(ride.chat).not.toHaveBeenCalled();
     expect(confirmations.prepareDomainConfirmation).not.toHaveBeenCalled();
@@ -188,6 +213,7 @@ describe('Unified assistant orchestration', () => {
     expect(confirmed.workflow_status).toBe('RUNNING');
     expect(confirmed.completed[0]).toEqual(expect.objectContaining({ kind: 'reservation', reservation_code: 'res-1', status: 'CONFIRMED', party_size: 2 }));
     expect(confirmed.items[0]).toEqual(expect.objectContaining({ kind: 'ride_quote' }));
+    expect(confirmed.items[0]).toEqual(expect.objectContaining({ amount: 52000, currency: 'VND', duration_minutes: 18 }));
   });
 
   it('normalizes an availability clause leaked into the Restaurant location before a dependent Ride', async () => {
@@ -316,6 +342,9 @@ describe('Unified assistant orchestration', () => {
     expect(foodItem).not.toHaveProperty('confirmation_id');
     expect(foodItem.preview).toEqual({ total: { amount: 50000, currency: 'VND' } });
     expect(foodItem.order).toEqual({ id: 'order-1', amount: 50000 });
+    expect(second.message).toContain('Phở thật');
+    expect(second.message).toContain('Quán thật');
+    expect(second.message).toContain('50.000 VND');
   });
 
   it('forwards a Food continuation with the latest message and preserves Food context', async () => {
@@ -1778,6 +1807,9 @@ describe('Unified assistant orchestration', () => {
     expect(healthcare.executeTool).toHaveBeenCalledWith(expect.objectContaining({ tool_name: 'healthcare.list_slots', arguments: { department: 'thần kinh' } }), user.sub, 'cor-1');
     expect(response.items[0].kind).toBe('healthcare_options');
     expect((response.items[0].options as Array<{ start_time?: string }>)[0].start_time).toBe('2099-01-01T10:00:00+07:00');
+    expect(response.message).toContain('Bác sĩ A');
+    expect(response.message).toContain('Thần kinh');
+    expect(response.message).toContain('300.000 VND');
     expect(JSON.stringify(response.items)).not.toContain('lịch mô phỏng');
     expect(response.actions.map((action) => action.kind)).toEqual(['select_healthcare_slot']);
   });
@@ -1798,6 +1830,7 @@ describe('Unified assistant orchestration', () => {
     expect(item.kind).toBe('healthcare_no_availability');
     expect(item.note).toContain('sáng mai');
     expect(item.note).not.toContain('tomorrow_morning');
+    expect(response.message).toContain('không tìm thấy khung giờ còn trống phù hợp');
   });
 
   it('does not show a no-results note when Restaurant search returns choices', async () => {

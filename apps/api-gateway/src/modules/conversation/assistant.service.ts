@@ -514,6 +514,11 @@ function isRideOnlyTurn(message: string): boolean {
   ]);
 }
 
+function isExplicitFoodOrderConfirmation(message: string): boolean {
+  const folded = plainTextForRouting(message).trim().replace(/[.!?]+$/, '');
+  return /^(?:dat luon|dat ngay|xac nhan dat|dong y dat|tien hanh dat)(?:\b|$)/.test(folded);
+}
+
 function explicitRidePassengerCount(message: string): number | undefined {
   const folded = plainTextForRouting(message);
   const count = '(?:[1-9][0-9]?|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\\s*(?:nguoi|khach|passengers?)';
@@ -654,6 +659,14 @@ function buildTaskErrorItem(code: string, retryable: boolean, context?: Record<s
     case 'NOT_FOUND':
       title = 'Không tìm thấy thông tin';
       note = 'Dịch vụ hoặc thông tin bạn yêu cầu không khả dụng.';
+      break;
+    case 'DEPARTMENT_NOT_FOUND':
+      title = 'Chưa tìm thấy chuyên khoa';
+      note = 'Mình chưa tìm thấy chuyên khoa này. Bạn kiểm tra tên khoa hoặc thử cách gọi khác nhé.';
+      break;
+    case 'LOCATION_UNRESOLVED':
+      title = 'Chưa xác định được địa chỉ';
+      note = 'Mình chưa xác định được địa chỉ này. Bạn chọn một gợi ý hoặc nhập địa chỉ rõ hơn nhé.';
       break;
     case 'INVALID_PAYLOAD':
     case 'BAD_REQUEST':
@@ -1644,6 +1657,32 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const effectiveCurrentLocation = freshDeviceLocation(currentLocation);
+    if (isExplicitFoodOrderConfirmation(message)) {
+      const paymentAction = state.actions.find((action) => action.kind === 'food_payment');
+      const foodTask = paymentAction
+        ? state.tasks.find((task) => task.id === paymentAction.task_id && task.revision === paymentAction.task_revision
+          && task.domain === 'food' && task.phase === 'AWAITING_CONFIRMATION')
+        : undefined;
+      if (paymentAction && foodTask && paymentAction.confirmation_id) {
+        // Text confirmation advances to the existing order-confirm step. It
+        // must never execute payment; payment remains a separate user action.
+        const confirmAction = this.actionFor(foodTask, 'food_confirm', {
+          confirmation_id: paymentAction.confirmation_id,
+        }, paymentAction.cohort_id);
+        const actions = [...state.actions.filter((action) => action.id !== paymentAction.id), confirmAction];
+        return this.persistTurn(
+          conversationId,
+          user,
+          message,
+          'Đơn hàng đã sẵn sàng. Bạn xác nhận đặt món để xem bước thanh toán tiếp theo; mình chưa thực hiện thanh toán.',
+          { ...state, actions },
+          foodTask.public_item ? [foodTask.public_item] : [],
+          actions,
+          [],
+          [confirmAction],
+        );
+      }
+    }
     if (isCurrentLocationQuestion(message)) {
       const locationLabel = effectiveCurrentLocation?.address_text ?? '\u0074\u1ecda \u0111\u1ed9 hi\u1ec7n t\u1ea1i c\u1ee7a thi\u1ebft b\u1ecb';
       const locationMessage = effectiveCurrentLocation
@@ -1898,23 +1937,25 @@ export class AssistantService {
     ));
     const baseMessage = this.messageFor(message, plan, presentationTasks, items, responseActions);
     const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
-    // A natural-language summary must never invent a time or availability
-    // claim that contradicts a card backed by an owner domain.  The card is
-    // already the precise, authoritative presentation for these states.
+    // Keep summaries for structured service results deterministic. A model
+    // composer can otherwise replace concrete provider data with a generic
+    // sentence or invent a detail that is absent from the service response.
     const requiresAuthoritativeSummary = items.some((item) => (
       item.kind === 'healthcare_options'
       || item.kind === 'healthcare_no_availability'
       || item.kind === 'restaurant_unavailable'
+      || item.kind === 'restaurant_options'
+      || item.kind === 'food_options'
+      || item.kind === 'ride_quote'
+      || item.kind === 'reservation'
+      || item.kind === 'appointment_confirmed'
+      || item.kind === 'food_order'
     ));
     const composed = planner.decision_source === 'deterministic' || requiresAuthoritativeSummary
       ? baseMessage
       : await this.compose(message, conversationId, user.sub, activeTasks, resultsForComposition, correlationId, baseMessage);
     const finalMessage = this.withDiscardAcknowledgement(
-      !responseActions.length && items.some((item) => (
-        item.kind === 'restaurant_options' && stringValue(item.note)?.includes('số người')
-      ))
-        ? 'Mình đã tìm thấy các quán phù hợp trong khu vực bạn yêu cầu. Bạn cho mình biết số người để mình kiểm tra bàn nhé.'
-        : composed,
+      composed,
       discardResult.domains,
       planTasks.length > 0,
     );
@@ -4629,30 +4670,142 @@ export class AssistantService {
     if (clarification && !items.length && !actions.length) return clarification;
     if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
     const activeTasks = tasks.filter((task) => task.phase !== 'DISCARDED');
-    if (actions.length) return activeTasks.length > 1
-      ? 'Mình đã chuẩn bị các bước tiếp theo cho những việc bạn yêu cầu. Bạn kiểm tra rồi xác nhận từng bước nhé.'
-      : 'Mình đã chuẩn bị xong. Bạn kiểm tra lại rồi xác nhận nhé.';
     const kinds = new Set(items.map((item) => stringValue(item.kind)).filter((kind): kind is string => Boolean(kind)));
     if (kinds.has('clarification')) return 'Mình cần thêm một vài thông tin để tiếp tục xử lý yêu cầu của bạn.';
-    if (kinds.has('task_error') || kinds.has('ride_timing_conflict')) return 'Một bước trong yêu cầu chưa thể hoàn tất an toàn. Bạn kiểm tra thông tin và thử lại nhé.';
-    if (kinds.has('restaurant_confirmation') || kinds.has('healthcare_confirmation') || kinds.has('food_confirmation')) return 'Thông tin đã sẵn sàng. Bạn kiểm tra lại các chi tiết rồi xác nhận bước tiếp theo nhé.';
+    if (kinds.has('task_error') || kinds.has('ride_timing_conflict')) {
+      const address = items.find((item) => item.kind === 'address_options');
+      if (address && stringValue(address.note)) return this.displayNote(address.note) ?? 'Bạn nhập rõ hơn địa chỉ để mình tiếp tục nhé.';
+      const error = items.find((item) => item.kind === 'task_error');
+      const note = this.displayNote(error?.note);
+      if (note && note !== 'Mình chưa thể hoàn tất dịch vụ. Bạn hãy thử lại sau nhé.') return note;
+      const failedDomain = activeTasks.find((task) => task.phase === 'FAILED')?.domain;
+      if (failedDomain === 'ride') return 'Mình chưa lấy được báo giá xe lúc này. Bạn kiểm tra lại địa chỉ đón/trả hoặc thử lại sau ít phút nhé.';
+      if (failedDomain === 'healthcare') return 'Mình chưa tải được lịch khám lúc này. Bạn thử lại sau ít phút nhé.';
+      if (failedDomain === 'food') return 'Mình chưa tải được danh sách món lúc này. Bạn thử lại sau ít phút nhé.';
+      if (failedDomain === 'restaurant') return 'Mình chưa tải được danh sách nhà hàng lúc này. Bạn thử lại sau ít phút nhé.';
+      return 'Một bước trong yêu cầu chưa thể hoàn tất. Bạn kiểm tra thông tin và thử lại nhé.';
+    }
+    if (kinds.has('restaurant_confirmation') || kinds.has('healthcare_confirmation') || kinds.has('food_confirmation')) {
+      return this.withActionPrompt('Thông tin đã sẵn sàng. Bạn kiểm tra lại các chi tiết trên thẻ rồi xác nhận bước tiếp theo nhé.', actions, activeTasks.length);
+    }
     if (kinds.has('restaurant_unavailable')) {
       const unavailable = items.find((item) => item.kind === 'restaurant_unavailable');
       const restaurant = isRecord(unavailable?.restaurant) ? unavailable.restaurant : undefined;
       const name = stringValue(restaurant?.name);
+      if (!name && stringValue(unavailable?.note)) return this.displayNote(unavailable?.note) ?? 'Mình chưa tìm thấy lựa chọn phù hợp. Bạn thử đổi tên quán hoặc khu vực nhé.';
       return name
         ? `Mình đã kiểm tra ${name}; hiện chưa có bàn trống theo yêu cầu này. Bạn có thể đổi giờ hoặc chọn một quán khác nhé.`
         : 'Mình chưa tìm thấy bàn trống phù hợp theo yêu cầu này. Bạn thử đổi giờ hoặc khu vực nhé.';
     }
-    if (kinds.has('restaurant_options')) {
-      const needsPartySize = items.some((item) => stringValue(item.note)?.includes('số người'));
-      return needsPartySize
-        ? 'Mình đã tìm thấy các quán phù hợp trong khu vực bạn yêu cầu. Bạn cho mình biết số người để mình kiểm tra bàn nhé.'
-        : 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
+    if (kinds.has('healthcare_no_availability')) {
+      const unavailable = items.find((item) => item.kind === 'healthcare_no_availability');
+      return this.displayNote(unavailable?.note) ?? 'Hiện chưa có lịch khám phù hợp. Bạn thử chọn ngày hoặc khung giờ khác nhé.';
     }
-    if (kinds.has('healthcare_options') || kinds.has('food_options') || kinds.has('ride_quote')) return 'Mình đã tìm thấy các lựa chọn phù hợp dựa trên dữ liệu hiện có.';
-    if (kinds.has('reservation') || kinds.has('appointment_confirmed') || kinds.has('food_order')) return 'Yêu cầu của bạn đã được cập nhật theo kết quả xác thực từ dịch vụ.';
+    const serviceSummaries = items.map((item) => this.serviceItemSummary(item)).filter((value): value is string => Boolean(value));
+    if (serviceSummaries.length) {
+      const needsPartySize = items.some((item) => item.kind === 'restaurant_options' && stringValue(item.note)?.includes('số người'));
+      const nextStep = needsPartySize
+        ? 'Bạn cho mình biết số người để mình kiểm tra bàn nhé.'
+        : kinds.has('healthcare_options')
+          ? 'Bạn chọn khung giờ phù hợp nhé.'
+          : kinds.has('food_options')
+            ? 'Bạn chọn món muốn dùng nhé.'
+            : kinds.has('restaurant_options') && actions.length
+              ? 'Bạn chọn nhà hàng phù hợp trên thẻ nhé.'
+              : kinds.has('ride_quote') && actions.length
+                ? 'Bạn xem lại báo giá rồi xác nhận nếu phù hợp nhé.'
+                : '';
+      return `${serviceSummaries.join(' ')} ${nextStep}`.trim();
+    }
+    if (actions.length) return this.withActionPrompt('Mình đã chuẩn bị các bước tiếp theo.', actions, activeTasks.length);
     return message.trim() ? 'Mình đã tìm được thông tin phù hợp cho bạn.' : 'Mình đã cập nhật thông tin cho bạn.';
+  }
+
+  private withActionPrompt(message: string, actions: StoredAction[], activeTaskCount: number): string {
+    if (!actions.length) return message;
+    const prompt = activeTaskCount > 1
+      ? 'Bạn kiểm tra thông tin rồi chọn/xác nhận từng bước nhé.'
+      : 'Bạn kiểm tra thông tin trên thẻ rồi chọn hoặc xác nhận nhé.';
+    return `${message} ${prompt}`;
+  }
+
+  private serviceItemSummary(item: JsonObject): string | undefined {
+    if (item.kind === 'restaurant_options') {
+      const options = arrayValue(item.options).filter(isRecord);
+      const choices = options.slice(0, 3).map((option) => [this.displayFact(option.name), this.displayFact(option.location ?? option.address),
+        this.displayFact(option.cuisine), numberValue(option.rating) !== undefined ? `đánh giá ${numberValue(option.rating)?.toFixed(1)}/5` : undefined]
+        .filter(Boolean).join(' · ')).filter(Boolean);
+      return choices.length ? `Mình tìm thấy ${options.length} nhà hàng. Một vài lựa chọn: ${choices.join('; ')}.` : undefined;
+    }
+    if (item.kind === 'healthcare_options') {
+      const options = arrayValue(item.options).filter(isRecord);
+      const choices = options.slice(0, 3).map((option) => [this.displayFact(option.doctor), this.displayFact(option.department),
+        this.displayFact(option.start_time), this.formatMoney(option.price, 'VND')].filter(Boolean).join(' · ')).filter(Boolean);
+      const departments = arrayValue(item.departments).filter(isRecord).map((department) => this.displayFact(department.name)).filter(Boolean);
+      return choices.length ? `Mình tìm thấy ${options.length} lịch khám: ${choices.join('; ')}.`
+        : departments.length ? `Các chuyên khoa hiện có: ${departments.slice(0, 5).join(', ')}.` : 'Hiện dịch vụ chưa trả về lịch khám cụ thể.';
+    }
+    if (item.kind === 'food_options') {
+      const options = arrayValue(item.options).filter(isRecord);
+      const choices = options.slice(0, 3).map((option) => {
+        const restaurant = isRecord(option.restaurant) ? option.restaurant : undefined;
+        return [this.displayFact(option.name), this.formatMoney(option.price, stringValue(option.currency) ?? 'VND'),
+          this.displayFact(restaurant?.name ?? option.restaurant)].filter(Boolean).join(' · ');
+      }).filter(Boolean);
+      return choices.length ? `Mình tìm thấy ${options.length} món: ${choices.join('; ')}.` : 'Hiện chưa có món phù hợp để chọn.';
+    }
+    if (item.kind === 'ride_quote') {
+      const route = [this.displayFact(item.pickup), this.displayFact(item.dropoff)].filter(Boolean).join(' đến ');
+      const details = [route, this.displayFact(item.vehicle), this.formatMoney(item.amount, stringValue(item.currency) ?? 'VND'),
+        numberValue(item.duration_minutes) !== undefined ? `khoảng ${numberValue(item.duration_minutes)} phút` : undefined].filter(Boolean);
+      return details.length ? `Báo giá chuyến xe: ${details.join(' · ')}.` : undefined;
+    }
+    if (item.kind === 'reservation') {
+      const restaurant = isRecord(item.restaurant) ? item.restaurant : undefined;
+      const facts = [this.displayFact(restaurant?.name), this.displayFact(item.reservation_code),
+        this.displayFact(item.start_at), numberValue(item.party_size) ? `${numberValue(item.party_size)} khách` : undefined,
+        this.displayFact(item.status)].filter(Boolean);
+      return facts.length ? `Đặt bàn đã được xác nhận: ${facts.join(' · ')}.` : 'Đặt bàn đã được xác nhận.';
+    }
+    if (item.kind === 'appointment_confirmed') {
+      const facility = isRecord(item.facility) ? item.facility : undefined;
+      const facts = [this.displayFact(item.doctor), this.displayFact(item.department), this.displayFact(item.start_time),
+        this.displayFact(facility?.name), this.displayFact(item.status)].filter(Boolean);
+      return facts.length ? `Lịch khám đã được xác nhận: ${facts.join(' · ')}.` : 'Lịch khám đã được xác nhận.';
+    }
+    if (item.kind === 'food_order') {
+      const order = isRecord(item.order) ? item.order : undefined;
+      const payment = isRecord(item.payment) ? item.payment : undefined;
+      const facts = [this.displayFact(order?.order_number ?? order?.id), this.displayFact(order?.status),
+        this.displayFact(payment?.status) ? `thanh toán ${this.displayFact(payment?.status)}` : undefined].filter(Boolean);
+      return facts.length ? `Đơn món đã được gửi đến dịch vụ: ${facts.join(' · ')}.` : 'Đơn món đã được gửi đến dịch vụ.';
+    }
+    return undefined;
+  }
+
+  private displayFact(value: unknown): string | undefined {
+    const text = stringValue(value);
+    if (!text) return undefined;
+    // Service data is untrusted and can be large; keep summaries concise and
+    // avoid rendering control characters while cards retain the full value.
+    return text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').slice(0, 100);
+  }
+
+  private displayNote(value: unknown): string | undefined {
+    const text = stringValue(value);
+    if (!text) return undefined;
+    const cleaned = text.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').slice(0, 500);
+    return safeText(cleaned, '') || undefined;
+  }
+
+  private formatMoney(value: unknown, currency: string): string | undefined {
+    const amount = numberValue(value);
+    if (amount === undefined) return undefined;
+    try {
+      return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(amount) + ` ${currency}`;
+    } catch {
+      return `${amount} ${currency}`;
+    }
   }
 
   private actionFor(task: StoredTask, kind: ActionKind, values: Partial<StoredAction>, cohortId?: string): StoredAction {

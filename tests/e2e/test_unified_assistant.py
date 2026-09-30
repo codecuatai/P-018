@@ -243,8 +243,10 @@ def test_unified_b_food_completion_exposes_only_authoritative_payment() -> None:
         confirmation = food_chat("Đặt luôn.")
         confirm_action = find_action(confirmation, "food_confirm")
         assert any(item.get("kind") == "food_confirmation" for item in confirmation["items"])
-        result = assistant_action(client, token, conversation_id, confirm_action, unique_id("assistant-food-confirm"))
-        order_item = next(item for item in result["completed"] if item.get("kind") == "food_order")
+        payment_ready = assistant_action(client, token, conversation_id, confirm_action, unique_id("assistant-food-confirm"))
+        payment_action = find_action(payment_ready, "food_payment")
+        result = assistant_action(client, token, conversation_id, payment_action, unique_id("assistant-food-payment"))
+        order_item = next(item for item in [*result["items"], *result["completed"]] if item.get("kind") == "food_order")
         assert order_item.get("order", {}).get("id")
         assert order_item.get("payment", {}).get("status") == "SUCCEEDED"
         assert "provider_reference" not in order_item.get("payment", {})
