@@ -864,8 +864,39 @@ def _healthcare_requested_date(text: str, now: datetime | None = None) -> str | 
     return None
 
 
+def _domain_scoped_text(text: str, domain: str) -> str:
+    """Keep date/time details attached to the service clause that mentions them."""
+    clauses = re.split(
+        r"\s+(?:và|va|rồi|roi|đồng thời|dong thoi|sau đó|sau do)\s+",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if len(clauses) < 2:
+        return text
+
+    if domain == "healthcare":
+        primary_markers = ("lich kham", "kham", "bac si", "chuyen khoa", "khoa")
+        reference_markers = ("benh vien", "phong kham")
+    elif domain == "restaurant":
+        primary_markers = ("dat ban", "giu ban", "dat cho", "giu cho")
+        reference_markers = ("nha hang", "quan an", "restaurant")
+    else:
+        return text
+
+    primary_matches = [clause for clause in clauses if _has_any(_routing_plain(clause), primary_markers)]
+    if primary_matches:
+        return primary_matches[-1]
+    reference_matches = [
+        clause for clause in clauses
+        if _has_any(_routing_plain(clause), reference_markers)
+        and not re.search(r"\b(?:nha hang|quan an|restaurant|benh vien|phong kham)\s+(?:do|nay|ay)\b", _routing_plain(clause))
+    ]
+    return reference_matches[-1] if reference_matches else text
+
+
 def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
-    lowered = _routing_plain(text)
+    scoped_text = _domain_scoped_text(text, domain)
+    lowered = _routing_plain(scoped_text)
     slots: dict[str, Any] = {}
     party_size = _party_size(lowered, (("mot", 1), ("hai", 2), ("ba", 3), ("bon", 4), ("nam", 5)))
     if domain == "restaurant" and party_size is not None and _has_any(lowered, ("nguoi", "khach", "ban")):
@@ -917,13 +948,13 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
                     slots["passenger_count"] = count
                     break
     if domain in {"restaurant", "healthcare"}:
-        location = _location(text)
+        location = _location(scoped_text)
         if location:
             slots["location"] = location
         # A healthcare daypart such as "sáng mai" is a range preference, not
         # an exact 08:00 request.  Exact clock times are kept as start_at.
-        if domain == "restaurant" or _has_explicit_clock(text):
-            start_at = _time_slot(text)
+        if domain == "restaurant" or _has_explicit_clock(scoped_text):
+            start_at = _time_slot(scoped_text)
             if start_at:
                 slots["start_at"] = start_at
         if domain == "restaurant":
@@ -1009,7 +1040,7 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         department_match = re.search(r"\bkhoa\s+([^,.!?;:]+)", lowered)
         if department_match:
             slots["department"] = department_match.group(1).strip()
-        appointment_date = _healthcare_requested_date(text)
+        appointment_date = _healthcare_requested_date(scoped_text)
         if appointment_date:
             slots["appointment_date"] = appointment_date
         healthcare_depts = (

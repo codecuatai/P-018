@@ -449,6 +449,7 @@ export class LocationService {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return undefined;
     const normalized = foldLocalAddress(query);
     const fixtures: Array<{ matches: string[]; formatted?: string; latitude: number; longitude: number }> = [
+      { matches: ['noi bai', 'san bay noi bai', 'noi bai international airport'], formatted: 'Cảng hàng không quốc tế Nội Bài, Sóc Sơn, Hà Nội', latitude: 21.2187, longitude: 105.8042 },
       { matches: ['ho hoan kiem', 'ho guom'], formatted: 'Hồ Hoàn Kiếm, Quận Hoàn Kiếm, Hà Nội', latitude: 21.0285, longitude: 105.8048 },
       { matches: ['cong vien nghia do', 'nghia do'], formatted: 'Công viên Nghĩa Đô, Cầu Giấy, Hà Nội', latitude: 21.0456, longitude: 105.7939 },
       { matches: ['vinuni', 'vinhomes ocean park'], formatted: 'VinUniversity, Vinhomes Ocean Park, Gia Lâm, Hà Nội', latitude: 20.9914, longitude: 105.945975 },
@@ -469,6 +470,7 @@ export class LocationService {
     if (this.config.get<boolean>('LOCAL_DETERMINISTIC_LOCATION_FALLBACK') !== true || this.config.get<string>('APP_ENV') === 'production') return [];
     const normalized = foldLocalAddress(query);
     const fixtures: Array<{ matches: string[]; formatted: string; latitude: number; longitude: number }> = [
+      { matches: ['noi bai', 'san bay noi bai', 'noi bai international airport'], formatted: 'Cảng hàng không quốc tế Nội Bài, Sóc Sơn, Hà Nội', latitude: 21.2187, longitude: 105.8042 },
       { matches: ['51 tam khuong', 'tam khuong', '51 5am', 'khuong thuong', 'dong da'], formatted: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội', latitude: 21.0062, longitude: 105.8286 },
       { matches: ['chua boc', 'quang trung'], formatted: 'Chùa Bộc, Phường Quang Trung, Quận Đống Đa, Hà Nội', latitude: 21.0078, longitude: 105.8282 },
       { matches: ['tay son', 'nga tu so'], formatted: 'Tây Sơn, Phường Ngã Tư Sở, Quận Đống Đa, Hà Nội', latitude: 21.0112, longitude: 105.8235 },

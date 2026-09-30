@@ -97,6 +97,22 @@ describe('Geoapify provider boundary', () => {
     expect(result.candidates[0]).toMatchObject({ latitude: 21.0456, longitude: 105.7939 });
   });
 
+  it('resolves Noi Bai airport from common Vietnamese and unaccented aliases', async () => {
+    const geoapify = { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() };
+    const locations = new LocationService(
+      config({ APP_ENV: 'development', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: true }),
+      geoapify as never,
+    );
+
+    const accented = await locations.geocode('Sân bay Nội Bài');
+    const unaccented = await locations.geocode('Noi Bai International Airport');
+
+    expect(accented).toMatchObject({ provider: 'deterministic-local-demo', status: 'RESOLVED' });
+    expect(accented.candidates[0]).toMatchObject({ latitude: 21.2187, longitude: 105.8042 });
+    expect(unaccented).toMatchObject({ provider: 'deterministic-local-demo', status: 'RESOLVED' });
+    expect(unaccented.candidates[0]).toMatchObject({ latitude: 21.2187, longitude: 105.8042 });
+  });
+
   it('normalizes an OSRM-compatible GeoJSON route into auditable geometry', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       code: 'Ok',

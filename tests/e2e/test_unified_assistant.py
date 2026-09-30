@@ -178,7 +178,7 @@ def test_unified_assistant_rejects_stale_restaurant_action_after_details_change(
         stale_action = next(action for action in first["actions"] if action["kind"] == "select_restaurant")
 
         updated = assistant_chat(client, token, "3 nguoi", conversation_id)
-        assert any(action["kind"] == "select_restaurant" for action in updated["actions"])
+        assert any(item.get("kind") == "restaurant_options" for item in updated["items"])
 
         replay = client.post(
             "/api/v1/assistant/actions",
@@ -235,7 +235,12 @@ def test_unified_b_food_completion_exposes_only_authoritative_payment() -> None:
             food_chat("Xem tổng tiền."),
         ]
         assert all(turn["conversation_id"] == conversation_id for turn in turns)
-        errors = [item.get("error_code") for turn in turns for item in turn["items"] if item.get("kind") == "task_error"]
+        errors = [
+            (turn_index, item.get("error_code"), item.get("note"))
+            for turn_index, turn in enumerate(turns)
+            for item in turn["items"]
+            if item.get("kind") == "task_error"
+        ]
         assert not errors, errors
         assert any(item.get("kind") == "food_options" for item in turns[0]["items"])
         assert any(item.get("preview") for item in turns[-1]["items"])
@@ -304,23 +309,33 @@ def test_unified_e_food_and_healthcare_stay_in_one_conversation() -> None:
         assert [action for action in follow_up["actions"] if action["kind"].startswith("healthcare_") or action["kind"] == "select_healthcare_slot"] == healthcare_actions
 
 
-def test_unified_g_generic_choice_clarifies_then_specific_food_choice_preserves_healthcare() -> None:
+def test_unified_g_generic_choice_clarifies_then_specific_restaurant_choice_preserves_healthcare() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-food-healthcare-ambiguous")
-        combined = assistant_chat(client, token, "Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai", conversation_id)
+        booking_date = unique_restaurant_date()
+        combined = assistant_chat(
+            client,
+            token,
+            f"Đặt bàn cho 2 người ngày {booking_date} lúc 19h ở Hà Nội và đặt lịch khám thần kinh sáng mai",
+            conversation_id,
+        )
+        restaurant_action = find_action(combined, "select_restaurant")
         healthcare_action = find_action(combined, "select_healthcare_slot")
 
         clarification = assistant_chat(client, token, "Chọn cái đầu tiên", conversation_id)
-        assert "đồ ăn" in clarification["message"].casefold()
+        assert "đặt bàn" in clarification["message"].casefold()
         assert "lịch khám" in clarification["message"].casefold()
         assert clarification["actions"] == combined["actions"]
         assert clarification["items"] == []
 
-        food_follow_up = assistant_chat(client, token, "Chọn quán đầu tiên", conversation_id)
-        assert any(item.get("kind") in {"food_options", "food_confirmation", "food_empty"} for item in food_follow_up["items"])
-        assert find_action(food_follow_up, "select_healthcare_slot") == healthcare_action
+        restaurant_follow_up = assistant_chat(client, token, "Chọn nhà hàng đầu tiên", conversation_id)
+        assert any(item.get("kind") in {"restaurant_confirmation", "restaurant_options"} for item in restaurant_follow_up["items"])
+        assert find_action(restaurant_follow_up, "select_healthcare_slot") == healthcare_action
+        refreshed_restaurant_action = find_action(restaurant_follow_up, "select_restaurant")
+        assert refreshed_restaurant_action["kind"] == restaurant_action["kind"]
+        assert refreshed_restaurant_action["target_index"] == restaurant_action["target_index"]
 
 
 def test_unified_f_restaurant_to_ride_completes_both_confirmed_actions() -> None:

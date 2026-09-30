@@ -1556,6 +1556,10 @@ export class AssistantService {
       if (existing) return { tasks: [this.planFromTask(existing, message)] };
     }
 
+    if (planned.length > 1 && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
+      return { tasks: [], clarificationQuestion: 'Bạn muốn tiếp tục với yêu cầu nào trước?' };
+    }
+
     if (planned.length) {
       // A fresh request may introduce new work, but an explicit follow-up to
       // an existing task must not be widened again by a planner replay of all
@@ -1564,9 +1568,6 @@ export class AssistantService {
       return { tasks: planned };
     }
 
-    if (planned.length > 1 && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
-      return { tasks: [], clarificationQuestion: 'Bạn muốn tiếp tục với yêu cầu nào trước?' };
-    }
     return { tasks: planned };
   }
 
@@ -1625,9 +1626,9 @@ export class AssistantService {
     const candidates = this.pendingChoiceDomains(active, actions);
     const hasCandidate = (domain: Domain): boolean => candidates.includes(domain);
     const foodSelection = textHasAny(folded, ['chon quan', 'chon mon']);
-    if (foodSelection && available.has('food') && hasCandidate('food')) return ['food'];
-    if (textHasAny(folded, ['chon nha hang']) && available.has('restaurant') && hasCandidate('restaurant')) return ['restaurant'];
-    if (textHasAny(folded, ['chon lich']) && available.has('healthcare') && hasCandidate('healthcare')) return ['healthcare'];
+    if (foodSelection && available.has('food')) return ['food'];
+    if (textHasAny(folded, ['chon nha hang']) && available.has('restaurant')) return ['restaurant'];
+    if (textHasAny(folded, ['chon lich']) && available.has('healthcare')) return ['healthcare'];
 
     const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day']);
     if (isCurrentLocationReference(folded) && available.has('food')) return ['food'];

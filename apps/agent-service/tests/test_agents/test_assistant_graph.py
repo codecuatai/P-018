@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -16,6 +16,7 @@ from src.agents.assistant_graph import (
     _merge_explicit_context_actions,
     _model_prompt,
     _safe_composed_message,
+    _semantic_slots,
     _time_slot,
     build_assistant_graph,
     compose_response,
@@ -285,6 +286,35 @@ def test_healthcare_then_ride_uses_dependency_without_guessing_destination() -> 
     assert plan.tasks[1].depends_on == [0]
     assert plan.tasks[1].extracted_slots["pickup_address"] == "VinUni"
     assert "dropoff_address" not in plan.tasks[1].extracted_slots
+
+
+def test_combined_restaurant_and_healthcare_times_stay_with_their_own_service() -> None:
+    request = (
+        "Đặt bàn nhà hàng ngày 28/10/2026 lúc 19h cho 2 người, "
+        "đồng thời đặt lịch khám thần kinh sáng mai."
+    )
+
+    restaurant = _semantic_slots(request, "restaurant")
+    healthcare = _semantic_slots(request, "healthcare")
+
+    assert restaurant["start_at"].startswith("2026-10-28T19:00:00")
+    assert healthcare["appointment_date"] == _healthcare_requested_date("sáng mai")
+    assert healthcare["time_preference"] == "tomorrow_morning"
+    assert "start_at" not in healthcare
+
+
+def test_restaurant_booking_details_survive_a_ride_to_that_restaurant() -> None:
+    date = (datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")) + timedelta(days=2)).strftime("%d/%m/%Y")
+    request = (
+        f"Đặt bàn cho 2 người ngày {date} lúc 19h ở Hà Nội, "
+        "rồi gọi xe máy từ VinUni tới nhà hàng đó."
+    )
+
+    restaurant = _semantic_slots(request, "restaurant")
+
+    assert restaurant["party_size"] == 2
+    assert restaurant["location"] == "Hà Nội"
+    assert restaurant["start_at"].startswith((datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")) + timedelta(days=2)).date().isoformat())
 
 
 def test_healthcare_day_after_tomorrow_is_a_calendar_filter_not_a_stale_clock() -> None:
