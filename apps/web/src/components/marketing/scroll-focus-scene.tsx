@@ -1,7 +1,9 @@
 "use client";
 
-import { motion, useInView, useReducedMotion, useScroll, useTransform } from "motion/react";
+import { motion, useInView, useScroll, useTransform } from "motion/react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 type SceneProps = {
   children: ReactNode;
@@ -57,7 +59,7 @@ export function useDelayedReplay(ref: RefObject<Element | null>, enabled = true,
  * opt into a controlled replay when they leave and re-enter the viewport.
  */
 export function RevealScene({ children, className, id, role, replayOnReenter = false, "aria-label": ariaLabel, "aria-labelledby": ariaLabelledBy }: SceneProps) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const target = useRef<HTMLDivElement>(null);
   const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
 
@@ -85,7 +87,7 @@ export function RevealScene({ children, className, id, role, replayOnReenter = f
 
 /** A local reading-order reveal for headings, cards, rows and media. */
 export function RevealItem({ children, className, as = "div", delay = 0, variant = "up", replayOnReenter = false }: { children: ReactNode; className?: string; as?: RevealElement; delay?: number; variant?: RevealVariant; replayOnReenter?: boolean }) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const target = useRef<HTMLDivElement>(null);
   const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
   const hiddenState = {
@@ -122,7 +124,7 @@ export function RevealItem({ children, className, as = "div", delay = 0, variant
  */
 export function ScrollFocusScene({ children, className }: { children: ReactNode; className?: string }) {
   const target = useRef<HTMLDivElement>(null);
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const hasEntered = useInView(target, { once: true, amount: 0.2 });
   const { scrollYProgress } = useScroll({ target, offset: ["start end", "end start"] });
   const opacity = useTransform(scrollYProgress, [0, 0.22, 0.5, 0.78, 1], [0.62, 0.82, 1, 0.82, 0.62]);
@@ -142,7 +144,7 @@ export function ScrollFocusScene({ children, className }: { children: ReactNode;
 }
 
 export function RevealLine({ className, delay = 0, replayOnReenter = false }: { className?: string; delay?: number; replayOnReenter?: boolean }) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const target = useRef<HTMLSpanElement>(null);
   const delayedActive = useDelayedReplay(target, replayOnReenter, DEFAULT_REPLAY_RESET_MARGIN, reduceMotion);
 

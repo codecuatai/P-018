@@ -435,6 +435,20 @@
   text-overflow: ellipsis;
 }
 
+@media (max-width: 560px) {
+  .account-type-switch {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .account-type-option { align-items: flex-start; }
+
+  .account-type-option .opt-sub {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
 .account-type-option[data-variant="user"][data-active="true"] {
   color: #0F172A;
   background: #EEF2FF;

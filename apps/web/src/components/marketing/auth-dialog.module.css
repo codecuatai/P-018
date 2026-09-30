@@ -1,6 +1,6 @@
 .dialogLogin {
-  width: min(440px, calc(100vw - 28px)) !important;
-  max-width: 440px !important;
+  width: min(560px, calc(100vw - 32px)) !important;
+  max-width: 560px !important;
   height: auto !important;
   max-height: min(720px, calc(100dvh - 28px)) !important;
   padding: 0 !important;
@@ -14,8 +14,8 @@
 }
 
 .dialogRegister {
-  width: min(520px, calc(100vw - 28px)) !important;
-  max-width: 520px !important;
+  width: min(760px, calc(100vw - 32px)) !important;
+  max-width: 760px !important;
   height: auto !important;
   max-height: min(760px, calc(100dvh - 28px)) !important;
   padding: 0 !important;

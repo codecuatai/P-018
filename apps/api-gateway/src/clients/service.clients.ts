@@ -141,6 +141,26 @@ export type ServiceCallContext = {
   toolCallId?: string;
 };
 
+type McpServiceName = 'ride' | 'restaurant' | 'healthcare' | 'food' | 'delivery';
+type McpServiceResponse = { status: number; headers?: Record<string, string>; body?: unknown };
+
+function readMcpPayload(text: string): Record<string, unknown> {
+  const dataLines = text.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim());
+  const payload = dataLines.length ? dataLines.join('\n') : text;
+  return JSON.parse(payload) as Record<string, unknown>;
+}
+
+function parseMcpToolResult(result: Record<string, unknown>): McpServiceResponse {
+  const structured = result.structuredContent;
+  if (structured && typeof structured === 'object') return structured as McpServiceResponse;
+  const content = Array.isArray(result.content) ? result.content : [];
+  const textBlock = content.find((item) => item && typeof item === 'object' && (item as Record<string, unknown>).type === 'text') as Record<string, unknown> | undefined;
+  if (typeof textBlock?.text === 'string') {
+    try { return JSON.parse(textBlock.text) as McpServiceResponse; } catch { /* surfaced below */ }
+  }
+  throw new Error('MCP service returned an invalid response contract.');
+}
+
 const rideBookingCancelProfile: OperationProfile = {
   serviceId: 'ride-service',
   operationId: 'ride.booking.cancel',
@@ -155,13 +175,106 @@ const rideBookingCancelProfile: OperationProfile = {
 };
 
 abstract class InternalServiceClient {
+  private readonly mcpService?: McpServiceName;
+  private mcpSessionId?: string;
+  private mcpReady?: Promise<void>;
+
   constructor(
     protected readonly config: ConfigService,
     private readonly urlKey: string,
-  ) {}
+  ) {
+    const services: Record<string, McpServiceName> = {
+      ride: 'ride', restaurant: 'restaurant', healthcare: 'healthcare', food: 'food', delivery: 'delivery',
+    };
+    this.mcpService = services[urlKey];
+  }
 
   get baseUrl(): string {
+    if (this.mcpService) return `mcp://${this.mcpService}`;
     return this.config.getOrThrow<string>(this.urlKey);
+  }
+
+  private async mcpRpc(method: string, params: Record<string, unknown> = {}, timeoutMs?: number): Promise<Record<string, unknown>> {
+    const endpoint = this.config.getOrThrow<string>('XONE_SERVICE_MCP_URL').replace(/\/+$/, '');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...(this.mcpSessionId ? { 'mcp-session-id': this.mcpSessionId } : {}),
+          'mcp-protocol-version': '2024-11-05',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', ...(method.startsWith('notifications/') ? {} : { id }), method, params }),
+      });
+      const sessionId = response.headers.get('mcp-session-id');
+      if (sessionId) this.mcpSessionId = sessionId;
+      if (!response.ok) throw new Error(`MCP endpoint returned HTTP ${response.status}.`);
+      if (response.status === 202) return {};
+      if (method.startsWith('notifications/')) return {};
+      const payload = readMcpPayload(await response.text());
+      if (payload.error && typeof payload.error === 'object') {
+        const detail = payload.error as Record<string, unknown>;
+        throw new Error(typeof detail.message === 'string' ? detail.message : 'MCP request failed.');
+      }
+      return (payload.result && typeof payload.result === 'object' ? payload.result : {}) as Record<string, unknown>;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async ensureMcpSession(timeoutMs?: number): Promise<void> {
+    if (!this.mcpService || this.mcpReady) return this.mcpReady;
+    this.mcpReady = (async () => {
+      await this.mcpRpc('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'p-018-api-gateway', version: '1.0.0' },
+      }, timeoutMs);
+      await this.mcpRpc('notifications/initialized', {}, timeoutMs);
+    })();
+    try { await this.mcpReady; } catch (error) { this.mcpReady = undefined; throw error; }
+  }
+
+  private async mcpRequest(path: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
+    if (!this.mcpService) throw new Error('MCP service is not configured.');
+    await this.ensureMcpSession(timeoutMs);
+    const url = new URL(path, this.baseUrl);
+    const headers = Object.fromEntries(new Headers(init.headers).entries());
+    let body: unknown;
+    if (typeof init.body === 'string' && init.body.length > 0) {
+      try { body = JSON.parse(init.body); } catch { body = { raw: init.body }; }
+    }
+    const result = await this.mcpRpc('tools/call', {
+      name: 'gateway_service_request',
+      arguments: {
+        service: this.mcpService,
+        method: String(init.method ?? 'GET').toUpperCase(),
+        path: `${url.pathname}${url.search}`,
+        gateway_token: this.internalToken,
+        headers,
+        ...(body !== undefined ? { body } : {}),
+      },
+    }, timeoutMs);
+    if (result.isError === true) throw new Error('MCP service request failed.');
+    const remote = parseMcpToolResult(result);
+    const status = Number(remote.status);
+    if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error('MCP service returned an invalid HTTP status.');
+    const remoteHeaders = remote.headers && typeof remote.headers === 'object' ? remote.headers as Record<string, string> : {};
+    return new Response(remote.body === undefined || [204, 205, 304].includes(status) ? null : JSON.stringify(remote.body), {
+      status,
+      headers: remoteHeaders,
+    });
+  }
+
+  private upstreamRequest(path: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
+    return this.mcpService
+      ? this.mcpRequest(path, init, timeoutMs)
+      : fetch(`${this.baseUrl}${path}`, init);
   }
 
   protected get internalToken(): string {
@@ -172,7 +285,7 @@ abstract class InternalServiceClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await this.upstreamRequest(path, {
         ...init,
         signal: controller.signal,
         headers: {
@@ -182,7 +295,7 @@ abstract class InternalServiceClient {
           ...(actorId ? { 'x-actor-id': actorId } : {}),
           ...init.headers,
         },
-      });
+      }, timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
       const body = (await response.json().catch(() => ({}))) as JsonObject;
       if (!response.ok) {
         const detail = typeof body.detail === 'object' && body.detail !== null ? body.detail as JsonObject : body;
@@ -204,7 +317,7 @@ abstract class InternalServiceClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await this.upstreamRequest(path, {
         method: 'GET',
         signal: controller.signal,
         headers: {
@@ -212,10 +325,10 @@ abstract class InternalServiceClient {
           'x-internal-service-token': this.internalToken,
           ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
         },
-      });
+      }, timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
       if (response.status === 404 && path === '/health/ready') {
         // Fallback to /health/live if readiness endpoint is not supported on older deployment
-        const liveRes = await fetch(`${this.baseUrl}/health/live`, {
+        const liveRes = await this.upstreamRequest('/health/live', {
           method: 'GET',
           signal: controller.signal,
           headers: {
@@ -223,7 +336,7 @@ abstract class InternalServiceClient {
             'x-internal-service-token': this.internalToken,
             ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
           },
-        }).catch(() => null);
+        }, timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000)).catch(() => null);
         if (liveRes && liveRes.ok) {
           const liveBody = (await liveRes.json().catch(() => ({}))) as JsonObject;
           const liveData = typeof liveBody.data === 'object' && liveBody.data !== null ? (liveBody.data as JsonObject) : liveBody;
@@ -251,7 +364,7 @@ abstract class InternalServiceClient {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), profile.perAttemptTimeoutMs);
       try {
-        const response = await fetch(this.baseUrl + path, {
+        const response = await this.upstreamRequest(path, {
           ...init,
           body,
           signal: controller.signal,
@@ -263,7 +376,7 @@ abstract class InternalServiceClient {
             ...domainHeaders,
             ...(init.headers ?? {}),
           },
-        });
+        }, profile.perAttemptTimeoutMs);
         const payload: unknown = await response.json().catch(() => undefined);
         if (!response.ok) {
           throw responseError(profile, response.status, response.headers.get('Retry-After'), payload);
@@ -410,7 +523,7 @@ export class AgentClient extends InternalServiceClient {
 @Injectable()
 export class RideClient extends InternalServiceClient {
   constructor(config: ConfigService) {
-    super(config, 'RIDE_SERVICE_URL');
+    super(config, 'ride');
   }
 
   async live(correlationId: string): Promise<JsonObject> {
@@ -567,7 +680,7 @@ export class RideClient extends InternalServiceClient {
 
 @Injectable()
 export class RestaurantClient extends InternalServiceClient {
-  constructor(config: ConfigService) { super(config, 'RESTAURANT_SERVICE_URL'); }
+  constructor(config: ConfigService) { super(config, 'restaurant'); }
 
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
@@ -706,7 +819,7 @@ export class RestaurantClient extends InternalServiceClient {
 
 @Injectable()
 export class HealthcareClient extends InternalServiceClient {
-  constructor(config: ConfigService) { super(config, 'HEALTHCARE_SERVICE_URL'); }
+  constructor(config: ConfigService) { super(config, 'healthcare'); }
 
   async live(correlationId: string): Promise<JsonObject> {
     return this.legacyRequest<JsonObject>('/health/live', { method: 'GET' }, correlationId);
@@ -903,7 +1016,7 @@ export class HealthcareClient extends InternalServiceClient {
 @Injectable()
 export class FoodClient extends InternalServiceClient {
   constructor(config: ConfigService) {
-    super(config, 'FOOD_SERVICE_URL');
+    super(config, 'food');
   }
 
   async live(correlationId: string): Promise<JsonObject> {
@@ -1020,7 +1133,7 @@ export class FoodClient extends InternalServiceClient {
 @Injectable()
 export class DeliveryClient extends InternalServiceClient {
   constructor(config: ConfigService) {
-    super(config, 'DELIVERY_SERVICE_URL');
+    super(config, 'delivery');
   }
 
   async live(correlationId?: string): Promise<JsonObject> {

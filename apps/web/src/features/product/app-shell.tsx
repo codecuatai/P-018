@@ -241,8 +241,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               className={`sidebar-resizer${isResizing ? " is-active" : ""}`}
               onMouseDown={startResizing}
               onDoubleClick={resetSidebarWidth}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                const maxAllowed = Math.min(MAX_SIDEBAR_WIDTH, Math.floor(window.innerWidth * 0.45));
+                const next = event.key === "Home"
+                  ? MIN_SIDEBAR_WIDTH
+                  : event.key === "End"
+                    ? maxAllowed
+                    : Math.max(MIN_SIDEBAR_WIDTH, Math.min(sidebarWidth + (event.key === "ArrowRight" ? 20 : -20), maxAllowed));
+                setSidebarWidth(next);
+                try { localStorage.setItem("xone_sidebar_width", String(next)); } catch { /* best effort */ }
+              }}
               role="separator"
               aria-orientation="vertical"
+              aria-valuemin={MIN_SIDEBAR_WIDTH}
+              aria-valuemax={MAX_SIDEBAR_WIDTH}
+              aria-valuenow={sidebarWidth}
+              tabIndex={0}
               aria-label="Kéo để mở rộng hoặc thu nhỏ thanh bên"
               title="Kéo để mở rộng / thu nhỏ (Nhấp đúp: đặt lại mặc định 280px)"
             >
@@ -255,6 +271,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             className="sidebar-expand-btn"
             type="button"
             aria-label="Mở menu bên trái (Ctrl+B)"
+          aria-expanded="false"
             title="Mở menu bên trái (Ctrl+B)"
             onClick={toggleSidebar}
           >
@@ -313,6 +330,7 @@ function Sidebar({
           <button
             className="sidebar-collapse-btn"
             type="button"
+            aria-expanded="true"
             onClick={onCollapse}
             aria-label="Thu gọn menu bên trái (Ctrl+B)"
             title="Thu gọn menu bên trái (Ctrl+B)"

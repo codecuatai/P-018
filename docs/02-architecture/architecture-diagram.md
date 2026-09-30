@@ -13,10 +13,11 @@ flowchart TB
 
   subgraph Compose private network
     Gateway --> Agent[Agent Service :8001]
-    Gateway --> Food[Food Service :8104]
-    Gateway --> Ride[Ride Service :8101]
-    Gateway --> Restaurant[Restaurant Service :8102]
-    Gateway --> Healthcare[Healthcare Service :8103]
+    Gateway -->|MCP Streamable HTTP :8105/mcp| ServiceMCP[P-018-Service MCP Server]
+    ServiceMCP --> Food[Food Service :8104]
+    ServiceMCP --> Ride[Ride Service :8101]
+    ServiceMCP --> Restaurant[Restaurant Service :8102]
+    ServiceMCP --> Healthcare[Healthcare Service :8103]
 
     Gateway --> CoreDB[(xone_core)]
     Food --> FoodDB[(xone_food)]
@@ -29,14 +30,14 @@ flowchart TB
   Agent -. adapter Gemini tùy chọn .-> Gemini[Gemini API]
 ```
 
-Client Web và Mobile chỉ gọi duy nhất vào API Gateway công khai. Tuyến `/api/health` của Next.js chỉ là container probe, không phải là BFF hay nguồn thẩm quyền nghiệp vụ. Agent, tất cả domain service, và PostgreSQL là các service nội bộ thuộc mạng riêng của Compose; chỉ có Web, Gateway và PostgreSQL được công khai cổng ra máy host phục vụ quy trình phát triển cục bộ.
+Client Web và Mobile chỉ gọi duy nhất vào API Gateway công khai. Gateway kết nối sang repo `P-018-Service` duy nhất qua MCP Streamable HTTP tại `/mcp`; MCP server chuyển tiếp đến REST API của domain services bên trong mạng riêng của repo đó. Tuyến `/api/health` của Next.js chỉ là container probe, không phải là BFF hay nguồn thẩm quyền nghiệp vụ.
 
 ### Quyền sở hữu và Giao diện (Ownership and Interfaces)
 
 | Thành phần | Trách nhiệm | Giao diện | Trạng thái / Lưu trữ |
 | --- | --- | --- | --- |
 | **Web** | Hiển thị giao diện, xác thực/phiên trên trình duyệt, các thẻ hội thoại tương tác | Chỉ gọi REST Gateway công khai | Trạng thái trình duyệt không có thẩm quyền |
-| **API Gateway** | Xác thực đầu vào công khai, phân quyền, định hình phản hồi, correlation/audit, điều phối xác nhận 2 bước, typed client nội bộ | Public `/api/v1`; Typed HTTP client nội bộ | Sở hữu dữ liệu Core trong `xone_core` |
+| **API Gateway** | Xác thực đầu vào công khai, phân quyền, định hình phản hồi, correlation/audit, điều phối xác nhận 2 bước | Public `/api/v1`; MCP client sang `P-018-Service` | Sở hữu dữ liệu Core trong `xone_core` |
 | **Agent** | Lập kế hoạch ngữ nghĩa có giới hạn và tổng hợp ngôn ngữ an toàn | HTTP nội bộ từ Gateway sang Agent | `workflow_store` hiện tại chạy in-memory trong tiến trình; `xone_agent` đã cấp phát nhưng chưa gắn migration/client |
 | **Food** | Danh mục món ăn, giỏ hàng, báo giá, đơn hàng và trạng thái giao hàng | REST nội bộ (chỉ Gateway gọi) | `xone_food` / asyncpg |
 | **Ride** | Báo giá chuyến đi, giữ chỗ xe (hold), đặt chuyến và theo dõi mô phỏng (tracking) | REST nội bộ (chỉ Gateway gọi) | `xone_ride` / SQLAlchemy |

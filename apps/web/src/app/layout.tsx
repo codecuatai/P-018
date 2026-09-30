@@ -8,6 +8,7 @@ import "../styles/shared.css";
 import "../styles/auth.css";
 import "../styles/assistant.css";
 import "../styles/product.css";
+import "../styles/ui-refresh.css";
 import "leaflet/dist/leaflet.css";
 
 const inter = Inter({

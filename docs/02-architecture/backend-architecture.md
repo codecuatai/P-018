@@ -34,7 +34,7 @@ flowchart TD
     end
 
     subgraph TypedAdapters["Tầng Adapter Dịch Vụ Nội Bộ (Typed Clients)"]
-        Services[services: Typed HTTP Clients gửi tới Agent, Ride, Restaurant, Healthcare, Food]
+        Services[Typed Clients: Agent HTTP nội bộ; domain calls qua P-018-Service MCP]
     end
 
     EdgeLayer --> CoreOrchestration
@@ -68,7 +68,7 @@ flowchart TD
 - Worker nền chạy theo chu kỳ `GATEWAY_WORKFLOW_POLL_INTERVAL_MS` để phục hồi các giao dịch dở dang (recovery) và tự động cập nhật tiến độ đơn giao đồ ăn hoặc chuyến xe.
 
 #### E. Tầng Khách Nội Bộ Có Định Kiểu (`services`)
-- Toàn bộ giao tiếp từ Gateway xuống 5 dịch vụ con đều sử dụng các Typed Client chuyên dụng:
+- Toàn bộ giao tiếp từ Gateway tới domain services sử dụng Typed Client chuyên dụng và đi qua MCP; Agent nội bộ vẫn dùng HTTP client riêng:
   - `AgentClient`: Gửi yêu cầu lập kế hoạch và phân tích ngữ nghĩa.
   - `FoodClient`: Tương tác thực đơn, giỏ hàng, đặt món.
   - `RideClient`: Yêu cầu báo giá, đặt xe, theo dõi tài xế.

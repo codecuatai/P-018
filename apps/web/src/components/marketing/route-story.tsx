@@ -1,12 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { motion, useInView, useReducedMotion, useScroll, useTransform } from "motion/react";
+import { motion, useInView, useScroll, useTransform } from "motion/react";
 import { useRef, useState } from "react";
 
 import { LANDING_MEDIA } from "@/components/marketing/landing-media";
 import { useDelayedReplay } from "@/components/marketing/scroll-focus-scene";
 import styles from "@/components/marketing/route-story.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 const routeTransition = { duration: 0.78, ease: [0.22, 1, 0.36, 1] as const };
 const destinationTransition = { duration: 0.44, ease: [0.22, 1, 0.36, 1] as const };
@@ -36,7 +37,7 @@ export const MAP_ROUTES = [
 ] as const;
 
 export function HanoiRouteStory({ mediaAvailable = true }: HanoiRouteStoryProps) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const sceneRef = useRef<HTMLDivElement>(null);
   const entered = useInView(sceneRef, { once: false, amount: 0.24, margin: "-10% 0px -10% 0px" });
   const delayedActive = useDelayedReplay(sceneRef, true, undefined, reduceMotion);

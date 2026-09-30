@@ -4,7 +4,7 @@
 
 ### Nguyên tắc kiến trúc cốt lõi:
 1. **Sở hữu miền độc lập (Domain Ownership)**: Mỗi dịch vụ miền sở hữu toàn bộ logic nghiệp vụ, schema cơ sở dữ liệu và các bước chuyển trạng thái của riêng mình.
-2. **Hợp đồng REST/JSON/OpenAPI**: Giao tiếp nội bộ hoàn toàn qua HTTP REST có định kiểu rõ ràng, không chia sẻ code nghiệp vụ hoặc ORM model giữa các dịch vụ.
+2. **Ranh giới repo qua MCP**: `P-018` chỉ gọi domain services ở `P-018-Service` qua MCP Streamable HTTP. HTTP REST chỉ được dùng bên trong từng repo; không chia sẻ code nghiệp vụ hoặc ORM model giữa các dịch vụ.
 3. **Xác nhận giao dịch rõ ràng (Explicit Confirmation)**: Mọi tác vụ có chi phí, thay đổi trạng thái hoặc ảnh hưởng quyền lợi người dùng đều phải trải qua bước xác nhận người dùng trước khi thực thi.
 4. **Tính Idempotent cho các thao tác ghi**: Mọi yêu cầu ghi hoặc thanh toán đều mang `Idempotency-Key` để bảo đảm an toàn khi mạng chập chờn hoặc retry.
 5. **Truy cập đặc quyền tối thiểu (Least Privilege)**: Tách biệt hoàn toàn quyền truy cập cơ sở dữ liệu và biến môi trường giữa các phân hệ. Lưu lượng công khai từ người dùng kết thúc tại Gateway; các liên kết còn lại hoàn toàn là kết nối mạng nội bộ riêng tư.
@@ -35,6 +35,7 @@ flowchart TB
     end
 
     subgraph DomainLayer["4. Tầng Dịch Vụ Miền Nghiệp Vụ (FastAPI Microservices)"]
+        ServiceMCP["P-018-Service MCP Server (:8105/mcp)\n- MCP tool bridge qua ranh giới repository"]:::domain
         Ride["Ride Service (Port :8101)\n- Báo giá cước, mô phỏng tài xế & định tuyến di chuyển"]:::domain
         Restaurant["Restaurant Service (Port :8102)\n- Tra cứu thực đơn, tình trạng bàn & đặt chỗ dine-in"]:::domain
         Healthcare["Healthcare Service (Port :8103)\n- Danh mục bác sĩ/chuyên khoa & đặt lịch khám bệnh"]:::domain
@@ -55,10 +56,11 @@ flowchart TB
 
     Gateway <-->|Gửi yêu cầu Tool & Nhận kết quả| Agent
 
-    Gateway -->|Typed Client Adapter| Ride
-    Gateway -->|Typed Client Adapter| Restaurant
-    Gateway -->|Typed Client Adapter| Healthcare
-    Gateway -->|Typed Client Adapter| Food
+    Gateway -->|MCP Streamable HTTP| ServiceMCP
+    ServiceMCP -->|HTTP nội bộ trong P-018-Service| Ride
+    ServiceMCP -->|HTTP nội bộ trong P-018-Service| Restaurant
+    ServiceMCP -->|HTTP nội bộ trong P-018-Service| Healthcare
+    ServiceMCP -->|HTTP nội bộ trong P-018-Service| Food
 
     Gateway -.->|Kết nối SQL riêng| CoreDB
     Agent -.->|Kết nối SQL riêng| AgentDB

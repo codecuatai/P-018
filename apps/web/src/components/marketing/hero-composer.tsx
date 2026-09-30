@@ -1,13 +1,14 @@
 "use client";
 
 import { ArrowUp, ShieldCheck } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
 import { useMarketingAuth } from "@/components/marketing/marketing-auth";
 import styles from "@/components/marketing/hero-composer.module.css";
 import { useAuth } from "@/providers/auth-provider";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 export const HERO_PROMPTS = [
   "Đặt xe từ VinUni đến Hồ Gươm bằng xe 4 chỗ",
@@ -21,7 +22,7 @@ export function HeroComposer() {
   const router = useRouter();
   const { status } = useAuth();
   const { openAuth } = useMarketingAuth();
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const [draft, setDraft] = useState("");
   const [promptIndex, setPromptIndex] = useState(0);
   const [hasInteracted, setHasInteracted] = useState(false);

@@ -17,7 +17,7 @@ API Gateway là cổng kết nối công khai duy nhất và là bộ điều ph
 - `conversation`: Quản lý danh sách, nội dung tin nhắn và vòng đời các cuộc hội thoại bền vững.
 - `tools`: Quản trị Tool Registry v2, adapter kiểm tra chính sách và phân phối công cụ.
 - `services`: Khám phá danh mục dịch vụ trên Service Hub, hỗ trợ trạng thái phản hồi suy giảm an toàn (degraded/partial).
-- `food`, `ride`, `restaurant`, `healthcare`: Các Typed Client kết nối an toàn tới từng domain service nội bộ.
+- `food`, `ride`, `restaurant`, `healthcare`: Typed Client gọi domain API qua MCP endpoint `XONE_SERVICE_MCP_URL`; không kết nối trực tiếp tới các cổng service.
 - `personal`: Quản lý thông tin cá nhân, hồ sơ người dùng và sổ địa chỉ đã lưu.
 - `workflow`: Điều phối workflow đa dịch vụ, máy trạng thái kế hoạch và xử lý đền bù (compensation).
 - `admin`: Các API quản trị hệ thống, giám sát sức khỏe, người dùng và dữ liệu danh mục.

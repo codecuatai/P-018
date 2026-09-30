@@ -72,12 +72,8 @@ services:
       GATEWAY_PROVIDER_SERVICES_RATE_LIMIT: ${GATEWAY_PROVIDER_SERVICES_RATE_LIMIT:-60}
       DATABASE_URL: ${CORE_DATABASE_URL:?CORE_DATABASE_URL is required}
       AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:?AGENT_SERVICE_URL is required}
-      RIDE_SERVICE_URL: ${RIDE_SERVICE_URL:?RIDE_SERVICE_URL is required}
-      RESTAURANT_SERVICE_URL: ${RESTAURANT_SERVICE_URL:?RESTAURANT_SERVICE_URL is required}
-      HEALTHCARE_SERVICE_URL: ${HEALTHCARE_SERVICE_URL:?HEALTHCARE_SERVICE_URL is required}
+      XONE_SERVICE_MCP_URL: ${XONE_SERVICE_MCP_URL:?XONE_SERVICE_MCP_URL is required}
       HEALTHCARE_DEFAULT_PATIENT_ID: ${HEALTHCARE_DEFAULT_PATIENT_ID:-}
-      FOOD_SERVICE_URL: ${FOOD_SERVICE_URL:?FOOD_SERVICE_URL is required}
-      DELIVERY_SERVICE_URL: ${DELIVERY_SERVICE_URL:-http://delivery-service:8106}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       APP_ENV: ${APP_ENV:?APP_ENV is required}
@@ -119,11 +115,6 @@ services:
     ports: [ "127.0.0.1:${API_GATEWAY_PORT}:3000" ]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-      - "ride-service:host-gateway"
-      - "restaurant-service:host-gateway"
-      - "healthcare-service:host-gateway"
-      - "food-service:host-gateway"
-      - "delivery-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
@@ -197,19 +188,12 @@ services:
     depends_on: { postgres: { condition: service_healthy } }
     extra_hosts:
       - "host.docker.internal:host-gateway"
-      - "ride-service:host-gateway"
-      - "restaurant-service:host-gateway"
-      - "healthcare-service:host-gateway"
-      - "food-service:host-gateway"
-      - "delivery-service:host-gateway"
     restart: unless-stopped
     networks: [ xone_internal ]
     <<: *default-logging
 
-  # NOTE: Domain Microservices (Food, Restaurant, Healthcare, Ride)
-  # have been separated into standalone repository: P-018-Service (ports 8101-8104).
-  # Run `docker compose up -d` in P-018-Service to start the 4 services,
-  # or point *_SERVICE_URL in .env to their remote/local endpoints.
+  # Domain Microservices live in P-018-Service. The Gateway reaches them only
+  # through XONE_SERVICE_MCP_URL; configure that endpoint in the root .env.
 
 volumes:
   postgres_data:

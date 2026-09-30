@@ -1,12 +1,13 @@
 "use client";
 
 import Image from "next/image";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useRef, useState } from "react";
 
 import { LANDING_MEDIA } from "@/components/marketing/landing-media";
 import { useDelayedReplay } from "@/components/marketing/scroll-focus-scene";
 import styles from "@/components/marketing/service-composition.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 export const SERVICE_DEFINITIONS = [
   {
@@ -65,7 +66,7 @@ const reducedTransition = { duration: 0.01 };
 const revealTransition = { duration: 0.62, ease: [0.22, 1, 0.36, 1] as const };
 
 export function ServiceComposition() {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const compositionRef = useRef<HTMLDivElement>(null);
   const visible = useDelayedReplay(compositionRef, true, undefined, reduceMotion);
   const [activeId, setActiveId] = useState<ServiceId>("food");

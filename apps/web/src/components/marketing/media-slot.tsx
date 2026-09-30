@@ -1,17 +1,17 @@
 "use client";
 
-import { useReducedMotion } from "motion/react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LANDING_MEDIA, type LandingMediaKey } from "@/components/marketing/landing-media";
 import { HanoiRouteStory } from "@/components/marketing/route-story";
 import styles from "@/components/marketing/media-slot.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 type HeroMediaLifecycle = "video" | "transition-to-poster" | "poster-hold" | "restart";
 
 export function HeroMedia() {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const videoRef = useRef<HTMLVideoElement>(null);
   const restartTimerRef = useRef<number | null>(null);
   const playRequestRef = useRef<Promise<void> | null>(null);

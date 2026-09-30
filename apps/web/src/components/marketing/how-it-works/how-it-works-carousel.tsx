@@ -1,13 +1,14 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, Link2, MessageCircle, ShieldCheck } from "lucide-react";
-import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion, useInView } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
 
 import { AskPreview } from "@/components/marketing/how-it-works/ask-preview";
 import { ConfirmPreview } from "@/components/marketing/how-it-works/confirm-preview";
 import { ConnectPreview } from "@/components/marketing/how-it-works/connect-preview";
 import styles from "@/components/marketing/how-it-works/how-it-works-carousel.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 export const HOW_IT_WORKS_STAGES = [
   { id: "ask", label: "Nói điều bạn cần", description: "Bắt đầu bằng một yêu cầu tự nhiên.", icon: MessageCircle, preview: <AskPreview /> },
@@ -27,7 +28,7 @@ const slideVariants = {
 };
 
 export function HowItWorksCarousel() {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const carouselRef = useRef<HTMLDivElement>(null);
   const stageButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const timerRef = useRef<number | null>(null);

@@ -13,10 +13,11 @@ flowchart TB
   
   subgraph InternalNetwork["Mạng Nội Bộ Docker: xone_internal (Bridge)"]
     Gateway --> Agent[agent-service :8001]
-    Gateway --> Ride[ride-service :8101]
-    Gateway --> Restaurant[restaurant-service :8102]
-    Gateway --> Healthcare[healthcare-service :8103]
-    Gateway --> Food[food-service :8104]
+    Gateway -->|MCP :8105/mcp| ServiceMCP[P-018-Service MCP Server]
+    ServiceMCP --> Ride[ride-service :8101]
+    ServiceMCP --> Restaurant[restaurant-service :8102]
+    ServiceMCP --> Healthcare[healthcare-service :8103]
+    ServiceMCP --> Food[food-service :8104]
     
     Gateway --> Core[(xone_core)]
     Agent --> AgentDb[(xone_agent)]
@@ -35,14 +36,13 @@ flowchart TB
 | **API Gateway** | `api-gateway` | `3000` (`${API_GATEWAY_PORT}`) | `3000` | Công khai (Public) |
 | **PostgreSQL** | `postgres` | `5432` (`${POSTGRES_PORT}`) | `5432` | Nội bộ / Host dev |
 | **Agent Service** | `agent-service` | Không public | `8001` (`${AGENT_SERVICE_PORT}`) | Chỉ nội bộ (`xone_internal`) |
-| **Ride Service** | `ride-service` | Không public | `8101` (`${RIDE_SERVICE_PORT}`) | Chỉ nội bộ (`xone_internal`) |
-| **Restaurant Service**| `restaurant-service` | Không public | `8102` (`${RESTAURANT_SERVICE_PORT}`) | Chỉ nội bộ (`xone_internal`) |
-| **Healthcare Service**| `healthcare-service` | Không public | `8103` (`${HEALTHCARE_SERVICE_PORT}`) | Chỉ nội bộ (`xone_internal`) |
-| **Food Service** | `food-service` | Không public | `8104` (`${FOOD_SERVICE_PORT}`) | Chỉ nội bộ (`xone_internal`) |
+| **P-018-Service MCP** | `mcp-server` | MCP endpoint được cấu hình qua `XONE_SERVICE_MCP_URL` | `8105/mcp` | Kết nối duy nhất giữa hai repo |
+| **Domain Services** | `ride`, `restaurant`, `healthcare`, `food` | Không public từ P-018 | `8101`–`8104` | Chỉ mạng nội bộ của `P-018-Service` |
 
 > [!IMPORTANT]
 > - Chỉ có **Web** và **API Gateway** mở cổng công khai ra ngoài máy host.
-> - Toàn bộ 5 microservices backend và các kết nối CSDL nằm trọn vẹn bên trong mạng ảo `xone_internal` (Docker Bridge).
+> - API Gateway không truy cập trực tiếp các cổng `8101`–`8106`; mọi lời gọi domain đi qua MCP `:8105/mcp`.
+> - Domain services và database của chúng nằm trong mạng riêng của `P-018-Service`.
 > - Giao tiếp giữa các container bắt buộc sử dụng **Docker Service DNS** (ví dụ: `http://agent-service:8001`), tuyệt đối **không được dùng `localhost`** khi giao tiếp giữa các container với nhau.
 
 ---

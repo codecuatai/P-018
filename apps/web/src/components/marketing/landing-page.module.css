@@ -21,7 +21,7 @@
 .heroTitleLine { display: block; }
 .heroTitleSecond { font-size: 0.94em; }
 .heroLede { max-width: 620px; margin: 19px auto 0; color: var(--color-ink); font-size: var(--text-base); line-height: var(--leading-normal); }
-.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; color: var(--color-navy); font-size: var(--text-sm); font-weight: 600; }
+.heroNote { display: inline-flex; align-items: center; justify-content: center; gap: 8px; margin: 17px 0 0; padding: 9px 14px; color: var(--color-navy); background: rgb(255 255 255 / 88%); border: 1px solid rgb(255 255 255 / 82%); border-radius: 999px; box-shadow: 0 4px 14px rgb(16 24 40 / 9%); backdrop-filter: blur(10px); font-size: var(--text-sm); font-weight: 600; }
 .heroNote svg { color: var(--color-success); }
 
 .section { padding: var(--section-gap) 0; overflow: hidden; width: 100%; }

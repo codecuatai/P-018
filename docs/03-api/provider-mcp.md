@@ -21,11 +21,12 @@ Nền tảng X-One hỗ trợ giao tiếp MCP theo cả hai chiều:
 │      ├── McpAuthGuard (JWT Bearer / API Key: xone_mcp_...)              │
 │      ├── McpSessionService (Stateful Session Tracking)                 │
 │      ├── DomainGuard (Phân quyền theo vai trò đối tác)                  │
-│      └── McpToolRegistry (22 công cụ tiêu chuẩn)                        │
-│           ├── ride-service :8101                                        │
-│           ├── restaurant-service :8102                                  │
-│           ├── healthcare-service :8103                                  │
-│           └── food-service :8104                                        │
+│      └── Typed service clients gọi P-018-Service MCP qua Streamable HTTP│
+│                         │                                               │
+│                         ▼                                               │
+│                 [P-018-Service MCP :8105/mcp]                           │
+│                         │ HTTP nội bộ                                   │
+│              Ride / Restaurant / Healthcare / Food                      │
 └─────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────┐

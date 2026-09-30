@@ -1,19 +1,20 @@
 "use client";
 
 import { ArrowRight, Check, Navigation, UtensilsCrossed } from "lucide-react";
-import { motion, useInView, useReducedMotion } from "motion/react";
+import { motion, useInView } from "motion/react";
 import { useRef } from "react";
 
 import { XOneMark } from "@/components/XOneMark";
 import { useDelayedReplay } from "@/components/marketing/scroll-focus-scene";
 import styles from "@/components/marketing/multi-service-conversation.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 const revealTransition = { duration: 0.52, ease: [0.22, 1, 0.36, 1] as const };
 const hiddenState = { opacity: 0, y: 20, scale: 0.985 };
 const visibleState = { opacity: 1, y: 0, scale: 1 };
 
 export function MultiServiceConversation({ className = "", replayOnReenter = false }: { className?: string; replayOnReenter?: boolean }) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const storyRef = useRef<HTMLDivElement>(null);
   const entered = useInView(storyRef, { once: !replayOnReenter, amount: 0.24, margin: "-10% 0px -10% 0px" });
   const delayedActive = useDelayedReplay(storyRef, replayOnReenter, undefined, reduceMotion);

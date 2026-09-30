@@ -37,8 +37,8 @@ describe('health endpoints', () => {
     expect(response.body.request_id).toBeDefined();
   });
 
-  it('registers FoodClient with the configured internal URL', () => {
-    expect(app.get(FoodClient).baseUrl).toBe('http://food-service:8104');
+  it('registers FoodClient with the MCP transport boundary', () => {
+    expect(app.get(FoodClient).baseUrl).toBe('mcp://food');
   });
 
   it('supports demo login and protects the current-user endpoint', async () => {

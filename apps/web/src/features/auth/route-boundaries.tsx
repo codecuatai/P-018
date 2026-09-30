@@ -2,11 +2,19 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
+import { WifiOff } from "lucide-react";
 
 import { useAuth } from "@/providers/auth-provider";
 
-function LoadingState({ children }: { children: ReactNode }) {
-  return <main className="screen-loading" aria-live="polite"><span className="loading-mark" />{children}</main>;
+function LoadingState({ children, recoverable = false }: { children: ReactNode; recoverable?: boolean }) {
+  if (recoverable) {
+    return <main className="screen-loading screen-loading-recoverable" role="alert" aria-live="assertive"><section className="session-recovery-card"><span className="session-recovery-icon" aria-hidden="true"><WifiOff size={20} /></span><div className="session-recovery-copy"><p className="eyebrow">KẾT NỐI TẠM GIÁN ĐOẠN</p><h1>Chưa thể kết nối không gian của bạn.</h1><p>Phiên đăng nhập vẫn được giữ an toàn. Hãy thử kết nối lại.</p>{children}</div></section></main>;
+  }
+  return <main className="screen-loading" role="status" aria-live="polite"><span className="loading-mark" />{children}</main>;
+}
+
+function SessionRetry({ retrySession }: { retrySession: () => void }) {
+  return <LoadingState recoverable><button className="button button-primary session-retry-button" type="button" onClick={retrySession}>Thử kết nối lại</button></LoadingState>;
 }
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -20,7 +28,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     }
   }, [pathname, router, status]);
   if (status === "loading") return <LoadingState>Đang khôi phục phiên…</LoadingState>;
-  if (status === "recoverable") return <LoadingState><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></LoadingState>;
+  if (status === "recoverable") return <SessionRetry retrySession={retrySession} />;
   if (status !== "authenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   return <>{children}</>;
 }
@@ -95,7 +103,9 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
       router.replace(next);
     }
   }, [pathname, router, status]);
-  if (status === "loading" || status === "recoverable" || status === "unauthenticated") return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
+  if (status === "loading") return <LoadingState>Đang kiểm tra quyền truy cập…</LoadingState>;
+  if (status === "recoverable") return <SessionRetry retrySession={retrySession} />;
+  if (status === "unauthenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   if ((user?.role === "admin" || user?.role === "manager") && user.status !== "disabled") return <>{children}</>;
   return <main className="access-denied" id="main-content"><span className="eyebrow">403 · KHÔNG CÓ QUYỀN TRUY CẬP</span><h1>Khu vực này dành cho quản trị viên & quản lý.</h1><p>Tài khoản hiện tại không có quyền mở trang quản trị.</p></main>;
 }
@@ -110,9 +120,9 @@ export function RequireRoles({ roles, children }: { roles: Array<"admin" | "mana
       router.replace(next);
     }
   }, [pathname, router, status]);
-  if (status === "loading" || status === "recoverable" || status === "unauthenticated") {
-    return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền truy cập…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
-  }
+  if (status === "loading") return <LoadingState>Đang kiểm tra quyền truy cập…</LoadingState>;
+  if (status === "recoverable") return <SessionRetry retrySession={retrySession} />;
+  if (status === "unauthenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   const currentRole = user?.role === "customer" ? "user" : user?.role;
   const isAllowed = user && user.status !== "disabled" && roles.some((r) => (r === "customer" ? "user" : r) === currentRole);
   if (isAllowed) return <>{children}</>;
@@ -129,9 +139,9 @@ export function RequireProvider({ children }: { children: ReactNode }) {
       router.replace(next);
     }
   }, [pathname, router, status]);
-  if (status === "loading" || status === "recoverable" || status === "unauthenticated") {
-    return <LoadingState>{status === "loading" ? "Đang kiểm tra quyền đối tác…" : status === "recoverable" ? <><span>Chưa thể khôi phục phiên do kết nối tạm thời gián đoạn.</span> <button className="text-button" type="button" onClick={retrySession}>Thử lại</button></> : "Đang chuyển tới đăng nhập…"}</LoadingState>;
-  }
+  if (status === "loading") return <LoadingState>Đang kiểm tra quyền đối tác…</LoadingState>;
+  if (status === "recoverable") return <SessionRetry retrySession={retrySession} />;
+  if (status === "unauthenticated") return <LoadingState>Đang chuyển tới đăng nhập…</LoadingState>;
   if (user?.role === "provider" && user.status !== "disabled") {
     return <>{children}</>;
   }

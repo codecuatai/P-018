@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { motion, useReducedMotion } from "motion/react";
+import { motion } from "motion/react";
 import { useState, type ReactNode } from "react";
 
 import styles from "@/components/marketing/floating-product-image.module.css";
+import { usePrefersReducedMotion } from "@/components/marketing/use-motion-preference";
 
 interface FloatingProductImageProps {
   src: string;
@@ -27,7 +28,7 @@ export function FloatingProductImage({
   width = 720,
   height = 560,
 }: FloatingProductImageProps) {
-  const reduceMotion = useReducedMotion() === true;
+  const reduceMotion = usePrefersReducedMotion();
   const [failed, setFailed] = useState(false);
 
   return (

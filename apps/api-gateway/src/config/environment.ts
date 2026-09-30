@@ -70,10 +70,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   const requiredStrings = [
     'DATABASE_URL',
     'AGENT_SERVICE_URL',
-    'RIDE_SERVICE_URL',
-    'RESTAURANT_SERVICE_URL',
-    'HEALTHCARE_SERVICE_URL',
-    'FOOD_SERVICE_URL',
+    'XONE_SERVICE_MCP_URL',
     'INTERNAL_SERVICE_TOKEN',
     'JWT_SECRET',
     'DEMO_AUTH_ENABLED',
@@ -93,12 +90,16 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     throw new Error('PORT must be an integer between 1 and 65535.');
   }
 
-  for (const name of requiredStrings.slice(0, 6)) {
+  for (const name of ['DATABASE_URL', 'AGENT_SERVICE_URL', 'XONE_SERVICE_MCP_URL']) {
     try {
       new URL(String(config[name]));
     } catch {
       throw new Error(`${name} must be a valid URL.`);
     }
+  }
+  const serviceMcpUrl = new URL(String(config.XONE_SERVICE_MCP_URL).trim());
+  if (!['http:', 'https:'].includes(serviceMcpUrl.protocol) || serviceMcpUrl.pathname.replace(/\/+$/, '') !== '/mcp' || serviceMcpUrl.username || serviceMcpUrl.password) {
+    throw new Error('XONE_SERVICE_MCP_URL must be an HTTP(S) MCP endpoint ending in /mcp.');
   }
   if (String(config.JWT_SECRET).length < 16) {
     throw new Error('JWT_SECRET must be at least 16 characters.');
@@ -142,7 +143,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
   for (const name of ['AUTH_ISSUER', 'AUTH_AUDIENCE', 'AUTH_REFRESH_COOKIE_NAME']) {
     if (typeof config[name] !== 'string' || String(config[name]).trim() === '') throw new Error(`${name} is required.`);
   }
-  for (const name of ['LOCATION_PROVIDER_URL', 'GEOCODING_PROVIDER_URL', 'ROUTING_PROVIDER_URL', 'DELIVERY_SERVICE_URL']) {
+  for (const name of ['LOCATION_PROVIDER_URL', 'GEOCODING_PROVIDER_URL', 'ROUTING_PROVIDER_URL', 'XONE_SERVICE_MCP_URL']) {
     if (config[name] !== undefined && String(config[name]).trim() !== '') {
       try {
         const url = new URL(String(config[name]).trim());
@@ -210,7 +211,7 @@ export function validateEnvironment(config: Record<string, unknown>): Record<str
     AUTH_DEV_RESET_TOKEN_CAPTURE: authDevResetTokenCapture === 'true',
     LOCAL_DETERMINISTIC_LOCATION_FALLBACK: localDeterministicLocationFallback === 'true',
     GEOAPIFY_REAL_MODE: geoapifyRealMode === 'true',
-    DELIVERY_SERVICE_URL: config.DELIVERY_SERVICE_URL ? String(config.DELIVERY_SERVICE_URL).trim() : 'http://127.0.0.1:8106',
+    XONE_SERVICE_MCP_URL: String(config.XONE_SERVICE_MCP_URL).trim().replace(/\/+$/, ''),
     ...(config.GEOAPIFY_SERVER_API_KEY !== undefined ? { GEOAPIFY_SERVER_API_KEY: normalizeConfiguredSecret(config.GEOAPIFY_SERVER_API_KEY) } : {}),
     ...(config.GOOGLE_CLIENT_ID !== undefined && String(config.GOOGLE_CLIENT_ID).trim() !== '' ? { GOOGLE_CLIENT_ID: normalizeConfiguredSecret(config.GOOGLE_CLIENT_ID) } : {}),
     ...(config.GOOGLE_CLIENT_SECRET !== undefined && String(config.GOOGLE_CLIENT_SECRET).trim() !== '' ? { GOOGLE_CLIENT_SECRET: normalizeConfiguredSecret(config.GOOGLE_CLIENT_SECRET) } : {}),
