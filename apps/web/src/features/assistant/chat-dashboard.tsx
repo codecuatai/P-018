@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Bot, ChevronLeft, ChevronRight, Loader2, LocateFixed, PlusCircle, RefreshCw } from "lucide-react";
+import { ArrowUp, Bot, ChevronLeft, ChevronRight, LifeBuoy, Loader2, LocateFixed, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { AssistantCards, FoodCartDock, type FoodSelection } from "@/components/WorkflowCards";
@@ -513,9 +513,6 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
           
           <div className="composer-wrap">
             <div className="composer-box">
-              <button className="composer-addon-btn" type="button" aria-label="Thêm tùy chọn" title="Tính năng đang được phát triển" disabled>
-                <PlusCircle size={20} />
-              </button>
               <textarea
                 ref={inputRef}
                 aria-label="Nhập yêu cầu"
@@ -553,17 +550,19 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
             {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <div className={`composer-footer${conversationId ? " has-support" : ""}`}>
               <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
               {conversationId ? (
                 <button
                   type="button"
-                  className="button button-secondary button-sm"
+                  className={`composer-support-button${handoffRequested ? " is-complete" : ""}`}
                   onClick={() => void requestHumanHandoff()}
                   disabled={handoffLoading || handoffRequested}
                   aria-label="Yêu cầu người hỗ trợ"
+                  title="Chuyển cuộc trò chuyện cho đội ngũ hỗ trợ"
                 >
-                  {handoffRequested ? "Đã chuyển cho người hỗ trợ" : handoffLoading ? "Đang chuyển…" : "Gặp người hỗ trợ"}
+                  <LifeBuoy size={15} aria-hidden="true" />
+                  <span>{handoffRequested ? "Đã gửi yêu cầu hỗ trợ" : handoffLoading ? "Đang kết nối…" : "Liên hệ hỗ trợ"}</span>
                 </button>
               ) : null}
             </div>

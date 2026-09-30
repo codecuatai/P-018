@@ -45,7 +45,7 @@ test("login and both registration modes fit the viewport and remain usable", asy
 });
 
 test("customer workspace remains within the viewport", async ({ context, page }, testInfo) => {
-  await installAuthenticatedFixture(context, { email: "responsive-user@example.test", role: "user" });
+  const gateway = await installAuthenticatedFixture(context, { email: "responsive-user@example.test", role: "user" });
   await page.goto("/app");
   await expect(page.locator(".customer-shell")).toBeVisible();
   await expectNoPageOverflow(page, "customer workspace");
@@ -66,6 +66,25 @@ test("customer workspace remains within the viewport", async ({ context, page },
     expect(firstQuickActionVisible, "first customer quick action should remain above the composer").toBe(true);
   }
   if (testInfo.project.name === "chromium-375") await page.screenshot({ path: testInfo.outputPath("customer-mobile.png") });
+
+  gateway.seedConversation();
+  await page.goto("/app/conversations/conversation-a");
+  const supportButton = page.getByRole("button", { name: "Yêu cầu người hỗ trợ" });
+  await expect(supportButton).toBeVisible();
+  const composerAlignment = await page.evaluate(() => {
+    const hint = document.querySelector(".composer-footer .composer-hint")?.getBoundingClientRect();
+    const support = document.querySelector(".composer-support-button")?.getBoundingClientRect();
+    const footer = document.querySelector(".composer-footer")?.getBoundingClientRect();
+    return {
+      centerDifference: hint && support ? Math.abs((hint.top + hint.height / 2) - (support.top + support.height / 2)) : Number.POSITIVE_INFINITY,
+      footerHeight: footer?.height ?? Number.POSITIVE_INFINITY,
+      width: document.documentElement.clientWidth,
+    };
+  });
+  expect(composerAlignment.centerDifference, "support action should align beside the composer hint").toBeLessThanOrEqual(3);
+  expect(composerAlignment.footerHeight, "support footer should remain compact").toBeLessThanOrEqual(composerAlignment.width <= 560 ? 34 : 38);
+  if (testInfo.project.name === "chromium-375") await page.screenshot({ path: testInfo.outputPath("customer-composer-mobile.png") });
+  if (testInfo.project.name === "chromium-1440") await page.screenshot({ path: testInfo.outputPath("customer-composer-desktop.png") });
 });
 
 test("provider portal remains within the viewport", async ({ context, page }, testInfo) => {
