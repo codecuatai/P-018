@@ -42,7 +42,6 @@ import {
   Sparkles,
   Star,
   Stethoscope,
-  Store,
   Ticket,
   UserCheck,
   UserRound,
@@ -311,15 +310,6 @@ export function AdminDashboard() {
             <span className="admin-status-dot status-healthy" />
             <span className="admin-header-status-text">gateway-core</span>
           </div>
-
-          <Link
-            href="/app"
-            className="role-switch-link role-badge-customer"
-            title="Xem giao diện người dùng / khách hàng"
-          >
-            <UserRound size={13} />
-            <span>Giao diện Khách hàng</span>
-          </Link>
 
           <AdminUserMenu userEmail={user?.email ?? ""} userRole={user?.role} onLogout={handleLogout} />
         </div>
@@ -821,25 +811,6 @@ function AdminUserMenu({ userEmail, userRole, onLogout }: { userEmail: string; u
               <ShieldCheck size={12} /> {isManager ? "Quyền Manager · Phiên bảo mật" : "Quyền Admin · Phiên bảo mật"}
             </small>
           </div>
-          <div className="dropdown-divider" />
-          <Link
-            className="dropdown-item"
-            href="/app"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            <UserRound size={15} />
-            <span>Giao diện Khách hàng</span>
-          </Link>
-          <Link
-            className="dropdown-item"
-            href="/app/provider"
-            role="menuitem"
-            onClick={() => setOpen(false)}
-          >
-            <Store size={15} />
-            <span>Cổng Đối tác</span>
-          </Link>
           <div className="dropdown-divider" />
           <button
             className="dropdown-item dropdown-item-danger"

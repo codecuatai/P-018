@@ -59,14 +59,14 @@ const DEFAULT_SIDEBAR_WIDTH = 280;
 const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 540;
 
-function getRoleBadge(role?: string): { label: string; className: string; switchHref?: string; switchLabel?: string } {
+function getRoleBadge(role?: string): { label: string; className: string } {
   switch (role) {
     case "admin":
-      return { label: "Admin", className: "role-badge-admin", switchHref: "/admin", switchLabel: "Admin Console" };
+      return { label: "Admin", className: "role-badge-admin" };
     case "manager":
-      return { label: "Quản lý", className: "role-badge-manager", switchHref: "/admin", switchLabel: "Trung tâm vận hành" };
+      return { label: "Quản lý", className: "role-badge-manager" };
     case "provider":
-      return { label: "Đối tác", className: "role-badge-provider", switchHref: "/app/provider", switchLabel: "Cổng đối tác" };
+      return { label: "Đối tác", className: "role-badge-provider" };
     case "user":
     case "customer":
     default:
@@ -182,6 +182,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     try { await logout(); } finally { router.replace("/"); }
   }
 
+  const roleBadge = getRoleBadge(user?.role);
+  const isCustomerRole = !user?.role || user.role === "user" || user.role === "customer";
+
   if (pathname?.startsWith("/app/provider")) {
     return <>{children}</>;
   }
@@ -196,22 +199,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
         <div className="app-global-header-right">
-          {user?.role && ["admin", "manager", "provider"].includes(user.role) ? (
-            <Link
-              href={getRoleBadge(user.role).switchHref ?? "/app"}
-              className={`role-switch-link ${getRoleBadge(user.role).className}`}
-              title={`Chuyển sang ${getRoleBadge(user.role).switchLabel}`}
-            >
-              <ShieldCheck size={13} aria-hidden="true" />
-              <span>{getRoleBadge(user.role).switchLabel}</span>
-              <ChevronRight size={12} aria-hidden="true" />
-            </Link>
-          ) : (
-            <span className="role-pill role-badge-customer" title="Khách hàng cá nhân">
-              <UserRound size={12} aria-hidden="true" />
-              <span>Khách hàng</span>
-            </span>
-          )}
+          <span className={`role-pill ${roleBadge.className}`} title={`Vai trò: ${roleBadge.label}`}>
+            {isCustomerRole ? <UserRound size={12} aria-hidden="true" /> : <ShieldCheck size={12} aria-hidden="true" />}
+            <span>{roleBadge.label}</span>
+          </span>
           <NotificationBell />
           <UserMenu userEmail={user?.email ?? ""} userRole={user?.role} onLogout={handleLogout} />
         </div>

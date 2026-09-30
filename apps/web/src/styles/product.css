@@ -310,11 +310,8 @@
 .app-content { position: relative; min-width: 0; min-height: 0; height: 100%; overflow-y: auto; padding: 36px clamp(20px, 3.5vw, 48px) 48px; background: #F8FAFC; }
 .app-content-assistant { display: flex; flex-direction: column; height: 100%; max-height: 100%; min-height: 0; min-width: 0; flex: 1 1 auto; align-self: stretch; overflow: hidden; padding: 0; background: #F8FAFC; }
 
-.role-pill,
-.role-switch-link { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border-radius: 999px; font-size: var(--text-micro); font-weight: 700; text-decoration: none; border: 1px solid var(--color-border); }
+.role-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border-radius: 999px; font-size: var(--text-micro); font-weight: 700; text-decoration: none; border: 1px solid var(--color-border); }
 .role-pill { color: var(--color-navy); background: #F1F5F9; }
-.role-switch-link { color: #4338CA; background: #EEF2FF; border-color: #C7D2FE; transition: background-color 150ms ease, border-color 150ms ease; }
-.role-switch-link:hover { background: #E0E7FF; border-color: #AECDFB; }
 .role-badge-admin { color: #7C2D12; background: #FFF4E8; border-color: #F3D3B3; }
 .role-badge-manager { color: #4338CA; background: #EEF2FF; border-color: #C7D2FE; }
 .role-badge-provider { color: #065F46; background: #ECFDF5; border-color: #A7E5C6; }
@@ -5460,8 +5457,7 @@
     white-space: nowrap;
   }
 
-  .provider-shell .app-global-header-right > .button-secondary,
-  .provider-shell .app-global-header-right > .role-switch-link {
+  .provider-shell .app-global-header-right > .button-secondary {
     justify-content: center;
     width: 36px;
     min-width: 36px;
@@ -5470,7 +5466,6 @@
   }
 
   .provider-shell .app-global-header-right > .button-secondary > span,
-  .provider-shell .app-global-header-right > .role-switch-link > span,
   .provider-shell .app-global-header-right > div:last-child > div:first-child > div:last-child,
   .provider-shell .app-global-header-right > div:last-child > button > span {
     display: none;

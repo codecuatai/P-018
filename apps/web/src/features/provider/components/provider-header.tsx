@@ -6,7 +6,6 @@ import {
   ChevronDown,
   LogOut,
   Store,
-  UserRound,
   Volume2,
   VolumeX,
 } from "lucide-react";
@@ -292,30 +291,6 @@ export function ProviderHeader({
           )}
           <span>{soundEnabled ? "Chuông: Bật" : "Chuông: Tắt"}</span>
         </button>
-
-        {/* Customer Portal Link */}
-        <Link
-          href="/app"
-          className="role-switch-link role-badge-customer"
-          aria-label="Mở giao diện khách hàng"
-          title="Xem giao diện người dùng / khách hàng"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "6px 12px",
-            borderRadius: "8px",
-            fontSize: "12px",
-            fontWeight: 600,
-            textDecoration: "none",
-            color: "#0F766E",
-            background: "#F0FDFA",
-            border: "1px solid #CCFBF1",
-          }}
-        >
-          <UserRound size={13} />
-          <span>Giao diện Khách hàng</span>
-        </Link>
 
         {/* Profile Card & Logout */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginLeft: "6px" }}>
