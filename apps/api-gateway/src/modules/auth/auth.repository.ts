@@ -589,7 +589,9 @@ export class PostgresAuthRepository implements AuthRepository {
 
   async consumePasswordResetToken(tokenHash: string, passwordHash: string, now: string): Promise<ResetConsumption> {
     return this.transaction(async (client) => {
-      const found = await client.query(`${this.accountSelect('reset.token_hash=$1', 'reset')} FOR UPDATE`, [tokenHash]);
+      // provider_profiles is an optional LEFT JOIN; lock only the required
+      // account, credential, and reset-token rows to keep PostgreSQL happy.
+      const found = await client.query(`${this.accountSelect('reset.token_hash=$1', 'reset')} FOR UPDATE OF u, c, reset`, [tokenHash]);
       const row = found.rows[0] as Record<string, unknown> | undefined;
       if (!row || row.used_at || Date.parse(String(row.reset_expires_at)) <= Date.parse(now)) return { state: 'INVALID' };
       const account = this.accountFromRow(row);

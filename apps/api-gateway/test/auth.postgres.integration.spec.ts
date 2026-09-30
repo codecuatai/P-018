@@ -48,7 +48,12 @@ describe('Auth PostgreSQL persistence', () => {
       '004_core_recovery.sql', '005_core_payment_provider_saga.sql', '006_core_payment_recovery_claims.sql',
       '007_core_assistant_action_executions.sql', '008_core_assistant_action_recovery.sql', '009_core_auth.sql',
       '010_core_personal_context.sql', '011_core_multi_service_workflows.sql', '012_core_product_ops.sql',
-      '013_core_admin_support_idempotency.sql',
+      '013_core_admin_support_idempotency.sql', '014_core_memory_system.sql',
+      '015_core_api_keys.sql', '016_core_token_usage.sql', '017_core_four_roles_rbac.sql',
+      '019_core_provider_offerings.sql', '020_core_audit_and_feature_flags.sql',
+      '022_core_customer_extensions.sql', '023_core_provider_connected_services.sql',
+      '018_core_seed_four_roles.sql', '021_core_mcp_provider.sql',
+      '024_core_provider_delivery_role.sql', '025_provider_operations_control_plane.sql',
     ]) {
       await migrationPool.query(await readFile(resolve(__dirname, '..', 'migrations', name), 'utf8'));
     }

@@ -50,13 +50,13 @@ export function formatDateTime(value: unknown): string {
   const date = new Date(String(value));
   return Number.isNaN(date.getTime())
     ? "Đang cập nhật"
-    : new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+    : new Intl.DateTimeFormat("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }).format(date);
 }
 
 export function formatTime(value: unknown): string {
   if (value === null || value === undefined || String(value).trim() === "") return "";
   const date = new Date(String(value));
-  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date);
+  return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Ho_Chi_Minh" }).format(date);
 }
 
 export function formatMoney(value: unknown, currency = "VND"): string {
