@@ -2734,6 +2734,89 @@ describe('Unified assistant orchestration', () => {
     expect(agent.chat).toHaveBeenCalledTimes(1);
   });
 
+  it('adds a Food request to the same session without replaying or discarding an active Ride', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-active-ride-add-food';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'ride-in-progress',
+        domain: 'ride',
+        goal: 'Đặt xe 4 chỗ',
+        normalized_request: 'Đặt xe từ 51 Tam Khương đến sân bay Nội Bài',
+        extracted_slots: { pickup_address: '51 Tam Khương', dropoff_address: 'Sân bay Nội Bài', vehicle_type: 'CAR_4' },
+        depends_on: [],
+        phase: 'IN_PROGRESS',
+        revision: 1,
+        workflow_id: 'ride-active-workflow',
+        public_item: { kind: 'ride_quote', title: 'Chuyến xe đang di chuyển' },
+      }],
+      actions: [{
+        id: 'ride-active-action',
+        kind: 'ride_service',
+        task_id: 'ride-in-progress',
+        task_revision: 1,
+        cohort_id: 'ride-active-cohort',
+        workflow_id: 'ride-active-workflow',
+      }],
+    });
+    const foodResult = {
+      response_type: 'options',
+      message: 'Bạn muốn ăn tối món gì hay ở khu vực nào vậy?',
+      data: { items: [] },
+      state_updates: {},
+    };
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: foodResult.message,
+        decision_source: 'model',
+        plan: {
+          assistant_message: foodResult.message,
+          interaction_mode: 'service',
+          tasks: [{ domain: 'food', goal: 'Tìm món ăn tối', normalized_request: 'tôi muốn ăn tối', extracted_slots: { dish_query: 'cơm, lẩu, nướng' } }],
+        },
+        planning_decision: versionedDecision({
+          tasks: [{
+            task_ref: 0,
+            domain: 'food',
+            goal: 'Tìm món ăn tối',
+            normalized_request: 'tôi muốn ăn tối',
+            semantic_slots: {
+              dish_query: { value: 'cơm, lẩu, nướng', source: 'INFERRED_PREFERENCE' },
+              category: { value: 'ăn tối', source: 'USER_EXPLICIT' },
+            },
+            depends_on: [],
+            disposition: 'READY',
+            steps: [],
+          }],
+        }),
+      }),
+      chat: jest.fn().mockResolvedValue(foodResult),
+    };
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'tôi muốn ăn tối', conversationId, 'cor-active-ride-add-food');
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+    const rideTask = tasks.find((task) => task.id === 'ride-in-progress');
+    const foodTask = tasks.find((task) => task.domain === 'food');
+
+    expect(response.items.map((item) => item.kind)).toEqual(['ride_quote', 'food_empty']);
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(agent.chat).toHaveBeenCalledTimes(1);
+    expect(rideTask).toEqual(expect.objectContaining({ phase: 'IN_PROGRESS', revision: 1, workflow_id: 'ride-active-workflow' }));
+    expect(foodTask).toEqual(expect.objectContaining({ phase: 'IN_PROGRESS', normalized_request: 'tôi muốn ăn tối' }));
+    expect(stored?.state.actions).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'ride-active-action' })]));
+  });
+
   it('keeps pending service state while returning a card-free chitchat turn', async () => {
     const store = new InMemoryCoreRepository();
     const conversationId = 'conv-chitchat';

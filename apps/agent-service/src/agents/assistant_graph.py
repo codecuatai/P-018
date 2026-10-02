@@ -2469,15 +2469,22 @@ def _merge_explicit_context_actions(
             "lich kham", "bac si", "kham", "than kinh",
         ),
     )
+    # Reuse the deterministic current-turn classifier as a hard semantic
+    # signal when a model latches onto an older active Ride task. In
+    # particular, broad requests such as "tôi muốn ăn tối" are Food requests
+    # even though they contain neither a dish name nor delivery wording.
+    explicit_food_tasks = [
+        task for task in deterministic_plan(message).tasks if task.domain == "food"
+    ]
     food_signal = _has_any(
         lowered_message,
         ("pho", "bun", "com", "do an", "dat mon", "giao", "ship", "ga ran", "ga chien"),
-    )
+    ) or bool(explicit_food_tasks)
     location_reply = _has_any(
         lowered_message,
         ("vi tri hien tai", "vi tri cua toi", "current location", "vi tri thiet bi"),
     )
-    if active_ride and not other_service_signal and (location_reply or _looks_like_short_location_reply(message)):
+    if active_ride and not other_service_signal and not food_signal and (location_reply or _looks_like_short_location_reply(message)):
         ride_tasks = [task for task in plan.tasks if task.domain == "ride"]
         if not ride_tasks:
             active_slots = active_ride.get("extracted_slots") if isinstance(active_ride.get("extracted_slots"), dict) else {}
@@ -2535,6 +2542,12 @@ def _merge_explicit_context_actions(
         raw_tasks or all(task.domain == "food" for task in plan.tasks)
     ):
         food_tasks = [task for task in plan.tasks if task.domain == "food"]
+        if not food_tasks:
+            # The current turn is an explicit Food request, so discard a
+            # stale Ride-only model projection and route the independently
+            # planned Food task. The active Ride remains durable in Gateway
+            # conversation state and is not cancelled by this correction.
+            food_tasks = explicit_food_tasks
         if not food_tasks:
             active_food = next(
                 (

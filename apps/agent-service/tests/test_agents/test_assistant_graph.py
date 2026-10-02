@@ -127,6 +127,41 @@ def test_explicit_ride_turn_synthesizes_ride_when_model_replays_food_only() -> N
     assert plan.tasks[0].extracted_slots["dropoff_address"] == "\u0043\u1ea7u Gi\u1ea5y"
 
 
+def test_food_dinner_request_overrides_stale_model_ride_without_discarding_it() -> None:
+    message = "tôi muốn ăn tối"
+    state = {
+        "tasks": [{
+            "domain": "ride",
+            "phase": "IN_PROGRESS",
+            "goal": "Đặt xe 4 chỗ",
+            "normalized_request": "Đặt xe từ 51 Tam Khương đến sân bay Nội Bài",
+            "extracted_slots": {
+                "pickup_address": "51 Tam Khương",
+                "dropoff_address": "Sân bay Nội Bài",
+                "vehicle_type": "CAR_4",
+            },
+        }]
+    }
+    model_plan = AssistantPlan(
+        assistant_message="Bạn muốn ăn tối món gì hay ở khu vực nào vậy?",
+        tasks=[PlannedTask(
+            domain="ride",
+            goal="Đặt xe 4 chỗ",
+            normalized_request=message,
+            extracted_slots={},
+            needs_clarification=True,
+            missing_information=["pickup_address", "dropoff_address", "vehicle_type"],
+        )],
+    )
+
+    guarded = _apply_plan_guards(model_plan, message, state)
+
+    assert domains(guarded) == ["food"]
+    assert guarded.tasks[0].extracted_slots["category"] == "ăn tối"
+    assert guarded.tasks[0].extracted_slots["dish_query"] == "cơm, lẩu, nướng"
+    assert guarded.discarded_task_refs == []
+
+
 def test_deterministic_guard_path_retains_healthcare_anchor() -> None:
     plan = deterministic_plan(
         "Đặt xe đón từ nhà ra bến xe rồi đi viện",
