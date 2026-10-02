@@ -16,6 +16,17 @@ def test_classify_food_pure():
     assert classify("pizza ngon") == "search_food"
 
 
+def test_food_recommendation_is_discovery_not_cart_mutation():
+    from src.agents.intent import extract_slots
+
+    query = "tôi đói gợi ý cho tôi món ăn đi"
+    assert classify(query) == "search_food"
+    assert extract_slots(query).get("dish_query") is None
+
+    assert classify("gợi ý cho tôi món ăn tối") == "search_food"
+    assert classify("Cho tôi hai bát burger bò cỡ lớn") == "add_to_cart"
+
+
 def test_classify_pharmacy_and_ride_compare():
     assert classify("tôi muốn mua thuốc panadol") == "pharmacy_search"
     assert classify("tìm nhà thuốc gần đây") == "pharmacy_search"

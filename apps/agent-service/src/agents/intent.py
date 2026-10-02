@@ -93,9 +93,32 @@ def classify(query: str) -> str:
         return "update_cart"
     if any(value in text for value in ("chon mon", "lay mon", "mon dau tien", "mon thu hai", "mon so")):
         return "select_menu_item"
+    if any(value in text for value in ("them", "cho vao gio")):
+        return "add_to_cart"
+    # Discovery language takes precedence over broad polite phrasing such as
+    # "cho tôi". Otherwise "gợi ý cho tôi món ăn" is misclassified as
+    # add_to_cart and asks for a restaurant/quantity before any menu search.
+    if any(
+        value in text
+        for value in (
+            "tim",
+            "an gi",
+            "mon",
+            "nha hang",
+            "goi y",
+            "gan day",
+            "fast food",
+            "ga ran",
+            "ga chien",
+            "hamburger",
+            "pizza",
+            "dat ga",
+        )
+    ):
+        return "search_food"
     if "toi muon" in text and _dish_query(text):
         return "search_food"
-    if any(value in text for value in ("them", "cho vao gio", "mua", "cho toi", "toi muon")):
+    if any(value in text for value in ("mua", "cho toi", "toi muon")):
         return "add_to_cart"
     if any(value in text for value in ("xem tong", "preview", "xem don")):
         return "preview_order"
@@ -124,6 +147,7 @@ def classify(query: str) -> str:
 
 def _dish_query(text: str) -> str | None:
     cleaned = re.sub(r"\b(?:tim|lay|chon|mon|do an|nha hang|cho toi|toi muon|mua|them|dat|an|bat|phan|to)\b", " ", text)
+    cleaned = re.sub(r"\b(?:goi y|toi doi|bua toi|an toi|di|giup toi)\b", " ", cleaned)
     cleaned = re.sub(r"\bap ma\b.*$", " ", cleaned)
     cleaned = re.sub(r"\b(?:mot|hai|ba|bon|nam|[1-9][0-9]?)\b", " ", cleaned)
     cleaned = re.sub(r"\b(?:co lon|size lon|size thuong|khong cay|it cay|cay|nha rieng|duoi \d+ nghin)\b", " ", cleaned)
@@ -134,6 +158,8 @@ def _dish_query(text: str) -> str | None:
     )[0]
     cleaned = re.sub(r"\b(?:o|tai|khu vuc)\s+[a-z ]+[.!?,;:]*$", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,!?;:")
+    if set(cleaned.split()).issubset({"toi", "doi", "goi", "y", "di", "mon", "an", "gi", "bua"}):
+        return None
     return cleaned or None
 
 

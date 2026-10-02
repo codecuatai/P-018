@@ -66,6 +66,25 @@ async def test_food_graph_emits_versioned_non_executable_proposal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_food_recommendation_emits_search_proposal_instead_of_missing_cart_slots() -> None:
+    result = await build_graph().ainvoke(
+        {
+            "query": "tôi đói gợi ý cho tôi món ăn đi",
+            "user_id": "usr_one",
+            "conversation_id": "conv_recommendation",
+            "correlation_id": "cor_recommendation",
+            "workflow_context": {"dish_query": "cơm, lẩu, nướng"},
+        }
+    )
+
+    assert result.get("missing_slots", []) == []
+    assert result["intent"] == "search_food"
+    assert result["tool_calls"][0]["capability_name"] == "search_food"
+    assert result["tool_calls"][0]["semantic_arguments"]["keyword"] == "cơm, lẩu, nướng"
+    assert result["tool_results"] == []
+
+
+@pytest.mark.asyncio
 async def test_food_proposal_does_not_echo_authoritative_ids() -> None:
     result = await build_graph().ainvoke(
         {
