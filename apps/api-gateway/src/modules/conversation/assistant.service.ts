@@ -12,7 +12,7 @@ import {
 } from '../../clients/service.clients';
 import { AuthUser } from '../auth/auth.types';
 import { ConfirmationService } from '../confirmation/confirmation.service';
-import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind } from '../core/core.module';
+import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, AssistantActionSuccessCommit, CoreStore, isUserVisibleConversationMessage, ConversationMessageKind, ConversationRecord } from '../core/core.module';
 import { estimateTokenCostUsd } from '../core/token-pricing.util';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolProposal, ToolService } from '../tools/tool.module';
@@ -535,6 +535,17 @@ function isRideOnlyTurn(message: string): boolean {
 function isExplicitFoodOrderConfirmation(message: string): boolean {
   const folded = plainTextForRouting(message).trim().replace(/[.!?]+$/, '');
   return /^(?:dat luon|dat ngay|xac nhan dat|dong y dat|tien hanh dat)(?:\b|$)/.test(folded);
+}
+
+function isFoodAddressAcknowledgement(message: string): boolean {
+  const folded = plainTextForRouting(message).trim().replace(/[.!?]+$/, '');
+  return /^(?:oke|ok|okay|duoc|dung|dung roi|chinh xac|chuan roi|xac nhan)(?:\b|$)/.test(folded)
+    || /\b(?:giao den day|giao toi dia chi nay|chot dia chi nay)\b/.test(folded);
+}
+
+function isHomeDeliveryAddressReference(message: string): boolean {
+  const folded = plainTextForRouting(message);
+  return /\b(?:nha cua toi|nha toi|nha minh|giao ve nha|giao toi nha)\b/.test(folded);
 }
 
 function explicitRidePassengerCount(message: string): number | undefined {
@@ -1627,6 +1638,101 @@ export class AssistantService {
     return `Bạn muốn tiếp tục với ${joined} nào trước?`;
   }
 
+  private async resumePendingFoodAddressSelection(
+    user: AuthUser,
+    message: string,
+    conversationId: string,
+    correlationId: string,
+    current: ConversationRecord | undefined,
+    state: AssistantState,
+    currentLocation?: DeviceCurrentLocation,
+  ): Promise<AssistantResponse | undefined> {
+    const task = state.tasks.find((candidate) => {
+      const context = isRecord(candidate.authoritative?.food_context) ? candidate.authoritative.food_context : {};
+      return candidate.domain === 'food'
+        && candidate.phase === 'NEEDS_INFO'
+        && candidate.public_item?.kind === 'address_options'
+        && Boolean(stringValue(context.cart_id));
+    });
+    if (!task) return undefined;
+
+    const context = isRecord(task.authoritative?.food_context) ? task.authoritative.food_context : {};
+    const addresses = (await this.store.listSavedAddresses(user.sub))
+      .filter((address) => isUsableFoodDeliveryAddress(address.addressText));
+    const foldedMessage = plainTextForRouting(message).trim();
+    const homeReference = isHomeDeliveryAddressReference(message);
+    let selectedAddress = homeReference
+      ? addresses.find((address) => ['nha', 'home'].includes(plainTextForRouting(address.label).trim()))
+      : undefined;
+
+    if (!selectedAddress) {
+      selectedAddress = addresses.find((address) => {
+        const label = plainTextForRouting(address.label).trim();
+        const addressText = plainTextForRouting(address.addressText).trim();
+        return foldedMessage === label
+          || foldedMessage.includes(addressText)
+          || (label.length >= 3 && ` ${foldedMessage} `.includes(` ${label} `));
+      });
+    }
+
+    if (!selectedAddress && isFoodAddressAcknowledgement(message)) {
+      const previousAssistant = [...(current?.messages ?? [])].reverse().find((entry) => entry.role === 'assistant');
+      const previousText = previousAssistant ? plainTextForRouting(previousAssistant.content) : '';
+      const justPresented = addresses.filter((address) => {
+        const fullAddress = plainTextForRouting(address.addressText).trim();
+        const streetPrefix = fullAddress.split(/[,;]/, 1)[0]?.trim() ?? '';
+        return (fullAddress.length >= 8 && previousText.includes(fullAddress))
+          || (streetPrefix.length >= 8 && previousText.includes(streetPrefix));
+      });
+      if (justPresented.length === 1) selectedAddress = justPresented[0];
+    }
+
+    if (!selectedAddress) {
+      if (!isFoodAddressAcknowledgement(message)) return undefined;
+      const prompt = 'Mình vẫn đang chờ bạn chọn địa chỉ giao hàng. Hãy chọn địa chỉ trên thẻ hoặc nhắn nhãn như “Nhà” nhé.';
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        prompt,
+        state,
+        task.public_item ? [task.public_item] : [],
+        state.actions,
+        [],
+        state.actions,
+      );
+    }
+
+    // A home label or an address just shown by the authenticated profile flow
+    // is an explicit destination choice while this cart is awaiting delivery.
+    // Keep the address actor-scoped and pass its exact saved text to checkout.
+    task.revision += 1;
+    task.latest_message = message;
+    task.authoritative = {
+      ...(task.authoritative ?? {}),
+      food_context: { ...context, address_query: selectedAddress.addressText },
+    };
+    const checkout = await this.prepareFoodCheckout(task, user, correlationId, currentLocation);
+    task.phase = checkout.phase;
+    task.authoritative = checkout.authoritative ?? task.authoritative;
+    task.public_item = checkout.publicItem;
+    task.missing_information = [];
+    const actions = state.actions.filter((action) => action.task_id !== task.id);
+    if (checkout.nextAction) actions.push(checkout.nextAction);
+    const nextState = { ...state, actions };
+    return this.persistTurn(
+      conversationId,
+      user,
+      message,
+      checkout.message,
+      nextState,
+      checkout.publicItem ? [checkout.publicItem] : [],
+      actions,
+      [],
+      actions,
+    );
+  }
+
   private pendingChoiceDomains(active: StoredTask[], actions: StoredAction[]): Domain[] {
     const candidates = new Set<Domain>();
     for (const action of actions) {
@@ -1702,6 +1808,16 @@ export class AssistantService {
         );
       }
     }
+    const foodAddressContinuation = await this.resumePendingFoodAddressSelection(
+      user,
+      message,
+      conversationId,
+      correlationId,
+      current,
+      state,
+      effectiveCurrentLocation,
+    );
+    if (foodAddressContinuation) return foodAddressContinuation;
     if (isCurrentLocationQuestion(message)) {
       const locationLabel = effectiveCurrentLocation?.address_text
         ?? (effectiveCurrentLocation

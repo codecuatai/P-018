@@ -1269,6 +1269,114 @@ describe('Unified assistant orchestration', () => {
     expect(foodAgent.chat).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      message: 'nhà của tôi',
+      previousAssistant: 'Bạn muốn giao đơn hàng tới địa chỉ nào? Hãy chọn nhãn địa chỉ trên thẻ.',
+    },
+    {
+      message: 'đúng giao hàng đến đây cho tôi',
+      previousAssistant: 'Địa chỉ đã lưu của bạn: Nhà: 12 Đường Láng, Hà Nội (mặc định).',
+    },
+    {
+      message: 'oke',
+      previousAssistant: 'Mình đã ghi nhận địa chỉ giao hàng tại 12 Đường Láng.',
+    },
+  ])('continues pending Food checkout for address selection "$message"', async ({ message, previousAssistant }) => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = `conv-food-address-${message.replaceAll(' ', '-')}`;
+    const savedAddress = {
+      id: 'address-home-checkout',
+      actorId: user.sub,
+      label: 'Nhà',
+      addressText: '12 Đường Láng, Hà Nội',
+      source: 'manual' as const,
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await store.createSavedAddress(savedAddress);
+    await store.createSavedAddress({
+      ...savedAddress,
+      id: 'address-other-actor',
+      actorId: 'different-actor',
+      addressText: 'Địa chỉ riêng của người khác',
+    });
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'food-address-task',
+        domain: 'food',
+        operation: 'CREATE',
+        goal: 'Đặt món đã chọn',
+        normalized_request: 'Đặt món đã chọn giao tới nhà',
+        extracted_slots: { quantity: 1 },
+        depends_on: [],
+        phase: 'NEEDS_INFO',
+        revision: 2,
+        latest_message: 'oke',
+        public_item: { kind: 'address_options', title: 'Chọn địa chỉ giao hàng', purpose: 'DELIVERY', allow_new: true },
+        authoritative: {
+          food_context: {
+            cart_id: 'cart-home-checkout',
+            cart_items: [{ id: 'cart-item-home', name: 'Phở bò', quantity: 1, unit_price: 50000 }],
+          },
+        },
+      }],
+      actions: [],
+    });
+    await store.appendConversationTurn({
+      conversationId,
+      actorId: user.sub,
+      userMessage: { role: 'user', content: 'nhà của tôi', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: previousAssistant, createdAt: new Date().toISOString() },
+      stateUpdates: {},
+    });
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const food = { getCart: jest.fn().mockResolvedValue({ id: 'cart-home-checkout', items: [{ id: 'cart-item-home', name: 'Phở bò', quantity: 1, unit_price: 50000, currency: 'VND' }], total: 50000, currency: 'VND' }) };
+    const confirmations = {
+      prepare: jest.fn().mockResolvedValue({
+        id: 'food-address-confirmation',
+        status: 'PENDING',
+        preview: {
+          address: { address_text: savedAddress.addressText },
+          total: { amount: 50000, currency: 'VND' },
+          delivery: { fee: { amount: 0, currency: 'VND' }, pickup_stops: [] },
+        },
+      }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      confirmations as never,
+      food as never,
+      {} as never,
+    );
+
+    const response = await service.chat(user, message, conversationId, 'cor-food-address-resume');
+    const saved = await store.getConversation(conversationId, user.sub);
+    const tasks = saved?.state.tasks as Array<Record<string, unknown>>;
+
+    expect(confirmations.prepare).toHaveBeenCalledWith(user, expect.objectContaining({
+      cart_id: 'cart-home-checkout',
+      address_id: savedAddress.id,
+    }), 'cor-food-address-resume');
+    expect(response.items[0]).toMatchObject({
+      kind: 'food_confirmation',
+      delivery_address: savedAddress.addressText,
+      confirmation_state: 'PAYMENT_REQUIRED',
+    });
+    expect(response.actions.map((action) => action.kind)).toEqual(['food_payment']);
+    expect(response.message).toContain('thanh toán');
+    expect(response.message).not.toContain('đã đặt thành công');
+    expect(tasks[0]).toEqual(expect.objectContaining({ phase: 'AWAITING_CONFIRMATION' }));
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(agent.chat).not.toHaveBeenCalled();
+  });
+
   it('resumes the active Ride when a Ride-only follow-up omits it from the plan', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {
