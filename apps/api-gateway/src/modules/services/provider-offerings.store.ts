@@ -254,7 +254,7 @@ export class PostgresProviderOfferingsRepository implements ProviderOfferingsRep
       availabilitySchedule: typeof row.availability_schedule === 'object' && row.availability_schedule !== null ? row.availability_schedule as Record<string, { start: string; end: string }> : {},
       connectedServices:
         row.connected_services && typeof row.connected_services === 'object'
-          ? { ride: true, food: true, restaurant: true, healthcare: true, ...(row.connected_services as Record<string, boolean>) }
+          ? { ride: true, food: true, restaurant: true, healthcare: true, delivery: false, ...(row.connected_services as Record<string, boolean>) }
           : { ride: true, food: true, restaurant: true, healthcare: true },
       createdAt: new Date(String(row.created_at)).toISOString(),
       updatedAt: new Date(String(row.updated_at)).toISOString(),

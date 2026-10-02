@@ -346,13 +346,21 @@ export class ProviderServicesController {
     this.assertProvider(request.user);
     const userId = request.user.sub;
 
-    // Check domain permissions: Master provider (@xone.local) can manage all domains.
-    // Scoped providers are restricted to their registered domain.
+    // Check domain permissions. An explicit connected_services entry is the
+    // source of truth for multi-service providers; provider_type remains the
+    // fallback for legacy profiles without an explicit connection flag.
     const isMaster = this.isMasterProvider(request.user);
     if (!isMaster) {
       const profile = await this.store.getProfile(userId);
+      const connected = profile?.connectedServices?.[body.domain];
+      if (connected === false) {
+        throw new BadRequestException({
+          code: 'DOMAIN_NOT_CONNECTED',
+          detail: `Đối tác chưa kết nối domain ${body.domain}.`,
+        });
+      }
       const pType = profile?.providerType || request.user.provider_type;
-      if (pType) {
+      if (connected !== true && pType) {
         const allowedDomainsMap: Record<string, string[]> = {
           restaurant_merchant: ['food', 'restaurant'],
           food: ['food', 'restaurant'],

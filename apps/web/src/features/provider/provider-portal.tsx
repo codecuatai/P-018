@@ -98,10 +98,7 @@ export function ProviderPortal() {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProviderProfile | null>(null);
 
-  const isDisconnected =
-    user?.email === "provider@xone.local" ||
-    profile?.status === "suspended" ||
-    profile?.tenantId === "partner-disconnected";
+  const isDisconnected = profile?.status === "suspended" || profile?.tenantId === "partner-disconnected";
 
   const isMaster =
     (user?.email === "provider1@xone.local" ||
@@ -133,6 +130,11 @@ export function ProviderPortal() {
     if (tab === "food" && connectedServices.food === false) return false;
     if (tab === "restaurant" && connectedServices.restaurant === false) return false;
     if (tab === "health" && connectedServices.healthcare === false) return false;
+    if (tab === "ride" && connectedServices.ride === true) return true;
+    if (tab === "delivery" && connectedServices.delivery === true) return true;
+    if (tab === "food" && connectedServices.food === true) return true;
+    if (tab === "restaurant" && connectedServices.restaurant === true) return true;
+    if (tab === "health" && connectedServices.healthcare === true) return true;
     if (isMaster) return true;
     if (rawProviderType === "restaurant_merchant" || rawProviderType === "food") {
       return tab === "food" || tab === "restaurant";
