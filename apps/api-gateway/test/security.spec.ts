@@ -12,7 +12,7 @@ describe('Gateway security baseline', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = module.createNestApplication<NestExpressApplication>({ bodyParser: false });
+    app = module.createNestApplication({ bodyParser: false }) as unknown as NestExpressApplication;
     configureGatewayHttpSecurity(app, getGatewaySecurityConfig(process.env));
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();

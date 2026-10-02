@@ -1,3 +1,4 @@
+import { BadGatewayException } from '@nestjs/common';
 import { ServiceCallError } from '../src/resilience/service-call-error';
 import { InMemoryCoreRepository } from '../src/modules/core/core.module';
 import { AssistantService as ProductionAssistantService } from '../src/modules/conversation/assistant.service';
@@ -131,6 +132,86 @@ describe('Unified assistant orchestration', () => {
     });
     return { conversationId, actionId };
   }
+
+  it('answers personal profile questions from the authenticated user without sending profile data to the Agent', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+
+    const response = await service.chat(
+      { ...user, full_name: 'Nguyễn An', phone: '0900000000', language: 'vi', timezone: 'Asia/Ho_Chi_Minh' },
+      'Thông tin cá nhân của tôi là gì?',
+      undefined,
+      'cor-personal-profile',
+    );
+
+    expect(response.message).toContain('Nguyễn An');
+    expect(response.message).toContain('demo@xone.vn');
+    expect(response.message).toContain('0900000000');
+    expect(response.message).toContain('Asia/Ho_Chi_Minh');
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+  });
+
+  it('answers current-location wording and only uses a fresh location explicitly supplied by the device', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+
+    const missing = await service.chat(user, 'Tôi đang ở đâu?', undefined, 'cor-location-missing');
+    const shared = await service.chat(
+      user,
+      'Mình đang ở đâu?',
+      undefined,
+      'cor-location-shared',
+      { latitude: 21.03, longitude: 105.81, address_text: 'Cầu Giấy', captured_at: new Date().toISOString(), source: 'device' },
+    );
+    const stale = await service.chat(
+      user,
+      'Tôi đang ở đâu?',
+      undefined,
+      'cor-location-stale',
+      { latitude: 21.03, longitude: 105.81, address_text: 'Địa chỉ cũ', captured_at: new Date(Date.now() - 16 * 60_000).toISOString(), source: 'device' },
+    );
+
+    expect(missing.message).toContain('chưa có vị trí hiện tại');
+    expect(shared.message).toContain('Cầu Giấy');
+    expect(stale.message).toContain('chưa có vị trí hiện tại');
+    expect(stale.message).not.toContain('Địa chỉ cũ');
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+  });
+
+  it('reads only the authenticated user’s saved addresses for profile-address questions', async () => {
+    const store = new InMemoryCoreRepository();
+    await store.createSavedAddress({
+      id: 'address-profile-home',
+      actorId: user.sub,
+      label: 'Nhà',
+      addressText: '12 Đường Mẫu, Hà Nội',
+      source: 'manual',
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    await store.createSavedAddress({
+      id: 'address-other-user',
+      actorId: 'another-actor',
+      label: 'Nhà',
+      addressText: 'Địa chỉ của người khác',
+      source: 'manual',
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, {} as never, {} as never);
+
+    const response = await service.chat(user, 'Địa chỉ đã lưu của tôi là gì?', undefined, 'cor-profile-addresses');
+
+    expect(response.message).toContain('12 Đường Mẫu, Hà Nội');
+    expect(response.message).toContain('mặc định');
+    expect(response.message).not.toContain('Địa chỉ của người khác');
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+  });
 
   it('turns an explicit Food order request into a confirmation action without calling payment', async () => {
     const store = new InMemoryCoreRepository();
@@ -382,6 +463,34 @@ describe('Unified assistant orchestration', () => {
     expect(agent.chat.mock.calls[1][0].workflow_context).toEqual(expect.objectContaining({ dish_query: 'phở', district: 'North Campus', restaurant_candidates: [{ id: 'food-restaurant-secret' }], cart_id: 'cart-secret' }));
     expect(second.items[0].kind).toBe('food_options');
     expect((conversation?.state.food_context as Record<string, unknown>).cart_id).toBe('cart-secret');
+  });
+
+  it('keeps Food empty/error guidance instead of replacing it with a generic composed reply', async () => {
+    const store = new InMemoryCoreRepository();
+    const foodMessage = 'Món súp cua hiện chưa có trong danh sách. Bạn thử tìm món khác nhé.';
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Xin lỗi bạn, mình chưa thể thực hiện được yêu cầu này lúc này.' }
+        : {
+          decision_source: 'model',
+          plan: { tasks: [{ domain: 'food', goal: 'Tìm món', normalized_request: 'Tìm súp cua', extracted_slots: { query: 'súp cua' } }] },
+        }),
+      chat: jest.fn().mockResolvedValue({ response_type: 'error', message: foodMessage, data: { items: [] }, state_updates: {} }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tìm món súp cua.', undefined, 'cor-food-empty-generic-reply');
+
+    expect(response.items[0]).toMatchObject({ kind: 'food_empty', note: foodMessage });
+    expect(response.message).toBe(foodMessage);
+    expect(agent.assistantChat).toHaveBeenCalledTimes(1);
   });
 
   it('propagates an authoritative sanitized Food cart through selection and cart mutation', async () => {
@@ -917,8 +1026,8 @@ describe('Unified assistant orchestration', () => {
     const store = new InMemoryCoreRepository();
     const agent = {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
-        ? { assistant_message: 'Mình cần thêm loại xe.' }
-        : { plan: { tasks: [{ domain: 'ride', goal: 'Đặt xe', normalized_request: 'Đặt xe từ VinUni đến Hồ Gươm', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm' } }] } }),
+        ? { assistant_message: 'Xin lỗi bạn, mình chưa thể thực hiện được yêu cầu này lúc này.' }
+        : { decision_source: 'model', plan: { tasks: [{ domain: 'ride', goal: 'Đặt xe', normalized_request: 'Đặt xe từ VinUni đến Hồ Gươm', extracted_slots: { pickup_address: 'VinUni', dropoff_address: 'Hồ Gươm' } }] } }),
     };
     const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
     const service = new AssistantService(
@@ -936,7 +1045,53 @@ describe('Unified assistant orchestration', () => {
       kind: 'clarification',
       question: 'Bạn muốn xe máy, ô tô 4 chỗ hay ô tô 7 chỗ?',
     }));
+    expect(response.message).toContain('Bạn muốn xe máy, ô tô 4 chỗ hay ô tô 7 chỗ?');
+    expect(agent.assistantChat).toHaveBeenCalledTimes(1);
     expect(ride.chat).not.toHaveBeenCalled();
+  });
+
+  it('keeps location resolution failures specific instead of replacing them with a generic composed reply', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Xin lỗi bạn, mình chưa thể thực hiện được yêu cầu này lúc này.' }
+        : {
+          decision_source: 'model',
+          plan: { tasks: [{
+            domain: 'ride',
+            goal: 'Đặt xe',
+            normalized_request: 'Đặt xe từ một địa chỉ đến Nội Bài bằng xe 4 chỗ',
+            extracted_slots: { pickup_address: 'Một địa chỉ', dropoff_address: 'Nội Bài', vehicle_type: 'CAR_4' },
+          }] },
+        }),
+    };
+    const ride = {
+      quoteFromSemantic: jest.fn().mockRejectedValue(new BadGatewayException({
+        code: 'LOCATION_UNRESOLVED',
+        detail: 'Hiện mình chưa xác định được địa chỉ này. Bạn chọn một gợi ý hoặc nhập rõ hơn nhé.',
+        retryable: true,
+      })),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      ride as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Đặt xe từ một địa chỉ đến Nội Bài bằng xe 4 chỗ.', undefined, 'cor-ride-location-unresolved');
+
+    expect(response.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'task_error', error_code: 'LOCATION_UNRESOLVED', retryable: true }),
+    ]));
+    expect(response.message).toContain('Bạn chọn một gợi ý hoặc nhập địa chỉ rõ hơn nhé.');
+    expect(response.message).not.toContain('chưa thể thực hiện được yêu cầu này lúc này');
+    expect(agent.assistantChat).toHaveBeenCalledTimes(1);
+    expect(agent.assistantChat.mock.calls[0][0]).not.toEqual(expect.objectContaining({ mode: 'compose' }));
   });
 
   it('does not merge a replayed Food task into a Ride-only interruption', () => {
@@ -1236,8 +1391,8 @@ describe('Unified assistant orchestration', () => {
     const store = new InMemoryCoreRepository();
     const agent = {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
-        ? { assistant_message: 'Mình đã tìm thấy nhà hàng phù hợp.' }
-        : { plan: { tasks: [{ domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Nhà hàng lẩu ở Hà Nội', extracted_slots: { location: 'Hà Nội', cuisine_query: 'lẩu', party_size: 4, start_at: '2099-01-01T19:00:00+07:00' } }] } }),
+        ? { assistant_message: 'Xin lỗi bạn, mình chưa thể thực hiện được yêu cầu này lúc này.' }
+        : { decision_source: 'model', plan: { tasks: [{ domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Nhà hàng lẩu ở Hà Nội', extracted_slots: { location: 'Hà Nội', cuisine_query: 'lẩu', party_size: 4, start_at: '2099-01-01T19:00:00+07:00' } }] } }),
     };
     const restaurant = {
       executeTool: jest.fn()
@@ -1263,6 +1418,8 @@ describe('Unified assistant orchestration', () => {
     expect(response.items[0].note).toContain('dữ liệu hiện có');
     expect(response.actions).toHaveLength(1);
     expect(response.actions[0].kind).toBe('select_restaurant');
+    expect(response.message).toContain('Lẩu Gà Ó O');
+    expect(agent.assistantChat).toHaveBeenCalledTimes(1);
   });
 
   it('does not report a successful Food cart update when Core A omits the required cart proposal', async () => {
@@ -1818,8 +1975,8 @@ describe('Unified assistant orchestration', () => {
     const store = new InMemoryCoreRepository();
     const agent = {
       assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
-        ? { assistant_message: 'Mình đã kiểm tra lịch khám.' }
-        : { plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh sáng mai', extracted_slots: { department: 'thần kinh', time_preference: 'tomorrow_morning' } }] } }),
+        ? { assistant_message: 'Xin lỗi bạn, mình chưa thể thực hiện được yêu cầu này lúc này.' }
+        : { decision_source: 'model', plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám', normalized_request: 'Khám thần kinh sáng mai', extracted_slots: { department: 'thần kinh', time_preference: 'tomorrow_morning' } }] } }),
     };
     const healthcare = { executeTool: jest.fn().mockResolvedValue({ doctors: [] }), acknowledgePayment: jest.fn(), defaultPatientId: 1 };
     const service = new AssistantService(store as never, agent as never, { executeTool: jest.fn() } as never, healthcare as never, { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never, { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never);
@@ -1831,6 +1988,7 @@ describe('Unified assistant orchestration', () => {
     expect(item.note).toContain('sáng mai');
     expect(item.note).not.toContain('tomorrow_morning');
     expect(response.message).toContain('không tìm thấy khung giờ còn trống phù hợp');
+    expect(agent.assistantChat).toHaveBeenCalledTimes(1);
   });
 
   it('does not show a no-results note when Restaurant search returns choices', async () => {

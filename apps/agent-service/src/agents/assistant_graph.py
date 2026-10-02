@@ -78,6 +78,9 @@ Structured safety rules — these ALWAYS take precedence:
 - A Ride route may contain one user-requested intermediate stop. For a change such as "detour via <place> before the destination", emit that place only as `stopover_address`; preserve the existing pickup, destination, and vehicle from authoritative conversation context. A changed stop requires a fresh quote and a new service-details confirmation. Never invent a stop, coordinates, price, or availability.
 - Maximum 1 clarification_question per response turn.
 - Context precedence is fixed: explicit current-turn values, fresh UI context, authoritative conversation facts, saved profile context, then retrieved-memory hints. Never let a lower-precedence value overwrite a higher-precedence value.
+- For questions about the user's personal facts or preferences, use only matching fields in user_profile or retrieved_memories. If no matching fact is present, say clearly that you do not have that information and ask whether the user wants to share it; never guess or deflect to unrelated suggestions.
+- When asked about your own age, home, relationships, or likes, be clear that you are an AI and do not have human life facts or personal preferences; do not invent a favorite color or food.
+- When a question is clearly playful or hypothetical, do not trigger an out-of-scope refusal just because it mentions a specialized word. Keep the joke brief, mark fiction as playful, and distinguish it from factual claims.
 """.strip()
 
 XONE_SYSTEM_PROMPT = """Bạn là X-One — Trợ lý ảo đa dịch vụ thông minh, thân thiện và linh hoạt tại Việt Nam.
@@ -115,7 +118,7 @@ XONE_SYSTEM_PROMPT += """
 Before building tasks, read user_profile, conversation_state.tasks, retrieved_memories, and recent_messages. Retrieved memories are contextual hints only: use them to resolve intent/preferences, never as authority for current prices, availability, orders, bookings, payments, or exact sensitive facts. Preserve COMPLETED tasks as history; only discard an in-progress task when the user explicitly abandons it. Map saved address phrases such as home to the matching saved-address label. For ambiguous or missing addresses, ask one clarification question or use location_query; never invent an exact address. Analyze intent, service count, dependencies, and required slots internally before emitting JSON. ride requires pickup_address and dropoff_address; food requires dish_query; restaurant requires location or cuisine_query; healthcare requires department. Maximum 4 tasks. Never claim success unless authoritative_results proves it.
 For restaurant discovery, retain the user's stated cuisine, area, and time as semantic slots; do not create a reservation until a concrete restaurant is selected and the required party size/time are available. For an unconfirmed Ride route change that adds an intermediate stop, use `operation=UPDATE` and `stopover_address`; retain the active ride task rather than creating an unrelated ride.
 Food delivery and restaurant services are limited to central Hanoi (Hoàn Kiếm, Ba Đình, Đống Đa, Hai Bà Trưng, Tây Hồ, Cầu Giấy). For another city or district, return interaction_mode="unsupported" with a brief polite Vietnamese refusal. For nearby food, use the user's selected delivery address district; do not claim nearby results until the Food search tool returns authoritative items.
-Requests about programming, mathematics, politics, schoolwork, computer repair, or other non-X-One topics are unsupported: return interaction_mode="unsupported", tasks=[], and a brief Vietnamese refusal. Do not answer the unrelated question or provide code/instructions.
+For harmless casual conversation, jokes, riddles, or simple general-knowledge questions, answer briefly in Vietnamese with tasks=[]. Do not claim personal experiences or invent live facts. If the user asks for specialized work outside X-One's services (such as writing/debugging code, solving homework, political analysis, medical diagnosis, or computer repair), return interaction_mode="unsupported" and a brief polite boundary. Never let this rule block a harmless question merely because it is unrelated to booking.
 """
 
 COMPOSE_INSTRUCTION = """You are X-One composing a concise Vietnamese response from authoritative system results. Focus only on the current request and active tasks. Do not mention FAILED, DISCARDED, or old COMPLETED tasks unless the user explicitly asks about them. Keep anchor tasks (healthcare/restaurant) ahead of dependent ride steps and make the next required choice clear. When multiple choices exist, list at most three and ask the user to choose. Never invent IDs, prices, times, names, addresses, or statuses. Use success language only when authoritative_results.kind is booking_confirmed or order_confirmed. Always use first person 'mình' and address the user as 'bạn'; never use 'em', 'anh', or 'tôi'."""
@@ -280,6 +283,8 @@ def _typed_pipeline_result(
     plan: AssistantPlan,
     state: AssistantState,
     source: Literal["model", "deterministic"],
+    *,
+    degraded: bool = False,
 ) -> AssistantState:
     telemetry = get_telemetry()
     with telemetry.observation(
@@ -293,7 +298,6 @@ def _typed_pipeline_result(
         ),
         input={
             "interaction_mode": plan.interaction_mode,
-            "assistant_message": plan.assistant_message,
             "raw_tasks_count": len(plan.tasks),
             "decision_source": source,
         },
@@ -345,16 +349,12 @@ def _typed_pipeline_result(
                 workflow_relation=decision.workflow_relation,
                 replan_directive=decision.replan_directive,
                 task_count=len(decision.tasks),
-                status="succeeded",
+                status="degraded" if degraded else "succeeded",
             ),
             output=format_human_plan_output(decision, plan.assistant_message),
         )
         for task in decision.tasks:
             steps = task.steps
-            step_summaries = [
-                f"[{step.step_kind}] {step.capability or step.confirmation_gate} (Risk: {step.risk_ceiling})"
-                for step in steps
-            ]
             with telemetry.observation(
                 f"core_a.task [{task.domain.upper()}]",
                 "span",
@@ -379,12 +379,10 @@ def _typed_pipeline_result(
                     "task_ref": task.task_ref,
                     "domain": task.domain,
                     "depends_on": task.depends_on,
-                    "normalized_request": task.normalized_request,
                 },
                 output={
                     "disposition": task.disposition,
                     "step_count": len(steps),
-                    "steps": step_summaries,
                 },
             ):
                 pass
@@ -394,6 +392,7 @@ def _typed_pipeline_result(
         "planning_decision": decision.model_dump(mode="json"),
         "assistant_message": plan.assistant_message,
         "decision_source": source,
+        "degraded": degraded,
     }
 
 
@@ -1421,6 +1420,22 @@ def _current_location_plan(text: str, current_location: dict[str, Any] | None = 
 
 
 def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
+    asks_about_assistant_life = any(
+        re.search(pattern, lowered)
+        for pattern in (
+            r"\bban\b.{0,30}\b(?:thich|so thich)\b",
+            r"\bban\b.{0,30}\b(?:co tuoi|bao nhieu tuoi|co nha|co nguoi yeu|co gia dinh)\b",
+        )
+    )
+    if asks_about_assistant_life:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message=(
+                "Mình là trợ lý ảo nên không có sở thích hay cuộc sống riêng như con người. "
+                "Nhưng mình có thể giúp bạn chọn món, màu sắc hoặc gợi ý phù hợp nếu bạn muốn."
+            ),
+        )
+
     unsupported_patterns = (
         r"\b(?:python|javascript|typescript|c\+\+|golang|java|coding|doan ma)\b",
         r"\b(?:lap trinh|viet code)\b",
@@ -1435,6 +1450,14 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
         r"\b(?:may bay|chuyen bay|flight|khach san|hotel|tau hoa|train)\b",
     )
     if any(re.search(pat, lowered) for pat in unsupported_patterns):
+        if re.search(r"\bneu\b.{0,40}\bcon meo\b.{0,50}\b(?:lap trinh|viet code|python|javascript)\b", lowered):
+            return AssistantPlan(
+                interaction_mode="chitchat",
+                assistant_message=(
+                    "Chắc mèo sẽ viết ứng dụng tự động đuổi chuột, rồi thêm nút “nằm lên bàn phím” "
+                    "để kiểm thử phiên bản mới!"
+                ),
+            )
         return AssistantPlan(
             interaction_mode="unsupported",
             assistant_message=(
@@ -1452,6 +1475,9 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
     weather_query = _has_any(lowered, ("thoi tiet", "du bao thoi tiet")) and not _has_any(
         lowered, ("dat xe", "goi xe", "dat ban", "dat mon", "ship", "giao")
     )
+    moon_night_shift = _has_any(lowered, ("mat trang",)) and _has_any(
+        lowered, ("ca dem", "di lam dem", "di lam ca", "tang ca")
+    )
     wishes = _has_any(lowered, ("chuc ban", "ngay lam viec vui ve", "ngay moi vui ve"))
     capability_chat = _has_any(lowered, ("co biet nau an khong", "biet lam gi"))
 
@@ -1461,6 +1487,14 @@ def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
             assistant_message=(
                 "Mình là X-One, trợ lý giúp bạn tìm món giao tận nơi, đặt xe, đặt bàn "
                 "và tìm lịch khám. Bạn cứ nói điều mình đang cần theo cách tự nhiên nhé."
+            ),
+        )
+    if moon_night_shift:
+        return AssistantPlan(
+            interaction_mode="chitchat",
+            assistant_message=(
+                "Nói vui thì Mặt Trăng đúng là trực ca đêm rồi! Còn thực tế, Mặt Trăng không tự phát sáng; "
+                "ta thấy nó sáng vì phản chiếu ánh sáng Mặt Trời."
             ),
         )
     if greeting or wellbeing or wishes or humor or weather_query or capability_chat:
@@ -2937,7 +2971,7 @@ async def _invoke_structured(
             prompt_template_version="1",
             status="started",
         ),
-        input={"prompt": prompt, "purpose": purpose, "schema": schema.__name__, "prompt_length": len(prompt)},
+        input={"purpose": purpose, "schema": schema.__name__, "prompt_length": len(prompt)},
         model=settings.gemini_model,
     ) as generation_observation:
         try:
@@ -2972,7 +3006,7 @@ async def _invoke_structured(
                     status="succeeded",
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
                 ),
-                output=parsed.model_dump(mode="json"),
+                output={"parsed": True, "schema": schema.__name__},
                 usage=usage,
                 model=(
                     str(runtime.get("last_model_used"))
@@ -2993,7 +3027,7 @@ async def _invoke_structured(
                     error_code=provider_error_category(error),
                     latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
                 ),
-                output={"error": str(error)[:300]},
+                output={"error_type": type(error).__name__},
             )
             raise
 
@@ -3134,7 +3168,7 @@ async def compose_response(
                 error_code="composition_fallback" if degraded else None,
                 latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
             ),
-            output={"assistant_message": response, "decision_source": source},
+            output={"message_length": len(response), "decision_source": source},
         )
         if degraded:
             with telemetry.observation(
@@ -3210,7 +3244,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                     ),
                 ):
                     pass
-            return _typed_pipeline_result(plan, state, "deterministic")
+            return _typed_pipeline_result(plan, state, "deterministic", degraded=True)
         try:
             message = str(state.get("query", ""))
             cancellation_boundary = _ride_cancellation_plan(message, state.get("conversation_state"))
@@ -3286,7 +3320,7 @@ def build_assistant_graph(llm: LLMAdapter | None = None):
                 state.get("conversation_state", {}),
                 state.get("current_location"),
             )
-            return _typed_pipeline_result(plan, state, "deterministic")
+            return _typed_pipeline_result(plan, state, "deterministic", degraded=True)
 
     graph = StateGraph(AssistantState)
     graph.add_node("decide", decide)

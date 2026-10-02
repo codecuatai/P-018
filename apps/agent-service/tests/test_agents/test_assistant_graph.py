@@ -906,6 +906,31 @@ def test_programming_request_is_declined_as_out_of_scope() -> None:
     assert "đặt xe" in plan.assistant_message
 
 
+def test_playful_hypothetical_is_not_mistaken_for_a_coding_request() -> None:
+    plan = deterministic_plan("Nếu con mèo biết lập trình thì nó viết chương trình gì?")
+
+    assert plan.interaction_mode == "chitchat"
+    assert plan.tasks == []
+    assert "đuổi chuột" in plan.assistant_message
+
+
+def test_playful_moon_question_gets_a_joke_and_the_fact_is_kept_correct() -> None:
+    plan = deterministic_plan("Mặt trăng có đi làm ca đêm không?")
+
+    assert plan.interaction_mode == "chitchat"
+    assert plan.tasks == []
+    assert "Nói vui" in plan.assistant_message
+    assert "phản chiếu ánh sáng Mặt Trời" in plan.assistant_message
+
+
+def test_assistant_does_not_invent_human_likes_or_personal_life() -> None:
+    plan = deterministic_plan("Bạn thích màu gì?")
+
+    assert plan.interaction_mode == "chitchat"
+    assert plan.tasks == []
+    assert "không có sở thích" in plan.assistant_message
+
+
 class FakePlanner:
     async def ainvoke_structured(self, _prompt: str, schema: type[Any]) -> Any:
         assert schema is AssistantPlan

@@ -16,7 +16,7 @@ describe('real auth HTTP contract', () => {
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    app = module.createNestApplication<NestExpressApplication>({ bodyParser: false });
+    app = module.createNestApplication({ bodyParser: false }) as unknown as NestExpressApplication;
     configureGatewayHttpSecurity(app, getGatewaySecurityConfig(process.env));
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
     app.useGlobalFilters(new HttpExceptionFilter());

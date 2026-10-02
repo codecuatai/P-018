@@ -36,6 +36,7 @@ class SafeObservationMetadata(BaseModel):
     app_env: Literal["development", "production", "test"] | None = None
     tracing_enabled: bool | None = None
     status: Literal["started", "succeeded", "degraded", "failed"] | None = None
+    degraded: bool | None = None
     accepted: bool | None = None
     actor_assertion_valid: bool | None = None
     decision_source: Literal["model", "deterministic"] | None = None
@@ -178,8 +179,7 @@ def format_human_plan_output(
     decision: Any,
     assistant_message: str | None = None,
 ) -> dict[str, Any]:
-    """Create a human-readable summary of the agent plan for Langfuse output."""
-    tasks_summary: list[str] = []
+    """Project an agent plan to non-content metadata for Langfuse."""
     decision_dict: Mapping[str, Any] = {}
     if isinstance(decision, Mapping):
         decision_dict = decision
@@ -189,26 +189,23 @@ def format_human_plan_output(
             decision_dict = dumped
 
     raw_tasks = decision_dict.get("tasks", [])
-    if isinstance(raw_tasks, list):
-        for index, task in enumerate(raw_tasks):
-            t_dict: Mapping[str, Any] = {}
-            if isinstance(task, Mapping):
-                t_dict = task
-            elif hasattr(task, "model_dump") and callable(getattr(task, "model_dump")):
-                dumped = task.model_dump()
-                if isinstance(dumped, Mapping):
-                    t_dict = dumped
-            domain = str(t_dict.get("domain", "unknown"))
-            goal = str(t_dict.get("goal") or "")
-            depends_on = t_dict.get("depends_on", [])
-            dep_text = f" (Phụ thuộc Task {depends_on})" if depends_on else ""
-            tasks_summary.append(f"Task {index} [{domain.upper()}]{dep_text}: {goal}")
+    tasks = raw_tasks if isinstance(raw_tasks, list) else []
+    allowed_domains = {"ride", "food", "restaurant", "healthcare"}
+    domains: set[str] = set()
+    dependency_counts: list[int] = []
+    for task in tasks[:4]:
+        t_dict = _mapping(task) or {}
+        domain = t_dict.get("domain")
+        if domain in allowed_domains:
+            domains.add(domain)
+        depends_on = t_dict.get("depends_on", [])
+        dependency_counts.append(min(len(depends_on), 4) if isinstance(depends_on, list) else 0)
 
     return {
-        "assistant_message": assistant_message or decision_dict.get("assistant_message", ""),
         "interaction_mode": decision_dict.get("interaction_mode", "service"),
         "workflow_relation": decision_dict.get("workflow_relation", "SINGLE_TASK"),
-        "tasks_count": len(tasks_summary),
-        "tasks_summary": tasks_summary,
+        "tasks_count": min(len(tasks), 4),
+        "domains": sorted(domains),
+        "dependency_counts": dependency_counts,
     }
 

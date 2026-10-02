@@ -206,12 +206,9 @@ async def assistant_chat(
         trace_name,
         "agent",
         root_metadata,
-        session_id=request.conversation_id,
-        user_id=safe_code(request.user_id),
         tags=[f"mode:{request.mode}", f"env:{settings.app_env}"],
         input={
             "mode": request.mode,
-            "conversation_id": request.conversation_id,
             "message_length": len(request.message),
         },
     ) as root_observation:
@@ -225,7 +222,7 @@ async def assistant_chat(
                     actor_assertion_valid=actor_id == request.user_id,
                     status="started",
                 ),
-                input={"actor_id": actor_id, "user_id": request.user_id},
+                input={"actor_assertion_present": bool(actor_id and request.user_id)},
             ) as validation_observation:
                 if actor_id != request.user_id:
                     validation_observation.update(
@@ -254,7 +251,7 @@ async def assistant_chat(
                         accepted=True,
                         status="succeeded",
                     ),
-                    output={"accepted": True, "actor_id": actor_id},
+                    output={"accepted": True},
                 )
 
             result = await assistant_agent.ainvoke(
@@ -294,10 +291,7 @@ async def assistant_chat(
                 if result.get("decision_source") in {"model", "deterministic"}
                 else "deterministic"
             )
-            degraded = (
-                settings.agent_model_mode == "gemini"
-                and source == "deterministic"
-            )
+            degraded = result.get("degraded") is True
             interaction_mode = decision.get("interaction_mode")
             if interaction_mode not in {"service", "chitchat", "advisory", "unsupported"}:
                 interaction_mode = None
@@ -399,10 +393,8 @@ async def chat(
     with telemetry.observation(
         "Food Agent: Chat",
         "agent",
-        session_id=request.conversation_id,
-        user_id=safe_code(request.user_id),
         tags=["domain:food", f"env:{settings.app_env}"],
-        input={"conversation_id": request.conversation_id, "message_length": len(request.message)},
+        input={"message_length": len(request.message)},
     ) as food_observation:
         try:
             result = await food_agent.ainvoke(
@@ -465,7 +457,6 @@ async def chat(
             )
             food_observation.update(
                 output={
-                    "response": result.get("response", ""),
                     "intent": result.get("intent"),
                     "turn_status": response.turn_status,
                 }
@@ -493,10 +484,8 @@ async def restaurant_chat(
     with telemetry.observation(
         "Restaurant Agent: Chat",
         "agent",
-        session_id=workflow_id,
-        user_id=safe_code(actor_id),
         tags=["domain:restaurant", f"env:{settings.app_env}"],
-        input={"workflow_id": workflow_id, "message_length": len(request.message)},
+        input={"message_length": len(request.message)},
     ) as rest_observation:
         try:
             result = await restaurant_agent.ainvoke(
@@ -529,7 +518,6 @@ async def restaurant_chat(
             )
             rest_observation.update(
                 output={
-                    "response": result.get("response", ""),
                     "intent": result.get("intent"),
                     "status": result.get("status", "COMPLETED"),
                 }
@@ -557,10 +545,8 @@ async def healthcare_chat(
     with telemetry.observation(
         "Healthcare Agent: Chat",
         "agent",
-        session_id=workflow_id,
-        user_id=safe_code(actor_id),
         tags=["domain:healthcare", f"env:{settings.app_env}"],
-        input={"workflow_id": workflow_id, "message_length": len(request.message)},
+        input={"message_length": len(request.message)},
     ) as health_observation:
         try:
             result = await healthcare_agent.ainvoke(
@@ -593,7 +579,6 @@ async def healthcare_chat(
             )
             health_observation.update(
                 output={
-                    "response": result.get("response", ""),
                     "intent": result.get("intent"),
                     "status": result.get("status", "COMPLETED"),
                 }
@@ -619,10 +604,8 @@ async def ride_chat(
     with telemetry.observation(
         "Ride Agent: Chat",
         "agent",
-        session_id=request.workflow_id,
-        user_id=safe_code(actor_id),
         tags=["domain:ride", f"env:{settings.app_env}"],
-        input={"workflow_id": request.workflow_id, "message_length": len(request.message)},
+        input={"message_length": len(request.message)},
     ) as ride_observation:
         try:
             result = await ride_agent.ainvoke(
@@ -651,7 +634,6 @@ async def ride_chat(
             )
             ride_observation.update(
                 output={
-                    "response": result.get("response", ""),
                     "intent": result.get("intent", "help"),
                     "has_tool_request": bool(result.get("tool_request")),
                 }

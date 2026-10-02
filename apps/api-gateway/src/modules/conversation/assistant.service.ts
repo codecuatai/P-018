@@ -413,9 +413,27 @@ function deviceDeliveryAddress(currentLocation: DeviceCurrentLocation, actorId: 
 
 function isCurrentLocationQuestion(message: string): boolean {
   const folded = plainTextForRouting(message).trim();
-  if (!/(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|current location)/.test(folded)) return false;
-  if (!/(?:o dau|dang o dau|biet|cho biet|xem)/.test(folded)) return false;
+  const asksCurrentLocation = /(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|dia diem hien tai|current location|where am i)/.test(folded)
+    || /\b(?:toi|minh)\s+(?:dang\s+)?o dau\b/.test(folded);
+  if (!asksCurrentLocation) return false;
+  if (!/(?:o dau|dang o dau|biet|cho biet|xem|where am i)/.test(folded)) return false;
   return !/(?:dat xe|goi xe|muon xe|can xe|chuyen xe|cuoc xe)/.test(folded);
+}
+
+type PersonalProfileQuestion = 'all' | 'name' | 'email' | 'phone' | 'addresses' | 'unavailable';
+
+function personalProfileQuestion(message: string): PersonalProfileQuestion | undefined {
+  const folded = plainTextForRouting(message).trim();
+  const refersToSelf = /\b(?:toi|minh|cua toi|cua minh|my|me)\b/.test(folded);
+  if (!refersToSelf) return undefined;
+
+  if (/(?:ngay sinh|sinh nhat|birthday|tuoi cua toi|can nang|chieu cao)/.test(folded)) return 'unavailable';
+  if (/(?:dia chi|dia chi nha|dia chi da luu|nha cua toi|nha toi)/.test(folded)) return 'addresses';
+  if (/(?:email|thu dien tu)/.test(folded)) return 'email';
+  if (/(?:so dien thoai|dien thoai|sdt)/.test(folded)) return 'phone';
+  if (/(?:ten toi|ten cua toi|toi ten|minh ten|ho ten|toi la ai|my name)/.test(folded)) return 'name';
+  if (/(?:thong tin ca nhan|thong tin cua toi|ho so ca nhan|ho so cua toi|profile)/.test(folded)) return 'all';
+  return undefined;
 }
 
 function isRestaurantReference(message: string): boolean {
@@ -1685,7 +1703,10 @@ export class AssistantService {
       }
     }
     if (isCurrentLocationQuestion(message)) {
-      const locationLabel = effectiveCurrentLocation?.address_text ?? '\u0074\u1ecda \u0111\u1ed9 hi\u1ec7n t\u1ea1i c\u1ee7a thi\u1ebft b\u1ecb';
+      const locationLabel = effectiveCurrentLocation?.address_text
+        ?? (effectiveCurrentLocation
+          ? `${effectiveCurrentLocation.latitude.toFixed(5)}, ${effectiveCurrentLocation.longitude.toFixed(5)}`
+          : '\u0074\u1ecda \u0111\u1ed9 hi\u1ec7n t\u1ea1i c\u1ee7a thi\u1ebft b\u1ecb');
       const locationMessage = effectiveCurrentLocation
         ? `\u0056\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i m\u00ecnh nh\u1eadn \u0111\u01b0\u1ee3c l\u00e0 ${locationLabel}.`
         : '\u004d\u00ecnh ch\u01b0a c\u00f3 v\u1ecb tr\u00ed hi\u1ec7n t\u1ea1i c\u1ee7a b\u1ea1n. B\u1ea1n c\u00f3 th\u1ec3 b\u1eadt chia s\u1ebb v\u1ecb tr\u00ed ho\u1eb7c cho m\u00ecnh bi\u1ebft \u0111\u1ecba \u0111i\u1ec3m c\u1ee5 th\u1ec3 nh\u00e9.';
@@ -1699,6 +1720,38 @@ export class AssistantService {
         state.actions,
         [],
         [],
+      );
+    }
+    const profileQuestion = personalProfileQuestion(message);
+    if (profileQuestion) {
+      let profileMessage: string;
+      if (profileQuestion === 'addresses') {
+        const addresses = await this.store.listSavedAddresses(user.sub);
+        profileMessage = addresses.length
+          ? `\u0110\u1ecba ch\u1ec9 \u0111\u00e3 l\u01b0u c\u1ee7a b\u1ea1n: ${addresses.map((address) => `${address.label}: ${address.addressText}${address.isDefault ? ' (m\u1eb7c \u0111\u1ecbnh)' : ''}`).join('; ')}.`
+          : 'B\u1ea1n ch\u01b0a l\u01b0u \u0111\u1ecba ch\u1ec9 n\u00e0o trong h\u1ed3 s\u01a1.';
+      } else if (profileQuestion === 'unavailable') {
+        profileMessage = 'M\u00ecnh kh\u00f4ng th\u1ea5y th\u00f4ng tin n\u00e0y trong h\u1ed3 s\u01a1 hi\u1ec7n t\u1ea1i.';
+      } else {
+        const fields: string[] = [];
+        if (profileQuestion === 'all' || profileQuestion === 'name') fields.push(`H\u1ecd v\u00e0 t\u00ean: ${user.full_name || 'Ch\u01b0a c\u1eadp nh\u1eadt'}`);
+        if (profileQuestion === 'all' || profileQuestion === 'email') fields.push(`Email: ${user.email || 'Ch\u01b0a c\u1eadp nh\u1eadt'}`);
+        if (profileQuestion === 'all' || profileQuestion === 'phone') fields.push(`S\u1ed1 \u0111i\u1ec7n tho\u1ea1i: ${user.phone || 'Ch\u01b0a c\u1eadp nh\u1eadt'}`);
+        if (profileQuestion === 'all' && user.language) fields.push(`Ng\u00f4n ng\u1eef: ${user.language}`);
+        if (profileQuestion === 'all' && user.timezone) fields.push(`M\u00fai gi\u1edd: ${user.timezone}`);
+        profileMessage = `Th\u00f4ng tin h\u1ed3 s\u01a1 c\u1ee7a b\u1ea1n: ${fields.join('; ')}.`;
+      }
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        profileMessage,
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+        true,
       );
     }
     const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 12).map((address) => ({
@@ -1938,16 +1991,21 @@ export class AssistantService {
     ));
     const baseMessage = this.messageFor(message, plan, presentationTasks, items, responseActions);
     const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
-    // Keep summaries for structured service results deterministic. A model
-    // composer can otherwise replace concrete provider data with a generic
-    // sentence or invent a detail that is absent from the service response.
-    const requiresAuthoritativeSummary = items.some((item) => (
-      item.kind === 'healthcare_options'
+    // Keep failures and specific user prompts from the Gateway intact. A model
+    // composer can otherwise replace a concrete error or question with a
+    // generic sentence that contradicts the task card.
+    const requiresAuthoritativeSummary = activeTasks.some((task) => task.phase === 'FAILED') || items.some((item) => (
+      item.kind === 'clarification'
+      || item.kind === 'address_options'
+      || item.kind === 'food_empty'
+      || item.kind === 'healthcare_options'
       || item.kind === 'healthcare_no_availability'
       || item.kind === 'restaurant_unavailable'
       || item.kind === 'restaurant_options'
       || item.kind === 'food_options'
       || item.kind === 'ride_quote'
+      || item.kind === 'task_error'
+      || item.kind === 'ride_timing_conflict'
       || item.kind === 'reservation'
       || item.kind === 'appointment_confirmed'
       || item.kind === 'food_order'
@@ -4623,8 +4681,12 @@ export class AssistantService {
     actions: StoredAction[] = [],
     completed: JsonObject[] = [],
     responseActions: StoredAction[] = actions,
+    authenticatedProfileReply = false,
   ): Promise<AssistantResponse> {
-    const safeMessage = safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
+    // Profile values come from this authenticated user's own Gateway record;
+    // keep them out of model composition while allowing values like a demo
+    // email address that the model-output guard would otherwise suppress.
+    const safeMessage = authenticatedProfileReply ? message : safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
     const orchestration = state.orchestration ?? buildOrchestrationSnapshot(state.tasks);
     const finalState = { ...state, actions, orchestration };
     const response: AssistantResponse = {
@@ -4672,15 +4734,34 @@ export class AssistantService {
     if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
     const activeTasks = tasks.filter((task) => task.phase !== 'DISCARDED');
     const kinds = new Set(items.map((item) => stringValue(item.kind)).filter((kind): kind is string => Boolean(kind)));
-    if (kinds.has('clarification')) return 'Mình cần thêm một vài thông tin để tiếp tục xử lý yêu cầu của bạn.';
-    if (kinds.has('task_error') || kinds.has('ride_timing_conflict')) {
+    if (kinds.has('clarification')) {
+      const clarification = items.find((item) => item.kind === 'clarification');
+      return this.displayNote(clarification?.question) ?? 'Mình cần thêm một vài thông tin để tiếp tục xử lý yêu cầu của bạn.';
+    }
+    if (kinds.has('address_options')) {
       const address = items.find((item) => item.kind === 'address_options');
-      if (address && stringValue(address.note)) return this.displayNote(address.note) ?? 'Bạn nhập rõ hơn địa chỉ để mình tiếp tục nhé.';
+      return this.displayNote(address?.note) ?? 'Bạn nhập rõ hơn địa chỉ để mình tiếp tục nhé.';
+    }
+    if (kinds.has('ride_timing_conflict')) {
+      const conflict = items.find((item) => item.kind === 'ride_timing_conflict');
+      return this.displayNote(conflict?.note) ?? 'Lịch khám và thời gian di chuyển chưa khớp. Bạn chọn lịch hoặc điểm đón khác nhé.';
+    }
+    if (kinds.has('food_empty')) {
+      const empty = items.find((item) => item.kind === 'food_empty');
+      return this.displayNote(empty?.note) ?? 'Hiện chưa có món phù hợp để chọn. Bạn thử đổi món hoặc khu vực nhé.';
+    }
+    if (kinds.has('task_error')) {
       const error = items.find((item) => item.kind === 'task_error');
       const note = this.displayNote(error?.note);
       if (note && note !== 'Mình chưa thể hoàn tất dịch vụ. Bạn hãy thử lại sau nhé.') return note;
       const failedDomain = activeTasks.find((task) => task.phase === 'FAILED')?.domain;
-      if (failedDomain === 'ride') return 'Mình chưa lấy được báo giá xe lúc này. Bạn kiểm tra lại địa chỉ đón/trả hoặc thử lại sau ít phút nhé.';
+      if (failedDomain === 'ride') {
+        const booking = items.find((item) => item.kind === 'ride_booking');
+        const status = stringValue(booking?.status)?.toUpperCase();
+        if (status === 'NO_DRIVER') return 'Hiện chưa tìm được tài xế phù hợp cho chuyến này. Bạn có thể thử lại.';
+        if (status === 'PAYMENT_FAILED') return 'Thanh toán chuyến xe chưa hoàn tất. Bạn kiểm tra trạng thái thanh toán trước khi thử lại nhé.';
+        return 'Chuyến xe chưa thể hoàn tất. Bạn kiểm tra thông tin chuyến hoặc thử lại sau nhé.';
+      }
       if (failedDomain === 'healthcare') return 'Mình chưa tải được lịch khám lúc này. Bạn thử lại sau ít phút nhé.';
       if (failedDomain === 'food') return 'Mình chưa tải được danh sách món lúc này. Bạn thử lại sau ít phút nhé.';
       if (failedDomain === 'restaurant') return 'Mình chưa tải được danh sách nhà hàng lúc này. Bạn thử lại sau ít phút nhé.';

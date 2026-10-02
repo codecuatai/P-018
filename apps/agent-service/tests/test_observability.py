@@ -308,6 +308,7 @@ def test_core_a_emits_human_readable_decision_flow(
         {"conversation_state": {}},
         "deterministic",
     )
+    assert result["degraded"] is False
 
     names = [event["name"] for event in telemetry.events]
     assert names[:2] == ["planner.route", "core_a.validate"]
@@ -317,12 +318,16 @@ def test_core_a_emits_human_readable_decision_flow(
     planner_event = next(e for e in telemetry.events if e["name"] == "planner.route")
     assert "updates" in planner_event
     plan_output = planner_event["updates"][0]["output"]
-    assert "tasks_summary" in plan_output
-    assert len(plan_output["tasks_summary"]) >= 1
+    assert plan_output["tasks_count"] >= 1
+    assert planner_event["updates"][0]["metadata"]["status"] == "succeeded"
+    assert "tasks_summary" not in plan_output
+    serialized = str(telemetry.events)
+    assert "Hồ Gươm" not in serialized
+    assert "assistant_message" not in plan_output
 
 
 @pytest.mark.asyncio
-async def test_model_generation_records_rich_input_output_and_usage(
+async def test_model_generation_records_safe_metadata_and_usage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     telemetry = RecordingTelemetry()
@@ -332,7 +337,8 @@ async def test_model_generation_records_rich_input_output_and_usage(
         async def ainvoke_structured(self, _prompt: str, _schema):
             return {
                 "parsed": assistant_graph.AssistantPlan(
-                    assistant_message="ok",
+                    assistant_message="sensitive answer must not be traced",
+                    reasoning="sensitive internal reasoning must not be traced",
                     tasks=[],
                     interaction_mode="chitchat",
                 ),
@@ -347,7 +353,7 @@ async def test_model_generation_records_rich_input_output_and_usage(
 
     parsed = await assistant_graph._invoke_structured(
         FakeModel(),
-        "prompt text for planning",
+        "prompt with synthetic private context that must not be traced",
         assistant_graph.AssistantPlan,
         purpose="plan",
     )
@@ -356,13 +362,17 @@ async def test_model_generation_records_rich_input_output_and_usage(
     generation = next(
         event for event in telemetry.events if "Phân tích & Lập kế hoạch" in event["name"] or "model.generate.plan" in event["name"]
     )
-    assert generation["input"]["prompt"] == "prompt text for planning"
+    assert "prompt" not in generation["input"]
+    assert "prompt_length" in generation["input"]
     assert generation["updates"][0]["usage"] == {
         "input": 20,
         "output": 4,
         "total": 24,
     }
-    assert generation["updates"][0]["output"]["assistant_message"] == "ok"
+    assert generation["updates"][0]["output"] == {"parsed": True, "schema": "AssistantPlan"}
+    assert "synthetic private context" not in str(telemetry.events)
+    assert "sensitive answer" not in str(telemetry.events)
+    assert "sensitive internal reasoning" not in str(telemetry.events)
 
 
 def test_repository_has_no_tracked_langfuse_secret_or_trace_export() -> None:
