@@ -4084,11 +4084,14 @@ export class AssistantService {
     if (cartUpdated) {
       foodData = { ...foodData, options: [] };
     }
+    const foodNote = /^Gateway will validate and execute the proposed next step\.?$/i.test(String(response.message ?? '').trim())
+      ? 'Mình chưa tìm thấy món phù hợp. Bạn thử đổi món hoặc khu vực nhé.'
+      : safeText(response.message, 'Hiện chưa có món phù hợp để chọn.');
     const publicItem: JsonObject = {
       kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
       ...foodData,
       ...(cartUpdated ? { kind: 'food_cart' } : {}),
-      ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: safeText(response.message, 'Hiện chưa có món phù hợp để chọn.') } : {}),
+      ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: foodNote } : {}),
     };
     const optionActions = !pending
       ? [

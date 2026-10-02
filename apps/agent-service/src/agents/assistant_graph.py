@@ -437,6 +437,36 @@ def _routing_plain(value: str) -> str:
     return _plain(value).replace("\u0111", "d")
 
 
+def _is_generic_food_browse(value: str) -> bool:
+    """A broad recommendation is a browse request, not a made-up dish query."""
+    text = _routing_plain(value)
+    broad_request = _has_any(
+        text,
+        (
+            "goi y",
+            "an gi",
+            "mon ngon",
+            "mon an",
+            "toi doi",
+            "dang doi",
+            "doi bung",
+            "an trua",
+            "bua trua",
+            "an sang",
+            "bua sang",
+            "an toi",
+            "bua toi",
+        ),
+    )
+    if not broad_request:
+        return False
+    concrete_dish = re.search(
+        r"\b(?:pho|bun|com|burger|pizza|ga ran|ga chien|hamburger|tra sua|banh mi|mi cay|che|hu tieu|banh cuon|nem lui|tra dao|ca phe|matcha|sua chua)\b",
+        text,
+    )
+    return concrete_dish is None
+
+
 def _has_any(text: str, values: tuple[str, ...]) -> bool:
     return any(value in text for value in values)
 
@@ -974,18 +1004,15 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         if "giao ve nha" in lowered or "giao toi nha" in lowered:
             slots["address_reference"] = "home"
 
-        if _has_any(lowered, ("an trua", "bua trua")):
-            slots["dish_query"] = "cơm, phở, bún"
-            slots["category"] = "ăn trưa"
-        elif _has_any(lowered, ("an sang", "bua sang")):
-            slots["dish_query"] = "phở, bún, bánh mì"
-            slots["category"] = "ăn sáng"
-        elif _has_any(lowered, ("an toi", "bua toi")):
-            slots["dish_query"] = "cơm, lẩu, nướng"
-            slots["category"] = "ăn tối"
-        elif _has_any(lowered, ("goi y", "an gi", "mon ngon")):
-            slots["dish_query"] = "phở, bún, cơm"
-        else:
+        if _is_generic_food_browse(scoped_text):
+            if _has_any(lowered, ("an trua", "bua trua")):
+                slots["category"] = "ăn trưa"
+            elif _has_any(lowered, ("an sang", "bua sang")):
+                slots["category"] = "ăn sáng"
+            elif _has_any(lowered, ("an toi", "bua toi")):
+                slots["category"] = "ăn tối"
+
+        if not _is_generic_food_browse(scoped_text):
             m_unit = re.search(
                 r"\b[1-9][0-9]?\s*(?:suất|suat|phần|phan|ly|cốc|coc|bát|bat|tô|to|hộp|hop|đĩa|dia)\s+([^,.;!?]+?)(?:\s*,\s*|\s+(?:giao|ship|mang|địa\s+chỉ|dia\s+chi|ghi\s+chú|ghi\s+chu|it\s+|khong\s+|tìm|tim|quá|qua|nhé|nhe)\b|$)",
                 text,
@@ -2408,6 +2435,12 @@ def _sanitize_plan(plan: AssistantPlan) -> AssistantPlan:
     for index, task in enumerate(plan.tasks[:4]):
         dependencies = sorted({value for value in task.depends_on if 0 <= value < index})
         slots = _domain_slots(task.domain, _canonical_model_slots(task.extracted_slots))
+        if task.domain == "food" and _is_generic_food_browse(task.normalized_request):
+            # Broad recommendation requests should browse the menu without an
+            # invented comma-separated dish query (which the service treats
+            # as one literal search phrase).
+            for name in ("query", "dish_query"):
+                slots.pop(name, None)
         tasks.append(task.model_copy(update={"extracted_slots": slots, "depends_on": dependencies}))
     clarification = plan.clarification_question if plan.needs_clarification else None
     if clarification and len(clarification) > 500:

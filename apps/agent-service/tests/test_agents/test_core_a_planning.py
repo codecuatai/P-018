@@ -132,6 +132,23 @@ def test_food_discovery_selects_observed_read_capability() -> None:
     assert step.confirmation_gate == ConfirmationGate.NONE
 
 
+def test_broad_food_recommendation_can_browse_without_invented_query() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.FOOD,
+        operation=Operation.DISCOVER,
+        goal="Gợi ý món phù hợp",
+        normalized_request="Tôi đói gợi ý món ăn cho tôi đi",
+        slots=FoodSemanticSlots(),
+    )
+
+    task = CoreAPlanner().plan(input_for(intent)).tasks[0]
+
+    assert task.disposition == TaskDisposition.READY
+    assert task.missing_information == []
+    assert task.steps[0].capability == "search_food"
+
+
 def test_ride_requires_an_explicit_vehicle_type_before_quoting() -> None:
     intent = SemanticIntent(
         intent_ref=0,

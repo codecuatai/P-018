@@ -493,6 +493,37 @@ describe('Unified assistant orchestration', () => {
     expect(agent.assistantChat).toHaveBeenCalledTimes(1);
   });
 
+  it('does not expose the internal proposal placeholder when Food search is empty', async () => {
+    const store = new InMemoryCoreRepository();
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình chưa tìm thấy món phù hợp. Bạn thử đổi món hoặc khu vực nhé.' }
+        : { decision_source: 'model', plan: { tasks: [{ domain: 'food', goal: 'Gợi ý món', normalized_request: 'Tôi đói, gợi ý món ăn', extracted_slots: {} }] } }),
+      chat: jest.fn().mockResolvedValue({
+        response_type: 'error',
+        message: 'Gateway will validate and execute the proposed next step.',
+        data: { items: [] },
+        state_updates: {},
+      }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tôi đói, gợi ý món ăn cho tôi.', undefined, 'cor-food-internal-placeholder');
+
+    expect(response.items[0]).toMatchObject({
+      kind: 'food_empty',
+      note: 'Mình chưa tìm thấy món phù hợp. Bạn thử đổi món hoặc khu vực nhé.',
+    });
+    expect(response.message).not.toContain('Gateway will validate');
+  });
+
   it('propagates an authoritative sanitized Food cart through selection and cart mutation', async () => {
     const store = new InMemoryCoreRepository();
     const candidates = [{

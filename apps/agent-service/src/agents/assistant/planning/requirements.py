@@ -14,7 +14,8 @@ from ..contracts import (
 )
 
 SEMANTIC_REQUIREMENTS: dict[tuple[Domain, Operation], tuple[str, ...]] = {
-    (Domain.FOOD, Operation.DISCOVER): ("query|dish_query",),
+    # Discovery supports browsing the current menu with no keyword.
+    (Domain.FOOD, Operation.DISCOVER): (),
     (Domain.FOOD, Operation.CREATE): ("query|dish_query",),
     (Domain.FOOD, Operation.CANCEL): (),
     (Domain.FOOD, Operation.STATUS): (),

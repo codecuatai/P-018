@@ -624,7 +624,7 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
             }
             return {
                 "response_type": "text",
-                "response": "Gateway will validate and execute the proposed next step.",
+                "response": "Mình sẽ tìm món phù hợp cho bạn.",
                 "data": {"proposals": proposals},
                 "state_updates": semantic_updates,
             }

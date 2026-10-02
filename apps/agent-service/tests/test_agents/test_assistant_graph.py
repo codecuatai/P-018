@@ -158,7 +158,7 @@ def test_food_dinner_request_overrides_stale_model_ride_without_discarding_it() 
 
     assert domains(guarded) == ["food"]
     assert guarded.tasks[0].extracted_slots["category"] == "ăn tối"
-    assert guarded.tasks[0].extracted_slots["dish_query"] == "cơm, lẩu, nướng"
+    assert "dish_query" not in guarded.tasks[0].extracted_slots
     assert guarded.discarded_task_refs == []
 
 
@@ -1599,8 +1599,11 @@ def test_deterministic_plan_handles_food_lunch_recommendation_and_followup() -> 
     assert len(plan.tasks) == 1
     assert plan.tasks[0].domain == "food"
     assert plan.interaction_mode == "service"
-    dish = plan.tasks[0].extracted_slots.get("dish_query", "")
-    assert any(k in dish for k in ("mon", "trua", "cơm", "phở", "bún"))
+    assert "dish_query" not in plan.tasks[0].extracted_slots
+    assert "query" not in plan.tasks[0].extracted_slots
+
+    specific = deterministic_plan("gợi ý món phở cho tôi")
+    assert "phở" in specific.tasks[0].extracted_slots["dish_query"]
 
     # Follow up with "oke" continues the food task
     followup = deterministic_plan("oke", conversation_state={"tasks": [plan.tasks[0].model_dump()]})
