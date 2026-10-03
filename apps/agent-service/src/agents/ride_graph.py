@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import re
-import unicodedata
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.agents.tool_ids import make_tool_call_id
 from src.models.schemas import ToolRequest
@@ -22,10 +21,25 @@ class RideAgentState(TypedDict, total=False):
     tool_request: dict[str, Any] | None
 
 
-def _fold(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", value.lower())
-    folded = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
-    return folded.replace("đ", "d").replace("ð", "d")
+class RideSlotPatch(BaseModel):
+    """Semantic fields extracted from the latest user turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pickup_address: str | None = Field(default=None, max_length=300)
+    dropoff_address: str | None = Field(default=None, max_length=300)
+    vehicle_type: str | None = None
+    passenger_count: int | None = Field(default=None, ge=1, le=99)
+    promo_code: str | None = Field(default=None, max_length=50)
+    provider: str | None = None
+
+
+class RideResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: str
+    slot_patch: RideSlotPatch = Field(default_factory=RideSlotPatch)
+    status_query: bool = False
 
 
 def _ride_context(context: dict[str, Any]) -> dict[str, Any]:
@@ -33,77 +47,15 @@ def _ride_context(context: dict[str, Any]) -> dict[str, Any]:
     return dict(ride) if isinstance(ride, dict) else {}
 
 
-def _extract(query: str, context: dict[str, Any]) -> dict[str, str]:
+def _patch(context: dict[str, Any], slots: dict[str, Any]) -> dict[str, Any]:
     ride = _ride_context(context)
-    slots: dict[str, str] = {}
-    route = re.search(r"\btừ\s+(.+?)\s+đến\s+(.+)$", query, re.IGNORECASE)
-    if not route:
-        route = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+)$", query, re.IGNORECASE)
-    if route:
-        slots["pickup_address"] = route.group(1).strip(" .,!?")[:300]
-        slots["dropoff_address"] = _strip_vehicle_suffix(route.group(2).strip(" .,!?"))[:300]
-    else:
-        pickup = re.search(
-            r"(?:điểm đón|pickup)\s*[:：]\s*(.+?)(?:,|;|\s+điểm đến|\s+dropoff)\s*[:：]?", query, re.IGNORECASE
-        )
-        dropoff = re.search(r"(?:điểm đến|dropoff)\s*[:：]\s*(.+)$", query, re.IGNORECASE)
-        if pickup:
-            slots["pickup_address"] = pickup.group(1).strip(" .,!?")[:300]
-        if dropoff:
-            slots["dropoff_address"] = _strip_vehicle_suffix(dropoff.group(1).strip(" .,!?"))[:300]
-
-    folded = _fold(query)
-    if "xe may" in folded or "bike" in folded:
-        slots["vehicle_type"] = "BIKE"
-    elif "7 cho" in folded or "car_7" in folded or "car 7" in folded:
-        slots["vehicle_type"] = "CAR_7"
-    elif "4 cho" in folded or "car_4" in folded or "car 4" in folded:
-        slots["vehicle_type"] = "CAR_4"
-
-    passenger = re.search(r"\b([1-9][0-9]?)\s*(?:người|nguoi|khách|khach|passengers?)\b", query, re.IGNORECASE)
-    if passenger:
-        slots["passenger_count"] = passenger.group(1)
-
-    promo = re.search(
-        r"(?:ma|mã)\s*(?:khuyen mai|khuyến mãi|promo)?\s*[:：]?\s*([A-Za-z0-9_-]{2,50})", query, re.IGNORECASE
-    )
-    if promo:
-        slots["promo_code"] = promo.group(1)
-
-    if "xanh sm" in folded or "xanhsm" in folded or "vinfast" in folded:
-        slots["provider"] = "xanhsm"
-    elif "grab" in folded:
-        slots["provider"] = "grab"
-    elif "be" in folded.split() or " be " in f" {folded} " or "xe be" in folded:
-        slots["provider"] = "be"
-
-    for field in ("pickup_address", "dropoff_address", "vehicle_type", "passenger_count", "promo_code", "provider"):
-        if field not in slots and ride.get(field) not in (None, ""):
-            slots[field] = str(ride[field])
-    return slots
-
-
-def _strip_vehicle_suffix(value: str) -> str:
-    result = value
-    for _ in range(2):
-        result = re.sub(
-            r"\s+(?:cho\s+)?[1-9][0-9]?\s*(?:người|nguoi|khách|khach|passengers?)\s*$", "", result, flags=re.IGNORECASE
-        )
-        result = re.sub(
-            r"\s+(?:bằng|bang|với|voi)\s+(?:xe\s*)?(?:máy|may|[47]\s*(?:chỗ|cho)|bike|car[_ ]?[47])\s*$",
-            "",
-            result,
-            flags=re.IGNORECASE,
-        )
-    return result.strip()
-
-
-def _patch(context: dict[str, Any], slots: dict[str, str]) -> dict[str, Any]:
-    ride = _ride_context(context)
+    semantic_fields = {
+        "pickup_address", "dropoff_address", "vehicle_type", "passenger_count", "promo_code", "provider"
+    }
     updates = [
-        {"slot": field, "value": value, "source": "user", "confidence": 0.95}
+        {"slot": field, "value": value, "source": "user", "confidence": 1.0}
         for field, value in slots.items()
-        if value != ride.get(field)
+        if field in semantic_fields and value != ride.get(field)
     ]
     revision = int(ride.get("revision", 0) or 0)
     return {
@@ -125,29 +77,76 @@ def _tool(tool_name: str, risk_level: str, arguments: dict[str, Any], workflow_i
     ).model_dump()
 
 
-def interpret_ride(state: RideAgentState) -> RideAgentState:
+async def interpret_ride(state: RideAgentState) -> RideAgentState:
     query = str(state.get("query", ""))
     context = state.get("context", {})
     workflow_id = str(state.get("workflow_id", ""))
     turn_id = str(state.get("turn_id", "1"))
     ride = _ride_context(context)
-    slots = _extract(query, context)
+    try:
+        from src.config import get_settings
+        from src.services.llm import GeminiAdapter
+
+        if get_settings().agent_model_mode != "gemini":
+            raise RuntimeError("LLM interpretation is disabled")
+        prompt = (
+            "Interpret the latest ride-service message using all supplied context. Extract only values stated or clearly "
+            "implied by this message, resolving references against existing ride state. Classify whether the user asks "
+            "for ride status. Do not invent addresses, providers, promo codes, IDs, or intent. vehicle_type must be "
+            "BIKE, CAR_4, or CAR_7 when clear; otherwise null. Use intent=ride for ride requests or follow-ups and "
+            "intent=other for unrelated messages. Return only the schema.\n"
+            f"Existing ride state: {ride}\nOther context: {context}\nLatest user message: {query}"
+        )
+        raw = await GeminiAdapter().ainvoke_structured(prompt, RideResolution)
+        if isinstance(raw, dict) and raw.get("parsed") is not None:
+            raw = raw["parsed"]
+        resolution = raw if isinstance(raw, RideResolution) else RideResolution.model_validate(raw)
+    except Exception:
+        return {
+            "response": "Mình chưa hiểu đủ thông tin chuyến xe. Bạn nói rõ điểm đón, điểm đến và loại xe giúp mình nhé.",
+            "intent": "clarify_ride",
+            "missing_fields": ["pickup_address", "dropoff_address", "vehicle_type"],
+            "state_patch": {
+                "active_domain": "ride", "slot_updates": [], "clear_fields": [],
+                "revision": int(ride.get("revision", 0) or 0),
+            },
+            "tool_request": None,
+        }
+
+    if resolution.intent != "ride":
+        return {
+            "response": "Mình có thể giúp đặt hoặc theo dõi chuyến xe. Bạn muốn làm gì tiếp theo?",
+            "intent": "help",
+            "missing_fields": [],
+            "state_patch": {
+                "active_domain": "ride", "slot_updates": [], "clear_fields": [],
+                "revision": int(ride.get("revision", 0) or 0),
+            },
+            "tool_request": None,
+        }
+
+    slots: dict[str, Any] = dict(ride)
+    semantic_patch = resolution.slot_patch.model_dump(exclude_none=True)
+    if semantic_patch.get("vehicle_type") not in {"BIKE", "CAR_4", "CAR_7"}:
+        semantic_patch.pop("vehicle_type", None)
+    for field, value in semantic_patch.items():
+        if isinstance(value, str):
+            value = value.strip()
+        if value not in (None, ""):
+            slots[field] = value
+    slots = {key: value for key, value in slots.items() if value not in (None, "")}
     patch = _patch(context, slots)
     missing = [field for field in ("pickup_address", "dropoff_address", "vehicle_type") if not slots.get(field)]
     if missing:
         return {
-            "response": (
-                "Bạn cho mình biết điểm đón, điểm đến và loại xe "
-                "(xe máy, ô tô 4 chỗ hoặc ô tô 7 chỗ) còn thiếu nhé."
-            ),
+            "response": "Bạn cho mình biết các thông tin chuyến đi còn thiếu nhé.",
             "intent": "clarify_ride",
             "missing_fields": missing,
             "state_patch": patch,
             "tool_request": None,
         }
 
-    folded = _fold(query)
-    if ride.get("latest_booking_id") and any(term in folded for term in ("trang thai", "status", "tai xe")):
+    if ride.get("latest_booking_id") and resolution.status_query:
         return {
             "response": "Mình sẽ kiểm tra trạng thái chuyến đi của bạn.",
             "intent": "get_ride_status",
@@ -164,12 +163,11 @@ def interpret_ride(state: RideAgentState) -> RideAgentState:
             "dropoff_address": slots["dropoff_address"],
             "vehicle_type": slots["vehicle_type"],
         }
-        if slots.get("promo_code"):
-            arguments["promo_code"] = slots["promo_code"]
+        for field in ("promo_code", "provider"):
+            if slots.get(field):
+                arguments[field] = slots[field]
         if slots.get("passenger_count"):
             arguments["passenger_count"] = int(slots["passenger_count"])
-        if slots.get("provider"):
-            arguments["provider"] = slots["provider"]
         return {
             "response": "Mình sẽ lấy báo giá chính thức cho chuyến đi này.",
             "intent": "request_ride_quote",

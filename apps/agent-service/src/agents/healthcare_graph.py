@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import re
-import unicodedata
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.healthcare_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
@@ -15,132 +12,38 @@ from src.config import get_settings
 from src.models.schemas import ToolRequest
 from src.services.llm import GeminiAdapter
 
-DEPARTMENT_ALIASES = {
-    "than kinh": "Than kinh",
-    "tim mach": "Tim mach",
-    "co xuong khop": "Co - Xuong - Khop",
-    "tieu hoa": "Tieu hoa - Gan mat",
-    "ho hap": "Ho hap",
-    "tiet": "Tiet",
-    "than tiet nieu": "Than - Tiet nieu",
-    "mat": "Mat",
-    "da lieu": "Da lieu",
-    "nhi": "Nhi",
-    "phu san": "Phu san",
-    "tai mui hong": "Tai - Mui - Hong",
-    "rang ham mat": "Rang - Ham - Mat",
-    "kham benh": "Kham benh",
-}
 
-SYMPTOM_MARKERS = (
-    "dau",
-    "buon non",
-    "non",
-    "sot",
-    "ho",
-    "met",
-    "chong mat",
-    "tieu chay",
-    "tao bon",
-    "ngua",
-    "phat ban",
-)
+class HealthcareSlotPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-
-class DepartmentSelection(BaseModel):
     department: str | None = None
-    confidence: float = Field(default=0.0, ge=0, le=1)
+    provider: Literal["longchau", "pharmacity"] | None = None
+    medication_name: str | None = Field(default=None, max_length=120)
+    symptoms: str | None = Field(default=None, max_length=1000)
 
 
-def _fold(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", value.lower())
-    folded = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
-    return folded.replace("đ", "d").replace("ð", "d")
+class HealthcareResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["healthcare", "other"]
+    action: Literal[
+        "browse_departments", "browse_slots", "hold_slot", "confirm_appointment", "cancel_appointment", "none"
+    ] = "none"
+    slot_patch: HealthcareSlotPatch = Field(default_factory=HealthcareSlotPatch)
+    explicit_confirmation: bool = False
+    # Zero-based position in an authoritative list supplied with the prompt.
+    selected_index: int | None = Field(default=None, ge=0, le=100)
 
 
-def _healthcare_message(query: str, previous_intent: str | None) -> bool:
-    folded = _fold(query)
-    if previous_intent == "healthcare_booking":
-        return True
-    return any(
-        term in folded
-        for term in (
-            "suc khoe",
-            "bac si",
-            "kham",
-            "benh vien",
-            "chuyen khoa",
-            "dat lich y te",
-            "huy lich",
-            "huy cuoc hen",
-            "thuoc",
-            "nha thuoc",
-            "hieu thuoc",
-            "long chau",
-            "pharmacity",
-            *SYMPTOM_MARKERS,
-        )
-    )
-
-
-def _extract_slots(query: str, context: dict[str, Any], tool_result: Any) -> dict[str, Any]:
-    previous_slots = context.get("slots", {})
-    slots = dict(previous_slots) if isinstance(previous_slots, dict) else {}
-    folded = _fold(query)
-
-    for alias, value in DEPARTMENT_ALIASES.items():
-        if alias in folded:
-            slots["department"] = value
-            break
-
-    slot_match = re.search(r"(?:slot|khung\s*gio|khung)\s*(?:id\s*)?(?:la|:)?\s*(\d+)", folded)
-    if slot_match:
-        slots["slot_id"] = int(slot_match.group(1))
-    appointment_match = re.search(r"(?:appointment|lich\s*hen|lich\s*kham)\s*(?:id\s*)?(?:la|:)?\s*(\d+)", folded)
-    if appointment_match:
-        slots["appointment_id"] = int(appointment_match.group(1))
-
-    if "long chau" in folded or "fpt long chau" in folded or "longchau" in folded:
-        slots["provider"] = "longchau"
-    elif "pharmacity" in folded:
-        slots["provider"] = "pharmacity"
-
-    for med in (
-        "panadol extra",
-        "panadol",
-        "paracetamol",
-        "decolgen",
-        "berocca",
-        "gaviscon",
-        "augmentin",
-        "strepsils",
-        "khau trang",
-        "nuoc muoi",
-    ):
-        if med in folded:
-            slots["medication_name"] = med
-            break
-
-    if context.get("patient_id") is not None:
-        try:
-            slots["patient_id"] = int(context["patient_id"])
-        except (TypeError, ValueError):
-            slots.pop("patient_id", None)
-    if context.get("appointment_id") is not None:
-        try:
-            slots["appointment_id"] = int(context["appointment_id"])
-        except (TypeError, ValueError):
-            pass
-
-    if isinstance(tool_result, list) and tool_result and isinstance(tool_result[0], dict):
-        if "available_slots" in tool_result[0]:
-            slots.setdefault(
-                "department", previous_slots.get("department") if isinstance(previous_slots, dict) else None
-            )
-    if isinstance(tool_result, dict):
-        for key in ("appointment_id", "slot_id"):
-            if tool_result.get(key) is not None:
-                slots[key] = tool_result[key]
+def _slots_from_context(context: dict[str, Any], patch: HealthcareSlotPatch) -> dict[str, Any]:
+    previous = context.get("slots", {})
+    slots = dict(previous) if isinstance(previous, dict) else {}
+    # IDs and patient identity are accepted only from trusted workflow/service state.
+    for key in ("patient_id", "appointment_id", "slot_id"):
+        if context.get(key) is not None:
+            slots[key] = context[key]
+    for key, value in patch.model_dump(exclude_none=True).items():
+        slots[key] = value
     return {key: value for key, value in slots.items() if value not in (None, "")}
 
 
@@ -163,65 +66,9 @@ def _tool_request(
     return validate_tool_request(request).model_dump()
 
 
-def _tokens(value: str) -> set[str]:
-    return {
-        token
-        for token in re.findall(r"[a-z0-9]+", _fold(value))
-        if len(token) > 2 and token not in {"khoa", "noi", "ngoai", "benh", "kham"}
-    }
-
-
-def _deterministic_department(query: str, departments: list[dict[str, Any]]) -> str | None:
-    query_tokens = _tokens(query)
-    if not query_tokens:
-        return None
-    scored: list[tuple[int, str]] = []
-    for department in departments:
-        name = str(department.get("name", ""))
-        description = str(department.get("description", ""))
-        score = len(query_tokens & _tokens(f"{name} {description}"))
-        if score:
-            scored.append((score, name))
-    scored.sort(reverse=True)
-    if not scored or (len(scored) > 1 and scored[0][0] == scored[1][0]):
-        return None
-    return scored[0][1]
-
-
-async def _select_department(query: str, departments: list[dict[str, Any]]) -> str | None:
-    if not departments:
-        return None
-    settings = get_settings()
-    has_key = bool(getattr(settings, "has_gemini_api_key", settings.gemini_api_key))
-    if settings.agent_model_mode == "gemini" and has_key:
-        try:
-            prompt = (
-                "Bạn hỗ trợ chọn chuyên khoa dựa trên mô tả dữ liệu được cung cấp. "
-                "Chỉ chọn một tên khoa đúng y nguyên trong danh sách hoặc trả null. "
-                "Không chẩn đoán bệnh và không đưa lời khuyên điều trị.\n"
-                f"Triệu chứng người dùng: {query}\n"
-                f"Danh sách chuyên khoa: {departments}"
-            )
-            raw = await GeminiAdapter().ainvoke_structured(prompt, DepartmentSelection)
-            if isinstance(raw, dict) and raw.get("parsed") is not None:
-                raw = raw["parsed"]
-            parsed = raw if isinstance(raw, DepartmentSelection) else DepartmentSelection.model_validate(raw)
-            if (
-                parsed.department
-                and parsed.confidence >= 0.55
-                and any(parsed.department == item.get("name") for item in departments)
-            ):
-                return parsed.department
-        except Exception:
-            # Candidate presentation remains the safe fallback when provider
-            # output is unavailable or does not match authoritative data.
-            pass
-    return _deterministic_department(query, departments)
-
-
 def _tool_outcome(tool_name: str | None, result: Any) -> str:
     if isinstance(result, dict) and result.get("error"):
-        return result["error"]
+        return str(result["error"])
     if isinstance(result, list) and not result:
         return "EMPTY_RESULT"
     return "SUCCEEDED"
@@ -230,130 +77,122 @@ def _tool_outcome(tool_name: str | None, result: Any) -> str:
 async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     query = str(state.get("query", ""))
     context = dict(state.get("context", {}))
-    previous_intent = state.get("intent")
     tool_result = context.get("tool_result")
-    if not _healthcare_message(query, previous_intent) and not tool_result:
-        return {"intent": "general_chat", "slots": {}, "status": "COMPLETED"}
-
-    slots = _extract_slots(query, context, tool_result)
     workflow_id = str(state["workflow_id"])
     turn_id = str(state.get("turn_id", "1"))
-    folded = _fold(query)
 
+    try:
+        settings = get_settings()
+        if settings.agent_model_mode != "gemini":
+            raise RuntimeError("LLM interpretation is disabled")
+        prompt = (
+            "You interpret a healthcare/pharmacy workflow turn using conversation state and the latest message. "
+            "Classify intent from meaning, including short follow-ups and references to prior choices. Return semantic "
+            "slot values only; never invent IDs, medical facts, availability, diagnoses, or tool results. Use IDs only "
+            "when explicitly present in the user's message; trusted existing state is included separately. Select a list "
+            "item only by its zero-based index when the user clearly refers to that item. Set explicit_confirmation "
+            "true only when the user clearly approves the pending action; questions, uncertainty, negation, or changes "
+            "must be false. Do not diagnose or recommend treatment.\n"
+            f"Workflow context: {context}\nAuthoritative latest tool result: {tool_result}\nLatest user message: {query}"
+        )
+        raw = await GeminiAdapter().ainvoke_structured(prompt, HealthcareResolution)
+        if isinstance(raw, dict) and raw.get("parsed") is not None:
+            raw = raw["parsed"]
+        resolution = raw if isinstance(raw, HealthcareResolution) else HealthcareResolution.model_validate(raw)
+    except Exception:
+        return {
+            "intent": "healthcare_booking" if context.get("intent") == "healthcare_booking" else "general_chat",
+            "slots": context.get("slots", {}),
+            "status": "NEEDS_INPUT",
+            "missing_slots": ["request_clarification"],
+        }
+
+    if resolution.intent == "other":
+        return {"intent": "general_chat", "slots": context.get("slots", {}), "status": "COMPLETED"}
+
+    slots = _slots_from_context(context, resolution.slot_patch)
+    action = resolution.action
     if context.get("tool_result_only") and tool_result is not None:
-        if context.get("tool_name") == "healthcare.list_departments" and isinstance(tool_result, list):
-            departments = [item for item in tool_result if isinstance(item, dict)]
-            selected_department = await _select_department(query, departments)
-            if selected_department:
-                slots["department"] = selected_department
-                return {
-                    "intent": "healthcare_booking",
-                    "slots": slots,
-                    "status": "TOOL_REQUEST_READY",
-                    "tool_request": _tool_request(
-                        "healthcare.list_slots",
-                        "READ",
-                        {"department": selected_department},
-                        workflow_id,
-                        turn_id,
-                    ),
-                }
+        tool_name = context.get("tool_name")
+        if tool_name == "healthcare.list_departments" and isinstance(tool_result, list):
+            index = resolution.selected_index
+            if index is not None and index < len(tool_result) and isinstance(tool_result[index], dict):
+                department = tool_result[index].get("name")
+                if department:
+                    slots["department"] = str(department)
+                    return {
+                        "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
+                        "tool_request": _tool_request(
+                            "healthcare.list_slots", "READ", {"department": slots["department"]}, workflow_id, turn_id
+                        ),
+                    }
         return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "COMPLETED",
-            "outcome": _tool_outcome(context.get("tool_name"), tool_result),
+            "intent": "healthcare_booking", "slots": slots, "status": "COMPLETED",
+            "outcome": _tool_outcome(tool_name, tool_result),
         }
 
-    if slots.get("appointment_id") and is_explicit_confirmation(query):
-        return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "TOOL_REQUEST_READY",
-            "tool_request": _tool_request(
-                "healthcare.confirm_appointment",
-                "FINANCIAL_OR_FINAL",
-                {"appointment_id": int(slots["appointment_id"])},
-                workflow_id,
-                turn_id,
-                f"healthcare-confirm-{workflow_id}-{turn_id}",
-            ),
-        }
+    if tool_result is not None and context.get("tool_name") == "healthcare.list_slots":
+        data = tool_result.get("data", tool_result) if isinstance(tool_result, dict) else tool_result
+        candidates = data if isinstance(data, list) else (
+            data.get("available_slots", data.get("slots", [])) if isinstance(data, dict) else []
+        )
+        index = resolution.selected_index
+        if isinstance(candidates, list) and index is not None and index < len(candidates):
+            candidate = candidates[index]
+            if isinstance(candidate, dict) and candidate.get("id") is not None:
+                slots["slot_id"] = candidate["id"]
 
-    if any(term in folded for term in ("huy lich", "huy cuoc hen")):
+    if action == "cancel_appointment":
         if not slots.get("appointment_id"):
-            return {
-                "intent": "healthcare_booking",
-                "slots": slots,
-                "missing_slots": ["appointment_id"],
-                "status": "NEEDS_INPUT",
-            }
+            return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["appointment_id"], "status": "NEEDS_INPUT"}
         return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "TOOL_REQUEST_READY",
+            "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
             "tool_request": _tool_request(
-                "healthcare.cancel_appointment",
-                "REVERSIBLE_WRITE",
-                {"appointment_id": int(slots["appointment_id"])},
-                workflow_id,
-                turn_id,
+                "healthcare.cancel_appointment", "REVERSIBLE_WRITE",
+                {"appointment_id": int(slots["appointment_id"])}, workflow_id, turn_id,
                 f"healthcare-cancel-{workflow_id}-{turn_id}",
             ),
         }
 
-    if not slots.get("department"):
+    if action == "confirm_appointment":
+        if not slots.get("appointment_id"):
+            return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["appointment_id"], "status": "NEEDS_INPUT"}
+        if not resolution.explicit_confirmation:
+            return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["confirmation"], "status": "NEEDS_INPUT"}
         return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "TOOL_REQUEST_READY",
-            "tool_request": _tool_request("healthcare.list_departments", "READ", {}, workflow_id, turn_id),
-        }
-
-    if not slots.get("slot_id"):
-        return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "TOOL_REQUEST_READY",
+            "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
             "tool_request": _tool_request(
-                "healthcare.list_slots",
-                "READ",
-                {"department": str(slots["department"])},
-                workflow_id,
-                turn_id,
+                "healthcare.confirm_appointment", "FINANCIAL_OR_FINAL",
+                {"appointment_id": int(slots["appointment_id"])}, workflow_id, turn_id,
+                f"healthcare-confirm-{workflow_id}-{turn_id}",
             ),
         }
 
+    if action == "browse_departments" or not slots.get("department"):
+        return {
+            "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
+            "tool_request": _tool_request("healthcare.list_departments", "READ", {}, workflow_id, turn_id),
+        }
+    if action == "browse_slots" or not slots.get("slot_id"):
+        return {
+            "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
+            "tool_request": _tool_request(
+                "healthcare.list_slots", "READ", {"department": str(slots["department"])}, workflow_id, turn_id
+            ),
+        }
     if not slots.get("patient_id"):
-        return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "missing_slots": ["patient_id"],
-            "status": "NEEDS_INPUT",
-        }
-    if not is_explicit_confirmation(query):
-        return {
-            "intent": "healthcare_booking",
-            "slots": slots,
-            "status": "NEEDS_INPUT",
-            "missing_slots": ["confirmation"],
-        }
+        return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["patient_id"], "status": "NEEDS_INPUT"}
+    if action != "hold_slot" or not resolution.explicit_confirmation:
+        return {"intent": "healthcare_booking", "slots": slots, "missing_slots": ["confirmation"], "status": "NEEDS_INPUT"}
 
     return {
-        "intent": "healthcare_booking",
-        "slots": slots,
-        "status": "TOOL_REQUEST_READY",
+        "intent": "healthcare_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
         "tool_request": _tool_request(
-            "healthcare.hold_slot",
-            "REVERSIBLE_WRITE",
+            "healthcare.hold_slot", "REVERSIBLE_WRITE",
             {
-                "slot_id": int(slots["slot_id"]),
-                "patient_id": int(slots["patient_id"]),
-                "symptoms": str(context.get("symptoms", "General consultation")),
-            },
-            workflow_id,
-            turn_id,
-            f"healthcare-hold-{workflow_id}-{turn_id}",
+                "slot_id": int(slots["slot_id"]), "patient_id": int(slots["patient_id"]),
+                "symptoms": str(resolution.slot_patch.symptoms or context.get("symptoms", "General consultation")),
+            }, workflow_id, turn_id, f"healthcare-hold-{workflow_id}-{turn_id}",
         ),
     }
 
@@ -363,7 +202,6 @@ def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
     outcome = "UNKNOWN"
     missing = []
     error_code = None
-
     if state.get("status") == "NEEDS_INPUT":
         phase = "NEEDS_INFO"
         missing = state.get("missing_slots", [])
@@ -375,14 +213,9 @@ def compose_healthcare_response(state: AgentState) -> dict[str, Any]:
     else:
         phase = "COMPLETED"
         outcome = state.get("outcome", "SUCCEEDED")
-
     envelope = {
-        "phase": phase,
-        "outcome": outcome,
-        "missing_information": missing,
-        "error_code": error_code,
-        "actions": [],
-        "authoritative_cards": [],
+        "phase": phase, "outcome": outcome, "missing_information": missing, "error_code": error_code,
+        "actions": [], "authoritative_cards": [],
     }
     response = "Mình đã cập nhật thông tin theo kết quả xác thực."
     if phase == "NEEDS_INFO":

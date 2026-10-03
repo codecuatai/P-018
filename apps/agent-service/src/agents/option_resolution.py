@@ -16,21 +16,12 @@ def resolve_options(
             concept = plain(str(preference.get("concept", "")))
             value = plain(str(preference.get("value", "")))
             group_text = plain(str(group.get("name", "")))
-            concept_terms = {
-                "size": ("size", "kich thuoc"),
-                "spice": ("spice", "cay"),
-                "extra": ("extra", "them", "mon"),
-            }.get(concept, (concept,))
             option = next(
                 (
                     item
                     for item in options
-                    if value
-                    and value in plain(str(item.get("name", "")))
-                    and (
-                        not concept
-                        or any(term in group_text or term in plain(str(item.get("name", ""))) for term in concept_terms)
-                    )
+                    if value == plain(str(item.get("name", ""))).strip()
+                    and (not concept or concept == group_text.strip())
                 ),
                 None,
             )

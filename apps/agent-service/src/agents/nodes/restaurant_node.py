@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import re
-import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
@@ -17,8 +14,6 @@ TZ = timezone(timedelta(hours=7))
 
 
 class RestaurantSlotPatch(BaseModel):
-    """User-expressible Restaurant values; authoritative fields are impossible."""
-
     model_config = ConfigDict(extra="forbid")
 
     location: str | None = Field(default=None, min_length=1, max_length=300)
@@ -30,301 +25,146 @@ class RestaurantSlotPatch(BaseModel):
     duration_minutes: int | None = Field(default=None, ge=15, le=480)
     seating_type: str | None = Field(default=None, min_length=1, max_length=80)
     special_requests: str | None = Field(default=None, min_length=1, max_length=500)
-    selection: Literal["first", "second", "third", "fourth", "fifth"] | None = None
+    restaurant_name: str | None = None
 
 
-class RestaurantExtraction(BaseModel):
+class RestaurantResolution(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    intent: Literal["ride", "food", "restaurant", "healthcare", "general_support"]
+    intent: Literal["restaurant", "other"]
     slot_patch: RestaurantSlotPatch = Field(default_factory=RestaurantSlotPatch)
-    confidence: float = Field(default=0.0, ge=0, le=1)
+    explicit_confirmation: bool = False
+    # A zero-based index into the latest authoritative restaurant search result.
+    selected_index: int | None = Field(default=None, ge=0, le=100)
 
 
-def _fold(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", value.lower())
-    return "".join(char for char in normalized if unicodedata.category(char) != "Mn").replace("đ", "d")
-
-
-def _parse_time(query: str) -> str | None:
-    folded = _fold(query)
-    match = re.search(r"\b(\d{1,2})\s*h\s*(\d{2})?\s*(sang|toi|am|pm)?\b", folded)
-    if not match:
-        match = re.search(r"\b(\d{1,2}):(\d{2})\s*(sang|toi|am|pm)?\b", folded)
-    if not match:
-        match = re.search(r"\b(\d{1,2})\s+gio\s*(\d{2})?\s*(sang|toi|am|pm)?\b", folded)
-    if not match:
-        return None
-    hour = int(match.group(1))
-    minute = int(match.group(2) or 0)
-    meridiem = match.group(3) if len(match.groups()) >= 3 else None
-    if meridiem in {"toi", "pm"} and hour < 12:
-        hour += 12
-    if meridiem in {"sang", "am"} and hour == 12:
-        hour = 0
-    if hour > 23 or minute > 59:
-        return None
-    return f"{hour:02d}:{minute:02d}"
-
-
-def _parse_date(query: str, now: datetime) -> str | None:
-    folded = _fold(query)
-    explicit = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?\b", folded)
-    if explicit:
-        year = int(explicit.group(3) or now.year)
-        return f"{year:04d}-{int(explicit.group(2)):02d}-{int(explicit.group(1)):02d}"
-    if "hom nay" in folded:
-        return now.date().isoformat()
-    if "ngay mai" in folded:
-        return (now + timedelta(days=1)).date().isoformat()
-    return None
-
-
-def _matches_restaurant_name(name: str, query: str) -> bool:
-    folded_name = _fold(name)
-    folded_query = _fold(query)
-    if folded_name in folded_query:
-        return True
-    stop_words = {"va", "và", "and", "nha", "hang"}
-    name_tokens = {token for token in re.findall(r"[a-z0-9]+", folded_name) if token not in stop_words}
-    query_tokens = set(re.findall(r"[a-z0-9]+", folded_query))
-    return bool(name_tokens) and name_tokens.issubset(query_tokens)
-
-
-def _extract_slots(query: str, previous: dict[str, Any], now: datetime) -> dict[str, Any]:
-    slots = dict(previous)
-    folded = _fold(query)
-    party_match = re.search(r"\b(\d+)\s*(?:nguoi|khach)\b", folded)
-    if party_match:
-        slots["party_size"] = int(party_match.group(1))
-    elif "party_size" in previous and re.fullmatch(r"\s*\d+\s*", folded):
-        slots["party_size"] = int(folded.strip())
-
-    parsed_time = _parse_time(query)
-    if parsed_time and (
-        "h" in folded or "gio" in folded or ":" in folded or any(word in folded for word in ("sang", "toi", "am", "pm"))
-    ):
-        slots["local_time"] = parsed_time
-
-    parsed_date = _parse_date(query, now)
-    if parsed_date:
-        slots["local_date"] = parsed_date
-
-    locations = {
-        "ha noi": "Hà Nội",
-        "ho chi minh": "Hồ Chí Minh",
-        "sai gon": "Hồ Chí Minh",
-        "da nang": "Đà Nẵng",
-    }
-    for key, value in locations.items():
-        if key in folded:
-            slots["location"] = value
-            break
-
-    tool_result = previous.get("_tool_result")
-    if isinstance(tool_result, dict):
-        result_data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else tool_result
-        items = result_data.get("items", []) if isinstance(result_data, dict) else []
-        if items:
-            selected = None
-            if any(term in folded for term in ("cai thu nhat", "thu nhat", "dau tien", "so 1")):
-                selected = items[0]
-            else:
-                for item in items:
-                    if _matches_restaurant_name(str(item.get("name", "")), query):
-                        selected = item
-                        break
-            if selected:
-                slots["restaurant_id"] = selected.get("id")
-                slots["restaurant_name"] = selected.get("name")
-
-    duration_match = re.search(r"\b(\d+)\s*phut\b", folded)
-    if duration_match:
-        slots["duration_minutes"] = int(duration_match.group(1))
-    return slots
-
-
-def _is_restaurant_message(query: str, previous_intent: str | None) -> bool:
-    folded = _fold(query)
-    if previous_intent == "restaurant_booking":
-        return True
-    return any(term in folded for term in ("dat ban", "nha hang", "ban an", "ban co the di"))
-
-
-def _tool_outcome(result: dict[str, Any], tool_name: str | None = None) -> str:
+def _tool_outcome(result: dict[str, Any]) -> str:
     if result.get("error"):
-        return result["error"]
+        return str(result["error"])
     data = result.get("data", result)
     if isinstance(data, dict) and "items" in data and not data.get("items"):
         return "EMPTY_RESULT"
     return "SUCCEEDED"
 
 
+def _tool_request(
+    name: str,
+    risk: str,
+    arguments: dict[str, Any],
+    state: AgentState,
+    *,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    return validate_tool_request(
+        ToolRequest(
+            tool_name=name,
+            risk_level=risk,  # type: ignore[arg-type]
+            arguments=arguments,
+            workflow_id=state["workflow_id"],
+            tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
+            idempotency_key=idempotency_key,
+        )
+    ).model_dump()
+
+
 async def classify_and_extract(state: AgentState) -> dict[str, Any]:
-    query = state.get("query", "")
-    previous_intent = state.get("intent")
-    context = state.get("context", {})
-    if context.get("tool_result"):
-        if context.get("tool_result_only"):
-            return {
-                "status": "COMPLETED",
-                "outcome": _tool_outcome(context["tool_result"], context.get("tool_name")),
-                "intent": previous_intent or "restaurant_booking",
-                "slots": context.get("slots", {}),
-            }
-        context_slots = dict(context.get("slots", {}))
-        context_slots["_tool_result"] = context.get("tool_result")
-        tool_name = context.get("tool_name")
-        slots = _extract_slots(query, context_slots, datetime.now(TZ))
-        if tool_name == "restaurant.search" and slots.get("restaurant_id"):
-            tool_request = validate_tool_request(
-                ToolRequest(
-                    tool_name="restaurant.check_availability",
-                    risk_level="READ",
-                    arguments={
-                        key: slots[key]
-                        for key in ("restaurant_id", "party_size", "start_at", "duration_minutes")
-                        if key in slots
-                    },
-                    workflow_id=state["workflow_id"],
-                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-                )
-            )
-            return {
-                "intent": "restaurant_booking",
-                "slots": slots,
-                "tool_request": tool_request.model_dump(),
-                "status": "TOOL_REQUEST_READY",
-            }
-        elif tool_name == "restaurant.check_availability" and is_explicit_confirmation(query):
-            tool_request = validate_tool_request(
-                ToolRequest(
-                    tool_name="restaurant.create_hold",
-                    risk_level="REVERSIBLE_WRITE",
-                    arguments={
-                        key: slots[key]
-                        for key in ("restaurant_id", "party_size", "start_at", "duration_minutes")
-                        if key in slots
-                    },
-                    workflow_id=state["workflow_id"],
-                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-                    idempotency_key=f"hold-{state['workflow_id']}-{state.get('turn_id', '1')}",
-                )
-            )
-            return {
-                "intent": "restaurant_booking",
-                "slots": slots,
-                "tool_request": tool_request.model_dump(),
-                "status": "TOOL_REQUEST_READY",
-            }
-        elif tool_name == "restaurant.create_hold" and is_explicit_confirmation(query):
-            hold_result = context.get("tool_result", {})
-            hold_data = (
-                hold_result.get("data")
-                if isinstance(hold_result, dict) and isinstance(hold_result.get("data"), dict)
-                else hold_result
-            )
-            tool_request = validate_tool_request(
-                ToolRequest(
-                    tool_name="restaurant.create_reservation",
-                    risk_level="FINANCIAL_OR_FINAL",
-                    arguments={
-                        "restaurant_id": slots.get("restaurant_id"),
-                        "party_size": slots.get("party_size"),
-                        "start_at": slots.get("start_at"),
-                        "duration_minutes": slots.get("duration_minutes", 120),
-                        "hold_id": hold_data.get("id"),
-                    },
-                    workflow_id=state["workflow_id"],
-                    tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-                    idempotency_key=f"reservation-{state['workflow_id']}-{state.get('turn_id', '1')}",
-                )
-            )
-            return {
-                "intent": "restaurant_booking",
-                "slots": slots,
-                "tool_request": tool_request.model_dump(),
-                "status": "TOOL_REQUEST_READY",
-            }
-        return {
-            "status": "COMPLETED",
-            "outcome": _tool_outcome(context["tool_result"], tool_name),
-            "intent": previous_intent or "restaurant_booking",
-            "slots": context.get("slots", {}),
-        }
-
-    folded = _fold(query)
-    if any(term in folded for term in ("suc khoe", "bac si", "kham benh", "y te")):
-        return {"intent": "healthcare_request", "status": "COMPLETED", "slots": {}, "unsupported": True}
-    if not _is_restaurant_message(query, previous_intent):
-        return {"intent": "general_chat", "slots": {}, "status": "COMPLETED"}
-
-    now = datetime.now(TZ)
-    slots = _extract_slots(query, context.get("slots", state.get("slots", {})), now)
+    query = str(state.get("query", ""))
+    context = dict(state.get("context", {}))
+    prior = context.get("slots", state.get("slots", {}))
+    prior = dict(prior) if isinstance(prior, dict) else {}
+    tool_result = context.get("tool_result")
+    now = datetime.now(TZ).isoformat()
     try:
         from src.config import get_settings
+        from src.services.llm import GeminiAdapter
 
-        if get_settings().agent_model_mode == "gemini":
-            from src.services.llm import GeminiAdapter
-
-            safe_previous = RestaurantSlotPatch.model_validate(
-                {key: value for key, value in slots.items() if key in RestaurantSlotPatch.model_fields}
-            )
-            prompt = (
-                "Phân loại intent và trích xuất duy nhất các trường semantic theo schema. "
-                "Không tạo ID, giá, currency, version, availability, status, confirmation hay tool result.\n"
-                f"Semantic context: {safe_previous.model_dump(exclude_none=True)}\n"
-                f"Tin nhắn: {query}"
-            )
-            raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantExtraction)
-            if isinstance(raw, dict) and raw.get("parsed") is not None:
-                raw = raw["parsed"]
-            model_result = raw if isinstance(raw, RestaurantExtraction) else RestaurantExtraction.model_validate(raw)
-            if model_result.intent in {"healthcare", "general_support"}:
-                return {
-                    "intent": "healthcare_request" if model_result.intent == "healthcare" else "general_chat",
-                    "slots": slots,
-                    "status": "COMPLETED",
-                    "unsupported": model_result.intent == "healthcare",
-                }
-            if model_result.intent == "restaurant":
-                slots.update(model_result.slot_patch.model_dump(exclude_none=True))
+        if get_settings().agent_model_mode != "gemini":
+            raise RuntimeError("LLM interpretation is disabled")
+        prompt = (
+            "Interpret the latest message for a restaurant reservation workflow from meaning and full context. "
+            "Extract only semantic values stated or clearly implied; resolve short follow-ups against existing slots "
+            "and the pending operation. Return dates as YYYY-MM-DD and local time as HH:MM using the supplied current "
+            "time and timezone. Never invent IDs, availability, prices, or tool results. Select a search result only by "
+            "zero-based index when the user clearly refers to it. Set explicit_confirmation only for clear approval of "
+            "the exact pending action; questions, corrections, hesitation, or unrelated replies are not confirmation. "
+            "Use intent=other for unrelated requests.\n"
+            f"Current local time: {now}\nExisting workflow context: {context}\nExisting reservation slots: {prior}"
+            f"\nLatest authoritative tool result: {tool_result}\nLatest user message: {query}"
+        )
+        raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantResolution)
+        if isinstance(raw, dict) and raw.get("parsed") is not None:
+            raw = raw["parsed"]
+        resolution = raw if isinstance(raw, RestaurantResolution) else RestaurantResolution.model_validate(raw)
     except Exception:
-        # Deterministic extraction remains a safe availability-only fallback.
-        pass
-    if slots.get("local_date") and slots.get("local_time"):
-        slots["start_at"] = f"{slots['local_date']}T{slots['local_time']}:00+07:00"
+        return {
+            "intent": state.get("intent") or "restaurant_booking", "slots": prior,
+            "missing_slots": ["request_clarification"], "status": "NEEDS_INPUT",
+        }
 
-    missing = [name for name in ("party_size", "local_date", "local_time", "location") if name not in slots]
+    if resolution.intent == "other":
+        return {"intent": "general_chat", "slots": prior, "status": "COMPLETED"}
+    slots: dict[str, Any] = dict(prior)
+    slots.update(resolution.slot_patch.model_dump(exclude_none=True))
+    tool_name = context.get("tool_name")
+
+    if context.get("tool_result_only") and tool_result is not None:
+        return {
+            "status": "COMPLETED", "outcome": _tool_outcome(tool_result),
+            "intent": state.get("intent") or "restaurant_booking", "slots": prior,
+        }
+
+    if tool_result is not None and tool_name == "restaurant.search":
+        data = tool_result.get("data", tool_result) if isinstance(tool_result, dict) else {}
+        items = data.get("items", []) if isinstance(data, dict) else []
+        index = resolution.selected_index
+        if index is not None and index < len(items) and isinstance(items[index], dict):
+            selected = items[index]
+            slots["restaurant_id"] = selected.get("id")
+            slots["restaurant_name"] = selected.get("name")
+    if tool_result is not None and tool_name == "restaurant.check_availability" and resolution.explicit_confirmation:
+        arguments = {key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots}
+        return {
+            "intent": "restaurant_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
+            "tool_request": _tool_request(
+                "restaurant.create_hold", "REVERSIBLE_WRITE", arguments, state,
+                idempotency_key=f"hold-{state['workflow_id']}-{state.get('turn_id', '1')}",
+            ),
+        }
+    if tool_result is not None and tool_name == "restaurant.create_hold" and resolution.explicit_confirmation:
+        hold_data = tool_result.get("data", tool_result) if isinstance(tool_result, dict) else {}
+        arguments = {
+            "restaurant_id": slots.get("restaurant_id"), "party_size": slots.get("party_size"),
+            "start_at": slots.get("start_at"), "duration_minutes": slots.get("duration_minutes", 120),
+            "hold_id": hold_data.get("id") if isinstance(hold_data, dict) else None,
+        }
+        return {
+            "intent": "restaurant_booking", "slots": slots, "status": "TOOL_REQUEST_READY",
+            "tool_request": _tool_request(
+                "restaurant.create_reservation", "FINANCIAL_OR_FINAL", arguments, state,
+                idempotency_key=f"reservation-{state['workflow_id']}-{state.get('turn_id', '1')}",
+            ),
+        }
+
+    if slots.get("local_date") and slots.get("local_time"):
+        try:
+            parsed = datetime.fromisoformat(f"{slots['local_date']}T{slots['local_time']}:00+07:00")
+            slots["start_at"] = parsed.isoformat()
+        except ValueError:
+            slots.pop("start_at", None)
+    missing = [name for name in ("party_size", "local_date", "local_time", "location") if not slots.get(name)]
     if missing:
         return {"intent": "restaurant_booking", "slots": slots, "missing_slots": missing, "status": "NEEDS_INPUT"}
 
     if slots.get("restaurant_id"):
-        tool_name = "restaurant.check_availability"
-        arguments = {
-            key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots
-        }
+        name = "restaurant.check_availability"
+        arguments = {key: slots[key] for key in ("restaurant_id", "party_size", "start_at", "duration_minutes") if key in slots}
     else:
-        tool_name = "restaurant.search"
-        arguments = {
-            key: slots[key] for key in ("location", "party_size", "start_at", "duration_minutes") if key in slots
-        }
-        arguments.setdefault("limit", 10)
-    tool_request = validate_tool_request(
-        ToolRequest(
-            tool_name=tool_name,
-            risk_level="READ",
-            arguments=arguments,
-            workflow_id=state["workflow_id"],
-            tool_call_id=make_tool_call_id(state["workflow_id"], state.get("turn_id", "1")),
-        )
-    )
+        name = "restaurant.search"
+        arguments = {key: slots[key] for key in ("location", "party_size", "start_at", "duration_minutes") if key in slots}
+        arguments["limit"] = 10
     return {
-        "intent": "restaurant_booking",
-        "slots": slots,
-        "missing_slots": [],
-        "tool_request": tool_request.model_dump(),
-        "status": "TOOL_REQUEST_READY",
+        "intent": "restaurant_booking", "slots": slots, "missing_slots": [], "status": "TOOL_REQUEST_READY",
+        "tool_request": _tool_request(name, "READ", arguments, state),
     }
 
 
@@ -333,29 +173,17 @@ def compose_restaurant_response(state: AgentState) -> dict[str, Any]:
     outcome = "UNKNOWN"
     missing = []
     error_code = None
-
-    if state.get("unsupported"):
-        phase = "FAILED"
-        error_code = "UNSUPPORTED_DOMAIN"
-    elif state.get("status") == "NEEDS_INPUT":
-        phase = "NEEDS_INFO"
-        missing = state.get("missing_slots", [])
+    if state.get("status") == "NEEDS_INPUT":
+        phase, missing = "NEEDS_INFO", state.get("missing_slots", [])
     elif state.get("status") == "TOOL_REQUEST_READY":
         phase = "IN_PROGRESS"
     elif state.get("intent") == "general_chat":
-        phase = "FAILED"
-        error_code = "GENERAL_CHAT"
+        phase, error_code = "FAILED", "GENERAL_CHAT"
     else:
-        phase = "COMPLETED"
-        outcome = state.get("outcome", "SUCCEEDED")
-
+        phase, outcome = "COMPLETED", state.get("outcome", "SUCCEEDED")
     envelope = {
-        "phase": phase,
-        "outcome": outcome,
-        "missing_information": missing,
-        "error_code": error_code,
-        "actions": [],
-        "authoritative_cards": [],
+        "phase": phase, "outcome": outcome, "missing_information": missing,
+        "error_code": error_code, "actions": [], "authoritative_cards": [],
     }
     response = "Mình đã cập nhật thông tin theo kết quả xác thực."
     if phase == "NEEDS_INFO":

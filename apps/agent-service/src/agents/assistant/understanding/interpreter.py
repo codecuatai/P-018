@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from src.agents.confirmation import is_explicit_confirmation
-
 from ..contracts import (
-    ConstraintStrength,
     Domain,
     FoodSemanticSlots,
     HealthcareSemanticSlots,
@@ -16,7 +12,6 @@ from ..contracts import (
     ReferenceResolution,
     RestaurantSemanticSlots,
     RideSemanticSlots,
-    SemanticConstraint,
     SemanticIntent,
     SemanticReference,
     SemanticSlot,
@@ -25,40 +20,13 @@ from ..contracts import (
 )
 
 
-def _operation(text: str) -> Operation:
-    folded = text.casefold()
-    padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
-    if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
-        return Operation.CANCEL
-    has_vn_tone = bool(re.search(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", text, re.IGNORECASE))
-    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")) or (
-        not has_vn_tone
-        and not re.search(r"\bdoi\s+can\b", _ascii_fold(text))
-        and any(
-            f" {value} " in (" " + _ascii_fold(text) + " ")
-            for value in ("doi", "cap nhat")
-        )
-    ):
-        return Operation.UPDATE
-    if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
-        return Operation.STATUS
-    if any(f" {value} " in padded for value in ("đặt", "gọi xe", "giữ", "book", "order")):
-        return Operation.CREATE
-    return Operation.DISCOVER
-
-
-def _operation_for_task(domain: Domain, normalized_request: str, slots: Mapping[str, Any]) -> Operation:
-    operation = _operation(normalized_request)
-    # A combined request such as "tìm quán ... rồi đặt xe" is still in the
-    # Restaurant discovery phase until the user selects a concrete restaurant.
-    # Treating the anchor as CREATE makes the requirement checker ask for
-    # party/time before it can even return the authoritative candidate list.
-    # A later selection (or an explicit reservation update/cancel/status)
-    # keeps its own operation semantics.
+def _operation_for_task(domain: Domain, candidate_operation: Any, slots: Mapping[str, Any]) -> Operation:
+    try:
+        operation = Operation(str(candidate_operation))
+    except ValueError:
+        operation = Operation.DISCOVER
     if domain == Domain.RESTAURANT and operation == Operation.CREATE and slots.get("selection") is None:
         return Operation.DISCOVER
-    # A material stopover changes an unconfirmed route, so it must re-quote
-    # rather than use the unavailable booking-update capability.
     if domain == Domain.RIDE and slots.get("stopover_address") is not None:
         return Operation.UPDATE
     return operation
@@ -92,48 +60,24 @@ def _previous_values(conversation_state: Mapping[str, Any]) -> set[object]:
 
 
 def _slot_source(
-    field: str,
     value: object,
     *,
-    user_message: str,
     context_values: set[object],
     previous_values: set[object],
 ) -> SlotSource:
-    folded = user_message.casefold()
-    plain = re.sub(r"[^a-z0-9\s]", " ", _ascii_fold(user_message))
-    literal = isinstance(value, str) and value.strip() and (
-        value.casefold() in folded or _ascii_fold(value).strip() in plain
-    )
-    normalized_explicit = (
-        field == "vehicle_type" and any(token in plain for token in ("xe may", "4 cho", "bon cho", "7 cho", "bay cho", "o to", "oto", "xe o to", "xe oto", "xe hoi", "taxi", "car", "bike", "xe om"))
-        or field in {"start_at", "appointment_date", "time_preference"} and bool(re.search(r"\b(?:\d{1,2}(?:\s*(?:gio|h)|:[0-5]\d)|hom nay|mai|ngay kia|sang mai|chieu mai|toi mai|trua nay|sang nay|chieu nay|toi nay)\b", plain))
-        or field == "address_reference" and any(token in plain for token in ("ve nha", "toi nha", "home"))
-        or field == "delivery_preference" and any(token in plain for token in ("giao", "ship"))
-        or field == "selection" and any(token in plain for token in ("chon", "lay"))
-        or field == "provider" and any(token in plain for token in ("grab", "be", "xanh sm", "vinfast", "shopeefood", "grabfood", "pasgo", "long chau", "pharmacity"))
-        or field == "medication_name" and any(token in plain for token in ("panadol", "paracetamol", "decolgen", "berocca", "gaviscon", "augmentin", "strepsils"))
-    )
-    if literal or normalized_explicit:
-        return SlotSource.USER_EXPLICIT
     if value in context_values:
         return SlotSource.AUTHORITATIVE_CONTEXT
     if value in previous_values:
         return SlotSource.CONVERSATION_REFERENCE
-    return SlotSource.INFERRED_PREFERENCE
-
-
-def _ascii_fold(value: str) -> str:
-    import unicodedata
-
-    normalized = unicodedata.normalize("NFD", value.casefold())
-    return "".join("d" if char == "đ" else char for char in normalized if unicodedata.category(char) != "Mn")
+    # Slot presence here means the structured planner identified it as a
+    # current-turn value; source classification must not parse the utterance again.
+    return SlotSource.USER_EXPLICIT
 
 
 def _slots(
     domain: Domain,
     raw: Any,
     *,
-    user_message: str,
     conversation_state: Mapping[str, Any],
     current_location: Mapping[str, Any],
 ):
@@ -148,9 +92,7 @@ def _slots(
         key: SemanticSlot(
             value=value,
             source=_slot_source(
-                key,
                 value,
-                user_message=user_message,
                 context_values=_context_values(conversation_state, current_location),
                 previous_values=_previous_values(conversation_state),
             ),
@@ -167,28 +109,17 @@ def _slots(
     return schema.model_validate(projected)
 
 
-def _constraints(text: str) -> list[SemanticConstraint]:
-    lowered = text.casefold()
-    hard = ("dị ứng", "di ung", "không được", "khong duoc", "bắt buộc", "bat buoc", "tránh ", "tranh ")
-    soft = ("ưu tiên", "uu tien", "nếu có thể", "neu co the", "thích ", "thich ")
-    if any(marker in lowered for marker in hard):
-        return [SemanticConstraint(strength=ConstraintStrength.HARD, text=text[:500], actionable=False)]
-    if any(marker in lowered for marker in soft):
-        return [SemanticConstraint(strength=ConstraintStrength.SOFT, text=text[:500], actionable=False)]
-    return []
-
-
 def semantic_turn_from_plan(
     tasks: Sequence[Any],
     *,
     language: str = "vi",
     interaction_mode: str = "service",
     discarded_task_refs: Sequence[int] = (),
-    user_message: str = "",
     conversation_state: Mapping[str, Any] | None = None,
     current_location: Mapping[str, Any] | None = None,
+    explicit_confirmation: bool = False,
 ) -> SemanticTurn:
-    """Project the bounded legacy understanding result onto the Core B contract."""
+    """Project structured planner semantics onto the Core B contract."""
     intents: list[SemanticIntent] = []
     safe_state = conversation_state or {}
     safe_location = current_location or {}
@@ -249,19 +180,18 @@ def semantic_turn_from_plan(
             SemanticIntent(
                 intent_ref=intent_ref,
                 domain=domain,
-                operation=_operation_for_task(domain, normalized, extracted),
+                operation=_operation_for_task(domain, value.get("operation"), extracted),
                 goal=goal,
                 normalized_request=normalized,
                 slots=_slots(
                     domain,
                     value.get("extracted_slots"),
-                    user_message=user_message,
                     conversation_state=safe_state,
                     current_location=safe_location,
                 ),
                 references=references,
-                constraints=_constraints(normalized),
-                explicit_confirmation_language=is_explicit_confirmation(normalized),
+                constraints=[],
+                explicit_confirmation_language=explicit_confirmation,
             )
         )
     safe_language = language if language in {"vi", "en", "mixed", "unknown"} else "unknown"

@@ -8,7 +8,6 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from src.agents.intent import classify, extract_slots
 from src.agents.reference_resolution import resolve_references
 from src.agents.state import AgentState, FoodWorkflowContext
 from src.agents.tool_selection import select_tools
@@ -239,16 +238,11 @@ def _proposal(
 
 
 def reconcile_intent(
-    deterministic_intent: str,
     model_intent: str,
     workflow_context: dict[str, Any] | None = None,
 ) -> str:
-    """Keep explicit user workflow actions authoritative over model routing."""
+    """Accept only an intent from the bounded schema returned by the model."""
     del workflow_context
-    if deterministic_intent == "out_of_scope":
-        return "out_of_scope"
-    if deterministic_intent != "general_food_support":
-        return deterministic_intent
     return model_intent if model_intent in VALID_INTENTS else "general_food_support"
 
 
@@ -385,33 +379,28 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
             # UI action. Keep that typed event authoritative over the wording
             # of its internal status message, so the model cannot route a
             # selected item back to food discovery.
-            deterministic_intent = "add_to_cart"
+            selected_intent = "add_to_cart"
             quantity = workflow_slots.get("assistant_action_quantity")
-            deterministic = {"quantity": quantity} if isinstance(quantity, int) else {}
+            selected_slots = {"quantity": quantity} if isinstance(quantity, int) else {}
+            return {
+                "intent": selected_intent,
+                "confidence": 1.0,
+                "decision_source": "typed_action",
+                "extracted_slots": {**workflow_slots, **selected_slots},
+                "tool_registry": PROPOSAL_REGISTRY,
+                "step_count": state.get("step_count", 0) + 1,
+            }
         else:
-            deterministic_intent = classify(query)
-            deterministic = extract_slots(query)
-        # A bare location is a valid follow-up only when an existing food
-        # search supplies the dish/category.  It must not start an unrelated
-        # food flow by itself.
-        if (
-            deterministic_intent == "general_food_support"
-            and deterministic.get("district")
-            and state.get("extracted_slots", {}).get("dish_query")
-        ):
-            deterministic_intent = "search_food"
+            selected_intent = "general_food_support"
+            selected_slots = {}
         registry = PROPOSAL_REGISTRY
         fallback = {
-            "intent": deterministic_intent,
+            "intent": selected_intent,
             "confidence": None,
-            "decision_source": "deterministic",
-            "extracted_slots": {**workflow_slots, **deterministic},
+            "decision_source": "degraded",
+            "extracted_slots": {**workflow_slots, **selected_slots},
         }
-        # The production graph is constructed with the default Gemini adapter
-        # even when the runtime is using the deterministic path.  Keep model
-        # injection available for tests and explicit callers, but do not make
-        # ordinary classified food requests wait for a remote model.
-        if not use_model or (llm is None and deterministic_intent != "general_food_support"):
+        if not use_model:
             return {
                 **fallback,
                 "tool_registry": registry,
@@ -420,7 +409,7 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
         try:
             prompt = json.dumps(
                 {
-                    "instruction": "Interpret the food-related part of this X-One conversation. Return semantic slots only; never return database IDs. Propose only registered non-transaction tools. The top-level assistant may be handling ride, restaurant, or healthcare tasks in the same turn, so do not claim that this subflow owns the whole conversation.",
+                    "instruction": "Interpret the current user intent in the full recent conversation and workflow context. Choose the best matching intent from the schema and return only semantic user-provided values. Never extract or invent database IDs, prices, stock, availability, or transaction status. Propose only registered tools; final order confirmation and payment must remain separate. A short reply may continue a pending step or start a different request, so resolve it from context. The top-level assistant may handle ride, restaurant, or healthcare in the same turn.",
                     "query": query,
                     "recent_messages": state.get("messages", [])[-20:],
                     "workflow_context": state.get("extracted_slots", {}),
@@ -439,13 +428,9 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
-            # The structured model output is accepted only after schema and
-            # semantic-slot validation; let those validated semantic values
-            # refine deterministic extraction (while resource IDs remain
-            # excluded by _safe_model_slots).
-            slots = {**state.get("extracted_slots", {}), **deterministic, **model_slots}
+            slots = {**workflow_slots, **model_slots}
             return {
-                "intent": reconcile_intent(deterministic_intent, decision.intent, state.get("extracted_slots", {})),
+                "intent": reconcile_intent(decision.intent, workflow_slots),
                 "confidence": decision.confidence,
                 "decision_source": "model",
                 "extracted_slots": slots,
@@ -453,9 +438,9 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
                 "step_count": state.get("step_count", 0) + 1,
             }
         except (json.JSONDecodeError, ValidationError) as exc:
-            logger.warning("Structured model decision unavailable; deterministic fallback: %s", type(exc).__name__)
+            logger.warning("Structured model decision unavailable; safe fallback: %s", type(exc).__name__)
         except Exception as exc:
-            logger.warning("LLM adapter failed; deterministic fallback: %s", type(exc).__name__)
+            logger.warning("LLM adapter failed; safe fallback: %s", type(exc).__name__)
         return {**fallback, "tool_registry": registry, "step_count": state.get("step_count", 0) + 1}
 
     async def resolve_node(state: AgentState) -> AgentState:

@@ -96,27 +96,15 @@ function isGenericFoodResume(task: StoredTask): boolean {
   const cart = isRecord(task.authoritative?.cart) ? task.authoritative.cart : undefined;
   const hasStoredCart = Boolean(stringValue(context.cart_id) || stringValue(cart?.id));
   const hasStoredDeliveryAddress = Boolean(stringValue(context.address_id));
-  const message = task.latest_message ?? '';
-  return hasStoredCart
-    && !hasStoredDeliveryAddress
-    && /(?:tiếp\s*tục|quay\s*lại|đặt\s*tiếp)/iu.test(message)
-    && !/(?:giao|địa\s*chỉ|nhà\s*riêng|đến|tới)/iu.test(message);
+  return hasStoredCart && !hasStoredDeliveryAddress;
 }
 
 function isGenericFoodDeliveryAddress(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  return ['home', 'nha', 'nha toi', 'giao ve nha', 'giao toi nha'].includes(plainText(value).trim());
+  return typeof value === 'string' && ['home', 'current_location'].includes(value.trim().toLowerCase());
 }
 
 function isCurrentLocationReference(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  return /(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|current location)/.test(plainTextForRouting(value));
-}
-
-function isFoodWorkflowInstruction(value: unknown): boolean {
-  if (typeof value !== 'string') return false;
-  const normalized = plainTextForRouting(value).trim();
-  return /^(?:them|chon|cap nhat|xoa|thanh toan|dat)\b.*\b(?:mon|gio|cart|don hang)\b/.test(normalized);
+  return typeof value === 'string' && value.trim().toLowerCase() === 'current_location';
 }
 
 function isUsableFoodDeliveryAddress(value: unknown): value is string {
@@ -124,7 +112,7 @@ function isUsableFoodDeliveryAddress(value: unknown): value is string {
     && Boolean(value.trim())
     && !isGenericFoodDeliveryAddress(value)
     && !isCurrentLocationReference(value)
-    && !isFoodWorkflowInstruction(value);
+    && value.trim().length <= 500;
 }
 
 const FOOD_READ_CAPABILITIES = new Set(['search_food', 'view_menu', 'view_menu_item', 'list_food_delivery_addresses', 'get_food_cart', 'quote_delivery', 'preview_order']);
@@ -411,43 +399,6 @@ function deviceDeliveryAddress(currentLocation: DeviceCurrentLocation, actorId: 
   };
 }
 
-function isCurrentLocationQuestion(message: string): boolean {
-  const folded = plainTextForRouting(message).trim();
-  const asksCurrentLocation = /(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|dia diem hien tai|current location|where am i)/.test(folded)
-    || /\b(?:toi|minh)\s+(?:dang\s+)?o dau\b/.test(folded);
-  if (!asksCurrentLocation) return false;
-  if (!/(?:o dau|dang o dau|biet|cho biet|xem|where am i)/.test(folded)) return false;
-  return !/(?:dat xe|goi xe|muon xe|can xe|chuyen xe|cuoc xe)/.test(folded);
-}
-
-type PersonalProfileQuestion = 'all' | 'name' | 'email' | 'phone' | 'addresses' | 'unavailable';
-
-function personalProfileQuestion(message: string): PersonalProfileQuestion | undefined {
-  const folded = plainTextForRouting(message).trim();
-  const refersToSelf = /\b(?:toi|minh|cua toi|cua minh|my|me)\b/.test(folded);
-  if (!refersToSelf) return undefined;
-
-  if (/(?:ngay sinh|sinh nhat|birthday|tuoi cua toi|can nang|chieu cao)/.test(folded)) return 'unavailable';
-  if (/(?:dia chi|dia chi nha|dia chi da luu|nha cua toi|nha toi)/.test(folded)) return 'addresses';
-  if (/(?:email|thu dien tu)/.test(folded)) return 'email';
-  if (/(?:so dien thoai|dien thoai|sdt)/.test(folded)) return 'phone';
-  if (/(?:ten toi|ten cua toi|toi ten|minh ten|ho ten|toi la ai|my name)/.test(folded)) return 'name';
-  if (/(?:thong tin ca nhan|thong tin cua toi|ho so ca nhan|ho so cua toi|profile)/.test(folded)) return 'all';
-  return undefined;
-}
-
-function isRestaurantReference(message: string): boolean {
-  const folded = plainTextForRouting(message);
-  return textHasAny(folded, [
-    'nha hang nay',
-    'nha hang do',
-    'quan nay',
-    'quan do',
-    'restaurant nay',
-    'restaurant do',
-  ]);
-}
-
 function locationTokens(value: unknown): string[] {
   if (typeof value !== 'string') return [];
   return plainText(value)
@@ -487,128 +438,6 @@ function restaurantMatchesRequestedLocation(candidate: JsonObject, requestedLoca
     || requested.every((token) => fields.includes(token));
 }
 
-function usesCurrentLocationReference(message: string, slots: Record<string, unknown>, currentLocation?: DeviceCurrentLocation): boolean {
-  const folded = plainTextForRouting(message);
-  if (/(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi|current location)/.test(folded)) return true;
-  if (!currentLocation) return false;
-  const pickupLatitude = numberValue(slots.pickup_latitude);
-  const pickupLongitude = numberValue(slots.pickup_longitude);
-  if (
-    pickupLatitude !== undefined
-    && pickupLongitude !== undefined
-    && Math.abs(pickupLatitude - currentLocation.latitude) < 0.000001
-    && Math.abs(pickupLongitude - currentLocation.longitude) < 0.000001
-  ) return true;
-  const pickup = stringValue(slots.pickup_address);
-  const currentAddress = stringValue(currentLocation.address_text);
-  if (pickup && ['vi tri hien tai', 'vi tri cua toi', 'vi tri thiet bi', 'current location'].includes(plainTextForRouting(pickup).trim())) return true;
-  if (!pickup && !hasExplicitRidePickup(message)) return true;
-  return Boolean(pickup && currentAddress && plainText(pickup) === plainText(currentAddress)
-    && !/(?:tu|from|diem don|pickup)\s+[^,.!?]+/.test(folded));
-}
-
-function hasExplicitRidePickup(message: string): boolean {
-  const folded = plainTextForRouting(message);
-  return /\b(?:tu|from|diem don|don|pickup|diem xuat phat)\b/.test(folded);
-}
-
-function explicitRideVehicleType(message: string): 'BIKE' | 'CAR_4' | 'CAR_7' | undefined {
-  const folded = plainTextForRouting(message);
-  if (/\b(?:xe may|bike)\b/.test(folded)) return 'BIKE';
-  if (/\b(?:xe 4 cho|car[_ ]?4|4 cho)\b/.test(folded)) return 'CAR_4';
-  if (/\b(?:xe 7 cho|car[_ ]?7|7 cho)\b/.test(folded)) return 'CAR_7';
-  return undefined;
-}
-
-function isRideOnlyTurn(message: string): boolean {
-  const folded = plainTextForRouting(message);
-  const rideSignal = textHasAny(folded, [
-    'dat xe', 'dat chuyen', 'goi xe', 'muon xe', 'can xe', 'xe may', 'xe 4 cho', 'xe 7 cho',
-  ]);
-  if (!rideSignal) return false;
-  return !textHasAny(folded, [
-    'pho', 'bun', 'com', 'do an', 'dat mon', 'giao', 'ship', 'ga ran', 'ga chien',
-    'tim nha hang', 'nha hang', 'dat ban', 'dat cho', 'lich kham', 'bac si', 'kham', 'than kinh',
-  ]);
-}
-
-function isExplicitFoodOrderConfirmation(message: string): boolean {
-  const folded = plainTextForRouting(message).trim().replace(/[.!?]+$/, '');
-  return /^(?:dat luon|dat ngay|xac nhan dat|dong y dat|tien hanh dat)(?:\b|$)/.test(folded);
-}
-
-function isFoodAddressAcknowledgement(message: string): boolean {
-  const folded = plainTextForRouting(message).trim().replace(/[.!?]+$/, '');
-  return /^(?:oke|ok|okay|duoc|dung|dung roi|chinh xac|chuan roi|xac nhan)(?:\b|$)/.test(folded)
-    || /\b(?:giao den day|giao toi dia chi nay|chot dia chi nay)\b/.test(folded);
-}
-
-function isHomeDeliveryAddressReference(message: string): boolean {
-  const folded = plainTextForRouting(message);
-  return /\b(?:nha cua toi|nha toi|nha minh|giao ve nha|giao toi nha)\b/.test(folded);
-}
-
-function explicitRidePassengerCount(message: string): number | undefined {
-  const folded = plainTextForRouting(message);
-  const count = '(?:[1-9][0-9]?|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\\s*(?:nguoi|khach|passengers?)';
-  const ridePassengerRequest = new RegExp(
-    `(?:dat xe|goi xe|di xe|xe may|xe 4 cho|xe 7 cho|chuyen xe|cuoc xe)[^.!?]{0,40}${count}`,
-  );
-  const carryingRequest = new RegExp(`(?:cho|cho toi|cho minh)\\s*${count}[^.!?]{0,24}(?:di|xe)`);
-  if (!ridePassengerRequest.test(folded) && !carryingRequest.test(folded)) return undefined;
-  const match = folded.match(new RegExp(`\\b([1-9][0-9]?)\\s*(?:nguoi|khach|passengers?)\\b`));
-  if (match) return Number(match[1]);
-  const wordCounts: Record<string, number> = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
-  for (const [word, value] of Object.entries(wordCounts)) {
-    if (new RegExp(`\\b${word}\\s*(?:nguoi|khach|passengers?)\\b`).test(folded)) return value;
-  }
-  return undefined;
-}
-
-function isRideResumeRequest(message: string): boolean {
-  const folded = plainTextForRouting(message);
-  return /\b(?:dat chuyen|xac nhan chuyen|dat xe nay|dat chuyen nay)\b/.test(folded);
-}
-
-function isRestaurantDetailContinuation(message: string): boolean {
-  const folded = plainText(message).trim().replace(/[.!?]+$/, '').trim();
-  if (folded.length > 64) return false;
-  return /^(?:\d{1,2}|mot|hai|ba|bon|nam|sau|bay|tam|chin|muoi)\s+(?:nguoi|khach|ban)\b/.test(folded)
-    || /^(?:so nguoi|luc|vao|toi nay|sang mai|chieu nay|ngay mai|ngay kia)\b/.test(folded);
-}
-
-function isRideStopoverUpdate(message: string): boolean {
-  const folded = plainText(message);
-  return /(?:\bghe(?:\s+qua)?\b|\bdi\s+qua\b|\bdung\s+(?:o|tai)\b|\bdiem\s+dung\b)/.test(folded);
-}
-
-function rideStopoverFromMessage(message: string): string | undefined {
-  const match = message.match(/(?:gh(?:\u00e9|e)(?:\s+qua)?|\u0111i\s+qua|di\s+qua|d\u1eebng\s+(?:\u1edf|t\u1ea1i)|dung\s+(?:o|tai))\s+(.+?)(?=\s+(?:m\u1ed9t\s+ch\u00fat|m\u1ed9t\s+l\u00e1t|r\u1ed3i|sau\s+\u0111\u00f3|tr\u01b0\u1edbc\s+khi|m\u1edbi\s+t\u1edbi)\b|[.!?]|$)/iu);
-  const address = match?.[1]?.trim().replace(/[\s,]+$/, '');
-  return address || undefined;
-}
-
-function textHasAny(value: string, candidates: string[]): boolean {
-  return candidates.some((candidate) => value.includes(candidate));
-}
-
-const FINAL_SUCCESS_PATTERNS: Record<Domain, RegExp[]> = {
-  ride: [/(?:chuyen xe|cuoc xe|ride).*(?:da (?:duoc )?dat thanh cong|booked successfully|has been booked)/],
-  restaurant: [/(?:dat ban|reservation).*(?:thanh cong|confirmed)/],
-  healthcare: [/(?:lich kham|lich hen|appointment).*(?:da (?:duoc )?(?:xac nhan|tao thanh cong)|confirmed)/],
-  food: [/(?:don hang|don do an|food order).*(?:da (?:duoc )?(?:dat|tiep nhan) thanh cong|confirmed|succeeded)/],
-};
-
-function hasUnsupportedFinalSuccessClaim(message: string, tasks: StoredTask[]): boolean {
-  const folded = plainText(message);
-  const incompleteDomains = new Set(
-    tasks.filter((task) => task.phase !== 'COMPLETED').map((task) => task.domain),
-  );
-  return [...incompleteDomains].some((domain) => (
-    FINAL_SUCCESS_PATTERNS[domain].some((pattern) => pattern.test(folded))
-  ));
-}
-
 function selectionName(index: number): string {
   return ['first', 'second', 'third', 'fourth', 'fifth'][index] ?? 'first';
 }
@@ -619,27 +448,6 @@ function selectionIndex(value: string | undefined): number | undefined {
   const names = ['first', 'second', 'third', 'fourth', 'fifth'];
   const index = names.indexOf(normalized);
   return index >= 0 ? index : undefined;
-}
-
-function selectionIndexFromText(message: string | undefined, candidates: JsonObject[]): number | undefined {
-  if (!message || !candidates.length) return undefined;
-  const normalized = plainText(message);
-  const numberMatch = normalized.match(/\b(?:so|thu)\s*([1-9][0-9]?)\b/);
-  if (numberMatch) {
-    const index = Number(numberMatch[1]) - 1;
-    return index >= 0 && index < candidates.length ? index : undefined;
-  }
-  if (textHasAny(normalized, ['dau tien', 'first'])) return 0;
-  if (textHasAny(normalized, ['thu hai', 'second'])) return candidates.length > 1 ? 1 : undefined;
-  if (textHasAny(normalized, ['thu ba', 'third'])) return candidates.length > 2 ? 2 : undefined;
-  if (textHasAny(normalized, ['thu tu', 'fourth'])) return candidates.length > 3 ? 3 : undefined;
-  if (textHasAny(normalized, ['thu nam', 'fifth'])) return candidates.length > 4 ? 4 : undefined;
-  const exactMatches = candidates.map((candidate) => plainText(String(candidate.name ?? candidate.doctor ?? candidate.title ?? ''))).map((name, index) => ({ name, index })).filter((value) => value.name && normalized.includes(value.name));
-  return exactMatches.length === 1 ? exactMatches[0].index : undefined;
-}
-
-function foodSelectionIndex(message: string, candidates: JsonObject[]): number | undefined {
-  return selectionIndexFromText(message, candidates);
 }
 
 function assistantActionFailureStatus(error: unknown): 'FAILED_RETRYABLE' | 'FAILED_FINAL' {
@@ -758,66 +566,6 @@ function restaurantReservationFromAuthority(authority?: JsonObject): JsonObject 
 function restaurantLocalDate(value: unknown): string | undefined {
   const parsed = parseAuthoritativeDate(value);
   return parsed ? healthcareDateKey(parsed) : undefined;
-}
-
-function restaurantDateFromMessage(message: string): string | undefined {
-  const folded = plainTextForRouting(message);
-  const numeric = folded.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
-  if (numeric) {
-    const year = Number(numeric[3]) < 100 ? Number(numeric[3]) + 2000 : Number(numeric[3]);
-    const candidate = parseAuthoritativeDate(`${year.toString().padStart(4, '0')}-${numeric[2].padStart(2, '0')}-${numeric[1].padStart(2, '0')}T00:00:00+07:00`);
-    return candidate ? healthcareDateKey(candidate) : undefined;
-  }
-  const today = parseAuthoritativeDate(`${healthcareDateKey(new Date())}T00:00:00+07:00`);
-  if (!today) return undefined;
-  const days = folded.includes('ngay kia') ? 2 : folded.includes('ngay mai') || /\bmai\b/.test(folded) ? 1 : folded.includes('hom nay') ? 0 : undefined;
-  return days === undefined ? undefined : healthcareDateKey(new Date(today.getTime() + days * 86_400_000));
-}
-
-function restaurantClockFromMessage(message: string): { hour: number; minute: number } | undefined {
-  const folded = plainTextForRouting(message);
-  const matches = [...folded.matchAll(/\b(\d{1,2})(?:\s*(?:gio|h)|:([0-5]\d))\s*(sang|chieu|toi|trua|am|pm)?/g)];
-  const match = matches.at(-1);
-  if (!match) return undefined;
-  let hour = Number(match[1]);
-  const minute = Number(match[2] ?? 0);
-  const period = match[3];
-  if (hour > 23) return undefined;
-  if (period && ['chieu', 'toi', 'pm'].includes(period) && hour < 12) hour += 12;
-  if (period === 'trua' && hour < 11) hour += 12;
-  return hour <= 23 ? { hour, minute } : undefined;
-}
-
-function restaurantTimeParts(value: Date): { hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: HEALTHCARE_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(value);
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0);
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0);
-  return { hour: hour === 24 ? 0 : hour, minute };
-}
-
-function restaurantRequestedStartAt(requested: unknown, message: string, previousStartAt: string): string | undefined {
-  const explicitClock = restaurantClockFromMessage(message);
-  const requestedDate = restaurantLocalDate(requested);
-  const previousDate = restaurantLocalDate(previousStartAt);
-  const messageDate = restaurantDateFromMessage(message);
-  const hasExplicitDate = Boolean(messageDate);
-  const parsedRequested = parseAuthoritativeDate(requested);
-  const clock = explicitClock ?? (parsedRequested ? restaurantTimeParts(parsedRequested) : undefined);
-  const date = messageDate ?? (!hasExplicitDate ? previousDate : requestedDate) ?? requestedDate;
-  if (!clock || !date) return undefined;
-  const candidate = parseAuthoritativeDate(`${date}T${String(clock.hour).padStart(2, '0')}:${String(clock.minute).padStart(2, '0')}:00+07:00`);
-  return candidate?.toISOString();
-}
-
-function restaurantPartySizeFromMessage(message: string): number | undefined {
-  const folded = plainTextForRouting(message);
-  const numeric = folded.match(/\b([1-9][0-9]?)\s*(?:nguoi|khach|ban)\b/);
-  if (numeric) return Number(numeric[1]);
-  const words: Record<string, number> = { mot: 1, hai: 2, ba: 3, bon: 4, nam: 5, sau: 6, bay: 7, tam: 8, chin: 9, muoi: 10 };
-  for (const [word, value] of Object.entries(words)) {
-    if (new RegExp(`\\b${word}\\s+(?:nguoi|khach|ban)\\b`).test(folded)) return value;
-  }
-  return undefined;
 }
 
 function healthcareDateKey(value: Date): string {
@@ -1557,36 +1305,23 @@ export class AssistantService {
     return undefined;
   }
 
-  private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, actions: StoredAction[]): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
+  private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, dialogue: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
     const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
-    // The Agent plan is the typed semantic decision. The narrow exception
-    // below protects an explicit Ride interruption from a planner replaying
-    // an unrelated active task; it keeps the existing Ride task addressable
-    // and does not invent domain results or side effects.
-    if (isRideOnlyTurn(message)) {
-      const rideTasks = planned.filter((task) => task.domain === 'ride');
-      if (rideTasks.length) {
-        return { tasks: rideTasks };
+    if (dialogue.relation === 'CONTINUE_PENDING') {
+      const targetRef = numberValue(dialogue.target_task_ref);
+      const target = targetRef === undefined ? undefined : current[targetRef];
+      if (target && active.includes(target)) {
+        const matching = planned.filter((task) => task.domain === target.domain);
+        return { tasks: matching.length ? matching : [this.planFromTask(target)] };
       }
-      const activeRide = active.find((task) => task.domain === 'ride');
-      if (activeRide) return { tasks: [this.planFromTask(activeRide, message)] };
-    }
-    const folded = plainText(message);
-    const targets = this.followUpDomains(active, actions, folded);
-    if (targets.length > 1) {
-      return { tasks: [], clarificationQuestion: this.followUpClarificationQuestion(targets) };
-    }
-    if (targets.length === 1) {
-      const target = targets[0];
-      const matching = planned.filter((task) => task.domain === target);
-      if (matching.length) return { tasks: matching };
-      const existing = active.find((task) => task.domain === target);
-      if (existing) return { tasks: [this.planFromTask(existing, message)] };
     }
 
-    if (planned.length > 1 && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
-      return { tasks: [], clarificationQuestion: 'Bạn muốn tiếp tục với yêu cầu nào trước?' };
+    if (dialogue.relation === 'UNCLEAR'
+      && planned.length > 1
+      && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
+      const domains = [...new Set(planned.map((task) => task.domain as Domain))];
+      return { tasks: [], clarificationQuestion: this.followUpClarificationQuestion(domains) };
     }
 
     if (planned.length) {
@@ -1600,20 +1335,8 @@ export class AssistantService {
     return { tasks: planned };
   }
 
-  private planFromTask(task: StoredTask, latestMessage?: string): AgentPlanTask {
+  private planFromTask(task: StoredTask): AgentPlanTask {
     const extractedSlots = sanitizedSlots(task.extracted_slots);
-    const partySize = task.domain === 'restaurant' && latestMessage
-      ? restaurantPartySizeFromMessage(latestMessage)
-      : undefined;
-    if (partySize !== undefined) extractedSlots.party_size = partySize;
-    const vehicleType = task.domain === 'ride' && latestMessage
-      ? explicitRideVehicleType(latestMessage)
-      : undefined;
-    if (vehicleType) extractedSlots.vehicle_type = vehicleType;
-    const stopover = task.domain === 'ride' && latestMessage
-      ? rideStopoverFromMessage(latestMessage)
-      : undefined;
-    if (stopover) extractedSlots.stopover_address = stopover;
     return {
       domain: task.domain,
       operation: task.operation,
@@ -1638,57 +1361,81 @@ export class AssistantService {
     return `Bạn muốn tiếp tục với ${joined} nào trước?`;
   }
 
+  private pendingFoodOrderConfirmationTask(state: AssistantState): StoredTask | undefined {
+    return state.tasks.find((task) => task.domain === 'food'
+      && task.phase === 'AWAITING_CONFIRMATION'
+      && state.actions.some((action) => action.task_id === task.id
+        && action.task_revision === task.revision
+        && action.kind === 'food_payment'
+        && Boolean(action.confirmation_id)));
+  }
+
+  private async confirmPendingFoodOrder(
+    user: AuthUser,
+    message: string,
+    conversationId: string,
+    state: AssistantState,
+    planner: JsonObject,
+  ): Promise<AssistantResponse | undefined> {
+    const foodTask = this.pendingFoodOrderConfirmationTask(state);
+    if (!foodTask) return undefined;
+    const rawPlan = isRecord(planner.plan) ? planner.plan : {};
+    const dialogue = isRecord(rawPlan.dialogue_resolution) ? rawPlan.dialogue_resolution : {};
+    if (dialogue.action !== 'CONFIRM_FOOD_ORDER'
+      || dialogue.relation !== 'CONTINUE_PENDING'
+      || numberValue(dialogue.target_task_ref) !== state.tasks.indexOf(foodTask)) return undefined;
+
+    const paymentAction = state.actions.find((action) => action.task_id === foodTask.id
+      && action.task_revision === foodTask.revision
+      && action.kind === 'food_payment'
+      && Boolean(action.confirmation_id));
+    if (!paymentAction?.confirmation_id) return undefined;
+
+    // The model interprets consent; Gateway emits only the typed confirm action.
+    // Payment remains a separate explicit user action.
+    const confirmAction = this.actionFor(foodTask, 'food_confirm', {
+      confirmation_id: paymentAction.confirmation_id,
+    }, paymentAction.cohort_id);
+    const actions = [...state.actions.filter((action) => action.id !== paymentAction.id), confirmAction];
+    return this.persistTurn(
+      conversationId,
+      user,
+      message,
+      'Đơn hàng đã sẵn sàng. Bạn xác nhận đặt món để xem bước thanh toán tiếp theo; mình chưa thực hiện thanh toán.',
+      { ...state, actions },
+      foodTask.public_item ? [foodTask.public_item] : [],
+      actions,
+      [],
+      [confirmAction],
+    );
+  }
+
   private async resumePendingFoodAddressSelection(
     user: AuthUser,
     message: string,
     conversationId: string,
     correlationId: string,
-    current: ConversationRecord | undefined,
     state: AssistantState,
+    planner: JsonObject,
     currentLocation?: DeviceCurrentLocation,
   ): Promise<AssistantResponse | undefined> {
-    const task = state.tasks.find((candidate) => {
-      const context = isRecord(candidate.authoritative?.food_context) ? candidate.authoritative.food_context : {};
-      return candidate.domain === 'food'
-        && candidate.phase === 'NEEDS_INFO'
-        && candidate.public_item?.kind === 'address_options'
-        && Boolean(stringValue(context.cart_id));
-    });
+    const task = this.pendingFoodAddressTask(state);
     if (!task) return undefined;
 
     const context = isRecord(task.authoritative?.food_context) ? task.authoritative.food_context : {};
     const addresses = (await this.store.listSavedAddresses(user.sub))
       .filter((address) => isUsableFoodDeliveryAddress(address.addressText));
-    const foldedMessage = plainTextForRouting(message).trim();
-    const homeReference = isHomeDeliveryAddressReference(message);
-    let selectedAddress = homeReference
-      ? addresses.find((address) => ['nha', 'home'].includes(plainTextForRouting(address.label).trim()))
-      : undefined;
+    const rawPlan = isRecord(planner.plan) ? planner.plan : {};
+    const dialogue = isRecord(rawPlan.dialogue_resolution) ? rawPlan.dialogue_resolution : {};
+    const relation = stringValue(dialogue.relation);
+    const expectedTaskRef = state.tasks.indexOf(task);
+    const targetsPendingTask = numberValue(dialogue.target_task_ref) === expectedTaskRef;
+    const plannedTasks = arrayValue(rawPlan.tasks).filter(isRecord);
+    const hasDifferentServiceIntent = plannedTasks.some((candidate) => candidate.domain !== 'food');
 
-    if (!selectedAddress) {
-      selectedAddress = addresses.find((address) => {
-        const label = plainTextForRouting(address.label).trim();
-        const addressText = plainTextForRouting(address.addressText).trim();
-        return foldedMessage === label
-          || foldedMessage.includes(addressText)
-          || (label.length >= 3 && ` ${foldedMessage} `.includes(` ${label} `));
-      });
-    }
-
-    if (!selectedAddress && isFoodAddressAcknowledgement(message)) {
-      const previousAssistant = [...(current?.messages ?? [])].reverse().find((entry) => entry.role === 'assistant');
-      const previousText = previousAssistant ? plainTextForRouting(previousAssistant.content) : '';
-      const justPresented = addresses.filter((address) => {
-        const fullAddress = plainTextForRouting(address.addressText).trim();
-        const streetPrefix = fullAddress.split(/[,;]/, 1)[0]?.trim() ?? '';
-        return (fullAddress.length >= 8 && previousText.includes(fullAddress))
-          || (streetPrefix.length >= 8 && previousText.includes(streetPrefix));
-      });
-      if (justPresented.length === 1) selectedAddress = justPresented[0];
-    }
-
-    if (!selectedAddress) {
-      if (!isFoodAddressAcknowledgement(message)) return undefined;
+    if (relation === 'UNRELATED' || relation === 'START_NEW' || hasDifferentServiceIntent) return undefined;
+    if (relation !== 'CONTINUE_PENDING' || !targetsPendingTask) {
+      if (relation === 'UNCLEAR' && !hasDifferentServiceIntent && plannedTasks.length > 0) return undefined;
       const prompt = 'Mình vẫn đang chờ bạn chọn địa chỉ giao hàng. Hãy chọn địa chỉ trên thẻ hoặc nhắn nhãn như “Nhà” nhé.';
       return this.persistTurn(
         conversationId,
@@ -1703,14 +1450,42 @@ export class AssistantService {
       );
     }
 
-    // A home label or an address just shown by the authenticated profile flow
-    // is an explicit destination choice while this cart is awaiting delivery.
-    // Keep the address actor-scoped and pass its exact saved text to checkout.
+    const selectedLabel = stringValue(dialogue.saved_address_label);
+    const selectedAddress = dialogue.action === 'SELECT_SAVED_ADDRESS' && selectedLabel
+      ? addresses.find((address) => plainTextForRouting(address.label).trim() === plainTextForRouting(selectedLabel).trim())
+      : undefined;
+    const explicitAddressText = stringValue(dialogue.explicit_address_text)?.trim();
+    const normalizedExplicitAddress = explicitAddressText
+      ? plainTextForRouting(explicitAddressText).replace(/[^a-z0-9]/g, '')
+      : '';
+    const normalizedCurrentMessage = plainTextForRouting(message).replace(/[^a-z0-9]/g, '');
+    const explicitAddressWasProvided = dialogue.action === 'USE_EXPLICIT_ADDRESS'
+      && Boolean(explicitAddressText && explicitAddressText.length >= 8 && isUsableFoodDeliveryAddress(explicitAddressText))
+      && Boolean(normalizedExplicitAddress && normalizedCurrentMessage === normalizedExplicitAddress);
+    const deliveryAddressText = selectedAddress?.addressText
+      ?? (explicitAddressWasProvided ? explicitAddressText : undefined);
+    if (!deliveryAddressText) {
+      const prompt = 'Mình chưa xác định được bạn muốn dùng địa chỉ nào. Bạn chọn một địa chỉ đang hiển thị hoặc nhập địa chỉ giao hàng nhé.';
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        prompt,
+        state,
+        task.public_item ? [task.public_item] : [],
+        state.actions,
+        [],
+        state.actions,
+      );
+    }
+
+    // Resolve a saved label against this actor's addresses, or accept only text
+    // the model can verify was present in the user's current message.
     task.revision += 1;
     task.latest_message = message;
     task.authoritative = {
       ...(task.authoritative ?? {}),
-      food_context: { ...context, address_query: selectedAddress.addressText },
+      food_context: { ...context, address_query: deliveryAddressText },
     };
     const checkout = await this.prepareFoodCheckout(task, user, correlationId, currentLocation);
     task.phase = checkout.phase;
@@ -1733,44 +1508,6 @@ export class AssistantService {
     );
   }
 
-  private pendingChoiceDomains(active: StoredTask[], actions: StoredAction[]): Domain[] {
-    const candidates = new Set<Domain>();
-    for (const action of actions) {
-      const task = active.find((candidate) => candidate.id === action.task_id && candidate.revision === action.task_revision);
-      if (task) candidates.add(task.domain);
-    }
-    for (const task of active) {
-      if (this.plannerPendingChoice(task)) candidates.add(task.domain);
-    }
-    return (['food', 'restaurant', 'healthcare', 'ride'] as Domain[]).filter((domain) => candidates.has(domain));
-  }
-
-  private followUpDomains(active: StoredTask[], actions: StoredAction[], folded: string): Domain[] {
-    const available = new Set(active.map((task) => task.domain));
-    const candidates = this.pendingChoiceDomains(active, actions);
-    const hasCandidate = (domain: Domain): boolean => candidates.includes(domain);
-    const foodSelection = textHasAny(folded, ['chon quan', 'chon mon']);
-    if (foodSelection && available.has('food')) return ['food'];
-    if (textHasAny(folded, ['chon nha hang']) && available.has('restaurant')) return ['restaurant'];
-    if (textHasAny(folded, ['chon lich']) && available.has('healthcare')) return ['healthcare'];
-
-    const foodSignal = textHasAny(folded, ['pho', 'bun', 'com', 'bat', 'co lon', 'khong cay', 'giao ve', 'giao toi', 'ship', 'dia chi', 'ap ma', 'tong tien', 'xem tong', 'dat luon', 'ga ran', 'ga chien', 'fast food', 'do an nhanh', 'goi y', 'gan day']);
-    if (isCurrentLocationReference(folded) && available.has('food')) return ['food'];
-    if (foodSignal && available.has('food')) return ['food'];
-    if (textHasAny(folded, ['lich kham', 'bac si', 'kham', 'than kinh']) && available.has('healthcare')) return ['healthcare'];
-    if (available.has('restaurant') && hasCandidate('restaurant') && isRestaurantDetailContinuation(folded)) return ['restaurant'];
-    if (textHasAny(folded, ['dat ban', 'nha hang', 'so nguoi']) && available.has('restaurant')) return ['restaurant'];
-    if (available.has('ride') && isRideStopoverUpdate(folded)) return ['ride'];
-    if (textHasAny(folded, ['dat xe', 'goi xe', 'dat chuyen', 'xac nhan chuyen', 'dat xe nay', 'dat chuyen nay', 'xe may', 'xe 4 cho', 'xe 7 cho']) && available.has('ride')) return ['ride'];
-
-    if (textHasAny(folded, ['chon cai', 'chon thu', 'chon dau'])) {
-      if (candidates.length) return candidates;
-      return [...available];
-    }
-    if (active.length === 1 && (textHasAny(folded, ['nguoi', 'hoan kiem', 'ha noi', 'cau giay', 'tay ho', 'ba dinh', 'sang mai', 'toi nay', 'ngay mai', 'ngay kia', 'dong y', 'xac nhan']) || /\b\d{1,2}\s*(gio|h)\b/.test(folded))) return [active[0].domain];
-    return [];
-  }
-
   async chat(
     user: AuthUser,
     message: string,
@@ -1782,33 +1519,8 @@ export class AssistantService {
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
     const effectiveCurrentLocation = freshDeviceLocation(currentLocation);
-    if (isExplicitFoodOrderConfirmation(message)) {
-      const paymentAction = state.actions.find((action) => action.kind === 'food_payment');
-      const foodTask = paymentAction
-        ? state.tasks.find((task) => task.id === paymentAction.task_id && task.revision === paymentAction.task_revision
-          && task.domain === 'food' && task.phase === 'AWAITING_CONFIRMATION')
-        : undefined;
-      if (paymentAction && foodTask && paymentAction.confirmation_id) {
-        // Text confirmation advances to the existing order-confirm step. It
-        // must never execute payment; payment remains a separate user action.
-        const confirmAction = this.actionFor(foodTask, 'food_confirm', {
-          confirmation_id: paymentAction.confirmation_id,
-        }, paymentAction.cohort_id);
-        const actions = [...state.actions.filter((action) => action.id !== paymentAction.id), confirmAction];
-        return this.persistTurn(
-          conversationId,
-          user,
-          message,
-          'Đơn hàng đã sẵn sàng. Bạn xác nhận đặt món để xem bước thanh toán tiếp theo; mình chưa thực hiện thanh toán.',
-          { ...state, actions },
-          foodTask.public_item ? [foodTask.public_item] : [],
-          actions,
-          [],
-          [confirmAction],
-        );
-      }
-    }
-    const foodAddressContinuation = await this.resumePendingFoodAddressSelection(
+    let precomputedPlanner: JsonObject | undefined;
+    precomputedPlanner = await this.requestAssistantPlanner(
       user,
       message,
       conversationId,
@@ -1817,8 +1529,25 @@ export class AssistantService {
       state,
       effectiveCurrentLocation,
     );
+    await this.recordUsageFromAgentResponse(precomputedPlanner, user.sub, 'assistant');
+    this.validateCoreAHandoff(precomputedPlanner);
+    const foodOrderConfirmation = precomputedPlanner
+      ? await this.confirmPendingFoodOrder(user, message, conversationId, state, precomputedPlanner)
+      : undefined;
+    if (foodOrderConfirmation) return foodOrderConfirmation;
+    const foodAddressContinuation = await this.resumePendingFoodAddressSelection(
+      user,
+      message,
+      conversationId,
+      correlationId,
+      state,
+      precomputedPlanner ?? {},
+      effectiveCurrentLocation,
+    );
     if (foodAddressContinuation) return foodAddressContinuation;
-    if (isCurrentLocationQuestion(message)) {
+    const contextualPlan = isRecord(precomputedPlanner.plan) ? precomputedPlanner.plan : {};
+    const contextualResolution = isRecord(contextualPlan.dialogue_resolution) ? contextualPlan.dialogue_resolution : {};
+    if (contextualResolution.contextual_query === 'CURRENT_LOCATION') {
       const locationLabel = effectiveCurrentLocation?.address_text
         ?? (effectiveCurrentLocation
           ? `${effectiveCurrentLocation.latitude.toFixed(5)}, ${effectiveCurrentLocation.longitude.toFixed(5)}`
@@ -1838,7 +1567,9 @@ export class AssistantService {
         [],
       );
     }
-    const profileQuestion = personalProfileQuestion(message);
+    const profileQuestion = contextualResolution.contextual_query === 'PROFILE'
+      ? stringValue(contextualResolution.profile_field)?.toLowerCase()
+      : undefined;
     if (profileQuestion) {
       let profileMessage: string;
       if (profileQuestion === 'addresses') {
@@ -1870,45 +1601,7 @@ export class AssistantService {
         true,
       );
     }
-    const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 12).map((address) => ({
-      id: address.id,
-      label: address.label,
-      address_text: address.addressText,
-      ...(address.city ? { city: address.city } : {}),
-      ...(address.district ? { district: address.district } : {}),
-      ...(address.ward ? { ward: address.ward } : {}),
-      ...(address.latitude !== undefined ? { latitude: address.latitude } : {}),
-      ...(address.longitude !== undefined ? { longitude: address.longitude } : {}),
-      ...(address.provider ? { provider: address.provider } : {}),
-      source: address.source,
-      is_default: address.isDefault,
-    }));
-    // The planner only needs labels to resolve a user reference. Coordinates,
-    // IDs, and full saved-address values remain in the Gateway and are resolved
-    // only when an authorized domain action is prepared.
-    const plannerSavedAddresses = savedAddresses.map((address) => ({ label: address.label }));
-    const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
-      ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
-      : [];
-    const planner = await this.agent.assistantChat(
-      {
-        conversation_id: conversationId,
-        user_id: user.sub,
-        message,
-        messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
-        conversation_state: { ...this.plannerSafeState(state), saved_addresses: plannerSavedAddresses, retrieved_memories: retrievedMemories.map((memory) => ({ namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, why_retrieved: memory.whyRetrieved })) },
-        user_profile: {
-          name: user.full_name ?? '',
-          saved_addresses: plannerSavedAddresses,
-        },
-        ...(effectiveCurrentLocation ? { current_location: effectiveCurrentLocation } : {}),
-        capability_snapshot: CAPABILITY_SNAPSHOT,
-        correlation_id: correlationId,
-      },
-      correlationId,
-    );
-    await this.recordUsageFromAgentResponse(planner, user.sub, 'assistant');
-    this.validateCoreAHandoff(planner);
+    const planner = precomputedPlanner ?? {};
     const resolution = this.typedPlan(planner);
     const discardedTaskRefs = resolution.discardedTaskRefs;
     const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
@@ -1916,14 +1609,16 @@ export class AssistantService {
     // path. The Agent still returns `plan` for compatibility with older
     // consumers, but its clarification field can disagree with Core A's
     // validated typed decision and must never block dispatch here.
-    const followUpResolution = this.resolvePlanTasks(state.tasks, resolution.tasks, message, state.actions);
+    const semanticPlan = isRecord(planner.plan) ? planner.plan : {};
+    const dialogueResolution = isRecord(semanticPlan.dialogue_resolution) ? semanticPlan.dialogue_resolution : {};
+    const followUpResolution = this.resolvePlanTasks(state.tasks, resolution.tasks, message, dialogueResolution);
     const planTasks = followUpResolution.tasks;
     const clarificationQuestion = resolution.clarificationQuestion ?? followUpResolution.clarificationQuestion;
     const plan: JsonObject = {
       ...(stringValue(planner.assistant_message) ? { assistant_message: stringValue(planner.assistant_message) } : {}),
       ...(clarificationQuestion ? { clarification_question: clarificationQuestion } : {}),
     };
-    const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective, effectiveCurrentLocation);
+    const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
     for (const taskId of discardResult.discardedIds) merge.touchedIds.add(taskId);
     const merged = merge.tasks;
     if (resolution.confirmationInvalidated) {
@@ -1954,9 +1649,7 @@ export class AssistantService {
         plan.assistant_message,
         'Mình vẫn ở đây và sẵn sàng trò chuyện cùng bạn.',
       );
-      const conversationalMessage = hasUnsupportedFinalSuccessClaim(candidateMessage, merged)
-        ? 'Mình vẫn ở đây và sẵn sàng trò chuyện cùng bạn.'
-        : candidateMessage;
+      const conversationalMessage = candidateMessage;
       const conversationalState: AssistantState = {
         ...state,
         tasks: merged.slice(0, 8),
@@ -2605,9 +2298,7 @@ export class AssistantService {
       );
       await this.recordUsageFromAgentResponse(response, userId, 'assistant');
       const candidate = safeText(response.assistant_message, fallback);
-      return hasUnsupportedFinalSuccessClaim(candidate, tasks)
-        ? safeText(fallback, 'Mình đã cập nhật các lựa chọn và bước xác nhận tiếp theo cho bạn.')
-        : candidate;
+      return candidate;
     } catch {
       return safeText(fallback, 'Mình đã cập nhật thông tin cho bạn.');
     }
@@ -2699,7 +2390,6 @@ export class AssistantService {
     planned: AgentPlanTask[],
     latestMessage: string,
     replanDirective?: ReplanDirective,
-    currentLocation?: DeviceCurrentLocation,
   ): MergeResult {
     const next = current.map((task) => ({ ...task, extracted_slots: { ...task.extracted_slots } }));
     const touchedIds = new Set<string>();
@@ -2721,24 +2411,13 @@ export class AssistantService {
       const activeRide = domain === 'ride'
         ? next.find((task) => task.domain === 'ride' && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined;
-      const activeSameDomain = next.filter((task) => task.domain === domain
-        && task.phase !== 'COMPLETED'
-        && (retrySameKey || task.phase !== 'FAILED')
-        && task.phase !== 'BLOCKED'
-        && task.phase !== 'DISCARDED');
-      const detailContinuation = domain === 'restaurant'
-        && activeSameDomain.length === 1
-        && isRestaurantDetailContinuation(latestMessage)
-        ? activeSameDomain[0]
-        : undefined;
       const match = sameRequest ?? completedRestaurantUpdate ?? activeRide ?? (planned.length === 1
         ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
-        : undefined) ?? detailContinuation;
+        : undefined);
       const candidateSlots = isRecord(candidate.extracted_slots) ? candidate.extracted_slots : {};
-      const currentLocationReference = domain === 'ride'
-        && usesCurrentLocationReference(latestMessage, candidateSlots, currentLocation);
+      const currentLocationReference = domain === 'ride' && candidateSlots.pickup_source === 'CURRENT_DEVICE_LOCATION';
       const slots = sanitizedTaskSlots(domain, candidateSlots, currentLocationReference);
-      const restaurantReference = domain === 'ride' && isRestaurantReference(latestMessage);
+      const restaurantReference = domain === 'ride' && candidateSlots.destination_reference === 'RESTAURANT';
       const referencedRestaurant = restaurantReference
         ? [...next].reverse().find((task) => task.domain === 'restaurant'
           && task.phase !== 'FAILED'
@@ -2752,22 +2431,6 @@ export class AssistantService {
         delete slots.dropoff_address;
         delete slots.dropoff_latitude;
         delete slots.dropoff_longitude;
-      }
-      const explicitVehicleType = domain === 'ride' ? explicitRideVehicleType(latestMessage) : undefined;
-      if (explicitVehicleType) slots.vehicle_type = explicitVehicleType;
-      const parsedStopover = domain === 'ride' ? rideStopoverFromMessage(latestMessage) : undefined;
-      if (parsedStopover) slots.stopover_address = parsedStopover;
-      if (domain === 'ride' && Object.prototype.hasOwnProperty.call(slots, 'passenger_count')) {
-        const requestedPassengerCount = explicitRidePassengerCount(latestMessage);
-        if (requestedPassengerCount === undefined) {
-          // Restaurant party size and Ride passenger count are separate
-          // domains. A planner may echo the former into a dependent Ride
-          // proposal; accept a Ride count only when this turn explicitly
-          // scopes the count to the vehicle journey.
-          delete slots.passenger_count;
-        } else {
-          slots.passenger_count = requestedPassengerCount;
-        }
       }
       const requestedPhase: TaskPhase | undefined = candidate.disposition === 'BLOCKED'
         ? 'BLOCKED'
@@ -2789,7 +2452,7 @@ export class AssistantService {
         const stepChanged = !sameJson(match.planned_step, candidate.planned_step);
         const foodContinuation = domain === 'food' && match.phase !== 'COMPLETED';
         const phaseChanged = requestedPhase !== undefined && requestedPhase !== match.phase;
-        const rideResume = domain === 'ride' && isRideResumeRequest(latestMessage) && isRecord(match.authoritative?.quote);
+        const rideResume = domain === 'ride' && operation === 'UPDATE' && isRecord(match.authoritative?.quote);
         const completedUpdate = operation === 'UPDATE' && domain === 'restaurant' && match.phase === 'COMPLETED';
         if (changed || stepChanged || foodContinuation || phaseChanged || rideResume || completedUpdate) {
           const exactSameKeyRetry = retrySameKey && !changed && !stepChanged;
@@ -2807,7 +2470,7 @@ export class AssistantService {
         if (domain === 'ride') {
           if (currentLocationReference) {
             match.authoritative = { ...(match.authoritative ?? {}), pickup_source: 'CURRENT_DEVICE_LOCATION' };
-          } else if (hasExplicitRidePickup(latestMessage) && match.authoritative) {
+          } else if (candidateSlots.pickup_source === 'USER_PROVIDED' && match.authoritative) {
             const { pickup_source: _pickupSource, ...authority } = match.authoritative;
             match.authoritative = authority;
           }
@@ -2821,6 +2484,12 @@ export class AssistantService {
         match.planned_step = candidate.planned_step;
         plannedIds.push(match.id);
         continue;
+      }
+      if (restaurantReference) {
+        delete slots.destination_reference;
+        delete slots.dropoff_address;
+        delete slots.dropoff_latitude;
+        delete slots.dropoff_longitude;
       }
       const created: StoredTask = {
         id: `task_${randomUUID().replaceAll('-', '').slice(0, 12)}`,
@@ -2858,7 +2527,8 @@ export class AssistantService {
         && mappedDependencies.length === 0
         && !stringValue(plannedSlots.dropoff_address);
       const referenceDependency = target.domain === 'ride'
-        && isRestaurantReference(latestMessage)
+        && isRecord(plannedSlotsRaw)
+        && plannedSlotsRaw.destination_reference === 'RESTAURANT'
         ? [...next].reverse().find((task) => task.domain === 'restaurant'
           && task.phase !== 'FAILED'
           && task.phase !== 'DISCARDED'
@@ -2947,7 +2617,7 @@ export class AssistantService {
       return;
     }
     if (task.domain === 'ride') {
-      const pickupWasExplicit = hasExplicitRidePickup(String(task.latest_message ?? ''));
+      const pickupWasExplicit = task.extracted_slots.pickup_source === 'USER_PROVIDED';
       const pickupSource = previousAuthority.pickup_source;
       task.authoritative = pickupSource === 'CURRENT_DEVICE_LOCATION' && !pickupWasExplicit
         ? { pickup_source: pickupSource }
@@ -3122,9 +2792,8 @@ export class AssistantService {
     const selectableCandidates = arrayValue(existing?.available_candidates).filter(isRecord);
     const visibleCandidates = selectableCandidates.length ? selectableCandidates : candidates;
     let selected = isRecord(existing?.selected) ? existing.selected : undefined;
-    const requestedIndex = selectionIndexFromText(task.latest_message, visibleCandidates);
-    if (!selected && selection) selected = visibleCandidates[selectionIndex(selection) ?? 0];
-    if (!selected && requestedIndex !== undefined) selected = visibleCandidates[requestedIndex];
+    const requestedIndex = numberValue(slots.selection_index) ?? selectionIndex(selection);
+    if (!selected && requestedIndex !== undefined && requestedIndex >= 0 && requestedIndex < visibleCandidates.length) selected = visibleCandidates[requestedIndex];
     if (!candidates.length) {
       const workflowId = task.workflow_id ?? `wf_${conversationId}_${task.id}`;
       const search = (arguments_: Record<string, unknown>): Promise<unknown> => this.restaurant.executeTool({
@@ -3351,10 +3020,8 @@ export class AssistantService {
         publicItem: { kind: 'clarification', question: 'Mình chưa đọc được reservation hiện tại để đổi giờ an toàn. Bạn mở lại đặt bàn rồi thử lại nhé.' },
       };
     }
-    const message = task.latest_message ?? '';
-    const requestedPartySize = restaurantPartySizeFromMessage(message);
-    const nextPartySize = requestedPartySize ?? numberValue(task.extracted_slots.party_size) ?? previousPartySize;
-    const nextStartAt = restaurantRequestedStartAt(task.extracted_slots.start_at, message, previousStartAt) ?? previousStartAt;
+    const nextPartySize = numberValue(task.extracted_slots.party_size) ?? previousPartySize;
+    const nextStartAt = stringValue(task.extracted_slots.start_at) ?? previousStartAt;
     const previousTimestamp = parseAuthoritativeDate(previousStartAt);
     const nextTimestamp = parseAuthoritativeDate(nextStartAt);
     if (!previousTimestamp || !nextTimestamp || nextTimestamp.getTime() <= Date.now()) {
@@ -3594,23 +3261,22 @@ export class AssistantService {
     // A browser location is request-scoped.  It is used only to form the
     // current Ride quote, not copied into saved addresses or the durable task
     // slots. The Web client resends it for explicit actions while sharing is on.
-    if (!pickup && freshLocation) {
+    if (!pickup && freshLocation && pickupSource === 'CURRENT_DEVICE_LOCATION') {
       pickup = freshLocation.address_text?.trim() || 'Vị trí thiết bị hiện tại';
       slots.pickup_latitude = freshLocation.latitude;
       slots.pickup_longitude = freshLocation.longitude;
     }
     const savedAddresses = await this.store.listSavedAddresses(user.sub);
-    const sortedAddresses = [...savedAddresses].sort((a, b) => (b.label?.length ?? 0) - (a.label?.length ?? 0));
     if (pickup && pickupSource !== 'CURRENT_DEVICE_LOCATION') {
-      const match = sortedAddresses.find((a) => plainText(pickup!).includes(plainText(a.label)));
+      const match = savedAddresses.find((a) => plainText(pickup!) === plainText(a.label));
       if (match) pickup = match.addressText;
     }
     if (dropoff) {
-      const match = sortedAddresses.find((a) => plainText(dropoff!).includes(plainText(a.label)));
+      const match = savedAddresses.find((a) => plainText(dropoff!) === plainText(a.label));
       if (match) dropoff = match.addressText;
     }
     if (stopover) {
-      const match = sortedAddresses.find((a) => plainText(stopover!).includes(plainText(a.label)));
+      const match = savedAddresses.find((a) => plainText(stopover!) === plainText(a.label));
       if (match) stopover = match.addressText;
     }
     // `slots` is a request-local route projection. Current-device pickup is
@@ -3807,9 +3473,14 @@ export class AssistantService {
     }
     const selection = stringValue(slots.selection);
     const selectedDoctorIndex = numberValue(existing?.selected_doctor_index);
+    const requestedSelection = numberValue(slots.selection_index) ?? selectionIndex(selection);
     const index = selectedDoctorIndex !== undefined && Number.isInteger(selectedDoctorIndex)
       ? selectedDoctorIndex
-      : selectionIndex(selection) ?? selectionIndexFromText(task.latest_message, doctors) ?? 0;
+      : requestedSelection ?? -1;
+    if (index < 0 || index >= doctors.length) {
+      const options = this.healthcareOptions(doctors, task.id);
+      return { phase: 'NEEDS_INFO', authoritative: existing, publicItem: options, items: [options], actions: this.healthcareSelectionActions(doctors, task), workflowId };
+    }
     const candidate = doctors[index];
     const selectedSlotFromAction = isRecord(existing?.selectedSlot) ? existing.selectedSlot : undefined;
     const slot = selectedSlotFromAction ?? arrayValue(candidate?.available_slots).filter(isRecord)[0];
@@ -4033,7 +3704,8 @@ export class AssistantService {
       };
     }
     const storedCandidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
-    const selectedIndex = foodSelectionIndex(task.latest_message ?? '', storedCandidates);
+    const selectedIndex = numberValue(task.extracted_slots.selection_index)
+      ?? selectionIndex(stringValue(task.extracted_slots.selection));
     const selectedCandidate = selectedIndex !== undefined
       ? storedCandidates[selectedIndex]
       : storedCandidates.find((candidate) => candidate.id === storedContext.menu_item_id);
@@ -4129,7 +3801,8 @@ export class AssistantService {
     // A user may supply the delivery address after choosing quantities locally.
     // At that point the cart is already authoritative, so continue to the
     // checkout form instead of re-rendering the old menu candidates.
-    const messageAddressContinuation = /(?:địa\s*chỉ|giao\s+(?:đến|tới|về)|nhà|tại|vị\s*trí\s*hiện\s*tại|current\s+location)/iu.test(task.latest_message ?? '');
+    const semanticDeliveryAddress = stringValue(task.extracted_slots.address_reference);
+    const messageAddressContinuation = Boolean(semanticDeliveryAddress);
     const contextAddressQuery = stringValue(nextContext.address_query);
     // A selection action uses an internal message and may carry the generic
     // delivery preference from the original search. It must not silently
@@ -4138,7 +3811,7 @@ export class AssistantService {
     const effectiveAddressQuery = messageAddressContinuation
       ? (contextAddressQuery && !isGenericFoodDeliveryAddress(contextAddressQuery)
         ? contextAddressQuery
-        : stringValue(task.latest_message) ?? contextAddressQuery)
+        : semanticDeliveryAddress ?? contextAddressQuery)
       : contextAddressQuery;
     if (!pending && cartUpdated && addressContinuation && effectiveAddressQuery) {
       const checkout = await this.prepareFoodCheckout(
@@ -4275,8 +3948,7 @@ export class AssistantService {
     let savedAddresses = (await this.store.listSavedAddresses(user.sub))
       .filter((address) => isUsableFoodDeliveryAddress(address.addressText));
     const requestedAddress = stringValue(context.address_query);
-    const requestedDeviceLocation = isCurrentLocationReference(requestedAddress)
-      || isCurrentLocationReference(task.latest_message);
+    const requestedDeviceLocation = isCurrentLocationReference(context.address_reference);
     const currentDeviceLocation = requestedDeviceLocation ? freshDeviceLocation(currentLocation) : undefined;
     const deviceAddress = currentDeviceLocation ? deviceDeliveryAddress(currentDeviceLocation, user.sub) : undefined;
     // A saved/default profile address is reusable context, not permission to
@@ -4286,19 +3958,17 @@ export class AssistantService {
     let addressId = deviceAddress?.id ?? (requestedAddress && !genericDeliveryAddress && isUsableFoodDeliveryAddress(requestedAddress)
       ? (savedAddresses.some((address) => address.id === stringValue(context.address_id)) ? stringValue(context.address_id) : undefined) ?? savedAddresses.find((address) => {
         const query = plainText(requestedAddress);
-        const candidate = plainText(`${address.label} ${address.addressText}`);
-        return query.includes(plainText(address.label)) || candidate.includes(query);
+        return query === plainText(address.label) || query === plainText(address.addressText);
       })?.id
       : undefined);
     // The assistant can receive a concrete delivery address in chat before the
     // user has visited the profile page. Persist that user-provided address in
     // Core so ConfirmationService can build the Food-owned immutable snapshot.
     // Generic phrases such as "giao về nhà" still require an actual address.
-    const normalizedRequestedAddress = requestedAddress ? plainText(requestedAddress) : '';
     const isConcreteRequestedAddress = Boolean(requestedAddress)
       && requestedAddress!.length >= 8
       && isUsableFoodDeliveryAddress(requestedAddress)
-      && !['nha', 'nha toi', 'nha rieng', 'giao ve nha'].includes(normalizedRequestedAddress);
+      && !isGenericFoodDeliveryAddress(requestedAddress);
     if (!addressId && requestedAddress && isConcreteRequestedAddress) {
       const now = new Date().toISOString();
       const savedAddress = await this.store.createSavedAddress({
@@ -5007,6 +4677,50 @@ export class AssistantService {
     } catch {
       return `${amount} ${currency}`;
     }
+  }
+
+  private async requestAssistantPlanner(
+    user: AuthUser,
+    message: string,
+    conversationId: string,
+    correlationId: string,
+    current: ConversationRecord | undefined,
+    state: AssistantState,
+    currentLocation?: DeviceCurrentLocation,
+  ): Promise<JsonObject> {
+    const savedAddresses = (await this.store.listSavedAddresses(user.sub)).slice(0, 12);
+    const plannerSavedAddresses = savedAddresses.map((address) => ({ label: address.label }));
+    const retrievedMemories = typeof (this.store as unknown as { retrieveMemories?: unknown }).retrieveMemories === 'function'
+      ? await (this.store as unknown as { retrieveMemories(actorId: string, query: { limit: number }): Promise<Array<Record<string, unknown>>> }).retrieveMemories(user.sub, { limit: 8 })
+      : [];
+    return this.agent.assistantChat(
+      {
+        conversation_id: conversationId,
+        user_id: user.sub,
+        message,
+        messages: (current?.messages ?? []).filter(isUserVisibleConversationMessage).slice(-20).map((entry) => ({ role: entry.role, content: entry.content })),
+        conversation_state: {
+          ...this.plannerSafeState(state),
+          saved_addresses: plannerSavedAddresses,
+          retrieved_memories: retrievedMemories.map((memory) => ({ namespace: memory.namespace, key: memory.key, value: memory.typedValue, confidence: memory.confidence, valid_until: memory.validUntil, why_retrieved: memory.whyRetrieved })),
+        },
+        user_profile: { name: user.full_name ?? '', saved_addresses: plannerSavedAddresses },
+        ...(currentLocation ? { current_location: currentLocation } : {}),
+        capability_snapshot: CAPABILITY_SNAPSHOT,
+        correlation_id: correlationId,
+      },
+      correlationId,
+    );
+  }
+
+  private pendingFoodAddressTask(state: AssistantState): StoredTask | undefined {
+    return state.tasks.find((task) => {
+      const context = isRecord(task.authoritative?.food_context) ? task.authoritative.food_context : {};
+      return task.domain === 'food'
+        && task.phase === 'NEEDS_INFO'
+        && task.public_item?.kind === 'address_options'
+        && Boolean(stringValue(context.cart_id));
+    });
   }
 
   private actionFor(task: StoredTask, kind: ActionKind, values: Partial<StoredAction>, cohortId?: string): StoredAction {
