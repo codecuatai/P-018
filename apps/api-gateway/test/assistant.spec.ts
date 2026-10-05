@@ -2463,6 +2463,121 @@ describe('Unified assistant orchestration', () => {
     expect(result.tasks[0].extracted_slots).toEqual(expect.objectContaining({ dropoff_address: 'Sân bay Nội Bài' }));
   });
 
+  it('uses the saved default address as Ride pickup when no pickup is supplied', async () => {
+    const store = new InMemoryCoreRepository();
+    await store.createSavedAddress({
+      id: 'address-ride-default-pickup',
+      actorId: user.sub,
+      label: 'Nhà',
+      addressText: '51 Phố Tam Khương, Hà Nội',
+      source: 'manual',
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const ride = {
+      quoteFromSemantic: jest.fn().mockResolvedValue({
+        workflow_id: 'ride-default-pickup-flow',
+        stage: 'SERVICE_CONFIRMATION',
+        quote: {
+          pickup_address: '51 Phố Tam Khương, Hà Nội',
+          dropoff_address: 'Sân bay Nội Bài',
+          vehicle_type: 'CAR_4',
+          amount: 50000,
+          currency: 'VND',
+          expires_at: '2099-01-01T18:00:00+07:00',
+        },
+      }),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const service = new AssistantService(store as never, {} as never, {} as never, {} as never, ride as never, {} as never);
+    const task = {
+      id: 'task-ride-default-pickup',
+      domain: 'ride',
+      operation: 'CREATE',
+      goal: 'Đặt xe',
+      normalized_request: 'Đặt xe đi sân bay Nội Bài bằng xe 4 chỗ',
+      extracted_slots: { dropoff_address: 'Sân bay Nội Bài', vehicle_type: 'CAR_4' },
+      depends_on: [],
+      phase: 'PLANNING',
+      revision: 0,
+    };
+    const internal = service as unknown as {
+      processRide: (task: Record<string, unknown>, allTasks: Record<string, unknown>[], actor: typeof user, conversationId: string, correlationId: string) => Promise<unknown>;
+    };
+
+    await internal.processRide(task, [task], user, 'conversation-default-pickup', 'cor-default-pickup');
+
+    expect(ride.quoteFromSemantic).toHaveBeenCalledWith(
+      user.sub,
+      expect.any(String),
+      'cor-default-pickup',
+      expect.objectContaining({ pickupAddress: '51 Phố Tam Khương, Hà Nội', dropoffAddress: 'Sân bay Nội Bài' }),
+      undefined,
+    );
+  });
+
+  it('resolves an abbreviated explicit Ride pickup from the user’s saved address', async () => {
+    const store = new InMemoryCoreRepository();
+    await store.createSavedAddress({
+      id: 'address-ride-partial-match',
+      actorId: user.sub,
+      label: 'Nhà',
+      addressText: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội',
+      latitude: 21.0062,
+      longitude: 105.8286,
+      source: 'geocoded',
+      isDefault: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    const ride = {
+      quoteFromSemantic: jest.fn().mockResolvedValue({
+        workflow_id: 'ride-partial-pickup-flow',
+        stage: 'SERVICE_CONFIRMATION',
+        quote: {
+          pickup_address: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội',
+          dropoff_address: 'Hồ Tây, Hà Nội',
+          vehicle_type: 'CAR_4',
+          amount: 50000,
+          currency: 'VND',
+          expires_at: '2099-01-01T18:00:00+07:00',
+        },
+      }),
+      confirmService: jest.fn(),
+      confirmPayment: jest.fn(),
+    };
+    const service = new AssistantService(store as never, {} as never, {} as never, {} as never, ride as never, {} as never);
+    const task = {
+      id: 'task-ride-partial-pickup',
+      domain: 'ride',
+      operation: 'CREATE',
+      goal: 'Đặt xe',
+      normalized_request: 'Đặt xe từ 51 Tam Khương đến Hồ Tây bằng xe 4 chỗ',
+      extracted_slots: { pickup_address: '51 tam khương', dropoff_address: 'Hồ Tây', vehicle_type: 'CAR_4' },
+      depends_on: [],
+      phase: 'PLANNING',
+      revision: 0,
+    };
+    const internal = service as unknown as {
+      processRide: (task: Record<string, unknown>, allTasks: Record<string, unknown>[], actor: typeof user, conversationId: string, correlationId: string) => Promise<unknown>;
+    };
+
+    await internal.processRide(task, [task], user, 'conversation-partial-pickup', 'cor-partial-pickup');
+
+    expect(ride.quoteFromSemantic).toHaveBeenCalledWith(
+      user.sub,
+      expect.any(String),
+      'cor-partial-pickup',
+      expect.objectContaining({
+        pickupAddress: '51 Phố Tam Khương, Phường Khương Thượng, Quận Đống Đa, Hà Nội',
+        dropoffAddress: 'Hồ Tây',
+      }),
+      expect.objectContaining({ pickup_latitude: 21.0062, pickup_longitude: 105.8286 }),
+    );
+  });
+
   it('invalidates stale pending confirmation state and its public card', () => {
     const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
     const internal = service as unknown as {

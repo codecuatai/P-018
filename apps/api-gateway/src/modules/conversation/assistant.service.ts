@@ -380,6 +380,24 @@ function plainText(value: string): string {
   return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replaceAll('đ', 'd').replaceAll('Đ', 'D').toLowerCase();
 }
 
+function matchesSavedAddressReference(query: string, address: { label: string; addressText: string }): boolean {
+  const foldedQuery = plainText(query).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const foldedLabel = plainText(address.label).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const foldedAddress = plainText(address.addressText).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (foldedQuery && (foldedQuery === foldedLabel || foldedQuery === foldedAddress)) return true;
+
+  const queryTokens = foldedQuery.split(' ').filter(Boolean);
+  const addressTokens = new Set(foldedAddress.split(' '));
+  const numberTokens = queryTokens.filter((token) => /^\d+$/.test(token));
+  const ignoredTokens = new Set(['pho', 'duong', 'so', 'ngo', 'hem', 'quan', 'phuong', 'district', 'ward', 'ha', 'noi', 'viet', 'nam']);
+  const nameTokens = queryTokens.filter((token) => !/^\d+$/.test(token) && !ignoredTokens.has(token));
+  // A partial match must contain a sufficiently specific street/place name,
+  // and any house number in the request must match exactly.
+  return nameTokens.length >= 2
+    && numberTokens.every((token) => addressTokens.has(token))
+    && nameTokens.every((token) => addressTokens.has(token));
+}
+
 function plainTextForRouting(value: string): string {
   return plainText(value).replaceAll('\u0111', 'd').replaceAll('\u0110', 'D');
 }
@@ -3625,13 +3643,39 @@ export class AssistantService {
       slots.pickup_longitude = freshLocation.longitude;
     }
     const savedAddresses = await this.store.listSavedAddresses(user.sub);
+    // For Ride, the profile's default address is the pickup when the request
+    // does not specify one. An explicit current-device pickup remains
+    // request-scoped and must not silently fall back to the saved address.
+    if (!pickup && pickupSource !== 'CURRENT_DEVICE_LOCATION') {
+      const defaultPickup = savedAddresses.find((address) => address.isDefault && isUsableFoodDeliveryAddress(address.addressText));
+      if (defaultPickup) {
+        pickup = defaultPickup.addressText;
+        slots.pickup_address = pickup;
+        if (defaultPickup.latitude !== undefined && defaultPickup.longitude !== undefined) {
+          slots.pickup_latitude = defaultPickup.latitude;
+          slots.pickup_longitude = defaultPickup.longitude;
+        }
+      }
+    }
     if (pickup && pickupSource !== 'CURRENT_DEVICE_LOCATION') {
-      const match = savedAddresses.find((a) => plainText(pickup!) === plainText(a.label));
-      if (match) pickup = match.addressText;
+      const match = savedAddresses.find((address) => isUsableFoodDeliveryAddress(address.addressText) && matchesSavedAddressReference(pickup!, address));
+      if (match) {
+        pickup = match.addressText;
+        if (match.latitude !== undefined && match.longitude !== undefined) {
+          slots.pickup_latitude = match.latitude;
+          slots.pickup_longitude = match.longitude;
+        }
+      }
     }
     if (dropoff) {
-      const match = savedAddresses.find((a) => plainText(dropoff!) === plainText(a.label));
-      if (match) dropoff = match.addressText;
+      const match = savedAddresses.find((address) => isUsableFoodDeliveryAddress(address.addressText) && matchesSavedAddressReference(dropoff!, address));
+      if (match) {
+        dropoff = match.addressText;
+        if (match.latitude !== undefined && match.longitude !== undefined) {
+          slots.dropoff_latitude = match.latitude;
+          slots.dropoff_longitude = match.longitude;
+        }
+      }
     }
     if (stopover) {
       const match = savedAddresses.find((a) => plainText(stopover!) === plainText(a.label));

@@ -113,6 +113,19 @@ describe('Geoapify provider boundary', () => {
     expect(unaccented.candidates[0]).toMatchObject({ latitude: 21.2187, longitude: 105.8042 });
   });
 
+  it('resolves Hồ Tây in local demo mode as the lake center', async () => {
+    const geoapify = { enabled: false, geocode: jest.fn(), autocomplete: jest.fn() };
+    const locations = new LocationService(
+      config({ APP_ENV: 'development', LOCAL_DETERMINISTIC_LOCATION_FALLBACK: true }),
+      geoapify as never,
+    );
+
+    const result = await locations.geocode('Hồ Tây');
+
+    expect(result).toMatchObject({ provider: 'deterministic-local-demo', status: 'RESOLVED' });
+    expect(result.candidates[0]).toMatchObject({ address_text: 'Hồ Tây, Hà Nội', latitude: 21.055, longitude: 105.82 });
+  });
+
   it('normalizes an OSRM-compatible GeoJSON route into auditable geometry', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       code: 'Ok',
