@@ -972,12 +972,29 @@ def _apply_plan_guards(
     if boundary is not None:
         return boundary
     conversation_boundary = _conversation_only_plan(message, _plain(message))
-    if conversation_boundary is not None and conversation_boundary.interaction_mode in {
-        "unsupported",
-        "chitchat",
-    }:
+    if conversation_boundary is not None and (
+        conversation_boundary.interaction_mode in {"unsupported", "chitchat"}
+        or (
+            conversation_boundary.interaction_mode == "advisory"
+            and conversation_boundary.needs_clarification
+        )
+    ):
+        # A clarification boundary is authoritative too: do not let a model
+        # invent a service task (or resume an unrelated active task) for a
+        # vague disclosure such as "tôi bị ốm".
         return conversation_boundary
     deterministic_candidate = deterministic_plan(message, conversation_state, current_location)
+    lowered_message = _routing_plain(message)
+    restaurant_recommendation = (
+        _has_any(lowered_message, ("goi y", "de xuat", "gioi thieu"))
+        and _has_any(lowered_message, ("nha hang", "quan an", "dat nha hang"))
+        and not _has_any(lowered_message, ("dat ban", "giu ban", "dat cho", "con ban", "ban trong"))
+    )
+    if restaurant_recommendation and any(task.domain == "restaurant" for task in deterministic_candidate.tasks):
+        # Recommendation requests should first discover venues. Do not let a
+        # generative planner turn “suggest a restaurant” into a reservation
+        # flow that asks party size before offering any choices.
+        plan = deterministic_candidate
     if not plan.tasks and deterministic_candidate.tasks:
         # Structured output can be valid but omit a clearly requested service.
         # Preserve the bounded deterministic interpretation instead of silently
@@ -1895,13 +1912,13 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             cuisine_match = re.search(r"\b(?:muon an|thich an|an|quan|nha hang)\b\s+([^,.!?]+)", lowered, flags=re.IGNORECASE)
             if cuisine_match:
                 cuisine = re.split(
-                    r"\b(?:luc|vao|toi|sang|trua|nao|co|con|ban|o|tai|khu\s+vuc|quanh|gan|vung|cho|den)\b",
+                    r"\b(?:luc|vao|toi|sang|trua|nao|co|con|ban|o|tai|khu\s+vuc|quanh|gan|vung|cho|den|ngon|goi\s+y|de\s+xuat|gioi\s+thieu|nhi)\b",
                     cuisine_match.group(1),
                     maxsplit=1,
                     flags=re.IGNORECASE,
                 )[0].strip()
                 cuisine = re.sub(r"^an\s+", "", cuisine).strip()
-                if cuisine and cuisine not in {"tai nha hang", "nha hang"}:
+                if cuisine and cuisine not in {"tai nha hang", "nha hang", "ngon", "goi y"}:
                     slots["cuisine_query"] = cuisine
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
@@ -1977,7 +1994,7 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         healthcare_depts = (
             "tai mui hong", "co xuong khop", "rang ham mat", "noi tong quat",
             "da khoa", "than kinh", "tieu hoa", "tim mach", "noi tiet",
-            "da lieu", "nhi khoa", "nhi", "mat", "phu san", "san phu khoa",
+            "da lieu", "nhi khoa", "mat", "phu san", "san phu khoa",
             "ung buou", "ho hap", "nam hoc", "dinh duong", "chan thuong",
             "huyet hoc", "y hoc co truyen", "phuc hoi chuc nang", "tam benh",
             "tam than", "truyen nhiem",
@@ -1986,6 +2003,8 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             if re.search(rf"\b{department}\b", lowered):
                 slots["department"] = department
                 break
+        if _has_any(lowered, ("mang bau", "co bau", "mang thai", "thai ky", "thai san")):
+            slots["department"] = "san phu khoa"
         if "sang mai" in lowered:
             slots["time_preference"] = "tomorrow_morning"
         elif "chieu mai" in lowered:
@@ -1998,7 +2017,14 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
             slots["time_preference"] = "afternoon"
         elif "toi ngay kia" in lowered or "buoi toi" in lowered or "toi nay" in lowered:
             slots["time_preference"] = "evening"
-        if _has_any(lowered, ("dau", "met", "trieu chung", "symptom")):
+        symptom_signal = _has_any(
+            lowered,
+            (
+                "dau dau", "dau bung", "dau nguc", "dau hong", "dau lung", "dau rang",
+                "met", "sot", "ho", "buon non", "chong mat", "trieu chung", "symptom",
+            ),
+        )
+        if symptom_signal:
             slots["symptoms"] = text[:500]
     if (
         "chon cai dau tien" in lowered
@@ -2345,6 +2371,51 @@ def _current_location_plan(text: str, current_location: dict[str, Any] | None = 
     )
 
 def _conversation_only_plan(text: str, lowered: str) -> AssistantPlan | None:
+    pregnancy_recommendation = _has_any(
+        lowered,
+        ("mang bau", "co bau", "mang thai", "thai ky", "thai san"),
+    ) and _has_any(
+        lowered,
+        ("kham o dau", "o dau kham", "an tam", "uy tin", "benh vien nao", "nen kham"),
+    ) and not _has_any(lowered, ("dat lich", "lich kham", "chon lich", "dat hen"))
+    if pregnancy_recommendation:
+        question = (
+            "Mình có thể giúp bạn tìm cơ sở có khoa Sản phụ khoa trong dữ liệu dịch vụ. "
+            "Bạn muốn tìm ở khu vực nào, và có muốn kiểm tra lịch khám luôn không?"
+        )
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=question,
+            needs_clarification=True,
+            clarification_question=question,
+        )
+
+    health_disclosure = _has_any(
+        lowered,
+        (
+            "bi om", "toi om", "minh om", "khong khoe", "khong duoc khoe",
+            "met qua", "toi thay met", "minh thay met", "dang sot", "bi sot",
+            "sot cao", "dang ho", "bi ho", "dau bung", "dau nguc", "kho tho",
+        ),
+    )
+    explicit_service_request = _has_any(
+        lowered,
+        (
+            "dat xe", "goi xe", "muon xe", "can xe", "xe may", "xe 4 cho", "xe 7 cho",
+            "dat lich kham", "lich kham", "bac si", "hen kham", "di kham", "kham benh", "kham",
+            "tim benh vien", "benh vien", "phong kham",
+            "dat mon", "goi mon", "giao do an", "ship do an", "tim mon", "tim nha hang", "dat ban",
+        ),
+    )
+    if health_disclosure and not explicit_service_request:
+        question = "Bạn muốn mình giúp tìm lịch khám hay đang cần hỗ trợ việc khác? Mình không thể chẩn đoán bệnh qua chat."
+        return AssistantPlan(
+            interaction_mode="advisory",
+            assistant_message=question,
+            needs_clarification=True,
+            clarification_question=question,
+        )
+
     asks_about_assistant_life = any(
         re.search(pattern, lowered)
         for pattern in (
@@ -2725,7 +2796,7 @@ def deterministic_plan(
                     "o to", "oto", "taxi", "car", "bike",
                 ),
             )
-            and (_route(text)[0] is not None or _route(text)[1] is not None or "xe" in lowered or "cuoc" in lowered)
+            and (_route(text)[0] is not None or _route(text)[1] is not None or "xe" in lowered)
         )
         or (_route(text)[0] is not None and _route(text)[1] is not None and not has_delivery_signal)
         or _stopover_address(text) is not None
@@ -2934,6 +3005,7 @@ def deterministic_plan(
     if len(tasks) == 1 and tasks[0].needs_clarification:
         missing = tasks[0].missing_information
         labels = {
+            "location|cuisine_query": "khu vực hoặc món ẩm thực",
             "location": "khu vực",
             "party_size": "số người",
             "start_at": "thời gian",

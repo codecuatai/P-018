@@ -437,10 +437,15 @@
 .collapsible-card-title { margin: 0; color: var(--color-ink); font-size: var(--text-base); font-weight: 700; letter-spacing: var(--tracking-tight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .collapsible-card-status { justify-self: start; padding: 2px 9px; color: var(--color-primary-strong); background: var(--color-primary-light); border: 1px solid #C7D2FE; border-radius: 999px; font-size: var(--text-micro); font-weight: 700; }
 .collapsible-card-summary { margin: 4px 0 0; color: var(--color-muted); font-size: var(--text-xs); line-height: var(--leading-snug); }
-.collapsible-card-toggle { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 6px 12px; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; font-family: inherit; font-size: var(--text-xs); font-weight: 600; cursor: pointer; transition: background-color 140ms ease, border-color 140ms ease; }
-.collapsible-card-toggle:hover { background: var(--color-canvas); border-color: #CBD5E1; }
-.collapsible-card-toggle svg { transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1); }
+.collapsible-card-toggle { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 40px; padding: 5px 14px 5px 7px; color: var(--color-primary-strong); background: #F5F5FF; border: 1px solid #E0E1FF; border-radius: 999px; box-shadow: 0 1px 2px rgb(30 41 59 / 5%); font-family: inherit; font-size: var(--text-xs); font-weight: 650; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+.collapsible-card-toggle:hover { background: #EEEEFF; border-color: #C7C9FF; box-shadow: 0 3px 8px rgb(79 70 229 / 10%); }
+.collapsible-card-toggle:active { transform: translateY(1px); }
+.collapsible-card-toggle:focus-visible { outline: 3px solid rgb(99 102 241 / 25%); outline-offset: 2px; }
+.collapsible-card-toggle svg { display: block; width: 25px; height: 25px; padding: 5px; box-sizing: border-box; color: var(--color-primary-strong); background: #FFFFFF; border: 1px solid #E6E7FF; border-radius: 50%; transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1); }
 .collapsible-card-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.collapsible-agent-card.is-completed .collapsible-card-toggle { color: #047857; background: #ECFDF5; border-color: #C7F0DD; }
+.collapsible-agent-card.is-completed .collapsible-card-toggle:hover { background: #DDF8EB; border-color: #A7E8CB; }
+.collapsible-agent-card.is-completed .collapsible-card-toggle svg { color: #047857; border-color: #D1F3E2; }
 .collapsible-card-content { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 180ms cubic-bezier(0.4, 0, 0.2, 1); }
 .collapsible-card-content.is-collapsed { grid-template-rows: 0fr; }
 .collapsible-card-content-inner { min-height: 0; overflow: hidden; }

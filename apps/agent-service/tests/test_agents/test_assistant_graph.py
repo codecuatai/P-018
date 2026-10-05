@@ -66,6 +66,98 @@ def test_empty_model_plan_does_not_drop_a_clear_restaurant_request() -> None:
     assert domains(guarded) == ["restaurant"]
 
 
+@pytest.mark.parametrize("message", [
+    "tôi bị ốm",
+    "mình không khỏe",
+    "tôi đang sốt",
+    "mệt quá",
+])
+def test_health_disclosure_does_not_get_routed_as_a_service(message: str) -> None:
+    active_ride = {
+        "tasks": [{
+            "domain": "ride",
+            "phase": "NEEDS_INFO",
+            "goal": "Tìm chuyến xe",
+            "normalized_request": "Đặt xe từ nhà đến Hồ Tây",
+            "extracted_slots": {"pickup_address": "Nhà", "dropoff_address": "Hồ Tây"},
+            "missing_information": ["vehicle_type"],
+        }]
+    }
+    model_plan = AssistantPlan(
+        assistant_message="Chuyến xe chưa thể hoàn tất.",
+        tasks=[PlannedTask(
+            domain="ride",
+            goal="Tìm chuyến xe",
+            normalized_request=message,
+            extracted_slots={},
+        )],
+    )
+
+    guarded = _apply_plan_guards(model_plan, message, active_ride)
+    fallback = deterministic_plan(message, active_ride)
+
+    assert guarded.tasks == []
+    assert guarded.interaction_mode == "advisory"
+    assert guarded.needs_clarification is True
+    assert "lịch khám" in guarded.assistant_message
+    assert fallback.tasks == []
+
+
+def test_health_disclosure_does_not_block_an_explicit_ride_request() -> None:
+    message = "Tôi bị ốm, đặt xe từ nhà đến bệnh viện Bạch Mai"
+    plan = deterministic_plan(message)
+
+    assert "ride" in domains(plan)
+
+
+def test_pregnancy_facility_question_asks_for_area_without_searching_empty_slots() -> None:
+    message = "tôi hình như mang bầu thì khám ở đâu an tâm nhất nhỉ"
+    model_plan = AssistantPlan(
+        assistant_message="Mình chưa thấy khung giờ khám còn trống.",
+        tasks=[PlannedTask(
+            domain="healthcare",
+            goal="Tìm lịch khám",
+            normalized_request=message,
+            extracted_slots={"department": "nhi", "symptoms": message},
+        )],
+    )
+
+    guarded = _apply_plan_guards(model_plan, message, {})
+    scheduled = deterministic_plan("mang thai đặt lịch khám ngày mai")
+
+    assert guarded.tasks == []
+    assert guarded.interaction_mode == "advisory"
+    assert guarded.needs_clarification is True
+    assert "khu vực nào" in guarded.assistant_message
+    assert scheduled.tasks[0].extracted_slots["department"] == "san phu khoa"
+    assert "symptoms" not in scheduled.tasks[0].extracted_slots
+
+
+def test_restaurant_suggestion_with_meeting_context_does_not_create_a_ride_or_ask_party_size() -> None:
+    message = "chiều nay tôi có cuộc họp tôi muốn đặt nhà hàng, gợi ý cho tôi 1 vài nhà hàng ngon đi"
+    model_plan = AssistantPlan(
+        assistant_message="Cho mình biết số người nhé.",
+        tasks=[PlannedTask(
+            domain="restaurant",
+            goal="Đặt bàn",
+            normalized_request=message,
+            extracted_slots={"party_size": 2},
+            needs_clarification=True,
+            missing_information=["party_size"],
+        )],
+    )
+
+    deterministic = deterministic_plan(message)
+    guarded = _apply_plan_guards(model_plan, message, {})
+
+    assert domains(deterministic) == ["restaurant"]
+    assert deterministic.tasks[0].needs_clarification is True
+    assert deterministic.tasks[0].missing_information == ["location|cuisine_query"]
+    assert "khu vực" in deterministic.assistant_message
+    assert domains(guarded) == ["restaurant"]
+    assert guarded.tasks[0].missing_information == ["location|cuisine_query"]
+
+
 def test_planner_schema_requires_reasoning_first() -> None:
     parsed = json.loads(_model_prompt({"query": "Đặt xe", "messages": [], "conversation_state": {}}))
     assert parsed["response_schema"]["required"][0] == "reasoning"

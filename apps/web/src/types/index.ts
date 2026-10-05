@@ -822,6 +822,7 @@ export interface ChatMessage {
   timestamp: string;
   response?: AssistantResponse;
   requestStatus?: "sending" | "sent" | "error" | "stopped";
+  voiceReply?: boolean;
   retryText?: string;
   retryAction?: AssistantAction;
   pendingStartedAt?: number;

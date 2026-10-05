@@ -25,6 +25,16 @@ jest.mock("@/components/WorkflowCards", () => ({
   FoodCartDock: () => null,
 }));
 
+jest.mock("@/components/voice-input", () => ({
+  VoiceInput: ({ onTranscript }: { onTranscript: (text: string) => void }) => (
+    <button type="button" aria-label="Nhập bằng giọng nói" onClick={() => onTranscript("Tìm quán phở")}>Mic</button>
+  ),
+}));
+
+jest.mock("@/components/voice-output", () => ({
+  VoiceOutput: () => <button type="button" aria-label="Đọc văn bản">Phát</button>,
+}));
+
 jest.mock("@/features/product/context-rail", () => ({
   ActiveWorkDetailDialog: () => null,
   ActiveWorkRailCardWithCancel: () => null,
@@ -40,6 +50,39 @@ describe("ChatDashboard voice controls", () => {
     expect(screen.getByRole("button", { name: "Nhập bằng giọng nói" })).toBeEnabled();
     expect(screen.getByRole("textbox", { name: "Nhập yêu cầu" })).toHaveAttribute("placeholder", "Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?");
     expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it("does not show audio playback for a text-typed reply", async () => {
+    jest.mocked(apiClient.sendAssistantMessage).mockResolvedValue({
+      conversation_id: "conversation-typed",
+      message: "Mình tìm thấy quán phù hợp.",
+      items: [],
+      actions: [],
+    } as never);
+
+    render(<ChatDashboard user={{ sub: "user-typed", email: "typed@example.test", role: "USER" }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Nhập yêu cầu" }), { target: { value: "Tìm quán phở" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi yêu cầu" }));
+
+    await screen.findByText("Mình tìm thấy quán phù hợp.");
+    expect(screen.queryByRole("button", { name: "Đọc văn bản" })).not.toBeInTheDocument();
+  });
+
+  it("shows manual audio playback for a reply to a mic-entered request", async () => {
+    jest.mocked(apiClient.sendAssistantMessage).mockResolvedValue({
+      conversation_id: "conversation-voice",
+      message: "Mình tìm thấy quán phù hợp.",
+      items: [],
+      actions: [],
+    } as never);
+
+    render(<ChatDashboard user={{ sub: "user-voice", email: "voice@example.test", role: "USER" }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Nhập bằng giọng nói" }));
+    expect(screen.getByRole("textbox", { name: "Nhập yêu cầu" })).toHaveValue("Tìm quán phở");
+    fireEvent.click(screen.getByRole("button", { name: "Gửi yêu cầu" }));
+
+    await screen.findByText("Mình tìm thấy quán phù hợp.");
+    expect(screen.getByRole("button", { name: "Đọc văn bản" })).toBeInTheDocument();
   });
 
   it("captures device location when the user asks for the current location", async () => {

@@ -46,6 +46,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
   const feedRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeRequestController = useRef<AbortController | null>(null);
+  const voiceDraftRef = useRef(false);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -97,6 +98,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setConversationLoadError("");
     actionKeys.current = {};
     consumedActionIds.current = new Set();
+    voiceDraftRef.current = false;
     setConversationId(initialConversationId);
     setMessages([]);
     setFoodSelections({});
@@ -237,14 +239,16 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     activeRequestController.current?.abort();
   }
 
-  async function send(textOverride?: string): Promise<void> {
+  async function send(textOverride?: string, voiceReplyOverride?: boolean): Promise<void> {
     const text = (textOverride ?? composer).trim();
     if (!text || sending) return;
+    const voiceReply = voiceReplyOverride ?? (textOverride === undefined && voiceDraftRef.current);
+    voiceDraftRef.current = false;
     const pendingId = makeId("assistant");
     const pendingStartedAt = Date.now();
     const controller = new AbortController();
     activeRequestController.current = controller;
-    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt }]);
+    setMessages((current) => [...current, { id: makeId("user"), role: "user", text, timestamp: new Date().toISOString(), requestStatus: "sent" }, { id: pendingId, role: "assistant", text: "Mình đang xem yêu cầu của bạn…", timestamp: new Date().toISOString(), requestStatus: "sending", pendingStartedAt, ...(voiceReply ? { voiceReply: true } : {}) }]);
     setComposer("");
     setSending(true);
     try {
@@ -497,7 +501,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 onAction={handleAction}
                 onFoodSelectionChange={handleFoodSelectionChange}
                 foodSelections={foodSelections}
-                onRetry={(text) => void send(text)}
+                onRetry={(text, voiceReply) => void send(text, voiceReply)}
                 activeActionId={activeActionId}
                 tts={tts}
                 ttsActiveMessageId={ttsActiveMessageId}
@@ -514,7 +518,10 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 ref={inputRef}
                 aria-label="Nhập yêu cầu"
                 disabled={sending}
-                onChange={(event) => setComposer(event.target.value)}
+                onChange={(event) => {
+                  voiceDraftRef.current = false;
+                  setComposer(event.target.value);
+                }}
                 onKeyDown={onKeyDown}
                 placeholder="Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?"
                 rows={1}
@@ -526,6 +533,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 </button>
                 <VoiceInput
                   onTranscript={(text) => {
+                    voiceDraftRef.current = true;
                     setComposer((prev) => (prev ? `${prev} ${text}` : text));
                     inputRef.current?.focus();
                   }}
@@ -600,7 +608,7 @@ function MessageBubble({
   onAction: (action: AssistantAction, input?: { quantity?: number }) => void; 
   onFoodSelectionChange: (selection: FoodSelection) => void; 
   foodSelections: Record<string, FoodSelection>; 
-  onRetry: (text: string) => void; 
+  onRetry: (text: string, voiceReply?: boolean) => void;
   activeActionId?: string;
   tts: import("@/hooks/use-speech-synthesis").TtsControl;
   ttsActiveMessageId: string | null;
@@ -614,7 +622,7 @@ function MessageBubble({
       </div>
       <div className="message-content">
         <div className="message-text">{message.text}</div>
-        {assistant && message.text && message.requestStatus !== "sending" && (
+        {assistant && message.voiceReply && message.text && message.requestStatus === "sent" && (
           <VoiceOutput 
             text={message.text} 
             tts={tts}
@@ -628,7 +636,7 @@ function MessageBubble({
           <AssistantCards response={message.response} onAction={onAction} foodSelections={foodSelections} onFoodSelectionChange={onFoodSelectionChange} disabledActionId={activeActionId} />
         ) : null}
         {message.requestStatus === "error" && message.retryText ? (
-          <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "")}>
+          <button className="retry-button" type="button" onClick={() => onRetry(message.retryText ?? "", message.voiceReply)}>
             <RefreshCw size={14} /> Thử lại
           </button>
         ) : null}

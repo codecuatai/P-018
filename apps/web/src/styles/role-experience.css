@@ -49,7 +49,7 @@
 .customer-shell .composer-wrap {
   gap: 0;
   padding-top: 12px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   background: linear-gradient(180deg, rgb(247 248 252 / 0%) 0%, #f7f8fc 22%);
 }
 
