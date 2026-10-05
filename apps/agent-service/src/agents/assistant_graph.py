@@ -97,6 +97,8 @@ Quy tắc ứng xử và bóc tách tác vụ:
 - Chitchat / Tư vấn chung ("chào bạn", "bạn là ai", "hôm nay ăn gì ngon"): trả về `tasks: []`, `interaction_mode: "chitchat"` hoặc `"advisory"`.
 - Yêu cầu dịch vụ cụ thể: trích xuất danh sách `tasks` chính xác.
 - Khi người dùng ĐỔI Ý / HỦY BỎ yêu cầu cũ ("thôi không đi xe nữa, tìm quán phở"): điền task_ref của tác vụ cũ vào `discarded_task_refs` và chỉ tạo task mới.
+- Có thể sử dụng cả bốn dịch vụ trong cùng một cuộc trò chuyện qua nhiều lượt. Mỗi lượt ưu tiên yêu cầu mới nhất; giữ các tác vụ khác dịch vụ còn dang dở, không phát lại lựa chọn cũ, và chỉ bỏ đúng tác vụ mà người dùng từ chối rõ ràng. Ví dụ "không muốn ăn, hãy tìm nhà hàng" bỏ yêu cầu Food đang dở nhưng vẫn tạo task Restaurant.
+- Các từ đánh giá chất lượng như "ngon", "tốt", "nổi tiếng", "bình dân" là sở thích chung, không phải loại ẩm thực (cuisine_query). Không biến lỗi gõ như "ngol" thành bộ lọc món; hỏi khu vực hoặc tìm gợi ý chung theo dữ liệu có sẵn.
 - Chuỗi dịch vụ phụ thuộc ("Tìm quán lẩu ở Hoàn Kiếm rồi đặt xe đưa tôi tới đó"):
   + Task 0 (restaurant): Tìm nhà hàng ở Hoàn Kiếm.
   + Task 1 (ride): depends_on = [0], không tự bịa địa chỉ đến (dropoff_address để trống để Gateway lấy từ Task 0).
@@ -470,6 +472,22 @@ def _safe_slots(value: Any) -> dict[str, Any]:
     return safe
 
 
+def _is_generic_restaurant_preference(value: Any) -> bool:
+    if not isinstance(value, str):
+        return False
+    folded = " ".join(_plain(value).replace("-", " ").split())
+    generic = {
+        "ngon", "ngol", "ngonn", "tot", "chat luong", "uy tin",
+        "binh dan", "re", "gia tot", "noi tieng", "sang trong",
+        "dep", "de xuat", "goi y",
+    }
+    if folded in generic:
+        return True
+    # Correct one-character transcription/typing noise around the generic
+    # quality adjective; these words are not cuisine filters.
+    return len(folded) == 4 and sum(left != right for left, right in zip(folded, "ngon")) <= 1
+
+
 def _safe_model_text(value: Any, limit: int) -> str:
     if not isinstance(value, str):
         return ""
@@ -766,6 +784,9 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         text_slot("location", 300)
         text_slot("cuisine_type", 200)
         text_slot("cuisine_query", 200)
+        for name in ("cuisine_type", "cuisine_query"):
+            if _is_generic_restaurant_preference(normalized.get(name)):
+                normalized.pop(name, None)
         party_size = slots.get("party_size")
         if isinstance(party_size, int) and not isinstance(party_size, bool) and 1 <= party_size <= 20:
             normalized["party_size"] = party_size

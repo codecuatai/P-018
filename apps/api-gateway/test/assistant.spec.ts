@@ -573,6 +573,57 @@ describe('Unified assistant orchestration', () => {
     ]));
   });
 
+  it('switches from declined Food to Restaurant and treats a generic ngon typo as no cuisine filter', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-food-to-restaurant-quality-preference';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'pending-food', domain: 'food', operation: 'DISCOVER', goal: 'Tìm và đặt món',
+        normalized_request: 'Tìm món ăn', extracted_slots: { dish_query: 'phở' }, depends_on: [],
+        phase: 'NEEDS_INFO', revision: 0, public_item: { kind: 'food_options', options: [{ name: 'Món cũ' }] },
+      }],
+      actions: [],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        decision_source: 'model',
+        planning_decision: versionedDecision({
+          discarded_task_refs: [0],
+          tasks: [{
+            task_ref: 0, domain: 'restaurant', operation: 'DISCOVER', goal: 'Gợi ý nhà hàng ngon',
+            normalized_request: 'no, tôi không muốn ăn, hãy tìm nhà hàng ngol cho tôi đi',
+            semantic_slots: { cuisine_query: { value: 'ngol', source: 'USER_EXPLICIT' } },
+            steps: [], disposition: 'READY', depends_on: [],
+          }],
+        }),
+      }),
+    };
+    const restaurant = { executeTool: jest.fn() };
+    const service = new AssistantService(
+      store as never, agent as never, restaurant as never, {} as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      {} as never,
+    );
+
+    const response = await service.chat(
+      user,
+      'no, tôi không muốn ăn, hãy tìm nhà hàng ngol cho tôi đi',
+      conversationId,
+      'cor-food-to-restaurant-quality-preference',
+    );
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+
+    expect(restaurant.executeTool).not.toHaveBeenCalled();
+    expect(response.items).toEqual([expect.objectContaining({ kind: 'clarification' })]);
+    expect(response.message).toContain('khu vực hoặc loại món');
+    expect(response.message).not.toContain('ngol');
+    expect(response.message).not.toContain('số người');
+    expect(tasks.find((task) => task.id === 'pending-food')?.phase).toBe('DISCARDED');
+    expect(tasks.some((task) => task.domain === 'restaurant' && task.phase === 'NEEDS_INFO')).toBe(true);
+  });
+
   it('overrides a wrong pediatric slot with obstetrics for a pregnancy appointment request', () => {
     const service = new AssistantService(
       new InMemoryCoreRepository() as never,

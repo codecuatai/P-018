@@ -158,6 +158,53 @@ def test_restaurant_suggestion_with_meeting_context_does_not_create_a_ride_or_as
     assert guarded.tasks[0].missing_information == ["location|cuisine_query"]
 
 
+def test_generic_restaurant_quality_word_is_not_forwarded_as_a_cuisine_filter() -> None:
+    message = "no, tôi không muốn ăn, hãy tìm nhà hàng ngol cho tôi đi"
+    model_plan = AssistantPlan(
+        assistant_message="Mình sẽ tìm nhà hàng phù hợp.",
+        tasks=[PlannedTask(
+            domain="restaurant",
+            goal="Gợi ý nhà hàng ngon",
+            normalized_request=message,
+            extracted_slots={"cuisine_query": "ngol"},
+        )],
+    )
+
+    guarded = _apply_plan_guards(model_plan, message, {})
+
+    assert domains(guarded) == ["restaurant"]
+    assert guarded.tasks[0].extracted_slots.get("cuisine_query") is None
+
+
+def test_all_service_domains_can_be_used_sequentially_in_one_conversation() -> None:
+    messages = (
+        ("Gợi ý nhà hàng ngon ở Hà Nội", "restaurant"),
+        ("Tìm lịch khám vì tôi đau đầu", "healthcare"),
+        ("Đặt xe 4 chỗ từ nhà đến sân bay Nội Bài", "ride"),
+        ("Tìm phở bò giao về nhà", "food"),
+    )
+    conversation_tasks: list[dict[str, Any]] = []
+
+    for index, (message, expected_domain) in enumerate(messages):
+        plan = deterministic_plan(message, {"tasks": conversation_tasks})
+
+        assert domains(plan) == [expected_domain]
+        conversation_tasks.extend(
+            {
+                "domain": task.domain,
+                "phase": "NEEDS_INFO",
+                "goal": task.goal,
+                "normalized_request": task.normalized_request,
+                "extracted_slots": task.extracted_slots,
+                "depends_on": [],
+                "revision": index,
+            }
+            for task in plan.tasks
+        )
+
+    assert {task["domain"] for task in conversation_tasks} == {"restaurant", "healthcare", "ride", "food"}
+
+
 def test_planner_schema_requires_reasoning_first() -> None:
     parsed = json.loads(_model_prompt({"query": "Đặt xe", "messages": [], "conversation_state": {}}))
     assert parsed["response_schema"]["required"][0] == "reasoning"

@@ -414,6 +414,18 @@ function explicitServiceDomains(message: string): Domain[] {
   return patterns.filter(([, pattern]) => pattern.test(folded)).map(([domain]) => domain);
 }
 
+function restaurantCuisineFilter(value: string | undefined): string | undefined {
+  if (!value?.trim()) return undefined;
+  const folded = plainTextForRouting(value).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const genericPreferences = new Set([
+    'ngon', 'ngol', 'ngonn', 'tot', 'chat luong', 'uy tin', 'binh dan',
+    're', 'gia tot', 'noi tieng', 'sang trong', 'dep', 'goi y', 'de xuat',
+  ]);
+  const oneEditFromNgon = folded.length === 4
+    && [...folded].reduce((differences, character, index) => differences + Number(character !== 'ngon'[index]), 0) <= 1;
+  return genericPreferences.has(folded) || oneEditFromNgon ? undefined : value.trim();
+}
+
 function distanceQuestionDestination(message: string): string | undefined {
   const folded = plainTextForRouting(message);
   if (!/\b(?:quang duong|khoang cach|bao xa|bao nhieu km|mat bao lau|distance)\b/.test(folded)) return undefined;
@@ -3268,11 +3280,12 @@ export class AssistantService {
     }
     const slots = task.extracted_slots;
     const location = restaurantSearchLocation(stringValue(slots.location));
-    const cuisineType = stringValue(slots.cuisine_type);
+    const cuisineType = restaurantCuisineFilter(stringValue(slots.cuisine_type));
     const budgetRange = stringValue(slots.budget_range);
     const partySize = numberValue(slots.party_size);
     const startAt = stringValue(slots.start_at);
-    const cuisineQuery = cuisineType ?? stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine);
+    const cuisineQuery = cuisineType
+      ?? restaurantCuisineFilter(stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine));
     let existing = task.authoritative;
     const invalidatedHold = isRecord(existing?.invalidated_hold) ? existing.invalidated_hold : undefined;
     const invalidatedHoldId = stringValue(invalidatedHold?.id);
