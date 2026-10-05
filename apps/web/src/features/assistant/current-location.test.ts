@@ -1,4 +1,4 @@
-import { deviceLocationFromPosition } from "./current-location";
+import { deviceLocationFromPosition, shouldCaptureCurrentLocation } from "./current-location";
 
 describe("assistant current location", () => {
   it("keeps coordinates and capture metadata as structured ephemeral context", () => {
@@ -24,4 +24,20 @@ describe("assistant current location", () => {
       source: "device",
     });
   });
+
+  it.each([
+    "Đặt xe từ vị trí hiện tại đi sân bay Nội Bài",
+    "Từ vị trí hiện tại đến 51 Phố Tam Khương",
+    "What is my current location?",
+    "Tôi đang ở đâu?",
+  ])("recognizes an explicit current-location request: %s", (message) => {
+    expect(shouldCaptureCurrentLocation(message)).toBe(true);
+  });
+
+  it.each(["Đặt xe đến sân bay Nội Bài", "Nhà tôi ở đâu trong hồ sơ?"]) (
+    "does not request device location for unrelated messages: %s",
+    (message) => {
+      expect(shouldCaptureCurrentLocation(message)).toBe(false);
+    },
+  );
 });

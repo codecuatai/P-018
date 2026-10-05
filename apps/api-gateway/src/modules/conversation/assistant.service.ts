@@ -2734,7 +2734,11 @@ export class AssistantService {
         ? next.find((task) => task.domain === domain && task.phase !== 'COMPLETED' && (retrySameKey || task.phase !== 'FAILED') && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED')
         : undefined);
       const candidateSlots = isRecord(candidate.extracted_slots) ? candidate.extracted_slots : {};
-      const currentLocationReference = domain === 'ride' && candidateSlots.pickup_source === 'CURRENT_DEVICE_LOCATION';
+      const foldedLatestMessage = plainTextForRouting(latestMessage).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+      const explicitlyUsesCurrentLocationAsPickup = domain === 'ride'
+        && /\b(?:tu|from)\s+(?:vi tri hien tai|vi tri cua toi|vi tri thiet bi hien tai|my current location)\b/.test(foldedLatestMessage);
+      const currentLocationReference = domain === 'ride'
+        && (candidateSlots.pickup_source === 'CURRENT_DEVICE_LOCATION' || explicitlyUsesCurrentLocationAsPickup);
       const slots = sanitizedTaskSlots(domain, candidateSlots, currentLocationReference);
       if (domain === 'ride') {
         const foldedRideRequest = plainTextForRouting(latestMessage);
@@ -3882,7 +3886,7 @@ export class AssistantService {
     trustedExecutionScope: string,
     expectedCapability?: string,
     allowedCapabilities?: readonly string[],
-  ): Promise<{ data: JsonObject; stateUpdates: JsonObject; pending?: JsonObject }> {
+  ): Promise<{ data: JsonObject; stateUpdates: JsonObject; pending?: JsonObject; searchFallback?: { requestedKeyword: string; searchedKeyword: string } }> {
     if (!this.tools) throw new ServiceUnavailableException({ code: 'GATEWAY_DISPATCH_UNAVAILABLE', detail: 'Gateway proposal dispatcher is unavailable.' });
     const proposalNames = values.map((value) => stringValue(value.capability_name) ?? '');
     if (allowedCapabilities && (
@@ -3912,6 +3916,7 @@ export class AssistantService {
     let restaurantId = stringValue(selectedCandidate?.restaurant_id) ?? stringValue(context.restaurant_id);
     let addressId = stringValue(context.address_id);
     let selectedOptions: JsonObject[] = [];
+    let searchFallback: { requestedKeyword: string; searchedKeyword: string } | undefined;
 
     for (const [proposalIndex, value] of values.entries()) {
       const proposal = value as unknown as ToolProposal;
@@ -3964,7 +3969,7 @@ export class AssistantService {
         throw new UnprocessableEntityException({ code: 'UNSUPPORTED_TOOL_PROPOSAL', detail: 'The proposed Food capability is not supported by this flow.' });
       }
 
-      const executed = await this.tools.executeProposal(
+      let executed = await this.tools.executeProposal(
         proposal,
         args,
         user,
@@ -3973,7 +3978,35 @@ export class AssistantService {
         `${trustedExecutionScope}:p${proposalIndex}`,
       );
       if (name === 'search_food') {
-        const rows = (Array.isArray(executed) ? executed : arrayValue(executed.items)).filter(isRecord);
+        let rows = (Array.isArray(executed) ? executed : arrayValue(executed.items)).filter(isRecord);
+        const requestedKeyword = stringValue(args.keyword)?.trim() ?? '';
+        const keywordParts = requestedKeyword.split(/\s+/).filter(Boolean);
+        // A precise dish name may not exist in the catalog while a broader
+        // prefix (for example, "phở bò sốt vang" -> "phở bò") does. Retry at
+        // most twice, keeping every non-keyword filter unchanged.
+        if (!rows.some((row) => stringValue(isRecord(row.item) ? row.item.id : row.id)) && keywordParts.length > 2) {
+          const shortestPrefix = Math.max(2, keywordParts.length - 2);
+          let retryIndex = 0;
+          for (let length = keywordParts.length - 1; length >= shortestPrefix; length -= 1) {
+            const searchedKeyword = keywordParts.slice(0, length).join(' ');
+            retryIndex += 1;
+            const fallbackResult = await this.tools.executeProposal(
+              proposal,
+              { ...args, keyword: searchedKeyword },
+              user,
+              correlationId,
+              workflowId,
+              `${trustedExecutionScope}:p${proposalIndex}:fallback${retryIndex}`,
+            );
+            const fallbackRows = (Array.isArray(fallbackResult) ? fallbackResult : arrayValue(fallbackResult.items)).filter(isRecord);
+            if (fallbackRows.some((row) => stringValue(isRecord(row.item) ? row.item.id : row.id))) {
+              executed = fallbackResult;
+              rows = fallbackRows;
+              searchFallback = { requestedKeyword, searchedKeyword };
+              break;
+            }
+          }
+        }
         const restaurants: JsonObject[] = [];
         const items: JsonObject[] = [];
         for (const row of rows) {
@@ -4033,7 +4066,7 @@ export class AssistantService {
         data = name === 'preview_order' ? { preview: executed } : executed;
       }
     }
-    return { data, stateUpdates, ...(pending ? { pending } : {}) };
+    return { data, stateUpdates, ...(pending ? { pending } : {}), ...(searchFallback ? { searchFallback } : {}) };
   }
 
   private async processFood(
@@ -4138,6 +4171,7 @@ export class AssistantService {
     let stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
     let pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
     let data = isRecord(response.data) ? response.data : {};
+    let searchFallback: { requestedKeyword: string; searchedKeyword: string } | undefined;
     const proposals = arrayValue(data.proposals).filter(isRecord);
     const explicitSelection = selectedByAction || selectedIndex !== undefined;
     if (explicitSelection && !proposals.some((proposal) => stringValue(proposal.capability_name) === 'add_to_cart')) {
@@ -4172,6 +4206,7 @@ export class AssistantService {
       stateUpdates = { ...stateUpdates, ...dispatched.stateUpdates };
       pending = dispatched.pending;
       data = dispatched.data;
+      searchFallback = dispatched.searchFallback;
     }
     const responseCart = isRecord(data.cart) ? data.cart : undefined;
     const cartIdHint = stringValue(stateUpdates.cart_id) ?? stringValue(responseCart?.id) ?? stringValue((previousContext as JsonObject).cart_id);
@@ -4272,14 +4307,23 @@ export class AssistantService {
     if (cartUpdated) {
       foodData = { ...foodData, options: [] };
     }
-    const foodNote = /^Gateway will validate and execute the proposed next step\.?$/i.test(String(response.message ?? '').trim())
-      ? 'Mình chưa tìm thấy món phù hợp. Bạn thử đổi món hoặc khu vực nhé.'
-      : safeText(response.message, 'Hiện chưa có món phù hợp để chọn.');
+    const responseMessage = String(response.message ?? '').trim();
+    const genericSearchMessage = /^(?:Gateway will validate and execute the proposed next step|Mình sẽ tìm món phù hợp cho bạn)\.?$/i.test(responseMessage);
+    const foodNote = searchFallback
+      ? `Chưa tìm thấy đúng “${searchFallback.requestedKeyword}”. Mình đã mở rộng tìm kiếm sang “${searchFallback.searchedKeyword}” và tìm được các món gần phù hợp.`
+      : genericSearchMessage
+        ? 'Mình chưa tìm thấy món phù hợp. Bạn thử đổi món hoặc khu vực nhé.'
+        : safeText(response.message, 'Hiện chưa có món phù hợp để chọn.');
+    const foodOptions = arrayValue(foodData.options);
+    const foodEmpty = !pending && !cartUpdated && foodOptions.length === 0;
     const publicItem: JsonObject = {
-      kind: pending ? 'food_confirmation' : arrayValue(foodData.options).length ? 'food_options' : 'food_empty',
+      kind: pending ? 'food_confirmation' : foodOptions.length ? 'food_options' : 'food_empty',
       ...foodData,
+      ...(!pending && !cartUpdated ? {
+        title: searchFallback ? 'Món gần phù hợp' : stringValue(foodData.title) ?? (foodEmpty ? 'Chưa có món phù hợp' : 'Món phù hợp'),
+      } : {}),
       ...(cartUpdated ? { kind: 'food_cart' } : {}),
-      ...(!pending && !cartUpdated && !arrayValue(foodData.options).length ? { note: foodNote } : {}),
+      ...(!pending && !cartUpdated && (foodEmpty || searchFallback) ? { note: foodNote } : {}),
     };
     const optionActions = !pending
       ? [

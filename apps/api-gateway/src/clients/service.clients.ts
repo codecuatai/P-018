@@ -1,4 +1,4 @@
-import { HttpException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { HttpException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { operationProfile, OperationProfile } from '../resilience/operation-profile';
@@ -144,6 +144,13 @@ export type ServiceCallContext = {
 type McpServiceName = 'ride' | 'restaurant' | 'healthcare' | 'food' | 'delivery';
 type McpServiceResponse = { status: number; headers?: Record<string, string>; body?: unknown };
 
+class McpToolExecutionError extends Error {
+  constructor() {
+    super('MCP tool execution failed.');
+    this.name = 'McpToolExecutionError';
+  }
+}
+
 function readMcpPayload(text: string): Record<string, unknown> {
   const dataLines = text.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim());
   const payload = dataLines.length ? dataLines.join('\n') : text;
@@ -175,6 +182,7 @@ const rideBookingCancelProfile: OperationProfile = {
 };
 
 abstract class InternalServiceClient {
+  private readonly logger = new Logger(InternalServiceClient.name);
   private readonly mcpService?: McpServiceName;
   private mcpSessionId?: string;
   private mcpReady?: Promise<void>;
@@ -264,7 +272,7 @@ abstract class InternalServiceClient {
             ...(body !== undefined ? { body } : {}),
           },
         }, timeoutMs);
-        if (result.isError === true) throw new Error('MCP service request failed.');
+        if (result.isError === true) throw new McpToolExecutionError();
         const remote = parseMcpToolResult(result);
         const status = Number(remote.status);
         if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error('MCP service returned an invalid HTTP status.');
@@ -412,7 +420,23 @@ abstract class InternalServiceClient {
         if (error instanceof ServiceCallError) {
           throw error;
         }
+        if (error instanceof McpToolExecutionError) {
+          this.logger.warn(`Downstream tool error service=${profile.serviceId} operation=${profile.operationId} correlation_id=${context.correlationId} code=MCP_TOOL_ERROR`);
+          throw new ServiceCallError({
+            service: profile.serviceId,
+            operation: profile.operationId,
+            contractVersion: profile.contractVersion,
+            httpStatus: null,
+            code: 'MCP_TOOL_ERROR',
+            detail: 'The MCP bridge returned a tool execution error.',
+            category: 'UNKNOWN',
+            retryable: false,
+            retryAfterMs: null,
+            outcome: outcomeForTransportFailure(profile),
+          });
+        }
         if (error instanceof Error && error.name === 'AbortError') {
+          this.logger.warn(`Downstream timeout service=${profile.serviceId} operation=${profile.operationId} correlation_id=${context.correlationId} code=DOWNSTREAM_TIMEOUT`);
           throw new ServiceCallError({
             service: profile.serviceId,
             operation: profile.operationId,
@@ -426,6 +450,7 @@ abstract class InternalServiceClient {
             outcome: outcomeForTransportFailure(profile),
           });
         }
+        this.logger.warn(`Downstream transport error service=${profile.serviceId} operation=${profile.operationId} correlation_id=${context.correlationId} code=DOWNSTREAM_NETWORK`);
         throw new ServiceCallError({
           service: profile.serviceId,
           operation: profile.operationId,

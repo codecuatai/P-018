@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 import * as apiClient from "@/lib/api-client";
@@ -38,6 +38,40 @@ describe("ChatDashboard voice controls", () => {
 
     expect(screen.queryByRole("button", { name: "Thêm tùy chọn" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nhập bằng giọng nói" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "Nhập yêu cầu" })).toHaveAttribute("placeholder", "Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?");
     expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
+  });
+
+  it("captures device location when the user asks for the current location", async () => {
+    const position = {
+      coords: { latitude: 21.01, longitude: 105.82, accuracy: 12 },
+      timestamp: Date.now(),
+    } as GeolocationPosition;
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition: (success: PositionCallback) => success(position) },
+    });
+    jest.mocked(apiClient.reverseGeocodeAddress).mockResolvedValue({
+      candidates: [{ address_text: "Địa chỉ thiết bị", latitude: 21.01, longitude: 105.82 }],
+    } as never);
+    jest.mocked(apiClient.sendAssistantMessage).mockResolvedValue({
+      conversation_id: "conversation-current-location",
+      message: "Đã nhận vị trí.",
+      items: [],
+      actions: [],
+    } as never);
+
+    render(<ChatDashboard user={{ sub: "user-location", email: "location@example.test", role: "USER" }} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Nhập yêu cầu" }), {
+      target: { value: "Đặt xe từ vị trí hiện tại đi sân bay Nội Bài" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi yêu cầu" }));
+
+    await waitFor(() => expect(apiClient.sendAssistantMessage).toHaveBeenCalledWith(
+      "Đặt xe từ vị trí hiện tại đi sân bay Nội Bài",
+      undefined,
+      expect.objectContaining({ latitude: 21.01, longitude: 105.82, source: "device" }),
+      expect.any(AbortSignal),
+    ));
   });
 });

@@ -73,6 +73,13 @@
   font-size: 0.94rem;
 }
 
+.customer-shell .composer-box textarea:focus,
+.customer-shell .composer-box textarea:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
+}
+
 .customer-shell .composer-addon-btn {
   display: none;
 }

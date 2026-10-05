@@ -16,7 +16,7 @@ import { ActiveWorkDetailDialog, ActiveWorkRailCardWithCancel as ActiveWorkRailC
 import { VoiceInput } from "@/components/voice-input";
 import { VoiceOutput } from "@/components/voice-output";
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis";
-import { deviceLocationFromPosition } from "./current-location";
+import { deviceLocationFromPosition, shouldCaptureCurrentLocation } from "./current-location";
 
 export function ChatDashboard({ user, initialConversationId }: { user: AuthUser; initialConversationId?: string }) {
   const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
@@ -248,7 +248,20 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setComposer("");
     setSending(true);
     try {
-      const response = await sendAssistantMessage(text, conversationId, currentLocation, controller.signal);
+      let requestLocation = currentLocation;
+      if (!requestLocation && shouldCaptureCurrentLocation(text)) {
+        try {
+          setIsLocating(true);
+          setLocateError("");
+          requestLocation = await captureCurrentLocation();
+          setCurrentLocation(requestLocation);
+        } catch {
+          setLocateError("Không thể tự lấy vị trí. Hãy cấp quyền định vị hoặc bấm nút vị trí rồi gửi lại.");
+        } finally {
+          setIsLocating(false);
+        }
+      }
+      const response = await sendAssistantMessage(text, conversationId, requestLocation, controller.signal);
       setConversationId(response.conversation_id);
       if (response.items.some((item) => item.kind === "food_options") && response.actions.some((action) => action.kind === "select_food_item")) {
         setFoodSelections({});
@@ -404,9 +417,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
     setIsLocating(true);
     setLocateError("");
     try {
-      const position = await getCurrentPosition();
-      const address = await fetchAddress(position);
-      setCurrentLocation(deviceLocationFromPosition(position, address));
+      setCurrentLocation(await captureCurrentLocation());
       inputRef.current?.focus();
     } catch {
       setLocateError("Không thể lấy vị trí. Vui lòng kiểm tra quyền truy cập và thử lại.");
@@ -535,7 +546,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
               </div>
             </div>
             {locateError ? <p className="composer-error" role="alert">{locateError}</p> : null}
-            {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
+            {currentLocation ? <p className="composer-hint" role="status">Đang chia sẻ vị trí hiện tại{currentLocation.address_text && !/^tọa độ:/i.test(currentLocation.address_text) ? `: ${currentLocation.address_text}` : ""}. Vị trí không được lưu vào hồ sơ.</p> : null}
             <div className="composer-footer">
               <p className="composer-hint">Enter gửi · Shift+Enter xuống dòng</p>
             </div>
@@ -644,6 +655,13 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
       maximumAge: 0,
     });
   });
+}
+
+async function captureCurrentLocation(): Promise<DeviceCurrentLocation> {
+  if (!("geolocation" in navigator)) throw new Error("GEOLOCATION_UNAVAILABLE");
+  const position = await getCurrentPosition();
+  const address = await fetchAddress(position);
+  return deviceLocationFromPosition(position, address);
 }
 
 async function fetchAddress(position: GeolocationPosition): Promise<string> {

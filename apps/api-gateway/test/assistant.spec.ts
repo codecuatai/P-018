@@ -518,6 +518,84 @@ describe('Unified assistant orchestration', () => {
     expect((conversation?.state.food_context as Record<string, unknown>).cart_id).toBe('cart-secret');
   });
 
+  it('broadens an empty exact Food search within a newly created conversation', async () => {
+    const store = new InMemoryCoreRepository();
+    const exactKeyword = 'phở bò sốt vang';
+    const fallbackItem = {
+      id: 'pho-bo-item',
+      name: 'Phở bò',
+      restaurant_id: 'pho-restaurant',
+      price: 65000,
+      currency: 'VND',
+    };
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã tìm được một số món gần phù hợp.' }
+        : {
+          decision_source: 'model',
+          planning_decision: versionedDecision({
+            tasks: [{
+              task_ref: 0,
+              domain: 'food',
+              operation: 'DISCOVER',
+              goal: 'Tìm món phở bò sốt vang',
+              normalized_request: 'Tìm quán phở bò sốt vang ngon gần đây, giao tận nơi',
+              extracted_slots: { dish_query: exactKeyword },
+              steps: [{ step_ref: 0, purpose: 'Tìm món', step_kind: 'CAPABILITY', capability: 'search_food', phase: 'DISCOVERY', requires_semantic_fields: [], requires_authority: [], depends_on_steps: [], risk_ceiling: 'READ', confirmation_gate: 'NONE' }],
+              disposition: 'READY',
+            }],
+          }),
+        }),
+      chat: jest.fn(async (payload: Record<string, unknown>) => ({
+        response_type: 'text',
+        message: 'Mình sẽ tìm món phù hợp cho bạn.',
+        data: {
+          proposals: [{
+            schema_version: '1',
+            capability_name: 'search_food',
+            semantic_arguments: { keyword: exactKeyword },
+            workflow_id: payload.conversation_id,
+            tool_call_id: 'call-food-search-fallback',
+            risk_ceiling: 'READ',
+            confirmation_gate: 'none',
+          }],
+        },
+        state_updates: {},
+      })),
+    };
+    const tools = {
+      executeProposal: jest.fn(async (_proposal: unknown, args: Record<string, unknown>) => {
+        if (args.keyword === 'phở bò') return [{ item: fallbackItem, restaurant: { id: 'pho-restaurant', name: 'Quán Phở' } }];
+        return [];
+      }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      { executeTool: jest.fn() } as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+      undefined,
+      tools as never,
+    );
+
+    const response = await service.chat(user, 'Tìm quán phở bò sốt vang ngon gần đây, giao tận nơi', undefined, 'cor-food-new-session-fallback');
+
+    expect(response.conversation_id).toBeTruthy();
+    expect(tools.executeProposal.mock.calls.map(([, args]) => args.keyword)).toEqual([
+      'phở bò sốt vang',
+      'phở bò sốt',
+      'phở bò',
+    ]);
+    expect(response.items[0]).toMatchObject({
+      kind: 'food_options',
+      title: 'Món gần phù hợp',
+      note: 'Chưa tìm thấy đúng “phở bò sốt vang”. Mình đã mở rộng tìm kiếm sang “phở bò” và tìm được các món gần phù hợp.',
+      options: [expect.objectContaining({ name: 'Phở bò', restaurant: expect.objectContaining({ name: 'Quán Phở' }) })],
+    });
+  });
+
   it('keeps Food empty/error guidance instead of replacing it with a generic composed reply', async () => {
     const store = new InMemoryCoreRepository();
     const foodMessage = 'Món súp cua hiện chưa có trong danh sách. Bạn thử tìm món khác nhé.';
@@ -541,7 +619,7 @@ describe('Unified assistant orchestration', () => {
 
     const response = await service.chat(user, 'Tìm món súp cua.', undefined, 'cor-food-empty-generic-reply');
 
-    expect(response.items[0]).toMatchObject({ kind: 'food_empty', note: foodMessage });
+    expect(response.items[0]).toMatchObject({ kind: 'food_empty', title: 'Chưa có món phù hợp', note: foodMessage });
     expect(response.message).toBe(foodMessage);
     expect(agent.assistantChat).toHaveBeenCalledTimes(1);
   });
@@ -2363,6 +2441,26 @@ describe('Unified assistant orchestration', () => {
 
     expect(result.tasks[0]).toEqual(expect.objectContaining({ phase: 'PLANNING', revision: 3 }));
     expect(result.touchedIds.has('task-retry')).toBe(true);
+  });
+
+  it('uses device coordinates for an explicit current-location pickup even when the planner omits the pickup source', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const internal = service as unknown as {
+      mergeTasks: (current: Array<Record<string, unknown>>, planned: Array<Record<string, unknown>>, message: string) => { tasks: Array<Record<string, unknown>> };
+    };
+
+    const result = internal.mergeTasks([], [{
+      domain: 'ride',
+      goal: 'Đặt xe 4 chỗ',
+      normalized_request: 'Đặt xe từ vị trí hiện tại đi sân bay Nội Bài',
+      extracted_slots: { pickup_address: 'vị trí hiện tại', dropoff_address: 'Sân bay Nội Bài', vehicle_type: 'CAR_4' },
+      depends_on: [],
+      disposition: 'READY',
+    }], 'Đặt xe 4 chỗ từ vị trí hiện tại đi sân bay Nội Bài');
+
+    expect(result.tasks[0].authoritative).toEqual({ pickup_source: 'CURRENT_DEVICE_LOCATION' });
+    expect(result.tasks[0].extracted_slots).not.toHaveProperty('pickup_address');
+    expect(result.tasks[0].extracted_slots).toEqual(expect.objectContaining({ dropoff_address: 'Sân bay Nội Bài' }));
   });
 
   it('invalidates stale pending confirmation state and its public card', () => {
