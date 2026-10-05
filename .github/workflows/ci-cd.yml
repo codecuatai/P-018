@@ -268,7 +268,8 @@ jobs:
       ${{
         always() &&
         !cancelled() &&
-        github.event_name == 'push' &&
+        github.event_name == 'workflow_dispatch' &&
+        vars.ENABLE_DEPLOYMENTS == 'true' &&
         github.ref == 'refs/heads/develop' &&
         needs.detect-changes.result == 'success' &&
         !contains(needs.*.result, 'failure') &&
@@ -347,7 +348,8 @@ jobs:
       ${{
         always() &&
         !cancelled() &&
-        github.event_name == 'push' &&
+        github.event_name == 'workflow_dispatch' &&
+        vars.ENABLE_DEPLOYMENTS == 'true' &&
         github.ref == 'refs/heads/main' &&
         needs.detect-changes.result == 'success' &&
         !contains(needs.*.result, 'failure') &&
