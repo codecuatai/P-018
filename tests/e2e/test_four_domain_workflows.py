@@ -8,13 +8,16 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
-from _helpers import REPO_ROOT, compose_args, get_cached_token
+from _helpers import REPO_ROOT, get_cached_token
 
 GATEWAY_URL = os.getenv("E2E_GATEWAY_URL")
 DEMO_EMAIL = os.getenv("E2E_DEMO_EMAIL", "demo@example.invalid")
 DEMO_PASSWORD = os.getenv("E2E_DEMO_PASSWORD", "replace-with-local-demo-password")
 HEALTHCARE_DB_NAME = os.getenv("E2E_HEALTHCARE_DB_NAME", "xone_healthcare")
 HEALTHCARE_DB_USER = os.getenv("E2E_HEALTHCARE_DB_USER", "healthcare_user")
+SERVICE_REPO_ROOT = REPO_ROOT.parent / "P-018-Service"
+SERVICE_COMPOSE_PROJECT_NAME = os.getenv("E2E_SERVICE_COMPOSE_PROJECT_NAME", "p-018-service")
+SERVICE_COMPOSE_ENV_FILE = os.getenv("E2E_SERVICE_COMPOSE_ENV_FILE", ".env.example")
 pytestmark = pytest.mark.skipif(not GATEWAY_URL, reason="E2E_GATEWAY_URL is not configured")
 
 
@@ -64,21 +67,25 @@ def workflow_chat(
 def run_healthcare_sql(sql: str) -> str:
     result = subprocess.run(
         [
-            *compose_args(
-                "exec",
-                "-T",
-                "postgres",
-                "psql",
-                "-U",
-                HEALTHCARE_DB_USER,
-                "-d",
-                HEALTHCARE_DB_NAME,
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-qAt",
-            ),
+            "docker",
+            "compose",
+            "-p",
+            SERVICE_COMPOSE_PROJECT_NAME,
+            "--env-file",
+            SERVICE_COMPOSE_ENV_FILE,
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            HEALTHCARE_DB_USER,
+            "-d",
+            HEALTHCARE_DB_NAME,
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-qAt",
         ],
-        cwd=REPO_ROOT,
+        cwd=SERVICE_REPO_ROOT,
         input=sql,
         text=True,
         capture_output=True,
@@ -89,10 +96,11 @@ def run_healthcare_sql(sql: str) -> str:
 
 
 def expire_healthcare_slot(slot_id: int) -> None:
-    run_healthcare_sql(
+    updated = run_healthcare_sql(
         f"UPDATE time_slots SET hold_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' "
-        f"WHERE id = {slot_id} AND status = 'HOLDING';"
+        f"WHERE id = {slot_id} AND status = 'HOLDING' RETURNING id;"
     )
+    assert updated == str(slot_id), f"Expected to expire held Healthcare slot {slot_id}; got {updated!r}."
 
 
 def healthcare_state(appointment_id: int) -> tuple[str, str, str]:
@@ -199,6 +207,15 @@ def test_ride_public_two_step_confirmation() -> None:
         )
         payment.raise_for_status()
         completed = payment.json()["data"]
+        if completed["status"] == "SEARCHING_DRIVER":
+            # Driver assignment is deliberately lazy: the first tracking read
+            # completes the search so confirmation can return immediately.
+            tracking = client.get(
+                f"/api/v1/rides/{booking['id']}/tracking",
+                headers=auth_headers(token),
+            )
+            tracking.raise_for_status()
+            completed = tracking.json()["data"]
         assert completed["status"] == "DRIVER_ASSIGNED"
 
 
@@ -208,7 +225,7 @@ def test_restaurant_public_flow_requires_explicit_final_confirmation() -> None:
         token = login(client)
         workflow_id = unique_id("restaurant-workflow")
         first = workflow_chat(client, token, workflow_id, unique_restaurant_request())
-        assert first["tool_result"]["items"]
+        assert first["tool_result"]["items"], first
         assert first["tool_request"]["tool_name"] == "restaurant.search"
 
         second = workflow_chat(

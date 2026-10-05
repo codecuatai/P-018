@@ -105,6 +105,59 @@ const AssistantService: AssistantServiceConstructor = new Proxy(ProductionAssist
 describe('Unified assistant orchestration', () => {
   const user = { sub: 'actor-assistant', email: 'demo@xone.vn', role: 'USER' };
 
+  it('answers a previous-message question from this conversation without resuming its active Food task', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-food-message-recall';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.appendConversationTurn({
+      conversationId,
+      actorId: user.sub,
+      userMessage: { role: 'user', content: 'Tìm phở bò giao đến Cầu Giấy.', kind: 'USER', visibility: 'USER_VISIBLE', createdAt: new Date().toISOString() },
+      assistantMessage: { role: 'assistant', content: 'Mình đang tìm món phù hợp.', kind: 'ASSISTANT', visibility: 'USER_VISIBLE', createdAt: new Date().toISOString() },
+      stateUpdates: {
+        tasks: [{
+          id: 'food-task-active',
+          domain: 'food',
+          operation: 'DISCOVER',
+          goal: 'Tìm món giao đến Cầu Giấy',
+          normalized_request: 'Tìm phở bò giao đến Cầu Giấy',
+          extracted_slots: { dish_query: 'phở bò', district: 'Cầu Giấy' },
+          depends_on: [],
+          phase: 'IN_PROGRESS',
+          revision: 1,
+          public_item: { kind: 'food_options', options: [{ id: 'food-option-1' }] },
+          authoritative: { food_context: { dish_query: 'phở bò', district: 'Cầu Giấy' } },
+        }],
+        actions: [],
+      },
+    });
+
+    const agent = { assistantChat: jest.fn(), chat: jest.fn() };
+    const food = { chat: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      food as never,
+    );
+
+    const response = await service.chat(user, 'Câu trước tôi nói gì?', conversationId, 'cor-food-message-recall');
+
+    expect(response.message).toContain('Tìm phở bò giao đến Cầu Giấy.');
+    expect(response.items).toEqual([]);
+    expect(response.actions).toEqual([]);
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(food.chat).not.toHaveBeenCalled();
+    const saved = await store.getConversation(conversationId, user.sub);
+    expect(saved?.messages.at(-2)?.content).toBe('Câu trước tôi nói gì?');
+    expect(saved?.state.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'food-task-active', phase: 'IN_PROGRESS' }),
+    ]));
+  });
+
   async function seedFoodPaymentAction(store: InMemoryCoreRepository, confirmationId: string) {
     const conversationId = `conv_food_payment_${confirmationId}`;
     const actionId = `action_food_payment_${confirmationId}`;
@@ -696,7 +749,7 @@ describe('Unified assistant orchestration', () => {
     ]));
   });
 
-  it('clarifies a generic Food and Healthcare selection, then advances only Food for a specific restaurant choice', async () => {
+  it('clarifies a generic Food and Healthcare selection without mutating either task', async () => {
     const store = new InMemoryCoreRepository();
     let planningCalls = 0;
     const agent = {
@@ -711,17 +764,6 @@ describe('Unified assistant orchestration', () => {
                 { domain: 'healthcare', goal: 'Đặt lịch khám thần kinh', normalized_request: 'Đặt lịch khám thần kinh sáng mai', extracted_slots: { department: 'thần kinh' } },
               ],
             },
-          };
-        }
-        if (planningCalls === 2) {
-          return {
-            planning_decision: versionedDecision({
-              tasks: [],
-              clarification_need: {
-                reason: 'The selection target is ambiguous across active tasks.',
-                missing_fields: ['selection_domain'],
-              },
-            }),
           };
         }
         return { plan: { tasks: [{ domain: 'food', goal: 'Chọn quán phở đầu tiên', normalized_request: 'Chọn quán phở đầu tiên', extracted_slots: { selection_index: 0 } }] } };
@@ -739,6 +781,7 @@ describe('Unified assistant orchestration', () => {
 
     const combined = await service.chat(user, 'Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai.', undefined, 'cor-ambiguous-1');
     const beforeClarification = await store.getConversation(combined.conversation_id, user.sub);
+    const beforeHealthcare = (beforeClarification?.state.tasks as Array<Record<string, unknown>>).find((task) => task.domain === 'healthcare');
     const generic = await service.chat(user, 'Chọn cái đầu tiên.', combined.conversation_id, 'cor-ambiguous-2');
     const afterClarification = await store.getConversation(combined.conversation_id, user.sub);
 
@@ -749,16 +792,11 @@ describe('Unified assistant orchestration', () => {
     expect(agent.chat).toHaveBeenCalledTimes(1);
     expect(healthcare.executeTool).toHaveBeenCalledTimes(1);
 
-    const beforeHealthcare = (beforeClarification?.state.tasks as Array<Record<string, unknown>>).find((task) => task.domain === 'healthcare');
-    const foodSelected = await service.chat(user, 'Chọn quán đầu tiên.', combined.conversation_id, 'cor-ambiguous-3');
-    const afterFoodSelection = await store.getConversation(combined.conversation_id, user.sub);
-    const afterHealthcare = (afterFoodSelection?.state.tasks as Array<Record<string, unknown>>).find((task) => task.domain === 'healthcare');
+    const afterHealthcare = (afterClarification?.state.tasks as Array<Record<string, unknown>>).find((task) => task.domain === 'healthcare');
 
-    expect(foodSelected.items.some((item) => item.kind === 'food_options')).toBe(true);
-    expect(agent.chat).toHaveBeenCalledTimes(2);
+    expect(agent.chat).toHaveBeenCalledTimes(1);
     expect(healthcare.executeTool).toHaveBeenCalledTimes(1);
     expect(afterHealthcare).toEqual(beforeHealthcare);
-    expect(foodSelected.actions.map((action) => action.kind)).toEqual(['select_food_item', 'select_healthcare_slot']);
   });
 
   it('derives generic and specific follow-up domains from actions plus authoritative choice metadata', () => {

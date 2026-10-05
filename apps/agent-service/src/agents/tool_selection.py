@@ -19,7 +19,13 @@ def select_tools(intent: str, slots: dict[str, Any], registry: list[dict[str, An
             },
         )
     if intent == "select_restaurant":
-        return call("search_food", {"keyword": slots.get("dish_query", "")}) if not slots.get("restaurant_id") else []
+        # Once reference resolution has selected a restaurant, the next safe
+        # read is its authoritative menu. Returning no tool here leaves the
+        # Gateway's planned search_food step without a proposal and turns a
+        # valid multi-turn selection into CORE_A_PROPOSAL_MISSING.
+        if slots.get("restaurant_id"):
+            return call("view_menu", {"restaurant_id": slots["restaurant_id"]})
+        return call("search_food", {"keyword": slots.get("dish_query", "")})
     if intent == "select_menu_item":
         if slots.get("menu_item_id"):
             return call("view_menu_item", {"menu_item_id": slots["menu_item_id"]})

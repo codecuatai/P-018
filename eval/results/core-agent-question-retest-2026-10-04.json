@@ -1,0 +1,52 @@
+{
+  "schema_version": "1",
+  "evaluation": "Core Agent live question sweep",
+  "base_inventory_cases": 100,
+  "date_utc": "2026-10-04",
+  "privacy": "Synthetic prompts, responses, credentials, and trace bodies are not written to this artifact.",
+  "groups": {
+    "service": {
+      "cases": 1,
+      "passed": 1,
+      "failed": 0
+    },
+    "ambiguous": {
+      "cases": 1,
+      "passed": 1,
+      "failed": 0
+    }
+  },
+  "summary": {
+    "cases": 2,
+    "passed": 2,
+    "failed": 0,
+    "provider_model": 2,
+    "fallback_or_other": 0
+  },
+  "results": [
+    {
+      "case_id": "service-14",
+      "group": "service",
+      "status": "PASS",
+      "http_status": 200,
+      "decision_source": "model",
+      "task_count": 1,
+      "domains": [
+        "restaurant"
+      ],
+      "latency_ms": 2580
+    },
+    {
+      "case_id": "ambiguous-12",
+      "group": "ambiguous",
+      "status": "PASS",
+      "http_status": 200,
+      "decision_source": "model",
+      "task_count": 1,
+      "domains": [
+        "food"
+      ],
+      "latency_ms": 2714
+    }
+  ]
+}

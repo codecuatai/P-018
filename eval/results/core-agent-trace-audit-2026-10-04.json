@@ -1,0 +1,37 @@
+{
+  "schema_version": "1",
+  "audit": "Core Agent Langfuse trace privacy",
+  "date_utc": "2026-10-04",
+  "observations": 713,
+  "traces": 104,
+  "root_observations": 104,
+  "generation_observations": 104,
+  "generation_usage_observations": 102,
+  "observation_io_count": 0,
+  "identity_field_count": 0,
+  "user_id_field_count": 0,
+  "session_id_field_count": 0,
+  "unexpected_metadata_keys": [
+    "resourceAttributes.service.instance.id",
+    "resourceAttributes.service.name",
+    "resourceAttributes.telemetry.sdk.language",
+    "resourceAttributes.telemetry.sdk.name",
+    "resourceAttributes.telemetry.sdk.version",
+    "scope.attributes.public_key",
+    "scope.name",
+    "scope.version"
+  ],
+  "sample_observation_names": [
+    "Assistant: Plan",
+    "LLM: Ph\u00e2n t\u00edch & L\u1eadp k\u1ebf ho\u1ea1ch",
+    "core_a.task [FOOD]",
+    "core_a.task [HEALTHCARE]",
+    "core_a.task [RESTAURANT]",
+    "core_a.task [RIDE]",
+    "core_a.validate",
+    "fallback",
+    "planner.route",
+    "request.validate",
+    "run_metadata.persist"
+  ]
+}

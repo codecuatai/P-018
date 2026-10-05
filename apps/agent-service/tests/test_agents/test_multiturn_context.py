@@ -13,6 +13,7 @@ class FlowGateway:
             {"name": name, "permission": "draft_write" if name in {"create_cart", "add_to_cart"} else "read"}
             for name in (
                 "search_food",
+                "view_menu",
                 "view_menu_item",
                 "create_cart",
                 "add_to_cart",
@@ -94,7 +95,7 @@ async def test_structured_prompt_contains_messages_context_and_schema() -> None:
 
 
 @pytest.mark.asyncio
-async def test_first_restaurant_alias_resolves_from_persisted_candidates() -> None:
+async def test_first_restaurant_alias_loads_authoritative_menu_from_persisted_candidates() -> None:
     gateway = FlowGateway()
     graph = build_graph(tool_client=gateway)
     result = await graph.ainvoke(
@@ -106,6 +107,7 @@ async def test_first_restaurant_alias_resolves_from_persisted_candidates() -> No
             "workflow_context": {"restaurant_candidates": [{"id": "res_pho_hanoi", "name": "Phở Gánh Phố Cổ"}]},
         }
     )
+    assert [proposal["capability_name"] for proposal in result["tool_calls"]] == ["view_menu"]
     assert result["state_updates"]["restaurant_id"] == "res_pho_hanoi"
 
 

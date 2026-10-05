@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -193,3 +195,116 @@ def compose_restaurant_response(state: AgentState) -> dict[str, Any]:
     elif phase == "FAILED":
         response = "Yêu cầu chưa thể hoàn tất an toàn với thông tin hiện tại."
     return {"response": response, "grounding_envelope": envelope, "tool_request": state.get("tool_request")}
+
+
+# Restored compatibility helpers retained by the Agent test and fallback APIs.
+class RestaurantExtraction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: Literal["ride", "food", "restaurant", "healthcare", "general_support"]
+    slot_patch: RestaurantSlotPatch = Field(default_factory=RestaurantSlotPatch)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
+def _fold(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.lower())
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn").replace("đ", "d")
+
+def _parse_time(query: str) -> str | None:
+    folded = _fold(query)
+    match = re.search(r"\b(\d{1,2})\s*h\s*(\d{2})?\s*(sang|toi|am|pm)?\b", folded)
+    if not match:
+        match = re.search(r"\b(\d{1,2}):(\d{2})\s*(sang|toi|am|pm)?\b", folded)
+    if not match:
+        match = re.search(r"\b(\d{1,2})\s+gio\s*(\d{2})?\s*(sang|toi|am|pm)?\b", folded)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    meridiem = match.group(3) if len(match.groups()) >= 3 else None
+    if meridiem in {"toi", "pm"} and hour < 12:
+        hour += 12
+    if meridiem in {"sang", "am"} and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+def _parse_date(query: str, now: datetime) -> str | None:
+    folded = _fold(query)
+    explicit = re.search(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{4}))?\b", folded)
+    if explicit:
+        year = int(explicit.group(3) or now.year)
+        return f"{year:04d}-{int(explicit.group(2)):02d}-{int(explicit.group(1)):02d}"
+    if "hom nay" in folded:
+        return now.date().isoformat()
+    if "ngay mai" in folded:
+        return (now + timedelta(days=1)).date().isoformat()
+    return None
+
+def _matches_restaurant_name(name: str, query: str) -> bool:
+    folded_name = _fold(name)
+    folded_query = _fold(query)
+    if folded_name in folded_query:
+        return True
+    stop_words = {"va", "và", "and", "nha", "hang"}
+    name_tokens = {token for token in re.findall(r"[a-z0-9]+", folded_name) if token not in stop_words}
+    query_tokens = set(re.findall(r"[a-z0-9]+", folded_query))
+    return bool(name_tokens) and name_tokens.issubset(query_tokens)
+
+def _extract_slots(query: str, previous: dict[str, Any], now: datetime) -> dict[str, Any]:
+    slots = dict(previous)
+    folded = _fold(query)
+    party_match = re.search(r"\b(\d+)\s*(?:nguoi|khach)\b", folded)
+    if party_match:
+        slots["party_size"] = int(party_match.group(1))
+    elif "party_size" in previous and re.fullmatch(r"\s*\d+\s*", folded):
+        slots["party_size"] = int(folded.strip())
+
+    parsed_time = _parse_time(query)
+    if parsed_time and (
+        "h" in folded or "gio" in folded or ":" in folded or any(word in folded for word in ("sang", "toi", "am", "pm"))
+    ):
+        slots["local_time"] = parsed_time
+
+    parsed_date = _parse_date(query, now)
+    if parsed_date:
+        slots["local_date"] = parsed_date
+
+    locations = {
+        "ha noi": "Hà Nội",
+        "ho chi minh": "Hồ Chí Minh",
+        "sai gon": "Hồ Chí Minh",
+        "da nang": "Đà Nẵng",
+    }
+    for key, value in locations.items():
+        if key in folded:
+            slots["location"] = value
+            break
+
+    tool_result = previous.get("_tool_result")
+    if isinstance(tool_result, dict):
+        result_data = tool_result.get("data") if isinstance(tool_result.get("data"), dict) else tool_result
+        items = result_data.get("items", []) if isinstance(result_data, dict) else []
+        if items:
+            selected = None
+            if any(term in folded for term in ("cai thu nhat", "thu nhat", "dau tien", "so 1")):
+                selected = items[0]
+            else:
+                for item in items:
+                    if _matches_restaurant_name(str(item.get("name", "")), query):
+                        selected = item
+                        break
+            if selected:
+                slots["restaurant_id"] = selected.get("id")
+                slots["restaurant_name"] = selected.get("name")
+
+    duration_match = re.search(r"\b(\d+)\s*phut\b", folded)
+    if duration_match:
+        slots["duration_minutes"] = int(duration_match.group(1))
+    return slots
+
+def _is_restaurant_message(query: str, previous_intent: str | None) -> bool:
+    folded = _fold(query)
+    if previous_intent == "restaurant_booking":
+        return True
+    return any(term in folded for term in ("dat ban", "nha hang", "ban an", "ban co the di"))

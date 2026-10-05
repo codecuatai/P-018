@@ -117,10 +117,8 @@ class _LangfuseObservationHandle(ObservationHandle):
         safe_model = _safe_model(model)
         if safe_model is not None:
             update["model"] = safe_model
-        if input is not None:
-            update["input"] = input
-        if output is not None:
-            update["output"] = output
+        # Observation payloads may contain prompts, user messages, model
+        # output, tool results, or PII. Langfuse is metadata-only by contract.
         if level is not None:
             update["level"] = level
         if status_message is not None:
@@ -210,10 +208,8 @@ class LangfuseTelemetry(SafeTelemetry):
             "metadata": meta_dict,
             "version": version,
         }
-        if input is not None:
-            kwargs["input"] = input
-        if output is not None:
-            kwargs["output"] = output
+        # Never export observation input/output, even if a caller accidentally
+        # supplies them. The telemetry adapter is the final privacy boundary.
 
         safe_model = _safe_model(model)
         if safe_model is not None:
@@ -222,10 +218,7 @@ class LangfuseTelemetry(SafeTelemetry):
             kwargs["usage_details"] = usage.as_langfuse()
 
         prop_kwargs: dict[str, Any] = {}
-        if session_id is not None:
-            prop_kwargs["session_id"] = session_id
-        if user_id is not None:
-            prop_kwargs["user_id"] = user_id
+        # Actor and workflow identifiers must not become Langfuse identities.
         if tags is not None:
             prop_kwargs["tags"] = tags
 

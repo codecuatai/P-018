@@ -242,33 +242,52 @@ abstract class InternalServiceClient {
 
   private async mcpRequest(path: string, init: RequestInit, timeoutMs?: number): Promise<Response> {
     if (!this.mcpService) throw new Error('MCP service is not configured.');
-    await this.ensureMcpSession(timeoutMs);
     const url = new URL(path, this.baseUrl);
     const headers = Object.fromEntries(new Headers(init.headers).entries());
     let body: unknown;
     if (typeof init.body === 'string' && init.body.length > 0) {
       try { body = JSON.parse(init.body); } catch { body = { raw: init.body }; }
     }
-    const result = await this.mcpRpc('tools/call', {
-      name: 'gateway_service_request',
-      arguments: {
-        service: this.mcpService,
-        method: String(init.method ?? 'GET').toUpperCase(),
-        path: `${url.pathname}${url.search}`,
-        gateway_token: this.internalToken,
-        headers,
-        ...(body !== undefined ? { body } : {}),
-      },
-    }, timeoutMs);
-    if (result.isError === true) throw new Error('MCP service request failed.');
-    const remote = parseMcpToolResult(result);
-    const status = Number(remote.status);
-    if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error('MCP service returned an invalid HTTP status.');
-    const remoteHeaders = remote.headers && typeof remote.headers === 'object' ? remote.headers as Record<string, string> : {};
-    return new Response(remote.body === undefined || [204, 205, 304].includes(status) ? null : JSON.stringify(remote.body), {
-      status,
-      headers: remoteHeaders,
-    });
+    const method = String(init.method ?? 'GET').toUpperCase();
+    const readOnly = method === 'GET';
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await this.ensureMcpSession(timeoutMs);
+        const result = await this.mcpRpc('tools/call', {
+          name: 'gateway_service_request',
+          arguments: {
+            service: this.mcpService,
+            method,
+            path: `${url.pathname}${url.search}`,
+            gateway_token: this.internalToken,
+            headers,
+            ...(body !== undefined ? { body } : {}),
+          },
+        }, timeoutMs);
+        if (result.isError === true) throw new Error('MCP service request failed.');
+        const remote = parseMcpToolResult(result);
+        const status = Number(remote.status);
+        if (!Number.isInteger(status) || status < 100 || status > 599) throw new Error('MCP service returned an invalid HTTP status.');
+        // Reads are safe to retry when the bridge reports a transient failure.
+        // This also recovers after the MCP server drops an otherwise cached session.
+        if (readOnly && attempt === 0 && [502, 503, 504].includes(status)) {
+          this.mcpSessionId = undefined;
+          this.mcpReady = undefined;
+          continue;
+        }
+        const remoteHeaders = remote.headers && typeof remote.headers === 'object' ? remote.headers as Record<string, string> : {};
+        return new Response(remote.body === undefined || [204, 205, 304].includes(status) ? null : JSON.stringify(remote.body), {
+          status,
+          headers: remoteHeaders,
+        });
+      } catch (error) {
+        if (!readOnly || attempt > 0) throw error;
+        // The bridge may evict a stateful HTTP MCP session while the Gateway
+        // process is still alive. Re-negotiate once before failing a safe read.
+        this.mcpSessionId = undefined;
+        this.mcpReady = undefined;
+      }
+    }
   }
 
   private upstreamRequest(path: string, init: RequestInit, timeoutMs?: number): Promise<Response> {

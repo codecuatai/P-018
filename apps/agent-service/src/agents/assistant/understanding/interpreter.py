@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from ..contracts import (
+    ConstraintStrength,
     Domain,
     FoodSemanticSlots,
     HealthcareSemanticSlots,
@@ -12,6 +14,7 @@ from ..contracts import (
     ReferenceResolution,
     RestaurantSemanticSlots,
     RideSemanticSlots,
+    SemanticConstraint,
     SemanticIntent,
     SemanticReference,
     SemanticSlot,
@@ -212,3 +215,42 @@ def semantic_turn_from_plan(
         interaction_mode=safe_mode,
         discarded_task_refs=safe_discarded_refs,
     )
+
+
+# Restored compatibility helpers retained by the Agent test and fallback APIs.
+def _operation(text: str) -> Operation:
+    folded = text.casefold()
+    padded = " " + re.sub(r"[^\w\s]", " ", folded) + " "
+    if any(f" {value} " in padded for value in ("hủy", "huỷ", "cancel")):
+        return Operation.CANCEL
+    has_vn_tone = bool(re.search(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]", text, re.IGNORECASE))
+    if any(f" {value} " in padded for value in ("đổi", "cập nhật", "update")) or (
+        not has_vn_tone
+        and not re.search(r"\bdoi\s+can\b", _ascii_fold(text))
+        and any(
+            f" {value} " in (" " + _ascii_fold(text) + " ")
+            for value in ("doi", "cap nhat")
+        )
+    ):
+        return Operation.UPDATE
+    if any(f" {value} " in padded for value in ("trạng thái", "theo dõi", "status", "track")):
+        return Operation.STATUS
+    if any(f" {value} " in padded for value in ("đặt", "gọi xe", "giữ", "book", "order")):
+        return Operation.CREATE
+    return Operation.DISCOVER
+
+def _ascii_fold(value: str) -> str:
+    import unicodedata
+
+    normalized = unicodedata.normalize("NFD", value.casefold())
+    return "".join("d" if char == "đ" else char for char in normalized if unicodedata.category(char) != "Mn")
+
+def _constraints(text: str) -> list[SemanticConstraint]:
+    lowered = text.casefold()
+    hard = ("dị ứng", "di ung", "không được", "khong duoc", "bắt buộc", "bat buoc", "tránh ", "tranh ")
+    soft = ("ưu tiên", "uu tien", "nếu có thể", "neu co the", "thích ", "thich ")
+    if any(marker in lowered for marker in hard):
+        return [SemanticConstraint(strength=ConstraintStrength.HARD, text=text[:500], actionable=False)]
+    if any(marker in lowered for marker in soft):
+        return [SemanticConstraint(strength=ConstraintStrength.SOFT, text=text[:500], actionable=False)]
+    return []

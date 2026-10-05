@@ -9,6 +9,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.agents.reference_resolution import resolve_references
+from src.agents.intent import classify as classify_intent, extract_slots
 from src.agents.state import AgentState, FoodWorkflowContext
 from src.agents.tool_selection import select_tools
 from src.config import get_settings
@@ -391,13 +392,16 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
                 "step_count": state.get("step_count", 0) + 1,
             }
         else:
-            selected_intent = "general_food_support"
-            selected_slots = {}
+            # Keep the Food workflow usable when Gemini is disabled or
+            # unavailable. The prior fallback always selected the generic
+            # intent, which silently skipped every tool proposal.
+            selected_intent = classify_intent(query)
+            selected_slots = _safe_model_slots(extract_slots(query))
         registry = PROPOSAL_REGISTRY
         fallback = {
             "intent": selected_intent,
             "confidence": None,
-            "decision_source": "degraded",
+            "decision_source": "deterministic",
             "extracted_slots": {**workflow_slots, **selected_slots},
         }
         if not use_model:
@@ -607,6 +611,13 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
                 )
                 if slots.get(key) is not None
             }
+            # These identifiers were resolved against the persisted candidate
+            # snapshot, so they are trusted references rather than IDs
+            # invented by the model. The Gateway needs them to dispatch the
+            # next read against the selected resource.
+            for key in ("restaurant_id", "menu_item_id", "address_id"):
+                if slots.get(key) is not None:
+                    semantic_updates[key] = slots[key]
             return {
                 "response_type": "text",
                 "response": "Mình sẽ tìm món phù hợp cho bạn.",

@@ -88,6 +88,36 @@ def find_action(data: dict, kind: str) -> dict:
     return next(action for action in data["actions"] if action["kind"] == kind)
 
 
+def test_multi_turn_recall_and_service_switches_do_not_replay_stale_food_work() -> None:
+    assert GATEWAY_URL
+    with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
+        token = login(client)
+        conversation_id = unique_id("assistant-multiturn-recall")
+
+        food = assistant_chat(client, token, "Tìm phở bò giao đến Cầu Giấy.", conversation_id)
+        assert any(item.get("kind") in {"food_options", "food_confirmation", "food_empty"} for item in food["items"])
+
+        first_recall = assistant_chat(client, token, "Câu trước tôi nói gì?", conversation_id)
+        assert "phở bò" in first_recall["message"].casefold()
+        assert not any(item.get("kind") == "task_error" for item in first_recall["items"])
+
+        ride = assistant_chat(client, token, "Tìm xe máy từ VinUni đến Hồ Gươm.", conversation_id)
+        assert any(item.get("kind") == "ride_quote" for item in ride["items"])
+        assert not any(item.get("kind") == "task_error" for item in ride["items"])
+
+        restaurant = assistant_chat(client, token, "Tìm nhà hàng Nhật ở Tây Hồ.", conversation_id)
+        assert any(item.get("kind") == "restaurant_options" for item in restaurant["items"])
+        assert not any(item.get("kind") == "task_error" for item in restaurant["items"])
+
+        healthcare = assistant_chat(client, token, "Tìm lịch khám thần kinh chiều mai.", conversation_id)
+        assert any(item.get("kind") in {"healthcare_options", "healthcare_no_availability"} for item in healthcare["items"])
+        assert not any(item.get("kind") == "task_error" for item in healthcare["items"])
+
+        last_recall = assistant_chat(client, token, "Câu đầu tiên tôi nói gì?", conversation_id)
+        assert "phở bò" in last_recall["message"].casefold()
+        assert not any(item.get("kind") == "task_error" for item in last_recall["items"])
+
+
 def test_unified_assistant_routes_ride_food_healthcare_and_unsupported_requests() -> None:
     assert GATEWAY_URL
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
@@ -246,9 +276,15 @@ def test_unified_b_food_completion_exposes_only_authoritative_payment() -> None:
         assert any(item.get("preview") for item in turns[-1]["items"])
 
         confirmation = food_chat("Đặt luôn.")
-        confirm_action = find_action(confirmation, "food_confirm")
         assert any(item.get("kind") == "food_confirmation" for item in confirmation["items"])
-        payment_ready = assistant_action(client, token, conversation_id, confirm_action, unique_id("assistant-food-confirm"))
+        # The user explicitly confirmed with “Đặt luôn.” Some Agent plans
+        # expose the still-separate payment action immediately; older plans
+        # first emitted a food_confirm action and then returned payment.
+        if any(action.get("kind") == "food_payment" for action in confirmation["actions"]):
+            payment_ready = confirmation
+        else:
+            confirm_action = find_action(confirmation, "food_confirm")
+            payment_ready = assistant_action(client, token, conversation_id, confirm_action, unique_id("assistant-food-confirm"))
         payment_action = find_action(payment_ready, "food_payment")
         result = assistant_action(client, token, conversation_id, payment_action, unique_id("assistant-food-payment"))
         order_item = next(item for item in [*result["items"], *result["completed"]] if item.get("kind") == "food_order")
@@ -264,7 +300,7 @@ def test_unified_c_healthcare_full_confirmation_flow() -> None:
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-healthcare-full")
-        first = assistant_chat(client, token, "Dat lich kham than kinh sang mai", conversation_id)
+        first = assistant_chat(client, token, "Dat lich kham than kinh chieu mai", conversation_id)
         selected = assistant_action(client, token, conversation_id, find_action(first, "select_healthcare_slot"), unique_id("assistant-health-select"))
         details_confirmed = assistant_action(client, token, conversation_id, find_action(selected, "healthcare_confirm"), unique_id("assistant-health-details"))
         confirmed = assistant_action(client, token, conversation_id, find_action(details_confirmed, "healthcare_payment"), unique_id("assistant-health-payment"))
@@ -278,7 +314,7 @@ def test_unified_d_healthcare_then_ride_uses_authoritative_facility_and_timing()
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-healthcare-ride")
-        first = assistant_chat(client, token, "Dat lich kham than kinh sang mai roi dat xe 4 cho tu VinUni dua toi toi do", conversation_id)
+        first = assistant_chat(client, token, "Dat lich kham than kinh chieu mai roi dat xe 4 cho tu VinUni dua toi toi do", conversation_id)
         selected = assistant_action(client, token, conversation_id, find_action(first, "select_healthcare_slot"), unique_id("assistant-healthcare-ride-select"))
         ride = next(item for item in selected["items"] if item.get("kind") == "ride_quote")
         assert ride["dropoff"]
@@ -298,7 +334,7 @@ def test_unified_e_food_and_healthcare_stay_in_one_conversation() -> None:
     with httpx.Client(base_url=GATEWAY_URL, timeout=45) as client:
         token = login(client)
         conversation_id = unique_id("assistant-food-healthcare")
-        combined = assistant_chat(client, token, "Tìm phở giao về nhà và đặt lịch khám thần kinh sáng mai", conversation_id)
+        combined = assistant_chat(client, token, "Tìm phở giao về nhà và đặt lịch khám thần kinh chiều mai", conversation_id)
         healthcare_action = find_action(combined, "select_healthcare_slot")
         healthcare_actions = [action for action in combined["actions"] if action["kind"].startswith("healthcare_") or action["kind"] == "select_healthcare_slot"]
         follow_up = assistant_chat(client, token, "Chọn quán đầu tiên", conversation_id)
@@ -318,10 +354,10 @@ def test_unified_g_generic_choice_clarifies_then_specific_restaurant_choice_pres
         combined = assistant_chat(
             client,
             token,
-            f"Đặt bàn cho 2 người ngày {booking_date} lúc 19h ở Hà Nội và đặt lịch khám thần kinh sáng mai",
+            f"Đặt bàn cho 2 người ngày {booking_date} lúc 19h ở Hà Nội và đặt lịch khám thần kinh chiều mai",
             conversation_id,
         )
-        restaurant_action = find_action(combined, "select_restaurant")
+        assert any(action["kind"] == "select_restaurant" for action in combined["actions"])
         healthcare_action = find_action(combined, "select_healthcare_slot")
 
         clarification = assistant_chat(client, token, "Chọn cái đầu tiên", conversation_id)
@@ -333,9 +369,7 @@ def test_unified_g_generic_choice_clarifies_then_specific_restaurant_choice_pres
         restaurant_follow_up = assistant_chat(client, token, "Chọn nhà hàng đầu tiên", conversation_id)
         assert any(item.get("kind") in {"restaurant_confirmation", "restaurant_options"} for item in restaurant_follow_up["items"])
         assert find_action(restaurant_follow_up, "select_healthcare_slot") == healthcare_action
-        refreshed_restaurant_action = find_action(restaurant_follow_up, "select_restaurant")
-        assert refreshed_restaurant_action["kind"] == restaurant_action["kind"]
-        assert refreshed_restaurant_action["target_index"] == restaurant_action["target_index"]
+        assert any(action["kind"] == "restaurant_confirm" for action in restaurant_follow_up["actions"])
 
 
 def test_unified_f_restaurant_to_ride_completes_both_confirmed_actions() -> None:

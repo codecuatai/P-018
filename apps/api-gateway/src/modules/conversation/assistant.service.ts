@@ -103,6 +103,19 @@ function isGenericFoodDeliveryAddress(value: unknown): boolean {
   return typeof value === 'string' && ['home', 'current_location'].includes(value.trim().toLowerCase());
 }
 
+function explicitFoodDeliveryAddress(message: string | undefined): string | undefined {
+  if (!message) return undefined;
+  const captured = message.match(/\b(?:giao|ship)\s+(?:về|ve|đến|den|tới|toi|to)\s+(.+?)(?:[.!?]|$)/iu)?.[1]
+    ?? message.match(/\bđịa\s*chỉ(?:\s+giao\s*hàng)?(?:\s+(?:của\s+tôi|là))?\s+(.+?)(?:[.!?]|$)/iu)?.[1];
+  const address = captured?.trim();
+  return address
+    && address.length >= 8
+    && isUsableFoodDeliveryAddress(address)
+    && !isGenericFoodDeliveryAddress(address)
+    ? address
+    : undefined;
+}
+
 function isCurrentLocationReference(value: unknown): boolean {
   return typeof value === 'string' && value.trim().toLowerCase() === 'current_location';
 }
@@ -346,6 +359,24 @@ function plainTextForRouting(value: string): string {
   return plainText(value).replaceAll('\u0111', 'd').replaceAll('\u0110', 'D');
 }
 
+function conversationRecallTarget(value: string): 'first' | 'previous' | undefined {
+  const folded = plainTextForRouting(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  const asksAboutMessage = /\b(cau|tin nhan|noi dung)\b.*\b(toi|minh|cua toi)\b.*\b(noi|hoi|gui|viet)\b.*\b(gi|cai gi|dieu gi)\b/.test(folded);
+  const asksAboutFirst = /\b(dau tien|luc dau|ban dau|first)\b/.test(folded)
+    || /\bwhat was my first (?:message|question|request)\b/.test(folded);
+  if (asksAboutMessage && asksAboutFirst) return 'first';
+  const previousPatterns = [
+    /\b(cau|tin nhan|noi dung)\b.*\b(truoc|gan nhat|vua roi)\b.*\b(toi|minh|cua toi)\b.*\b(noi|hoi|gui|viet)\b.*\b(gi|cai gi|dieu gi)\b/,
+    /\b(toi|minh)\b.*\b(vua|luc nay|truoc do|ban nay)\b.*\b(noi|hoi|gui|viet)\b.*\b(gi|cai gi|dieu gi)\b/,
+    /\bwhat did i (?:say|ask|write|send)\b.*\b(before|previously|last time|earlier)\b/,
+    /\bwhat was my (?:last|previous) (?:message|question|request)\b/,
+  ];
+  return previousPatterns.some((pattern) => pattern.test(folded)) ? 'previous' : undefined;
+}
+
 function freshDeviceLocation(value: unknown, now = Date.now()): DeviceCurrentLocation | undefined {
   if (!isRecord(value) || value.source !== 'device') return undefined;
   const latitude = numberValue(value.latitude);
@@ -448,6 +479,25 @@ function selectionIndex(value: string | undefined): number | undefined {
   const names = ['first', 'second', 'third', 'fourth', 'fifth'];
   const index = names.indexOf(normalized);
   return index >= 0 ? index : undefined;
+}
+
+function explicitCandidateChoice(message: string): { domain: Domain; index: number } | undefined {
+  const folded = plainTextForRouting(message);
+  if (!/\b(?:chon|lay|choose|select)\b/.test(folded)) return undefined;
+  const ordinal = folded.match(/\b(dau tien|thu nhat|thu hai|thu ba|thu tu|thu nam|so mot|so 1|second|third|fourth|fifth|first)\b/);
+  if (!ordinal) return undefined;
+  const indexes: Record<string, number> = {
+    'dau tien': 0, 'thu nhat': 0, 'so mot': 0, 'so 1': 0, first: 0,
+    'thu hai': 1, second: 1, 'thu ba': 2, third: 2, 'thu tu': 3, fourth: 3, 'thu nam': 4, fifth: 4,
+  };
+  const domain: Domain | undefined = /\b(?:nha hang|quan|restaurant)\b/.test(folded)
+    ? 'restaurant'
+    : /\b(?:lich|bac si|khoa|doctor|appointment)\b/.test(folded)
+      ? 'healthcare'
+      : /\b(?:mon|do an|dish|food)\b/.test(folded)
+        ? 'food'
+        : undefined;
+  return domain ? { domain, index: indexes[ordinal[1]] } : undefined;
 }
 
 function assistantActionFailureStatus(error: unknown): 'FAILED_RETRYABLE' | 'FAILED_FINAL' {
@@ -1308,6 +1358,15 @@ export class AssistantService {
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, dialogue: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
     const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
+    const foldedMessage = plainTextForRouting(message);
+    const isGenericChoice = /\bchon cai (?:dau tien|thu hai|thu ba|thu tu|thu nam)\b/.test(foldedMessage)
+      && !/\b(?:mon|quan|nha hang|lich|bac si|khoa|chuyen xe|xe may|o to)\b/.test(foldedMessage);
+    const choiceDomains = [...new Set(active
+      .filter((task) => Boolean(this.plannerPendingChoice(task)))
+      .map((task) => task.domain))];
+    if (isGenericChoice && choiceDomains.length > 1) {
+      return { tasks: [], clarificationQuestion: this.followUpClarificationQuestion(choiceDomains) };
+    }
     if (dialogue.relation === 'CONTINUE_PENDING') {
       const targetRef = numberValue(dialogue.target_task_ref);
       const target = targetRef === undefined ? undefined : current[targetRef];
@@ -1463,7 +1522,7 @@ export class AssistantService {
       && Boolean(explicitAddressText && explicitAddressText.length >= 8 && isUsableFoodDeliveryAddress(explicitAddressText))
       && Boolean(normalizedExplicitAddress && normalizedCurrentMessage === normalizedExplicitAddress);
     const deliveryAddressText = selectedAddress?.addressText
-      ?? (explicitAddressWasProvided ? explicitAddressText : undefined);
+      ?? (explicitAddressWasProvided ? explicitAddressText : explicitFoodDeliveryAddress(message));
     if (!deliveryAddressText) {
       const prompt = 'Mình chưa xác định được bạn muốn dùng địa chỉ nào. Bạn chọn một địa chỉ đang hiển thị hoặc nhập địa chỉ giao hàng nhé.';
       return this.persistTurn(
@@ -1518,6 +1577,107 @@ export class AssistantService {
     const conversationId = requestedConversationId ?? `conv_${randomUUID()}`;
     const current = await this.store.getConversation(conversationId, user.sub);
     const state = storedState(current?.state);
+    const recallTarget = conversationRecallTarget(message);
+    if (recallTarget) {
+      const userMessages = (current?.messages ?? [])
+        .filter(isUserVisibleConversationMessage)
+        .filter((entry) => entry.role === 'user');
+      const recalledMessage = recallTarget === 'first' ? userMessages[0] : userMessages.at(-1);
+      const previousText = recalledMessage?.content.trim();
+      const recalledText = previousText
+        ? previousText.length > 1200 ? `${previousText.slice(0, 1200)}…` : previousText
+        : undefined;
+      const answer = recalledText
+        ? recallTarget === 'first'
+          ? `Lúc đầu bạn đã nói: “${recalledText}”.`
+          : `Ngay trước đó bạn đã nói: “${recalledText}”.`
+        : 'Chưa có tin nhắn nào trước đó trong cuộc trò chuyện này.';
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        answer,
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+        true,
+      );
+    }
+    const isFoodPreviewRequest = /\b(?:xem tong(?: tien)?|xem lai don|tong tien bao nhieu|don het bao nhieu)\b/.test(plainText(message));
+    const pendingFoodConfirmation = isFoodPreviewRequest
+      ? state.tasks.find((task) => task.domain === 'food'
+        && task.phase === 'AWAITING_CONFIRMATION'
+        && task.public_item?.kind === 'food_confirmation'
+        && isRecord(task.public_item.preview))
+      : undefined;
+    if (pendingFoodConfirmation?.public_item) {
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        'Đây là tổng tiền và thông tin đơn hiện tại. Bạn có thể xác nhận khi sẵn sàng.',
+        state,
+        [pendingFoodConfirmation.public_item],
+        state.actions,
+        [],
+        state.actions,
+      );
+    }
+    // A bare ordinal cannot identify which service the user means when
+    // multiple services are waiting on candidate choices. Resolve this from
+    // persisted authoritative candidates before asking the planner, whose
+    // unrelated clarification can otherwise mask the cross-service choice.
+    const foldedMessage = plainTextForRouting(message);
+    const isGenericChoice = /\bchon cai (?:dau tien|thu hai|thu ba|thu tu|thu nam)\b/.test(foldedMessage)
+      && !/\b(?:mon|quan|nha hang|lich|bac si|khoa|chuyen xe|xe may|o to)\b/.test(foldedMessage);
+    const activeChoiceDomains = [...new Set(state.tasks
+      .filter((task) => !['COMPLETED', 'FAILED', 'BLOCKED', 'DISCARDED'].includes(task.phase))
+      .filter((task) => Boolean(this.plannerPendingChoice(task)))
+      .map((task) => task.domain))];
+    if (isGenericChoice && activeChoiceDomains.length > 1) {
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        this.followUpClarificationQuestion(activeChoiceDomains),
+        state,
+        [],
+        state.actions,
+        [],
+        state.actions,
+        true,
+      );
+    }
+    const explicitChoice = explicitCandidateChoice(message);
+    if (explicitChoice) {
+      const actionKind = explicitChoice.domain === 'restaurant'
+        ? 'select_restaurant'
+        : explicitChoice.domain === 'healthcare'
+          ? 'select_healthcare_slot'
+          : 'select_food_item';
+      const matchingActions = state.actions.filter((action) => {
+        const task = state.tasks.find((candidate) => candidate.id === action.task_id);
+        return action.kind === actionKind
+          && action.selection_index === explicitChoice.index
+          && task?.domain === explicitChoice.domain
+          && task.phase !== 'COMPLETED'
+          && task.phase !== 'FAILED'
+          && action.task_revision === task.revision;
+      });
+      const matchingTaskIds = new Set(matchingActions.map((action) => action.task_id));
+      if (matchingTaskIds.size === 1 && matchingActions.length === 1) {
+        const action = matchingActions[0];
+        return this.act(
+          user,
+          { conversation_id: conversationId, action_id: action.id },
+          correlationId,
+          `chat-choice:${conversationId}:${action.id}:${stableHash(message)}`,
+          message,
+        );
+      }
+    }
     const effectiveCurrentLocation = freshDeviceLocation(currentLocation);
     let precomputedPlanner: JsonObject | undefined;
     precomputedPlanner = await this.requestAssistantPlanner(
@@ -1836,6 +1996,7 @@ export class AssistantService {
     request: AssistantActionRequest,
     correlationId: string,
     idempotencyKey: string,
+    sourceMessage?: string,
   ): Promise<AssistantResponse> {
     const effectiveCurrentLocation = freshDeviceLocation(request.current_location);
     const requestHash = stableHash({
@@ -1989,20 +2150,20 @@ export class AssistantService {
       const responseActions = [
         ...(result.nextActions ?? []),
         ...(result.nextAction ? [result.nextAction] : []),
-        ...state.actions.filter((candidate) => candidate.task_id === task.id),
+        ...state.actions,
         ...dependentActions,
         ...dependentRetryActions,
       ].filter((candidate, index, values) => values.findIndex((item) => item.id === candidate.id) === index);
       const turn = this.buildTurn(
         request.conversation_id,
         user,
-        action.kind,
+        sourceMessage ?? action.kind,
         message,
         { ...state, tasks: state.tasks },
         remainingItems,
         state.actions,
         completedItems,
-        'INTERNAL_ACTION',
+        sourceMessage ? 'USER' : 'INTERNAL_ACTION',
         responseActions,
       );
       try {
@@ -2417,6 +2578,22 @@ export class AssistantService {
       const candidateSlots = isRecord(candidate.extracted_slots) ? candidate.extracted_slots : {};
       const currentLocationReference = domain === 'ride' && candidateSlots.pickup_source === 'CURRENT_DEVICE_LOCATION';
       const slots = sanitizedTaskSlots(domain, candidateSlots, currentLocationReference);
+      if (domain === 'ride') {
+        const foldedRideRequest = plainTextForRouting(latestMessage);
+        if (!slots.pickup_address) {
+          const restaurantRoute = latestMessage.match(/\b(?:từ|tu|from)\s+(.+?)\s+(?:tới|toi|đến|den|to)\s+(?:nhà\s+hàng|nha\s+hang|quán|quan)\s+(?:đó|do|này|nay)\b/iu);
+          const pickupAddress = restaurantRoute?.[1]?.trim();
+          if (pickupAddress) slots.pickup_address = pickupAddress;
+        }
+        if (!slots.vehicle_type) {
+          if (/\b(?:xe may|motorbike|motorcycle)\b/.test(foldedRideRequest)) slots.vehicle_type = 'BIKE';
+          else if (/\b(?:xe 4 cho|oto 4 cho|car 4|4 cho)\b/.test(foldedRideRequest)) slots.vehicle_type = 'CAR_4';
+          else if (/\b(?:xe 7 cho|oto 7 cho|car 7|7 cho)\b/.test(foldedRideRequest)) slots.vehicle_type = 'CAR_7';
+        }
+        const explicitRidePassengerCount = /\b(?:xe|chuyen xe|ride)\b[^.!?;]*(?:cho|ch[oơ]|for)\s*[1-9][0-9]?\s*(?:nguoi|hanh khach|passengers?)\b/.test(foldedRideRequest)
+          || /\b[1-9][0-9]?\s*(?:nguoi|hanh khach|passengers?)\s+(?:di xe|di chuyen|on the ride)\b/.test(foldedRideRequest);
+        if (!explicitRidePassengerCount) delete slots.passenger_count;
+      }
       const restaurantReference = domain === 'ride' && candidateSlots.destination_reference === 'RESTAURANT';
       const referencedRestaurant = restaurantReference
         ? [...next].reverse().find((task) => task.domain === 'restaurant'
@@ -2449,7 +2626,8 @@ export class AssistantService {
           delete nextSlots.pickup_longitude;
         }
         const changed = !sameJson(match.extracted_slots, nextSlots);
-        const stepChanged = !sameJson(match.planned_step, candidate.planned_step);
+        const stepChanged = match.phase !== 'AWAITING_CONFIRMATION'
+          && !sameJson(match.planned_step, candidate.planned_step);
         const foodContinuation = domain === 'food' && match.phase !== 'COMPLETED';
         const phaseChanged = requestedPhase !== undefined && requestedPhase !== match.phase;
         const rideResume = domain === 'ride' && operation === 'UPDATE' && isRecord(match.authoritative?.quote);
@@ -2541,6 +2719,24 @@ export class AssistantService {
           : preserveExistingRideDependencies
             ? target.depends_on
             : mappedDependencies;
+    }
+    const refersToRestaurant = /\b(?:nha hang|quan)\s+(?:do|nay|vua chon|duoc chon)\b/.test(plainTextForRouting(latestMessage));
+    if (refersToRestaurant) {
+      const restaurantTask = [...plannedIds]
+        .map((id) => next.find((task) => task.id === id))
+        .filter((task): task is StoredTask => Boolean(task && task.domain === 'restaurant' && !['FAILED', 'DISCARDED'].includes(task.phase)))
+        .at(-1)
+        ?? [...next].reverse().find((task) => task.domain === 'restaurant' && !['FAILED', 'DISCARDED'].includes(task.phase));
+      const rideTask = [...plannedIds]
+        .map((id) => next.find((task) => task.id === id))
+        .find((task): task is StoredTask => Boolean(task && task.domain === 'ride'));
+      if (restaurantTask && rideTask) {
+        rideTask.depends_on = [restaurantTask.id];
+        rideTask.extracted_slots.destination_reference = 'RESTAURANT';
+        delete rideTask.extracted_slots.dropoff_address;
+        delete rideTask.extracted_slots.dropoff_latitude;
+        delete rideTask.extracted_slots.dropoff_longitude;
+      }
     }
     return { tasks: next, touchedIds };
   }
@@ -3582,6 +3778,13 @@ export class AssistantService {
         // Food owns its catalog coverage and delivery eligibility. Gateway
         // forwards the resolved district as a search hint and must not infer a
         // delivery boundary from a hard-coded list of administrative names.
+      } else if (name === 'view_menu') {
+        if (!restaurantId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current restaurant selection is required.' });
+        args = {
+          restaurant_id: restaurantId,
+          ...(numberValue(semantic.limit) !== undefined ? { limit: numberValue(semantic.limit) } : {}),
+          ...(numberValue(semantic.offset) !== undefined ? { offset: numberValue(semantic.offset) } : {}),
+        };
       } else if (name === 'view_menu_item') {
         if (!menuItemId) throw new ConflictException({ code: 'FOOD_SELECTION_REQUIRED', detail: 'A current Food selection is required.' });
         args = { menu_item_id: menuItemId };
@@ -3624,6 +3827,14 @@ export class AssistantService {
         stateUpdates.restaurant_candidates = restaurants;
         stateUpdates.menu_item_candidates = items;
         data = { items: rows };
+      } else if (name === 'view_menu') {
+        const menuItems = arrayValue(executed.items).filter(isRecord).map((item) => ({
+          ...item,
+          ...(stringValue(item.restaurant_id ?? restaurantId) ? { restaurant_id: item.restaurant_id ?? restaurantId } : {}),
+        }));
+        if (restaurantId) stateUpdates.restaurant_id = restaurantId;
+        stateUpdates.menu_item_candidates = menuItems;
+        data = { items: menuItems };
       } else if (name === 'view_menu_item') {
         const groups = arrayValue(executed.option_groups).filter(isRecord);
         const preferences = arrayValue(semantic.option_preferences).filter(isRecord);
@@ -3689,8 +3900,10 @@ export class AssistantService {
     if (maxPrice !== undefined) semanticContext.max_price = maxPrice;
     const location = stringValue(task.extracted_slots.location);
     if (location && !semanticContext.district) semanticContext.district = location;
+    const explicitAddressForTask = explicitFoodDeliveryAddress(task.latest_message);
+    if (explicitAddressForTask) semanticContext.address_query = explicitAddressForTask;
     const baseContext = { ...storedContext, ...semanticContext };
-    if (isGenericFoodResume(task)) {
+    if (isGenericFoodResume(task) && !explicitAddressForTask) {
       const publicItem = await this.addressOptionsItem(user.sub, 'DELIVERY');
       return {
         phase: 'NEEDS_INFO',
@@ -3704,8 +3917,31 @@ export class AssistantService {
       };
     }
     const storedCandidates = arrayValue(storedContext.menu_item_candidates ?? storedContext.item_candidates).filter(isRecord);
-    const selectedIndex = numberValue(task.extracted_slots.selection_index)
+    const explicitSelectedIndex = numberValue(task.extracted_slots.selection_index)
       ?? selectionIndex(stringValue(task.extracted_slots.selection));
+    const requestedDish = plainText(stringValue(task.extracted_slots.dish_query) ?? '').trim();
+    const normalizedLatestMessage = plainText(task.latest_message ?? '');
+    const hasExplicitQuantity = numberValue(task.extracted_slots.quantity) !== undefined
+      || /\b(?:one|a|an|mot|hai|ba|bon|nam|[1-9][0-9]?)\s+(?:bat|to|phan|suat|ly|coc|hop|dia)\b/.test(normalizedLatestMessage);
+    const namedCandidateIndexes = hasExplicitQuantity
+      ? storedCandidates.flatMap((candidate, index) => {
+        const candidateName = plainText(stringValue(candidate.name) ?? '').trim();
+        return candidateName.length >= 3 && (
+          candidateName === requestedDish
+          || normalizedLatestMessage.includes(candidateName)
+        ) ? [index] : [];
+      })
+      : [];
+    const contextRestaurantId = stringValue(storedContext.restaurant_id);
+    const restaurantScopedMatches = contextRestaurantId
+      ? namedCandidateIndexes.filter((index) => stringValue(storedCandidates[index]?.restaurant_id) === contextRestaurantId)
+      : [];
+    const exactNamedCandidates = restaurantScopedMatches.length ? restaurantScopedMatches : namedCandidateIndexes;
+    // A quantity plus one exact match in the authoritative menu is a typed
+    // item selection. This lets the planned menu step advance to the draft
+    // cart workflow without guessing among similarly named dishes.
+    const selectedIndex = explicitSelectedIndex
+      ?? (exactNamedCandidates.length === 1 ? exactNamedCandidates[0] : undefined);
     const selectedCandidate = selectedIndex !== undefined
       ? storedCandidates[selectedIndex]
       : storedCandidates.find((candidate) => candidate.id === storedContext.menu_item_id);
@@ -3764,7 +4000,7 @@ export class AssistantService {
     if (proposals.length) {
       const dispatched = await this.dispatchFoodProposals(
         proposals,
-        previousContext,
+        { ...previousContext, ...stateUpdates },
         selectedCandidate,
         user,
         correlationId,
@@ -3801,7 +4037,10 @@ export class AssistantService {
     // A user may supply the delivery address after choosing quantities locally.
     // At that point the cart is already authoritative, so continue to the
     // checkout form instead of re-rendering the old menu candidates.
-    const semanticDeliveryAddress = stringValue(task.extracted_slots.address_reference);
+    const explicitMessageAddress = explicitFoodDeliveryAddress(task.latest_message);
+    const semanticAddressReference = stringValue(task.extracted_slots.address_reference);
+    const semanticDeliveryAddress = explicitMessageAddress
+      ?? (semanticAddressReference && !isGenericFoodDeliveryAddress(semanticAddressReference) ? semanticAddressReference : undefined);
     const messageAddressContinuation = Boolean(semanticDeliveryAddress);
     const contextAddressQuery = stringValue(nextContext.address_query);
     // A selection action uses an internal message and may carry the generic
@@ -4470,12 +4709,12 @@ export class AssistantService {
     actions: StoredAction[] = [],
     completed: JsonObject[] = [],
     responseActions: StoredAction[] = actions,
-    authenticatedProfileReply = false,
+    trustedDirectReply = false,
   ): Promise<AssistantResponse> {
     // Profile values come from this authenticated user's own Gateway record;
     // keep them out of model composition while allowing values like a demo
     // email address that the model-output guard would otherwise suppress.
-    const safeMessage = authenticatedProfileReply ? message : safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
+    const safeMessage = trustedDirectReply ? message : safeText(message, 'Mình đã cập nhật thông tin cho bạn.');
     const orchestration = state.orchestration ?? buildOrchestrationSnapshot(state.tasks);
     const finalState = { ...state, actions, orchestration };
     const response: AssistantResponse = {

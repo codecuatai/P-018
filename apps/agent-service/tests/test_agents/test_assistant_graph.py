@@ -56,6 +56,16 @@ def test_restaurant_discovery_does_not_require_booking_details() -> None:
     assert "start_at" not in restaurant_tasks[0].missing_information
 
 
+def test_empty_model_plan_does_not_drop_a_clear_restaurant_request() -> None:
+    guarded = _apply_plan_guards(
+        AssistantPlan(interaction_mode="chitchat", tasks=[]),
+        "Cho mình tìm nhà hàng hải sản ở Ba Đình",
+        {},
+    )
+
+    assert domains(guarded) == ["restaurant"]
+
+
 def test_planner_schema_requires_reasoning_first() -> None:
     parsed = json.loads(_model_prompt({"query": "Đặt xe", "messages": [], "conversation_state": {}}))
     assert parsed["response_schema"]["required"][0] == "reasoning"

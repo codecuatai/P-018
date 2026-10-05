@@ -204,7 +204,7 @@ def test_langfuse_initialization_failure_degrades_to_noop(
     assert "sensitive-sdk-message-must-not-propagate" not in caplog.text
 
 
-def test_langfuse_adapter_passes_session_user_and_io(
+def test_langfuse_adapter_never_exports_identity_or_observation_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
@@ -286,11 +286,15 @@ def test_langfuse_adapter_passes_session_user_and_io(
 
     observation_call = next(item["observation"] for item in calls if "observation" in item)
     assert len(prop_calls) == 1
-    assert prop_calls[0]["session_id"] == "conv-12345"
-    assert prop_calls[0]["user_id"] == "user-999"
-    assert prop_calls[0]["tags"] == ["mode:plan", "env:development"]
-    assert observation_call["input"] == {"user_message": "đặt xe máy"}
-    assert updates[0]["output"] == {"assistant_message": "Đã đặt xe cho bạn"}
+    assert prop_calls == [{"tags": ["mode:plan", "env:development"]}]
+    assert prop_calls[0].get("session_id") is None
+    assert prop_calls[0].get("user_id") is None
+    assert "input" not in observation_call
+    assert "output" not in observation_call
+    assert "input" not in updates[0]
+    assert "output" not in updates[0]
+    assert "đặt xe máy" not in str(calls)
+    assert "Đã đặt xe cho bạn" not in str(updates)
 
 
 def test_core_a_emits_human_readable_decision_flow(

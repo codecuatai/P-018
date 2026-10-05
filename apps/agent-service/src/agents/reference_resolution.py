@@ -48,6 +48,17 @@ def resolve_references(slots: dict[str, Any], context: dict[str, Any]) -> dict[s
         resolved["menu_item_name"] = items[selection_index].get("name")
         resolved["restaurant_id"] = resolved.get("restaurant_id") or items[selection_index].get("restaurant_id")
 
+    # A typed dish name can select a candidate only when it exactly matches a
+    # single item in the persisted menu snapshot. Never use fuzzy matching to
+    # turn an order into a different item.
+    dish_query = resolved.get("dish_query")
+    if dish_query and not resolved.get("menu_item_id"):
+        matches = _exact_candidate(items, str(dish_query))
+        if len(matches) == 1:
+            resolved["menu_item_id"] = matches[0].get("id")
+            resolved["menu_item_name"] = matches[0].get("name")
+            resolved["restaurant_id"] = resolved.get("restaurant_id") or matches[0].get("restaurant_id")
+
     # An address can be bound only after the LLM has interpreted the reference
     # and its normalized value exactly identifies one saved address.
     if resolved.get("address_query") and not resolved.get("address_id"):
