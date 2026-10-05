@@ -151,29 +151,90 @@ def test_restaurant_suggestion_with_meeting_context_does_not_create_a_ride_or_as
     guarded = _apply_plan_guards(model_plan, message, {})
 
     assert domains(deterministic) == ["restaurant"]
-    assert deterministic.tasks[0].needs_clarification is True
-    assert deterministic.tasks[0].missing_information == ["location|cuisine_query"]
-    assert "khu vực" in deterministic.assistant_message
+    assert deterministic.tasks[0].needs_clarification is False
+    assert deterministic.tasks[0].missing_information == []
     assert domains(guarded) == ["restaurant"]
-    assert guarded.tasks[0].missing_information == ["location|cuisine_query"]
+    assert guarded.tasks[0].missing_information == []
 
 
 def test_generic_restaurant_quality_word_is_not_forwarded_as_a_cuisine_filter() -> None:
-    message = "no, tôi không muốn ăn, hãy tìm nhà hàng ngol cho tôi đi"
+    message = "nhà hàng gì cũng được miễn là ngol"
     model_plan = AssistantPlan(
         assistant_message="Mình sẽ tìm nhà hàng phù hợp.",
         tasks=[PlannedTask(
             domain="restaurant",
             goal="Gợi ý nhà hàng ngon",
             normalized_request=message,
-            extracted_slots={"cuisine_query": "ngol"},
+            extracted_slots={"cuisine_query": "gi cung duoc mien la ngol"},
         )],
     )
 
     guarded = _apply_plan_guards(model_plan, message, {})
+    deterministic = deterministic_plan(message)
 
     assert domains(guarded) == ["restaurant"]
     assert guarded.tasks[0].extracted_slots.get("cuisine_query") is None
+    assert domains(deterministic) == ["restaurant"]
+    assert deterministic.tasks[0].extracted_slots.get("cuisine_query") is None
+    assert deterministic.tasks[0].missing_information == []
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "khu vực nào cũng được nhé",
+        "khu nào cũng được",
+        "ở đâu cũng được",
+        "bất kỳ khu vực nào",
+        "any area is fine",
+    ],
+)
+def test_generic_restaurant_area_reply_is_not_misclassified_as_a_location(reply: str) -> None:
+    assert _semantic_slots(reply, "restaurant").get("location") is None
+    plan = deterministic_plan(f"Tìm nhà hàng {reply}")
+    assert domains(plan) == ["restaurant"]
+    assert plan.tasks[0].extracted_slots.get("location") is None
+
+
+def test_restaurant_destination_is_not_extracted_as_area_or_cuisine_and_keeps_other_task() -> None:
+    message = "tôi muốn đi đến nhà hàng để ăn cơ"
+    state = {
+        "tasks": [{
+            "domain": "food", "phase": "NEEDS_INFO", "goal": "Tìm món ăn",
+            "normalized_request": "Tìm món phở", "extracted_slots": {"dish_query": "phở"},
+        }],
+    }
+    model_plan = AssistantPlan(
+        assistant_message="Mình sẽ tìm nhà hàng.",
+        discarded_task_refs=[0],
+        tasks=[PlannedTask(
+            domain="restaurant", goal="Tìm nhà hàng", normalized_request=message,
+            extracted_slots={"location": "nhà hàng để ăn cơ", "cuisine_query": "để ăn"},
+        )],
+    )
+
+    deterministic = deterministic_plan(message, state)
+    guarded = _apply_plan_guards(model_plan, message, state)
+
+    assert deterministic.tasks[0].extracted_slots.get("location") is None
+    assert deterministic.tasks[0].extracted_slots.get("cuisine_query") is None
+    assert deterministic.tasks[0].needs_clarification is False
+    assert guarded.discarded_task_refs == []
+    restaurant = next(task for task in guarded.tasks if task.domain == "restaurant")
+    assert restaurant.extracted_slots.get("location") is None
+    assert restaurant.extracted_slots.get("cuisine_query") is None
+
+
+def test_explicit_food_refusal_discards_only_the_food_task() -> None:
+    state = {"tasks": [{
+        "domain": "food", "phase": "NEEDS_INFO", "goal": "Tìm món ăn",
+        "normalized_request": "Tìm món phở", "extracted_slots": {"dish_query": "phở"},
+    }]}
+
+    plan = deterministic_plan("Không muốn ăn nữa, tìm nhà hàng giúp tôi", state)
+
+    assert plan.discarded_task_refs == [0]
+    assert domains(plan) == ["restaurant"]
 
 
 def test_all_service_domains_can_be_used_sequentially_in_one_conversation() -> None:

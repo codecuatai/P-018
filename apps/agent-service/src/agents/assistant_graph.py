@@ -98,7 +98,7 @@ Quy tắc ứng xử và bóc tách tác vụ:
 - Yêu cầu dịch vụ cụ thể: trích xuất danh sách `tasks` chính xác.
 - Khi người dùng ĐỔI Ý / HỦY BỎ yêu cầu cũ ("thôi không đi xe nữa, tìm quán phở"): điền task_ref của tác vụ cũ vào `discarded_task_refs` và chỉ tạo task mới.
 - Có thể sử dụng cả bốn dịch vụ trong cùng một cuộc trò chuyện qua nhiều lượt. Mỗi lượt ưu tiên yêu cầu mới nhất; giữ các tác vụ khác dịch vụ còn dang dở, không phát lại lựa chọn cũ, và chỉ bỏ đúng tác vụ mà người dùng từ chối rõ ràng. Ví dụ "không muốn ăn, hãy tìm nhà hàng" bỏ yêu cầu Food đang dở nhưng vẫn tạo task Restaurant.
-- Các từ đánh giá chất lượng như "ngon", "tốt", "nổi tiếng", "bình dân" là sở thích chung, không phải loại ẩm thực (cuisine_query). Không biến lỗi gõ như "ngol" thành bộ lọc món; hỏi khu vực hoặc tìm gợi ý chung theo dữ liệu có sẵn.
+- Các từ đánh giá chất lượng như "ngon", "tốt", "nổi tiếng", "bình dân" là sở thích chung, không phải loại ẩm thực (cuisine_query). Không biến lỗi gõ như "ngol" thành bộ lọc món. Với yêu cầu gợi ý chung như "nhà hàng gì cũng được miễn là ngon", tạo task tìm nhà hàng không có bộ lọc địa điểm/ẩm thực để Gateway tìm danh sách rộng; không hỏi số người cho đến khi người dùng chọn quán và muốn đặt bàn.
 - Chuỗi dịch vụ phụ thuộc ("Tìm quán lẩu ở Hoàn Kiếm rồi đặt xe đưa tôi tới đó"):
   + Task 0 (restaurant): Tìm nhà hàng ở Hoàn Kiếm.
   + Task 1 (ride): depends_on = [0], không tự bịa địa chỉ đến (dropoff_address để trống để Gateway lấy từ Task 0).
@@ -476,6 +476,9 @@ def _is_generic_restaurant_preference(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     folded = " ".join(_plain(value).replace("-", " ").split())
+    restaurant_tail = re.search(r"(?:nha hang|quan an|restaurant)s?\s+(.+)$", folded)
+    if restaurant_tail:
+        folded = restaurant_tail.group(1).strip()
     generic = {
         "ngon", "ngol", "ngonn", "tot", "chat luong", "uy tin",
         "binh dan", "re", "gia tot", "noi tieng", "sang trong",
@@ -483,9 +486,32 @@ def _is_generic_restaurant_preference(value: Any) -> bool:
     }
     if folded in generic:
         return True
-    # Correct one-character transcription/typing noise around the generic
-    # quality adjective; these words are not cuisine filters.
-    return len(folded) == 4 and sum(left != right for left, right in zip(folded, "ngon")) <= 1
+    tokens = folded.split()
+    quality_terms = {"ngon", "tot", "uy", "tin", "re", "dep", "noi", "tieng", "binh", "dan", "sang", "trong", "chat", "luong", "de", "xuat", "goi", "y"}
+    has_quality = any(
+        token in quality_terms
+        or (len(token) == 4 and sum(left != right for left, right in zip(token, "ngon")) <= 1)
+        for token in tokens
+    )
+    if not has_quality:
+        return False
+    # Phrase fillers commonly emitted by ASR/LLMs are not cuisine names. If
+    # everything except the quality preference is conversational framing,
+    # treat the whole slot as a generic preference (e.g. "gi cung duoc mien
+    # la ngol") rather than querying the catalog with that sentence.
+    framing = {
+        "gi", "cung", "duoc", "mien", "la", "nha", "hang", "nao", "bat", "ky",
+        "loai", "mon", "quan", "an", "cho", "toi", "minh", "ban", "di", "nhe",
+        "muon", "tim", "goi", "y", "de", "xuat", "mot", "vai", "bai", "nhi", "gia",
+        "restaurant", "restaurants", "any", "whatever", "anything", "as", "long", "as",
+        "please", "some", "a", "the", "is", "fine",
+    }
+    remaining = [token for token in tokens if token not in quality_terms and token not in framing]
+    remaining = [
+        token for token in remaining
+        if not (len(token) == 4 and sum(left != right for left, right in zip(token, "ngon")) <= 1)
+    ]
+    return not remaining
 
 
 def _safe_model_text(value: Any, limit: int) -> str:
@@ -782,6 +808,8 @@ def _domain_slots(domain: str, value: Any) -> dict[str, Any]:
         text_slot("promo_code", 50)
     elif domain == "restaurant":
         text_slot("location", 300)
+        if _is_generic_location_preference(normalized.get("location")) or _is_non_geographic_restaurant_location(normalized.get("location")):
+            normalized.pop("location", None)
         text_slot("cuisine_type", 200)
         text_slot("cuisine_query", 200)
         for name in ("cuisine_type", "cuisine_query"):
@@ -1446,7 +1474,7 @@ def _party_size(text: str, words: tuple[tuple[str, int], ...] = ()) -> int | Non
     return None
 
 _LOCATION_PATTERN = re.compile(
-    r"\b(?:ở|tại|tai|o|khu\s+(?:vực|vuc)|quanh|gần|gan|đến|den)\b\s+([^,.!?;]+)",
+    r"\b(?:ở|tại|tai|o|khu\s+(?:vực|vuc)|quanh|gần|gan)\b\s+([^,.!?;]+)",
     re.IGNORECASE,
 )
 
@@ -1461,7 +1489,47 @@ _MAX_HEURISTIC_INPUT_LENGTH = 512
 
 _MAX_LOCATION_LENGTH = 160
 
-_GENERIC_LOCATION_VALUES = {"mot", "một", "quan", "quán", "nha hang", "nhà hàng"}
+_GENERIC_LOCATION_VALUES = {"mot", "một", "quan", "quán", "nha hang", "nhà hàng", "nao"}
+
+
+def _is_generic_location_preference(value: Any) -> bool:
+    """Recognize answers that explicitly leave the search area unrestricted."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    folded = " ".join(_plain(value).replace("-", " ").split())
+    # Keep this an exact whole-value check so a concrete place in a longer
+    # answer (for example, “anywhere near Cầu Giấy”) remains a valid filter.
+    folded = re.sub(r"\s+(?:nhe|nha|nhi|a|da|okay|ok|thoi)$", "", folded).strip()
+    return folded in {
+        "khu vuc nao cung duoc",
+        "khu nao cung duoc",
+        "vung nao cung duoc",
+        "o dau cung duoc",
+        "dau cung duoc",
+        "cho nao cung duoc",
+        "dia diem nao cung duoc",
+        "nao cung duoc",
+        "gi cung duoc",
+        "bat ky khu vuc nao",
+        "bat ky khu nao",
+        "bat ky",
+        "any",
+        "bat ky dau cung duoc",
+        "any area is fine",
+        "any location is fine",
+        "anywhere",
+        "any area",
+        "any location",
+        "no location preference",
+    }
+
+
+def _is_non_geographic_restaurant_location(value: Any) -> bool:
+    """Reject venue/action phrases that a planner mislabeled as an area."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+    folded = " ".join(_plain(value).split())
+    return bool(re.search(r"\b(?:de an|di an|an tai|tim nha hang|nha hang de|quan an de)\b", folded))
 
 def _clean_location_candidate(value: str) -> str:
     result = value.strip()
@@ -1503,6 +1571,8 @@ def _location(text: str) -> str | None:
         for pattern in location_patterns:
             for match in pattern.finditer(bounded):
                 result = _clean_location_candidate(match.group(1))
+                if _is_generic_location_preference(result) or _is_generic_location_preference(candidate):
+                    continue
                 if _plain(result).strip() in {"do", "day", "nha hang do", "quan do"}:
                     continue
                 if _plain(result).strip() in {_plain(value) for value in _GENERIC_LOCATION_VALUES}:
@@ -1939,7 +2009,9 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
                     flags=re.IGNORECASE,
                 )[0].strip()
                 cuisine = re.sub(r"^an\s+", "", cuisine).strip()
-                if cuisine and cuisine not in {"tai nha hang", "nha hang", "ngon", "goi y"}:
+                if re.fullmatch(r"(?:de|di)\s+an(?:\s+co)?", cuisine):
+                    cuisine = ""
+                if cuisine and cuisine not in {"tai nha hang", "nha hang", "ngon", "goi y", "bat ky", "any"}:
                     slots["cuisine_query"] = cuisine
     if domain == "food":
         if "giao ve nha" in lowered or "giao toi nha" in lowered or "ship" in lowered:
@@ -2066,6 +2138,10 @@ def _semantic_slots(text: str, domain: str) -> dict[str, Any]:
         ordinal = re.search(r"\b(?:chon|lay)\s+(?:cai|mon|quan)?\s*(?:so|thu)\s*([1-9][0-9]?)\b", lowered)
         if ordinal:
             slots["selection_index"] = int(ordinal.group(1)) - 1
+    if domain == "restaurant":
+        for name in ("cuisine_query", "cuisine_type"):
+            if _is_generic_restaurant_preference(slots.get(name)):
+                slots.pop(name, None)
     return slots
 
 def _restaurant_update_plan(message: str, conversation_state: dict[str, Any] | None) -> AssistantPlan | None:
@@ -2135,7 +2211,11 @@ def _task(domain: str, text: str, goal: str, slots: dict[str, Any], depends_on: 
         # Discovery can begin with a location or cuisine alone. Booking details
         # become mandatory only after the user asks to reserve/hold a table.
         booking_intent = _has_any(_plain(text), ("dat ban", "giu ban", "dat cho", "con ban", "ban trong", "an toi", "an trua"))
-        if not slots.get("location") and not slots.get("cuisine_query") and not slots.get("cuisine_type") and not slots.get("cuisine"):
+        broad_quality_request = _is_generic_restaurant_preference(text)
+        broad_discovery = not booking_intent and _has_any(
+            _routing_plain(text), ("nha hang", "quan an", "di an", "an tai quan", "an tai nha hang")
+        )
+        if not slots.get("location") and not slots.get("cuisine_query") and not slots.get("cuisine_type") and not slots.get("cuisine") and not broad_quality_request and not broad_discovery:
             missing.append("location|cuisine_query")
         if booking_intent:
             for key in ("party_size", "start_at"):
@@ -2312,7 +2392,9 @@ def _discard_targets(message: str, previous_tasks: list[Any]) -> list[int]:
             "chuyen sang",
             "doi sang",
         ),
-    ) or bool(re.search(r"\bkhong\b.{0,80}\bnua\b", lowered))
+    ) or bool(re.search(r"\bkhong\b.{0,80}\bnua\b", lowered)) or bool(
+        re.search(r"\bkhong muon\b.{0,30}\b(?:an|dat mon|do an)\b", lowered)
+    )
     if not abandonment:
         return []
 
@@ -2336,6 +2418,7 @@ def _discard_targets(message: str, previous_tasks: list[Any]) -> list[int]:
         ),
         "food": (
             r"\bkhong\b.{0,30}\b(?:dat mon|do an|giao do an)\b",
+            r"\bkhong muon\b.{0,30}\b(?:an|dat mon|do an)\b",
             r"\b(?:bo|dung)\b.{0,30}\b(?:mon|do an)\b",
         ),
         "restaurant": (
@@ -3060,13 +3143,9 @@ def _merge_explicit_context_actions(
         else []
     )
     deterministic_refs = _discard_targets(message, raw_tasks)
-    allowed_model_refs = {
-        index
-        for index, value in enumerate(raw_tasks[:8])
-        if isinstance(value, dict)
-        and str(value.get("phase", "PLANNING")) not in {"COMPLETED", "FAILED", "BLOCKED", "DISCARDED"}
-    }
-    discarded_refs = sorted((set(plan.discarded_task_refs).intersection(allowed_model_refs)).union(deterministic_refs))
+    # Only discard when the user's words independently express abandonment.
+    # A model can otherwise misread a new request as a replacement task.
+    discarded_refs = deterministic_refs
     explicit_stopover = _stopover_address(message)
     active_ride = next(
         (

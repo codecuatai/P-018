@@ -337,11 +337,19 @@ function hasOpeningHours(value: unknown): boolean {
 
 const DEFAULT_RESTAURANT_OPENING_HOURS: JsonObject[] = [{ day: 'Hằng ngày', open: '08:00', close: '22:00' }];
 
-function prioritizeRestaurantCandidates(candidates: JsonObject[]): JsonObject[] {
-  // Keep the service ranking stable while placing restaurants with a real image first.
+function prioritizeRestaurantCandidates(candidates: JsonObject[], preferQuality = false): JsonObject[] {
+  // For an unconstrained “tasty restaurant” request, prefer authoritative
+  // ratings/review counts when present. Otherwise preserve service ordering,
+  // while placing restaurants with a real image first.
   return candidates
     .map((candidate, index) => ({ candidate, index }))
     .sort((left, right) => {
+      if (preferQuality) {
+        const ratingDifference = (numberValue(right.candidate.rating) ?? -1) - (numberValue(left.candidate.rating) ?? -1);
+        if (ratingDifference !== 0) return ratingDifference;
+        const reviewDifference = (numberValue(right.candidate.review_count) ?? -1) - (numberValue(left.candidate.review_count) ?? -1);
+        if (reviewDifference !== 0) return reviewDifference;
+      }
       const leftHasImage = Boolean(stringValue(left.candidate.image_url));
       const rightHasImage = Boolean(stringValue(right.candidate.image_url));
       return Number(rightHasImage) - Number(leftHasImage) || left.index - right.index;
@@ -414,16 +422,63 @@ function explicitServiceDomains(message: string): Domain[] {
   return patterns.filter(([, pattern]) => pattern.test(folded)).map(([domain]) => domain);
 }
 
+function isGenericRestaurantPreference(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const folded = plainTextForRouting(value).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const restaurantTail = folded.match(/(?:nha hang|quan an|restaurant)s?\s+(.+)$/)?.[1];
+  const tokens = (restaurantTail ?? folded).split(' ').filter(Boolean);
+  const qualityWords = new Set(['ngon', 'tot', 're', 'dep', 'uy', 'tin', 'chat', 'luong', 'binh', 'dan', 'noi', 'tieng', 'sang', 'trong']);
+  const isNgonTypo = (token: string) => token.length === 4
+    && [...token].reduce((differences, character, index) => differences + Number(character !== 'ngon'[index]), 0) <= 1;
+  const hasQualityWord = tokens.some((token) => qualityWords.has(token) || isNgonTypo(token));
+  if (!hasQualityWord) return false;
+  const framingWords = new Set([
+    'gi', 'cung', 'duoc', 'mien', 'la', 'nha', 'hang', 'nao', 'bat', 'ky', 'loai', 'mon', 'quan', 'an',
+    'cho', 'toi', 'minh', 'ban', 'di', 'nhe', 'muon', 'tim', 'goi', 'y', 'de', 'xuat', 'mot', 'vai',
+    'bai', 'nhi', 'gia', 'restaurant', 'restaurants', 'any', 'whatever', 'anything', 'as', 'long', 'is', 'fine',
+    'please', 'some', 'a', 'the', 'no', 'khong', 'hay',
+  ]);
+  return tokens.every((token) => qualityWords.has(token) || isNgonTypo(token) || framingWords.has(token));
+}
+
+function isGenericRestaurantLocation(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const folded = plainTextForRouting(value)
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\s+(?:nhe|nha|nhi|a|da|okay|ok|thoi)$/u, '')
+    .trim();
+  return new Set([
+    'khu vuc nao cung duoc', 'khu nao cung duoc', 'vung nao cung duoc',
+    'o dau cung duoc', 'dau cung duoc', 'cho nao cung duoc', 'dia diem nao cung duoc',
+    'nao cung duoc', 'gi cung duoc',
+    'bat ky khu vuc nao', 'bat ky khu nao', 'bat ky', 'nao', 'any', 'anywhere', 'any area',
+    'bat ky dau cung duoc', 'any area is fine', 'any location is fine',
+    'any location', 'no location preference',
+  ]).has(folded);
+}
+
+function isNonGeographicRestaurantLocation(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const folded = plainTextForRouting(value).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return /\b(?:de an|di an|an tai|tim nha hang|nha hang de|quan an de)\b/u.test(folded);
+}
+
+function isBroadRestaurantDiscoveryIntent(value: string | undefined): boolean {
+  if (!value?.trim()) return false;
+  const folded = plainTextForRouting(value);
+  const mentionsVenue = /\b(?:nha hang|quan an)\b/u.test(folded);
+  const asksToDiscover = /\b(?:tim|goi y|de xuat|muon di|di den|di an|an tai|di toi|gioi thieu)\b/u.test(folded);
+  return mentionsVenue && asksToDiscover;
+}
+
 function restaurantCuisineFilter(value: string | undefined): string | undefined {
   if (!value?.trim()) return undefined;
-  const folded = plainTextForRouting(value).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
-  const genericPreferences = new Set([
-    'ngon', 'ngol', 'ngonn', 'tot', 'chat luong', 'uy tin', 'binh dan',
-    're', 'gia tot', 'noi tieng', 'sang trong', 'dep', 'goi y', 'de xuat',
-  ]);
-  const oneEditFromNgon = folded.length === 4
-    && [...folded].reduce((differences, character, index) => differences + Number(character !== 'ngon'[index]), 0) <= 1;
-  return genericPreferences.has(folded) || oneEditFromNgon ? undefined : value.trim();
+  const normalized = value.trim();
+  const folded = plainTextForRouting(normalized).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (isGenericRestaurantPreference(normalized) || /^(?:de|di) an(?: co)?$/u.test(folded)) return undefined;
+  return normalized;
 }
 
 function distanceQuestionDestination(message: string): string | undefined {
@@ -534,6 +589,7 @@ function locationTokens(value: unknown): string[] {
 
 function restaurantSearchLocation(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
+  if (isGenericRestaurantLocation(value) || isNonGeographicRestaurantLocation(value)) return undefined;
   // Planner output is untrusted semantic input and can occasionally retain
   // natural-language qualifiers around the actual area. Keep the
   // consumer-facing spelling, but remove only well-known leading proximity
@@ -3286,6 +3342,9 @@ export class AssistantService {
     const startAt = stringValue(slots.start_at);
     const cuisineQuery = cuisineType
       ?? restaurantCuisineFilter(stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine));
+    const broadQualityRequest = isGenericRestaurantPreference(task.latest_message)
+      || isGenericRestaurantLocation(task.latest_message)
+      || isGenericRestaurantPreference(stringValue(slots.cuisine_query) ?? stringValue(slots.cuisine_type));
     let existing = task.authoritative;
     const invalidatedHold = isRecord(existing?.invalidated_hold) ? existing.invalidated_hold : undefined;
     const invalidatedHoldId = stringValue(invalidatedHold?.id);
@@ -3320,7 +3379,8 @@ export class AssistantService {
     }
     const selection = stringValue(slots.selection);
     const existingSelected = isRecord(existing?.selected);
-    const discoveryMissing = !location && !cuisineQuery;
+    const discoveryMissing = !location && !cuisineQuery && !broadQualityRequest
+      && !isBroadRestaurantDiscoveryIntent(task.latest_message);
     const bookingDetailsMissing = Boolean(selection || existingSelected) && (!partySize || !startAt);
     if (discoveryMissing || bookingDetailsMissing) {
       const missing = [discoveryMissing ? 'khu vực hoặc loại món' : '', !partySize && (selection || existingSelected) ? 'số người' : '', !startAt && (selection || existingSelected) ? 'thời gian' : ''].filter(Boolean);
@@ -3377,7 +3437,7 @@ export class AssistantService {
         list = this.resultItems(cuisineFallback).filter((candidate) => restaurantMatchesRequestedLocation(candidate, location));
         if (list.length) fallbackReason = 'cuisine';
       }
-      list = prioritizeRestaurantCandidates(list);
+      list = prioritizeRestaurantCandidates(list, broadQualityRequest);
       const noResultNote = location && cuisineQuery
         ? `Mình chưa tìm thấy quán ${cuisineQuery} còn trong dữ liệu tại ${location}. Mình không mở rộng sang khu vực khác.`
         : location
@@ -3385,11 +3445,6 @@ export class AssistantService {
           : cuisineQuery
             ? `Mình chưa tìm thấy nhà hàng phù hợp với ${cuisineQuery} từ dữ liệu hiện có.`
             : 'Mình chưa tìm thấy nhà hàng phù hợp từ dữ liệu hiện có.';
-      const missingBookingDetail = !partySize
-        ? 'Để kiểm tra bàn chính xác, bạn cho mình biết số người nhé.'
-        : !startAt
-          ? 'Bạn cho mình biết thời gian muốn đặt bàn nhé.'
-          : undefined;
       const resultNote = fallbackReason === 'location'
         ? `Mình chưa tìm thấy đúng loại món này; dưới đây là các nhà hàng vẫn thuộc ${location} để bạn chọn.`
         : fallbackReason === 'cuisine'
@@ -3397,7 +3452,7 @@ export class AssistantService {
           : list.length === 0
             ? noResultNote
             : undefined;
-      const publicItem = this.restaurantOptions(list, [resultNote, missingBookingDetail].filter(Boolean).join(' '));
+      const publicItem = this.restaurantOptions(list, resultNote);
       const cohortId = this.newCohort(task);
       const selectionActions = list.map((_, index) => this.actionFor(task, 'select_restaurant', { selection_index: index }, cohortId));
       return {
