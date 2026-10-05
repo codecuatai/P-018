@@ -419,6 +419,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
 
   const foodSelectionFormVisible = hasFoodSelectionForm(messages) && !foodSelectionSubmitted;
   const foodSelectionTotal = Object.values(foodSelections).reduce((total, selection) => total + (typeof selection.option.price === "number" ? selection.option.price : 0) * selection.quantity, 0);
+  const foodSelectionCount = Object.values(foodSelections).reduce((count, selection) => count + selection.quantity, 0);
   
   return (
     <section className="assistant-page" aria-label="Trợ lý X-One">
@@ -494,7 +495,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
             ))}
           </div>
           
-          {foodSelectionFormVisible ? <FoodCartDock total={foodSelectionTotal} onConfirm={() => void confirmFoodSelections()} disabled={sending || foodSelectionTotal <= 0} /> : null}
+          {foodSelectionFormVisible && foodSelectionTotal > 0 ? <FoodCartDock total={foodSelectionTotal} selectedCount={foodSelectionCount} onConfirm={() => void confirmFoodSelections()} disabled={sending} /> : null}
           
           <div className="composer-wrap">
             <div className="composer-box">
@@ -504,7 +505,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                 disabled={sending}
                 onChange={(event) => setComposer(event.target.value)}
                 onKeyDown={onKeyDown}
-                placeholder="Nhờ X-One đặt xe 8h sáng mai ra sân bay…"
+                placeholder="Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?"
                 rows={1}
                 value={composer}
               />

@@ -416,7 +416,7 @@ function FoodCard({ item, actions, onAction, disabledActionId, foodSelections, o
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [page, setPage] = useState(1);
   const [showAll, setShowAll] = useState(false);
-  const pageSize = 4;
+  const pageSize = 3;
   const allOptions = item.options ?? [];
   const totalPages = Math.max(1, Math.ceil(allOptions.length / pageSize));
   const paginatedOptions = allOptions
@@ -507,11 +507,12 @@ function FoodConfirmation({ item, confirmationAction, paymentAction, onAction, d
   </section>;
 }
 
-export function FoodCartDock({ total, onConfirm, disabled }: { total: number; onConfirm: () => void; disabled?: boolean }) {
+export function FoodCartDock({ total, selectedCount, onConfirm, disabled }: { total: number; selectedCount?: number; onConfirm: () => void; disabled?: boolean }) {
   return <section className="food-cart-dock" aria-label="Tổng tiền đơn món ăn">
     <div className="food-cart-dock-footer">
       <span>Tạm tính</span>
       <strong>{formatMoney(total, "VND")}</strong>
+      {selectedCount ? <span className="food-cart-selection-count">{selectedCount} phần đã chọn</span> : null}
       <button className="card-action" type="button" onClick={onConfirm} disabled={Boolean(disabled) || total <= 0}><CircleDollarSign size={15} /> Xác nhận</button>
     </div>
   </section>;
