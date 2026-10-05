@@ -16,6 +16,7 @@ import { AssistantActionExecutionClaim, AssistantActionExecutionRecord, Assistan
 import { estimateTokenCostUsd } from '../core/token-pricing.util';
 import { ServiceCallError } from '../../resilience/service-call-error';
 import { ToolProposal, ToolService } from '../tools/tool.module';
+import { LocationCoordinate, LocationService } from '../personal/personal.module';
 import { RideConversationService as RideWorkflowService, RideRouteContext, RideWorkflowHydration } from './ride-conversation.service';
 import {
   buildOrchestrationSnapshot,
@@ -400,6 +401,42 @@ function matchesSavedAddressReference(query: string, address: { label: string; a
 
 function plainTextForRouting(value: string): string {
   return plainText(value).replaceAll('\u0111', 'd').replaceAll('\u0110', 'D');
+}
+
+function explicitServiceDomains(message: string): Domain[] {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const patterns: Array<[Domain, RegExp]> = [
+    ['food', /\b(?:do an|mon an|dat mon|tim mon|goi mon|giao tan noi|ship tan noi|an gi|toi doi|doi qua|pho|bun|com|banh mi)\b/],
+    ['restaurant', /\b(?:nha hang|dat ban|dat nha hang|tim nha hang|goi y.*nha hang|quan lau|quan pho|quan bun|quan com|quan an|con ban|dat cho)\b/],
+    ['healthcare', /\b(?:lich kham|kham benh|kham o dau|bac si|benh vien|chuyen khoa|mang bau|co bau|mang thai|thai san)\b/],
+    ['ride', /\b(?:dat xe|goi xe|chuyen xe|xe may|xe 4 cho|xe 7 cho|san bay)\b/],
+  ];
+  return patterns.filter(([, pattern]) => pattern.test(folded)).map(([domain]) => domain);
+}
+
+function distanceQuestionDestination(message: string): string | undefined {
+  const folded = plainTextForRouting(message);
+  if (!/\b(?:quang duong|khoang cach|bao xa|bao nhieu km|mat bao lau|distance)\b/.test(folded)) return undefined;
+  if (/\b(?:dat xe|goi xe|book a ride|ride to)\b/.test(folded)) return undefined;
+  const connectors = [...message.matchAll(/(?:đến|tới|den|toi|to)\s+/giu)];
+  const connector = connectors.at(-1);
+  if (!connector || connector.index === undefined) return undefined;
+  const destination = message.slice(connector.index + connector[0].length)
+    .replace(/\s+(?:là|la|bao nhiêu|bao nhieu|khoảng|khoang|mất|mat|km|kilomet|ấy|ay|nhỉ|nhi)\b.*$/iu, '')
+    .replace(/[?.!]+$/g, '')
+    .trim();
+  return destination.length >= 2 && destination.length <= 160 ? destination : undefined;
+}
+
+function isNonBookingHealthConcern(message: string): boolean {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (explicitServiceDomains(message).includes('healthcare')) return false;
+  return /\b(?:toi bi om|toi om|toi met|minh bi om|minh met|dau dau|bi sot|met qua|cam thay khong khoe)\b/.test(folded);
+}
+
+function hasConflictingRideVehicle(message: string): boolean {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return /\b(?:xe may|motorbike|motorcycle)\b/.test(folded) && /\b(?:4 cho|7 cho|4 seat|7 seat)\b/.test(folded);
 }
 
 function conversationRecallTarget(value: string): 'first' | 'previous' | undefined {
@@ -940,6 +977,7 @@ export class AssistantService {
     @Optional() private readonly food?: FoodClient,
     @Optional() private readonly tools?: ToolService,
     @Optional() private readonly rideClient?: RideClient,
+    @Optional() private readonly locations?: LocationService,
   ) {}
 
   private async recordUsageFromAgentResponse(
@@ -1107,7 +1145,7 @@ export class AssistantService {
     for (const taskRef of refs) visit(taskRef);
   }
 
-  private typedPlan(planner: JsonObject): PlanResolution {
+  private typedPlan(planner: JsonObject, message = ''): PlanResolution {
     const rawDecision = planner.planning_decision;
     if (!isRecord(rawDecision)) {
       throw new ServiceUnavailableException({ code: 'AGENT_PLAN_INVALID', detail: 'Agent planning contract is invalid.' });
@@ -1127,12 +1165,16 @@ export class AssistantService {
           requires_authority: arrayValue(rawStep.requires_authority).filter(isRecord),
         }
         : undefined;
+      const extractedSlots = this.semanticSlotValues(task.semantic_slots);
+      if (task.domain === 'healthcare' && /\b(?:mang bau|co bau|mang thai|thai san)\b/.test(plainTextForRouting(message))) {
+        extractedSlots.department = 'Sản phụ khoa';
+      }
       return {
         domain: task.domain,
         operation: task.operation,
         goal: task.goal,
         normalized_request: task.normalized_request,
-        extracted_slots: this.semanticSlotValues(task.semantic_slots),
+        extracted_slots: extractedSlots,
         depends_on: arrayValue(task.depends_on),
         disposition: blockedTaskRefs.has(numberValue(task.task_ref) ?? -1) ? 'BLOCKED' : task.disposition,
         missing_information: arrayValue(task.missing_information),
@@ -1642,6 +1684,41 @@ export class AssistantService {
     );
   }
 
+  private async answerDistanceQuestion(actorId: string, destination: string): Promise<string> {
+    if (!this.locations) return 'Mình chưa thể tra tuyến đường lúc này. Bạn cho mình biết điểm xuất phát cụ thể nhé.';
+    try {
+      const addresses = await this.store.listSavedAddresses(actorId);
+      const originAddress = addresses.find((address) => address.isDefault) ?? addresses[0];
+      if (!originAddress) return 'Mình chưa thấy địa chỉ nhà đã lưu. Bạn cho mình biết điểm xuất phát cụ thể nhé.';
+
+      const resolvePoint = async (addressText: string, saved?: LocationCoordinate): Promise<LocationCoordinate | undefined> => {
+        if (saved && Number.isFinite(saved.latitude) && Number.isFinite(saved.longitude)
+          && saved.latitude >= -90 && saved.latitude <= 90 && saved.longitude >= -180 && saved.longitude <= 180) return saved;
+        const geocoded = await this.locations!.geocode(addressText);
+        const match = geocoded.candidates.find((candidate) => candidate.latitude !== null && candidate.longitude !== null);
+        return match?.latitude !== null && match?.latitude !== undefined && match.longitude !== null && match.longitude !== undefined
+          ? { latitude: match.latitude, longitude: match.longitude }
+          : undefined;
+      };
+      const [origin, target] = await Promise.all([
+        resolvePoint(originAddress.addressText, originAddress.latitude !== undefined && originAddress.longitude !== undefined
+          ? { latitude: originAddress.latitude, longitude: originAddress.longitude }
+          : undefined),
+        resolvePoint(destination),
+      ]);
+      if (!origin || !target) return `Mình chưa xác định được ${!origin ? 'địa chỉ nhà' : 'điểm đến'} trên bản đồ. Bạn cho mình địa chỉ cụ thể hơn nhé.`;
+
+      const route = await this.locations.route(origin, target);
+      const distance = Number(route.distance_km);
+      if (!Number.isFinite(distance) || distance <= 0) return 'Mình chưa tính được quãng đường từ dữ liệu hiện có. Bạn thử hỏi lại với địa chỉ cụ thể hơn nhé.';
+      const estimate = route.status !== 'RESOLVED' || route.provider === 'deterministic-straight-line';
+      const routeDescription = estimate ? 'theo đường thẳng (ước tính)' : 'theo tuyến đường';
+      return `Từ ${originAddress.label || 'địa chỉ nhà đã lưu'} đến ${destination} khoảng ${distance.toFixed(1)} km ${routeDescription}.`;
+    } catch {
+      return 'Mình chưa tra được quãng đường lúc này. Bạn thử lại sau nhé.';
+    }
+  }
+
   async chat(
     user: AuthUser,
     message: string,
@@ -1672,6 +1749,50 @@ export class AssistantService {
         user,
         message,
         answer,
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+        true,
+      );
+    }
+    if (hasConflictingRideVehicle(message)) {
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        'Xe máy không có cấu hình 4 hoặc 7 chỗ. Bạn muốn đi xe máy hay ô tô 4 chỗ?',
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+        true,
+      );
+    }
+    if (isNonBookingHealthConcern(message)) {
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        'Nghe bạn nói vậy mình rất tiếc. Bạn có muốn mình tìm lịch khám phù hợp cho bạn không?',
+        state,
+        [],
+        state.actions,
+        [],
+        [],
+        true,
+      );
+    }
+    const distanceDestination = distanceQuestionDestination(message);
+    if (distanceDestination) {
+      const distanceReply = await this.answerDistanceQuestion(user.sub, distanceDestination);
+      return this.persistTurn(
+        conversationId,
+        user,
+        message,
+        distanceReply,
         state,
         [],
         state.actions,
@@ -1938,8 +2059,15 @@ export class AssistantService {
       );
     }
     const planner = precomputedPlanner ?? {};
-    const resolution = this.typedPlan(planner);
-    const discardedTaskRefs = resolution.discardedTaskRefs;
+    const resolution = this.typedPlan(planner, message);
+    const foldedTurnMessage = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+    const abandonsRideForFood = /\b(?:thoi|dung|bo qua|huy|khong can nua|de sau)\b/.test(foldedTurnMessage)
+      && explicitServiceDomains(message).includes('food')
+      && state.tasks.some((task) => task.domain === 'ride' && !['COMPLETED', 'FAILED', 'BLOCKED', 'DISCARDED'].includes(task.phase));
+    const abandonedRideRefs = abandonsRideForFood
+      ? state.tasks.flatMap((task, index) => task.domain === 'ride' ? [index] : [])
+      : [];
+    const discardedTaskRefs = [...new Set([...resolution.discardedTaskRefs, ...abandonedRideRefs])];
     const discardResult = this.applyTaskDiscards(state.tasks, discardedTaskRefs);
     // `planning_decision` is the only planning authority on the production
     // path. The Agent still returns `plan` for compatibility with older
@@ -1948,10 +2076,35 @@ export class AssistantService {
     const semanticPlan = isRecord(planner.plan) ? planner.plan : {};
     const dialogueResolution = isRecord(semanticPlan.dialogue_resolution) ? semanticPlan.dialogue_resolution : {};
     const followUpResolution = this.resolvePlanTasks(state.tasks, resolution.tasks, message, dialogueResolution);
-    const planTasks = followUpResolution.tasks;
-    const clarificationQuestion = resolution.clarificationQuestion ?? followUpResolution.clarificationQuestion;
+    const explicitDomains = explicitServiceDomains(message);
+    const intentAlignedTasks = explicitDomains.length
+      ? followUpResolution.tasks.filter((task) => explicitDomains.includes(task.domain as Domain))
+      : followUpResolution.tasks;
+    const explicitIntentMismatch = explicitDomains.length > 0
+      && followUpResolution.tasks.length > 0
+      && intentAlignedTasks.length === 0;
+    const planTasks = abandonsRideForFood
+      ? intentAlignedTasks.filter((task) => task.domain === 'food')
+      : intentAlignedTasks;
+    const explicitIntentPrompt: Record<Domain, string> = {
+      food: 'Bạn đang muốn tìm đồ ăn. Bạn cho mình biết món hoặc khu vực muốn tìm nhé?',
+      restaurant: 'Bạn đang muốn tìm nhà hàng. Bạn cho mình biết khu vực hoặc loại món nhé?',
+      healthcare: 'Bạn đang muốn tìm lịch khám. Bạn cho mình biết triệu chứng hoặc chuyên khoa cần khám nhé?',
+      ride: 'Bạn đang muốn đặt xe. Bạn cho mình biết điểm đón và điểm đến nhé?',
+    };
+    const clarificationQuestion = abandonsRideForFood
+      ? 'Bạn muốn mình gợi ý món ăn hoặc quán ăn nào?'
+      : explicitIntentMismatch
+      ? explicitIntentPrompt[explicitDomains[0]]
+      : resolution.clarificationQuestion ?? followUpResolution.clarificationQuestion;
     const plan: JsonObject = {
-      ...(stringValue(planner.assistant_message) ? { assistant_message: stringValue(planner.assistant_message) } : {}),
+    ...(abandonsRideForFood
+      ? { assistant_message: 'Mình đã bỏ phần đặt xe đang dở. Bạn muốn mình gợi ý món ăn hoặc quán ăn nào?' }
+      : explicitIntentMismatch
+        ? { assistant_message: explicitIntentPrompt[explicitDomains[0]] }
+        : stringValue(planner.assistant_message)
+          ? { assistant_message: stringValue(planner.assistant_message) }
+          : {}),
       ...(clarificationQuestion ? { clarification_question: clarificationQuestion } : {}),
     };
     const merge = this.mergeTasks(state.tasks, planTasks, message, resolution.replanDirective);
@@ -1965,17 +2118,20 @@ export class AssistantService {
       return Boolean(task && !merge.touchedIds.has(task.id) && action.task_revision === task.revision);
     });
     const items: JsonObject[] = [];
-    // A Ride interruption is a focused turn: keep the inactive Food state
-    // durable, but do not replay its cards/actions alongside the Ride result.
-    // Other multi-service turns intentionally keep unrelated cohorts visible
-    // so an explicitly requested parallel task can be progressed in the same
-    // response.
+    // A clear request for one service focuses the response on that service;
+    // unrelated NEEDS_INFO choices remain durable but are not replayed as if
+    // they were part of the new request. Explicitly additive requests and
+    // concurrent multi-domain plans keep their separate cohorts visible.
     const hasActiveRide = state.tasks.some((task) => task.domain === 'ride' && !['COMPLETED', 'FAILED', 'BLOCKED', 'DISCARDED'].includes(task.phase));
     const singleDomainResume = planTasks.length > 0
       && planTasks.every((plannedTask) => plannedTask.domain === planTasks[0]?.domain)
       && state.tasks.some((task) => task.domain === planTasks[0]?.domain && !['COMPLETED', 'FAILED', 'BLOCKED', 'DISCARDED'].includes(task.phase))
       && hasActiveRide;
-    const focusedTurn = singleDomainResume || (planTasks.length > 0 && planTasks.every((plannedTask) => plannedTask.domain === 'ride'));
+    const singleDomainPlan = planTasks.length > 0 && planTasks.every((plannedTask) => plannedTask.domain === planTasks[0]?.domain);
+    const explicitlyParallel = /\b(?:them|ngoai ra|cung luc|dong thoi|ben canh do|ket hop)\b/.test(foldedMessage);
+    const addsFoodAlongsideActiveRide = planTasks[0]?.domain === 'food' && hasActiveRide;
+    const focusedTurn = singleDomainResume
+      || (singleDomainPlan && !explicitlyParallel && !addsFoodAlongsideActiveRide);
     const responseActions: StoredAction[] = actions.filter((action) => !focusedTurn || merge.touchedIds.has(action.task_id));
     const completed: JsonObject[] = [];
     const resultsForComposition: JsonObject[] = [];
@@ -2012,7 +2168,11 @@ export class AssistantService {
         conversationId,
         user,
         message,
-        safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+        this.withDiscardAcknowledgement(
+          safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+          discardResult.domains,
+          abandonsRideForFood,
+        ),
         state,
         [],
         state.actions,
@@ -2037,7 +2197,11 @@ export class AssistantService {
         conversationId,
         user,
         message,
-        safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+        this.withDiscardAcknowledgement(
+          safeText(plan.clarification_question, 'Bạn cho mình biết thêm một chút thông tin nhé?'),
+          discardResult.domains,
+          abandonsRideForFood,
+        ),
         clarificationState,
         [],
         actions,
@@ -2132,7 +2296,7 @@ export class AssistantService {
     );
     const presentationTasks = merged.filter((task) => task.phase !== 'DISCARDED' && (
       merge.touchedIds.has(task.id)
-      || ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase)
+      || (!focusedTurn && ['PLANNING', 'NEEDS_INFO', 'IN_PROGRESS', 'AWAITING_CONFIRMATION'].includes(task.phase))
     ));
     const baseMessage = this.messageFor(message, plan, presentationTasks, items, responseActions);
     const activeTasks = merged.filter((task) => merge.touchedIds.has(task.id) && task.phase !== 'DISCARDED');
@@ -2161,7 +2325,7 @@ export class AssistantService {
     const finalMessage = this.withDiscardAcknowledgement(
       composed,
       discardResult.domains,
-      planTasks.length > 0,
+      planTasks.length > 0 || (abandonsRideForFood && !planTasks.length),
     );
     const response = await this.persistTurn(conversationId, user, message, finalMessage, nextState, items, actions, completed, responseActions);
     return response;
@@ -4201,6 +4365,7 @@ export class AssistantService {
     // A UI action has already resolved the item and restaurant from an
     // authoritative candidate. Keep its Agent context deliberately narrow so
     // stale discovery slots cannot downgrade this typed cart-update event.
+    const expectedCapability = selectedByAction ? undefined : task.planned_step?.capability;
     const agentContext = selectedByAction
       ? {
         ...(selectedMenuItemId ? { menu_item_id: selectedMenuItemId } : {}),
@@ -4210,7 +4375,10 @@ export class AssistantService {
         assistant_action: 'ADD_SELECTED_FOOD_ITEM',
         assistant_action_quantity: selectionQuantity,
       }
-      : previousContext;
+      : {
+        ...previousContext,
+        ...(expectedCapability ? { planned_capability: expectedCapability } : {}),
+      };
     const response = await this.agent.chat({ conversation_id: conversationId, user_id: user.sub, message, workflow_context: agentContext, correlation_id: correlationId }, correlationId);
     let stateUpdates = isRecord(response.state_updates) ? response.state_updates : {};
     let pending = isRecord(response.pending_confirmation) ? response.pending_confirmation : undefined;
@@ -4227,9 +4395,9 @@ export class AssistantService {
         retryable: true,
       });
     }
-    const expectedCapability = explicitSelection ? undefined : task.planned_step?.capability;
+    const dispatchedCapability = explicitSelection ? undefined : expectedCapability;
     const allowedCapabilities = explicitSelection ? FOOD_SELECTION_PROPOSAL_CAPABILITIES : undefined;
-    if (expectedCapability && !proposals.length) {
+    if (dispatchedCapability && !proposals.length) {
       throw new ServiceUnavailableException({
         code: 'CORE_A_PROPOSAL_MISSING',
         detail: 'Food Core A dispatch requires a validated Agent proposal.',
@@ -4244,7 +4412,7 @@ export class AssistantService {
         correlationId,
         conversationId,
         `food:${task.id}:r${task.revision}`,
-        expectedCapability,
+        dispatchedCapability,
         allowedCapabilities,
       );
       stateUpdates = { ...stateUpdates, ...dispatched.stateUpdates };
@@ -5007,8 +5175,45 @@ export class AssistantService {
     // already executable. Surface the ready result first; retain the
     // clarification for a turn with no executable public result.
     if (clarification && !items.length && !actions.length) return clarification;
-    if (!items.length && !actions.length) return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
     const activeTasks = tasks.filter((task) => task.phase !== 'DISCARDED');
+    if (!items.length && !actions.length) {
+      // Model prose is not authoritative. A stale assistant_message can refer
+      // to an earlier domain even when the typed plan correctly changed focus.
+      // When a service task exists, construct a short prompt from its validated
+      // missing fields instead of replaying free-form planner text.
+      const task = activeTasks[0];
+      if (task) {
+        const labels: Record<string, string> = {
+          pickup_address: 'điểm đón',
+          dropoff_address: 'điểm đến',
+          vehicle_type: 'loại xe',
+          passenger_count: 'số người đi xe',
+          dish_query: 'món bạn muốn tìm',
+          restaurant_id: 'nhà hàng bạn chọn',
+          address_id: 'địa chỉ giao hàng',
+          department: 'chuyên khoa cần khám',
+          start_at: 'ngày và giờ mong muốn',
+          party_size: 'số người',
+          location: 'khu vực',
+        };
+        const missing = arrayValue(task.missing_information)
+          .filter((field): field is string => typeof field === 'string')
+          .map((field) => labels[field] ?? field)
+          .filter(Boolean);
+        const domainLabels: Record<Domain, string> = {
+          ride: 'chuyến xe',
+          food: 'món ăn',
+          restaurant: 'nhà hàng',
+          healthcare: 'lịch khám',
+        };
+        if (missing.length) {
+          const joined = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} và ${missing[missing.length - 1]}`;
+          return `Bạn cho mình biết thêm ${joined} để mình tiếp tục ${domainLabels[task.domain]}.`;
+        }
+        return `Mình đang tiếp tục yêu cầu ${domainLabels[task.domain]}. Bạn cho mình thêm thông tin còn thiếu nhé.`;
+      }
+      return safeText(stringValue(plan.assistant_message), 'Mình sẽ tiếp tục cùng bạn nhé.');
+    }
     const kinds = new Set(items.map((item) => stringValue(item.kind)).filter((kind): kind is string => Boolean(kind)));
     if (kinds.has('clarification')) {
       const clarification = items.find((item) => item.kind === 'clarification');
@@ -5276,6 +5481,7 @@ export class AssistantService {
     const openingHours = hasOpeningHours(candidate.opening_hours) ? candidate.opening_hours : DEFAULT_RESTAURANT_OPENING_HOURS;
     const coordinate = publicCoordinate(candidate);
     return {
+      ...(stringValue(candidate.id) ? { id: stringValue(candidate.id) } : {}),
       name: stringValue(candidate.name) ?? 'Nhà hàng',
       location: address ?? 'Thông tin địa điểm đang được cập nhật',
       ...(address ? { address } : {}),
@@ -5578,7 +5784,7 @@ export class AssistantService {
 
   private sanitizeOption(value: JsonObject): JsonObject {
     const result: JsonObject = {};
-    for (const key of ['name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'currency', 'category', 'rating', 'review_count', 'price_level', 'image_url', 'address', 'city', 'district', 'latitude', 'longitude', 'target_index']) {
+    for (const key of ['id', 'name', 'title', 'location', 'cuisine', 'description', 'doctor', 'department', 'start_time', 'price', 'currency', 'category', 'rating', 'review_count', 'price_level', 'image_url', 'address', 'city', 'district', 'latitude', 'longitude', 'target_index']) {
       const item = value[key];
       if (key === 'start_time') {
         const normalized = publicDateTime(item);
@@ -5611,6 +5817,7 @@ export class AssistantService {
     if (!isRecord(value)) return {};
     const openingHours = this.sanitizeOpeningHours(value.opening_hours);
     return {
+      ...(stringValue(value.id) ? { id: stringValue(value.id) } : {}),
       ...(stringValue(value.name) ? { name: stringValue(value.name) } : {}),
       ...(stringValue(value.location) ? { location: stringValue(value.location) } : {}),
       ...(stringValue(value.address) ? { address: stringValue(value.address) } : {}),

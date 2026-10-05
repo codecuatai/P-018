@@ -541,6 +541,7 @@ export type AssistantAction =
   | AssistantActionOf<"food_payment">;
 
 export interface AssistantOption {
+  id?: string;
   name?: string;
   title?: string;
   location?: string;

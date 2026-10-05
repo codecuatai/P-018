@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 from time import perf_counter
 from typing import Any
@@ -41,14 +42,31 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _scoped_run_id(correlation_id: str | None, scope: str) -> str:
-    """Give each Agent invocation a stable run ID within one correlation chain."""
+def _scoped_run_id(
+    correlation_id: str | None,
+    scope: str,
+    request_fingerprint: str | None = None,
+) -> str:
+    """Give each distinct Agent invocation a stable, collision-resistant run ID."""
     base = correlation_id or uuid4().hex
-    candidate = f"{base}:{scope}"
+    suffix = f":{request_fingerprint[:16]}" if request_fingerprint else ""
+    candidate = f"{base}:{scope}{suffix}"
     if len(candidate) <= 128:
         return candidate
     digest = hashlib.sha256(base.encode("utf-8")).hexdigest()
-    return f"{digest}:{scope}"[:128]
+    fingerprint = request_fingerprint[:16] if request_fingerprint else ""
+    return f"{digest}:{scope}:{fingerprint}"[:128]
+
+
+def _request_fingerprint(request: Any) -> str:
+    """Hash the complete validated payload so reused correlation IDs cannot collide."""
+    payload = json.dumps(
+        request.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _capability_names(result: dict[str, Any]) -> list[str]:
@@ -86,21 +104,36 @@ async def _record_run_untraced(
     started_at: float,
 ) -> None:
     try:
-        await get_run_metadata_store().record(
-            RunMetadata(
-                actor_id=actor_id,
-                workflow_id=workflow_id,
-                run_id=run_id,
-                phase=phase,
-                capability_names=_capability_names(result),
-                latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
-                error_code=(
-                    str(result["error_code"])[:100]
-                    if result.get("error_code") is not None
-                    else None
-                ),
-            )
+        store = get_run_metadata_store()
+        metadata = RunMetadata(
+            actor_id=actor_id,
+            workflow_id=workflow_id,
+            run_id=run_id,
+            phase=phase,
+            capability_names=_capability_names(result),
+            latency_ms=max(0, int((perf_counter() - started_at) * 1000)),
+            error_code=(
+                str(result["error_code"])[:100]
+                if result.get("error_code") is not None
+                else None
+            ),
         )
+        try:
+            await store.record(metadata)
+        except RunMetadataConflictError:
+            # A retry of the same request can legitimately finish with a
+            # different latency. Treat it as a replay only when all outcome
+            # fields match; a changed phase/capability/error remains a conflict.
+            existing = await store.get(actor_id, workflow_id, run_id)
+            same_outcome = existing is not None and (
+                existing.phase == metadata.phase
+                and existing.schema_version == metadata.schema_version
+                and existing.capability_names == metadata.capability_names
+                and existing.retry_count == metadata.retry_count
+                and existing.error_code == metadata.error_code
+            )
+            if not same_outcome:
+                raise
     except RunMetadataConflictError as exc:
         raise HTTPException(
             status_code=409,
@@ -189,7 +222,11 @@ async def assistant_chat(
 ) -> dict[str, Any]:
     """Plan one or more X-One tasks; the Gateway remains the side-effect owner."""
     settings = get_settings()
-    run_id = _scoped_run_id(request.correlation_id, f"assistant-{request.mode}")
+    run_id = _scoped_run_id(
+        request.correlation_id,
+        f"assistant-{request.mode}",
+        _request_fingerprint(request),
+    )
     trace_correlation_id = request.correlation_id or run_id
     started_at = perf_counter()
     telemetry = get_telemetry()
@@ -388,7 +425,7 @@ async def chat(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACTOR_MISMATCH", "detail": "Actor assertion does not match the request body."},
         )
-    run_id = _scoped_run_id(request.correlation_id, "food")
+    run_id = _scoped_run_id(request.correlation_id, "food", _request_fingerprint(request))
     started_at = perf_counter()
     with telemetry.observation(
         "Food Agent: Chat",

@@ -45,6 +45,27 @@ class FoodWorkflowContext(BaseModel):
     # only for the turn that adds the selected menu item to the cart.
     assistant_action: Literal["ADD_SELECTED_FOOD_ITEM"] | None = None
     assistant_action_quantity: int | None = Field(default=None, ge=1, le=50)
+    # Ephemeral dispatch authority supplied by the validated top-level plan.
+    # It is used only to align Food intent classification for this one turn.
+    planned_capability: Literal[
+        "search_food",
+        "view_menu",
+        "view_menu_item",
+        "list_food_delivery_addresses",
+        "get_food_cart",
+        "create_cart",
+        "add_to_cart",
+        "update_food_cart_item",
+        "remove_food_cart_item",
+        "apply_voucher",
+        "remove_food_voucher",
+        "quote_delivery",
+        "preview_order",
+        "get_food_order",
+        "track_food_order",
+        "prepare_food_order_confirmation",
+        "prepare_food_order_cancellation_confirmation",
+    ] | None = None
 
 
 class AgentState(TypedDict, total=False):

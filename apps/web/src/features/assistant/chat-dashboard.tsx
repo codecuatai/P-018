@@ -523,7 +523,7 @@ export function ChatDashboard({ user, initialConversationId }: { user: AuthUser;
                   setComposer(event.target.value);
                 }}
                 onKeyDown={onKeyDown}
-                placeholder="Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?"
+                placeholder="Bạn cần X-One giúp gì?"
                 rows={1}
                 value={composer}
               />

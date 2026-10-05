@@ -163,6 +163,10 @@
 .message-meta { display: none; }
 .message-text { display: inline-block; padding: 10px 14px; background: #FFFFFF; border: 1px solid var(--color-border); border-radius: 16px 16px 16px 4px; box-shadow: var(--shadow-card); color: var(--color-ink); font-size: var(--text-sm); line-height: var(--leading-normal); text-align: left; white-space: pre-wrap; word-break: break-word; }
 .chat-message.user .message-text { color: #FFFFFF; background: var(--color-primary); border: 1px solid var(--color-primary); border-radius: 16px 16px 4px 16px; box-shadow: 0 2px 6px rgb(79 70 229 / 0.2); }
+.chat-message.user .message-text::selection,
+.chat-message.user .message-text *::selection { color: #312E81; background: #FEF08A; }
+.chat-message.user .message-text::-moz-selection,
+.chat-message.user .message-text *::-moz-selection { color: #312E81; background: #FEF08A; }
 .chat-message.has-error .message-text { color: #9D352B; background: var(--color-danger-surface, #FEF2F2); border: 1px solid #FECACA; box-shadow: none; }
 .chat-message.is-stopped .message-text { color: var(--color-muted); background: var(--color-canvas); border: 1px solid var(--color-border); box-shadow: none; }
 

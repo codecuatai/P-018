@@ -5,7 +5,6 @@ import {
   BookmarkCheck,
   Bot,
   CalendarDays,
-  CarFront,
   ChevronLeft,
   ChevronRight,
   Gift,
@@ -15,16 +14,13 @@ import {
   Loader2,
   LogOut,
   Menu,
-  MessageSquareText,
   Plus,
   Settings,
   ShieldAlert,
   ShieldCheck,
-  Stethoscope,
   Store,
   User,
   UserRound,
-  Utensils,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,10 +29,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { XOneMark } from "@/components/XOneMark";
 import { Sheet, SheetClose, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { getUnreadNotificationCount, listConversations, listNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/api-client";
-import { ACTIVE_CONVERSATION_EVENT, CONVERSATIONS_CHANGED_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
-import { conversationTitle } from "@/lib/presentation";
-import type { ConversationRecord } from "@/types";
+import { getUnreadNotificationCount, listNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/api-client";
+import { ACTIVE_CONVERSATION_EVENT, emitNewConversation, emitNotificationsChanged, NEW_CONVERSATION_EVENT, NOTIFICATIONS_CHANGED_EVENT } from "@/lib/conversation-events";
 import { useAuth } from "@/providers/auth-provider";
 
 const navigation = [
@@ -338,7 +332,6 @@ function Sidebar({
       const link = <Link className={`app-nav-link ${current ? "is-active" : ""}`} href={targetHref} title={description} aria-current={current ? "page" : undefined} onClick={isAssistant && assistantWorkspace ? (event) => event.preventDefault() : undefined}><Icon size={17} /><span>{label}</span></Link>;
       return compact ? <SheetClose asChild key={href}>{link}</SheetClose> : <span key={href}>{link}</span>;
     })}</nav>
-    <RecentConversations pathname={pathname} compact={compact} />
     <div className="sidebar-spacer" />
     <div className="sidebar-footer"><div className="sidebar-identity"><span className="identity-initials" aria-hidden="true">{initials(userEmail)}</span><span className="sidebar-identity-copy"><strong title={userEmail}>{userEmail || "Tài khoản X-One"}</strong><small><ShieldCheck size={12} aria-hidden="true" /> {getRoleBadge(userRole).label} · Phiên bảo mật</small></span></div><SidebarUserMenu onLogout={onLogout} compact={compact} userRole={userRole} /></div>
   </div>
@@ -525,29 +518,4 @@ function useOutsideClick<T extends HTMLElement>(active: boolean, onOutsideClick:
   return ref;
 }
 
-function RecentConversations({ pathname, compact }: { pathname: string | null; compact?: boolean }) {
-  const [items, setItems] = useState<ConversationRecord[]>([]);
-  const [query, setQuery] = useState("");
-  useEffect(() => {
-    let active = true;
-    let controller: AbortController | undefined;
-    const load = () => {
-      controller?.abort();
-      controller = new AbortController();
-      void listConversations(false, controller.signal, 1, 10).then((result) => { if (active) setItems(result.items); }).catch(() => undefined);
-    };
-    load();
-    window.addEventListener(CONVERSATIONS_CHANGED_EVENT, load);
-    return () => { active = false; controller?.abort(); window.removeEventListener(CONVERSATIONS_CHANGED_EVENT, load); };
-  }, []);
-  const visible = items.filter((item) => item.status !== "ARCHIVED" && (!query.trim() || conversationTitle(item).toLowerCase().includes(query.trim().toLowerCase())));
-  const groups = groupConversations(visible).slice(0, 3);
-  return <div className="sidebar-recent"><div className="sidebar-recent-heading"><span>Gần đây</span><Link href="/app/history/conversations">Xem tất cả</Link></div><div className="sidebar-recent-search"><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm cuộc trò chuyện…" aria-label="Tìm cuộc trò chuyện" /></div>{groups.length ? <nav aria-label="Cuộc trò chuyện gần đây">{groups.map((group) => <div className="sidebar-recent-group" key={group.label}><small>{group.label}</small>{group.items.slice(0, compact ? 4 : 5).map((item) => { const current = pathname === `/app/conversations/${encodeURIComponent(item.conversationId)}`; const title = conversationTitle(item); const Icon = conversationIcon(title); const alive = (item.status ?? "ACTIVE") === "ACTIVE"; return <Link className={`sidebar-conversation-link ${current ? "is-active" : ""}${alive ? " is-alive" : " is-done"}`} href={`/app/conversations/${encodeURIComponent(item.conversationId)}`} aria-current={current ? "page" : undefined} key={item.conversationId}><span className="sidebar-conv-status" aria-hidden="true" /><span className="sidebar-conv-icon" aria-hidden="true"><Icon size={14} /></span><span className="sidebar-conv-title">{title}</span><time>{formatRecentTime(item.updatedAt ?? item.lastMessageAt ?? item.createdAt)}</time></Link>; })}</div>)}</nav> : <p className="sidebar-recent-empty">Không tìm thấy cuộc trò chuyện nào.</p>}</div>;
-}
-
-function conversationIcon(title: string) { const lower = title.toLowerCase(); if (lower.includes("xe") || lower.includes("chuyến") || lower.includes("đi") || lower.includes("đón")) return CarFront; if (lower.includes("ăn") || lower.includes("phở") || lower.includes("món") || lower.includes("quán") || lower.includes("bàn") || lower.includes("nhà hàng")) return Utensils; if (lower.includes("khám") || lower.includes("bệnh") || lower.includes("bác sĩ") || lower.includes("y tế")) return Stethoscope; return MessageSquareText; }
-function groupConversations(items: ConversationRecord[]): Array<{ label: string; items: ConversationRecord[] }> { const groups = new Map<string, ConversationRecord[]>(); for (const item of [...items].sort((left, right) => dateValue(right) - dateValue(left))) { const label = dayGroup(item.updatedAt ?? item.lastMessageAt ?? item.createdAt); groups.set(label, [...(groups.get(label) ?? []), item]); } return ["Hôm nay", "Hôm qua", "Trước đó"].flatMap((label) => groups.has(label) ? [{ label, items: groups.get(label)! }] : []); }
-function dayGroup(value?: string): string { const date = value ? new Date(value) : new Date(0); if (Number.isNaN(date.getTime())) return "Trước đó"; const now = new Date(); const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(); const candidate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(); const difference = Math.round((day - candidate) / 86_400_000); return difference <= 0 ? "Hôm nay" : difference === 1 ? "Hôm qua" : "Trước đó"; }
-function dateValue(value: ConversationRecord): number { const parsed = new Date(value.updatedAt ?? value.lastMessageAt ?? value.createdAt ?? 0).getTime(); return Number.isFinite(parsed) ? parsed : 0; }
-function formatRecentTime(value?: string): string { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.getTime()) ? "" : new Intl.DateTimeFormat("vi-VN", { hour: "2-digit", minute: "2-digit" }).format(date); }
 function initials(email: string): string { return email.trim().slice(0, 2).toUpperCase() || "XO"; }

@@ -39,4 +39,39 @@ describe('workflow refund reconciliation terminal semantics', () => {
     expect(food.post).toHaveBeenCalledWith(expect.stringContaining('/transition'), expect.objectContaining({ target_status: 'REFUND_PENDING' }), expect.any(String), expect.any(String));
     expect(food.post).not.toHaveBeenCalledWith(expect.stringContaining('/transition'), expect.objectContaining({ target_status: 'REFUNDED' }), expect.anything(), expect.anything());
   });
+
+  it('backs off failed order discovery and keeps retrying it without rediscovering every poll', async () => {
+    const payment = { id: 'pay_discovery_retry', orderId: 'ord_discovery_retry', actorId: 'usr_discovery_retry', status: 'SUCCEEDED' };
+    const upserts: Array<Record<string, unknown>> = [];
+    const store = {
+      listPaymentsForReconciliation: jest.fn().mockResolvedValue([payment]),
+      claimDueWorkflowReconciliations: jest.fn().mockResolvedValue([]),
+      getPayment: jest.fn().mockResolvedValue(payment),
+      upsertWorkflowReconciliation: jest.fn(async (value: Record<string, unknown>) => { upserts.push(value); return value; }),
+      checkHealth: jest.fn().mockResolvedValue(true),
+    };
+    const food = { get: jest.fn().mockRejectedValue(new Error('Upstream Client Error')) };
+    const payments = { recoverPendingPayments: jest.fn().mockResolvedValue([]) };
+    const confirmations = { recoverStaleConfirmations: jest.fn().mockResolvedValue(0) };
+    const config = { get: jest.fn().mockReturnValue('false') };
+    const service = new WorkflowService(food as never, confirmations as never, store as never, payments as never, config as never);
+
+    await service['runReconciliation']();
+    service['lastDiscoveryAt'] = Date.now();
+    store.claimDueWorkflowReconciliations.mockResolvedValueOnce([{
+      orderId: payment.orderId,
+      actorId: payment.actorId,
+      paymentId: payment.id,
+      status: 'DISCOVERY_RETRY',
+      attemptCount: 1,
+    }]);
+    food.get.mockResolvedValueOnce({ id: payment.orderId, status: 'PREPARING' });
+    await service['runReconciliation']();
+
+    expect(food.get).toHaveBeenCalledTimes(2);
+    expect(upserts[0]).toMatchObject({ status: 'DISCOVERY_RETRY', lastErrorCode: 'Upstream Client Error' });
+    expect(upserts[0].nextAttemptAt).toEqual(expect.any(String));
+    expect(upserts[1]).toMatchObject({ status: 'DISCOVERY_RETRY', lastErrorCode: undefined });
+    expect(upserts[1].completedAt).toBeUndefined();
+  });
 });

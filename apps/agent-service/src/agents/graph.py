@@ -377,6 +377,7 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
     async def classify_and_extract(state: AgentState) -> AgentState:
         query = str(state.get("query", ""))
         workflow_slots = dict(state.get("extracted_slots", {}))
+        planned_capability = workflow_slots.get("planned_capability")
         selection_action = workflow_slots.get("assistant_action")
         if selection_action == "ADD_SELECTED_FOOD_ITEM":
             # The Gateway has already resolved the menu item from an explicit
@@ -394,6 +395,31 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
                 "tool_registry": PROPOSAL_REGISTRY,
                 "step_count": state.get("step_count", 0) + 1,
             }
+        elif planned_capability:
+            # The Gateway has already validated Core A's typed plan. Keep the
+            # domain agent's semantic extraction, but do not let a second
+            # classifier turn a clear search into an unrelated/missing intent.
+            capability_intents = {
+                "search_food": "search_food",
+                "view_menu": "view_menu",
+                "view_menu_item": "select_menu_item",
+                "list_food_delivery_addresses": "list_addresses",
+                "get_food_cart": "general_food_support",
+                "create_cart": "create_cart",
+                "add_to_cart": "add_to_cart",
+                "update_food_cart_item": "update_cart",
+                "remove_food_cart_item": "remove_cart_item",
+                "apply_voucher": "apply_voucher",
+                "remove_food_voucher": "remove_voucher",
+                "quote_delivery": "quote_delivery",
+                "preview_order": "preview_order",
+                "get_food_order": "track_order",
+                "track_food_order": "track_order",
+                "prepare_food_order_confirmation": "place_order",
+                "prepare_food_order_cancellation_confirmation": "cancel_order",
+            }
+            selected_intent = capability_intents[str(planned_capability)]
+            selected_slots = _safe_model_slots(extract_slots(query))
         else:
             # Keep the Food workflow usable when Gemini is disabled or
             # unavailable. The prior fallback always selected the generic

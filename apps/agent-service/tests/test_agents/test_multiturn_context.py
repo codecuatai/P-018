@@ -167,3 +167,19 @@ async def test_typed_selected_food_action_cannot_fall_back_to_food_discovery() -
         "quantity": 3,
         "option_preferences": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_validated_food_search_capability_overrides_conflicting_domain_classification() -> None:
+    result = await build_graph().ainvoke(
+        {
+            "query": "tôi đói tôi muốn đặt đồ ăn",
+            "user_id": "actor-planned-food-search",
+            "conversation_id": "conv-planned-food-search",
+            "correlation_id": "cor-planned-food-search",
+            "workflow_context": {"planned_capability": "search_food"},
+        }
+    )
+
+    assert result["intent"] == "search_food"
+    assert [proposal["capability_name"] for proposal in result["tool_calls"]] == ["search_food"]

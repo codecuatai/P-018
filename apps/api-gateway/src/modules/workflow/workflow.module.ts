@@ -60,7 +60,17 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
           try {
             order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
           } catch (error: unknown) {
-            this.logger.warn(`Reconciliation discovery skipped for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
+            const retrySeconds = 5;
+            await this.store.upsertWorkflowReconciliation({
+              orderId: payment.orderId,
+              actorId: payment.actorId,
+              paymentId: payment.id,
+              status: 'DISCOVERY_RETRY',
+              lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN',
+              attemptCount: 0,
+              nextAttemptAt: new Date(Date.now() + retrySeconds * 1000).toISOString(),
+            });
+            this.logger.warn(`Reconciliation discovery deferred for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
             continue;
           }
           if (!['RESTAURANT_REJECTED', 'CANCELLED', 'REFUND_PENDING'].includes(String(order.status))) continue;
@@ -78,6 +88,15 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
           const correlationId = `cor_reconcile_${payment.orderId}`;
           const order = await this.food.get(`/api/v1/orders/${encodeURIComponent(payment.orderId)}`, correlationId, payment.actorId);
           if (!['RESTAURANT_REJECTED', 'CANCELLED', 'REFUND_PENDING'].includes(String(order.status))) {
+            if (work.status === 'DISCOVERY_RETRY') {
+              await this.store.upsertWorkflowReconciliation({
+                ...work,
+                status: 'DISCOVERY_RETRY',
+                lastErrorCode: undefined,
+                nextAttemptAt: new Date(Date.now() + 60_000).toISOString(),
+              });
+              continue;
+            }
             await this.store.upsertWorkflowReconciliation({ ...work, status: 'NO_LONGER_DUE', completedAt: new Date().toISOString(), nextAttemptAt: undefined });
             continue;
           }
@@ -102,13 +121,17 @@ export class WorkflowService implements OnModuleInit, OnModuleDestroy {
             await this.store.upsertWorkflowReconciliation(reconciliation);
           }
         } catch (error: unknown) {
-          this.logger.warn(`Refund reconciliation deferred for order ${payment.orderId}: ${error instanceof Error ? error.message : 'unknown error'}`);
+          const retryDetail = error instanceof Error ? error.message : 'unknown error';
+          if (work.status === 'DISCOVERY_RETRY') this.logger.debug(`Order discovery retry deferred for order ${payment.orderId}: ${retryDetail}`);
+          else this.logger.warn(`Refund reconciliation deferred for order ${payment.orderId}: ${retryDetail}`);
           if (error instanceof Error && error.message === 'REFUND_FAILED') {
             await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'REFUND_FAILED', lastErrorCode: 'REFUND_FAILED', attemptCount: work.attemptCount, completedAt: new Date().toISOString(), nextAttemptAt: undefined });
             continue;
           }
-          const backoffSeconds = [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
-          await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: 'RETRYABLE', lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN', attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() });
+          const backoffSeconds = work.status === 'DISCOVERY_RETRY'
+            ? [5, 15, 30, 60][Math.min(Math.max(work.attemptCount - 1, 0), 3)]
+            : [1, 2, 5, 10, 30][Math.min(work.attemptCount, 4)];
+          await this.store.upsertWorkflowReconciliation({ orderId: payment.orderId, actorId: payment.actorId, paymentId: payment.id, status: work.status === 'DISCOVERY_RETRY' ? 'DISCOVERY_RETRY' : 'RETRYABLE', lastErrorCode: error instanceof Error ? error.message : 'UNKNOWN', attemptCount: work.attemptCount, nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000).toISOString() });
         }
       }
       this.workerHealthy = true;

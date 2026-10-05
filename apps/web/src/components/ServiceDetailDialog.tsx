@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Info, LoaderCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, LoaderCircle, Utensils } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { FoodTrackingPanel } from "@/features/product/food-tracking";
 import { RideMapDetail } from "@/features/product/ride-map-detail";
 import { XOneMap, type XOnePoint } from "@/features/product/xone-map";
-import { resolveAddress } from "@/lib/api-client";
+import { errorText, getFoodMenu, resolveAddress, type FoodMenuPage } from "@/lib/api-client";
 import { formatAddress, formatDateTime, formatMoney, isRecord, optionalText } from "@/lib/presentation";
 import type { AssistantOption, AssistantRideItem } from "@/types";
 
@@ -51,7 +51,7 @@ export function ServiceDetailDialog({ open, onOpenChange, kind, option, ride, fo
     <DialogContent className={`service-detail-dialog service-detail-dialog-${kind}${foodOrderId ? " service-detail-dialog-food-tracking" : ""}`}>
       <DialogTitle className={kind === "ride" || kind === "healthcare" || kind === "restaurant" || foodOrderId ? "visually-hidden" : undefined}>{title}</DialogTitle>
       <DialogDescription className={kind === "ride" || kind === "healthcare" || kind === "restaurant" || foodOrderId ? "visually-hidden" : undefined}>Thông tin quan trọng cho lựa chọn của bạn.</DialogDescription>
-      {kind === "ride" ? <RideDetail ride={ride} bookingId={bookingId} route={route} /> : kind === "food" && foodOrderId ? <FoodTrackingPanel orderId={foodOrderId} hideMap polling variant="detail" /> : kind === "restaurant" ? <RestaurantDetail option={option} title={title} address={address} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : kind === "healthcare" ? <HealthcareDetail option={option} title={title} address={address} facilityName={facilityName} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : <div className="service-detail-dialog-body">
+      {kind === "ride" ? <RideDetail ride={ride} bookingId={bookingId} route={route} /> : kind === "food" && foodOrderId ? <FoodTrackingPanel orderId={foodOrderId} hideMap polling variant="detail" /> : kind === "restaurant" ? <RestaurantDetail open={open} option={option} title={title} address={address} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : kind === "healthcare" ? <HealthcareDetail option={option} title={title} address={address} facilityName={facilityName} resolvedPoint={resolvedPoint} resolving={resolving} primaryAction={primaryAction} /> : <div className="service-detail-dialog-body">
         {kind === "food" ? <FoodDetail option={option} title={title} restaurantName={restaurantName} address={address} resolvedPoint={resolvedPoint} resolving={resolving} /> : null}
       </div>}
     </DialogContent>
@@ -63,8 +63,9 @@ function RideDetail({ ride, bookingId, route }: { ride?: AssistantRideItem; book
   return <RideMapDetail bookingId={bookingId} initialOrigin={pointFromRide(ride, "pickup")} initialDestination={pointFromRide(ride, "dropoff")} initialStopovers={stopovers} initialRoute={route} initialRoutePolyline={ride?.route_polyline} initialRouteProvider={ride?.route_provider} initialRouteDistanceMeters={ride?.route_distance_meters} initialRouteDurationSeconds={ride?.route_duration_seconds} status={ride?.status} facts={[{ label: "Điểm đón", value: optionalText(ride?.pickup) }, { label: "Điểm đến", value: optionalText(ride?.dropoff) }, { label: "Loại xe", value: optionalText(ride?.vehicle) }, { label: "Khoảng cách", value: ride?.distance_km !== undefined ? `${ride.distance_km} km` : ride?.route_distance_meters ? `${(ride.route_distance_meters / 1000).toFixed(1)} km` : "Đang cập nhật" }, { label: "Thời gian dự kiến", value: ride?.duration_minutes ? `${ride.duration_minutes} phút` : ride?.route_duration_seconds ? `${Math.ceil(ride.route_duration_seconds / 60)} phút` : "Đang cập nhật" }, { label: "Giá dự kiến", value: formatMoney(ride?.amount, optionalText(ride?.currency, "VND")) }]} />;
 }
 
-function RestaurantDetail({ option, title, address, resolvedPoint, resolving, primaryAction }: { option: AssistantOption | null; title: string; address: string; resolvedPoint?: XOnePoint; resolving: boolean; primaryAction?: DetailPrimaryAction }) {
+function RestaurantDetail({ open, option, title, address, resolvedPoint, resolving, primaryAction }: { open: boolean; option: AssistantOption | null; title: string; address: string; resolvedPoint?: XOnePoint; resolving: boolean; primaryAction?: DetailPrimaryAction }) {
   const [showInfo, setShowInfo] = useState(false);
+  const restaurantId = option?.id ?? (isRecord(option?.restaurant) && typeof option.restaurant.id === "string" ? option.restaurant.id : undefined);
   if (!resolvedPoint) return <div className="restaurant-compact-detail">
     {option?.image_url ? <ImageWithFallback source={option.image_url} alt={title} /> : null}
     <div className="restaurant-compact-copy">
@@ -73,7 +74,7 @@ function RestaurantDetail({ option, title, address, resolvedPoint, resolving, pr
       <p>{optionalText(option?.description, address)}</p>
       {resolving ? <div className="map-fallback-banner" role="status"><LoaderCircle aria-hidden="true" className="spinner" size={17} /><span>Đang xác định vị trí…</span></div> : <div className="map-fallback-banner" role="status"><Info aria-hidden="true" size={17} /><span>Chưa có tọa độ hợp lệ; bản đồ không khả dụng.</span></div>}
       <button className="detail-info-button compact-detail-info-button" type="button" aria-expanded={showInfo} onClick={() => setShowInfo((value) => !value)}>{showInfo ? "Ẩn thông tin" : "Thông tin nhà hàng"}</button>
-      {showInfo ? <><div className="consumer-detail-grid"><Detail label="Địa chỉ" value={address} /><Detail label="Ẩm thực" value={optionalText(option?.cuisine)} /><Detail label="Đánh giá" value={option?.rating !== undefined ? `${option.rating} ★` : "Đang cập nhật"} /><Detail label="Số lượt đánh giá" value={option?.review_count ? String(option.review_count) : "Đang cập nhật"} /><Detail label="Mức giá" value={optionalText(option?.price_level)} /><Detail label="Giờ mở cửa" value={hoursText(option?.opening_hours)} /></div>{primaryAction ? <button className="button button-primary restaurant-map-select" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>{primaryAction.label}</button> : null}</> : null}
+      {showInfo ? <><div className="consumer-detail-grid"><Detail label="Địa chỉ" value={address} /><Detail label="Ẩm thực" value={optionalText(option?.cuisine)} /><Detail label="Đánh giá" value={option?.rating !== undefined ? `${option.rating} ★` : "Đang cập nhật"} /><Detail label="Số lượt đánh giá" value={option?.review_count ? String(option.review_count) : "Đang cập nhật"} /><Detail label="Mức giá" value={optionalText(option?.price_level)} /><Detail label="Giờ mở cửa" value={hoursText(option?.opening_hours)} /></div><RestaurantMenuPreview open={open && showInfo} restaurantId={restaurantId} />{primaryAction ? <button className="button button-primary restaurant-map-select" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>{primaryAction.label}</button> : null}</> : null}
     </div>
   </div>;
   return <section className="restaurant-detail-layout restaurant-detail-container" aria-label="Bản đồ và thông tin nhà hàng">
@@ -84,12 +85,49 @@ function RestaurantDetail({ option, title, address, resolvedPoint, resolving, pr
         <h3>{title}</h3>
         <p>{optionalText(option?.description, address)}</p>
         <div className="consumer-detail-grid"><Detail label="Địa chỉ" value={address} /><Detail label="Ẩm thực" value={optionalText(option?.cuisine)} /><Detail label="Đánh giá" value={option?.rating !== undefined ? `${option.rating} ★` : "Đang cập nhật"} /><Detail label="Số lượt đánh giá" value={option?.review_count ? String(option.review_count) : "Đang cập nhật"} /><Detail label="Mức giá" value={optionalText(option?.price_level)} /><Detail label="Giờ mở cửa" value={hoursText(option?.opening_hours)} /></div>
+        <RestaurantMenuPreview open={open} restaurantId={restaurantId} />
         {primaryAction ? <button className="button button-primary restaurant-map-select" type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled}>{primaryAction.label}</button> : null}
       </div>
     </article>
     <div className="restaurant-detail-map restaurant-detail-square-map">
       <XOneMap restaurant={resolvedPoint} variant="location-detail" density="active" label={`Vị trí ${title}`} />
     </div>
+  </section>;
+}
+
+function RestaurantMenuPreview({ open, restaurantId }: { open: boolean; restaurantId?: string }) {
+  const pageSize = 5;
+  const [menu, setMenu] = useState<FoodMenuPage>();
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    if (!open || !restaurantId) return;
+    let active = true;
+    setLoading(true);
+    setError("");
+    void getFoodMenu(restaurantId, { limit: pageSize, offset: (page - 1) * pageSize })
+      .then((result) => { if (active) setMenu(result); })
+      .catch((reason: unknown) => { if (active) setError(errorText(reason)); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [open, page, restaurantId, retry]);
+
+  const items = menu?.items ?? [];
+  const total = menu?.total ?? items.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return <section className="restaurant-menu-preview" aria-label="Thực đơn nhà hàng">
+    <div className="restaurant-menu-preview-heading"><span className="restaurant-menu-preview-icon"><Utensils size={17} /></span><div><span className="eyebrow">THỰC ĐƠN</span><h4>Món nhà hàng phục vụ</h4></div>{total > 0 ? <span className="restaurant-menu-count">{total} món</span> : null}</div>
+    {!restaurantId ? <p className="restaurant-menu-note">Thực đơn của nhà hàng này chưa được liên kết với danh mục món ăn.</p> : loading && !menu ? <p className="restaurant-menu-note" role="status"><LoaderCircle className="spinner" size={16} /> Đang tải thực đơn…</p> : error ? <div className="restaurant-menu-note restaurant-menu-error" role="alert"><span>{error}</span><button type="button" onClick={() => { setError(""); setRetry((current) => current + 1); }}>Thử lại</button></div> : !items.length ? <p className="restaurant-menu-note">Nhà hàng chưa có món ăn trong thực đơn.</p> : <>
+      <ul className="restaurant-menu-list">{items.map((item, index) => <li className="restaurant-menu-item" key={String(item.id ?? `${item.name ?? item.title}-${index}`)}>
+        {typeof item.image_url === "string" && item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : <span className="restaurant-menu-item-placeholder"><Utensils size={16} /></span>}
+        <div><strong>{optionalText(item.name ?? item.title, "Món ăn")}</strong><p>{optionalText(item.description, "Mô tả đang cập nhật")}</p></div>
+        <b>{formatMoney(item.price ?? item.base_price, optionalText(item.currency, "VND"))}</b>
+      </li>)}</ul>
+      {pageCount > 1 ? <nav className="restaurant-menu-pagination" aria-label="Trang thực đơn"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1 || loading} aria-label="Trang trước"><ChevronLeft size={16} /></button><span>Trang {page}/{pageCount}</span><button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} disabled={page >= pageCount || loading} aria-label="Trang sau"><ChevronRight size={16} /></button></nav> : null}
+    </>}
   </section>;
 }
 

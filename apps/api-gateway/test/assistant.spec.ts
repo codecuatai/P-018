@@ -105,6 +105,30 @@ const AssistantService: AssistantServiceConstructor = new Proxy(ProductionAssist
 describe('Unified assistant orchestration', () => {
   const user = { sub: 'actor-assistant', email: 'demo@xone.vn', role: 'USER' };
 
+  it('does not replay stale planner prose when the typed active task has a missing field', () => {
+    const service = new AssistantService(
+      new InMemoryCoreRepository() as never,
+      { assistantChat: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    const message = (service as unknown as {
+      messageFor: (message: string, plan: Record<string, unknown>, tasks: Array<Record<string, unknown>>, items: unknown[], actions: unknown[]) => string;
+    }).messageFor(
+      'xe máy thôi',
+      { assistant_message: 'Mình tìm thấy 8 nhà hàng. Bạn cho mình biết số người nhé.' },
+      [{ domain: 'ride', phase: 'NEEDS_INFO', missing_information: ['pickup_address'] }],
+      [],
+      [],
+    );
+
+    expect(message).toContain('điểm đón');
+    expect(message).not.toContain('nhà hàng');
+  });
+
   it('answers a previous-message question from this conversation without resuming its active Food task', async () => {
     const store = new InMemoryCoreRepository();
     const conversationId = 'conv-food-message-recall';
@@ -479,6 +503,167 @@ describe('Unified assistant orchestration', () => {
     expect(second.message).toContain('Phở thật');
     expect(second.message).toContain('Quán thật');
     expect(second.message).toContain('50.000 VND');
+  });
+
+  it('focuses a new healthcare request without replaying pending restaurant suggestions', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-restaurant-to-healthcare-focus';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [1, 2].map((number) => ({
+        id: `restaurant-pending-${number}`,
+        domain: 'restaurant',
+        operation: 'DISCOVER',
+        goal: 'Tìm và đặt bàn tại nhà hàng phù hợp',
+        normalized_request: 'Tìm nhà hàng',
+        extracted_slots: { cuisine_query: 'món tùy ý' },
+        depends_on: [],
+        phase: 'NEEDS_INFO',
+        revision: 0,
+        public_item: { kind: 'restaurant_options', options: [{ name: `Nhà hàng ${number}` }] },
+      })),
+      actions: [1, 2].map((number) => ({
+        id: `restaurant-pending-action-${number}`,
+        kind: 'select_restaurant',
+        task_id: `restaurant-pending-${number}`,
+        task_revision: 0,
+        cohort_id: `restaurant-pending-cohort-${number}`,
+        selection_index: 0,
+      })),
+    });
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã tìm lịch khám.' } : {
+        plan: { tasks: [{ domain: 'healthcare', goal: 'Tìm lịch khám vì đau đầu', normalized_request: 'Tìm lịch khám thần kinh', extracted_slots: { department: 'thần kinh' } }] },
+        planning_decision: versionedDecision({ tasks: [
+          { task_ref: 0, domain: 'restaurant', goal: 'Tiếp tục nhà hàng cũ', normalized_request: 'Gợi ý nhà hàng', semantic_slots: {}, steps: [], disposition: 'READY' },
+          { task_ref: 1, domain: 'healthcare', goal: 'Tìm lịch khám vì đau đầu', normalized_request: 'Tìm lịch khám thần kinh', semantic_slots: { department: { value: 'thần kinh', source: 'USER_EXPLICIT' } }, steps: [], disposition: 'READY' },
+        ] }),
+      }),
+    };
+    const restaurant = { executeTool: jest.fn() };
+    const healthcare = {
+      executeTool: jest.fn().mockResolvedValue({ doctors: [{
+        name: 'Bác sĩ Thần kinh',
+        department: { name: 'Thần kinh' },
+        available_slots: [{ id: 20, start_time: '2099-01-02T09:00:00+07:00' }],
+      }] }),
+      defaultPatientId: 1,
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      healthcare as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      { execute: jest.fn(), executeDomain: jest.fn(), prepareDomainConfirmation: jest.fn() } as never,
+    );
+
+    const response = await service.chat(user, 'Tôi hơi đau đầu, tìm lịch khám cho tôi đi.', conversationId, 'cor-restaurant-healthcare-focus');
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+
+    expect(response.items.map((item) => item.kind)).toEqual(['healthcare_options']);
+    expect(response.actions.map((action) => action.kind)).toEqual(['select_healthcare_slot']);
+    expect(restaurant.executeTool).not.toHaveBeenCalled();
+    expect(tasks.filter((task) => task.domain === 'restaurant')).toHaveLength(2);
+    expect(tasks.filter((task) => task.domain === 'restaurant').every((task) => task.phase === 'NEEDS_INFO')).toBe(true);
+    expect(stored?.state.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'restaurant-pending-action-1' }),
+      expect.objectContaining({ id: 'restaurant-pending-action-2' }),
+    ]));
+  });
+
+  it('overrides a wrong pediatric slot with obstetrics for a pregnancy appointment request', () => {
+    const service = new AssistantService(
+      new InMemoryCoreRepository() as never,
+      { assistantChat: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const resolution = (service as unknown as {
+      typedPlan: (planner: Record<string, unknown>, message: string) => { tasks: Array<{ extracted_slots: Record<string, unknown> }> };
+    }).typedPlan({
+      planning_decision: versionedDecision({ tasks: [
+        { task_ref: 0, domain: 'healthcare', goal: 'Tìm cơ sở khám thai', normalized_request: 'Tư vấn nơi khám thai', semantic_slots: { department: { value: 'nhi', source: 'USER_EXPLICIT' } }, steps: [], disposition: 'READY' },
+      ] }),
+    }, 'Tôi hình như mang bầu thì khám ở đâu an tâm nhất nhỉ?');
+
+    expect(resolution.tasks[0].extracted_slots.department).toBe('Sản phụ khoa');
+  });
+
+  it('answers a distance question from the saved default address without reopening old service choices', async () => {
+    const store = new InMemoryCoreRepository();
+    const actor = user.sub;
+    await store.createConversation({ conversationId: 'conv-distance-advisory', actorId: actor });
+    await store.createSavedAddress({
+      id: 'address-home-distance', actorId: actor, label: 'Nhà', addressText: '51 Phố Tam Khương, Hà Nội',
+      latitude: 21.004, longitude: 105.828, source: 'manual', isDefault: true,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    const agent = { assistantChat: jest.fn() };
+    const locations = {
+      geocode: jest.fn().mockResolvedValue({ status: 'RESOLVED', candidates: [{ address_text: 'Hồ Tây', latitude: 21.055, longitude: 105.82 }] }),
+      route: jest.fn().mockResolvedValue({ status: 'RESOLVED', provider: 'test-route', distance_km: 6.2 }),
+    };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      undefined,
+      undefined,
+      undefined,
+      locations as never,
+    );
+
+    const response = await service.chat(user, 'Ồ quãng đường từ nhà tôi đến Hồ Tây là bao nhiêu km ấy?', 'conv-distance-advisory', 'cor-distance-advisory');
+
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(locations.route).toHaveBeenCalledWith({ latitude: 21.004, longitude: 105.828 }, { latitude: 21.055, longitude: 105.82 });
+    expect(response.message).toContain('6.2 km theo tuyến đường');
+    expect(response.items).toHaveLength(0);
+    expect(response.actions).toHaveLength(0);
+  });
+
+  it('does not retry a failed ride when the user only says they are sick', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-symptom-after-ride-failure';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'failed-ride', domain: 'ride', operation: 'CREATE', goal: 'Đặt xe', normalized_request: 'Đặt xe đi Hồ Tây',
+        extracted_slots: { dropoff_address: 'Hồ Tây' }, depends_on: [], phase: 'FAILED', revision: 1,
+        failure_code: 'NO_DRIVER', public_item: { kind: 'task_error', error_code: 'NO_DRIVER' },
+      }],
+    });
+    const agent = { assistantChat: jest.fn() };
+    const ride = { chat: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, ride as never, {} as never);
+
+    const response = await service.chat(user, 'Tôi bị ốm', conversationId, 'cor-symptom-after-ride-failure');
+
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(response.message).toContain('Bạn có muốn mình tìm lịch khám');
+    expect(response.items).toHaveLength(0);
+  });
+
+  it('asks for clarification instead of guessing when the requested ride vehicle is contradictory', async () => {
+    const store = new InMemoryCoreRepository();
+    await store.createConversation({ conversationId: 'conv-conflicting-vehicle', actorId: user.sub });
+    const agent = { assistantChat: jest.fn() };
+    const ride = { chat: jest.fn() };
+    const service = new AssistantService(store as never, agent as never, {} as never, {} as never, ride as never, {} as never);
+
+    const response = await service.chat(user, 'xe máy 4 chỗ', 'conv-conflicting-vehicle', 'cor-conflicting-vehicle');
+
+    expect(agent.assistantChat).not.toHaveBeenCalled();
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(response.message).toContain('Bạn muốn đi xe máy hay ô tô 4 chỗ?');
   });
 
   it('forwards a Food continuation with the latest message and preserves Food context', async () => {
@@ -1801,6 +1986,7 @@ describe('Unified assistant orchestration', () => {
       'create_cart',
       'add_to_cart',
     ]);
+    expect(agent.chat.mock.calls[0][0].workflow_context).toEqual(expect.objectContaining({ planned_capability: 'search_food' }));
     expect(selected.items[0]).toMatchObject({ kind: 'food_cart' });
   });
 
@@ -3345,6 +3531,57 @@ describe('Unified assistant orchestration', () => {
     expect(tasks.find((task) => task.id === 'cancelled-healthcare')?.phase).toBe('COMPLETED');
     expect(tasks.find((task) => task.id === 'discarded-ride')?.phase).toBe('DISCARDED');
     expect(tasks.find((task) => task.id === 'failed-restaurant')?.phase).toBe('FAILED');
+  });
+
+  it('stops a pending Ride when the user says they are hungry and asks about Food', async () => {
+    const store = new InMemoryCoreRepository();
+    const conversationId = 'conv-stop-ride-for-food';
+    await store.createConversation({ conversationId, actorId: user.sub });
+    await store.mergeConversationState(conversationId, user.sub, {
+      tasks: [{
+        id: 'ride-being-planned',
+        domain: 'ride',
+        operation: 'DISCOVER',
+        goal: 'Đặt xe đến sân bay',
+        normalized_request: 'Đặt xe đến sân bay',
+        extracted_slots: { dropoff_address: 'Sân bay Nội Bài' },
+        depends_on: [],
+        phase: 'NEEDS_INFO',
+        revision: 0,
+      }],
+      actions: [],
+    });
+    const agent = {
+      assistantChat: jest.fn().mockResolvedValue({
+        assistant_message: 'Mình chưa có vị trí đón của bạn.',
+        plan: { tasks: [{
+          domain: 'ride',
+          goal: 'Tiếp tục đặt xe',
+          normalized_request: 'Đặt xe đến sân bay Nội Bài',
+          extracted_slots: { dropoff_address: 'Sân bay Nội Bài' },
+        }] },
+      }),
+    };
+    const ride = { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      {} as never,
+      {} as never,
+      ride as never,
+      {} as never,
+    );
+
+    const response = await service.chat(user, 'Thôi tôi đói.', conversationId, 'cor-stop-ride-for-food');
+    const stored = await store.getConversation(conversationId, user.sub);
+    const tasks = stored?.state.tasks as Array<Record<string, unknown>>;
+
+    expect(response.message).toContain('bỏ phần đặt xe');
+    expect(response.message).toContain('gợi ý món ăn');
+    expect(response.message).not.toContain('vị trí đón');
+    expect(response.items).toEqual([]);
+    expect(ride.chat).not.toHaveBeenCalled();
+    expect(tasks.find((task) => task.id === 'ride-being-planned')?.phase).toBe('DISCARDED');
   });
 
   it('does not discard an active authoritative Ride booking', () => {

@@ -1,4 +1,56 @@
 import pytest
+import src.api.routes as routes_module
+from src.api.routes import _record_run_untraced, _request_fingerprint, _scoped_run_id
+from src.application.run_metadata_store import RunMetadata, RunMetadataConflictError
+from src.models.schemas import AssistantChatRequest
+
+
+def test_assistant_run_id_is_stable_for_retry_and_distinct_when_correlation_id_is_reused():
+    first = AssistantChatRequest(
+        message="Tìm nhà hàng",
+        conversation_id="conv-reused-correlation",
+        user_id="actor",
+        correlation_id="cor-reused",
+    )
+    second = first.model_copy(update={"message": "Tôi muốn đặt xe"})
+
+    first_fingerprint = _request_fingerprint(first)
+    second_fingerprint = _request_fingerprint(second)
+    first_run = _scoped_run_id(first.correlation_id, "assistant-plan", first_fingerprint)
+
+    assert first_run == _scoped_run_id(first.correlation_id, "assistant-plan", first_fingerprint)
+    assert first_run != _scoped_run_id(second.correlation_id, "assistant-plan", second_fingerprint)
+
+
+@pytest.mark.asyncio
+async def test_run_metadata_retry_ignores_latency_only_conflict(monkeypatch):
+    existing = RunMetadata(
+        actor_id="actor",
+        workflow_id="conversation",
+        run_id="same-run",
+        phase="PLANNED",
+        capability_names=["search_food"],
+        latency_ms=100,
+    )
+
+    class ReplayedStore:
+        async def record(self, _metadata):
+            raise RunMetadataConflictError("latency differs on retry")
+
+        async def get(self, actor_id, workflow_id, run_id):
+            assert (actor_id, workflow_id, run_id) == ("actor", "conversation", "same-run")
+            return existing
+
+    monkeypatch.setattr(routes_module, "get_run_metadata_store", lambda: ReplayedStore())
+
+    await _record_run_untraced(
+        actor_id="actor",
+        workflow_id="conversation",
+        run_id="same-run",
+        phase="PLANNED",
+        result={"tool_calls": [{"capability_name": "search_food"}]},
+        started_at=0,
+    )
 
 
 @pytest.mark.asyncio

@@ -721,6 +721,355 @@
   }
 }
 
+/* Responsive foundations shared by every customer, provider, manager and admin route. */
+.app-body,
+.app-content,
+.admin-main-content,
+.provider-body,
+.provider-main,
+.admin-page,
+.provider-page,
+.assistant-page,
+.assistant-layout,
+.chat-column,
+.chat-feed {
+  min-width: 0;
+}
+
+.app-content img,
+.admin-main-content img,
+.provider-main img,
+.app-content video,
+.admin-main-content video,
+.provider-main video {
+  max-width: 100%;
+}
+
+.admin-table-wrap,
+.provider-main [role="region"][aria-label*="table" i],
+.provider-main .table-wrap,
+.provider-main .table-container {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1024px) {
+  .admin-shell .admin-sidebar {
+    width: 220px;
+  }
+
+  .admin-shell .app-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .admin-shell .admin-main-content {
+    padding-inline: 18px;
+  }
+
+  .provider-shell .provider-body {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .provider-shell .provider-sidebar {
+    width: 220px;
+  }
+}
+
+@media (max-width: 820px) {
+  /* Use a bounded grid for mobile chrome so the conversation can shrink
+     between the header and bottom navigation instead of overflowing below it. */
+  .app-shell:not(.provider-shell) {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell:not(.provider-shell) > .app-body {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    flex: 1 1 auto;
+    overflow: hidden !important;
+  }
+
+  .app-shell:not(.provider-shell) > .app-body > .app-mobile-header {
+    grid-column: 1;
+    grid-row: 1;
+    position: relative;
+    top: auto;
+  }
+
+  .app-shell:not(.provider-shell) > .app-body > .app-content {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell:not(.provider-shell) > .app-body > .app-content-assistant {
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell:not(.provider-shell) > .app-body > .mobile-bottom-nav {
+    position: relative;
+    inset: auto;
+    grid-column: 1;
+    grid-row: 3;
+    width: 100%;
+  }
+
+  .app-shell:not(.provider-shell) .app-content {
+    padding-bottom: 24px;
+  }
+
+  .app-shell:not(.provider-shell) .app-content-assistant {
+    padding-bottom: 0;
+  }
+
+  .chat-feed {
+    width: 100%;
+    min-width: 0;
+    padding-inline: clamp(12px, 3vw, 22px);
+  }
+
+  .chat-feed > *,
+  .chat-message,
+  .chat-message > *,
+  .chat-message .message-content,
+  .chat-message .assistant-card,
+  .chat-message .collapsible-agent-card,
+  .chat-message .agent-progress {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .chat-message .message-content {
+    flex: 0 1 85%;
+  }
+
+  .chat-message.assistant .message-content {
+    width: calc(100% - 42px);
+    flex: 1 1 0;
+    max-width: calc(100% - 42px);
+  }
+
+  .assistant-card,
+  .collapsible-agent-card,
+  .agent-progress,
+  .food-confirmation-form,
+  .food-cart-summary {
+    overflow-wrap: anywhere;
+  }
+
+  .admin-shell .app-body {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .admin-shell .app-body > .admin-main-content {
+    grid-column: 1;
+    grid-row: 2;
+    overflow-y: auto;
+  }
+
+  .admin-shell .admin-table-wrap {
+    margin-inline: 0;
+  }
+
+  .provider-shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+
+  .provider-shell .provider-main {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .admin-shell .admin-filter-bar,
+  .admin-shell .admin-banner-actions,
+  .provider-shell .provider-main .section-heading,
+  .provider-shell .provider-main .provider-page-heading {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 560px) {
+  .app-mobile-header {
+    padding-inline: 12px;
+  }
+
+  .mobile-bottom-nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding-inline: 5px;
+  }
+
+  .mobile-bottom-nav-link {
+    min-width: 0;
+    min-height: 52px;
+    padding-inline: 1px;
+    font-size: 0.66rem;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .composer-wrap {
+    padding-inline: 12px;
+  }
+
+  .composer-box {
+    align-items: center;
+    min-height: 58px;
+    min-width: 0;
+  }
+
+  .composer-box textarea {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
+    max-height: 72px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+  }
+
+  .customer-shell .composer-footer .composer-hint {
+    display: none !important;
+  }
+
+  .composer-actions {
+    gap: 1px;
+  }
+
+  .customer-shell .composer-mic-btn,
+  .customer-shell .location-button {
+    width: 34px;
+    height: 36px;
+  }
+
+  .customer-shell .send-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .section-heading,
+  .history-header-actions,
+  .admin-shell .admin-filter-bar,
+  .admin-shell .admin-banner-actions {
+    align-items: stretch;
+  }
+
+  .history-header-actions,
+  .admin-shell .admin-banner-actions {
+    flex-wrap: wrap;
+  }
+
+  .section-heading > *,
+  .history-header-actions > .button,
+  .admin-shell .admin-banner-actions > .button {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-shell .admin-subtab-bar,
+  .admin-shell .admin-nav {
+    max-width: calc(100vw - 28px);
+  }
+
+  .admin-shell .admin-card,
+  .admin-shell .admin-banner-card,
+  .provider-shell .provider-main .card,
+  .provider-shell .provider-main .panel {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .service-detail-dialog,
+  .active-ride-detail-dialog,
+  .service-detail-dialog-ride,
+  .service-detail-dialog-healthcare,
+  .service-detail-dialog-restaurant {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+  }
+
+  .admin-table,
+  .provider-main table {
+    min-width: 560px;
+  }
+}
+
+@media (max-width: 380px) {
+  .chat-feed {
+    padding-inline: 10px;
+  }
+
+  .chat-message {
+    gap: 6px;
+  }
+
+  .chat-message.assistant .message-content {
+    width: calc(100% - 36px);
+    max-width: calc(100% - 36px);
+  }
+
+  .message-avatar {
+    width: 26px;
+    height: 26px;
+  }
+
+  .composer-box {
+    gap: 2px;
+    padding-inline: 7px;
+  }
+
+  .customer-shell .composer-mic-btn,
+  .customer-shell .location-button {
+    width: 30px;
+  }
+
+  .customer-shell .send-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .mobile-bottom-nav-link svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+@media (max-width: 767px) {
+  .assistant-layout:not(.has-active-work) .rail-edge-toggle,
+  .assistant-layout.has-active-work:not(.is-rail-collapsed) .rail-edge-toggle {
+    display: none;
+  }
+
+  .assistant-layout.has-active-work.is-rail-collapsed .rail-edge-toggle {
+    position: fixed;
+    top: 70px;
+    right: 12px;
+    left: auto;
+    transform: none;
+  }
+}
+
 @media (max-width: 480px) {
   .admin-shell .admin-metric-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
