@@ -48,7 +48,7 @@ describe("ChatDashboard voice controls", () => {
 
     expect(screen.queryByRole("button", { name: "Thêm tùy chọn" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Nhập bằng giọng nói" })).toBeEnabled();
-    expect(screen.getByRole("textbox", { name: "Nhập yêu cầu" })).toHaveAttribute("placeholder", "Bạn muốn đặt món, đặt xe hay cần X-One hỗ trợ gì?");
+    expect(screen.getByRole("textbox", { name: "Nhập yêu cầu" })).toHaveAttribute("placeholder", "Bạn cần X-One giúp gì?");
     expect(apiClient.sendAssistantMessage).not.toHaveBeenCalled();
   });
 
