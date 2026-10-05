@@ -100,7 +100,32 @@ function isGenericFoodResume(task: StoredTask): boolean {
 }
 
 function isGenericFoodDeliveryAddress(value: unknown): boolean {
-  return typeof value === 'string' && ['home', 'current_location'].includes(value.trim().toLowerCase());
+  if (typeof value !== 'string') return false;
+  const folded = plainTextForRouting(value).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return ['home', 'current location', 'vi tri hien tai', 'dia chi hien tai'].includes(folded)
+    || /^(?:them|chon|xac nhan|dat luon)\b/.test(folded)
+    || folded === 'current_location';
+}
+
+function localProfileField(message: string): string | undefined {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (/\b(?:thong tin ca nhan|ho so cua toi)\b/.test(folded)) return 'all';
+  if (/\bdia chi\b/.test(folded) && /\b(?:da luu|cua toi|cua minh|ho so)\b/.test(folded)) return 'addresses';
+  if (/\b(?:so dien thoai|phone number|dien thoai)\b/.test(folded)) return 'phone';
+  if (/\b(?:email|thu dien tu)\b/.test(folded)) return 'email';
+  if (/\b(?:ho ten|ten cua toi|ten cua minh)\b/.test(folded)) return 'name';
+  return undefined;
+}
+
+function isLocalCurrentLocationQuestion(message: string): boolean {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return /\b(?:toi|minh)\s+(?:dang\s+)?o\s+dau\b/.test(folded)
+    || /^where am i\b/.test(folded);
+}
+
+function isClearFoodOrderConfirmation(message: string): boolean {
+  const folded = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return ['dat luon', 'xac nhan', 'xac nhan dat mon', 'dong y dat mon', 'toi dong y dat mon'].includes(folded);
 }
 
 function explicitFoodDeliveryAddress(message: string | undefined): string | undefined {
@@ -1355,15 +1380,26 @@ export class AssistantService {
     return undefined;
   }
 
+  private followUpDomains(active: StoredTask[], actions: StoredAction[], folded: string): Domain[] {
+    const valid = active.filter((task) => !['COMPLETED', 'FAILED', 'BLOCKED', 'DISCARDED'].includes(task.phase));
+    const hasDomain = (domain: Domain): boolean => valid.some((task) => task.domain === domain);
+    const hasChoice = (task: StoredTask): boolean => Boolean(this.plannerPendingChoice(task))
+      || actions.some((action) => action.task_id === task.id && action.task_revision === task.revision);
+    if (/\bchon nha hang\b/.test(folded)) return hasDomain('restaurant') ? ['restaurant'] : [];
+    if (/\bchon lich\b/.test(folded)) return hasDomain('healthcare') ? ['healthcare'] : [];
+    if (/\bchon quan\b/.test(folded) && hasDomain('food')) return ['food'];
+    if (/\bchon cai\b/.test(folded)) return valid.filter(hasChoice).map((task) => task.domain);
+    if (valid.length === 1 && /\b(?:doi|sang|ngay|gio|dia chi|oke|ok)\b/.test(folded)) return [valid[0].domain];
+    return [];
+  }
+
   private resolvePlanTasks(current: StoredTask[], planned: AgentPlanTask[], message: string, dialogue: JsonObject): { tasks: AgentPlanTask[]; clarificationQuestion?: string } {
     const active = current.filter((task) => task.phase !== 'COMPLETED' && task.phase !== 'FAILED' && task.phase !== 'BLOCKED' && task.phase !== 'DISCARDED');
     if (!active.length) return { tasks: planned };
     const foldedMessage = plainTextForRouting(message);
     const isGenericChoice = /\bchon cai (?:dau tien|thu hai|thu ba|thu tu|thu nam)\b/.test(foldedMessage)
       && !/\b(?:mon|quan|nha hang|lich|bac si|khoa|chuyen xe|xe may|o to)\b/.test(foldedMessage);
-    const choiceDomains = [...new Set(active
-      .filter((task) => Boolean(this.plannerPendingChoice(task)))
-      .map((task) => task.domain))];
+    const choiceDomains = [...new Set(this.followUpDomains(active, [], foldedMessage))];
     if (isGenericChoice && choiceDomains.length > 1) {
       return { tasks: [], clarificationQuestion: this.followUpClarificationQuestion(choiceDomains) };
     }
@@ -1381,6 +1417,23 @@ export class AssistantService {
       && planned.every((task) => active.some((candidate) => candidate.domain === task.domain))) {
       const domains = [...new Set(planned.map((task) => task.domain as Domain))];
       return { tasks: [], clarificationQuestion: this.followUpClarificationQuestion(domains) };
+    }
+
+    const rideInterruption = /\b(?:dat xe|goi xe|xe may|o to|car|bike|ride)\b/.test(foldedMessage);
+    const activeRide = active.find((task) => task.domain === 'ride');
+    if (rideInterruption) {
+      if (planned.some((task) => task.domain === 'ride')) {
+        return { tasks: planned.filter((task) => task.domain === 'ride') };
+      }
+    }
+    if (rideInterruption && activeRide) {
+      const rideTask = this.planFromTask(activeRide);
+      const slots = isRecord(rideTask.extracted_slots) ? { ...rideTask.extracted_slots } : {};
+      if (/\bxe may\b|\bbike\b/.test(foldedMessage)) slots.vehicle_type = 'BIKE';
+      else if (/\b7 cho\b/.test(foldedMessage)) slots.vehicle_type = 'CAR_7';
+      else if (/\b4 cho\b|\bcar\s*4\b/.test(foldedMessage)) slots.vehicle_type = 'CAR_4';
+      rideTask.extracted_slots = slots;
+      return { tasks: [rideTask] };
     }
 
     if (planned.length) {
@@ -1509,6 +1562,8 @@ export class AssistantService {
       );
     }
 
+    const useCurrentLocation = dialogue.action === 'USE_CURRENT_LOCATION'
+      && Boolean(freshDeviceLocation(currentLocation));
     const selectedLabel = stringValue(dialogue.saved_address_label);
     const selectedAddress = dialogue.action === 'SELECT_SAVED_ADDRESS' && selectedLabel
       ? addresses.find((address) => plainTextForRouting(address.label).trim() === plainTextForRouting(selectedLabel).trim())
@@ -1521,9 +1576,9 @@ export class AssistantService {
     const explicitAddressWasProvided = dialogue.action === 'USE_EXPLICIT_ADDRESS'
       && Boolean(explicitAddressText && explicitAddressText.length >= 8 && isUsableFoodDeliveryAddress(explicitAddressText))
       && Boolean(normalizedExplicitAddress && normalizedCurrentMessage === normalizedExplicitAddress);
-    const deliveryAddressText = selectedAddress?.addressText
+    const deliveryAddressText = useCurrentLocation ? undefined : selectedAddress?.addressText
       ?? (explicitAddressWasProvided ? explicitAddressText : explicitFoodDeliveryAddress(message));
-    if (!deliveryAddressText) {
+    if (!deliveryAddressText && !useCurrentLocation) {
       const prompt = 'Mình chưa xác định được bạn muốn dùng địa chỉ nào. Bạn chọn một địa chỉ đang hiển thị hoặc nhập địa chỉ giao hàng nhé.';
       return this.persistTurn(
         conversationId,
@@ -1544,7 +1599,9 @@ export class AssistantService {
     task.latest_message = message;
     task.authoritative = {
       ...(task.authoritative ?? {}),
-      food_context: { ...context, address_query: deliveryAddressText },
+      food_context: useCurrentLocation
+        ? { ...context, address_reference: 'current_location', address_query: undefined }
+        : { ...context, address_query: deliveryAddressText },
     };
     const checkout = await this.prepareFoodCheckout(task, user, correlationId, currentLocation);
     task.phase = checkout.phase;
@@ -1625,6 +1682,20 @@ export class AssistantService {
         state.actions,
       );
     }
+    const pendingFoodOrder = this.pendingFoodOrderConfirmationTask(state);
+    if (pendingFoodOrder && isClearFoodOrderConfirmation(message)) {
+      const directPlanner: JsonObject = {
+        plan: {
+          dialogue_resolution: {
+            action: 'CONFIRM_FOOD_ORDER',
+            relation: 'CONTINUE_PENDING',
+            target_task_ref: state.tasks.indexOf(pendingFoodOrder),
+          },
+        },
+      };
+      const response = await this.confirmPendingFoodOrder(user, message, conversationId, state, directPlanner);
+      if (response) return response;
+    }
     // A bare ordinal cannot identify which service the user means when
     // multiple services are waiting on candidate choices. Resolve this from
     // persisted authoritative candidates before asking the planner, whose
@@ -1679,6 +1750,93 @@ export class AssistantService {
       }
     }
     const effectiveCurrentLocation = freshDeviceLocation(currentLocation);
+    const pendingAddressTask = this.pendingFoodAddressTask(state);
+    if (pendingAddressTask) {
+      const savedAddresses = (await this.store.listSavedAddresses(user.sub))
+        .filter((address) => isUsableFoodDeliveryAddress(address.addressText));
+      const foldedReply = plainTextForRouting(message).replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+      const labelMatch = savedAddresses.find((address) => {
+        const label = plainTextForRouting(address.label).replace(/[^a-z0-9]+/g, ' ').trim();
+        return label.length > 1 && ` ${foldedReply} `.includes(` ${label} `);
+      });
+      const previousAssistantText = [...(current?.messages ?? [])]
+        .reverse()
+        .find((entry) => entry.role === 'assistant' && isUserVisibleConversationMessage(entry))?.content ?? '';
+      const previouslyPresentedAddress = savedAddresses.filter((address) => {
+        const presentedText = plainTextForRouting(previousAssistantText);
+        const fullAddress = plainTextForRouting(address.addressText);
+        const primaryAddress = plainTextForRouting(address.addressText.split(',')[0] ?? '');
+        return Boolean(fullAddress && presentedText.includes(fullAddress))
+          || (primaryAddress.length >= 8 && presentedText.includes(primaryAddress));
+      });
+      const affirmativeReply = ['oke', 'ok', 'dong y', 'dung', 'chinh xac', 'dung roi', 'dung giao hang den day cho toi'].includes(foldedReply);
+      const selectedByContext = labelMatch
+        ?? (affirmativeReply && previouslyPresentedAddress.length === 1 ? previouslyPresentedAddress[0] : undefined);
+      if (selectedByContext) {
+        const syntheticPlanner: JsonObject = {
+          plan: {
+            dialogue_resolution: {
+              relation: 'CONTINUE_PENDING',
+              target_task_ref: state.tasks.indexOf(pendingAddressTask),
+              action: 'SELECT_SAVED_ADDRESS',
+              saved_address_label: selectedByContext.label,
+            },
+          },
+        };
+        const resumed = await this.resumePendingFoodAddressSelection(
+          user, message, conversationId, correlationId, state, syntheticPlanner, effectiveCurrentLocation,
+        );
+        if (resumed) return resumed;
+      }
+      const requestedCurrentLocation = /\b(?:giao den|ship den|delivery to)\b.*\b(?:vi tri hien tai|current location)\b/.test(foldedReply)
+        || /\b(?:vi tri hien tai|current location)\b.*\b(?:giao|ship|delivery)\b/.test(foldedReply);
+      if (requestedCurrentLocation && effectiveCurrentLocation) {
+        const syntheticPlanner: JsonObject = {
+          plan: {
+            dialogue_resolution: {
+              relation: 'CONTINUE_PENDING',
+              target_task_ref: state.tasks.indexOf(pendingAddressTask),
+              action: 'USE_CURRENT_LOCATION',
+            },
+          },
+        };
+        const resumed = await this.resumePendingFoodAddressSelection(
+          user, message, conversationId, correlationId, state, syntheticPlanner, effectiveCurrentLocation,
+        );
+        if (resumed) return resumed;
+      }
+    }
+    if (isLocalCurrentLocationQuestion(message)) {
+      const locationLabel = effectiveCurrentLocation?.address_text
+        ?? (effectiveCurrentLocation
+          ? `${effectiveCurrentLocation.latitude.toFixed(5)}, ${effectiveCurrentLocation.longitude.toFixed(5)}`
+          : 'tọa độ hiện tại của thiết bị');
+      const locationMessage = effectiveCurrentLocation
+        ? `Vị trí hiện tại mình nhận được là ${locationLabel}.`
+        : 'Mình chưa có vị trí hiện tại của bạn. Bạn có thể bật chia sẻ vị trí hoặc cho mình biết địa điểm cụ thể nhé.';
+      return this.persistTurn(conversationId, user, message, locationMessage, state, [], state.actions, [], [], true);
+    }
+    const localProfile = localProfileField(message);
+    if (localProfile) {
+      let profileMessage: string;
+      if (localProfile === 'addresses') {
+        const addresses = await this.store.listSavedAddresses(user.sub);
+        profileMessage = addresses.length
+          ? `Địa chỉ đã lưu của bạn: ${addresses.map((address) => `${address.label}: ${address.addressText}${address.isDefault ? ' (mặc định)' : ''}`).join('; ')}.`
+          : 'Bạn chưa lưu địa chỉ nào trong hồ sơ.';
+      } else if (localProfile === 'unavailable') {
+        profileMessage = 'Mình không thấy thông tin này trong hồ sơ hiện tại.';
+      } else {
+        const fields: string[] = [];
+        if (localProfile === 'all' || localProfile === 'name') fields.push(`Họ và tên: ${user.full_name || 'Chưa cập nhật'}`);
+        if (localProfile === 'all' || localProfile === 'email') fields.push(`Email: ${user.email || 'Chưa cập nhật'}`);
+        if (localProfile === 'all' || localProfile === 'phone') fields.push(`Số điện thoại: ${user.phone || 'Chưa cập nhật'}`);
+        if (localProfile === 'all' && user.language) fields.push(`Ngôn ngữ: ${user.language}`);
+        if (localProfile === 'all' && user.timezone) fields.push(`Múi giờ: ${user.timezone}`);
+        profileMessage = `Thông tin hồ sơ của bạn: ${fields.join('; ')}.`;
+      }
+      return this.persistTurn(conversationId, user, message, profileMessage, state, [], state.actions, [], [], true);
+    }
     let precomputedPlanner: JsonObject | undefined;
     precomputedPlanner = await this.requestAssistantPlanner(
       user,
@@ -3903,7 +4061,9 @@ export class AssistantService {
     const explicitAddressForTask = explicitFoodDeliveryAddress(task.latest_message);
     if (explicitAddressForTask) semanticContext.address_query = explicitAddressForTask;
     const baseContext = { ...storedContext, ...semanticContext };
-    if (isGenericFoodResume(task) && !explicitAddressForTask) {
+    const hasSearchLocationRefinement = Boolean(stringValue(task.extracted_slots.location)
+      || stringValue(task.extracted_slots.district));
+    if (isGenericFoodResume(task) && !explicitAddressForTask && !hasSearchLocationRefinement) {
       const publicItem = await this.addressOptionsItem(user.sub, 'DELIVERY');
       return {
         phase: 'NEEDS_INFO',
