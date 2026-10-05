@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -88,19 +89,53 @@ async def interpret_ride(state: RideAgentState) -> RideAgentState:
         from src.services.llm import GeminiAdapter
 
         if get_settings().agent_model_mode != "gemini":
-            raise RuntimeError("LLM interpretation is disabled")
-        prompt = (
-            "Interpret the latest ride-service message using all supplied context. Extract only values stated or clearly "
-            "implied by this message, resolving references against existing ride state. Classify whether the user asks "
-            "for ride status. Do not invent addresses, providers, promo codes, IDs, or intent. vehicle_type must be "
-            "BIKE, CAR_4, or CAR_7 when clear; otherwise null. Use intent=ride for ride requests or follow-ups and "
-            "intent=other for unrelated messages. Return only the schema.\n"
-            f"Existing ride state: {ride}\nOther context: {context}\nLatest user message: {query}"
-        )
-        raw = await GeminiAdapter().ainvoke_structured(prompt, RideResolution)
-        if isinstance(raw, dict) and raw.get("parsed") is not None:
-            raw = raw["parsed"]
-        resolution = raw if isinstance(raw, RideResolution) else RideResolution.model_validate(raw)
+            folded = query.lower().replace("đ", "d")
+            pickup = dropoff = vehicle = None
+            route = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+?)(?:\s+by\s+|\s+for\s+|$)", query, re.IGNORECASE)
+            if route:
+                pickup, dropoff = route.group(1).strip(" ,."), route.group(2).strip(" ,.")
+            else:
+                route = re.search(r"\b(?:tu|từ)\s+(.+?)\s+\b(?:den|đến)\s+(.+?)(?=\s+(?:cho|for)\s+\d+\s+|$)", query, re.IGNORECASE)
+                if route:
+                    pickup, dropoff = route.group(1).strip(" ,."), route.group(2).strip(" ,.")
+            if "7 cho" in folded or re.search(r"\b7\s+chỗ\b", query, re.IGNORECASE) or "car 7" in folded:
+                vehicle = "CAR_7"
+            elif "car 4" in folded or "4 cho" in folded or re.search(r"\b4\s+chỗ\b", query, re.IGNORECASE):
+                vehicle = "CAR_4"
+            elif "xe may" in folded or "bike" in folded:
+                vehicle = "BIKE"
+            passengers = re.search(
+                r"\b(?:cho|for)\s+(\d+)\s+(?:người|nguoi|people|passengers)\b",
+                query,
+                re.IGNORECASE,
+            )
+            patch = {
+                key: value
+                for key, value in {
+                    "pickup_address": pickup,
+                    "dropoff_address": dropoff,
+                    "vehicle_type": vehicle,
+                    "passenger_count": int(passengers.group(1)) if passengers else None,
+                }.items()
+                if value is not None
+            }
+            resolution = RideResolution(
+                intent="ride" if any(term in folded for term in ("xe", "from ", "tu ", "từ ")) else "other",
+                slot_patch=patch,
+            )
+        else:
+            prompt = (
+                "Interpret the latest ride-service message using all supplied context. Extract only values stated or clearly "
+                "implied by this message, resolving references against existing ride state. Classify whether the user asks "
+                "for ride status. Do not invent addresses, providers, promo codes, IDs, or intent. vehicle_type must be "
+                "BIKE, CAR_4, or CAR_7 when clear; otherwise null. Use intent=ride for ride requests or follow-ups and "
+                "intent=other for unrelated messages. Return only the schema.\n"
+                f"Existing ride state: {ride}\nOther context: {context}\nLatest user message: {query}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, RideResolution)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            resolution = raw if isinstance(raw, RideResolution) else RideResolution.model_validate(raw)
     except Exception:
         return {
             "response": "Mình chưa hiểu đủ thông tin chuyến xe. Bạn nói rõ điểm đón, điểm đến và loại xe giúp mình nhé.",

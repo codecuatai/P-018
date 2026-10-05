@@ -10,18 +10,26 @@ def resolve_options(
 ) -> tuple[list[dict[str, str]], list[str]]:
     selected: list[dict[str, str]] = []
     unresolved = list(preferences)
+    concept_aliases = {
+        "size": {"size", "kich thuoc", "co"},
+        "spice": {"spice", "do cay", "vi cay"},
+    }
     for group in option_groups:
         options = list(group.get("options", []))
         for preference in list(unresolved):
             concept = plain(str(preference.get("concept", "")))
             value = plain(str(preference.get("value", "")))
             group_text = plain(str(group.get("name", "")))
+            concepts = concept_aliases.get(concept, {concept})
             option = next(
                 (
                     item
                     for item in options
-                    if value == plain(str(item.get("name", ""))).strip()
-                    and (not concept or concept == group_text.strip())
+                    if (
+                        value == plain(str(item.get("name", ""))).strip()
+                        or plain(str(item.get("name", ""))).strip().endswith(f" {value}")
+                    )
+                    and (not concept or any(alias in group_text for alias in concepts))
                 ),
                 None,
             )

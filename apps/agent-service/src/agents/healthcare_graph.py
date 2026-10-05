@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.agents.confirmation import is_explicit_confirmation
+from src.agents.intent import extract_slots
 from src.agents.policies.healthcare_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
@@ -84,21 +87,64 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
     try:
         settings = get_settings()
         if settings.agent_model_mode != "gemini":
-            raise RuntimeError("LLM interpretation is disabled")
-        prompt = (
-            "You interpret a healthcare/pharmacy workflow turn using conversation state and the latest message. "
-            "Classify intent from meaning, including short follow-ups and references to prior choices. Return semantic "
-            "slot values only; never invent IDs, medical facts, availability, diagnoses, or tool results. Use IDs only "
-            "when explicitly present in the user's message; trusted existing state is included separately. Select a list "
-            "item only by its zero-based index when the user clearly refers to that item. Set explicit_confirmation "
-            "true only when the user clearly approves the pending action; questions, uncertainty, negation, or changes "
-            "must be false. Do not diagnose or recommend treatment.\n"
-            f"Workflow context: {context}\nAuthoritative latest tool result: {tool_result}\nLatest user message: {query}"
-        )
-        raw = await GeminiAdapter().ainvoke_structured(prompt, HealthcareResolution)
-        if isinstance(raw, dict) and raw.get("parsed") is not None:
-            raw = raw["parsed"]
-        resolution = raw if isinstance(raw, HealthcareResolution) else HealthcareResolution.model_validate(raw)
+            folded = query.lower().replace("đ", "d")
+            normalized = extract_slots(query)
+            prior = context.get("slots", {})
+            prior = dict(prior) if isinstance(prior, dict) else {}
+            appointment_match = re.search(r"\bappointment\s+(\d+)\b|\blic hen\s+(\d+)\b", folded)
+            action: Literal[
+                "browse_departments", "browse_slots", "hold_slot", "confirm_appointment", "cancel_appointment", "none"
+            ] = "none"
+            if "huy" in folded and appointment_match:
+                action = "cancel_appointment"
+                prior["appointment_id"] = int(next(value for value in appointment_match.groups() if value))
+            elif context.get("tool_name") == "healthcare.hold_slot":
+                action = "confirm_appointment"
+                result_data = tool_result.get("data", tool_result) if isinstance(tool_result, dict) else {}
+                if isinstance(result_data, dict) and result_data.get("appointment_id") is not None:
+                    prior["appointment_id"] = result_data["appointment_id"]
+            elif context.get("tool_name") == "healthcare.list_slots":
+                slot_match = re.search(r"\bslot\s+(\d+)\b", folded)
+                if slot_match and isinstance(tool_result, list):
+                    for item in tool_result:
+                        nested = item.get("available_slots", []) if isinstance(item, dict) else []
+                        match = next((slot for slot in nested if str(slot.get("id")) == slot_match.group(1)), None)
+                        if match:
+                            prior["slot_id"] = match["id"]
+                            break
+                action = "hold_slot" if is_explicit_confirmation(query) else "none"
+            elif normalized.get("department"):
+                action = "browse_slots"
+            resolution = HealthcareResolution(
+                intent="healthcare"
+                if action != "none"
+                or state.get("intent") == "healthcare_booking"
+                or context.get("tool_name", "").startswith("healthcare.")
+                or normalized.get("department")
+                else "other",
+                action=action,
+                slot_patch={
+                    **({"department": normalized["department"]} if normalized.get("department") else {}),
+                    **({"medication_name": normalized["medication_name"]} if normalized.get("medication_name") else {}),
+                },
+                explicit_confirmation=is_explicit_confirmation(query),
+            )
+            context["slots"] = prior
+        else:
+            prompt = (
+                "You interpret a healthcare/pharmacy workflow turn using conversation state and the latest message. "
+                "Classify intent from meaning, including short follow-ups and references to prior choices. Return semantic "
+                "slot values only; never invent IDs, medical facts, availability, diagnoses, or tool results. Use IDs only "
+                "when explicitly present in the user's message; trusted existing state is included separately. Select a list "
+                "item only by its zero-based index when the user clearly refers to that item. Set explicit_confirmation "
+                "true only when the user clearly approves the pending action; questions, uncertainty, negation, or changes "
+                "must be false. Do not diagnose or recommend treatment.\n"
+                f"Workflow context: {context}\nAuthoritative latest tool result: {tool_result}\nLatest user message: {query}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, HealthcareResolution)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            resolution = raw if isinstance(raw, HealthcareResolution) else HealthcareResolution.model_validate(raw)
     except Exception:
         return {
             "intent": "healthcare_booking" if context.get("intent") == "healthcare_booking" else "general_chat",

@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.agents.confirmation import is_explicit_confirmation
 from src.agents.policies.tool_policy import validate_tool_request
 from src.agents.state import AgentState
 from src.agents.tool_ids import make_tool_call_id
@@ -81,22 +82,48 @@ async def classify_and_extract(state: AgentState) -> dict[str, Any]:
         from src.services.llm import GeminiAdapter
 
         if get_settings().agent_model_mode != "gemini":
-            raise RuntimeError("LLM interpretation is disabled")
-        prompt = (
-            "Interpret the latest message for a restaurant reservation workflow from meaning and full context. "
-            "Extract only semantic values stated or clearly implied; resolve short follow-ups against existing slots "
-            "and the pending operation. Return dates as YYYY-MM-DD and local time as HH:MM using the supplied current "
-            "time and timezone. Never invent IDs, availability, prices, or tool results. Select a search result only by "
-            "zero-based index when the user clearly refers to it. Set explicit_confirmation only for clear approval of "
-            "the exact pending action; questions, corrections, hesitation, or unrelated replies are not confirmation. "
-            "Use intent=other for unrelated requests.\n"
-            f"Current local time: {now}\nExisting workflow context: {context}\nExisting reservation slots: {prior}"
-            f"\nLatest authoritative tool result: {tool_result}\nLatest user message: {query}"
-        )
-        raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantResolution)
-        if isinstance(raw, dict) and raw.get("parsed") is not None:
-            raw = raw["parsed"]
-        resolution = raw if isinstance(raw, RestaurantResolution) else RestaurantResolution.model_validate(raw)
+            if not _is_restaurant_message(query, state.get("intent")):
+                return {"intent": "general_chat", "slots": prior, "status": "COMPLETED"}
+            legacy_prior = {**prior, "_tool_result": tool_result}
+            extracted = _extract_slots(query, legacy_prior, datetime.now(TZ))
+            data = tool_result.get("data", tool_result) if isinstance(tool_result, dict) else {}
+            items = data.get("items", []) if isinstance(data, dict) else []
+            folded = _fold(query)
+            selected_index = next(
+                (index for index, item in enumerate(items) if _matches_restaurant_name(str(item.get("name", "")), query)),
+                None,
+            )
+            if selected_index is None and items and any(term in folded for term in ("cai thu nhat", "thu nhat", "dau tien", "so 1")):
+                selected_index = 0
+            if selected_index is None and len(items) > 1 and any(term in folded for term in ("cai thu hai", "thu hai", "so 2")):
+                selected_index = 1
+            patch = {
+                key: value
+                for key, value in extracted.items()
+                if key in RestaurantSlotPatch.model_fields and value is not None
+            }
+            resolution = RestaurantResolution(
+                intent="restaurant",
+                slot_patch=patch,
+                explicit_confirmation=is_explicit_confirmation(query),
+                selected_index=selected_index,
+            )
+        else:
+            prompt = (
+                "Interpret the latest message for a restaurant reservation workflow from meaning and full context. "
+                "Extract only semantic values stated or clearly implied; resolve short follow-ups against existing slots "
+                "and the pending operation. Return dates as YYYY-MM-DD and local time as HH:MM using the supplied current "
+                "time and timezone. Never invent IDs, availability, prices, or tool results. Select a search result only by "
+                "zero-based index when the user clearly refers to it. Set explicit_confirmation only for clear approval of "
+                "the exact pending action; questions, corrections, hesitation, or unrelated replies are not confirmation. "
+                "Use intent=other for unrelated requests.\n"
+                f"Current local time: {now}\nExisting workflow context: {context}\nExisting reservation slots: {prior}"
+                f"\nLatest authoritative tool result: {tool_result}\nLatest user message: {query}"
+            )
+            raw = await GeminiAdapter().ainvoke_structured(prompt, RestaurantResolution)
+            if isinstance(raw, dict) and raw.get("parsed") is not None:
+                raw = raw["parsed"]
+            resolution = raw if isinstance(raw, RestaurantResolution) else RestaurantResolution.model_validate(raw)
     except Exception:
         return {
             "intent": state.get("intent") or "restaurant_booking", "slots": prior,

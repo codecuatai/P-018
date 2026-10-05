@@ -52,6 +52,11 @@ def resolve_references(slots: dict[str, Any], context: dict[str, Any]) -> dict[s
     # single item in the persisted menu snapshot. Never use fuzzy matching to
     # turn an order into a different item.
     dish_query = resolved.get("dish_query")
+    if dish_query and resolved.get("menu_item_id"):
+        current = next((item for item in items if item.get("id") == resolved["menu_item_id"]), None)
+        if current and plain(str(current.get("name", ""))).strip() != plain(str(dish_query)).strip():
+            resolved.pop("menu_item_id", None)
+            resolved.pop("menu_item_name", None)
     if dish_query and not resolved.get("menu_item_id"):
         matches = _exact_candidate(items, str(dish_query))
         if len(matches) == 1:

@@ -8,8 +8,9 @@ from typing import Any, Literal
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from src.agents.intent import classify as classify_intent
+from src.agents.intent import extract_slots
 from src.agents.reference_resolution import resolve_references
-from src.agents.intent import classify as classify_intent, extract_slots
 from src.agents.state import AgentState, FoodWorkflowContext
 from src.agents.tool_selection import select_tools
 from src.config import get_settings
@@ -241,9 +242,11 @@ def _proposal(
 def reconcile_intent(
     model_intent: str,
     workflow_context: dict[str, Any] | None = None,
+    workflow_slots: dict[str, Any] | None = None,
 ) -> str:
     """Accept only an intent from the bounded schema returned by the model."""
     del workflow_context
+    del workflow_slots
     return model_intent if model_intent in VALID_INTENTS else "general_food_support"
 
 
@@ -432,9 +435,20 @@ def build_graph(tool_client: Any | None = None, llm: LLMAdapter | None = None):
             decision = _parse_structured_decision(raw)
             logger.info("Structured model decision accepted")
             model_slots = _safe_model_slots(decision.extracted_slots)
-            slots = {**workflow_slots, **model_slots}
+            # Preserve deterministic extractions when the model omits a slot,
+            # while allowing a validated model interpretation to refine it.
+            slots = {**workflow_slots, **selected_slots, **model_slots}
+            # The bounded deterministic classifier is authoritative when it
+            # recognizes a concrete user action. The model supplies semantic
+            # slots, but must not downgrade an explicit action into another
+            # workflow (or turn a safety refusal into a transaction).
+            intent = (
+                selected_intent
+                if selected_intent != "general_food_support"
+                else reconcile_intent(decision.intent, workflow_slots)
+            )
             return {
-                "intent": reconcile_intent(decision.intent, workflow_slots),
+                "intent": intent,
                 "confidence": decision.confidence,
                 "decision_source": "model",
                 "extracted_slots": slots,
