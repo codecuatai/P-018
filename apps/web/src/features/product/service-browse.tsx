@@ -79,6 +79,8 @@ function FoodBrowse() {
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [showAllRestaurants, setShowAllRestaurants] = useState(false);
+  const [loadingAllRestaurants, setLoadingAllRestaurants] = useState(false);
   const [activeKeyword, setActiveKeyword] = useState("");
   const [loading, setLoading] = useState(true);
   const [paging, setPaging] = useState(false);
@@ -89,6 +91,8 @@ function FoodBrowse() {
   const [menuPage, setMenuPage] = useState(1);
   const [menuPageCount, setMenuPageCount] = useState(1);
   const [menuTotal, setMenuTotal] = useState(0);
+  const [showAllMenu, setShowAllMenu] = useState(false);
+  const [loadingAllMenu, setLoadingAllMenu] = useState(false);
   const [menuLoading, setMenuLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [cart, setCart] = useState<JsonRecord>();
@@ -115,6 +119,8 @@ function FoodBrowse() {
   const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
     const requestId = browseRequestRef.current + 1;
     browseRequestRef.current = requestId;
+    setShowAllRestaurants(false);
+    setLoadingAllRestaurants(false);
     if (keepList) setPaging(true); else setLoading(true);
     setError("");
     try {
@@ -130,6 +136,34 @@ function FoodBrowse() {
     catch (reason) { if (browseRequestRef.current === requestId) setError(errorText(reason)); }
     finally { if (browseRequestRef.current === requestId) { if (keepList) setPaging(false); else setLoading(false); } }
   }, []);
+  async function toggleAllRestaurants(): Promise<void> {
+    if (showAllRestaurants) {
+      setItems((current) => current.slice(0, itemsPerPage));
+      setPage(1);
+      setShowAllRestaurants(false);
+      return;
+    }
+    const requestId = ++browseRequestRef.current;
+    setLoadingAllRestaurants(true);
+    setError("");
+    try {
+      const pages: JsonRecord[][] = [];
+      for (let targetPage = 1; targetPage <= pageCount; targetPage += 1) {
+        const result = await browseService("food", activeKeyword, { page: targetPage, limit: itemsPerPage });
+        if (browseRequestRef.current !== requestId) return;
+        pages.push(result.items);
+      }
+      if (browseRequestRef.current === requestId) {
+        setItems(pages.flat());
+        setPage(1);
+        setShowAllRestaurants(true);
+      }
+    } catch (reason) {
+      if (browseRequestRef.current === requestId) setError(errorText(reason));
+    } finally {
+      if (browseRequestRef.current === requestId) setLoadingAllRestaurants(false);
+    }
+  }
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
   useEffect(() => { void load(); void listSavedAddresses().then((result) => { setAddresses(result.items); setAddressId(result.items.find((item) => item.is_default)?.id ?? result.items[0]?.id ?? ""); }).catch(() => undefined); }, [load]);
@@ -146,6 +180,8 @@ function FoodBrowse() {
   const loadMenu = useCallback(async (id: string, targetPage: number): Promise<void> => {
     const requestId = menuRequestRef.current + 1;
     menuRequestRef.current = requestId;
+    setShowAllMenu(false);
+    setLoadingAllMenu(false);
     setMenuLoading(true);
     try {
       const menu = await getFoodMenu(id, { limit: menuItemsPerPage, offset: (targetPage - 1) * menuItemsPerPage });
@@ -162,11 +198,43 @@ function FoodBrowse() {
     catch (reason) { if (menuRequestRef.current === requestId) setError(errorText(reason)); }
     finally { if (menuRequestRef.current === requestId) setMenuLoading(false); }
   }, []);
+  async function toggleAllMenu(): Promise<void> {
+    if (showAllMenu) {
+      setMenuItems((current) => current.slice(0, menuItemsPerPage));
+      setMenuPage(1);
+      setShowAllMenu(false);
+      return;
+    }
+    const requestId = ++menuRequestRef.current;
+    setMenuLoading(true);
+    setLoadingAllMenu(true);
+    setError("");
+    try {
+      const pages: JsonRecord[][] = [];
+      for (let targetPage = 1; targetPage <= menuPageCount; targetPage += 1) {
+        const menu = await getFoodMenu(selectedId, { limit: menuItemsPerPage, offset: (targetPage - 1) * menuItemsPerPage });
+        if (menuRequestRef.current !== requestId) return;
+        pages.push(listFrom(menu.items));
+      }
+      if (menuRequestRef.current === requestId) {
+        setMenuItems(pages.flat());
+        setMenuPage(1);
+        setShowAllMenu(true);
+      }
+    } catch (reason) {
+      if (menuRequestRef.current === requestId) setError(errorText(reason));
+    } finally {
+      if (menuRequestRef.current === requestId) {
+        setMenuLoading(false);
+        setLoadingAllMenu(false);
+      }
+    }
+  }
 
   async function openRestaurant(item: JsonRecord): Promise<void> {
     const id = idOf(item);
     if (!id) return;
-    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true); setMenuPage(1); setMenuPageCount(1); setMenuTotal(0);
+    setSelectedId(id); setRestaurant(undefined); setMenuItems([]); setCart(undefined); setConfirmation(undefined); setOrderResult(undefined); setError(""); setDetailLoading(true); setMenuPage(1); setMenuPageCount(1); setMenuTotal(0); setShowAllMenu(false); setLoadingAllMenu(false);
     try {
       const [detail] = await Promise.all([getFoodRestaurant(id), loadMenu(id, 1)]);
       setRestaurant(detail);
@@ -259,9 +327,9 @@ function FoodBrowse() {
   const visibleItems = items;
   const visibleMenuItems = menuItems;
 
-  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note, quantity) => void addItem(customizingItem, options, note, quantity)} /> : null}{menuTotal > 0 ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => setCustomizingItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> Tùy chỉnh & Thêm</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Phân trang thực đơn"><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.max(1, menuPage - 1))} disabled={menuPage === 1 || menuLoading}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {menuPage} / {menuPageCount} · {menuTotal} món</span><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.min(menuPageCount, menuPage + 1))} disabled={menuPage === menuPageCount || menuLoading}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
+  if (selectedId) return <div className="service-detail-flow"><button className="text-link" type="button" onClick={() => { setSelectedId(""); setError(""); }}><ChevronLeft size={16} /> Danh sách nhà hàng</button>{detailLoading ? <LoadingNote text="Đang tải nhà hàng và thực đơn…" /> : restaurant ? (<><DetailHeading item={restaurant} service="food" /><div className="food-product-grid"><div className="menu-panel"><div className="panel-heading"><div><span className="eyebrow">THỰC ĐƠN</span><h2>Món đang phục vụ</h2></div><Link className="text-link" href="/app?service=food&mode=assistant">Hỏi X-One AI <ArrowRight size={15} /></Link></div>{customizingItem ? <FoodItemCustomizer item={customizingItem} loading={cartLoading} onCancel={() => setCustomizingItem(undefined)} onAdd={(options, note, quantity) => void addItem(customizingItem, options, note, quantity)} /> : null}{menuTotal > 0 ? <><div className="menu-list">{visibleMenuItems.map((item) => <article className="menu-item" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Món ăn")} /><div className="menu-item-copy"><h3>{display(item.name ?? item.title ?? "Món ăn")}</h3><p>{display(item.description ?? "Mô tả món đang cập nhật")}</p><strong>{formatMoney(item.price ?? item.base_price)}</strong></div><button className="button button-secondary" type="button" onClick={() => setCustomizingItem(item)} disabled={cartLoading || item.available === false}><ShoppingBag size={15} /> Tùy chỉnh & Thêm</button></article>)}</div>{menuPageCount > 1 ? <nav className="menu-pagination" aria-label="Thực đơn" aria-busy={loadingAllMenu}><span aria-live="polite">{showAllMenu ? `Đang hiển thị ${menuItems.length} / ${menuTotal} món` : `Trang ${menuPage} / ${menuPageCount} · ${menuTotal} món`}</span><div className="browse-pagination-actions">{!showAllMenu ? <><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.max(1, menuPage - 1))} disabled={menuPage === 1 || menuLoading}><ChevronLeft size={16} /> Trước</button><button className="button button-secondary" type="button" onClick={() => void loadMenu(selectedId, Math.min(menuPageCount, menuPage + 1))} disabled={menuPage === menuPageCount || menuLoading}>Sau <ChevronRight size={16} /></button></> : null}<button className="button button-secondary" type="button" onClick={() => void toggleAllMenu()} disabled={menuLoading}>{loadingAllMenu ? <><Loader2 className="spinner" size={15} /> Đang tải món…</> : showAllMenu ? "Thu gọn" : `Hiển thị tất cả ${menuTotal} món`}</button></div></nav> : null}</> : <EmptyNote title="Thực đơn chưa có món" body="Nhà hàng này chưa có món có thể đặt." />}</div><FoodCart cart={cart} addresses={addresses} addressId={addressId} setAddressId={(value) => { setAddressId(value); setConfirmation(undefined); setChecked(false); }} onAddressAdded={(address) => { setAddresses((current) => [address, ...current.filter((item) => item.id !== address.id)]); setAddressId(address.id); setConfirmation(undefined); setChecked(false); }} voucher={voucher} setVoucher={setVoucher} loading={cartLoading} onVoucher={() => void applyVoucherCode()} onRemoveVoucher={() => void removeVoucherCode()} onQuantity={(item, quantity) => void changeQuantity(item, quantity)} onRemove={(item) => void removeItem(item)} onPreview={() => void prepareOrder()} confirmation={confirmation} checked={checked} setChecked={setChecked} onExecute={() => void executeOrder()} orderResult={orderResult} cancelConfirmation={cancelConfirmation} cancelChecked={cancelChecked} setCancelChecked={setCancelChecked} onPrepareCancel={() => void prepareCancel()} onExecuteCancel={() => void executeCancel()} /></div>{notice ? <p className="form-success" role="status">{notice}</p> : null}</>) : null}{error ? <ErrorNote message={error} onRetry={() => void openRestaurant({ id: selectedId })} /> : null}</div>;
 
-  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Phân trang danh sách nhà hàng"><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.max(1, page - 1), true)} disabled={page === 1 || paging}><ChevronLeft size={16} /> Trước</button><span aria-live="polite">Trang {page} / {pageCount} · {totalItems} nhà hàng</span><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.min(pageCount, page + 1), true)} disabled={page === pageCount || paging}>Sau <ChevronRight size={16} /></button></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
+  return <><SearchForm label="Tìm nhà hàng hoặc món" keyword={keyword} setKeyword={setKeyword} loading={loading} onSubmit={() => void load(keyword)} placeholder="Tên món, tên nhà hàng, khu vực" />{loading ? <LoadingNote text="Đang tải danh sách…" /> : error ? <ErrorNote message={error} onRetry={() => void load(keyword)} /> : items.length ? <><div className="browse-results">{visibleItems.map((item) => <article className="browse-result browse-result-action" key={idOf(item)}><AuthoritativeImage compact source={item.image_url} alt={display(item.name ?? item.title ?? "Nhà hàng")} /><div className="browse-result-copy"><h2>{display(item.name ?? item.title ?? "Nhà hàng")}</h2><p>{display(item.address ?? item.location ?? "Địa chỉ đang cập nhật")}</p><small>{listFrom(item.matching_items).length ? `${listFrom(item.matching_items).length} món khớp` : item.is_open === false ? "Đang đóng cửa" : "Đang nhận đơn"}</small></div><button className="button button-secondary" type="button" onClick={() => void openRestaurant(item)}>Xem thực đơn <ChevronRight size={16} /></button></article>)}</div>{pageCount > 1 ? <nav className="browse-pagination" aria-label="Danh sách quán ăn" aria-busy={loadingAllRestaurants}><span aria-live="polite">{showAllRestaurants ? `Đang hiển thị ${items.length} / ${totalItems} quán` : `Trang ${page} / ${pageCount} · ${totalItems} nhà hàng`}</span><div className="browse-pagination-actions">{!showAllRestaurants ? <><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.max(1, page - 1), true)} disabled={page === 1 || paging || loadingAllRestaurants}><ChevronLeft size={16} /> Trước</button><button className="button button-secondary" type="button" onClick={() => void load(activeKeyword, Math.min(pageCount, page + 1), true)} disabled={page === pageCount || paging || loadingAllRestaurants}>Sau <ChevronRight size={16} /></button></> : null}<button className="button button-secondary" type="button" onClick={() => void toggleAllRestaurants()} disabled={paging || loadingAllRestaurants}>{loadingAllRestaurants ? <><Loader2 className="spinner" size={15} /> Đang tải quán…</> : showAllRestaurants ? "Thu gọn" : `Hiển thị tất cả ${totalItems} quán`}</button></div></nav> : null}</> : <EmptyNote title="Chưa có nhà hàng phù hợp" body="Thử từ khóa khác hoặc chuyển sang X-One AI để mô tả món bạn muốn." />}</>;
 }
 
 function FoodItemCustomizer({ item, loading, onCancel, onAdd }: { item: JsonRecord; loading: boolean; onCancel: () => void; onAdd: (options: Array<{ group_id: string; option_id: string }>, note: string, quantity: number) => void }) {
@@ -635,6 +703,8 @@ function RestaurantBrowse() {
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
+  const [showAllRestaurants, setShowAllRestaurants] = useState(false);
+  const [loadingAllRestaurants, setLoadingAllRestaurants] = useState(false);
   const [paging, setPaging] = useState(false);
   const searchRequestRef = useRef(0);
 
@@ -665,6 +735,8 @@ function RestaurantBrowse() {
 
   const load = useCallback(async (query = "", targetPage = 1, keepList = false) => {
     const requestId = ++searchRequestRef.current;
+    setShowAllRestaurants(false);
+    setLoadingAllRestaurants(false);
     if (keepList) setPaging(true); else setLoading(true);
     setError("");
     try {
@@ -684,6 +756,34 @@ function RestaurantBrowse() {
       }
     }
   }, []);
+  async function toggleAllRestaurants(): Promise<void> {
+    if (showAllRestaurants) {
+      setItems((current) => current.slice(0, itemsPerPage));
+      setPage(1);
+      setShowAllRestaurants(false);
+      return;
+    }
+    const requestId = ++searchRequestRef.current;
+    setLoadingAllRestaurants(true);
+    setError("");
+    try {
+      const pages: JsonRecord[][] = [];
+      for (let targetPage = 1; targetPage <= pageCount; targetPage += 1) {
+        const result = await browseService("restaurant", debouncedKeyword, { page: targetPage, limit: itemsPerPage });
+        if (searchRequestRef.current !== requestId) return;
+        pages.push(result.items);
+      }
+      if (searchRequestRef.current === requestId) {
+        setItems(pages.flat());
+        setPage(1);
+        setShowAllRestaurants(true);
+      }
+    } catch (reason) {
+      if (searchRequestRef.current === requestId) setError(errorText(reason));
+    } finally {
+      if (searchRequestRef.current === requestId) setLoadingAllRestaurants(false);
+    }
+  }
   const searchParams = useSearchParams();
   const initialResourceId = searchParams.get("resource");
   useEffect(() => {
@@ -1002,30 +1102,21 @@ function RestaurantBrowse() {
             ))}
           </div>
           {pageCount > 1 ? (
-            <nav className="history-pagination" aria-label="Phân trang nhà hàng" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "16px", padding: "10px 0" }}>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-muted)", textAlign: "left" }}>
-                Trang <strong>{page}</strong> / {pageCount} · ({totalItems} nhà hàng)
+            <nav className="browse-pagination" aria-label="Danh sách nhà hàng" aria-busy={loadingAllRestaurants}>
+              <span aria-live="polite">
+                {showAllRestaurants ? `Đang hiển thị ${items.length} / ${totalItems} nhà hàng` : <>Trang <strong>{page}</strong> / {pageCount} · {totalItems} nhà hàng</>}
               </span>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  onClick={() => void load(debouncedKeyword, Math.max(1, page - 1), true)}
-                  disabled={page <= 1 || paging}
-                  aria-label="Trang trước"
-                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "var(--text-xs)" }}
-                >
-                  <ChevronLeft size={15} /> Trước
-                </button>
-                <button
-                  className="button button-secondary"
-                  type="button"
-                  onClick={() => void load(debouncedKeyword, Math.min(pageCount, page + 1), true)}
-                  disabled={page >= pageCount || paging}
-                  aria-label="Trang sau"
-                  style={{ minHeight: "34px", padding: "6px 12px", fontSize: "var(--text-xs)" }}
-                >
-                  Sau <ChevronRight size={15} />
+              <div className="browse-pagination-actions">
+                {!showAllRestaurants ? <>
+                  <button className="button button-secondary" type="button" onClick={() => void load(debouncedKeyword, Math.max(1, page - 1), true)} disabled={page <= 1 || paging || loadingAllRestaurants} aria-label="Trang trước">
+                    <ChevronLeft size={15} /> Trước
+                  </button>
+                  <button className="button button-secondary" type="button" onClick={() => void load(debouncedKeyword, Math.min(pageCount, page + 1), true)} disabled={page >= pageCount || paging || loadingAllRestaurants} aria-label="Trang sau">
+                    Sau <ChevronRight size={15} />
+                  </button>
+                </> : null}
+                <button className="button button-secondary" type="button" onClick={() => void toggleAllRestaurants()} disabled={paging || loadingAllRestaurants}>
+                  {loadingAllRestaurants ? <><Loader2 className="spinner" size={15} /> Đang tải nhà hàng…</> : showAllRestaurants ? "Thu gọn" : `Hiển thị tất cả ${totalItems} nhà hàng`}
                 </button>
               </div>
             </nav>
