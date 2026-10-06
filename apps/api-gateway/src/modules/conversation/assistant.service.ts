@@ -2278,33 +2278,75 @@ export class AssistantService {
       );
     }
 
-    for (const task of merged) {
-      if (task.phase === 'DISCARDED') continue;
-      // Durable task history is not the response projection for this turn.
-      // Only tasks touched by the current plan may contribute cards/results;
-      // otherwise a previously completed (including domain-cancelled) task or
-      // an old failure is replayed on an unrelated request.
-      if (task.phase === 'COMPLETED' && task.public_item && merge.touchedIds.has(task.id)) {
-        completed.push(task.public_item);
-        continue;
+    const pendingTaskIds = new Set(merged.map((task) => task.id));
+    while (pendingTaskIds.size) {
+      const readyTasks: StoredTask[] = [];
+      for (const task of merged) {
+        if (!pendingTaskIds.has(task.id)) continue;
+        if (task.phase === 'DISCARDED') {
+          pendingTaskIds.delete(task.id);
+          continue;
+        }
+        // Durable task history is not the response projection for this turn.
+        // Only tasks touched by the current plan may contribute cards/results;
+        // otherwise a previously completed (including domain-cancelled) task or
+        // an old failure is replayed on an unrelated request.
+        if (task.phase === 'COMPLETED' && task.public_item && merge.touchedIds.has(task.id)) {
+          completed.push(task.public_item);
+          pendingTaskIds.delete(task.id);
+          continue;
+        }
+        if (!merge.touchedIds.has(task.id)) {
+          const hasPendingAction = actions.some((action) => action.task_id === task.id && action.task_revision === task.revision);
+          if (!focusedTurn && hasPendingAction && task.public_item) items.push(task.public_item);
+          pendingTaskIds.delete(task.id);
+          continue;
+        }
+        if (hasFailedDependency(task, merged)) {
+          const publicItem = buildTaskErrorItem('DEPENDENCY_BLOCKED', false);
+          task.phase = 'FAILED';
+          task.failure_code = 'DEPENDENCY_BLOCKED';
+          task.public_item = publicItem;
+          items.push(publicItem);
+          resultsForComposition.push(publicItem);
+          pendingTaskIds.delete(task.id);
+          continue;
+        }
+        if (this.dependenciesReady(task, merged)) readyTasks.push(task);
       }
-      if (!merge.touchedIds.has(task.id)) {
-        const hasPendingAction = actions.some((action) => action.task_id === task.id && action.task_revision === task.revision);
-        if (!focusedTurn && hasPendingAction && task.public_item) items.push(task.public_item);
-        continue;
-      }
-      if (hasFailedDependency(task, merged)) {
-        const publicItem = buildTaskErrorItem('DEPENDENCY_BLOCKED', false);
-        task.phase = 'FAILED';
-        task.failure_code = 'DEPENDENCY_BLOCKED';
-        task.public_item = publicItem;
-        items.push(publicItem);
-        resultsForComposition.push(publicItem);
-        continue;
-      }
-      if (!this.dependenciesReady(task, merged)) continue;
-      try {
-        const result = await this.processTask(task, merged, user, conversationId, correlationId, effectiveCurrentLocation);
+
+      if (!readyTasks.length) break;
+
+      // Independent service lookups can overlap. Dependency-bound tasks are
+      // picked up on the next pass after their prerequisites update `merged`.
+      // Keep concurrency bounded even when durable history contains old tasks.
+      const batch = readyTasks.slice(0, 4);
+      const outcomes = await Promise.all(batch.map(async (task) => {
+        try {
+          return {
+            task,
+            result: await this.processTask(task, merged, user, conversationId, correlationId, effectiveCurrentLocation),
+          } as const;
+        } catch (error: unknown) {
+          return { task, error } as const;
+        }
+      }));
+
+      for (const outcome of outcomes) {
+        const { task } = outcome;
+        pendingTaskIds.delete(task.id);
+        if ('error' in outcome) {
+          const code = publicFailureCode(outcome.error);
+          const publicItem = buildTaskErrorItem(code, assistantActionFailureStatus(outcome.error) === 'FAILED_RETRYABLE');
+          task.phase = 'FAILED';
+          task.failure_code = code;
+          task.public_item = publicItem;
+          items.push(publicItem);
+          resultsForComposition.push(publicItem);
+          continue;
+        }
+
+        const { result } = outcome;
         task.phase = result.phase;
         if (result.phase === 'FAILED') task.failure_code = result.failureCode ?? stringValue(result.publicItem?.error_code) ?? 'TASK_FAILED';
         else delete task.failure_code;
@@ -2322,14 +2364,6 @@ export class AssistantService {
         }
         items.push(...taskResultItems(result));
         if (result.publicItem) resultsForComposition.push(result.publicItem);
-      } catch (error: unknown) {
-        const code = publicFailureCode(error);
-        const publicItem = buildTaskErrorItem(code, assistantActionFailureStatus(error) === 'FAILED_RETRYABLE');
-        task.phase = 'FAILED';
-        task.failure_code = code;
-        task.public_item = publicItem;
-        items.push(publicItem);
-        resultsForComposition.push(publicItem);
       }
     }
     this.propagateDependencyFailures(merged);
