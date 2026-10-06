@@ -622,6 +622,7 @@ interface AssistantItemBase<K extends string> {
 export interface AssistantRestaurantOptionsItem extends AssistantItemBase<"restaurant_options" | "restaurant_unavailable"> {
   options?: AssistantOption[];
   restaurant?: AssistantRestaurant;
+  selected?: boolean;
 }
 
 export interface AssistantRestaurantConfirmationItem extends AssistantItemBase<"restaurant_confirmation" | "reservation"> {

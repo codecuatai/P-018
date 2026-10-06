@@ -3391,7 +3391,20 @@ export class AssistantService {
       // deliberate state transition. Keep that authoritative selection while
       // asking for the remaining detail so the next turn checks this same
       // restaurant rather than searching the catalog again.
-      return { phase: 'NEEDS_INFO' as TaskPhase, authoritative: existing, items: [{ kind: 'clarification', question }] };
+      const selectedItem = isRecord(existing?.selected)
+        ? {
+          kind: 'restaurant_options',
+          title: 'Quán đã chọn',
+          selected: true,
+          options: [this.publicRestaurant(existing.selected)],
+        }
+        : undefined;
+      return {
+        phase: 'NEEDS_INFO' as TaskPhase,
+        authoritative: existing,
+        ...(selectedItem ? { publicItem: selectedItem } : {}),
+        items: [{ kind: 'clarification', question }, ...(selectedItem ? [selectedItem] : [])],
+      };
     }
     const startAtMilliseconds = Date.parse(startAt ?? '');
     if (Number.isFinite(startAtMilliseconds) && startAtMilliseconds <= Date.now()) {
@@ -5792,6 +5805,7 @@ export class AssistantService {
   private sanitizeConsumerItem(item: JsonObject): JsonObject {
     const allowed = new Set([
       'kind', 'title', 'note', 'question', 'options', 'departments', 'restaurant',
+      'selected',
       'reservation_code', 'party_size', 'start_at', 'status', 'expires_at', 'operation',
       'previous_start_at', 'previous_party_size', 'next_party_size',
       'pickup', 'dropoff', 'stopovers', 'vehicle', 'passenger_count', 'amount', 'currency', 'duration_minutes',

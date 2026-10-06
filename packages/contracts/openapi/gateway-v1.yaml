@@ -1248,6 +1248,7 @@ components:
           type: array
           items: {$ref: '#/components/schemas/RestaurantOption'}
         restaurant: {$ref: '#/components/schemas/RestaurantReference'}
+        selected: {type: boolean}
         resource_id: {type: string}
         previous_start_at: {type: string, format: date-time}
         previous_party_size: {type: integer, minimum: 1}

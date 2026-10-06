@@ -1,0 +1,2237 @@
+{
+  "schema_version": "1",
+  "evaluation": "100 four-service public Gateway discovery scenarios",
+  "base_case_count": 100,
+  "executed_case_count": 100,
+  "concurrency": 1,
+  "final_actions_allowed": false,
+  "restaurant_selection_regression": {
+    "status": "PASS",
+    "search_http_status": 200,
+    "action_http_status": 200,
+    "selected_card_visible": true,
+    "selection_persisted": true,
+    "safe_error_code": null
+  },
+  "summary": {
+    "status": "FAIL",
+    "cases_passed": 18,
+    "cases_failed": 82,
+    "coverage_by_domain": {
+      "food": 61,
+      "healthcare": 81,
+      "restaurant": 67,
+      "ride": 22
+    },
+    "all_four_domains_per_case": 18,
+    "final_actions_completed": 0,
+    "median_latency_ms": 6531,
+    "p95_latency_ms": 21625
+  },
+  "results": [
+    {
+      "case_id": "four-service-001",
+      "correlation_id": "xone-4svc-20261006-001",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 25172
+    },
+    {
+      "case_id": "four-service-002",
+      "correlation_id": "xone-4svc-20261006-002",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 21063
+    },
+    {
+      "case_id": "four-service-003",
+      "correlation_id": "xone-4svc-20261006-003",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 49469
+    },
+    {
+      "case_id": "four-service-004",
+      "correlation_id": "xone-4svc-20261006-004",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 64656
+    },
+    {
+      "case_id": "four-service-005",
+      "correlation_id": "xone-4svc-20261006-005",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 20672
+    },
+    {
+      "case_id": "four-service-006",
+      "correlation_id": "xone-4svc-20261006-006",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 15406
+    },
+    {
+      "case_id": "four-service-007",
+      "correlation_id": "xone-4svc-20261006-007",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 22812
+    },
+    {
+      "case_id": "four-service-008",
+      "correlation_id": "xone-4svc-20261006-008",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 22469
+    },
+    {
+      "case_id": "four-service-009",
+      "correlation_id": "xone-4svc-20261006-009",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 21625
+    },
+    {
+      "case_id": "four-service-010",
+      "correlation_id": "xone-4svc-20261006-010",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 10235
+    },
+    {
+      "case_id": "four-service-011",
+      "correlation_id": "xone-4svc-20261006-011",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_options",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 11390
+    },
+    {
+      "case_id": "four-service-012",
+      "correlation_id": "xone-4svc-20261006-012",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 15781
+    },
+    {
+      "case_id": "four-service-013",
+      "correlation_id": "xone-4svc-20261006-013",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 18766
+    },
+    {
+      "case_id": "four-service-014",
+      "correlation_id": "xone-4svc-20261006-014",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6891
+    },
+    {
+      "case_id": "four-service-015",
+      "correlation_id": "xone-4svc-20261006-015",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5437
+    },
+    {
+      "case_id": "four-service-016",
+      "correlation_id": "xone-4svc-20261006-016",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5078
+    },
+    {
+      "case_id": "four-service-017",
+      "correlation_id": "xone-4svc-20261006-017",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 2813
+    },
+    {
+      "case_id": "four-service-018",
+      "correlation_id": "xone-4svc-20261006-018",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4468
+    },
+    {
+      "case_id": "four-service-019",
+      "correlation_id": "xone-4svc-20261006-019",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "restaurant_unavailable",
+        "ride_quote",
+        "task_error"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4985
+    },
+    {
+      "case_id": "four-service-020",
+      "correlation_id": "xone-4svc-20261006-020",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3969
+    },
+    {
+      "case_id": "four-service-021",
+      "correlation_id": "xone-4svc-20261006-021",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5828
+    },
+    {
+      "case_id": "four-service-022",
+      "correlation_id": "xone-4svc-20261006-022",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7156
+    },
+    {
+      "case_id": "four-service-023",
+      "correlation_id": "xone-4svc-20261006-023",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6797
+    },
+    {
+      "case_id": "four-service-024",
+      "correlation_id": "xone-4svc-20261006-024",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6937
+    },
+    {
+      "case_id": "four-service-025",
+      "correlation_id": "xone-4svc-20261006-025",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7078
+    },
+    {
+      "case_id": "four-service-026",
+      "correlation_id": "xone-4svc-20261006-026",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4500
+    },
+    {
+      "case_id": "four-service-027",
+      "correlation_id": "xone-4svc-20261006-027",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6047
+    },
+    {
+      "case_id": "four-service-028",
+      "correlation_id": "xone-4svc-20261006-028",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 2797
+    },
+    {
+      "case_id": "four-service-029",
+      "correlation_id": "xone-4svc-20261006-029",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7547
+    },
+    {
+      "case_id": "four-service-030",
+      "correlation_id": "xone-4svc-20261006-030",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3641
+    },
+    {
+      "case_id": "four-service-031",
+      "correlation_id": "xone-4svc-20261006-031",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 9312
+    },
+    {
+      "case_id": "four-service-032",
+      "correlation_id": "xone-4svc-20261006-032",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 8297
+    },
+    {
+      "case_id": "four-service-033",
+      "correlation_id": "xone-4svc-20261006-033",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5907
+    },
+    {
+      "case_id": "four-service-034",
+      "correlation_id": "xone-4svc-20261006-034",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4906
+    },
+    {
+      "case_id": "four-service-035",
+      "correlation_id": "xone-4svc-20261006-035",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7219
+    },
+    {
+      "case_id": "four-service-036",
+      "correlation_id": "xone-4svc-20261006-036",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4593
+    },
+    {
+      "case_id": "four-service-037",
+      "correlation_id": "xone-4svc-20261006-037",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "restaurant"
+      ],
+      "item_kinds": [
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3453
+    },
+    {
+      "case_id": "four-service-038",
+      "correlation_id": "xone-4svc-20261006-038",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3672
+    },
+    {
+      "case_id": "four-service-039",
+      "correlation_id": "xone-4svc-20261006-039",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_options",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7375
+    },
+    {
+      "case_id": "four-service-040",
+      "correlation_id": "xone-4svc-20261006-040",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3797
+    },
+    {
+      "case_id": "four-service-041",
+      "correlation_id": "xone-4svc-20261006-041",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6594
+    },
+    {
+      "case_id": "four-service-042",
+      "correlation_id": "xone-4svc-20261006-042",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7094
+    },
+    {
+      "case_id": "four-service-043",
+      "correlation_id": "xone-4svc-20261006-043",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6500
+    },
+    {
+      "case_id": "four-service-044",
+      "correlation_id": "xone-4svc-20261006-044",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6218
+    },
+    {
+      "case_id": "four-service-045",
+      "correlation_id": "xone-4svc-20261006-045",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4938
+    },
+    {
+      "case_id": "four-service-046",
+      "correlation_id": "xone-4svc-20261006-046",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 2891
+    },
+    {
+      "case_id": "four-service-047",
+      "correlation_id": "xone-4svc-20261006-047",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7297
+    },
+    {
+      "case_id": "four-service-048",
+      "correlation_id": "xone-4svc-20261006-048",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3312
+    },
+    {
+      "case_id": "four-service-049",
+      "correlation_id": "xone-4svc-20261006-049",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6875
+    },
+    {
+      "case_id": "four-service-050",
+      "correlation_id": "xone-4svc-20261006-050",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3985
+    },
+    {
+      "case_id": "four-service-051",
+      "correlation_id": "xone-4svc-20261006-051",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5765
+    },
+    {
+      "case_id": "four-service-052",
+      "correlation_id": "xone-4svc-20261006-052",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7547
+    },
+    {
+      "case_id": "four-service-053",
+      "correlation_id": "xone-4svc-20261006-053",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6750
+    },
+    {
+      "case_id": "four-service-054",
+      "correlation_id": "xone-4svc-20261006-054",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3125
+    },
+    {
+      "case_id": "four-service-055",
+      "correlation_id": "xone-4svc-20261006-055",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "restaurant_unavailable",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6078
+    },
+    {
+      "case_id": "four-service-056",
+      "correlation_id": "xone-4svc-20261006-056",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4516
+    },
+    {
+      "case_id": "four-service-057",
+      "correlation_id": "xone-4svc-20261006-057",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4344
+    },
+    {
+      "case_id": "four-service-058",
+      "correlation_id": "xone-4svc-20261006-058",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4609
+    },
+    {
+      "case_id": "four-service-059",
+      "correlation_id": "xone-4svc-20261006-059",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_unavailable",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6531
+    },
+    {
+      "case_id": "four-service-060",
+      "correlation_id": "xone-4svc-20261006-060",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3391
+    },
+    {
+      "case_id": "four-service-061",
+      "correlation_id": "xone-4svc-20261006-061",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7016
+    },
+    {
+      "case_id": "four-service-062",
+      "correlation_id": "xone-4svc-20261006-062",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 8734
+    },
+    {
+      "case_id": "four-service-063",
+      "correlation_id": "xone-4svc-20261006-063",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 8156
+    },
+    {
+      "case_id": "four-service-064",
+      "correlation_id": "xone-4svc-20261006-064",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 8500
+    },
+    {
+      "case_id": "four-service-065",
+      "correlation_id": "xone-4svc-20261006-065",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7719
+    },
+    {
+      "case_id": "four-service-066",
+      "correlation_id": "xone-4svc-20261006-066",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4422
+    },
+    {
+      "case_id": "four-service-067",
+      "correlation_id": "xone-4svc-20261006-067",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_unavailable",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6703
+    },
+    {
+      "case_id": "four-service-068",
+      "correlation_id": "xone-4svc-20261006-068",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3766
+    },
+    {
+      "case_id": "four-service-069",
+      "correlation_id": "xone-4svc-20261006-069",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7593
+    },
+    {
+      "case_id": "four-service-070",
+      "correlation_id": "xone-4svc-20261006-070",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5266
+    },
+    {
+      "case_id": "four-service-071",
+      "correlation_id": "xone-4svc-20261006-071",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7500
+    },
+    {
+      "case_id": "four-service-072",
+      "correlation_id": "xone-4svc-20261006-072",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6016
+    },
+    {
+      "case_id": "four-service-073",
+      "correlation_id": "xone-4svc-20261006-073",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7297
+    },
+    {
+      "case_id": "four-service-074",
+      "correlation_id": "xone-4svc-20261006-074",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7656
+    },
+    {
+      "case_id": "four-service-075",
+      "correlation_id": "xone-4svc-20261006-075",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_options",
+        "restaurant_unavailable",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_healthcare_slot"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6312
+    },
+    {
+      "case_id": "four-service-076",
+      "correlation_id": "xone-4svc-20261006-076",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 2906
+    },
+    {
+      "case_id": "four-service-077",
+      "correlation_id": "xone-4svc-20261006-077",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5235
+    },
+    {
+      "case_id": "four-service-078",
+      "correlation_id": "xone-4svc-20261006-078",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5718
+    },
+    {
+      "case_id": "four-service-079",
+      "correlation_id": "xone-4svc-20261006-079",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7657
+    },
+    {
+      "case_id": "four-service-080",
+      "correlation_id": "xone-4svc-20261006-080",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4296
+    },
+    {
+      "case_id": "four-service-081",
+      "correlation_id": "xone-4svc-20261006-081",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5532
+    },
+    {
+      "case_id": "four-service-082",
+      "correlation_id": "xone-4svc-20261006-082",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5687
+    },
+    {
+      "case_id": "four-service-083",
+      "correlation_id": "xone-4svc-20261006-083",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7891
+    },
+    {
+      "case_id": "four-service-084",
+      "correlation_id": "xone-4svc-20261006-084",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_options",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6062
+    },
+    {
+      "case_id": "four-service-085",
+      "correlation_id": "xone-4svc-20261006-085",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7610
+    },
+    {
+      "case_id": "four-service-086",
+      "correlation_id": "xone-4svc-20261006-086",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5031
+    },
+    {
+      "case_id": "four-service-087",
+      "correlation_id": "xone-4svc-20261006-087",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_options",
+        "restaurant_unavailable",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5891
+    },
+    {
+      "case_id": "four-service-088",
+      "correlation_id": "xone-4svc-20261006-088",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3265
+    },
+    {
+      "case_id": "four-service-089",
+      "correlation_id": "xone-4svc-20261006-089",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6922
+    },
+    {
+      "case_id": "four-service-090",
+      "correlation_id": "xone-4svc-20261006-090",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "task_error"
+      ],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 5078
+    },
+    {
+      "case_id": "four-service-091",
+      "correlation_id": "xone-4svc-20261006-091",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "restaurant_options",
+        "ride_quote",
+        "task_error"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6578
+    },
+    {
+      "case_id": "four-service-092",
+      "correlation_id": "xone-4svc-20261006-092",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_empty",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 6906
+    },
+    {
+      "case_id": "four-service-093",
+      "correlation_id": "xone-4svc-20261006-093",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7375
+    },
+    {
+      "case_id": "four-service-094",
+      "correlation_id": "xone-4svc-20261006-094",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 8454
+    },
+    {
+      "case_id": "four-service-095",
+      "correlation_id": "xone-4svc-20261006-095",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_unavailable",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_food_item"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 9421
+    },
+    {
+      "case_id": "four-service-096",
+      "correlation_id": "xone-4svc-20261006-096",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_options",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_healthcare_slot",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 3782
+    },
+    {
+      "case_id": "four-service-097",
+      "correlation_id": "xone-4svc-20261006-097",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4890
+    },
+    {
+      "case_id": "four-service-098",
+      "correlation_id": "xone-4svc-20261006-098",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [],
+      "item_kinds": [],
+      "action_kinds": [],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4266
+    },
+    {
+      "case_id": "four-service-099",
+      "correlation_id": "xone-4svc-20261006-099",
+      "http_status": 200,
+      "status": "PASS",
+      "covered_domains": [
+        "food",
+        "healthcare",
+        "restaurant",
+        "ride"
+      ],
+      "item_kinds": [
+        "food_options",
+        "healthcare_no_availability",
+        "restaurant_options",
+        "ride_quote"
+      ],
+      "action_kinds": [
+        "ride_service",
+        "select_food_item",
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 7359
+    },
+    {
+      "case_id": "four-service-100",
+      "correlation_id": "xone-4svc-20261006-100",
+      "http_status": 200,
+      "status": "FAIL",
+      "covered_domains": [
+        "healthcare",
+        "restaurant"
+      ],
+      "item_kinds": [
+        "healthcare_no_availability",
+        "restaurant_options",
+        "task_error"
+      ],
+      "action_kinds": [
+        "select_restaurant"
+      ],
+      "completed_kinds": [],
+      "safe_error_code": null,
+      "final_action_absent": true,
+      "latency_ms": 4094
+    }
+  ],
+  "privacy": "Synthetic service-discovery prompts only. No prompts, auth tokens, raw responses, or user identifiers are persisted."
+}

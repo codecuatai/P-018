@@ -115,8 +115,10 @@ function AssistantCard({ item, actions, onAction, disabledActionId, foodSelectio
     case "restaurant_unavailable": {
       const restaurantOptions = item.options ?? [];
       const isUnavailable = item.kind === "restaurant_unavailable";
+      const isSelected = item.kind === "restaurant_options" && item.selected === true;
       const selectedName = text(item.restaurant?.name, "Quán đã chọn");
-      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, isUnavailable ? "Quán đã chọn chưa còn bàn" : "Chọn nhà hàng")} summary={isUnavailable ? selectedName : restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."} isCompleted={isCompleted}>
+      const chosenName = text(restaurantOptions[0]?.name, "Quán đã chọn");
+      return <CollapsibleAgentCard label="Nhà hàng" title={text(item.title, isUnavailable ? "Quán đã chọn chưa còn bàn" : "Chọn nhà hàng")} summary={isUnavailable || isSelected ? chosenName : restaurantOptions.length ? `${restaurantOptions.length} quán phù hợp` : "Mình đang cập nhật thêm lựa chọn cho bạn."} isCompleted={isCompleted}>
         <RestaurantCard item={item} actions={actions} onAction={onAction} disabledActionId={disabledActionId} />
       </CollapsibleAgentCard>;
     }
