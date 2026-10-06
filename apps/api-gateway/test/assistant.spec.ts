@@ -1399,7 +1399,15 @@ describe('Unified assistant orchestration', () => {
 
     const first = await service.chat(user, 'Tìm quán lẩu ở Cầu Giấy lúc 5 giờ chiều nay.', undefined, 'cor-rest-select-1');
     const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-rest-select-2', 'rest-select-key');
-    expect(selected.items[0]).toMatchObject({ kind: 'clarification' });
+    expect(selected.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'restaurant_options',
+        title: 'Quán đã chọn',
+        selected: true,
+        options: [expect.objectContaining({ name: 'Samcheop Topokki' })],
+      }),
+      expect.objectContaining({ kind: 'clarification' }),
+    ]));
 
     const partySize = await service.chat(user, '5 người', first.conversation_id, 'cor-rest-select-3');
 
@@ -2370,8 +2378,15 @@ describe('Unified assistant orchestration', () => {
       'cor-restaurant-select-before-party-2',
       'restaurant-select-before-party-key',
     );
-    expect(selected.items[0]).toMatchObject({ kind: 'clarification' });
-    expect(selected.items[0].question).toContain('số người');
+    expect(selected.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'restaurant_options',
+        title: 'Quán đã chọn',
+        selected: true,
+        options: [expect.objectContaining({ name: 'Quán Lẩu' })],
+      }),
+      expect.objectContaining({ kind: 'clarification', question: expect.stringContaining('số người') }),
+    ]));
 
     const party = await service.chat(user, '5 người', first.conversation_id, 'cor-restaurant-select-before-party-3');
     expect(party.items[0]).toMatchObject({ kind: 'restaurant_confirmation', party_size: 5 });
