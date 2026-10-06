@@ -151,6 +151,13 @@ class McpToolExecutionError extends Error {
   }
 }
 
+class McpSessionExpiredError extends Error {
+  constructor(readonly sessionId: string) {
+    super('MCP session is no longer valid.');
+    this.name = 'McpSessionExpiredError';
+  }
+}
+
 function readMcpPayload(text: string): Record<string, unknown> {
   const dataLines = text.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trim());
   const payload = dataLines.length ? dataLines.join('\n') : text;
@@ -207,6 +214,7 @@ abstract class InternalServiceClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs ?? this.config.get<number>('UPSTREAM_TIMEOUT_MS', 5000));
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const sessionId = this.mcpSessionId;
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -214,13 +222,17 @@ abstract class InternalServiceClient {
         headers: {
           'content-type': 'application/json',
           accept: 'application/json, text/event-stream',
-          ...(this.mcpSessionId ? { 'mcp-session-id': this.mcpSessionId } : {}),
+          ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
           'mcp-protocol-version': '2024-11-05',
         },
         body: JSON.stringify({ jsonrpc: '2.0', ...(method.startsWith('notifications/') ? {} : { id }), method, params }),
       });
-      const sessionId = response.headers.get('mcp-session-id');
-      if (sessionId) this.mcpSessionId = sessionId;
+      const responseSessionId = response.headers.get('mcp-session-id');
+      if (responseSessionId) this.mcpSessionId = responseSessionId;
+      // Streamable HTTP uses 404 for a request carrying an invalid/expired
+      // session. The server rejects it before dispatching the JSON-RPC call,
+      // so establish a new session and replay the request once.
+      if (response.status === 404 && sessionId) throw new McpSessionExpiredError(sessionId);
       if (!response.ok) throw new Error(`MCP endpoint returned HTTP ${response.status}.`);
       if (response.status === 202) return {};
       if (method.startsWith('notifications/')) return {};
@@ -289,6 +301,15 @@ abstract class InternalServiceClient {
           headers: remoteHeaders,
         });
       } catch (error) {
+        if (error instanceof McpSessionExpiredError && attempt === 0) {
+          // Another concurrent request may already have replaced this
+          // session. Do not discard that newer session on a late 404.
+          if (this.mcpSessionId === error.sessionId) {
+            this.mcpSessionId = undefined;
+            this.mcpReady = undefined;
+          }
+          continue;
+        }
         if (!readOnly || attempt > 0) throw error;
         // The bridge may evict a stateful HTTP MCP session while the Gateway
         // process is still alive. Re-negotiate once before failing a safe read.
