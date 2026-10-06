@@ -63,7 +63,7 @@ describe("RestaurantBrowse real-time search", () => {
     render(<ServiceBrowse service="restaurant" />);
     await flushPromises();
 
-    expect(screen.getByText((_, element) => element?.textContent === "Trang 1 / 2 · (11 nhà hàng)")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "Trang 1 / 2 · 11 nhà hàng")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Trang sau" }));
     await flushPromises();
 
