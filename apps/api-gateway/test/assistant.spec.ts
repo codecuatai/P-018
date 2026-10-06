@@ -374,6 +374,43 @@ describe('Unified assistant orchestration', () => {
     expect(confirmed.items[0]).toEqual(expect.objectContaining({ amount: 52000, currency: 'VND', duration_minutes: 18 }));
   });
 
+  it('anchors a cross-turn ride reference to the selected restaurant', () => {
+    const service = new AssistantService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never);
+    const mergeTasks = (service as unknown as {
+      mergeTasks: (current: Array<Record<string, unknown>>, planned: Array<Record<string, unknown>>, message: string) => { tasks: Array<Record<string, unknown>> };
+    }).mergeTasks.bind(service);
+
+    const result = mergeTasks(
+      [{
+        id: 'restaurant-selected',
+        domain: 'restaurant',
+        operation: 'CREATE',
+        goal: 'Đặt bàn tại quán đã chọn',
+        normalized_request: 'Đặt bàn tại quán đã chọn',
+        extracted_slots: {},
+        depends_on: [],
+        phase: 'COMPLETED',
+        revision: 1,
+        authoritative: { selected: { id: 'rest-1', name: 'Quán Một', address: '12 Hoàn Kiếm, Hà Nội' } },
+      }],
+      [{
+        domain: 'ride',
+        operation: 'CREATE',
+        goal: 'Đặt xe đến quán đã chọn',
+        normalized_request: 'Đặt xe đến quán đó',
+        extracted_slots: { pickup_address: 'VinUni', vehicle_type: 'CAR_4' },
+      }],
+      'Đặt xe đến quán đó cho tôi.',
+    );
+
+    const rideTask = result.tasks.find((task) => task.domain === 'ride');
+    expect(rideTask).toEqual(expect.objectContaining({
+      depends_on: ['restaurant-selected'],
+      extracted_slots: expect.objectContaining({ destination_reference: 'RESTAURANT' }),
+    }));
+    expect(rideTask?.extracted_slots).not.toHaveProperty('dropoff_address');
+  });
+
   it('normalizes an availability clause leaked into the Restaurant location before a dependent Ride', async () => {
     const store = new InMemoryCoreRepository();
     const agent = {
