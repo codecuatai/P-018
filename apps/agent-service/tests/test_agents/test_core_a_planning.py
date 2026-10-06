@@ -37,6 +37,7 @@ from src.agents.assistant.contracts import (
 from src.agents.assistant.planning import CoreAPlanner, default_capability_snapshot
 from src.agents.assistant.planning.replan import replan
 from src.agents.assistant.planning.requirements import usable_fact
+from src.agents.assistant.understanding.interpreter import semantic_turn_from_plan
 from src.agents.assistant_graph import plan_core_a
 
 
@@ -147,6 +148,108 @@ def test_broad_food_recommendation_can_browse_without_invented_query() -> None:
     assert task.disposition == TaskDisposition.READY
     assert task.missing_information == []
     assert task.steps[0].capability == "search_food"
+
+
+def test_selected_restaurant_authority_satisfies_booking_without_location() -> None:
+    intent = SemanticIntent(
+        intent_ref=0,
+        domain=Domain.RESTAURANT,
+        operation=Operation.CREATE,
+        goal="Đặt bàn tại quán đã chọn",
+        normalized_request="Đặt bàn cho 4 người lúc 23 giờ",
+        slots=RestaurantSemanticSlots(
+            party_size=slot(4),
+            start_at=slot("2099-09-20T23:00:00+07:00"),
+        ),
+    )
+    context = PlannerContext(tasks=[
+        PlannerTaskContext(
+            task_ref=3,
+            domain=Domain.RESTAURANT,
+            phase="NEEDS_INFO",
+            facts=[AuthoritativeFact(
+                fact_type=FactType.SELECTED_CANDIDATE,
+                field="restaurant_id",
+                value="present",
+                source_task_ref=3,
+            )],
+        ),
+    ])
+
+    task = CoreAPlanner().plan(input_for(intent, context=context)).tasks[0]
+
+    assert task.disposition == TaskDisposition.READY
+    assert task.missing_information == []
+    assert task.steps[0].capability == "restaurant.check_availability"
+
+
+def test_restaurant_booking_follow_up_keeps_create_operation_when_selection_is_active() -> None:
+    turn = semantic_turn_from_plan(
+        [{
+            "domain": "restaurant",
+            "operation": "DISCOVER",
+            "goal": "Đặt bàn cho 4 người",
+            "normalized_request": "Đặt bàn cho 4 người lúc 23 giờ",
+            "extracted_slots": {"party_size": 4, "start_at": "2099-09-20T23:00:00+07:00"},
+        }],
+        conversation_state={
+            "tasks": [{
+                "task_ref": 2,
+                "domain": "restaurant",
+                "phase": "NEEDS_INFO",
+                "facts": [{
+                    "fact_type": "selected_candidate",
+                    "field": "restaurant_id",
+                    "value": "present",
+                }],
+            }],
+        },
+    )
+
+    assert turn.intents[0].operation == Operation.CREATE
+
+
+def test_selected_restaurant_follow_up_asks_only_for_booking_details() -> None:
+    turn = semantic_turn_from_plan(
+        [{
+            "domain": "restaurant",
+            "operation": "DISCOVER",
+            "goal": "Tiếp tục đặt bàn",
+            "normalized_request": "Món gì cũng được nhé",
+            "extracted_slots": {},
+        }],
+        conversation_state={
+            "tasks": [{
+                "task_ref": 2,
+                "domain": "restaurant",
+                "phase": "NEEDS_INFO",
+                "facts": [{
+                    "fact_type": "selected_candidate",
+                    "field": "restaurant_id",
+                    "value": "present",
+                }],
+            }],
+        },
+    )
+    context = PlannerContext(tasks=[
+        PlannerTaskContext(
+            task_ref=2,
+            domain=Domain.RESTAURANT,
+            phase="NEEDS_INFO",
+            facts=[AuthoritativeFact(
+                fact_type=FactType.SELECTED_CANDIDATE,
+                field="restaurant_id",
+                value="present",
+                source_task_ref=2,
+            )],
+        ),
+    ])
+
+    task = CoreAPlanner().plan(input_for(turn.intents[0], context=context)).tasks[0]
+
+    assert turn.intents[0].operation == Operation.CREATE
+    assert task.disposition == TaskDisposition.NEEDS_INFO
+    assert set(task.missing_information) == {"party_size", "start_at"}
 
 
 def test_ride_requires_an_explicit_vehicle_type_before_quoting() -> None:

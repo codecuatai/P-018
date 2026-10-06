@@ -2441,6 +2441,63 @@ describe('Unified assistant orchestration', () => {
     expect(tasks[0].authoritative).toEqual(expect.objectContaining({ selected: expect.objectContaining({ id: 'rest-selected' }) }));
   });
 
+  it('uses the selected restaurant directly when a broad-search user later supplies booking details', async () => {
+    const store = new InMemoryCoreRepository();
+    let planningTurn = 0;
+    const agent = {
+      assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose'
+        ? { assistant_message: 'Mình đã kiểm tra bàn tại quán bạn chọn.' }
+        : {
+          plan: {
+            tasks: [{
+              domain: 'restaurant',
+              operation: planningTurn++ === 0 ? 'DISCOVER' : 'CREATE',
+              goal: 'Tìm nhà hàng ngon rồi đặt bàn tại quán đã chọn',
+              normalized_request: 'Đặt bàn tại quán đã chọn',
+              extracted_slots: planningTurn === 1
+                ? {}
+                : { party_size: 4, start_at: '2099-09-20T23:00:00+07:00' },
+            }],
+          },
+        }),
+    };
+    const restaurant = {
+      executeTool: jest.fn()
+        .mockResolvedValueOnce([{ id: 'pho-gon', name: 'Pho Gon', location: 'Hà Nội', cuisine_type: 'Vietnamese' }])
+        .mockResolvedValueOnce({ restaurant_id: 'pho-gon', available: true, resource_version: 1 })
+        .mockResolvedValueOnce({ id: 'hold-pho-gon', expires_at: '2099-09-20T22:00:00+07:00', status: 'ACTIVE' }),
+    };
+    const confirmations = { prepareDomainConfirmation: jest.fn().mockResolvedValue({ id: 'restaurant-confirm-1' }), executeDomain: jest.fn(), execute: jest.fn() };
+    const service = new AssistantService(
+      store as never,
+      agent as never,
+      restaurant as never,
+      { executeTool: jest.fn(), acknowledgePayment: jest.fn(), defaultPatientId: 1 } as never,
+      { chat: jest.fn(), confirmService: jest.fn(), confirmPayment: jest.fn() } as never,
+      confirmations as never,
+    );
+
+    const first = await service.chat(user, 'Tìm nhà hàng ngon cho tôi đi.', undefined, 'cor-broad-restaurant-1');
+    const selected = await service.act(user, { conversation_id: first.conversation_id, action_id: first.actions[0].id }, 'cor-broad-restaurant-2', 'select-pho-gon');
+    expect(selected.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'restaurant_options', title: 'Quán đã chọn', selected: true }),
+      expect.objectContaining({ kind: 'clarification', question: expect.stringContaining('số người và thời gian') }),
+    ]));
+
+    const booking = await service.chat(user, 'Đặt cho tôi 4 người và 11h tối ngày 20/09/2099 nhé.', first.conversation_id, 'cor-broad-restaurant-3');
+
+    expect(restaurant.executeTool.mock.calls.map((call) => call[0].tool_name)).toEqual([
+      'restaurant.search',
+      'restaurant.check_availability',
+      'restaurant.create_hold',
+    ]);
+    expect(restaurant.executeTool.mock.calls[1][0].arguments).toEqual(expect.objectContaining({ restaurant_id: 'pho-gon', party_size: 4 }));
+    expect(booking.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'restaurant_confirmation', restaurant: expect.objectContaining({ name: 'Pho Gon' }), party_size: 4 }),
+    ]));
+    expect(booking.actions.map((action) => action.kind)).toContain('restaurant_confirm');
+  });
+
   it('shows image-first restaurant alternatives when the selected slot is unavailable', async () => {
     const store = new InMemoryCoreRepository();
     const agent = { assistantChat: jest.fn(async (payload: Record<string, unknown>) => payload.mode === 'compose' ? { assistant_message: 'Mình đã cập nhật.' } : { plan: { tasks: [{ domain: 'restaurant', goal: 'Tìm nhà hàng', normalized_request: 'Nhà hàng Hà Nội', extracted_slots: { location: 'Hà Nội', party_size: 2, start_at: '2099-01-01T19:00:00+07:00' } }] } }) };

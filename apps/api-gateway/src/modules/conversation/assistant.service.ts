@@ -3413,7 +3413,7 @@ export class AssistantService {
     }
     const selection = stringValue(slots.selection);
     const existingSelected = isRecord(existing?.selected);
-    const discoveryMissing = !location && !cuisineQuery && !broadQualityRequest
+    const discoveryMissing = !selection && !existingSelected && !location && !cuisineQuery && !broadQualityRequest
       && !isBroadRestaurantDiscoveryIntent(task.latest_message);
     const bookingDetailsMissing = Boolean(selection || existingSelected) && (!partySize || !startAt);
     if (discoveryMissing || bookingDetailsMissing) {

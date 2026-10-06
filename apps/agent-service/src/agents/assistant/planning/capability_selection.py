@@ -18,7 +18,7 @@ from ..contracts import (
     StepKind,
     TaskDisposition,
 )
-from .requirements import task_facts, usable_fact
+from .requirements import selected_restaurant_facts, task_facts, usable_fact
 
 
 def _cap(
@@ -167,6 +167,9 @@ def _has(facts: list, field: str, *, version: bool = False, fresh: bool = False)
 
 def _choose(task: CoreAPlannedTask, context: PlannerContext) -> StepChoice:
     facts = task_facts(context, task.task_ref)
+    if task.domain == Domain.RESTAURANT and task.operation == Operation.CREATE:
+        if not _has(facts, "restaurant_id"):
+            facts = selected_restaurant_facts(context) or facts
     if task.operation == Operation.STATUS:
         return {
             Domain.FOOD: StepChoice("get_food_order", PlanningPhase.STATUS, "Đọc đơn đồ ăn"),

@@ -7,6 +7,7 @@ from ..contracts import (
     AuthorityRequirement,
     CoreAPlannedTask,
     Domain,
+    FactType,
     Operation,
     PlannerContext,
     SemanticSlot,
@@ -59,6 +60,22 @@ def task_facts(context: PlannerContext, task_ref: int) -> list[AuthoritativeFact
     return list(task.facts) if task else []
 
 
+def selected_restaurant_facts(context: PlannerContext) -> list[AuthoritativeFact]:
+    """Return facts for the active authoritative restaurant selection, if any."""
+    for task in reversed(context.tasks):
+        if task.domain != Domain.RESTAURANT or task.phase not in {
+            "PLANNING", "NEEDS_INFO", "IN_PROGRESS", "AWAITING_CONFIRMATION",
+        }:
+            continue
+        selected = [
+            fact for fact in task.facts
+            if fact.fact_type == FactType.SELECTED_CANDIDATE and fact.field == "restaurant_id"
+        ]
+        if selected:
+            return selected
+    return []
+
+
 def usable_fact(
     facts: list[AuthoritativeFact],
     requirement: AuthorityRequirement,
@@ -83,15 +100,29 @@ def usable_fact(
 
 def apply_requirements(task: CoreAPlannedTask, context: PlannerContext) -> CoreAPlannedTask:
     values = semantic_values(task)
+    facts = task_facts(context, task.task_ref)
+    if task.domain == Domain.RESTAURANT and task.operation == Operation.CREATE:
+        if not any(fact.fact_type == FactType.SELECTED_CANDIDATE and fact.field == "restaurant_id" for fact in facts):
+            facts = selected_restaurant_facts(context) or facts
+    has_selected_restaurant = any(
+        fact.fact_type == FactType.SELECTED_CANDIDATE and fact.field == "restaurant_id"
+        for fact in facts
+    )
     missing_semantic: list[str] = []
     for expression in SEMANTIC_REQUIREMENTS.get((task.domain, task.operation), ()):
         alternatives = expression.split("|")
+        if (
+            task.domain == Domain.RESTAURANT
+            and task.operation == Operation.CREATE
+            and expression == "location"
+            and has_selected_restaurant
+        ):
+            continue
         if task.domain == Domain.RIDE and expression == "dropoff_address" and task.depends_on:
             continue
         if not any(values.get(name) not in (None, "") for name in alternatives):
             missing_semantic.append(expression)
 
-    facts = task_facts(context, task.task_ref)
     missing_authority = [
         requirement
         for requirement in AUTHORITY_REQUIREMENTS.get((task.domain, task.operation), ())

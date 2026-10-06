@@ -23,12 +23,59 @@ from ..contracts import (
 )
 
 
-def _operation_for_task(domain: Domain, candidate_operation: Any, slots: Mapping[str, Any]) -> Operation:
+def _has_selected_restaurant_context(conversation_state: Mapping[str, Any]) -> bool:
+    active_phases = {"PLANNING", "NEEDS_INFO", "IN_PROGRESS", "AWAITING_CONFIRMATION"}
+    for task in conversation_state.get("tasks", []):
+        if not isinstance(task, Mapping) or task.get("domain") != Domain.RESTAURANT:
+            continue
+        if str(task.get("phase", "PLANNING")) not in active_phases:
+            continue
+        facts = task.get("facts", [])
+        if not isinstance(facts, Sequence) or isinstance(facts, str | bytes):
+            continue
+        if any(
+            isinstance(fact, Mapping)
+            and fact.get("fact_type") == "selected_candidate"
+            and fact.get("field") == "restaurant_id"
+            for fact in facts
+        ):
+            return True
+    return False
+
+
+def _operation_for_task(
+    domain: Domain,
+    candidate_operation: Any,
+    slots: Mapping[str, Any],
+    *,
+    selected_restaurant_in_context: bool = False,
+) -> Operation:
     try:
         operation = Operation(str(candidate_operation))
     except ValueError:
         operation = Operation.DISCOVER
-    if domain == Domain.RESTAURANT and operation == Operation.CREATE and slots.get("selection") is None:
+    has_search_filter = any(
+        slots.get(name) not in (None, "")
+        for name in ("location", "cuisine_query", "cuisine_type", "cuisine")
+    )
+    selected_booking_followup = (
+        domain == Domain.RESTAURANT
+        and selected_restaurant_in_context
+        and not has_search_filter
+    )
+    if (
+        selected_booking_followup
+        and operation in {Operation.DISCOVER, Operation.CREATE}
+    ):
+        # Once a restaurant is selected, an underspecified follow-up belongs
+        # to the pending booking flow. Do not reopen catalog discovery.
+        operation = Operation.CREATE
+    if (
+        domain == Domain.RESTAURANT
+        and operation == Operation.CREATE
+        and slots.get("selection") is None
+        and not selected_booking_followup
+    ):
         return Operation.DISCOVER
     if domain == Domain.RIDE and slots.get("stopover_address") is not None:
         return Operation.UPDATE
@@ -183,7 +230,12 @@ def semantic_turn_from_plan(
             SemanticIntent(
                 intent_ref=intent_ref,
                 domain=domain,
-                operation=_operation_for_task(domain, value.get("operation"), extracted),
+                operation=_operation_for_task(
+                    domain,
+                    value.get("operation"),
+                    extracted,
+                    selected_restaurant_in_context=_has_selected_restaurant_context(safe_state),
+                ),
                 goal=goal,
                 normalized_request=normalized,
                 slots=_slots(
